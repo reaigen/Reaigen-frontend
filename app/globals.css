@@ -1,0 +1,108 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --header-h: 64px;
+    --font-primary: -apple-system, BlinkMacSystemFont, "SF Pro Display", "SF Pro Text", "Segoe UI", Roboto, "Helvetica Neue", Helvetica, Arial, system-ui, sans-serif;
+    --motion-ease-smooth: cubic-bezier(0.22, 1, 0.36, 1);
+    --motion-ease-standard: cubic-bezier(0.2, 0.8, 0.2, 1);
+
+    --background:             0 0% 100%;
+    --foreground:             0 0% 2%;
+
+    --card:                   0 0% 100%;
+    --card-foreground:        0 0% 4%;
+
+    --popover:                0 0% 100%;
+    --popover-foreground:     0 0% 4%;
+
+    --primary:                0 0% 4%;
+    --primary-foreground:     0 0% 99%;
+
+    --secondary:              0 0% 94%;
+    --secondary-foreground:   0 0% 14%;
+
+    --muted:                  0 0% 92%;
+    --muted-foreground:       0 0% 30%;
+
+    --accent:                 0 0% 90%;
+    --accent-foreground:      0 0% 5%;
+
+    --destructive:            0 0% 12%;
+    --destructive-foreground: 0 0% 99%;
+
+    --success:                0 0% 12%;
+    --success-foreground:     0 0% 99%;
+
+    --border:                 0 0% 78%;
+    --input:                  0 0% 78%;
+    --ring:                   0 0% 8%;
+
+    --sidebar:                    0 0% 6%;
+    --sidebar-foreground:         0 0% 97%;
+    --sidebar-border:             0 0% 12%;
+    --sidebar-accent:             0 0% 14%;
+    --sidebar-accent-foreground:  0 0% 97%;
+    --sidebar-muted:              0 0% 62%;
+
+    --radius: 0.625rem;
+  }
+
+  * { border-color: hsl(var(--border)); }
+
+  html {
+    scroll-behavior: smooth;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+
+  body {
+    background-color: hsl(var(--background));
+    color: hsl(var(--foreground));
+    font-family: var(--font-primary);
+    font-size: 0.95rem;
+    line-height: 1.5;
+    font-weight: 400;
+  }
+
+  h1, h2, h3, h4 {
+    font-family: var(--font-primary);
+    letter-spacing: -0.02em;
+    line-height: 1.2;
+    font-weight: 700;
+  }
+
+  h1 { font-size: clamp(1.85rem, 3.2vw, 2.8rem); }
+  h2 { font-size: clamp(1.35rem, 2vw, 1.85rem); }
+  h3 { font-size: clamp(1.08rem, 1.2vw, 1.22rem); }
+  h4 { font-size: clamp(1rem, 1vw, 1.08rem); }
+}
+
+@layer utilities {
+  .scrollbar-thin {
+    scrollbar-width: thin;
+    scrollbar-color: hsl(var(--border)) transparent;
+  }
+  .scrollbar-thin::-webkit-scrollbar       { width: 4px; }
+  .scrollbar-thin::-webkit-scrollbar-track { background: transparent; }
+  .scrollbar-thin::-webkit-scrollbar-thumb { background: hsl(var(--border)); border-radius: 2px; }
+}
+
+input:-webkit-autofill,
+input:-webkit-autofill:hover,
+input:-webkit-autofill:focus,
+input:-webkit-autofill:active {
+  -webkit-box-shadow: 0 0 0 30px hsl(var(--background)) inset !important;
+  -webkit-text-fill-color: hsl(var(--foreground)) !important;
+  caret-color: hsl(var(--foreground)) !important;
+  transition: background-color 5000s ease-in-out 0s;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+  }
+}

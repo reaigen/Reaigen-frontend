@@ -1,0 +1,11 @@
+services:
+  reaigen-frontend:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    ports:
+      - "3050:3050"
+    environment:
+      - NODE_ENV=production
+      - REAIGEN_BACKEND_URL=http://host.docker.internal:80
+    restart: unless-stopped
