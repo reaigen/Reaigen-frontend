@@ -10,11 +10,22 @@ import { Input } from "../lib/ui/input";
 import { Label } from "../lib/ui/label";
 import { ApiError } from "../lib/api/client";
 
+type RegisterData = {
+  email: string;
+  username: string;
+  password: string;
+  password_confirm: string;
+  first_name: string;
+  last_name: string;
+  accept_privacy_policy: boolean;
+  accept_terms: boolean;
+};
+
 type AuthGateProps = {
   open: boolean;
   onClose: () => void;
   onLogin: (email: string, password: string) => Promise<void>;
-  onRegister: (email: string, username: string, password: string) => Promise<void>;
+  onRegister: (data: RegisterData) => Promise<void>;
 };
 
 const AUTH_FOCUS_RESET =
@@ -202,7 +213,7 @@ function RegistrationCard({
   onSubmit,
   onSwitchToLogin,
 }: {
-  onSubmit: (email: string, username: string, password: string) => Promise<void>;
+  onSubmit: (data: RegisterData) => Promise<void>;
   onSwitchToLogin: () => void;
 }) {
   const [firstName, setFirstName] = React.useState("");
@@ -226,7 +237,16 @@ function RegistrationCard({
     if (!canSubmit) return;
     try {
       setLoading(true);
-      await onSubmit(email.trim(), username, password);
+      await onSubmit({
+        email: email.trim(),
+        username,
+        password,
+        password_confirm: confirmPassword,
+        first_name: firstName.trim(),
+        last_name: lastName.trim(),
+        accept_privacy_policy: agreeToTerms,
+        accept_terms: agreeToTerms,
+      });
     } catch (err) {
       setError(parseApiError(err));
     } finally {
@@ -341,7 +361,7 @@ export function AuthGate({ open, onClose, onLogin, onRegister }: AuthGateProps) 
               />
             ) : (
               <RegistrationCard
-                onSubmit={async (email, username, password) => { await onRegister(email, username, password); onClose(); }}
+                onSubmit={async (data) => { await onRegister(data); onClose(); }}
                 onSwitchToLogin={() => setMode("login")}
               />
             )}

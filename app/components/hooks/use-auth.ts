@@ -15,7 +15,16 @@ export type AuthState = {
   user: UserProfile | null;
   isLoading: boolean;
   login: (email: string, password: string) => Promise<void>;
-  register: (email: string, username: string, password: string) => Promise<void>;
+  register: (data: {
+    email: string;
+    username: string;
+    password: string;
+    password_confirm: string;
+    first_name: string;
+    last_name: string;
+    accept_privacy_policy: boolean;
+    accept_terms: boolean;
+  }) => Promise<void>;
   logout: () => void;
   refreshProfile: () => Promise<UserProfile | null>;
 };
@@ -53,8 +62,17 @@ export function useAuth(): AuthState {
   }, [refreshProfile]);
 
   const register = React.useCallback(
-    async (email: string, username: string, password: string) => {
-      await apiRegister({ email, username, password });
+    async (data: {
+      email: string;
+      username: string;
+      password: string;
+      password_confirm: string;
+      first_name: string;
+      last_name: string;
+      accept_privacy_policy: boolean;
+      accept_terms: boolean;
+    }) => {
+      await apiRegister(data);
       await refreshProfile();
     },
     [refreshProfile],

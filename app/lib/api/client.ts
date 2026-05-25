@@ -41,8 +41,11 @@ export async function register(data: {
   email: string;
   username: string;
   password: string;
+  password_confirm: string;
   first_name?: string;
   last_name?: string;
+  accept_privacy_policy: boolean;
+  accept_terms: boolean;
 }) {
   return request("/api/auth/register/", {
     method: "POST",
