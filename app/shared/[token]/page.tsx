@@ -57,7 +57,16 @@ export default function SharedTourPage({ params }: { params: Promise<{ token: st
       setRequiresPin(false);
       loadViewer();
     } catch (err: any) {
-      setPinError("Invalid PIN");
+      let msg = "Invalid PIN";
+      try {
+        const body = JSON.parse(err.body);
+        if (body.error) msg = body.error;
+        if (body.retry_after_seconds) {
+          const mins = Math.ceil(body.retry_after_seconds / 60);
+          msg = `Too many attempts. Try again in ${mins} min.`;
+        }
+      } catch {}
+      setPinError(msg);
     } finally {
       setPinLoading(false);
     }
@@ -90,11 +99,14 @@ export default function SharedTourPage({ params }: { params: Promise<{ token: st
           <h2 className="text-lg font-semibold text-center">Enter PIN to view</h2>
           <form onSubmit={handlePinSubmit} className="space-y-3">
             <Input
-              type="password"
-              placeholder="PIN"
+              type="text"
+              inputMode="numeric"
+              pattern="[0-9]*"
+              placeholder="Enter PIN"
               value={pin}
-              onChange={(e) => setPin(e.target.value)}
+              onChange={(e) => setPin(e.target.value.replace(/\D/g, "").slice(0, 10))}
               autoFocus
+              autoComplete="off"
             />
             {pinError && <p className="text-xs text-destructive">{pinError}</p>}
             <Button className="w-full" loading={pinLoading}>
