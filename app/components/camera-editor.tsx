@@ -27,6 +27,7 @@ export default function CameraEditor({ splatId, viewerRef, tourData }: Props) {
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
   const [loaded, setLoaded] = useState(false);
+  const [sceneFov, setSceneFov] = useState<number>(65);
   const previewTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // Load existing saved cameras on mount
@@ -42,6 +43,9 @@ export default function CameraEditor({ splatId, viewerRef, tourData }: Props) {
               label: `Shot ${i + 1}`,
             }))
           );
+        }
+        if (data.sceneFov) {
+          setSceneFov(data.sceneFov);
         }
       })
       .catch(() => {})
@@ -110,6 +114,7 @@ export default function CameraEditor({ splatId, viewerRef, tourData }: Props) {
           up: [...s.up],
         })),
         fovY: 0.66,
+        sceneFov,
       });
       setMessage("Saved!");
     } catch (e: any) {
@@ -185,6 +190,27 @@ export default function CameraEditor({ splatId, viewerRef, tourData }: Props) {
               <Button variant="outline" size="sm" className="w-full" onClick={addShot}>
                 + Capture Current View
               </Button>
+
+              {/* Scene-level focal length (applies to entire room) */}
+              <div className="space-y-1">
+                <div className="flex items-center justify-between">
+                  <label className="text-xs text-muted-foreground">Scene FOV</label>
+                  <span className="text-xs font-mono tabular-nums">{sceneFov}°</span>
+                </div>
+                <input
+                  type="range"
+                  min={30}
+                  max={120}
+                  step={1}
+                  value={sceneFov}
+                  onChange={(e) => setSceneFov(Number(e.target.value))}
+                  className="w-full h-1.5 bg-muted rounded-full appearance-none cursor-pointer accent-primary"
+                />
+                <div className="flex justify-between text-[10px] text-muted-foreground/60">
+                  <span>Tight</span>
+                  <span>Wide</span>
+                </div>
+              </div>
 
               {shots.length > 0 && (
                 <div className="space-y-1.5 max-h-72 overflow-y-auto">

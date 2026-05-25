@@ -42,6 +42,8 @@ export interface TourData {
 export interface CameraData {
   cameras: { position: Vec3; forward: Vec3; up: Vec3 }[];
   fovY?: number;
+  sceneFov?: number;
+  source?: string;
   cached?: boolean;
 }
 

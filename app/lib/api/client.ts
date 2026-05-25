@@ -255,7 +255,7 @@ export async function getCameras(splatId: number): Promise<CameraData> {
 
 export async function saveCameras(
   splatId: number,
-  data: { cameras: { position: number[]; forward: number[]; up: number[] }[]; fovY?: number },
+  data: { cameras: { position: number[]; forward: number[]; up: number[] }[]; fovY?: number; sceneFov?: number },
 ): Promise<CameraData> {
   return request(`/api/reaigen/splats/${splatId}/cameras/`, {
     method: "PATCH",
