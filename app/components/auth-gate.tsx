@@ -8,7 +8,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "../li
 import { Checkbox } from "../lib/ui/checkbox";
 import { Input } from "../lib/ui/input";
 import { Label } from "../lib/ui/label";
-import { ApiError } from "../lib/api/client";
+import { ApiError, requestPasswordReset } from "../lib/api/client";
 
 type RegisterData = {
   email: string;
@@ -109,6 +109,8 @@ function LoginCard({
   const [showPassword, setShowPassword] = React.useState(false);
   const [loading, setLoading] = React.useState(false);
   const [error, setError] = React.useState<string | null>(null);
+  const [resetSent, setResetSent] = React.useState(false);
+  const [resetLoading, setResetLoading] = React.useState(false);
   const emailIsValid = /\S+@\S+\.\S+/.test(email.trim());
   const canSubmit = emailIsValid && password.trim().length >= 6;
 
@@ -154,9 +156,19 @@ function LoginCard({
               <button
                 type="button"
                 tabIndex={-1}
-                className={`inline-flex items-center text-[11px] text-foreground/60 hover:text-foreground ${AUTH_TEXT_BUTTON_CLASS}`}
+                disabled={resetLoading || !emailIsValid}
+                onClick={async () => {
+                  if (!emailIsValid) return;
+                  setResetLoading(true);
+                  try {
+                    await requestPasswordReset(email.trim());
+                    setResetSent(true);
+                  } catch {}
+                  setResetLoading(false);
+                }}
+                className={`inline-flex items-center text-[11px] text-foreground/60 hover:text-foreground disabled:opacity-40 ${AUTH_TEXT_BUTTON_CLASS}`}
               >
-                Forgot?
+                {resetSent ? "Reset link sent" : resetLoading ? "Sending..." : "Forgot?"}
               </button>
             </div>
             <div className="relative">

@@ -57,6 +57,13 @@ export async function logout() {
   return request("/api/auth/logout", { method: "POST" });
 }
 
+export async function requestPasswordReset(email: string) {
+  return request("/api/auth/password-reset/request/", {
+    method: "POST",
+    body: JSON.stringify({ email }),
+  });
+}
+
 // ─── Types (matches Django UserDetailSerializer) ──────────────────────────
 
 export interface UserLocalization {
