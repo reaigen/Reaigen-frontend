@@ -389,23 +389,21 @@ const SplatViewer = forwardRef<SplatViewerHandle, Props>(function SplatViewer(
 
   useEffect(() => {
     const handleKey = (e: KeyboardEvent) => {
-      // In free-fly mode, let the FreeCamera handle arrow keys
-      if (freeModeRef.current) {
-        if (e.key === "Escape") {
-          // Already free — do nothing
-          return;
-        }
+      // Arrow keys + WASD always control scene movement (FreeCamera).
+      // Switch to free mode on first arrow/WASD press so the camera
+      // takes over navigation instead of jumping between shots.
+      if (["ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight", "w", "a", "s", "d"].includes(e.key)) {
+        if (!freeModeRef.current) enableFreeCamera();
+        // Let BabylonJS FreeCamera handle the key
         return;
       }
-      if (e.key === "ArrowRight") { e.preventDefault(); goToNext(); }
-      if (e.key === "ArrowLeft") { e.preventDefault(); goToPrev(); }
       if (e.key === "Escape") {
         enableFreeCamera();
       }
     };
     window.addEventListener("keydown", handleKey);
     return () => window.removeEventListener("keydown", handleKey);
-  }, [goToNext, goToPrev, enableFreeCamera]);
+  }, [enableFreeCamera]);
 
   // ── Scroll navigation ─────────────────────────────────────────────────────
 
