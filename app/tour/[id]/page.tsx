@@ -22,8 +22,6 @@ export default function TourPage({ params }: { params: Promise<{ id: string }> }
   const [error, setError] = useState<string | null>(null);
   const [tourData, setTourData] = useState<TourData | null>(null);
   const [shotIdx, setShotIdx] = useState(0);
-  const [showEditor, setShowEditor] = useState(false);
-
   const splatRef = useRef<any>(null);
 
   useEffect(() => {
@@ -103,23 +101,12 @@ export default function TourPage({ params }: { params: Promise<{ id: string }> }
         </Button>
       </div>
 
-      <div className="absolute top-4 right-4 z-20 flex items-center gap-2">
-        <Button
-          variant={showEditor ? "default" : "outline"}
-          size="sm"
-          onClick={() => setShowEditor(!showEditor)}
-        >
-          {showEditor ? "Close Editor" : "Edit Cameras"}
-        </Button>
-      </div>
-
-      {showEditor && (
-        <CameraEditor
-          splatId={splatId}
-          viewerRef={splatRef}
-          tourData={tourData}
-        />
-      )}
+      <CameraEditor
+        splatId={splatId}
+        viewerRef={splatRef}
+        tourData={tourData}
+        defaultMode="preview"
+      />
     </div>
   );
 }

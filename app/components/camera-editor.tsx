@@ -18,11 +18,12 @@ interface Props {
   splatId: number;
   viewerRef: RefObject<SplatViewerHandle | null>;
   tourData: TourData | null;
+  defaultMode?: "edit" | "preview";
 }
 
-export default function CameraEditor({ splatId, viewerRef, tourData }: Props) {
+export default function CameraEditor({ splatId, viewerRef, tourData, defaultMode = "edit" }: Props) {
   const [shots, setShots] = useState<CameraShot[]>([]);
-  const [mode, setMode] = useState<"edit" | "preview">("edit");
+  const [mode, setMode] = useState<"edit" | "preview">(defaultMode);
   const [previewIdx, setPreviewIdx] = useState(0);
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
@@ -35,14 +36,22 @@ export default function CameraEditor({ splatId, viewerRef, tourData }: Props) {
     getCameras(splatId)
       .then((data) => {
         if (data.cameras?.length) {
-          setShots(
-            data.cameras.map((c, i) => ({
-              position: c.position,
-              forward: c.forward,
-              up: c.up,
-              label: `Shot ${i + 1}`,
-            }))
-          );
+          const loaded = data.cameras.map((c, i) => ({
+            position: c.position,
+            forward: c.forward,
+            up: c.up,
+            label: `Shot ${i + 1}`,
+          }));
+          setShots(loaded);
+          // Auto-start preview if opening in preview mode with saved cameras
+          if (defaultMode === "preview" && loaded.length > 0) {
+            setMode("preview");
+            setPreviewIdx(0);
+            // Small delay to let the viewer initialize
+            setTimeout(() => {
+              viewerRef.current?.navigateToCamera(loaded[0].position, loaded[0].forward);
+            }, 500);
+          }
         }
         if (data.sceneFov) {
           setSceneFov(data.sceneFov);
@@ -166,7 +175,7 @@ export default function CameraEditor({ splatId, viewerRef, tourData }: Props) {
       <Card className="shadow-xl border-border/50 bg-background/95 backdrop-blur-md">
         <CardHeader className="pb-2">
           <div className="flex items-center justify-between">
-            <CardTitle className="text-sm">Camera Editor</CardTitle>
+            <CardTitle className="text-sm">{mode === "preview" ? "Tour Preview" : "Camera Editor"}</CardTitle>
             {shots.length > 0 && (
               <div className="flex rounded-lg bg-muted p-0.5 text-xs">
                 <button
@@ -186,7 +195,14 @@ export default function CameraEditor({ splatId, viewerRef, tourData }: Props) {
           </div>
         </CardHeader>
         <CardContent className="space-y-3">
-          {mode === "edit" ? (
+          {mode === "preview" && shots.length === 0 ? (
+            <p className="text-xs text-muted-foreground text-center py-2">
+              No cameras set up yet.{" "}
+              <button onClick={() => setMode("edit")} className="text-primary hover:underline">
+                Add cameras
+              </button>
+            </p>
+          ) : mode === "edit" ? (
             <>
               <Button variant="outline" size="sm" className="w-full" onClick={addShot}>
                 + Capture Current View
