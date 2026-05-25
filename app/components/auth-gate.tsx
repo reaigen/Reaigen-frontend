@@ -79,9 +79,8 @@ function parseApiError(err: unknown): string {
 
 function ReaigenLogo() {
   return (
-    <div className="flex items-center gap-3 mb-3">
-      <div className="grid h-10 w-10 place-items-center rounded-xl bg-foreground/[0.03] border border-foreground/[0.16] text-[18px] font-bold text-foreground shadow-sm">R</div>
-      <span className="text-[20px] font-semibold tracking-tight text-foreground">Reaigen</span>
+    <div className="mb-4">
+      <span className="text-[28px] text-foreground" style={{ fontFamily: 'var(--font-brand), ui-serif, Georgia, serif', fontWeight: 500, letterSpacing: '0.03em' }}>Reaigen</span>
     </div>
   );
 }

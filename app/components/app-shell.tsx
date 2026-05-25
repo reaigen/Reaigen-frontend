@@ -38,9 +38,8 @@ export function AppShell({
       <header className="sticky top-0 z-50 h-16 border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
         <div className="flex h-full items-center justify-between px-6 max-w-7xl mx-auto">
           <div className="flex items-center gap-8">
-            <Link href="/dashboard" className="flex items-center gap-2.5">
-              <div className="grid h-8 w-8 place-items-center rounded-lg bg-foreground text-background text-sm font-bold">R</div>
-              <span className="text-lg font-semibold tracking-tight">Reaigen</span>
+            <Link href="/dashboard" className="flex items-center">
+              <span className="text-[21px]" style={{ fontFamily: 'var(--font-brand), ui-serif, Georgia, serif', fontWeight: 500, letterSpacing: '0.02em' }}>Reaigen</span>
             </Link>
             <nav className="flex items-center gap-1">
               {NAV_ITEMS.map((item) => (
