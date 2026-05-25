@@ -9,6 +9,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "../lib/ui/card";
 import { Button } from "../lib/ui/button";
 import { t, getUserLanguage } from "../lib/i18n";
 import { listSplats } from "../lib/api/client";
+import { ShareDialog } from "../components/share-dialog";
 import type { SplatListItem } from "../lib/tour-types";
 import Link from "next/link";
 
@@ -31,6 +32,9 @@ export default function DashboardPage() {
   const [hasMore, setHasMore] = React.useState(false);
   const [totalCount, setTotalCount] = React.useState(0);
   const pageRef = React.useRef(1);
+
+  // Share dialog state
+  const [shareTarget, setShareTarget] = React.useState<{ splatId: number; title: string } | null>(null);
 
   React.useEffect(() => {
     if (!isLoading && !isAuthenticated) {
@@ -134,11 +138,23 @@ export default function DashboardPage() {
                       {splat.status}
                     </span>
                     {(splat.status === "completed" && (splat.has_ply || splat.has_splat)) && (
-                      <Link href={`/tour/${splat.id}`}>
-                        <Button variant="outline" size="xs">
-                          {t("dashboard.viewTour", lang)}
+                      <div className="flex items-center gap-1.5">
+                        <Button
+                          variant="outline"
+                          size="xs"
+                          onClick={() => setShareTarget({ splatId: splat.id, title: splat.title })}
+                        >
+                          <svg width="12" height="12" viewBox="0 0 16 16" fill="none" className="mr-1">
+                            <path d="M6.5 9.5L9.5 6.5M7 11L5.5 12.5a2.121 2.121 0 01-3-3L4 8m5-3l1.5-1.5a2.121 2.121 0 013 3L12 8" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+                          </svg>
+                          {t("dashboard.share", lang)}
                         </Button>
-                      </Link>
+                        <Link href={`/tour/${splat.id}`}>
+                          <Button variant="outline" size="xs">
+                            {t("dashboard.viewTour", lang)}
+                          </Button>
+                        </Link>
+                      </div>
                     )}
                   </div>
                 ))}
@@ -155,6 +171,16 @@ export default function DashboardPage() {
           </CardContent>
         </Card>
       </div>
+
+      {/* Share Dialog */}
+      {shareTarget && (
+        <ShareDialog
+          splatId={shareTarget.splatId}
+          title={shareTarget.title}
+          open={!!shareTarget}
+          onClose={() => setShareTarget(null)}
+        />
+      )}
     </AppShell>
   );
 }

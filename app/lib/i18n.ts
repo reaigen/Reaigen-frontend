@@ -44,6 +44,8 @@ const translations: Record<string, Record<string, string>> = {
     "dashboard.virtualTours": "Virtual Tours",
     "dashboard.viewTour": "View Tour",
     "dashboard.loadMore": "Load more",
+    "dashboard.share": "Share",
+    "dashboard.linkCopied": "Link copied!",
     "dashboard.noSplats": "No splats yet. Upload a scan from the iOS app to get started.",
   },
   sk: {
@@ -91,6 +93,8 @@ const translations: Record<string, Record<string, string>> = {
     "dashboard.virtualTours": "Virtuálne prehliadky",
     "dashboard.viewTour": "Zobraziť prehliadku",
     "dashboard.loadMore": "Načítať ďalšie",
+    "dashboard.share": "Zdieľať",
+    "dashboard.linkCopied": "Odkaz skopírovaný!",
     "dashboard.noSplats": "Zatiaľ žiadne skeny. Nahrajte sken z iOS aplikácie.",
   },
   cs: {
@@ -138,6 +142,8 @@ const translations: Record<string, Record<string, string>> = {
     "dashboard.virtualTours": "Virtuální prohlídky",
     "dashboard.viewTour": "Zobrazit prohlídku",
     "dashboard.loadMore": "Načíst další",
+    "dashboard.share": "Sdílet",
+    "dashboard.linkCopied": "Odkaz zkopírován!",
     "dashboard.noSplats": "Zatím žádné skeny. Nahrajte sken z iOS aplikace.",
   },
   de: {
@@ -185,6 +191,8 @@ const translations: Record<string, Record<string, string>> = {
     "dashboard.virtualTours": "Virtuelle Touren",
     "dashboard.viewTour": "Tour ansehen",
     "dashboard.loadMore": "Mehr laden",
+    "dashboard.share": "Teilen",
+    "dashboard.linkCopied": "Link kopiert!",
     "dashboard.noSplats": "Noch keine Scans. Laden Sie einen Scan aus der iOS-App hoch.",
   },
 };

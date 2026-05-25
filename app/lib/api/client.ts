@@ -227,7 +227,7 @@ export async function changePassword(data: {
 
 // ─── Splat Viewer & Tour ──────────────────────────────────────────────────
 
-import type { SplatViewerPayload, CameraData, TourViewerData, SplatListItem } from "../tour-types";
+import type { SplatViewerPayload, CameraData, TourViewerData, SplatListItem, ShareData } from "../tour-types";
 
 export async function listSplats(page = 1, pageSize = 20): Promise<{ results: SplatListItem[]; count: number; next: string | null }> {
   return request(`/api/reaigen/splats/?page=${page}&page_size=${pageSize}`);
@@ -263,13 +263,66 @@ export async function saveCameras(
   });
 }
 
-export async function getSharedTourViewer(token: string): Promise<TourViewerData> {
-  return request(`/api/reaigen/shared/${token}/tour-viewer/`);
+export async function getSharedTourViewer(token: string, pinToken?: string): Promise<TourViewerData> {
+  const qs = pinToken ? `?pin_token=${encodeURIComponent(pinToken)}` : "";
+  return request(`/api/reaigen/shared/${token}/tour-viewer/${qs}`);
 }
 
-export async function verifySharePin(token: string, pin: string) {
+export async function verifySharePin(token: string, pin: string): Promise<{ verified: boolean; pin_token?: string }> {
   return request(`/api/reaigen/shared/${token}/verify-pin/`, {
     method: "POST",
     body: JSON.stringify({ pin }),
   });
+}
+
+// ─── Share Management ─────────────────────────────────────────────────────
+
+export async function getSplatShare(splatId: number): Promise<ShareData | null> {
+  try {
+    return await request(`/api/reaigen/splats/${splatId}/share/`);
+  } catch {
+    return null;
+  }
+}
+
+export async function createSplatShare(
+  splatId: number,
+  opts?: { share_type?: string; pin?: string; expires_in_hours?: number; max_access_count?: number },
+): Promise<ShareData> {
+  return request(`/api/reaigen/splats/${splatId}/share/`, {
+    method: "POST",
+    body: JSON.stringify(opts ?? {}),
+  });
+}
+
+export async function updateShare(shareId: number, data: Partial<{
+  title: string;
+  share_type: string;
+  pin: string;
+  expires_in_hours: number;
+  max_access_count: number | null;
+}>): Promise<ShareData> {
+  return request(`/api/reaigen/shares/${shareId}/`, {
+    method: "PATCH",
+    body: JSON.stringify(data),
+  });
+}
+
+export async function pauseShare(shareId: number): Promise<{ message: string; share: ShareData }> {
+  return request(`/api/reaigen/shares/${shareId}/pause/`, { method: "POST" });
+}
+
+export async function resumeShare(shareId: number): Promise<{ message: string; share: ShareData }> {
+  return request(`/api/reaigen/shares/${shareId}/resume/`, { method: "POST" });
+}
+
+export async function revokeShare(shareId: number): Promise<{ message: string }> {
+  return request(`/api/reaigen/shares/${shareId}/revoke/`, { method: "POST" });
+}
+
+export async function getShareAnalytics(shareId: number): Promise<{
+  share: ShareData;
+  stats: { total_accesses: number; unique_ips: number; authenticated_accesses: number; failed_pin_attempts: number };
+}> {
+  return request(`/api/reaigen/shares/${shareId}/analytics/`);
 }

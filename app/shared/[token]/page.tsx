@@ -23,12 +23,13 @@ export default function SharedTourPage({ params }: { params: Promise<{ token: st
   const [tourData, setTourData] = useState<TourData | null>(null);
   const [shotIdx, setShotIdx] = useState(0);
   const [activeRoomId, setActiveRoomId] = useState<number | null>(null);
+  const pinTokenRef = useRef<string | undefined>(undefined);
 
   const splatRef = useRef<any>(null);
 
   const loadViewer = useCallback(async () => {
     try {
-      const result = await getSharedTourViewer(token);
+      const result = await getSharedTourViewer(token, pinTokenRef.current);
       setData(result);
     } catch (e: any) {
       try {
@@ -51,7 +52,8 @@ export default function SharedTourPage({ params }: { params: Promise<{ token: st
     setPinLoading(true);
     setPinError(null);
     try {
-      await verifySharePin(token, pin);
+      const result = await verifySharePin(token, pin);
+      pinTokenRef.current = result.pin_token;
       setRequiresPin(false);
       loadViewer();
     } catch (err: any) {
@@ -124,12 +126,20 @@ export default function SharedTourPage({ params }: { params: Promise<{ token: st
     <div className="h-screen w-screen relative overflow-hidden">
       <SplatViewer
         ref={splatRef}
-        splatUrl={data.splat_url}
+        splatUrl={data.url}
         tourUrl={data.tour_url ?? undefined}
         readOnly
         onShotChange={handleShotChange}
         onTourLoaded={handleTourLoaded}
       />
+
+      {data.draft_title && (
+        <div className="absolute top-4 left-4 z-20">
+          <span className="text-sm font-medium text-white bg-black/50 backdrop-blur-sm px-3 py-1.5 rounded-full">
+            {data.draft_title}
+          </span>
+        </div>
+      )}
 
       {tourData && (
         <TourControls

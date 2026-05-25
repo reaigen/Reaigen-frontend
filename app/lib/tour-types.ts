@@ -48,12 +48,38 @@ export interface CameraData {
 }
 
 export interface TourViewerData {
-  splat_url: string;
+  splat_id: number;
+  draft_id: number;
+  status: string;
+  url: string;
+  format: string;
+  available_formats: string[];
   tour_url: string | null;
+  signed_outputs: Record<string, string>;
+  metadata: Record<string, unknown>;
+  outputs_updated_at: string | null;
+  draft_title: string;
   floorplan_url: string | null;
   rooms: RoomData[];
-  metadata: Record<string, unknown>;
   room_splats: RoomSplatData[];
+}
+
+export interface ShareData {
+  id: number;
+  draft: number;
+  token: string;
+  share_url: string;
+  share_type: string;
+  share_context: string;
+  status: string;
+  title: string;
+  expires_at: string | null;
+  max_access_count: number | null;
+  max_accesses: number | null;
+  access_count: number;
+  requires_pin: boolean;
+  is_accessible: boolean;
+  created_at: string;
 }
 
 export interface RoomData {
