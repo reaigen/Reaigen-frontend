@@ -388,19 +388,19 @@ const SplatViewer = forwardRef<SplatViewerHandle, Props>(function SplatViewer(
   // ── Keyboard navigation ────────────────────────────────────────────────────
 
   useEffect(() => {
-    const MOVE_KEYS = new Set(["w", "a", "s", "d", "q", "e", "ArrowUp", "ArrowDown"]);
+    const MOVE_KEYS = new Set(["w", "a", "s", "d", "q", "e"]);
     const handleKey = (e: KeyboardEvent) => {
       const tag = (e.target as HTMLElement)?.tagName;
       if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT") return;
 
-      // Left/right arrows navigate between shots
-      if (e.key === "ArrowLeft") {
+      // Arrow keys navigate between shots
+      if (e.key === "ArrowLeft" || e.key === "ArrowUp") {
         e.preventDefault();
         e.stopPropagation();
         goToPrev();
         return;
       }
-      if (e.key === "ArrowRight") {
+      if (e.key === "ArrowRight" || e.key === "ArrowDown") {
         e.preventDefault();
         e.stopPropagation();
         goToNext();
