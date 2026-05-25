@@ -388,17 +388,30 @@ const SplatViewer = forwardRef<SplatViewerHandle, Props>(function SplatViewer(
   // ── Keyboard navigation ────────────────────────────────────────────────────
 
   useEffect(() => {
-    const NAV_KEYS = new Set(["ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight", "w", "a", "s", "d", "q", "e"]);
+    const MOVE_KEYS = new Set(["w", "a", "s", "d", "q", "e", "ArrowUp", "ArrowDown"]);
     const handleKey = (e: KeyboardEvent) => {
-      // Only handle keys when the canvas or body is focused (not input fields)
       const tag = (e.target as HTMLElement)?.tagName;
       if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT") return;
 
-      if (NAV_KEYS.has(e.key)) {
+      // Left/right arrows navigate between shots
+      if (e.key === "ArrowLeft") {
+        e.preventDefault();
+        e.stopPropagation();
+        goToPrev();
+        return;
+      }
+      if (e.key === "ArrowRight") {
+        e.preventDefault();
+        e.stopPropagation();
+        goToNext();
+        return;
+      }
+
+      // WASD + Q/E + Up/Down arrows = scene movement (free camera)
+      if (MOVE_KEYS.has(e.key)) {
         e.preventDefault();
         e.stopPropagation();
         if (!freeModeRef.current) enableFreeCamera();
-        // BabylonJS FreeCamera picks up the key via its own listener
         return;
       }
       if (e.key === "Escape") {
@@ -408,7 +421,7 @@ const SplatViewer = forwardRef<SplatViewerHandle, Props>(function SplatViewer(
     };
     window.addEventListener("keydown", handleKey);
     return () => window.removeEventListener("keydown", handleKey);
-  }, [enableFreeCamera]);
+  }, [enableFreeCamera, goToPrev, goToNext]);
 
   // ── Scroll navigation ─────────────────────────────────────────────────────
 
