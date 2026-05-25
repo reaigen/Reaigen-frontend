@@ -25,6 +25,7 @@ export default function CameraEditor({ splatId, viewerRef, tourData, defaultMode
   const [shots, setShots] = useState<CameraShot[]>([]);
   const [mode, setMode] = useState<"edit" | "preview">(defaultMode);
   const [previewIdx, setPreviewIdx] = useState(0);
+  const [looping, setLooping] = useState(false);
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
   const [loaded, setLoaded] = useState(false);
@@ -43,11 +44,10 @@ export default function CameraEditor({ splatId, viewerRef, tourData, defaultMode
             label: `Shot ${i + 1}`,
           }));
           setShots(loaded);
-          // Auto-start preview if opening in preview mode with saved cameras
+          // Start in preview mode — fly to first shot but don't auto-loop
           if (defaultMode === "preview" && loaded.length > 0) {
             setMode("preview");
             setPreviewIdx(0);
-            // Small delay to let the viewer initialize
             setTimeout(() => {
               viewerRef.current?.navigateToCamera(loaded[0].position, loaded[0].forward);
             }, 500);
@@ -145,20 +145,21 @@ export default function CameraEditor({ splatId, viewerRef, tourData, defaultMode
 
   const stopPreview = useCallback(() => {
     setMode("edit");
+    setLooping(false);
     if (previewTimerRef.current) clearTimeout(previewTimerRef.current);
     viewerRef.current?.enableFreeCamera();
   }, [viewerRef]);
 
-  // Auto-advance in preview mode
+  // Auto-advance only when looping is enabled
   useEffect(() => {
-    if (mode !== "preview" || !shots.length) return;
+    if (mode !== "preview" || !looping || !shots.length) return;
     previewTimerRef.current = setTimeout(() => {
       const next = (previewIdx + 1) % shots.length;
       setPreviewIdx(next);
       viewerRef.current?.navigateToCamera(shots[next].position, shots[next].forward);
     }, 4000);
     return () => { if (previewTimerRef.current) clearTimeout(previewTimerRef.current); };
-  }, [mode, previewIdx, shots, viewerRef]);
+  }, [mode, looping, previewIdx, shots, viewerRef]);
 
   const previewGoTo = useCallback((idx: number) => {
     if (previewTimerRef.current) clearTimeout(previewTimerRef.current);
@@ -315,9 +316,33 @@ export default function CameraEditor({ splatId, viewerRef, tourData, defaultMode
                   </button>
                 ))}
               </div>
-              <p className="text-xs text-muted-foreground text-center">
-                Playing {previewIdx + 1} / {shots.length}
-              </p>
+              <div className="flex items-center justify-center gap-2">
+                <p className="text-xs text-muted-foreground">
+                  {previewIdx + 1} / {shots.length}
+                </p>
+                <button
+                  onClick={() => setLooping((v) => !v)}
+                  className={`p-1 rounded-md text-xs transition-colors ${
+                    looping
+                      ? "bg-primary text-primary-foreground"
+                      : "text-muted-foreground hover:text-foreground hover:bg-accent"
+                  }`}
+                  title={looping ? "Stop auto-play" : "Auto-play loop"}
+                >
+                  <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
+                    {looping ? (
+                      /* Pause icon */
+                      <>
+                        <rect x="3.5" y="3" width="2.5" height="8" rx="0.5" fill="currentColor" />
+                        <rect x="8" y="3" width="2.5" height="8" rx="0.5" fill="currentColor" />
+                      </>
+                    ) : (
+                      /* Play icon */
+                      <path d="M4 2.5L11.5 7L4 11.5V2.5Z" fill="currentColor" />
+                    )}
+                  </svg>
+                </button>
+              </div>
             </div>
           )}
 
