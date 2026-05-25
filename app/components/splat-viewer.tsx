@@ -107,6 +107,8 @@ export interface SplatViewerHandle {
   getTourData: () => TourData | null;
   navigateToCamera: (pos: Vec3, fwd: Vec3, instant?: boolean) => void;
   enableFreeCamera: () => void;
+  /** Set camera FOV in degrees (applies immediately to the live BabylonJS camera). */
+  setFov: (degrees: number) => void;
 }
 
 // ── Component ────────────────────────────────────────────────────────────────
@@ -273,9 +275,16 @@ const SplatViewer = forwardRef<SplatViewerHandle, Props>(function SplatViewer(
     cam.attachControl(canvasRef.current, true);
   }, []);
 
+  const setFov = useCallback((degrees: number) => {
+    const cam = cameraRef.current;
+    if (!cam) return;
+    // BabylonJS camera.fov is vertical FOV in radians
+    cam.fov = (degrees * Math.PI) / 180;
+  }, []);
+
   useImperativeHandle(ref, () => ({
-    goToShot, goToPrev, goToNext, getCurrentCamera, getTourData, navigateToCamera, enableFreeCamera,
-  }), [goToShot, goToPrev, goToNext, getCurrentCamera, getTourData, navigateToCamera, enableFreeCamera]);
+    goToShot, goToPrev, goToNext, getCurrentCamera, getTourData, navigateToCamera, enableFreeCamera, setFov,
+  }), [goToShot, goToPrev, goToNext, getCurrentCamera, getTourData, navigateToCamera, enableFreeCamera, setFov]);
 
   // ── Gravity alignment ──────────────────────────────────────────────────────
 

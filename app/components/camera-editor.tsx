@@ -46,6 +46,7 @@ export default function CameraEditor({ splatId, viewerRef, tourData }: Props) {
         }
         if (data.sceneFov) {
           setSceneFov(data.sceneFov);
+          viewerRef.current?.setFov(data.sceneFov);
         }
       })
       .catch(() => {})
@@ -203,7 +204,11 @@ export default function CameraEditor({ splatId, viewerRef, tourData }: Props) {
                   max={120}
                   step={1}
                   value={sceneFov}
-                  onChange={(e) => setSceneFov(Number(e.target.value))}
+                  onChange={(e) => {
+                    const v = Number(e.target.value);
+                    setSceneFov(v);
+                    viewerRef.current?.setFov(v);
+                  }}
                   className="w-full h-1.5 bg-muted rounded-full appearance-none cursor-pointer accent-primary"
                 />
                 <div className="flex justify-between text-[10px] text-muted-foreground/60">
