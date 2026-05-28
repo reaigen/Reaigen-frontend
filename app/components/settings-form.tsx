@@ -80,11 +80,14 @@ function ProfileTab({ user, onSaved, lang }: { user: UserProfile; onSaved: () =>
           </div>
           <div className="space-y-1.5">
             <Label htmlFor="email">{t("settings.profile.email", lang)}</Label>
-            <Input id="email" value={user.email} disabled className="opacity-60" />
+            <Input id="email" value={user.email} disabled className="opacity-50 cursor-not-allowed" />
+            <p className="text-[11px] text-muted-foreground">{t("settings.profile.emailHint", lang) || "Email cannot be changed here"}</p>
           </div>
           {error && <p className="text-sm text-destructive">{error}</p>}
-          {success && <p className="text-sm text-green-600">{t("settings.profile.saved", lang)}</p>}
-          <Button type="submit" loading={loading}>{t("settings.profile.save", lang)}</Button>
+          {success && <p className="text-sm text-muted-foreground">{t("settings.profile.saved", lang)}</p>}
+          <div className="pt-2">
+            <Button type="submit" loading={loading}>{t("settings.profile.save", lang)}</Button>
+          </div>
         </form>
       </CardContent>
     </Card>
@@ -275,8 +278,10 @@ function LocalizationTab({ user, onSaved, lang }: { user: UserProfile; onSaved: 
           </div>
 
           {error && <p className="text-sm text-destructive">{error}</p>}
-          {success && <p className="text-sm text-green-600">{t("settings.localization.saved", lang)}</p>}
-          <Button type="submit" loading={loading}>{t("settings.localization.save", lang)}</Button>
+          {success && <p className="text-sm text-muted-foreground">{t("settings.localization.saved", lang)}</p>}
+          <div className="pt-2">
+            <Button type="submit" loading={loading}>{t("settings.localization.save", lang)}</Button>
+          </div>
         </form>
       </CardContent>
     </Card>
@@ -339,8 +344,10 @@ function SecurityTab({ lang }: { lang: string }) {
             <p className="text-[11px] text-destructive">{t("settings.security.mismatch", lang)}</p>
           )}
           {error && <p className="text-sm text-destructive">{error}</p>}
-          {success && <p className="text-sm text-green-600">{t("settings.security.saved", lang)}</p>}
-          <Button type="submit" loading={loading} disabled={!canSubmit || loading}>{t("settings.security.save", lang)}</Button>
+          {success && <p className="text-sm text-muted-foreground">{t("settings.security.saved", lang)}</p>}
+          <div className="pt-2">
+            <Button type="submit" loading={loading} disabled={!canSubmit || loading}>{t("settings.security.save", lang)}</Button>
+          </div>
         </form>
       </CardContent>
     </Card>
@@ -351,8 +358,8 @@ export function SettingsForm({ user, onSaved }: { user: UserProfile; onSaved: ()
   const lang = getUserLanguage(user.localization);
 
   return (
-    <Tabs defaultValue="profile" className="w-full">
-      <TabsList>
+    <Tabs defaultValue="profile" className="w-full max-w-2xl">
+      <TabsList className="mb-6">
         <TabsTrigger value="profile">{t("settings.tab.profile", lang)}</TabsTrigger>
         <TabsTrigger value="localization">{t("settings.tab.localization", lang)}</TabsTrigger>
         <TabsTrigger value="security">{t("settings.tab.security", lang)}</TabsTrigger>
