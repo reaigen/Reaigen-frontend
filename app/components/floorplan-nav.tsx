@@ -38,23 +38,29 @@ export default function FloorplanNav({ floorplanUrl, rooms, onRoomClick, activeR
   }
 
   return (
-    <div className="absolute bottom-20 left-4 z-20">
+    <div className="absolute bottom-20 left-4 z-20 animate-fade-in">
       <button
         onClick={() => setExpanded(!expanded)}
-        className="mb-2 bg-background/80 backdrop-blur-md rounded-xl px-3 py-2 text-xs font-medium shadow-lg border border-border/50 hover:bg-accent transition-colors"
+        className={`mb-2 flex items-center gap-1.5 bg-black/50 backdrop-blur-xl rounded-full px-3 py-2 text-xs font-medium shadow-lg border border-white/10 text-white/80 hover:text-white hover:bg-black/60 transition-all ${expanded ? "bg-black/60" : ""}`}
       >
-        {expanded ? "Hide Floorplan" : "Floorplan"}
+        <svg width="12" height="12" viewBox="0 0 16 16" fill="none" className={`transition-transform duration-200 ${expanded ? "rotate-45" : ""}`}>
+          <rect x="2" y="2" width="5" height="5" rx="1" stroke="currentColor" strokeWidth="1.5" />
+          <rect x="9" y="2" width="5" height="5" rx="1" stroke="currentColor" strokeWidth="1.5" />
+          <rect x="2" y="9" width="5" height="5" rx="1" stroke="currentColor" strokeWidth="1.5" />
+          <rect x="9" y="9" width="5" height="5" rx="1" stroke="currentColor" strokeWidth="1.5" />
+        </svg>
+        {expanded ? "Close" : "Floorplan"}
       </button>
 
       {expanded && (
-        <div className="bg-background/90 backdrop-blur-md rounded-2xl shadow-xl border border-border/50 p-3 relative">
+        <div className="bg-black/50 backdrop-blur-xl rounded-2xl shadow-2xl border border-white/10 p-3 animate-fade-in-up">
           {/* Floorplan image as background */}
           <div className="relative" style={{ width: svgW, height: svgH }}>
             {/* eslint-disable-next-line @next/next/no-img-element */}
             <img
               src={floorplanUrl}
               alt="Floorplan"
-              className="absolute inset-0 w-full h-full object-contain rounded-xl opacity-30"
+              className="absolute inset-0 w-full h-full object-contain rounded-xl opacity-20 invert"
             />
             <svg
               width={svgW}
@@ -77,17 +83,17 @@ export default function FloorplanNav({ floorplanUrl, rooms, onRoomClick, activeR
                   <g key={room.id} onClick={() => onRoomClick(room)} className="cursor-pointer">
                     <polygon
                       points={pointsStr}
-                      fill={isActive ? "hsl(var(--primary) / 0.3)" : "hsl(var(--muted) / 0.2)"}
-                      stroke={isActive ? "hsl(var(--primary))" : "hsl(var(--border))"}
+                      fill={isActive ? "rgba(255,255,255,0.25)" : "rgba(255,255,255,0.08)"}
+                      stroke={isActive ? "rgba(255,255,255,0.8)" : "rgba(255,255,255,0.3)"}
                       strokeWidth={isActive ? 2 : 1}
-                      className="transition-all duration-200 hover:fill-[hsl(var(--primary)/0.2)]"
+                      className="transition-all duration-200 hover:fill-[rgba(255,255,255,0.15)]"
                     />
                     <text
                       x={cx}
                       y={cz}
                       textAnchor="middle"
                       dominantBaseline="central"
-                      className="text-[9px] fill-foreground font-medium pointer-events-none select-none"
+                      className="text-[9px] fill-white/80 font-medium pointer-events-none select-none"
                     >
                       {room.label}
                     </text>

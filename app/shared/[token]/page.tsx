@@ -217,17 +217,17 @@ export default function SharedTourPage({ params }: { params: Promise<{ token: st
 
       {/* Title badge */}
       {data.draft_title && (
-        <div className="absolute top-4 left-4 z-20">
-          <span className="text-sm font-medium text-white bg-black/50 backdrop-blur-sm px-3 py-1.5 rounded-full">
+        <div className="absolute top-4 left-4 z-20 animate-fade-in">
+          <span className="text-sm font-medium text-white bg-black/40 backdrop-blur-xl px-3.5 py-2 rounded-full border border-white/10 shadow-lg">
             {data.draft_title}
           </span>
         </div>
       )}
 
       {/* Branding */}
-      <div className="absolute top-4 right-4 z-20">
+      <div className="absolute top-4 right-4 z-20 animate-fade-in">
         <span
-          className="text-xs text-white/60 bg-black/30 backdrop-blur-sm px-2 py-1 rounded-full"
+          className="text-[13px] text-white/50 bg-black/20 backdrop-blur-sm px-2.5 py-1 rounded-full"
           style={{ fontFamily: "var(--font-brand), ui-serif, Georgia, serif", fontWeight: 500 }}
         >
           Reaigen
