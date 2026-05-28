@@ -11,6 +11,7 @@ export class ApiError extends Error {
 async function request(path: string, options: RequestInit = {}) {
   const res = await fetch(path, {
     ...options,
+    credentials: "include",
     headers: {
       "Content-Type": "application/json",
       ...options.headers,
@@ -275,11 +276,11 @@ export async function saveCameras(
 
 export async function getSharedTourViewer(token: string, pinToken?: string): Promise<TourViewerData> {
   const qs = pinToken ? `?pin_token=${encodeURIComponent(pinToken)}` : "";
-  return request(`/api/reaigen/shared/${token}/tour-viewer/${qs}`);
+  return request(`/api/reaigen/shared/${encodeURIComponent(token)}/tour-viewer/${qs}`);
 }
 
 export async function verifySharePin(token: string, pin: string): Promise<{ verified: boolean; pin_token?: string }> {
-  return request(`/api/reaigen/shared/${token}/verify-pin/`, {
+  return request(`/api/reaigen/shared/${encodeURIComponent(token)}/verify-pin/`, {
     method: "POST",
     body: JSON.stringify({ pin }),
   });

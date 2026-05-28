@@ -112,7 +112,7 @@ function LoginCard({
   const [resetSent, setResetSent] = React.useState(false);
   const [resetLoading, setResetLoading] = React.useState(false);
   const emailIsValid = /\S+@\S+\.\S+/.test(email.trim());
-  const canSubmit = emailIsValid && password.trim().length >= 6;
+  const canSubmit = emailIsValid && password.length > 0;
 
   async function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -163,7 +163,9 @@ function LoginCard({
                   try {
                     await requestPasswordReset(email.trim());
                     setResetSent(true);
-                  } catch {}
+                  } catch (err) {
+                    setError(parseApiError(err));
+                  }
                   setResetLoading(false);
                 }}
                 className={`inline-flex items-center text-[11px] text-foreground/60 hover:text-foreground disabled:opacity-40 ${AUTH_TEXT_BUTTON_CLASS}`}

@@ -150,6 +150,7 @@ const SplatViewer = forwardRef<SplatViewerHandle, Props>(function SplatViewer(
 
     const idx = Math.max(0, Math.min(data.shots.length - 1, raw));
     const shot = data.shots[idx];
+    if (shot.startIdx >= data.positions.length) return;
     const tPos = data.positions[shot.startIdx];
     const tFwd = data.forwards[shot.startIdx];
 
@@ -388,6 +389,10 @@ const SplatViewer = forwardRef<SplatViewerHandle, Props>(function SplatViewer(
   // ── Keyboard navigation ────────────────────────────────────────────────────
 
   useEffect(() => {
+    // In readOnly (shared tour), disable all keyboard navigation
+    // so guests preview using only the on-screen controls
+    if (readOnly) return;
+
     const MOVE_KEYS = new Set(["w", "a", "s", "d", "q", "e"]);
     const handleKey = (e: KeyboardEvent) => {
       const tag = (e.target as HTMLElement)?.tagName;
@@ -407,8 +412,8 @@ const SplatViewer = forwardRef<SplatViewerHandle, Props>(function SplatViewer(
         return;
       }
 
-      // WASD + Q/E + Up/Down arrows = scene movement (free camera)
-      if (MOVE_KEYS.has(e.key)) {
+      // WASD + Q/E = scene movement (free camera)
+      if (MOVE_KEYS.has(e.key.toLowerCase())) {
         e.preventDefault();
         e.stopPropagation();
         if (!freeModeRef.current) enableFreeCamera();
@@ -421,7 +426,7 @@ const SplatViewer = forwardRef<SplatViewerHandle, Props>(function SplatViewer(
     };
     window.addEventListener("keydown", handleKey);
     return () => window.removeEventListener("keydown", handleKey);
-  }, [enableFreeCamera, goToPrev, goToNext]);
+  }, [readOnly, enableFreeCamera, goToPrev, goToNext]);
 
   // ── Scroll navigation ─────────────────────────────────────────────────────
 
@@ -429,13 +434,18 @@ const SplatViewer = forwardRef<SplatViewerHandle, Props>(function SplatViewer(
     const canvas = canvasRef.current;
     if (!canvas) return;
     const handleWheel = (e: WheelEvent) => {
+      // In readOnly (shared tour), disable scroll navigation entirely
+      // so guests can view without accidental scrolling
+      if (readOnly) { e.preventDefault(); return; }
       if (!pathDataRef.current) return;
+      // Only allow scroll scrubbing in free-camera / edit mode
+      if (!freeModeRef.current) { e.preventDefault(); return; }
       e.preventDefault();
       scrollVelocityRef.current += e.deltaY * 0.003;
     };
     canvas.addEventListener("wheel", handleWheel, { passive: false });
     return () => canvas.removeEventListener("wheel", handleWheel);
-  }, []);
+  }, [readOnly]);
 
   // ── BabylonJS init ─────────────────────────────────────────────────────────
 
@@ -460,7 +470,7 @@ const SplatViewer = forwardRef<SplatViewerHandle, Props>(function SplatViewer(
         engine.onContextLostObservable.add(() => console.warn("[REAI] WebGL context lost"));
         engine.onContextRestoredObservable.add(() => {
           console.log("[REAI] WebGL context restored");
-          scene.render();
+          sceneRef.current?.render();
         });
 
         const scene = new BABYLON.Scene(engine);
@@ -475,12 +485,12 @@ const SplatViewer = forwardRef<SplatViewerHandle, Props>(function SplatViewer(
         camera.speed = 0.3;
         camera.upVector = new BABYLON.Vector3(0, 1, 0);
         camera.attachControl(canvas, true);
-        camera.keysUp = [87, 38];
-        camera.keysDown = [83, 40];
-        camera.keysLeft = [65, 37];
-        camera.keysRight = [68, 39];
-        camera.keysUpward = [69];
-        camera.keysDownward = [81];
+        camera.keysUp = [87];       // W only
+        camera.keysDown = [83];      // S only
+        camera.keysLeft = [65];      // A only
+        camera.keysRight = [68];     // D only
+        camera.keysUpward = [69];    // E
+        camera.keysDownward = [81];  // Q
         cameraRef.current = camera;
 
         const pipeline = new BABYLON.DefaultRenderingPipeline("pp", true, scene, [camera]);
@@ -612,7 +622,7 @@ const SplatViewer = forwardRef<SplatViewerHandle, Props>(function SplatViewer(
               const d = await r.json();
               const cams = d.cameras ?? [];
               if (cams.length > 0) {
-                const c = cams[Math.min(10, cams.length - 1)];
+                const c = cams[0];
                 const fx = Number(c.forward?.[0] ?? 0);
                 const fy = Number(c.forward?.[1] ?? 0);
                 const fz = Number(c.forward?.[2] ?? 1);

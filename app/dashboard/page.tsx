@@ -47,8 +47,16 @@ export default function DashboardPage() {
     const results = data.results ?? [];
     setSplats((prev) => {
       const merged = append ? [...prev, ...results] : results;
-      const seen = new Set<number>();
-      return merged.filter((s) => { if (seen.has(s.id)) return false; seen.add(s.id); return true; });
+      // Deduplicate by splat ID and by source_draft (keep newest per draft)
+      const seenId = new Set<number>();
+      const seenDraft = new Set<number>();
+      return merged.filter((s) => {
+        if (seenId.has(s.id)) return false;
+        seenId.add(s.id);
+        if (s.source_draft && seenDraft.has(s.source_draft)) return false;
+        if (s.source_draft) seenDraft.add(s.source_draft);
+        return true;
+      });
     });
     setHasMore(!!data.next);
     setTotalCount(data.count ?? 0);

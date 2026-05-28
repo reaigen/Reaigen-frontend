@@ -57,8 +57,28 @@ export function useAuth(): AuthState {
   }, [refreshProfile]);
 
   const login = React.useCallback(async (email: string, password: string) => {
-    await apiLogin(email, password);
-    await refreshProfile();
+    const result = await apiLogin(email, password);
+    // Backend returns user data alongside tokens — use it directly so we
+    // don't depend on cookies being available for the immediate next fetch.
+    if (result?.user) {
+      setUser(result.user as UserProfile);
+      // Still refresh in background to get the full profile shape
+      refreshProfile().catch(() => {});
+      return;
+    }
+    // Fallback: fetch profile via cookies — retry to handle cookie propagation delay
+    let lastErr: unknown;
+    for (let attempt = 0; attempt < 3; attempt++) {
+      if (attempt > 0) await new Promise((r) => setTimeout(r, 500));
+      try {
+        const profile = await getProfile();
+        if (profile) { setUser(profile); return; }
+      } catch (e) { lastErr = e; }
+    }
+    const detail = lastErr instanceof ApiError
+      ? `status=${lastErr.status} body=${lastErr.body?.slice(0, 120)}`
+      : lastErr instanceof Error ? lastErr.message : "unknown";
+    throw new Error(`Session failed (login ok=${!!result}, user=${!!result?.user}, keys=${result ? Object.keys(result).join(",") : "null"}): ${detail}`);
   }, [refreshProfile]);
 
   const register = React.useCallback(

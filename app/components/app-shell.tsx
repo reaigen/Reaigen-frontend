@@ -13,7 +13,7 @@ import { t, getUserLanguage } from "../lib/i18n";
 function getInitials(user: UserProfile): string {
   const f = user.first_name?.[0] ?? "";
   const l = user.last_name?.[0] ?? "";
-  return (f + l).toUpperCase() || user.email[0].toUpperCase();
+  return (f + l).toUpperCase() || (user.email?.[0] ?? "?").toUpperCase();
 }
 
 export function AppShell({
@@ -61,8 +61,8 @@ export function AppShell({
           <div className="flex items-center gap-3">
             <div className="flex items-center gap-2">
               <Avatar size="sm">
-                {(user.profile?.avatar_thumbnail_url ?? user.profile?.avatar_url) && (
-                  <AvatarImage src={(user.profile?.avatar_thumbnail_url ?? user.profile?.avatar_url)!} />
+                {(user.profile?.avatar_thumbnail_url || user.profile?.avatar_url) && (
+                  <AvatarImage src={(user.profile?.avatar_thumbnail_url ?? user.profile?.avatar_url) as string} />
                 )}
                 <AvatarFallback>{getInitials(user)}</AvatarFallback>
               </Avatar>

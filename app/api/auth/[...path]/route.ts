@@ -57,10 +57,14 @@ async function proxy(
 
     if (res.ok && contentType.includes("application/json")) {
       try {
-        const payload = JSON.parse(data) as { access?: string; refresh?: string };
+        const payload = JSON.parse(data) as { access?: string; refresh?: string; user?: unknown };
         if (payload.access || payload.refresh) {
+          // Pass user data through (if backend included it) so the
+          // client can hydrate the session without a separate fetch.
+          const body: Record<string, unknown> = { ok: true };
+          if (payload.user) body.user = payload.user;
           const sanitized = NextResponse.json(
-            { ok: true },
+            body,
             { status: res.status, headers: noStoreHeaders("application/json") },
           );
           setAuthCookies(

@@ -60,7 +60,12 @@ export default function CameraEditor({ splatId, viewerRef, tourData, defaultMode
       })
       .catch(() => {})
       .finally(() => setLoaded(true));
-  }, [splatId]);
+  }, [splatId]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Cleanup preview timer on unmount
+  useEffect(() => {
+    return () => { if (previewTimerRef.current) clearTimeout(previewTimerRef.current); };
+  }, []);
 
   // ── Edit mode actions ──────────────────────────────────────────────────────
 
@@ -91,7 +96,9 @@ export default function CameraEditor({ splatId, viewerRef, tourData, defaultMode
   }, [viewerRef, shots]);
 
   const removeShot = useCallback((idx: number) => {
-    setShots((prev) => prev.filter((_, i) => i !== idx));
+    setShots((prev) =>
+      prev.filter((_, i) => i !== idx).map((s, i) => ({ ...s, label: `Shot ${i + 1}` }))
+    );
     setMessage(null);
   }, []);
 
@@ -101,7 +108,8 @@ export default function CameraEditor({ splatId, viewerRef, tourData, defaultMode
       const target = idx + dir;
       if (target < 0 || target >= next.length) return prev;
       [next[idx], next[target]] = [next[target], next[idx]];
-      return next;
+      // Renumber labels after reorder
+      return next.map((s, i) => ({ ...s, label: `Shot ${i + 1}` }));
     });
   }, []);
 
@@ -132,7 +140,7 @@ export default function CameraEditor({ splatId, viewerRef, tourData, defaultMode
     } finally {
       setSaving(false);
     }
-  }, [shots, splatId]);
+  }, [shots, splatId, sceneFov]);
 
   // ── Preview mode ───────────────────────────────────────────────────────────
 
@@ -171,179 +179,171 @@ export default function CameraEditor({ splatId, viewerRef, tourData, defaultMode
 
   if (!loaded) return null;
 
+  // ── Preview mode: compact floating pill ─────────────────────────────────
+  if (mode === "preview") {
+    return (
+      <div className="absolute top-4 right-4 z-30">
+        <div className="flex items-center gap-1 bg-black/50 backdrop-blur-md rounded-full px-1 py-1 shadow-lg">
+          {/* Play / Pause */}
+          <button
+            onClick={() => setLooping((v) => !v)}
+            className={`p-1.5 rounded-full transition-colors ${
+              looping ? "bg-white/20 text-white" : "text-white/70 hover:text-white hover:bg-white/10"
+            }`}
+            title={looping ? "Pause auto-play" : "Auto-play"}
+          >
+            <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
+              {looping ? (
+                <>
+                  <rect x="3.5" y="3" width="2.5" height="8" rx="0.5" fill="currentColor" />
+                  <rect x="8" y="3" width="2.5" height="8" rx="0.5" fill="currentColor" />
+                </>
+              ) : (
+                <path d="M4 2.5L11.5 7L4 11.5V2.5Z" fill="currentColor" />
+              )}
+            </svg>
+          </button>
+
+          {/* Shot dots */}
+          {shots.length > 1 && (
+            <div className="flex items-center gap-1 px-1">
+              {shots.map((_, i) => (
+                <button
+                  key={i}
+                  onClick={() => previewGoTo(i)}
+                  className={`w-1.5 h-1.5 rounded-full transition-all ${
+                    i === previewIdx ? "bg-white scale-125" : "bg-white/40 hover:bg-white/60"
+                  }`}
+                  aria-label={`Shot ${i + 1}`}
+                />
+              ))}
+            </div>
+          )}
+
+          {/* Divider */}
+          <div className="w-px h-4 bg-white/20" />
+
+          {/* Edit button */}
+          <button
+            onClick={stopPreview}
+            className="px-2 py-1 text-[11px] font-medium text-white/80 hover:text-white rounded-full hover:bg-white/10 transition-colors"
+          >
+            Edit
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  // ── Edit mode: full panel ───────────────────────────────────────────────
   return (
     <div className="absolute top-16 right-4 z-30 w-72">
       <Card className="shadow-xl border-border/50 bg-background/95 backdrop-blur-md">
         <CardHeader className="pb-2">
           <div className="flex items-center justify-between">
-            <CardTitle className="text-sm">{mode === "preview" ? "Tour Preview" : "Camera Editor"}</CardTitle>
+            <CardTitle className="text-sm">Camera Editor</CardTitle>
             {shots.length > 0 && (
-              <div className="flex rounded-lg bg-muted p-0.5 text-xs">
-                <button
-                  onClick={mode === "preview" ? stopPreview : undefined}
-                  className={`px-2 py-0.5 rounded-md transition-colors ${mode === "edit" ? "bg-background shadow-sm font-medium" : "text-muted-foreground hover:text-foreground"}`}
-                >
-                  Edit
-                </button>
-                <button
-                  onClick={mode === "edit" ? startPreview : undefined}
-                  className={`px-2 py-0.5 rounded-md transition-colors ${mode === "preview" ? "bg-background shadow-sm font-medium" : "text-muted-foreground hover:text-foreground"}`}
-                >
-                  Preview
-                </button>
-              </div>
+              <button
+                onClick={startPreview}
+                className="text-xs text-muted-foreground hover:text-foreground transition-colors"
+              >
+                Preview
+              </button>
             )}
           </div>
         </CardHeader>
         <CardContent className="space-y-3">
-          {mode === "preview" && shots.length === 0 ? (
-            <p className="text-xs text-muted-foreground text-center py-2">
-              No cameras set up yet.{" "}
-              <button onClick={() => setMode("edit")} className="text-primary hover:underline">
-                Add cameras
-              </button>
-            </p>
-          ) : mode === "edit" ? (
-            <>
-              <Button variant="outline" size="sm" className="w-full" onClick={addShot}>
-                + Capture Current View
-              </Button>
+          <Button variant="outline" size="sm" className="w-full" onClick={addShot}>
+            + Capture Current View
+          </Button>
 
-              {/* Scene-level focal length (applies to entire room) */}
-              <div className="space-y-1">
-                <div className="flex items-center justify-between">
-                  <label className="text-xs text-muted-foreground">Scene FOV</label>
-                  <span className="text-xs font-mono tabular-nums">{sceneFov}°</span>
-                </div>
-                <input
-                  type="range"
-                  min={30}
-                  max={120}
-                  step={1}
-                  value={sceneFov}
-                  onChange={(e) => {
-                    const v = Number(e.target.value);
-                    setSceneFov(v);
-                    viewerRef.current?.setFov(v);
-                  }}
-                  className="w-full h-1.5 bg-muted rounded-full appearance-none cursor-pointer accent-primary"
-                />
-                <div className="flex justify-between text-[10px] text-muted-foreground/60">
-                  <span>Tight</span>
-                  <span>Wide</span>
-                </div>
-              </div>
+          {/* Scene FOV */}
+          <div className="space-y-1">
+            <div className="flex items-center justify-between">
+              <label className="text-xs text-muted-foreground">Scene FOV</label>
+              <span className="text-xs font-mono tabular-nums">{sceneFov}°</span>
+            </div>
+            <input
+              type="range"
+              min={30}
+              max={120}
+              step={1}
+              value={sceneFov}
+              onChange={(e) => {
+                const v = Number(e.target.value);
+                setSceneFov(v);
+                viewerRef.current?.setFov(v);
+              }}
+              className="w-full h-1.5 bg-muted rounded-full appearance-none cursor-pointer accent-primary"
+            />
+            <div className="flex justify-between text-[10px] text-muted-foreground/60">
+              <span>Tight</span>
+              <span>Wide</span>
+            </div>
+          </div>
 
-              {shots.length > 0 && (
-                <div className="space-y-1.5 max-h-72 overflow-y-auto">
-                  {shots.map((shot, i) => (
-                    <div
-                      key={i}
-                      className="flex items-center gap-1 rounded-lg bg-muted/50 px-2 py-1.5 text-xs group"
-                    >
-                      <button
-                        onClick={() => flyToShot(shot)}
-                        className="flex-1 truncate font-medium text-left hover:text-primary transition-colors"
-                        title="Click to fly to this shot"
-                      >
-                        {shot.label}
-                      </button>
-                      <button
-                        onClick={() => updateShot(i)}
-                        className="text-muted-foreground hover:text-primary p-0.5 opacity-0 group-hover:opacity-100 transition-opacity"
-                        aria-label="Update with current view"
-                        title="Replace with current view"
-                      >
-                        <svg width="12" height="12" viewBox="0 0 12 12" fill="none">
-                          <path d="M2 10L10 2M10 2H5M10 2V7" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
-                        </svg>
-                      </button>
-                      <button
-                        onClick={() => moveShot(i, -1)}
-                        disabled={i === 0}
-                        className="text-muted-foreground hover:text-foreground disabled:opacity-30 p-0.5"
-                        aria-label="Move up"
-                      >
-                        <svg width="12" height="12" viewBox="0 0 12 12" fill="none">
-                          <path d="M6 3L3 6H9L6 3Z" fill="currentColor" />
-                        </svg>
-                      </button>
-                      <button
-                        onClick={() => moveShot(i, 1)}
-                        disabled={i === shots.length - 1}
-                        className="text-muted-foreground hover:text-foreground disabled:opacity-30 p-0.5"
-                        aria-label="Move down"
-                      >
-                        <svg width="12" height="12" viewBox="0 0 12 12" fill="none">
-                          <path d="M6 9L9 6H3L6 9Z" fill="currentColor" />
-                        </svg>
-                      </button>
-                      <button
-                        onClick={() => removeShot(i)}
-                        className="text-muted-foreground hover:text-destructive p-0.5"
-                        aria-label="Remove shot"
-                      >
-                        <svg width="12" height="12" viewBox="0 0 12 12" fill="none">
-                          <path d="M3 3L9 9M9 3L3 9" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
-                        </svg>
-                      </button>
-                    </div>
-                  ))}
-                </div>
-              )}
-
-              {shots.length > 0 && (
-                <Button size="sm" className="w-full" onClick={handleSave} loading={saving}>
-                  Save Cameras
-                </Button>
-              )}
-            </>
-          ) : (
-            /* Preview mode */
-            <div className="space-y-2">
-              <div className="flex items-center gap-1 overflow-x-auto scrollbar-hide">
-                {shots.map((shot, i) => (
+          {shots.length > 0 && (
+            <div className="space-y-1.5 max-h-72 overflow-y-auto">
+              {shots.map((shot, i) => (
+                <div
+                  key={i}
+                  className="flex items-center gap-1 rounded-lg bg-muted/50 px-2 py-1.5 text-xs group"
+                >
                   <button
-                    key={i}
-                    onClick={() => previewGoTo(i)}
-                    className={`flex-shrink-0 px-2 py-1 rounded-lg text-xs font-medium transition-all ${
-                      i === previewIdx
-                        ? "bg-foreground text-background"
-                        : "text-muted-foreground hover:text-foreground hover:bg-accent"
-                    }`}
+                    onClick={() => flyToShot(shot)}
+                    className="flex-1 truncate font-medium text-left hover:text-primary transition-colors"
+                    title="Click to fly to this shot"
                   >
                     {shot.label}
                   </button>
-                ))}
-              </div>
-              <div className="flex items-center justify-center gap-2">
-                <p className="text-xs text-muted-foreground">
-                  {previewIdx + 1} / {shots.length}
-                </p>
-                <button
-                  onClick={() => setLooping((v) => !v)}
-                  className={`p-1 rounded-md text-xs transition-colors ${
-                    looping
-                      ? "bg-primary text-primary-foreground"
-                      : "text-muted-foreground hover:text-foreground hover:bg-accent"
-                  }`}
-                  title={looping ? "Stop auto-play" : "Auto-play loop"}
-                >
-                  <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
-                    {looping ? (
-                      /* Pause icon */
-                      <>
-                        <rect x="3.5" y="3" width="2.5" height="8" rx="0.5" fill="currentColor" />
-                        <rect x="8" y="3" width="2.5" height="8" rx="0.5" fill="currentColor" />
-                      </>
-                    ) : (
-                      /* Play icon */
-                      <path d="M4 2.5L11.5 7L4 11.5V2.5Z" fill="currentColor" />
-                    )}
-                  </svg>
-                </button>
-              </div>
+                  <button
+                    onClick={() => updateShot(i)}
+                    className="text-muted-foreground hover:text-primary p-0.5 opacity-0 group-hover:opacity-100 transition-opacity"
+                    aria-label="Update with current view"
+                    title="Replace with current view"
+                  >
+                    <svg width="12" height="12" viewBox="0 0 12 12" fill="none">
+                      <path d="M2 10L10 2M10 2H5M10 2V7" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+                    </svg>
+                  </button>
+                  <button
+                    onClick={() => moveShot(i, -1)}
+                    disabled={i === 0}
+                    className="text-muted-foreground hover:text-foreground disabled:opacity-30 p-0.5"
+                    aria-label="Move up"
+                  >
+                    <svg width="12" height="12" viewBox="0 0 12 12" fill="none">
+                      <path d="M6 3L3 6H9L6 3Z" fill="currentColor" />
+                    </svg>
+                  </button>
+                  <button
+                    onClick={() => moveShot(i, 1)}
+                    disabled={i === shots.length - 1}
+                    className="text-muted-foreground hover:text-foreground disabled:opacity-30 p-0.5"
+                    aria-label="Move down"
+                  >
+                    <svg width="12" height="12" viewBox="0 0 12 12" fill="none">
+                      <path d="M6 9L9 6H3L6 9Z" fill="currentColor" />
+                    </svg>
+                  </button>
+                  <button
+                    onClick={() => removeShot(i)}
+                    className="text-muted-foreground hover:text-destructive p-0.5"
+                    aria-label="Remove shot"
+                  >
+                    <svg width="12" height="12" viewBox="0 0 12 12" fill="none">
+                      <path d="M3 3L9 9M9 3L3 9" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+                    </svg>
+                  </button>
+                </div>
+              ))}
             </div>
+          )}
+
+          {shots.length > 0 && (
+            <Button size="sm" className="w-full" onClick={handleSave} loading={saving}>
+              Save Cameras
+            </Button>
           )}
 
           {message && (
