@@ -62,6 +62,7 @@ export interface TourViewerData {
   floorplan_url: string | null;
   rooms: RoomData[];
   room_splats: RoomSplatData[];
+  cameras: { cameras: { position: number[]; forward: number[]; up?: number[] }[]; fovY?: number; sceneFov?: number } | null;
 }
 
 export interface ShareData {
