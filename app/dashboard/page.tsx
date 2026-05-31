@@ -5,7 +5,6 @@ import { useRouter } from "next/navigation";
 import { useAuth } from "../components/hooks/use-auth";
 import { AppShell } from "../components/app-shell";
 import { ProfileCard } from "../components/profile-card";
-import { Card, CardContent, CardHeader, CardTitle } from "../lib/ui/card";
 import { Button } from "../lib/ui/button";
 import { t, getUserLanguage } from "../lib/i18n";
 import { listSplats } from "../lib/api/client";
@@ -13,14 +12,8 @@ import { ShareDialog } from "../components/share-dialog";
 import type { SplatListItem } from "../lib/tour-types";
 import Link from "next/link";
 
-function statusBadge(status: string) {
-  const colors: Record<string, string> = {
-    completed: "bg-success/10 text-success",
-    processing: "bg-primary/10 text-primary",
-    pending: "bg-muted text-muted-foreground",
-    failed: "bg-destructive/10 text-destructive",
-  };
-  return colors[status] ?? "bg-muted text-muted-foreground";
+function statusLabel(status: string) {
+  return status.charAt(0).toUpperCase() + status.slice(1);
 }
 
 export default function DashboardPage() {
@@ -32,14 +25,10 @@ export default function DashboardPage() {
   const [hasMore, setHasMore] = React.useState(false);
   const [totalCount, setTotalCount] = React.useState(0);
   const pageRef = React.useRef(1);
-
-  // Share dialog state
   const [shareTarget, setShareTarget] = React.useState<{ splatId: number; title: string } | null>(null);
 
   React.useEffect(() => {
-    if (!isLoading && !isAuthenticated) {
-      router.replace("/");
-    }
+    if (!isLoading && !isAuthenticated) router.replace("/");
   }, [isLoading, isAuthenticated, router]);
 
   const loadPage = React.useCallback(async (page: number, append: boolean) => {
@@ -47,7 +36,6 @@ export default function DashboardPage() {
     const results = data.results ?? [];
     setSplats((prev) => {
       const merged = append ? [...prev, ...results] : results;
-      // Deduplicate by splat ID and by source_draft (keep newest per draft)
       const seenId = new Set<number>();
       const seenDraft = new Set<number>();
       return merged.filter((s) => {
@@ -65,16 +53,12 @@ export default function DashboardPage() {
 
   React.useEffect(() => {
     if (!isAuthenticated) return;
-    loadPage(1, false)
-      .catch(() => {})
-      .finally(() => setSplatsLoading(false));
+    loadPage(1, false).catch(() => {}).finally(() => setSplatsLoading(false));
   }, [isAuthenticated, loadPage]);
 
   const handleLoadMore = React.useCallback(async () => {
     setLoadingMore(true);
-    try {
-      await loadPage(pageRef.current + 1, true);
-    } catch {}
+    try { await loadPage(pageRef.current + 1, true); } catch {}
     setLoadingMore(false);
   }, [loadPage]);
 
@@ -90,104 +74,112 @@ export default function DashboardPage() {
 
   return (
     <AppShell user={user} onLogout={logout}>
-      <div className="space-y-6">
-        <div>
-          <h1 className="text-2xl font-bold tracking-tight">{t("dashboard.title", lang)}</h1>
-          <p className="text-muted-foreground mt-1">{t("dashboard.welcome", lang)}, {user.first_name || user.email}.</p>
+      <div className="animate-fade-in space-y-5 sm:space-y-6">
+        {/* Greeting */}
+        <div className="rounded-[1.75rem] bg-card px-5 py-5 shadow-[0_10px_30px_rgba(15,23,42,0.04)] sm:px-6">
+          <h1 className="text-[22px] sm:text-2xl font-bold tracking-tight">
+            {t("dashboard.title", lang)}
+          </h1>
+          <p className="text-[13px] text-muted-foreground mt-0.5">
+            {t("dashboard.welcome", lang)}, {user.first_name || user.email}.
+          </p>
         </div>
 
-        <div className="grid gap-6 md:grid-cols-2">
-          <ProfileCard user={user} />
+        <ProfileCard user={user} />
 
-          <Card>
-            <CardHeader>
-              <CardTitle>{t("dashboard.quickActions", lang)}</CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-3">
-              <Link href="/settings">
-                <Button variant="outline" className="w-full justify-start">
-                  {t("dashboard.editSettings", lang)}
-                </Button>
-              </Link>
-            </CardContent>
-          </Card>
-        </div>
-
-        {/* Virtual Tours */}
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between">
-            <CardTitle>{t("dashboard.virtualTours", lang)}</CardTitle>
+        {/* Tours header */}
+        <section className="rounded-[1.75rem] bg-card px-4 py-4 shadow-[0_10px_30px_rgba(15,23,42,0.04)] sm:px-5 sm:py-5">
+          <div className="mb-3 flex flex-wrap items-baseline justify-between gap-2">
+            <h2 className="text-[16px] sm:text-lg font-semibold tracking-tight">
+              {t("dashboard.virtualTours", lang)}
+            </h2>
             {totalCount > 0 && (
-              <span className="text-xs text-muted-foreground">{splats.length} / {totalCount}</span>
+              <span className="rounded-full bg-muted px-2.5 py-1 text-[11px] text-muted-foreground tabular-nums">
+                {splats.length} / {totalCount}
+              </span>
             )}
-          </CardHeader>
-          <CardContent>
-            {splatsLoading ? (
-              <div className="flex items-center justify-center py-8">
-                <div className="animate-spin h-6 w-6 border-2 border-foreground/20 border-t-foreground rounded-full" />
+          </div>
+
+          {splatsLoading ? (
+            <div className="flex items-center justify-center py-16">
+              <div className="animate-spin h-6 w-6 border-2 border-foreground/20 border-t-foreground rounded-full" />
+            </div>
+          ) : splats.length === 0 ? (
+            <div className="flex flex-col items-center justify-center py-20 text-center">
+              <div className="mb-4 flex h-12 w-12 items-center justify-center rounded-full bg-foreground/[0.04]">
+              <svg width="22" height="22" viewBox="0 0 24 24" fill="none" className="text-foreground/25" aria-hidden="true">
+                <path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+                <path d="M3.27 6.96L12 12.01l8.73-5.05M12 22.08V12" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+              </svg>
               </div>
-            ) : splats.length === 0 ? (
-              <p className="text-sm text-muted-foreground py-4">{t("dashboard.noSplats", lang)}</p>
-            ) : (
-              <div className="space-y-2">
-                {splats.map((splat) => (
-                  <div
-                    key={splat.id}
-                    className="flex items-center gap-3 rounded-xl border border-border/50 px-4 py-3 hover:bg-accent/50 transition-colors"
-                  >
-                    <div className="flex-1 min-w-0">
-                      <p className="text-sm font-medium truncate">{splat.title}</p>
-                      <p className="text-xs text-muted-foreground">
-                        {new Date(splat.created_at).toLocaleDateString()}
-                        {splat.scan_type !== "unknown" && ` · ${splat.scan_type}`}
-                      </p>
-                    </div>
-                    <span className={`text-xs font-medium px-2 py-0.5 rounded-full ${statusBadge(splat.status)}`}>
-                      {splat.status}
+              <p className="text-[14px] font-medium text-foreground/60">{t("dashboard.noSplatsTitle", lang)}</p>
+              <p className="mt-1 max-w-[260px] text-[12px] leading-relaxed text-muted-foreground">{t("dashboard.noSplats", lang)}</p>
+            </div>
+          ) : (
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
+            {splats.map((splat) => {
+              const isReady = splat.status === "completed" && (splat.has_ply || splat.has_splat || splat.has_sog);
+              return (
+                <div key={splat.id} className="overflow-hidden rounded-[1.4rem] border border-border/60 bg-card transition-colors hover:border-border hover:shadow-[0_12px_24px_rgba(15,23,42,0.06)]">
+                  {/* Thumbnail */}
+                  <div className="aspect-[16/10] bg-muted/30 relative">
+                    {splat.thumbnail_url ? (
+                      <img src={splat.thumbnail_url} alt={splat.title} className="w-full h-full object-cover" />
+                    ) : (
+                      <div className="w-full h-full flex items-center justify-center">
+                        <svg width="32" height="32" viewBox="0 0 24 24" fill="none" className="text-foreground/10">
+                          <path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z" stroke="currentColor" strokeWidth="1.5" />
+                          <path d="M3.27 6.96L12 12.01l8.73-5.05M12 22.08V12" stroke="currentColor" strokeWidth="1.5" />
+                        </svg>
+                      </div>
+                    )}
+                    <span className="absolute top-2 right-2 text-[10px] font-medium px-1.5 py-0.5 rounded-md bg-background/80 backdrop-blur text-foreground/70">
+                      {statusLabel(splat.status)}
                     </span>
-                    {(splat.status === "completed" && (splat.has_ply || splat.has_splat)) && (
-                      <div className="flex items-center gap-1.5">
+                  </div>
+
+                  {/* Info */}
+                  <div className="px-3.5 py-3.5">
+                    <p className="text-[13px] font-medium truncate">{splat.title}</p>
+                    <p className="text-[11px] text-muted-foreground mt-0.5">
+                      {new Date(splat.created_at).toLocaleDateString()}
+                    </p>
+
+                    {isReady && (
+                      <div className="mt-2.5 flex flex-col gap-1.5 border-t border-border/40 pt-2.5 sm:flex-row">
                         <Button
-                          variant="outline"
-                          size="xs"
+                          variant="ghost" size="sm"
+                          className="h-8 flex-1 text-[11px] text-foreground/50 hover:text-foreground"
                           onClick={() => setShareTarget({ splatId: splat.id, title: splat.title })}
                         >
-                          <svg width="12" height="12" viewBox="0 0 16 16" fill="none" className="mr-1">
-                            <path d="M6.5 9.5L9.5 6.5M7 11L5.5 12.5a2.121 2.121 0 01-3-3L4 8m5-3l1.5-1.5a2.121 2.121 0 013 3L12 8" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
-                          </svg>
                           {t("dashboard.share", lang)}
                         </Button>
-                        <Link href={`/tour/${splat.id}`}>
-                          <Button variant="outline" size="xs">
+                        <Link href={`/tour/${splat.id}`} className="sm:flex-1">
+                          <Button variant="ghost" size="sm" className="h-8 w-full text-[11px] text-foreground/50 hover:text-foreground">
                             {t("dashboard.viewTour", lang)}
                           </Button>
                         </Link>
                       </div>
                     )}
                   </div>
-                ))}
+                </div>
+              );
+            })}
 
-                {hasMore && (
-                  <div className="pt-2 text-center">
-                    <Button variant="ghost" size="sm" onClick={handleLoadMore} loading={loadingMore}>
-                      {t("dashboard.loadMore", lang)}
-                    </Button>
-                  </div>
-                )}
-              </div>
-            )}
-          </CardContent>
-        </Card>
+              {hasMore && (
+                <div className="col-span-full flex justify-center pt-3">
+                  <Button variant="ghost" size="sm" className="text-[12px] text-foreground/45" onClick={handleLoadMore} loading={loadingMore}>
+                    {t("dashboard.loadMore", lang)}
+                  </Button>
+                </div>
+              )}
+            </div>
+          )}
+        </section>
       </div>
 
-      {/* Share Dialog */}
       {shareTarget && (
-        <ShareDialog
-          splatId={shareTarget.splatId}
-          title={shareTarget.title}
-          open={!!shareTarget}
-          onClose={() => setShareTarget(null)}
-        />
+        <ShareDialog splatId={shareTarget.splatId} title={shareTarget.title} open={!!shareTarget} onClose={() => setShareTarget(null)} />
       )}
     </AppShell>
   );

@@ -123,6 +123,11 @@ export interface PersonalizedData {
   email_notifications: boolean;
   push_notifications: boolean;
   sms_notifications: boolean;
+  notify_new_features: boolean;
+  notify_system_updates: boolean;
+  notify_billing: boolean;
+  notify_processing_complete: boolean;
+  notify_processing_failed: boolean;
   onboarding_completed: boolean;
   onboarding_step: number;
 }
@@ -147,6 +152,13 @@ export interface BillingAccount {
   current_storage_gb: string;
   current_posts_count: number;
   payment_provider: string;
+  billing_name: string;
+  billing_email: string;
+  billing_address: string;
+  billing_city: string;
+  billing_postal_code: string;
+  billing_country: string;
+  vat_number: string;
 }
 
 export interface UserProfile {
@@ -181,6 +193,79 @@ export async function updateProfile(data: Partial<{
   username: string;
 }>) {
   return request("/api/reaigen/users/me/", {
+    method: "PATCH",
+    body: JSON.stringify(data),
+  });
+}
+
+export async function updateSellerProfile(data: Partial<{
+  phone: string;
+  company: string;
+  website: string;
+  bio: string;
+  job_title: string;
+  linkedin_url: string;
+  twitter_handle: string;
+  instagram_handle: string;
+  address: string;
+  city: string;
+  state: string;
+  country: string;
+  postal_code: string;
+  is_real_estate_professional: boolean;
+  license_number: string;
+  agency_name: string;
+  is_public: boolean;
+  show_email: boolean;
+  show_phone: boolean;
+  allow_contact: boolean;
+  portfolio_visibility: string;
+  portfolio_slug: string;
+  portfolio_title: string;
+  portfolio_headline: string;
+}>): Promise<UserProfileData> {
+  return request("/api/reaigen/profiles/me/", {
+    method: "PATCH",
+    body: JSON.stringify(data),
+  });
+}
+
+export async function getPersonalizedData(): Promise<PersonalizedData> {
+  return request("/api/reaigen/personalized-data/me/");
+}
+
+export async function updatePersonalizedData(data: Partial<{
+  theme: string;
+  notifications_enabled: boolean;
+  email_notifications: boolean;
+  push_notifications: boolean;
+  sms_notifications: boolean;
+  notify_new_features: boolean;
+  notify_system_updates: boolean;
+  notify_billing: boolean;
+  notify_processing_complete: boolean;
+  notify_processing_failed: boolean;
+}>): Promise<PersonalizedData> {
+  return request("/api/reaigen/personalized-data/me/", {
+    method: "PATCH",
+    body: JSON.stringify(data),
+  });
+}
+
+export async function getBilling(): Promise<BillingAccount> {
+  return request("/api/reaigen/billing/me/");
+}
+
+export async function updateBilling(data: Partial<{
+  billing_name: string;
+  billing_email: string;
+  billing_address: string;
+  billing_city: string;
+  billing_postal_code: string;
+  billing_country: string;
+  vat_number: string;
+}>): Promise<BillingAccount> {
+  return request("/api/reaigen/billing/me/", {
     method: "PATCH",
     body: JSON.stringify(data),
   });
@@ -230,7 +315,7 @@ export async function changePassword(data: {
   current_password: string;
   new_password: string;
 }) {
-  return request("/api/auth/password/change/", {
+  return request("/api/auth/change-password/", {
     method: "POST",
     body: JSON.stringify(data),
   });
@@ -266,7 +351,7 @@ export async function getCameras(splatId: number): Promise<CameraData> {
 
 export async function saveCameras(
   splatId: number,
-  data: { cameras: { position: number[]; forward: number[]; up: number[] }[]; fovY?: number; sceneFov?: number },
+  data: { cameras: { position: number[]; forward: number[]; up: number[]; fov?: number }[]; fovY?: number; sceneFov?: number },
 ): Promise<CameraData> {
   return request(`/api/reaigen/splats/${splatId}/cameras/`, {
     method: "PATCH",
@@ -287,6 +372,11 @@ export async function verifySharePin(token: string, pin: string): Promise<{ veri
 }
 
 // ─── Share Management ─────────────────────────────────────────────────────
+
+export async function listShares(): Promise<ShareData[]> {
+  const data = await request("/api/reaigen/shares/");
+  return data.results ?? data ?? [];
+}
 
 export async function getSplatShare(splatId: number): Promise<ShareData | null> {
   try {

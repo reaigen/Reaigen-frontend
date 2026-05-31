@@ -22,6 +22,7 @@ export default function TourPage({ params }: { params: Promise<{ id: string }> }
   const [error, setError] = useState<string | null>(null);
   const [tourData, setTourData] = useState<TourData | null>(null);
   const [shotIdx, setShotIdx] = useState(0);
+  const [editorVersion, setEditorVersion] = useState(0);
   const splatRef = useRef<any>(null);
 
   useEffect(() => {
@@ -71,13 +72,15 @@ export default function TourPage({ params }: { params: Promise<{ id: string }> }
   }
 
   return (
-    <div className="h-screen w-screen relative overflow-hidden">
+    <div className="relative h-[100dvh] w-screen overflow-hidden bg-black">
       <SplatViewer
+        key={editorVersion}
         ref={splatRef}
         splatUrl={viewer.url}
         splatId={viewer.splat_id}
         tourUrl={viewer.tour_url ?? undefined}
         camerasUrl={`/api/reaigen/splats/${splatId}/cameras/`}
+        preferSavedCameras
         onShotChange={handleShotChange}
         onTourLoaded={handleTourLoaded}
       />
@@ -93,7 +96,7 @@ export default function TourPage({ params }: { params: Promise<{ id: string }> }
       )}
 
       {/* Top bar */}
-      <div className="absolute top-4 left-4 z-20 flex items-center gap-2">
+      <div className="absolute left-3 top-3 z-20 flex items-center gap-2 sm:left-4 sm:top-4">
         <Button variant="ghost" size="icon-sm" onClick={() => router.back()} aria-label="Back">
           <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
             <path d="M10 12L6 8L10 4" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
@@ -105,7 +108,8 @@ export default function TourPage({ params }: { params: Promise<{ id: string }> }
         splatId={splatId}
         viewerRef={splatRef}
         tourData={tourData}
-        defaultMode="preview"
+        defaultMode="edit"
+        onSaved={() => setEditorVersion((v) => v + 1)}
       />
     </div>
   );

@@ -20,9 +20,12 @@ function noStoreHeaders(contentType: string) {
 
 // Map frontend proxy paths to Django API paths
 function resolveTarget(joined: string): string {
-  // /api/reaigen/users/* → /api/v1/core/users/*
-  if (joined.startsWith("users")) {
-    return `${BACKEND_URL}/api/v1/core/${joined}`;
+  // Core app endpoints → /api/v1/core/*
+  const coreRoutes = ["users", "profiles", "personalized-data", "billing", "activities", "contact-links", "auth"];
+  for (const prefix of coreRoutes) {
+    if (joined.startsWith(prefix)) {
+      return `${BACKEND_URL}/api/v1/core/${joined}`;
+    }
   }
   // /api/reaigen/* → /api/v1/reaigen/*
   return `${BACKEND_URL}/api/v1/reaigen/${joined}`;
@@ -30,7 +33,7 @@ function resolveTarget(joined: string): string {
 
 async function refreshAccessToken(refreshToken: string): Promise<string | null> {
   try {
-    const res = await fetch(`${BACKEND_URL}/api/v1/core/auth/token/refresh/`, {
+    const res = await fetch(`${BACKEND_URL}/api/v1/core/auth/refresh/`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ refresh: refreshToken }),

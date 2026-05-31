@@ -3,8 +3,8 @@ import { NextResponse } from "next/server";
 export const ACCESS_COOKIE_NAME = "reaigen_access";
 export const REFRESH_COOKIE_NAME = "reaigen_refresh";
 
-const DEFAULT_ACCESS_COOKIE_MAX_AGE = 60 * 15;
-const DEFAULT_REFRESH_COOKIE_MAX_AGE = 60 * 60 * 24 * 30;
+const DEFAULT_ACCESS_COOKIE_MAX_AGE = 60 * 60;         // 1 hour
+const DEFAULT_REFRESH_COOKIE_MAX_AGE = 60 * 60 * 24 * 90; // 90 days
 
 function cookieOptions(maxAge: number) {
   return {

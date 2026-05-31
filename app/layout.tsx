@@ -1,6 +1,7 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import { Noto_Serif_Display } from "next/font/google";
 import "./globals.css";
+import { AuthProvider } from "./components/hooks/use-auth";
 
 export const brandSerif = Noto_Serif_Display({
   subsets: ["latin"],
@@ -8,6 +9,12 @@ export const brandSerif = Noto_Serif_Display({
   variable: "--font-brand",
   display: "swap",
 });
+
+export const viewport: Viewport = {
+  width: "device-width",
+  initialScale: 1,
+  viewportFit: "cover",
+};
 
 export const metadata: Metadata = {
   title: "Reaigen",
@@ -17,7 +24,9 @@ export const metadata: Metadata = {
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html lang="en" className={brandSerif.variable}>
-      <body>{children}</body>
+      <body>
+        <AuthProvider>{children}</AuthProvider>
+      </body>
     </html>
   );
 }

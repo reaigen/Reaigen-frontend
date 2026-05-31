@@ -289,10 +289,10 @@ export function ShareDialog({ splatId, title, open, onClose }: ShareDialogProps)
   const viewCount = stats?.total_accesses ?? share?.access_count ?? 0;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center" role="dialog" aria-modal="true" aria-label={`Share ${title}`}>
+    <div className="fixed inset-0 z-50 flex items-end justify-center sm:items-center" role="dialog" aria-modal="true" aria-label={`Share ${title}`}>
       <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" onClick={onClose} />
 
-      <div className="relative w-full max-w-sm mx-4 bg-background border border-border rounded-2xl shadow-2xl overflow-hidden">
+      <div className="relative mx-0 w-full max-w-sm max-h-[min(92dvh,48rem)] overflow-y-auto rounded-t-3xl border border-border bg-background shadow-2xl sm:mx-4 sm:max-h-[90dvh] sm:rounded-2xl">
         {/* Header */}
         <div className="flex items-center justify-between px-5 py-3.5 border-b border-border">
           <div className="flex items-center gap-2">
@@ -358,7 +358,7 @@ export function ShareDialog({ splatId, title, open, onClose }: ShareDialogProps)
             <p className="text-xs text-muted-foreground truncate">{title}</p>
 
             {/* ── Link URL + Copy ── */}
-            <div className="flex items-center gap-2">
+            <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
               <div
                 className="flex-1 min-w-0 bg-muted/50 rounded-lg px-3 py-2.5 cursor-text"
                 onClick={(e) => {
@@ -374,7 +374,7 @@ export function ShareDialog({ splatId, title, open, onClose }: ShareDialogProps)
                 variant={copied ? "default" : "outline"}
                 size="sm"
                 onClick={handleCopy}
-                className={`shrink-0 h-9 px-3 gap-1.5 transition-all duration-200 ${
+                className={`h-9 w-full shrink-0 gap-1.5 px-3 transition-all duration-200 sm:w-auto ${
                   copied ? "bg-foreground hover:bg-foreground text-background border-foreground" : ""
                 }`}
               >
@@ -384,8 +384,8 @@ export function ShareDialog({ splatId, title, open, onClose }: ShareDialogProps)
             </div>
 
             {/* Status + stats row */}
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-2">
+            <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+              <div className="flex flex-wrap items-center gap-2">
                 <span className={`inline-flex items-center gap-1 text-[11px] font-medium px-2 py-0.5 rounded-full ${
                   isActive ? "bg-foreground/10 text-foreground" : "bg-amber-500/10 text-amber-600"
                 }`}>
@@ -463,7 +463,7 @@ export function ShareDialog({ splatId, title, open, onClose }: ShareDialogProps)
                       }} size="sm" />
                     </div>
                     {usePin && share?.requires_pin && !changingPin && (
-                      <div className="flex items-center justify-between bg-muted/50 rounded-lg px-3 py-2">
+                      <div className="flex flex-col gap-2 rounded-lg bg-muted/50 px-3 py-2 sm:flex-row sm:items-center sm:justify-between">
                         <div className="flex items-center gap-1.5">
                           <CheckIcon className="text-foreground w-3 h-3" />
                           <span className="text-xs text-muted-foreground">PIN is set</span>
@@ -493,15 +493,15 @@ export function ShareDialog({ splatId, title, open, onClose }: ShareDialogProps)
 
                   {/* Expiry */}
                   <div className="px-3.5 py-3 space-y-2">
-                    <div className="flex items-center justify-between">
-                      <div>
+                    <div className="flex items-start justify-between gap-4">
+                      <div className="min-w-0">
                         <p className="text-sm font-medium">Auto-expire</p>
                         <p className="text-[11px] text-muted-foreground">Link stops working after time</p>
                       </div>
                       <Switch checked={useExpiry} onCheckedChange={setUseExpiry} size="sm" />
                     </div>
                     {useExpiry && (
-                      <div className="flex items-center gap-1.5">
+                      <div className="flex items-center gap-1.5 flex-wrap">
                         {EXPIRY_PRESETS.map((p) => (
                           <button
                             key={p.hours}
@@ -522,8 +522,8 @@ export function ShareDialog({ splatId, title, open, onClose }: ShareDialogProps)
 
                   {/* Max views */}
                   <div className="px-3.5 py-3">
-                    <div className="flex items-center justify-between">
-                      <div>
+                    <div className="flex items-start justify-between gap-4">
+                      <div className="min-w-0">
                         <p className="text-sm font-medium">View limit</p>
                         <p className="text-[11px] text-muted-foreground">Max number of opens</p>
                       </div>
@@ -533,7 +533,7 @@ export function ShareDialog({ splatId, title, open, onClose }: ShareDialogProps)
                         placeholder="None"
                         value={maxViews}
                         onChange={(e) => setMaxViews(e.target.value)}
-                        className="h-8 w-20 text-sm text-right"
+                        className="h-8 w-full max-w-[7rem] text-sm text-right"
                       />
                     </div>
                   </div>
@@ -566,7 +566,7 @@ export function ShareDialog({ splatId, title, open, onClose }: ShareDialogProps)
                         Revoke link permanently
                       </button>
                     ) : (
-                      <div className="flex items-center gap-2 py-1">
+                      <div className="flex flex-wrap items-center gap-2 py-1">
                         <span className="text-xs text-destructive flex-1">This cannot be undone</span>
                         <Button
                           variant="destructive"

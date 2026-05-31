@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState, useCallback, forwardRef, useImperativeHandle } from "react";
 import { getCache, putCache } from "@/app/lib/splat-cache";
-import type { Vec3, TourData, TourShot } from "@/app/lib/tour-types";
+import type { CameraData, Vec3, TourData, TourShot } from "@/app/lib/tour-types";
 
 /**
  * SplatViewer — BabylonJS Gaussian Splatting renderer with guided tour.
@@ -54,6 +54,10 @@ function buildFallbackShots(data: TourData): TourShot[] {
   return shots;
 }
 
+function isSavedCameraTour(data: TourData | null): boolean {
+  return data?.sceneType === "saved-cameras";
+}
+
 // ── Animation state ──────────────────────────────────────────────────────────
 
 interface Anim {
@@ -91,6 +95,9 @@ interface Props {
   splatId?: number;
   tourUrl?: string;
   camerasUrl?: string;
+  /** Camera data passed directly (avoids fetch). Takes priority over camerasUrl. */
+  initialCameras?: CameraData | null;
+  preferSavedCameras?: boolean;
   readOnly?: boolean;
   className?: string;
   onShotChange?: (idx: number, shot: TourShot | null) => void;
@@ -114,7 +121,7 @@ export interface SplatViewerHandle {
 // ── Component ────────────────────────────────────────────────────────────────
 
 const SplatViewer = forwardRef<SplatViewerHandle, Props>(function SplatViewer(
-  { splatUrl, splatId, tourUrl, camerasUrl, readOnly, className, onShotChange, onReady, onError, onTourLoaded },
+  { splatUrl, splatId, tourUrl, camerasUrl, initialCameras, preferSavedCameras, readOnly, className, onShotChange, onReady, onError, onTourLoaded },
   ref,
 ) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -142,6 +149,101 @@ const SplatViewer = forwardRef<SplatViewerHandle, Props>(function SplatViewer(
   const [tourData, setTourData] = useState<TourData | null>(null);
   const [shotIdx, setShotIdx] = useState(0);
 
+  const setCameraFromForward = useCallback((cam: any, B: any, pos: Vec3, fwd: Vec3, exactForward: boolean, fov?: number) => {
+    cam.position.set(pos[0], pos[1], pos[2]);
+    if (exactForward) {
+      cam.setTarget(new B.Vector3(
+        pos[0] + fwd[0] * LOOK,
+        pos[1] + fwd[1] * LOOK,
+        pos[2] + fwd[2] * LOOK,
+      ));
+    } else {
+      cam.setTarget(new B.Vector3(
+        pos[0] + fwd[0] * LOOK,
+        pos[1] - TILT_Y,
+        pos[2] + fwd[2] * LOOK,
+      ));
+    }
+    cam.rotation.z = 0;
+    if (typeof fov === "number" && Number.isFinite(fov)) cam.fov = fov;
+  }, []);
+
+  const applyTourData = useCallback((data: TourData) => {
+    setTourData(data);
+    onTourLoaded?.(data);
+    pathDataRef.current = {
+      positions: data.positions,
+      forwards: data.forwards,
+      arcLens: data.arcLens,
+      totalArc: data.totalArc,
+      shots: data.shots,
+    };
+    progressRef.current = data.arcLens?.[data.startIdx ?? 0] ?? 0;
+
+    const shot0 = data.shots[0];
+    const pos0 = data.positions[shot0.startIdx];
+    const fwd0 = data.forwards[shot0.startIdx];
+    const cam = cameraRef.current;
+    const B = babylonRef.current;
+    if (cam && B) {
+      setCameraFromForward(cam, B, pos0, fwd0, isSavedCameraTour(data), shot0.fov);
+      if (readOnly) cam.detachControl();
+    }
+    shotIdxRef.current = 0;
+    setShotIdx(0);
+    onShotChange?.(0, shot0);
+  }, [onShotChange, onTourLoaded, readOnly, setCameraFromForward]);
+
+  const buildTourFromSavedCameras = useCallback((cameraData: CameraData): TourData | null => {
+    const cams = cameraData.cameras ?? [];
+    if (!cams.length) return null;
+
+    const positions: Vec3[] = [];
+    const forwards: Vec3[] = [];
+    const shots: TourShot[] = [];
+    const arcLens: number[] = [];
+    let totalArc = 0;
+
+    for (let i = 0; i < cams.length; i += 1) {
+      const cam = cams[i];
+      const pos = cam.position as Vec3;
+      const rawFwd = (cam.forward ?? [0, 0, 1]) as Vec3;
+      const len = Math.hypot(rawFwd[0], rawFwd[1], rawFwd[2]) || 1;
+      const forward: Vec3 = [rawFwd[0] / len, rawFwd[1] / len, rawFwd[2] / len];
+      positions.push([pos[0], pos[1], pos[2]]);
+      forwards.push(forward);
+
+      if (i === 0) {
+        arcLens.push(0);
+      } else {
+        const prev = positions[i - 1];
+        totalArc += Math.hypot(pos[0] - prev[0], pos[1] - prev[1], pos[2] - prev[2]);
+        arcLens.push(totalArc);
+      }
+
+      shots.push({
+        storyBeat: "saved-camera",
+        label: `Shot ${i + 1}`,
+        startIdx: i,
+        fov: Number(cam.fov ?? cameraData.fovY ?? 0.66),
+        holdAfter: 3.5,
+        moveDuration: 1.2,
+        compositionScore: 1,
+      });
+    }
+
+    return {
+      version: 1,
+      positions,
+      forwards,
+      arcLens,
+      totalArc,
+      startIdx: 0,
+      shots,
+      sceneType: "saved-cameras",
+    };
+  }, []);
+
   // ── Navigate to a shot ─────────────────────────────────────────────────────
 
   const goToShot = useCallback((raw: number, instant = false) => {
@@ -153,6 +255,7 @@ const SplatViewer = forwardRef<SplatViewerHandle, Props>(function SplatViewer(
     if (shot.startIdx >= data.positions.length) return;
     const tPos = data.positions[shot.startIdx];
     const tFwd = data.forwards[shot.startIdx];
+    const useExactForward = isSavedCameraTour(data);
 
     const cam = cameraRef.current;
     freeModeRef.current = false;
@@ -174,13 +277,21 @@ const SplatViewer = forwardRef<SplatViewerHandle, Props>(function SplatViewer(
     anim.elapsed = 0;
     anim.duration = instant ? 0.001 : 1.5;
     anim.active = true;
+    (anim as any).exactForward = useExactForward;
+    (anim as any).toForward = tFwd;
+    (anim as any).fromTarget = [target.x, target.y, target.z] as Vec3;
+    (anim as any).toTarget = [
+      tPos[0] + tFwd[0] * LOOK,
+      tPos[1] + tFwd[1] * LOOK,
+      tPos[2] + tFwd[2] * LOOK,
+    ] as Vec3;
 
     const panDir = idx % 2 === 0 ? 1 : -1;
     anim.holdActive = false;
     anim.holdElapsed = 0;
     anim.holdDuration = 4.5;
     anim.holdAngle = anim.toAngle;
-    anim.holdPanAmt = panDir * (6 * Math.PI / 180);
+    anim.holdPanAmt = useExactForward ? 0 : panDir * (6 * Math.PI / 180);
     anim.holdBaseFov = shot.fov;
 
     pathScrubRef.current = null;
@@ -322,18 +433,72 @@ const SplatViewer = forwardRef<SplatViewerHandle, Props>(function SplatViewer(
 
   useEffect(() => {
     const resolvedTourUrl = tourUrl;
-    if (!ready || !resolvedTourUrl) return;
+    if (!ready) return;
 
     let cancelled = false;
     let retryTimer: ReturnType<typeof setTimeout> | null = null;
+    let usedSavedCameras = false;
+
+    const tryLoadSavedCameras = async () => {
+      // Use directly-provided camera data first (avoids data: URL / fetch issues)
+      if (initialCameras && initialCameras.cameras?.length) {
+        const savedTour = buildTourFromSavedCameras(initialCameras);
+        if (!savedTour || cancelled) return false;
+        usedSavedCameras = true;
+        applyTourData(savedTour);
+        return true;
+      }
+      const camUrl = camerasUrl ?? (splatId ? `/api/reaigen/splats/${splatId}/cameras/` : null);
+      if (!camUrl) return false;
+      try {
+        const r = await fetch(camUrl);
+        if (!r.ok) return false;
+        const cameraData = (await r.json()) as CameraData;
+        const savedTour = buildTourFromSavedCameras(cameraData);
+        if (!savedTour || cancelled) return false;
+        usedSavedCameras = true;
+        applyTourData(savedTour);
+        return true;
+      } catch {
+        return false;
+      }
+    };
 
     const tryLoad = () => {
+      if (!resolvedTourUrl) {
+        tryLoadSavedCameras().catch(() => {});
+        return;
+      }
       fetch(resolvedTourUrl)
         .then(r => r.ok ? r.json() : null)
         .then((data: TourData | null) => {
           if (cancelled) return;
+          if (preferSavedCameras) {
+            tryLoadSavedCameras().then((used) => {
+              if (used || cancelled) return;
+              if (!data?.positions?.length) {
+                retryTimer = setTimeout(tryLoad, 6000);
+                return;
+              }
+              if (!data.shots?.length) {
+                const fallbackShots = buildFallbackShots(data);
+                if (!fallbackShots.length) {
+                  retryTimer = setTimeout(tryLoad, 6000);
+                  return;
+                }
+                data = { ...data, shots: fallbackShots };
+              }
+              applyTourData(data);
+            }).catch(() => {});
+            return;
+          }
           if (!data?.positions?.length) {
-            retryTimer = setTimeout(tryLoad, 6000);
+            tryLoadSavedCameras().then((used) => {
+              if (used || cancelled) return;
+              retryTimer = setTimeout(tryLoad, 6000);
+            }).catch(() => {
+              if (!cancelled) retryTimer = setTimeout(tryLoad, 6000);
+            });
             return;
           }
           if (!data.shots?.length) {
@@ -345,46 +510,22 @@ const SplatViewer = forwardRef<SplatViewerHandle, Props>(function SplatViewer(
             data = { ...data, shots: fallbackShots };
           }
 
-          setTourData(data);
-          onTourLoaded?.(data);
-          pathDataRef.current = {
-            positions: data.positions,
-            forwards: data.forwards,
-            arcLens: data.arcLens,
-            totalArc: data.totalArc,
-            shots: data.shots,
-          };
-          progressRef.current = data.arcLens?.[data.startIdx ?? 0] ?? 0;
-
-          // Place camera at shot 0
-          const shot0 = data.shots[0];
-          const pos0 = data.positions[shot0.startIdx];
-          const fwd0 = data.forwards[shot0.startIdx];
-          const cam = cameraRef.current;
-          const B = babylonRef.current;
-          if (cam && B) {
-            cam.position.set(pos0[0], pos0[1], pos0[2]);
-            cam.setTarget(new B.Vector3(
-              pos0[0] + fwd0[0] * LOOK,
-              pos0[1] - TILT_Y,
-              pos0[2] + fwd0[2] * LOOK,
-            ));
-            cam.rotation.z = 0;
-            cam.fov = shot0.fov;
-            if (readOnly) cam.detachControl();
-          }
-          shotIdxRef.current = 0;
-          setShotIdx(0);
-          onShotChange?.(0, shot0);
+          applyTourData(data);
         })
         .catch(() => {
-          if (!cancelled) retryTimer = setTimeout(tryLoad, 6000);
+          if (usedSavedCameras || cancelled) return;
+          tryLoadSavedCameras().then((used) => {
+            if (used || cancelled) return;
+            retryTimer = setTimeout(tryLoad, 6000);
+          }).catch(() => {
+            if (!cancelled) retryTimer = setTimeout(tryLoad, 6000);
+          });
         });
     };
 
     tryLoad();
     return () => { cancelled = true; if (retryTimer) clearTimeout(retryTimer); };
-  }, [ready, tourUrl]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [ready, tourUrl, camerasUrl, initialCameras, splatId, preferSavedCameras, buildTourFromSavedCameras, applyTourData]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // ── Keyboard navigation ────────────────────────────────────────────────────
 
@@ -575,7 +716,7 @@ const SplatViewer = forwardRef<SplatViewerHandle, Props>(function SplatViewer(
           const pz = anim.fromPos[2] + (anim.toPos[2] - anim.fromPos[2]) * et;
           camera.position.set(px, py, pz);
 
-          if ((anim as any).editorNav) {
+          if ((anim as any).editorNav || (anim as any).exactForward) {
             // Direct 3D target interpolation for editor navigation
             const ft = (anim as any).fromTarget as Vec3;
             const tt = (anim as any).toTarget as Vec3;
@@ -600,7 +741,7 @@ const SplatViewer = forwardRef<SplatViewerHandle, Props>(function SplatViewer(
             if ((anim as any).editorNav) {
               (anim as any).editorNav = false;
               if (canvasRef.current) camera.attachControl(canvasRef.current, true);
-            } else if (!anim.holdActive && anim.holdDuration > 0) {
+            } else if (!(anim as any).exactForward && !anim.holdActive && anim.holdDuration > 0) {
               anim.holdActive = true;
               anim.holdElapsed = 0;
               anim.holdPos = [anim.toPos[0], anim.toPos[1], anim.toPos[2]];
@@ -615,30 +756,35 @@ const SplatViewer = forwardRef<SplatViewerHandle, Props>(function SplatViewer(
         // ── Place camera from COLMAP data ──
         async function placeCamera() {
           try {
-            const camUrl = camerasUrl ?? (splatId ? `/api/reaigen/splats/${splatId}/cameras/` : null);
-            if (!camUrl) return;
-            const r = await fetch(camUrl);
-            if (r.ok) {
-              const d = await r.json();
-              const cams = d.cameras ?? [];
-              if (cams.length > 0) {
-                const c = cams[0];
-                const fx = Number(c.forward?.[0] ?? 0);
-                const fy = Number(c.forward?.[1] ?? 0);
-                const fz = Number(c.forward?.[2] ?? 1);
-                const fl = Math.hypot(fx, fy, fz) || 1;
-                const nx = fx / fl, ny = fy / fl, nz = fz / fl;
-                const BACK_OFF = 0.45;
-                const px = c.position[0] - nx * BACK_OFF;
-                const py = c.position[1] - ny * BACK_OFF;
-                const pz = c.position[2] - nz * BACK_OFF;
-                camera.position.set(px, py, pz);
-                camera.setTarget(new BABYLON.Vector3(
-                  px + nx * LOOK, py + ny * LOOK, pz + nz * LOOK,
-                ));
-                const fovY = Number(d.fovY || 0);
-                if (fovY > 0) camera.fov = fovY;
-              }
+            let d: any = null;
+            // Use directly-provided camera data first
+            if (initialCameras && initialCameras.cameras?.length) {
+              d = initialCameras;
+            } else {
+              const camUrl = camerasUrl ?? (splatId ? `/api/reaigen/splats/${splatId}/cameras/` : null);
+              if (!camUrl) return;
+              const r = await fetch(camUrl);
+              if (!r.ok) return;
+              d = await r.json();
+            }
+            const cams = d.cameras ?? [];
+            if (cams.length > 0) {
+              const c = cams[0];
+              const fx = Number(c.forward?.[0] ?? 0);
+              const fy = Number(c.forward?.[1] ?? 0);
+              const fz = Number(c.forward?.[2] ?? 1);
+              const fl = Math.hypot(fx, fy, fz) || 1;
+              const nx = fx / fl, ny = fy / fl, nz = fz / fl;
+              const BACK_OFF = 0.45;
+              const px = c.position[0] - nx * BACK_OFF;
+              const py = c.position[1] - ny * BACK_OFF;
+              const pz = c.position[2] - nz * BACK_OFF;
+              camera.position.set(px, py, pz);
+              camera.setTarget(new BABYLON.Vector3(
+                px + nx * LOOK, py + ny * LOOK, pz + nz * LOOK,
+              ));
+              const fovY = Number(d.fovY || 0);
+              if (fovY > 0) camera.fov = fovY;
             }
           } catch { /* best-effort */ }
         }
@@ -647,20 +793,23 @@ const SplatViewer = forwardRef<SplatViewerHandle, Props>(function SplatViewer(
         const { GaussianSplattingMesh } = BABYLON;
         let gs: any = null;
 
-        const cachedFull: ArrayBuffer | null = splatId
+        const isSogUrl = splatUrl.split("?")[0].toLowerCase().endsWith(".sog");
+
+        const cachedFull: ArrayBuffer | null = (!isSogUrl && splatId)
           ? await getCache(splatId, "full")
           : null;
 
         if (disposed) return;
 
-        let fullConv: ArrayBuffer | null = cachedFull;
+        // Download the file
+        setStatus("Downloading...");
+        let rawBuffer: ArrayBuffer | null = cachedFull;
 
-        if (!fullConv) {
-          setStatus("Downloading...");
-          const plyResp = await fetch(splatUrl);
-          if (!plyResp.ok) throw new Error(`PLY ${plyResp.status}`);
-          const total = parseInt(plyResp.headers.get("content-length") || "0", 10);
-          const reader = plyResp.body!.getReader();
+        if (!rawBuffer) {
+          const resp = await fetch(splatUrl);
+          if (!resp.ok) throw new Error(`Download ${resp.status}`);
+          const total = parseInt(resp.headers.get("content-length") || "0", 10);
+          const reader = resp.body!.getReader();
           const chunks: Uint8Array[] = [];
           let received = 0;
           while (true) {
@@ -670,26 +819,49 @@ const SplatViewer = forwardRef<SplatViewerHandle, Props>(function SplatViewer(
             received += value.length;
             if (total > 0) setDownloadPct(Math.round((received / total) * 100));
           }
-          const raw = new ArrayBuffer(received);
-          const u8 = new Uint8Array(raw);
+          rawBuffer = new ArrayBuffer(received);
+          const u8 = new Uint8Array(rawBuffer);
           let off2 = 0;
           for (const c of chunks) { u8.set(c, off2); off2 += c.length; }
           if (disposed) return;
-
-          setStatus("Processing...");
-          const conv = await GaussianSplattingMesh.ConvertPLYWithSHToSplatAsync(raw);
-          if (disposed) return;
-          fullConv = conv.buffer;
-          if (splatId) void putCache(splatId, "full", fullConv);
         }
 
-        if (disposed) return;
+        // Detect format: ZIP signature = SOG, otherwise PLY/splat
+        const header = new Uint8Array(rawBuffer, 0, 2);
+        const isZip = header[0] === 0x50 && header[1] === 0x4B;
 
-        gs = new GaussianSplattingMesh("splat", null, scene);
-        await gs.updateDataAsync(fullConv!);
-        if (disposed) return;
-        gs.alwaysSelectAsActiveMesh = true;
-        gs.scaling = new BABYLON.Vector3(-1, 1, 1);
+        if (isZip || isSogUrl) {
+          // SOG format: unzip and parse with BabylonJS SOG parser
+          setStatus("Processing...");
+          const { ParseSogMeta } = await import("@babylonjs/loaders/splat/sog");
+          const fflate = await import("fflate");
+          const zipData = fflate.unzipSync(new Uint8Array(rawBuffer));
+          const files = new Map<string, Uint8Array>();
+          for (const [name, data] of Object.entries(zipData)) {
+            files.set(name, data as Uint8Array);
+          }
+          if (disposed) return;
+          const parsedSOG = await ParseSogMeta(files, "", scene);
+          if (disposed) return;
+
+          gs = new GaussianSplattingMesh("splat", null, scene);
+          gs.updateData(parsedSOG.data, parsedSOG.sh, { flipY: false }, undefined, parsedSOG.shDegree);
+          gs.alwaysSelectAsActiveMesh = true;
+          gs.scaling = new BABYLON.Vector3(-1, 1, 1);
+        } else {
+          // PLY/splat format
+          setStatus("Processing...");
+          const conv = await GaussianSplattingMesh.ConvertPLYWithSHToSplatAsync(rawBuffer);
+          if (disposed) return;
+          const fullConv = conv.buffer;
+          if (splatId) void putCache(splatId, "full", fullConv);
+
+          gs = new GaussianSplattingMesh("splat", null, scene);
+          await gs.updateDataAsync(fullConv);
+          if (disposed) return;
+          gs.alwaysSelectAsActiveMesh = true;
+          gs.scaling = new BABYLON.Vector3(-1, 1, 1);
+        }
         gsRef.current = gs;
 
         for (let i = 0; i < 300; i++) {

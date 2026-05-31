@@ -10,6 +10,8 @@ import {
   type UserProfile,
 } from "../../lib/api/client";
 
+const SILENT_REFRESH_INTERVAL_MS = 45 * 60 * 1000;
+
 export type AuthState = {
   isAuthenticated: boolean;
   user: UserProfile | null;
@@ -29,7 +31,9 @@ export type AuthState = {
   refreshProfile: () => Promise<UserProfile | null>;
 };
 
-export function useAuth(): AuthState {
+const AuthContext = React.createContext<AuthState | null>(null);
+
+export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = React.useState<UserProfile | null>(null);
   const [isLoading, setIsLoading] = React.useState(true);
   const userRef = React.useRef<UserProfile | null>(null);
@@ -52,21 +56,35 @@ export function useAuth(): AuthState {
     }
   }, []);
 
+  // Initial load
   React.useEffect(() => {
     refreshProfile().finally(() => setIsLoading(false));
   }, [refreshProfile]);
 
+  // Silent refresh
+  React.useEffect(() => {
+    if (!user) return;
+    const id = setInterval(() => { refreshProfile(); }, SILENT_REFRESH_INTERVAL_MS);
+    return () => clearInterval(id);
+  }, [user, refreshProfile]);
+
+  // Refresh on tab re-focus
+  React.useEffect(() => {
+    if (!user) return;
+    const handleVisibility = () => {
+      if (document.visibilityState === "visible") refreshProfile();
+    };
+    document.addEventListener("visibilitychange", handleVisibility);
+    return () => document.removeEventListener("visibilitychange", handleVisibility);
+  }, [user, refreshProfile]);
+
   const login = React.useCallback(async (email: string, password: string) => {
     const result = await apiLogin(email, password);
-    // Backend returns user data alongside tokens — use it directly so we
-    // don't depend on cookies being available for the immediate next fetch.
     if (result?.user) {
       setUser(result.user as UserProfile);
-      // Still refresh in background to get the full profile shape
       refreshProfile().catch(() => {});
       return;
     }
-    // Fallback: fetch profile via cookies — retry to handle cookie propagation delay
     let lastErr: unknown;
     for (let attempt = 0; attempt < 3; attempt++) {
       if (attempt > 0) await new Promise((r) => setTimeout(r, 500));
@@ -78,7 +96,7 @@ export function useAuth(): AuthState {
     const detail = lastErr instanceof ApiError
       ? `status=${lastErr.status} body=${lastErr.body?.slice(0, 120)}`
       : lastErr instanceof Error ? lastErr.message : "unknown";
-    throw new Error(`Session failed (login ok=${!!result}, user=${!!result?.user}, keys=${result ? Object.keys(result).join(",") : "null"}): ${detail}`);
+    throw new Error(`Session failed: ${detail}`);
   }, [refreshProfile]);
 
   const register = React.useCallback(
@@ -103,7 +121,7 @@ export function useAuth(): AuthState {
     setUser(null);
   }, []);
 
-  return {
+  const value = React.useMemo<AuthState>(() => ({
     isAuthenticated: user !== null,
     user,
     isLoading,
@@ -111,5 +129,13 @@ export function useAuth(): AuthState {
     register,
     logout,
     refreshProfile,
-  };
+  }), [user, isLoading, login, register, logout, refreshProfile]);
+
+  return React.createElement(AuthContext.Provider, { value }, children);
+}
+
+export function useAuth(): AuthState {
+  const ctx = React.useContext(AuthContext);
+  if (!ctx) throw new Error("useAuth must be used within AuthProvider");
+  return ctx;
 }

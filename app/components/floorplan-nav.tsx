@@ -26,7 +26,7 @@ export default function FloorplanNav({ floorplanUrl, rooms, onRoomClick, activeR
   const rangeX = maxX - minX || 1;
   const rangeZ = maxZ - minZ || 1;
 
-  const svgW = 300;
+  const svgW = typeof window !== "undefined" && window.innerWidth < 640 ? Math.min(240, window.innerWidth - 40) : 300;
   const svgH = svgW * (rangeZ / rangeX);
   const pad = 10;
 
@@ -38,7 +38,7 @@ export default function FloorplanNav({ floorplanUrl, rooms, onRoomClick, activeR
   }
 
   return (
-    <div className="absolute bottom-20 left-4 z-20 animate-fade-in">
+    <div className="absolute bottom-20 left-3 z-20 animate-fade-in sm:left-4">
       <button
         onClick={() => setExpanded(!expanded)}
         className={`mb-2 flex items-center gap-1.5 bg-black/50 backdrop-blur-xl rounded-full px-3 py-2 text-xs font-medium shadow-lg border border-white/10 text-white/80 hover:text-white hover:bg-black/60 transition-all ${expanded ? "bg-black/60" : ""}`}
@@ -53,7 +53,7 @@ export default function FloorplanNav({ floorplanUrl, rooms, onRoomClick, activeR
       </button>
 
       {expanded && (
-        <div className="bg-black/50 backdrop-blur-xl rounded-2xl shadow-2xl border border-white/10 p-3 animate-fade-in-up">
+        <div className="max-w-[calc(100vw-1.5rem)] rounded-2xl border border-white/10 bg-black/50 p-3 shadow-2xl backdrop-blur-xl animate-fade-in-up sm:max-w-none">
           {/* Floorplan image as background */}
           <div className="relative" style={{ width: svgW, height: svgH }}>
             {/* eslint-disable-next-line @next/next/no-img-element */}

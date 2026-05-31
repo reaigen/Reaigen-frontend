@@ -2,7 +2,7 @@
 
 import { useEffect, useState, useRef, useCallback, use } from "react";
 import { getSharedTourViewer, verifySharePin } from "../../lib/api/client";
-import type { TourViewerData, TourData, TourShot, RoomData } from "../../lib/tour-types";
+import type { TourViewerData, TourData, TourShot, RoomData, CameraData } from "../../lib/tour-types";
 import dynamic from "next/dynamic";
 import TourControls from "../../components/tour-controls";
 import FloorplanNav from "../../components/floorplan-nav";
@@ -124,7 +124,7 @@ export default function SharedTourPage({ params }: { params: Promise<{ token: st
   // ── PIN gate ──
   if (requiresPin) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-gradient-to-b from-background to-muted/30">
+      <div className="min-h-screen flex items-center justify-center bg-[hsl(var(--muted))]/35 px-4">
         <div className="w-full max-w-xs space-y-6 px-6">
           <div className="text-center space-y-2">
             <Brand />
@@ -151,11 +151,11 @@ export default function SharedTourPage({ params }: { params: Promise<{ token: st
               disabled={pinLoading}
               autoFocus
               autoComplete="off"
-              className="h-11 text-center text-lg tracking-[0.3em] font-mono"
+              className="h-10 text-center text-sm tracking-[0.2em] tabular-nums"
             />
             {pinError && (
-              <div className="rounded-lg bg-destructive/5 border border-destructive/20 px-3 py-2">
-                <p className="text-xs text-destructive text-center">{pinError}</p>
+              <div className="rounded-lg bg-foreground/[0.04] border border-foreground/[0.08] px-3 py-2">
+                <p className="text-xs text-foreground/60 text-center">{pinError}</p>
               </div>
             )}
             <Button className="w-full h-10" loading={pinLoading} disabled={pinLoading || pin.length < 4}>
@@ -169,22 +169,44 @@ export default function SharedTourPage({ params }: { params: Promise<{ token: st
 
   // ── Error state ──
   if (error) {
+    const isExpired = error.includes("expired") || error.includes("no longer");
+    const isPaused = error.includes("paused");
+    const isLimitReached = error.includes("limit");
+    const showRetry = !isExpired && !isPaused && !isLimitReached;
+
     return (
-      <div className="min-h-screen flex items-center justify-center bg-gradient-to-b from-background to-muted/30">
-        <div className="text-center space-y-4 px-6">
+      <div className="min-h-screen flex items-center justify-center bg-[hsl(var(--muted))]/35 px-4">
+        <div className="text-center space-y-4 px-6 max-w-xs">
           <Brand />
           <div className="pt-2">
-            <div className="mx-auto w-12 h-12 rounded-full bg-muted flex items-center justify-center mb-3">
-              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" className="text-muted-foreground">
-                <circle cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="2" />
-                <path d="M12 8v4M12 16h.01" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
-              </svg>
+            <div className="mx-auto w-12 h-12 rounded-full bg-foreground/[0.04] flex items-center justify-center mb-3">
+              {isExpired ? (
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" className="text-foreground/30">
+                  <circle cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="1.5" />
+                  <path d="M12 6v6l4 2" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+                </svg>
+              ) : isPaused ? (
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" className="text-foreground/30">
+                  <circle cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="1.5" />
+                  <path d="M10 15V9M14 15V9" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+                </svg>
+              ) : (
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" className="text-foreground/30">
+                  <circle cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="1.5" />
+                  <path d="M12 8v4M12 16h.01" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+                </svg>
+              )}
             </div>
-            <p className="text-sm text-muted-foreground max-w-xs mx-auto">{error}</p>
+            <p className="text-[14px] font-medium text-foreground/70 mb-1">
+              {isExpired ? "Link expired" : isPaused ? "Link paused" : isLimitReached ? "View limit reached" : "Something went wrong"}
+            </p>
+            <p className="text-[13px] text-foreground/40 leading-relaxed">{error}</p>
           </div>
-          <Button variant="outline" size="sm" onClick={() => { setError(null); loadViewer(); }}>
-            Try again
-          </Button>
+          {showRetry && (
+            <Button variant="outline" size="sm" onClick={() => { setError(null); loadViewer(); }}>
+              Try again
+            </Button>
+          )}
         </div>
       </div>
     );
@@ -204,12 +226,13 @@ export default function SharedTourPage({ params }: { params: Promise<{ token: st
 
   // ── Viewer ──
   return (
-    <div className="h-screen w-screen relative overflow-hidden">
+    <div className="relative h-[100dvh] w-screen overflow-hidden bg-black">
       <SplatViewer
         ref={splatRef}
         splatUrl={data.url}
         tourUrl={data.tour_url ?? undefined}
-        camerasUrl={data.cameras ? `data:application/json,${encodeURIComponent(JSON.stringify(data.cameras))}` : undefined}
+        initialCameras={data.cameras as CameraData ?? undefined}
+        preferSavedCameras={!!data.cameras?.cameras?.length}
         readOnly
         onShotChange={handleShotChange}
         onTourLoaded={handleTourLoaded}
@@ -217,15 +240,15 @@ export default function SharedTourPage({ params }: { params: Promise<{ token: st
 
       {/* Title badge */}
       {data.draft_title && (
-        <div className="absolute top-4 left-4 z-20 animate-fade-in">
-          <span className="text-sm font-medium text-white bg-black/40 backdrop-blur-xl px-3.5 py-2 rounded-full border border-white/10 shadow-lg">
+        <div className="absolute left-3 top-3 z-20 max-w-[calc(100%-5.5rem)] animate-fade-in sm:left-4 sm:top-4 sm:max-w-[calc(100%-6rem)]">
+          <span className="text-sm font-medium text-white bg-black/40 backdrop-blur-xl px-3.5 py-2 rounded-full border border-white/10 shadow-lg block truncate">
             {data.draft_title}
           </span>
         </div>
       )}
 
       {/* Branding */}
-      <div className="absolute top-4 right-4 z-20 animate-fade-in">
+      <div className="absolute right-3 top-3 z-20 animate-fade-in sm:right-4 sm:top-4">
         <span
           className="text-[13px] text-white/50 bg-black/20 backdrop-blur-sm px-2.5 py-1 rounded-full"
           style={{ fontFamily: "var(--font-brand), ui-serif, Georgia, serif", fontWeight: 500 }}

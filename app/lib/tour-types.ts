@@ -40,7 +40,7 @@ export interface TourData {
 }
 
 export interface CameraData {
-  cameras: { position: Vec3; forward: Vec3; up: Vec3 }[];
+  cameras: { position: Vec3; forward: Vec3; up?: Vec3; fov?: number }[];
   fovY?: number;
   sceneFov?: number;
   source?: string;
@@ -106,7 +106,9 @@ export interface SplatListItem {
   scan_type: string;
   has_ply: boolean;
   has_splat: boolean;
+  has_sog: boolean;
   point_count: number | null;
+  thumbnail_url: string | null;
   created_at: string;
   updated_at: string;
 }
