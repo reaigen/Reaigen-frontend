@@ -806,7 +806,7 @@ const SplatViewer = forwardRef<SplatViewerHandle, Props>(function SplatViewer(
         let rawBuffer: ArrayBuffer | null = cachedFull;
 
         if (!rawBuffer) {
-          const resp = await fetch(splatUrl);
+          const resp = await fetch(splatUrl, { cache: "no-store" });
           if (!resp.ok) throw new Error(`Download ${resp.status}`);
           const total = parseInt(resp.headers.get("content-length") || "0", 10);
           const reader = resp.body!.getReader();
