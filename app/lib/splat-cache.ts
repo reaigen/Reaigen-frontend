@@ -42,6 +42,12 @@ export async function getCache(
   try {
     const db = await openDB();
     const key = version ? `splat:${splatId}:${stage}:${version}` : `splat:${splatId}:${stage}`;
+    // If version provided, delete old unversioned entry
+    if (version) {
+      const oldKey = `splat:${splatId}:${stage}`;
+      const tx0 = db.transaction(STORE, "readwrite");
+      tx0.objectStore(STORE).delete(oldKey);
+    }
     return await new Promise<ArrayBuffer | null>((resolve) => {
       const tx = db.transaction(STORE, "readwrite");
       const req = tx.objectStore(STORE).get(key);
