@@ -99,6 +99,8 @@ interface Props {
   initialCameras?: CameraData | null;
   preferSavedCameras?: boolean;
   readOnly?: boolean;
+  /** outputs_updated_at from backend — used as cache version key */
+  outputsVersion?: string | null;
   className?: string;
   onShotChange?: (idx: number, shot: TourShot | null) => void;
   onReady?: () => void;
@@ -121,7 +123,7 @@ export interface SplatViewerHandle {
 // ── Component ────────────────────────────────────────────────────────────────
 
 const SplatViewer = forwardRef<SplatViewerHandle, Props>(function SplatViewer(
-  { splatUrl, splatId, tourUrl, camerasUrl, initialCameras, preferSavedCameras, readOnly, className, onShotChange, onReady, onError, onTourLoaded },
+  { splatUrl, splatId, tourUrl, camerasUrl, initialCameras, preferSavedCameras, readOnly, outputsVersion, className, onShotChange, onReady, onError, onTourLoaded },
   ref,
 ) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -796,7 +798,7 @@ const SplatViewer = forwardRef<SplatViewerHandle, Props>(function SplatViewer(
         const isSogUrl = splatUrl.split("?")[0].toLowerCase().endsWith(".sog");
 
         const cachedFull: ArrayBuffer | null = (!isSogUrl && splatId)
-          ? await getCache(splatId, "full")
+          ? await getCache(splatId, "full", outputsVersion)
           : null;
 
         if (disposed) return;
@@ -854,7 +856,7 @@ const SplatViewer = forwardRef<SplatViewerHandle, Props>(function SplatViewer(
           const conv = await GaussianSplattingMesh.ConvertPLYWithSHToSplatAsync(rawBuffer);
           if (disposed) return;
           const fullConv = conv.buffer;
-          if (splatId) void putCache(splatId, "full", fullConv);
+          if (splatId) void putCache(splatId, "full", fullConv, outputsVersion);
 
           gs = new GaussianSplattingMesh("splat", null, scene);
           await gs.updateDataAsync(fullConv);

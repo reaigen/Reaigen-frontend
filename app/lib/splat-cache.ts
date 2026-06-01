@@ -37,10 +37,11 @@ function openDB(): Promise<IDBDatabase> {
 export async function getCache(
   splatId: number,
   stage: "startup" | "full",
+  version?: string | null,
 ): Promise<ArrayBuffer | null> {
   try {
     const db = await openDB();
-    const key = `splat:${splatId}:${stage}`;
+    const key = version ? `splat:${splatId}:${stage}:${version}` : `splat:${splatId}:${stage}`;
     return await new Promise<ArrayBuffer | null>((resolve) => {
       const tx = db.transaction(STORE, "readwrite");
       const req = tx.objectStore(STORE).get(key);
@@ -67,10 +68,11 @@ export async function putCache(
   splatId: number,
   stage: "startup" | "full",
   buffer: ArrayBuffer,
+  version?: string | null,
 ): Promise<void> {
   try {
     const db = await openDB();
-    const key = `splat:${splatId}:${stage}`;
+    const key = version ? `splat:${splatId}:${stage}:${version}` : `splat:${splatId}:${stage}`;
     await evictIfNeeded(db, buffer.byteLength);
     await new Promise<void>((resolve, reject) => {
       const tx = db.transaction(STORE, "readwrite");

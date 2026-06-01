@@ -122,4 +122,5 @@ export interface SplatViewerPayload {
   tour_url: string | null;
   signed_outputs: Record<string, string>;
   metadata: Record<string, unknown>;
+  outputs_updated_at: string | null;
 }

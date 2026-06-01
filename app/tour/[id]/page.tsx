@@ -80,6 +80,7 @@ export default function TourPage({ params }: { params: Promise<{ id: string }> }
         splatId={viewer.splat_id}
         tourUrl={viewer.tour_url ?? undefined}
         camerasUrl={`/api/reaigen/splats/${splatId}/cameras/`}
+        outputsVersion={viewer.outputs_updated_at}
         preferSavedCameras
         onShotChange={handleShotChange}
         onTourLoaded={handleTourLoaded}
