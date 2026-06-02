@@ -607,8 +607,15 @@ const SplatViewer = forwardRef<SplatViewerHandle, Props>(function SplatViewer(
         const canvas = canvasRef.current;
         const engine = new BABYLON.Engine(canvas, true, {
           antialias: true, powerPreference: "high-performance",
+          preserveDrawingBuffer: false, stencil: false,
         });
         engineRef.current = engine;
+
+        // VKGS-tier DPR cap: lock at 1.5× to keep sort/render sharp without
+        // overloading the GPU on retina displays. No motion drop — switching
+        // DPR is itself a visible artefact.
+        const dpr = typeof window !== "undefined" ? window.devicePixelRatio || 1 : 1;
+        engine.setHardwareScalingLevel(dpr / Math.min(dpr, 1.5));
 
         engine.onContextLostObservable.add(() => console.warn("[REAI] WebGL context lost"));
         engine.onContextRestoredObservable.add(() => {
@@ -621,8 +628,8 @@ const SplatViewer = forwardRef<SplatViewerHandle, Props>(function SplatViewer(
         scene.clearColor = new BABYLON.Color4(1, 1, 1, 1);
 
         const camera = new BABYLON.FreeCamera("cam", BABYLON.Vector3.Zero(), scene);
-        camera.minZ = 0.15;
-        camera.maxZ = 80;
+        camera.minZ = 0.1;
+        camera.maxZ = 100;
         camera.fov = 0.66;
         camera.inertia = 0.5;
         camera.speed = 0.3;
@@ -636,9 +643,17 @@ const SplatViewer = forwardRef<SplatViewerHandle, Props>(function SplatViewer(
         camera.keysDownward = [81];  // Q
         cameraRef.current = camera;
 
-        const pipeline = new BABYLON.DefaultRenderingPipeline("pp", true, scene, [camera]);
-        pipeline.fxaaEnabled = true;
-        pipeline.imageProcessingEnabled = false;
+        // VKGS-tier: no post-process pipeline. Engine-level antialias:true
+        // provides clean splat silhouettes without colour transforms or blits.
+
+        // VKGS-tier: Mip-Splatting screen-space kernel — fixed at 0.15 for
+        // crisp rendering that matches vk_gaussian_splatting reference.
+        const { GaussianSplattingMaterial } = BABYLON;
+        GaussianSplattingMaterial.KernelSize = 0.15;
+        GaussianSplattingMaterial.Compensation = true;
+
+        // Reduce per-frame work
+        scene.skipPointerMovePicking = true;
 
         // ── Render loop ──
         let prevT = performance.now();
@@ -847,7 +862,9 @@ const SplatViewer = forwardRef<SplatViewerHandle, Props>(function SplatViewer(
           if (disposed) return;
 
           gs = new GaussianSplattingMesh("splat", null, scene);
-          gs.updateData(parsedSOG.data, parsedSOG.sh, { flipY: false }, undefined, parsedSOG.shDegree);
+          const sogSh = parsedSOG.sh && parsedSOG.sh.length ? parsedSOG.sh : undefined;
+          const sogDegree = sogSh ? (parsedSOG.shDegree ?? 0) : 0;
+          gs.updateData(parsedSOG.data, sogSh, { flipY: false }, undefined, sogDegree);
           gs.alwaysSelectAsActiveMesh = true;
           gs.scaling = new BABYLON.Vector3(-1, 1, 1);
         } else {
