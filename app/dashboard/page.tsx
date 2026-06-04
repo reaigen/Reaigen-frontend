@@ -26,13 +26,14 @@ export default function DashboardPage() {
   const [totalCount, setTotalCount] = React.useState(0);
   const pageRef = React.useRef(1);
   const [shareTarget, setShareTarget] = React.useState<{ splatId: number; title: string } | null>(null);
+  const [search, setSearch] = React.useState("");
 
   React.useEffect(() => {
     if (!isLoading && !isAuthenticated) router.replace("/");
   }, [isLoading, isAuthenticated, router]);
 
   const loadPage = React.useCallback(async (page: number, append: boolean) => {
-    const data = await listSplats(page, 20);
+    const data = await listSplats(page, 20, search);
     const results = data.results ?? [];
     setSplats((prev) => {
       const merged = append ? [...prev, ...results] : results;
@@ -49,12 +50,16 @@ export default function DashboardPage() {
     setHasMore(!!data.next);
     setTotalCount(data.count ?? 0);
     pageRef.current = page;
-  }, []);
+  }, [search]);
 
   React.useEffect(() => {
     if (!isAuthenticated) return;
-    loadPage(1, false).catch(() => {}).finally(() => setSplatsLoading(false));
-  }, [isAuthenticated, loadPage]);
+    setSplatsLoading(true);
+    const timer = setTimeout(() => {
+      loadPage(1, false).catch(() => {}).finally(() => setSplatsLoading(false));
+    }, search ? 300 : 0);
+    return () => clearTimeout(timer);
+  }, [search, isAuthenticated, loadPage]);
 
   const handleLoadMore = React.useCallback(async () => {
     setLoadingMore(true);
@@ -100,6 +105,14 @@ export default function DashboardPage() {
             )}
           </div>
 
+          <input
+            type="text"
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            placeholder={t("dashboard.searchPlaceholder", lang)}
+            className="mb-3 w-full rounded-xl border border-border/60 bg-background px-3 py-2 text-[13px] placeholder:text-muted-foreground/60 focus:outline-none focus:ring-1 focus:ring-foreground/20"
+          />
+
           {splatsLoading ? (
             <div className="flex items-center justify-center py-16">
               <div className="animate-spin h-6 w-6 border-2 border-foreground/20 border-t-foreground rounded-full" />
@@ -116,7 +129,7 @@ export default function DashboardPage() {
               <p className="mt-1 max-w-[260px] text-[12px] leading-relaxed text-muted-foreground">{t("dashboard.noSplats", lang)}</p>
             </div>
           ) : (
-            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
+            <div className="grid grid-cols-2 gap-3">
             {splats.map((splat) => {
               const isReady = splat.status === "completed" && (splat.has_ply || splat.has_splat || splat.has_sog);
               return (

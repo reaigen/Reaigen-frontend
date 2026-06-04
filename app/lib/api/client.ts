@@ -323,10 +323,11 @@ export async function changePassword(data: {
 
 // ─── Splat Viewer & Tour ──────────────────────────────────────────────────
 
-import type { SplatViewerPayload, CameraData, TourViewerData, SplatListItem, ShareData } from "../tour-types";
+import type { SplatViewerPayload, CameraData, TourViewerData, SplatListItem, ShareData, SplatsByDraftPayload } from "../tour-types";
 
-export async function listSplats(page = 1, pageSize = 20): Promise<{ results: SplatListItem[]; count: number; next: string | null }> {
-  return request(`/api/reaigen/splats/?page=${page}&page_size=${pageSize}`);
+export async function listSplats(page = 1, pageSize = 20, search = ""): Promise<{ results: SplatListItem[]; count: number; next: string | null }> {
+  const q = search ? `&search=${encodeURIComponent(search)}` : "";
+  return request(`/api/reaigen/splats/?page=${page}&page_size=${pageSize}${q}`);
 }
 
 export async function listAllSplats(): Promise<SplatListItem[]> {
@@ -343,6 +344,10 @@ export async function listAllSplats(): Promise<SplatListItem[]> {
 
 export async function getSplatViewer(splatId: number): Promise<SplatViewerPayload> {
   return request(`/api/reaigen/splats/${splatId}/viewer/`);
+}
+
+export async function getSplatsByDraft(draftId: number): Promise<SplatsByDraftPayload> {
+  return request(`/api/reaigen/splats/by-draft/${draftId}/?all=true`);
 }
 
 export async function getCameras(splatId: number): Promise<CameraData> {

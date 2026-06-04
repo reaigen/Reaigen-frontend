@@ -866,7 +866,7 @@ export function SettingsForm({ user, onSaved }: { user: UserProfile; onSaved: ()
 
   return (
     <Tabs defaultValue="profile" className="w-full">
-      <TabsList className="mb-5 flex w-full flex-wrap gap-1 overflow-x-auto scrollbar-hide sm:mb-6 sm:w-auto sm:flex-nowrap">
+      <TabsList className="mb-5 flex w-full flex-wrap gap-1 sm:mb-6">
         <TabsTrigger value="profile">{t("settings.tab.profile", lang)}</TabsTrigger>
         <TabsTrigger value="seller">{t("settings.tab.seller", lang)}</TabsTrigger>
         <TabsTrigger value="privacy">{t("settings.tab.privacy", lang)}</TabsTrigger>

@@ -3,14 +3,36 @@
 import { useEffect, useState, useRef, useCallback, use } from "react";
 import { useRouter } from "next/navigation";
 import { useAuth } from "../../components/hooks/use-auth";
-import { getSplatViewer } from "../../lib/api/client";
-import type { SplatViewerPayload, TourData, TourShot } from "../../lib/tour-types";
+import { getSplatViewer, getSplatsByDraft } from "../../lib/api/client";
+import type { CameraData, SplatViewerPayload, TourData, TourShot } from "../../lib/tour-types";
 import dynamic from "next/dynamic";
 import TourControls from "../../components/tour-controls";
 import CameraEditor from "../../components/camera-editor";
 import { Button } from "../../lib/ui/button";
 
 const SplatViewer = dynamic(() => import("../../components/splat-viewer"), { ssr: false });
+const SOG_READY_TIMEOUT_MS = 15000;
+
+function pickRenderableUrl(viewer: SplatViewerPayload): string {
+  if (viewer.format === "sog") {
+    return viewer.signed_outputs?.spz
+      ?? viewer.signed_outputs?.["model.spz"]
+      ?? viewer.signed_outputs?.splat
+      ?? viewer.url
+      ?? viewer.signed_outputs?.ply
+      ?? viewer.signed_outputs?.["model.ply"]
+      ?? viewer.signed_outputs?.["output_mcmc.ply"]
+      ?? viewer.url;
+  }
+  return viewer.url;
+}
+
+function pickFallbackRenderableUrl(viewer: SplatViewerPayload): string | null {
+  return viewer.signed_outputs?.ply
+    ?? viewer.signed_outputs?.["model.ply"]
+    ?? viewer.signed_outputs?.["output_mcmc.ply"]
+    ?? null;
+}
 
 export default function TourPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params);
@@ -23,7 +45,32 @@ export default function TourPage({ params }: { params: Promise<{ id: string }> }
   const [tourData, setTourData] = useState<TourData | null>(null);
   const [shotIdx, setShotIdx] = useState(0);
   const [editorVersion, setEditorVersion] = useState(0);
+  const [activeRenderUrl, setActiveRenderUrl] = useState<string | null>(null);
+  const [viewerReady, setViewerReady] = useState(false);
   const splatRef = useRef<any>(null);
+  const resolvedSplatId = viewer?.splat_id ?? splatId;
+  const viewerCameras = viewer?.cameras as CameraData | undefined;
+  const preferSavedCameras = !!viewerCameras?.cameras?.length || viewer?.format !== "sog";
+  const preferredRenderUrl = viewer ? pickRenderableUrl(viewer) : null;
+  const fallbackRenderUrl = viewer ? pickFallbackRenderableUrl(viewer) : null;
+
+  useEffect(() => {
+    setActiveRenderUrl(preferredRenderUrl);
+    setViewerReady(false);
+  }, [preferredRenderUrl]);
+
+  useEffect(() => {
+    if (!activeRenderUrl) return;
+    if (viewerReady) return;
+    if (!fallbackRenderUrl || activeRenderUrl === fallbackRenderUrl) return;
+    if (!activeRenderUrl.split("?")[0].toLowerCase().endsWith(".sog")) return;
+
+    const timer = window.setTimeout(() => {
+      setActiveRenderUrl(fallbackRenderUrl);
+    }, SOG_READY_TIMEOUT_MS);
+
+    return () => window.clearTimeout(timer);
+  }, [activeRenderUrl, fallbackRenderUrl, viewerReady]);
 
   useEffect(() => {
     if (!isLoading && !isAuthenticated) router.replace("/");
@@ -32,9 +79,32 @@ export default function TourPage({ params }: { params: Promise<{ id: string }> }
   useEffect(() => {
     if (!isAuthenticated || isNaN(splatId)) return;
     getSplatViewer(splatId)
+      .then(async (data) => {
+        if (!data.draft_id) return data;
+
+        try {
+          const byDraft = await getSplatsByDraft(data.draft_id);
+          const canonicalSplatId = byDraft.parent_splat_id;
+          if (canonicalSplatId && canonicalSplatId !== data.splat_id) {
+            router.replace(`/tour/${canonicalSplatId}`);
+            return await getSplatViewer(canonicalSplatId);
+          }
+        } catch {
+          // Best-effort canonicalization; fall back to the explicit splat route.
+        }
+
+        return data;
+      })
       .then((data) => setViewer(data))
-      .catch((e) => setError(e.body || e.message));
-  }, [isAuthenticated, splatId]);
+      .catch((e) => {
+        const raw = e.body || e.message || "";
+        if (raw.toLowerCase().includes("not found")) {
+          setError("This tour could not be found.");
+        } else {
+          setError("Something went wrong loading this tour.");
+        }
+      });
+  }, [isAuthenticated, splatId, router]);
 
   const handleShotChange = useCallback((idx: number, shot: TourShot | null) => {
     setShotIdx(idx);
@@ -76,12 +146,20 @@ export default function TourPage({ params }: { params: Promise<{ id: string }> }
       <SplatViewer
         key={editorVersion}
         ref={splatRef}
-        splatUrl={viewer.url}
-        splatId={viewer.splat_id}
+        splatUrl={activeRenderUrl ?? viewer.url}
+        splatId={resolvedSplatId}
         tourUrl={viewer.tour_url ?? undefined}
-        camerasUrl={`/api/reaigen/splats/${splatId}/cameras/`}
+        initialCameras={viewerCameras}
+        camerasUrl={`/api/reaigen/splats/${resolvedSplatId}/cameras/`}
         outputsVersion={viewer.outputs_updated_at}
-        preferSavedCameras
+        preferSavedCameras={preferSavedCameras}
+        onReady={() => setViewerReady(true)}
+        onError={() => {
+          if (fallbackRenderUrl && activeRenderUrl !== fallbackRenderUrl) {
+            setViewerReady(false);
+            setActiveRenderUrl(fallbackRenderUrl);
+          }
+        }}
         onShotChange={handleShotChange}
         onTourLoaded={handleTourLoaded}
       />
@@ -106,7 +184,7 @@ export default function TourPage({ params }: { params: Promise<{ id: string }> }
       </div>
 
       <CameraEditor
-        splatId={splatId}
+        splatId={resolvedSplatId}
         viewerRef={splatRef}
         tourData={tourData}
         defaultMode="edit"
