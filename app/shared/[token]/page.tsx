@@ -10,6 +10,28 @@ import { Button } from "../../lib/ui/button";
 import { Input } from "../../lib/ui/input";
 
 const SplatViewer = dynamic(() => import("../../components/splat-viewer"), { ssr: false });
+const SOG_READY_TIMEOUT_MS = 15000;
+
+function pickRenderableUrl(data: TourViewerData): string {
+  return data.signed_outputs?.sog
+    ?? data.signed_outputs?.["model.sog"]
+    ?? (data.format === "sog" ? data.url : undefined)
+    ?? data.signed_outputs?.splat
+    ?? data.signed_outputs?.["model.splat"]
+    ?? data.signed_outputs?.spz
+    ?? data.signed_outputs?.["model.spz"]
+    ?? data.signed_outputs?.ply
+    ?? data.signed_outputs?.["model.ply"]
+    ?? data.signed_outputs?.["output_mcmc.ply"]
+    ?? data.url;
+}
+
+function pickFallbackRenderableUrl(data: TourViewerData): string | null {
+  return data.signed_outputs?.ply
+    ?? data.signed_outputs?.["model.ply"]
+    ?? data.signed_outputs?.["output_mcmc.ply"]
+    ?? null;
+}
 
 // Map raw backend errors to user-friendly messages
 function sanitizeError(msg: string): string {
@@ -44,18 +66,15 @@ export default function SharedTourPage({ params }: { params: Promise<{ token: st
   const [tourData, setTourData] = useState<TourData | null>(null);
   const [shotIdx, setShotIdx] = useState(0);
   const [activeRoomId, setActiveRoomId] = useState<number | null>(null);
-
-  // Persist PIN token in sessionStorage so page reloads don't re-prompt
-  const pinTokenRef = useRef<string | undefined>(
-    typeof window !== "undefined" ? (sessionStorage.getItem(`reaigen_pin_${token}`) ?? undefined) : undefined,
-  );
+  const [activeRenderUrl, setActiveRenderUrl] = useState<string | null>(null);
+  const [viewerReady, setViewerReady] = useState(false);
 
   const splatRef = useRef<any>(null);
 
   const loadViewer = useCallback(async () => {
     try {
       setError(null);
-      const result = await getSharedTourViewer(token, pinTokenRef.current);
+      const result = await getSharedTourViewer(token);
       setData(result);
     } catch (e: any) {
       try {
@@ -72,6 +91,23 @@ export default function SharedTourPage({ params }: { params: Promise<{ token: st
   }, [token]);
 
   useEffect(() => { loadViewer(); }, [loadViewer]);
+  useEffect(() => {
+    setActiveRenderUrl(data ? pickRenderableUrl(data) : null);
+    setViewerReady(false);
+  }, [data]);
+  useEffect(() => {
+    if (!data || !activeRenderUrl) return;
+    if (viewerReady) return;
+    const fallbackUrl = pickFallbackRenderableUrl(data);
+    if (!fallbackUrl || activeRenderUrl === fallbackUrl) return;
+    if (!activeRenderUrl.split("?")[0].toLowerCase().endsWith(".sog")) return;
+
+    const timer = window.setTimeout(() => {
+      setActiveRenderUrl(fallbackUrl);
+    }, SOG_READY_TIMEOUT_MS);
+
+    return () => window.clearTimeout(timer);
+  }, [activeRenderUrl, data, viewerReady]);
 
   const handlePinSubmit = useCallback(async (e: React.FormEvent) => {
     e.preventDefault();
@@ -81,12 +117,13 @@ export default function SharedTourPage({ params }: { params: Promise<{ token: st
     setError(null);
     try {
       const result = await verifySharePin(token, pin);
-      if (result.pin_token) {
-        pinTokenRef.current = result.pin_token;
-        sessionStorage.setItem(`reaigen_pin_${token}`, result.pin_token);
+      if (result.verified) {
+        setRequiresPin(false);
+        setPin("");
+        await loadViewer();
+      } else {
+        setPinError("Invalid PIN. Please try again.");
       }
-      setRequiresPin(false);
-      await loadViewer();
     } catch (err: any) {
       let msg = "Invalid PIN. Please try again.";
       try {
@@ -229,11 +266,19 @@ export default function SharedTourPage({ params }: { params: Promise<{ token: st
     <div className="relative h-[100dvh] w-screen overflow-hidden bg-black">
       <SplatViewer
         ref={splatRef}
-        splatUrl={data.url}
+        splatUrl={activeRenderUrl ?? pickRenderableUrl(data)}
         tourUrl={data.tour_url ?? undefined}
         initialCameras={data.cameras as CameraData ?? undefined}
         preferSavedCameras={!!data.cameras?.cameras?.length}
         readOnly
+        onReady={() => setViewerReady(true)}
+        onError={() => {
+          const fallbackUrl = pickFallbackRenderableUrl(data);
+          if (fallbackUrl && activeRenderUrl !== fallbackUrl) {
+            setViewerReady(false);
+            setActiveRenderUrl(fallbackUrl);
+          }
+        }}
         onShotChange={handleShotChange}
         onTourLoaded={handleTourLoaded}
       />

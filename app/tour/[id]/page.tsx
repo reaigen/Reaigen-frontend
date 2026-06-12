@@ -14,17 +14,17 @@ const SplatViewer = dynamic(() => import("../../components/splat-viewer"), { ssr
 const SOG_READY_TIMEOUT_MS = 15000;
 
 function pickRenderableUrl(viewer: SplatViewerPayload): string {
-  if (viewer.format === "sog") {
-    return viewer.signed_outputs?.spz
-      ?? viewer.signed_outputs?.["model.spz"]
-      ?? viewer.signed_outputs?.splat
-      ?? viewer.url
-      ?? viewer.signed_outputs?.ply
-      ?? viewer.signed_outputs?.["model.ply"]
-      ?? viewer.signed_outputs?.["output_mcmc.ply"]
-      ?? viewer.url;
-  }
-  return viewer.url;
+  return viewer.signed_outputs?.sog
+    ?? viewer.signed_outputs?.["model.sog"]
+    ?? (viewer.format === "sog" ? viewer.url : undefined)
+    ?? viewer.signed_outputs?.splat
+    ?? viewer.signed_outputs?.["model.splat"]
+    ?? viewer.signed_outputs?.spz
+    ?? viewer.signed_outputs?.["model.spz"]
+    ?? viewer.signed_outputs?.ply
+    ?? viewer.signed_outputs?.["model.ply"]
+    ?? viewer.signed_outputs?.["output_mcmc.ply"]
+    ?? viewer.url;
 }
 
 function pickFallbackRenderableUrl(viewer: SplatViewerPayload): string | null {
