@@ -8,6 +8,26 @@ import {
 const BACKEND_URL =
   process.env.REAIGEN_BACKEND_URL ?? "http://localhost:8000";
 
+function backendCandidates(): string[] {
+  const configured = BACKEND_URL.replace(/\/+$/, "");
+  const candidates = [configured];
+
+  try {
+    const url = new URL(configured);
+    const isLocalhost = url.hostname === "localhost" || url.hostname === "127.0.0.1";
+    if (isLocalhost) {
+      const alternates = [80, 8000]
+        .filter((port) => String(port) !== (url.port || (url.protocol === "https:" ? "443" : "80")))
+        .map((port) => `${url.protocol}//${url.hostname}:${port}`);
+      candidates.push(...alternates);
+    }
+  } catch {
+    // Keep configured URL only if it's not parseable.
+  }
+
+  return [...new Set(candidates)];
+}
+
 function noStoreHeaders(contentType: string) {
   return {
     "Content-Type": contentType,
@@ -34,8 +54,6 @@ async function proxy(
   }
 
   const slash = joined.endsWith("/") ? "" : "/";
-  const target = `${BACKEND_URL}/api/v1/core/auth/${joined}${slash}`;
-
   const headers: Record<string, string> = {};
   const ct = req.headers.get("Content-Type");
   if (ct) headers["Content-Type"] = ct;
@@ -46,50 +64,55 @@ async function proxy(
     init.body = await req.text();
   }
 
-  try {
-    const res = await fetch(target, { ...init, cache: "no-store" });
-    const data = await res.text();
-    const contentType = res.headers.get("Content-Type") ?? "application/json";
-    const response = new NextResponse(data, {
-      status: res.status,
-      headers: noStoreHeaders(contentType),
-    });
+  let lastError: unknown = null;
 
-    if (res.ok && contentType.includes("application/json")) {
-      try {
-        const payload = JSON.parse(data) as { access?: string; refresh?: string; user?: unknown };
-        if (payload.access || payload.refresh) {
-          // Pass user data through (if backend included it) so the
-          // client can hydrate the session without a separate fetch.
-          const body: Record<string, unknown> = { ok: true };
-          if (payload.user) body.user = payload.user;
-          const sanitized = NextResponse.json(
-            body,
-            { status: res.status, headers: noStoreHeaders("application/json") },
-          );
-          setAuthCookies(
-            sanitized,
-            payload,
-            req.cookies.get(REFRESH_COOKIE_NAME)?.value ?? null,
-          );
-          return sanitized;
+  for (const baseUrl of backendCandidates()) {
+    const target = `${baseUrl}/api/v1/core/auth/${joined}${slash}`;
+    try {
+      const res = await fetch(target, { ...init, cache: "no-store" });
+      const data = await res.text();
+      const contentType = res.headers.get("Content-Type") ?? "application/json";
+      const response = new NextResponse(data, {
+        status: res.status,
+        headers: noStoreHeaders(contentType),
+      });
+
+      if (res.ok && contentType.includes("application/json")) {
+        try {
+          const payload = JSON.parse(data) as { access?: string; refresh?: string; user?: unknown };
+          if (payload.access || payload.refresh) {
+            const body: Record<string, unknown> = { ok: true };
+            if (payload.user) body.user = payload.user;
+            const sanitized = NextResponse.json(
+              body,
+              { status: res.status, headers: noStoreHeaders("application/json") },
+            );
+            setAuthCookies(
+              sanitized,
+              payload,
+              req.cookies.get(REFRESH_COOKIE_NAME)?.value ?? null,
+            );
+            return sanitized;
+          }
+        } catch {
+          // Non-token responses pass through
         }
-      } catch {
-        // Non-token responses pass through
       }
-    }
 
-    if (!res.ok && joined === "token/refresh") {
-      clearAuthCookies(response);
-    }
+      if (!res.ok && joined === "token/refresh") {
+        clearAuthCookies(response);
+      }
 
-    return response;
-  } catch (err) {
-    return NextResponse.json(
-      { error: "Backend unreachable", detail: String(err) },
-      { status: 502, headers: noStoreHeaders("application/json") },
-    );
+      return response;
+    } catch (err) {
+      lastError = err;
+    }
   }
+
+  return NextResponse.json(
+    { error: "Backend unreachable" },
+    { status: 502, headers: noStoreHeaders("application/json") },
+  );
 }
 
 export const POST = proxy;

@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState, useCallback, forwardRef, useImperativeHandle } from "react";
+import { AllocateShBuffers } from "@babylonjs/core/Meshes/GaussianSplatting/gaussianSplattingMeshBase.js";
 import { getCache, putCache } from "@/app/lib/splat-cache";
 import type { CameraData, Vec3, TourData, TourShot } from "@/app/lib/tour-types";
 
@@ -11,9 +12,9 @@ import type { CameraData, Vec3, TourData, TourShot } from "@/app/lib/tour-types"
  *   Tour    — arrow keys / buttons navigate shots with quintic easing.
  *   Explore — WASD + mouse free-fly when Escape pressed or no tour data.
  *
- * Coordinate system: PLY files are Y-up (Y-flip done server-side).
- * Tour positions from tour.json arrive in COLMAP/RoomKit (Y-down) →
- * apply CPU-side flip: y = -y, z = -z before camera placement.
+ * Coordinate system: Backend PLY output is already Y-up.
+ * Scene pretransform is identity (no flip needed).
+ * Camera positions from tour.json/cameras API are in viewer space directly.
  */
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
@@ -32,6 +33,7 @@ function slerpAngle(a: number, b: number, t: number): number {
 
 const LOOK = 5;
 const TILT_Y = LOOK * Math.tan(5 * Math.PI / 180);
+const SH_C0 = 0.28209479177387814;
 
 function buildFallbackShots(data: TourData): TourShot[] {
   const n = data.positions?.length ?? 0;
@@ -56,6 +58,287 @@ function buildFallbackShots(data: TourData): TourShot[] {
 
 function isSavedCameraTour(data: TourData | null): boolean {
   return data?.sceneType === "saved-cameras";
+}
+
+function computeSceneBoundsFromSplatBuffer(buffer: ArrayBuffer): { center: Vec3; radius: number } | null {
+  if (buffer.byteLength < 32) return null;
+  const floats = new Float32Array(buffer);
+  const stride = 8;
+  const count = Math.floor(floats.length / stride);
+  if (!count) return null;
+
+  let minX = Infinity, minY = Infinity, minZ = Infinity;
+  let maxX = -Infinity, maxY = -Infinity, maxZ = -Infinity;
+
+  for (let i = 0; i < count; i += 1) {
+    const base = i * stride;
+    const x = floats[base];
+    const y = floats[base + 1];
+    const z = floats[base + 2];
+    if (!Number.isFinite(x) || !Number.isFinite(y) || !Number.isFinite(z)) continue;
+    if (x < minX) minX = x;
+    if (y < minY) minY = y;
+    if (z < minZ) minZ = z;
+    if (x > maxX) maxX = x;
+    if (y > maxY) maxY = y;
+    if (z > maxZ) maxZ = z;
+  }
+
+  if (!Number.isFinite(minX) || !Number.isFinite(maxX)) return null;
+  const center: Vec3 = [
+    (minX + maxX) * 0.5,
+    (minY + maxY) * 0.5,
+    (minZ + maxZ) * 0.5,
+  ];
+  const radius = Math.max(
+    0.75,
+    Math.hypot(maxX - minX, maxY - minY, maxZ - minZ) * 0.5,
+  );
+  return { center, radius };
+}
+
+function shouldUseCameraPose(
+  position: Vec3,
+  fallback: { center: Vec3; radius: number } | null,
+): boolean {
+  if (!position.every((value) => Number.isFinite(value))) return false;
+  if (!fallback) return true;
+  const [cx, cy, cz] = fallback.center;
+  const dx = position[0] - cx;
+  const dy = position[1] - cy;
+  const dz = position[2] - cz;
+  const distance = Math.hypot(dx, dy, dz);
+  return distance <= Math.max(6, fallback.radius * 8);
+}
+
+function extractSplatIdFromAssetUrl(url: string): number | null {
+  const match = url.match(/\/splats\/(\d+)\//);
+  if (!match) return null;
+  const value = Number(match[1]);
+  return Number.isFinite(value) ? value : null;
+}
+
+interface VkgsMetaBlock {
+  files: string[];
+}
+
+interface VkgsSogMeta {
+  version: number;
+  count?: number;
+  means: VkgsMetaBlock & { mins: number[]; maxs: number[] };
+  scales: VkgsMetaBlock & { codebook: number[][] };
+  quats: VkgsMetaBlock;
+  sh0: VkgsMetaBlock & { codebook: number[][] };
+  shN?: VkgsMetaBlock & { mins: number[][]; maxs: number[][] };
+}
+
+interface DecodedImageData {
+  bits: Uint8Array;
+  width: number;
+}
+
+interface ParsedSogData {
+  data: ArrayBuffer;
+  sh?: Uint8Array[];
+  shDegree?: number;
+}
+
+function clampByte(value: number): number {
+  return Math.max(0, Math.min(255, Math.round(value)));
+}
+
+function lerp(min: number, max: number, t: number): number {
+  return min + (max - min) * t;
+}
+
+async function decodeWebpImage(fileData: Uint8Array): Promise<DecodedImageData> {
+  const bytes = new Uint8Array(fileData.byteLength);
+  bytes.set(fileData);
+  const blob = new Blob([bytes], { type: "image/webp" });
+  const objectUrl = URL.createObjectURL(blob);
+  try {
+    const image = await new Promise<HTMLImageElement>((resolve, reject) => {
+      const img = new Image();
+      img.crossOrigin = "anonymous";
+      img.onload = () => resolve(img);
+      img.onerror = () => reject(new Error("Failed to decode SOG webp image"));
+      img.src = objectUrl;
+    });
+
+    const canvas = document.createElement("canvas");
+    canvas.width = image.width;
+    canvas.height = image.height;
+    const ctx = canvas.getContext("2d");
+    if (!ctx) throw new Error("Failed to decode SOG image context");
+    ctx.drawImage(image, 0, 0);
+    const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+    return {
+      bits: new Uint8Array(imageData.data.buffer.slice(0)),
+      width: imageData.width,
+    };
+  } finally {
+    URL.revokeObjectURL(objectUrl);
+  }
+}
+
+function isVkgsSogMeta(meta: unknown): meta is VkgsSogMeta {
+  if (!meta || typeof meta !== "object") return false;
+  const candidate = meta as Partial<VkgsSogMeta>;
+  return candidate.version === 2 &&
+    Array.isArray(candidate.scales?.codebook?.[0]) &&
+    Array.isArray(candidate.sh0?.codebook?.[0]) &&
+    Array.isArray(candidate.shN?.mins?.[0]) &&
+    Array.isArray(candidate.shN?.maxs?.[0]) &&
+    Array.isArray(candidate.shN?.files) &&
+    candidate.shN.files.length >= 2 &&
+    candidate.shN.files.length % 2 === 0;
+}
+
+async function parseVkgsSogMeta(
+  zipData: Record<string, Uint8Array>,
+  meta: VkgsSogMeta,
+  scene: any,
+): Promise<ParsedSogData> {
+  const requiredFiles = [
+    ...meta.means.files,
+    ...meta.scales.files,
+    ...meta.quats.files,
+    ...meta.sh0.files,
+    ...(meta.shN?.files ?? []),
+  ];
+  const imageEntries = await Promise.all(requiredFiles.map(async (fileName) => {
+    const fileData = zipData[fileName];
+    if (!fileData) throw new Error(`SOG archive is missing ${fileName}`);
+    return [fileName, await decodeWebpImage(fileData)] as const;
+  }));
+  const images = new Map<string, DecodedImageData>(imageEntries);
+
+  const splatCount = meta.count ?? 0;
+  if (!Number.isFinite(splatCount) || splatCount <= 0) {
+    throw new Error("SOG metadata is missing a valid splat count");
+  }
+
+  const rowOutputLength = 3 * 4 + 3 * 4 + 4 + 4;
+  const buffer = new ArrayBuffer(rowOutputLength * splatCount);
+  const position = new Float32Array(buffer);
+  const scale = new Float32Array(buffer);
+  const rgba = new Uint8ClampedArray(buffer);
+  const rot = new Uint8ClampedArray(buffer);
+  const unlog = (n: number) => Math.sign(n) * (Math.exp(Math.abs(n)) - 1);
+
+  const meansLow = images.get(meta.means.files[0])?.bits;
+  const meansHigh = images.get(meta.means.files[1])?.bits;
+  const scalesImage = images.get(meta.scales.files[0])?.bits;
+  const quatsImage = images.get(meta.quats.files[0])?.bits;
+  const sh0Image = images.get(meta.sh0.files[0])?.bits;
+  if (!meansLow || !meansHigh || !scalesImage || !quatsImage || !sh0Image) {
+    throw new Error("SOG archive is missing required core textures");
+  }
+
+  for (let i = 0; i < splatCount; i += 1) {
+    const pixelOffset = i * 4;
+    for (let j = 0; j < 3; j += 1) {
+      const q = (meansHigh[pixelOffset + j] << 8) | meansLow[pixelOffset + j];
+      const n = lerp(meta.means.mins[j], meta.means.maxs[j], q / 65535);
+      position[i * 8 + j] = unlog(n);
+    }
+  }
+
+  for (let i = 0; i < splatCount; i += 1) {
+    const pixelOffset = i * 4;
+    for (let axis = 0; axis < 3; axis += 1) {
+      const axisCodebook = meta.scales.codebook[axis];
+      if (!axisCodebook) throw new Error(`SOG scales codebook is missing axis ${axis}`);
+      scale[i * 8 + 3 + axis] = Math.exp(axisCodebook[scalesImage[pixelOffset + axis]]);
+    }
+  }
+
+  for (let i = 0; i < splatCount; i += 1) {
+    const pixelOffset = i * 4;
+    for (let channel = 0; channel < 3; channel += 1) {
+      const channelCodebook = meta.sh0.codebook[channel];
+      if (!channelCodebook) throw new Error(`SOG sh0 codebook is missing channel ${channel}`);
+      const component = 0.5 + channelCodebook[sh0Image[pixelOffset + channel]] * SH_C0;
+      rgba[i * 32 + 24 + channel] = clampByte(255 * component);
+    }
+    rgba[i * 32 + 24 + 3] = sh0Image[pixelOffset + 3];
+  }
+
+  const toComp = (c: number) => ((c / 255 - 0.5) * 2.0) / Math.SQRT2;
+  for (let i = 0; i < splatCount; i += 1) {
+    const quatsr = quatsImage[i * 4];
+    const quatsg = quatsImage[i * 4 + 1];
+    const quatsb = quatsImage[i * 4 + 2];
+    const quatsa = quatsImage[i * 4 + 3];
+    const a = toComp(quatsr);
+    const b = toComp(quatsg);
+    const c = toComp(quatsb);
+    const mode = quatsa - 252;
+    const t = a * a + b * b + c * c;
+    const d = Math.sqrt(Math.max(0, 1 - t));
+    let q: number[];
+    switch (mode) {
+      case 0:
+        q = [d, a, b, c];
+        break;
+      case 1:
+        q = [a, d, b, c];
+        break;
+      case 2:
+        q = [a, b, d, c];
+        break;
+      case 3:
+        q = [a, b, c, d];
+        break;
+      default:
+        throw new Error("Invalid quaternion mode in SOG");
+    }
+    rot[i * 32 + 28] = q[0] * 127.5 + 127.5;
+    rot[i * 32 + 28 + 1] = q[1] * 127.5 + 127.5;
+    rot[i * 32 + 28 + 2] = q[2] * 127.5 + 127.5;
+    rot[i * 32 + 28 + 3] = q[3] * 127.5 + 127.5;
+  }
+
+  if (!meta.shN) {
+    return { data: buffer };
+  }
+
+  const coeffs = Math.floor(meta.shN.files.length / 2);
+  const shComponentCount = coeffs * 3;
+  const textureCount = Math.ceil(shComponentCount / 16);
+  const width = scene.getEngine().getCaps().maxTextureSize;
+  const height = Math.ceil(splatCount / width);
+  const sh = AllocateShBuffers(textureCount, height * width * 4 * 4);
+
+  for (let coeff = 0; coeff < coeffs; coeff += 1) {
+    const lowFile = meta.shN.files[coeff * 2];
+    const highFile = meta.shN.files[coeff * 2 + 1];
+    const lowBits = images.get(lowFile)?.bits;
+    const highBits = images.get(highFile)?.bits;
+    const mins = meta.shN.mins[coeff];
+    const maxs = meta.shN.maxs[coeff];
+    if (!lowBits || !highBits || !mins || !maxs) {
+      throw new Error(`SOG SH coefficient ${coeff} is incomplete`);
+    }
+
+    for (let i = 0; i < splatCount; i += 1) {
+      const pixelOffset = i * 4;
+      for (let channel = 0; channel < 3; channel += 1) {
+        const q = (highBits[pixelOffset + channel] << 8) | lowBits[pixelOffset + channel];
+        const value = lerp(mins[channel], maxs[channel], q / 65535);
+        const shIndexWrite = coeff * 3 + channel;
+        const textureIndex = Math.floor(shIndexWrite / 16);
+        const byteIndexInTexture = shIndexWrite % 16;
+        sh[textureIndex][byteIndexInTexture + i * 16] = clampByte(value * 127.5 + 127.5);
+      }
+    }
+  }
+
+  return {
+    data: buffer,
+    sh,
+    shDegree: Math.max(0, Math.round(Math.sqrt(coeffs + 1) - 1)),
+  };
 }
 
 // ── Animation state ──────────────────────────────────────────────────────────
@@ -150,6 +433,7 @@ const SplatViewer = forwardRef<SplatViewerHandle, Props>(function SplatViewer(
   const [ready, setReady] = useState(false);
   const [tourData, setTourData] = useState<TourData | null>(null);
   const [shotIdx, setShotIdx] = useState(0);
+  const fallbackSceneRef = useRef<{ center: Vec3; radius: number } | null>(null);
 
   const setCameraFromForward = useCallback((cam: any, B: any, pos: Vec3, fwd: Vec3, exactForward: boolean, fov?: number) => {
     cam.position.set(pos[0], pos[1], pos[2]);
@@ -213,7 +497,7 @@ const SplatViewer = forwardRef<SplatViewerHandle, Props>(function SplatViewer(
       const len = Math.hypot(rawFwd[0], rawFwd[1], rawFwd[2]) || 1;
       const forward: Vec3 = [rawFwd[0] / len, rawFwd[1] / len, rawFwd[2] / len];
       positions.push([pos[0], pos[1], pos[2]]);
-      forwards.push(forward);
+      forwards.push([forward[0], forward[1], forward[2]]);
 
       if (i === 0) {
         arcLens.push(0);
@@ -772,8 +1056,10 @@ const SplatViewer = forwardRef<SplatViewerHandle, Props>(function SplatViewer(
 
         // ── Place camera from COLMAP data ──
         async function placeCamera() {
+          const fallback = fallbackSceneRef.current;
           try {
             let d: any = null;
+            const assetSplatId = extractSplatIdFromAssetUrl(splatUrl);
             // Use directly-provided camera data first
             if (initialCameras && initialCameras.cameras?.length) {
               d = initialCameras;
@@ -796,14 +1082,31 @@ const SplatViewer = forwardRef<SplatViewerHandle, Props>(function SplatViewer(
               const px = c.position[0] - nx * BACK_OFF;
               const py = c.position[1] - ny * BACK_OFF;
               const pz = c.position[2] - nz * BACK_OFF;
-              camera.position.set(px, py, pz);
-              camera.setTarget(new BABYLON.Vector3(
-                px + nx * LOOK, py + ny * LOOK, pz + nz * LOOK,
-              ));
-              const fovY = Number(d.fovY || 0);
-              if (fovY > 0) camera.fov = fovY;
+              const candidate: Vec3 = [px, py, pz];
+              const allowCameraPose =
+                !assetSplatId || !splatId || assetSplatId === splatId || !!initialCameras?.cameras?.length;
+              if (!allowCameraPose || shouldUseCameraPose(candidate, fallback)) {
+                camera.position.set(px, py, pz);
+                camera.setTarget(new BABYLON.Vector3(
+                  px + nx * LOOK, py + ny * LOOK, pz + nz * LOOK,
+                ));
+                const fovY = Number(d.fovY || 0);
+                if (fovY > 0) camera.fov = fovY;
+                return;
+              }
+              console.warn("[REAI] Ignoring outlier camera pose; using scene-bounds fallback");
             }
           } catch { /* best-effort */ }
+
+          if (fallback) {
+            const [cx, cy, cz] = fallback.center;
+            const dist = Math.max(2.5, fallback.radius * 1.5);
+            camera.position.set(cx - dist, cy + dist * 0.2, cz - dist);
+            camera.setTarget(new BABYLON.Vector3(cx, cy, cz));
+            camera.rotation.z = 0;
+            camera.minZ = Math.max(0.05, fallback.radius / 250);
+            camera.maxZ = Math.max(80, fallback.radius * 30);
+          }
         }
 
         // ── Load Gaussian Splatting mesh ──
@@ -843,51 +1146,145 @@ const SplatViewer = forwardRef<SplatViewerHandle, Props>(function SplatViewer(
           if (disposed) return;
         }
 
-        // Detect format: ZIP signature = SOG, otherwise PLY/splat
-        const header = new Uint8Array(rawBuffer, 0, 2);
-        const isZip = header[0] === 0x50 && header[1] === 0x4B;
+        // Detect format by signature first, then by URL suffix for signed URLs without clear MIME.
+        const u8 = new Uint8Array(rawBuffer);
+        const isZip = u8.length >= 2 && u8[0] === 0x50 && u8[1] === 0x4B;
+        const isGZippedSpz = u8.length >= 2 && u8[0] === 0x1f && u8[1] === 0x8b;
+        const isNgspSpz = u8.length >= 4 && u8[0] === 0x4e && u8[1] === 0x47 && u8[2] === 0x53 && u8[3] === 0x50;
+        const isSpzUrl = splatUrl.split("?")[0].toLowerCase().endsWith(".spz");
 
         if (isZip || isSogUrl) {
           // SOG format: unzip and parse with BabylonJS SOG parser
           setStatus("Processing...");
-          const { ParseSogMeta } = await import("@babylonjs/loaders/splat/sog");
+          const { ParseSogMeta } = await import("@babylonjs/loaders/SPLAT/sog");
           const fflate = await import("fflate");
           const zipData = fflate.unzipSync(new Uint8Array(rawBuffer));
-          const files = new Map<string, Uint8Array>();
-          for (const [name, data] of Object.entries(zipData)) {
-            files.set(name, data as Uint8Array);
+          let vkgsMeta: VkgsSogMeta | null = null;
+          const metaEntry = zipData["meta.json"];
+          if (metaEntry) {
+            try {
+              const decoded = new TextDecoder().decode(metaEntry);
+              const meta = JSON.parse(decoded) as VkgsSogMeta & {
+                shN?: { shape?: number[]; files?: string[]; bands?: number; mins?: number; maxs?: number; codebook?: number[] };
+              };
+              if (isVkgsSogMeta(meta)) {
+                vkgsMeta = meta;
+              }
+              if (!vkgsMeta) {
+                const shN = meta.shN;
+                const hasUsableShN =
+                  !!shN &&
+                  Array.isArray(shN.files) &&
+                  shN.files.length > 0 &&
+                  (
+                    typeof shN.bands === "number" ||
+                    (Array.isArray(shN.shape) && typeof shN.shape[1] === "number")
+                  );
+                if (shN && !hasUsableShN) {
+                  delete meta.shN;
+                  zipData["meta.json"] = new TextEncoder().encode(JSON.stringify(meta));
+                  console.warn("[REAI] SOG meta.json has incomplete shN block; loading as SH0-only");
+                }
+              }
+            } catch (error) {
+              console.warn("[REAI] Failed to sanitize SOG meta.json:", error);
+            }
           }
           if (disposed) return;
-          const parsedSOG = await ParseSogMeta(files, "", scene);
+          let parsedSOG: ParsedSogData;
+          if (vkgsMeta) {
+            parsedSOG = await parseVkgsSogMeta(zipData as Record<string, Uint8Array>, vkgsMeta, scene);
+          } else {
+            const files = new Map<string, Uint8Array>();
+            for (const [name, data] of Object.entries(zipData)) {
+              files.set(name, data as Uint8Array);
+            }
+            parsedSOG = await ParseSogMeta(files, "", scene);
+          }
           if (disposed) return;
+          fallbackSceneRef.current = computeSceneBoundsFromSplatBuffer(parsedSOG.data);
 
           gs = new GaussianSplattingMesh("splat", null, scene);
           const sogSh = parsedSOG.sh && parsedSOG.sh.length ? parsedSOG.sh : undefined;
           const sogDegree = sogSh ? (parsedSOG.shDegree ?? 0) : 0;
           gs.updateData(parsedSOG.data, sogSh, { flipY: false }, undefined, sogDegree);
           gs.alwaysSelectAsActiveMesh = true;
-          gs.scaling = new BABYLON.Vector3(-1, 1, 1);
+        } else if (isGZippedSpz || isNgspSpz || isSpzUrl) {
+          // SPZ format: this is the current R&D-packed web format.
+          setStatus("Processing...");
+          const { ParseSpz, GetSpzModule, ConvertSpzToSplatAsync } = await import("@babylonjs/loaders/SPLAT/spz");
+          let parsedSPZ: {
+            data: ArrayBuffer;
+            sh?: Uint8Array[];
+            shDegree?: number;
+            trainedWithAntialiasing?: boolean;
+          };
+
+          if (isNgspSpz) {
+            const spz = await GetSpzModule("https://unpkg.com/@adobe/spz@0.2.2/dist/spz.js");
+            const cloud = spz.loadSpzFromBuffer(u8, { to: spz.CoordinateSystem.RUB });
+            parsedSPZ = await ConvertSpzToSplatAsync(cloud, scene);
+          } else {
+            const readableStream = new ReadableStream({
+              start(controller) {
+                controller.enqueue(u8);
+                controller.close();
+              },
+            });
+            const decompressed = await new Response(
+              readableStream.pipeThrough(new DecompressionStream("gzip")),
+            ).arrayBuffer();
+            parsedSPZ = await ParseSpz(decompressed, scene, {});
+          }
+
+          if (disposed) return;
+          fallbackSceneRef.current = computeSceneBoundsFromSplatBuffer(parsedSPZ.data);
+
+          gs = new GaussianSplattingMesh("splat", null, scene);
+          gs.updateData(
+            parsedSPZ.data,
+            parsedSPZ.sh && parsedSPZ.sh.length ? parsedSPZ.sh : undefined,
+            { flipY: false },
+            undefined,
+            parsedSPZ.shDegree ?? 0,
+          );
+          gs.alwaysSelectAsActiveMesh = true;
         } else {
           // PLY/splat format
           setStatus("Processing...");
-          const conv = await GaussianSplattingMesh.ConvertPLYWithSHToSplatAsync(rawBuffer);
+          const conv: { buffer: ArrayBuffer } = await GaussianSplattingMesh.ConvertPLYWithSHToSplatAsync(rawBuffer) as { buffer: ArrayBuffer };
           if (disposed) return;
           const fullConv = conv.buffer;
+          fallbackSceneRef.current = computeSceneBoundsFromSplatBuffer(fullConv);
           if (splatId) void putCache(splatId, "full", fullConv, outputsVersion);
 
           gs = new GaussianSplattingMesh("splat", null, scene);
           await gs.updateDataAsync(fullConv);
           if (disposed) return;
           gs.alwaysSelectAsActiveMesh = true;
-          gs.scaling = new BABYLON.Vector3(-1, 1, 1);
         }
         gsRef.current = gs;
 
+        // Per-mesh quality
+        gs.scaling.x = -1;
+        const mat = gs.material as any;
+        if (mat) {
+          mat.backFaceCulling = false;
+        }
+
+        let meshReady = false;
         for (let i = 0; i < 300; i++) {
-          if (gs.isReady()) break;
+          if (gs.isReady()) {
+            meshReady = true;
+            break;
+          }
           await new Promise(r => setTimeout(r, 100));
         }
         if (disposed) return;
+        if (!meshReady) {
+          const assetKind = isSogUrl ? "SOG" : isSpzUrl || isGZippedSpz || isNgspSpz ? "SPZ" : "PLY";
+          throw new Error(`${assetKind} mesh did not become ready`);
+        }
 
         await placeCamera();
         setReady(true);

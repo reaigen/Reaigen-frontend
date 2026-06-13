@@ -247,12 +247,12 @@ export default function CameraEditor({ splatId, viewerRef, tourData, defaultMode
   // ── Preview mode: compact floating pill ─────────────────────────────────
   if (mode === "preview") {
     return (
-      <div className="absolute right-2 top-4 z-30 sm:right-4">
-        <div className="flex items-center gap-1 bg-black/50 backdrop-blur-md rounded-full px-1 py-1 shadow-lg">
+      <div className="absolute inset-x-2 top-4 z-30 flex justify-end sm:inset-x-auto sm:right-4">
+        <div className="flex max-w-full items-center gap-1 rounded-xl border border-white/15 bg-black/70 px-1 py-1 shadow-[0_16px_40px_rgba(0,0,0,0.24)]">
           {/* Play / Pause */}
           <button
             onClick={() => setLooping((v) => !v)}
-            className={`p-1.5 rounded-full transition-colors ${
+            className={`rounded-lg p-1.5 transition-colors ${
               looping ? "bg-white/20 text-white" : "text-white/70 hover:text-white hover:bg-white/10"
             }`}
             title={looping ? "Pause auto-play" : "Auto-play"}
@@ -276,7 +276,7 @@ export default function CameraEditor({ splatId, viewerRef, tourData, defaultMode
                 <button
                   key={i}
                   onClick={() => previewGoTo(i)}
-                  className={`w-1.5 h-1.5 rounded-full transition-all ${
+                  className={`h-1.5 w-1.5 rounded-full transition-all ${
                     i === previewIdx ? "bg-white scale-125" : "bg-white/40 hover:bg-white/60"
                   }`}
                   aria-label={`Shot ${i + 1}`}
@@ -291,7 +291,7 @@ export default function CameraEditor({ splatId, viewerRef, tourData, defaultMode
           {/* Edit button */}
           <button
             onClick={stopPreview}
-            className="px-2 py-1 text-[11px] font-medium text-white/80 hover:text-white rounded-full hover:bg-white/10 transition-colors"
+            className="rounded-lg px-2 py-1 text-[11px] font-medium text-white/80 transition-colors hover:bg-white/10 hover:text-white"
           >
             Edit
           </button>
@@ -306,9 +306,9 @@ export default function CameraEditor({ splatId, viewerRef, tourData, defaultMode
 
   // ── Edit mode: full panel ───────────────────────────────────────────────
   return (
-    <div className="absolute left-2 right-2 top-16 z-30 sm:left-auto sm:right-4 sm:w-72">
-      <Card className="max-h-[calc(100dvh-5.5rem)] overflow-hidden border-border/50 bg-background/95 shadow-xl backdrop-blur-md">
-        <CardHeader className="pb-2">
+    <div className="absolute inset-x-2 top-16 z-30 sm:inset-x-auto sm:right-4 sm:w-[22rem]">
+      <Card className="max-h-[calc(100dvh-5.5rem)] overflow-hidden rounded-2xl border border-border/70 bg-background shadow-[0_18px_55px_rgba(0,0,0,0.18)]">
+        <CardHeader className="border-b border-border/45 pb-3">
           <div className="flex items-center justify-between">
             <div>
               <CardTitle className="text-sm">Camera Editor</CardTitle>
@@ -320,14 +320,14 @@ export default function CameraEditor({ splatId, viewerRef, tourData, defaultMode
               {shots.length > 0 && (
                 <button
                   onClick={startPreview}
-                  className="text-xs text-muted-foreground hover:text-foreground transition-colors"
+                  className="rounded-lg px-2 py-1 text-xs text-muted-foreground transition-colors hover:bg-foreground/[0.06] hover:text-foreground"
                 >
                   Preview
                 </button>
               )}
               <button
                 onClick={() => setIsCollapsed((v) => !v)}
-                className="rounded-md p-1 text-muted-foreground transition-colors hover:bg-foreground/[0.04] hover:text-foreground"
+                className="rounded-lg p-1 text-muted-foreground transition-colors hover:bg-foreground/[0.04] hover:text-foreground"
                 aria-label={isCollapsed ? "Expand camera editor" : "Collapse camera editor"}
               >
                 <svg width="14" height="14" viewBox="0 0 16 16" fill="none" className={`transition-transform ${isCollapsed ? "rotate-180" : ""}`}>
@@ -338,12 +338,12 @@ export default function CameraEditor({ splatId, viewerRef, tourData, defaultMode
           </div>
         </CardHeader>
         {!isCollapsed && (
-        <CardContent className="space-y-3 overflow-y-auto pb-4">
-          <Button variant="outline" size="sm" className="w-full" onClick={addShot}>
-            + Capture Current View
+        <CardContent className="space-y-3 overflow-y-auto p-3 sm:p-4">
+          <Button variant="outline" size="sm" className="h-9 w-full rounded-xl" onClick={addShot}>
+            Capture Current View
           </Button>
 
-          <div className="rounded-xl bg-muted/45 px-3 py-2">
+          <div className="rounded-xl border border-border/60 bg-muted/30 px-3 py-2">
             <div className="flex items-center justify-between gap-3">
               <span className="text-[11px] font-medium text-foreground/70">
                 {selectedIdx != null ? `Selected: Shot ${selectedIdx + 1}` : "No shot selected"}
@@ -360,7 +360,7 @@ export default function CameraEditor({ splatId, viewerRef, tourData, defaultMode
           </div>
 
           {/* Scene FOV */}
-          <div className="space-y-1">
+          <div className="space-y-1 rounded-xl border border-border/60 bg-muted/30 px-3 py-2.5">
             <div className="flex items-center justify-between">
               <label className="text-xs text-muted-foreground">Scene FOV</label>
               <span className="text-xs font-mono tabular-nums">{sceneFov}°</span>
@@ -376,7 +376,7 @@ export default function CameraEditor({ splatId, viewerRef, tourData, defaultMode
                 setSceneFov(v);
                 viewerRef.current?.setFov(v);
               }}
-              className="w-full h-1.5 bg-muted rounded-full appearance-none cursor-pointer accent-primary"
+              className="h-1.5 w-full cursor-pointer appearance-none rounded-full bg-muted accent-primary"
             />
             <div className="flex justify-between text-[10px] text-muted-foreground/60">
               <span>Tight</span>
@@ -385,16 +385,16 @@ export default function CameraEditor({ splatId, viewerRef, tourData, defaultMode
           </div>
 
           {shots.length > 0 && (
-            <div className="max-h-[38dvh] space-y-1.5 overflow-y-auto sm:max-h-72">
+            <div className="max-h-[38dvh] space-y-1.5 overflow-y-auto pr-0.5 sm:max-h-72">
               {shots.map((shot, i) => (
                 <div
                   key={i}
-                  className={`rounded-xl px-2.5 py-2 text-xs transition-colors ${
+                  className={`rounded-xl border px-2.5 py-2 text-xs transition-colors ${
                     updatedIdx === i
-                      ? "bg-emerald-500/10 ring-1 ring-emerald-500/30"
+                      ? "border-foreground/20 bg-background"
                       : selectedIdx === i
-                        ? "bg-foreground/[0.06] ring-1 ring-foreground/10"
-                        : "bg-muted/50"
+                        ? "border-foreground/15 bg-background"
+                        : "border-border/60 bg-muted/25"
                   }`}
                 >
                   <div className="flex items-center justify-between">
@@ -403,9 +403,9 @@ export default function CameraEditor({ splatId, viewerRef, tourData, defaultMode
                         setSelectedIdx(i);
                         flyToShot(shot);
                       }}
-                      className="flex items-center gap-2 font-medium text-left hover:text-primary transition-colors"
+                      className="flex min-w-0 items-center gap-2 text-left font-medium transition-colors hover:text-foreground"
                     >
-                      <span className="inline-flex h-5 min-w-5 items-center justify-center rounded-full bg-background px-1.5 text-[10px] font-semibold text-foreground/65">
+                      <span className="inline-flex h-5 min-w-5 items-center justify-center rounded bg-foreground/[0.06] px-1.5 text-[10px] font-semibold text-foreground/65">
                         {i + 1}
                       </span>
                       <span>{shot.label}</span>
@@ -435,12 +435,12 @@ export default function CameraEditor({ splatId, viewerRef, tourData, defaultMode
                   </div>
                   <div className="mt-1 flex items-center gap-1.5">
                     {selectedIdx === i && (
-                      <span className="rounded-full bg-foreground px-2 py-0.5 text-[10px] font-medium text-background">
+                      <span className="rounded bg-foreground px-2 py-0.5 text-[10px] font-medium text-background">
                         Selected
                       </span>
                     )}
                     {previewIdx === i && (
-                      <span className="rounded-full bg-background px-2 py-0.5 text-[10px] font-medium text-foreground/65">
+                      <span className="rounded bg-foreground/[0.06] px-2 py-0.5 text-[10px] font-medium text-foreground/65">
                         Preview start
                       </span>
                     )}
@@ -448,13 +448,13 @@ export default function CameraEditor({ splatId, viewerRef, tourData, defaultMode
                   <div className="mt-1.5 grid grid-cols-2 gap-1.5">
                     <button
                       onClick={() => goToLocalShot(i)}
-                      className="h-7 rounded-md bg-foreground/[0.04] text-[11px] font-medium text-foreground/65 transition-colors hover:bg-foreground/[0.08] hover:text-foreground"
+                      className="h-7 rounded-lg bg-foreground/[0.04] text-[11px] font-medium text-foreground/65 transition-colors hover:bg-foreground/[0.08] hover:text-foreground"
                     >
                       Jump to shot
                     </button>
                     <button
                       onClick={() => updateShot(i)}
-                      className="h-7 rounded-md bg-foreground/[0.06] text-[11px] font-medium text-foreground/60 transition-colors hover:bg-foreground/[0.1] hover:text-foreground"
+                      className="h-7 rounded-lg bg-foreground/[0.06] text-[11px] font-medium text-foreground/60 transition-colors hover:bg-foreground/[0.1] hover:text-foreground"
                     >
                       {updatedIdx === i ? "Updated" : "Use current view"}
                     </button>
@@ -465,7 +465,7 @@ export default function CameraEditor({ splatId, viewerRef, tourData, defaultMode
           )}
 
           {shots.length > 0 && (
-            <Button size="sm" className="w-full" onClick={handleSave} loading={saving}>
+            <Button size="sm" className="h-9 w-full rounded-xl" onClick={handleSave} loading={saving}>
               Save Cameras
             </Button>
           )}

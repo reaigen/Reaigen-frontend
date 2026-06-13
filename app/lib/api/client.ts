@@ -176,6 +176,13 @@ export interface UserProfile {
   phone_verified: boolean;
   last_login: string | null;
   date_joined: string;
+  gdpr?: {
+    has_given_consent: boolean;
+    consent_date: string | null;
+    consent_version: string;
+    marketing_consent: boolean;
+    data_processing_consent: boolean;
+  };
   profile: UserProfileData | null;
   personalized_data: PersonalizedData | null;
   billing_account: BillingAccount | null;
@@ -323,11 +330,27 @@ export async function changePassword(data: {
 
 // ─── Splat Viewer & Tour ──────────────────────────────────────────────────
 
-import type { SplatViewerPayload, CameraData, TourViewerData, SplatListItem, ShareData, SplatsByDraftPayload } from "../tour-types";
+import type { SplatViewerPayload, CameraData, TourViewerData, SplatListItem, ShareData, SplatsByDraftPayload, DraftListingItem } from "../tour-types";
 
 export async function listSplats(page = 1, pageSize = 20, search = ""): Promise<{ results: SplatListItem[]; count: number; next: string | null }> {
   const q = search ? `&search=${encodeURIComponent(search)}` : "";
   return request(`/api/reaigen/splats/?page=${page}&page_size=${pageSize}${q}`);
+}
+
+export async function listDrafts(page = 1, pageSize = 100): Promise<{ results: DraftListingItem[]; count: number; next: string | null }> {
+  return request(`/api/reaigen/drafts/?page=${page}&page_size=${pageSize}`);
+}
+
+export async function listAllDrafts(): Promise<DraftListingItem[]> {
+  const all: DraftListingItem[] = [];
+  let page = 1;
+  while (true) {
+    const data = await listDrafts(page, 100);
+    all.push(...(data.results ?? []));
+    if (!data.next) break;
+    page++;
+  }
+  return all;
 }
 
 export async function listAllSplats(): Promise<SplatListItem[]> {
@@ -364,12 +387,11 @@ export async function saveCameras(
   });
 }
 
-export async function getSharedTourViewer(token: string, pinToken?: string): Promise<TourViewerData> {
-  const qs = pinToken ? `?pin_token=${encodeURIComponent(pinToken)}` : "";
-  return request(`/api/reaigen/shared/${encodeURIComponent(token)}/tour-viewer/${qs}`);
+export async function getSharedTourViewer(token: string): Promise<TourViewerData> {
+  return request(`/api/reaigen/shared/${encodeURIComponent(token)}/tour-viewer/`);
 }
 
-export async function verifySharePin(token: string, pin: string): Promise<{ verified: boolean; pin_token?: string }> {
+export async function verifySharePin(token: string, pin: string): Promise<{ verified: boolean }> {
   return request(`/api/reaigen/shared/${encodeURIComponent(token)}/verify-pin/`, {
     method: "POST",
     body: JSON.stringify({ pin }),

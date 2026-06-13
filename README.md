@@ -26,7 +26,7 @@ Copy `.env.local.example` to `.env.local`:
 
 ```bash
 # Backend URL (Django API) — server-side only, not exposed to browser
-REAIGEN_BACKEND_URL=http://localhost:8000
+REAIGEN_BACKEND_URL=http://localhost:80
 ```
 
 In Docker production, this is set to `http://host.docker.internal:80` (reaches Nginx on the host).
@@ -42,17 +42,17 @@ npm run dev
 
 Runs on `http://localhost:3055` (bound to `0.0.0.0`).
 
-Requires the backend running on port 8000 (or 80 via Nginx).
+Requires the backend running on port 80 via Nginx in this workspace. The proxy also falls back between `localhost:80` and `localhost:8000` for local development.
 
 ---
 
 ## Production (Docker)
 
 ```bash
-docker compose up --build
+docker compose up --build -d
 ```
 
-Builds a multi-stage image (deps → build → standalone) and runs on port **3050**.
+Builds a multi-stage image (deps → build → standalone) and runs on port **3055**.
 
 The app is reverse-proxied via publicrouter at `https://app-reaigen.publicrouter.sk`.
 

@@ -62,7 +62,7 @@ export function AppShell({
   }
 
   return (
-    <div className="min-h-screen bg-muted/35">
+    <div className="min-h-screen bg-background">
       {/* ── header ──────────────────────────────────────────────── */}
       <header className="sticky top-0 z-50 border-b border-border/50 bg-background/92 pt-safe backdrop-blur-xl supports-[backdrop-filter]:bg-background/70">
         <div className="mx-auto flex h-14 max-w-7xl items-center justify-between px-4 sm:h-16 sm:px-6 pl-safe pr-safe">

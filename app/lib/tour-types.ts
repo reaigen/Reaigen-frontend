@@ -113,6 +113,38 @@ export interface SplatListItem {
   updated_at: string;
 }
 
+export interface DraftListingItem {
+  id: number;
+  title: string;
+  description: string;
+  display_address: string | null;
+  city: string;
+  state: string;
+  country: string;
+  postal_code: string;
+  price: string | number | null;
+  currency: string | null;
+  area: string | number | null;
+  area_unit_display: string | null;
+  area_display: string | null;
+  area_preferred: string | number | null;
+  area_preferred_unit: string | null;
+  price_preferred: string | number | null;
+  price_preferred_currency: string | null;
+  is_complete: boolean;
+  is_portfolio_visible: boolean;
+  specs?: {
+    layout?: {
+      bedrooms?: number | string | null;
+      bathrooms?: number | string | null;
+      rooms?: number | string | null;
+    };
+    [key: string]: unknown;
+  };
+  created_at: string;
+  updated_at: string;
+}
+
 export interface SplatViewerPayload {
   splat_id: number;
   draft_id: number;
@@ -123,4 +155,11 @@ export interface SplatViewerPayload {
   signed_outputs: Record<string, string>;
   metadata: Record<string, unknown>;
   outputs_updated_at: string | null;
+  cameras?: CameraData | null;
+}
+
+export interface SplatsByDraftPayload {
+  splats: TourViewerData[];
+  parent_splat_id: number | null;
+  room_splat_ids: number[];
 }

@@ -15,7 +15,7 @@ export default function TourControls({ shots, currentIdx, onGoToShot, onPrev, on
 
   return (
     <div className="absolute bottom-4 left-1/2 z-20 w-[calc(100%-1rem)] max-w-[calc(100%-1rem)] -translate-x-1/2 animate-fade-in-up sm:bottom-6 sm:w-auto sm:max-w-[calc(100%-2rem)]">
-      <div className="flex items-center justify-center gap-1.5 rounded-full border border-white/10 bg-black/60 px-2 py-1.5 shadow-2xl backdrop-blur-xl">
+      <div className="flex items-center justify-center gap-1.5 rounded-full border border-white/10 bg-black/75 px-2 py-1.5 shadow-2xl">
         <button onClick={onPrev} className="p-1.5 rounded-full text-white/70 hover:text-white hover:bg-white/10 transition-colors" aria-label="Previous shot">
           <svg width="14" height="14" viewBox="0 0 16 16" fill="none">
             <path d="M10 12L6 8L10 4" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />

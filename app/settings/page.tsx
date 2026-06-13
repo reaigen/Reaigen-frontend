@@ -29,8 +29,8 @@ export default function SettingsPage() {
 
   return (
     <AppShell user={user} onLogout={logout}>
-      <div className="mx-auto max-w-2xl animate-fade-in space-y-6 sm:space-y-8">
-        <div className="rounded-[1.75rem] bg-card px-5 py-5 shadow-[0_10px_30px_rgba(15,23,42,0.04)] sm:px-6">
+      <div className="mx-auto max-w-5xl animate-fade-in space-y-6">
+        <div className="border-b border-border/70 pb-5">
           <h1 className="text-[22px] sm:text-2xl font-bold tracking-tight">{t("settings.title", lang)}</h1>
           <p className="text-[14px] text-muted-foreground mt-1">{t("settings.subtitle", lang)}</p>
         </div>

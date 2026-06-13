@@ -4,8 +4,9 @@ services:
       context: .
       dockerfile: Dockerfile
     ports:
-      - "3050:3050"
+      - "3055:3055"
     environment:
       - NODE_ENV=production
+      - HOSTNAME=0.0.0.0
       - REAIGEN_BACKEND_URL=http://host.docker.internal:80
     restart: unless-stopped

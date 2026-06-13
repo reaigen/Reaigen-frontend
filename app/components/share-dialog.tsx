@@ -65,6 +65,7 @@ const EXPIRY_PRESETS = [
   { label: "7 days", hours: 168 },
   { label: "30 days", hours: 720 },
 ] as const;
+const DEFAULT_EXPIRY_HOURS = 168;
 
 function closestPreset(hours: number): number {
   let best: number = EXPIRY_PRESETS[0].hours;
@@ -102,7 +103,7 @@ export function ShareDialog({ splatId, title, open, onClose }: ShareDialogProps)
   const [pin, setPin] = React.useState("");
   const [changingPin, setChangingPin] = React.useState(false);
   const [useExpiry, setUseExpiry] = React.useState(false);
-  const [expiryHours, setExpiryHours] = React.useState(168);
+  const [expiryHours, setExpiryHours] = React.useState(DEFAULT_EXPIRY_HOURS);
   const [maxViews, setMaxViews] = React.useState("");
 
   const copiedTimerRef = React.useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -116,7 +117,7 @@ export function ShareDialog({ splatId, title, open, onClose }: ShareDialogProps)
     };
   }, []);
 
-  // Load on open — auto-create if no existing share
+  // Load on open. New links are created only after the owner confirms access settings.
   React.useEffect(() => {
     if (!open) return;
     let cancelled = false;
@@ -128,6 +129,10 @@ export function ShareDialog({ splatId, title, open, onClose }: ShareDialogProps)
     setSaveSuccess(false);
     setLoading(true);
     setShowSettings(false);
+    setUsePin(true);
+    setUseExpiry(true);
+    setExpiryHours(DEFAULT_EXPIRY_HOURS);
+    setMaxViews("");
     setPin("");
     setChangingPin(false);
 
@@ -148,26 +153,6 @@ export function ShareDialog({ splatId, title, open, onClose }: ShareDialogProps)
         try { const a = await getShareAnalytics(existing.id); if (!cancelled) setStats(a.stats); } catch {}
         if (!cancelled) setLoading(false);
       } else {
-        // Auto-create a permanent share immediately
-        try {
-          const s = await createSplatShare(splatId, {});
-          if (cancelled) return;
-          setShare(s);
-          setUsePin(false);
-          setUseExpiry(false);
-          setExpiryHours(168);
-          setMaxViews("");
-          // Auto-copy the new link
-          const url = `${window.location.origin}/shared/${s.token}`;
-          copyToClipboard(url).then((ok) => {
-            if (ok && !cancelled) {
-              setCopied(true);
-              copiedTimerRef.current = setTimeout(() => setCopied(false), 3000);
-            }
-          });
-        } catch {
-          if (!cancelled) setError("Failed to create share link");
-        }
         if (!cancelled) setLoading(false);
       }
     });
@@ -185,6 +170,53 @@ export function ShareDialog({ splatId, title, open, onClose }: ShareDialogProps)
       copiedTimerRef.current = setTimeout(() => setCopied(false), 2000);
     }
   }, [shareUrl]);
+
+  const handleCreateShare = React.useCallback(async () => {
+    if (usePin && pin.length < 4) {
+      setError("Enter a 4-10 digit PIN");
+      return;
+    }
+
+    const mv = parseInt(maxViews);
+    const opts: { share_type?: string; pin?: string; expires_in_hours?: number; max_access_count?: number } = {};
+    if (usePin) {
+      opts.share_type = "pin";
+      opts.pin = pin;
+    } else if (useExpiry) {
+      opts.share_type = "temporary";
+    } else {
+      opts.share_type = "permanent";
+    }
+    if (useExpiry) opts.expires_in_hours = expiryHours;
+    if (mv > 0) opts.max_access_count = mv;
+
+    setSaving(true);
+    setError(null);
+    try {
+      const s = await createSplatShare(splatId, opts);
+      setShare(s);
+      setPin("");
+      setChangingPin(false);
+      setUsePin(s.requires_pin);
+      setUseExpiry(!!s.expires_at);
+      if (s.expires_at) {
+        const hrs = Math.max(1, Math.round((new Date(s.expires_at).getTime() - Date.now()) / 3600000));
+        setExpiryHours(closestPreset(hrs));
+      }
+      setMaxViews(s.max_access_count ? String(s.max_access_count) : "");
+      const url = `${window.location.origin}/shared/${s.token}`;
+      copyToClipboard(url).then((ok) => {
+        if (ok) {
+          setCopied(true);
+          copiedTimerRef.current = setTimeout(() => setCopied(false), 3000);
+        }
+      });
+    } catch {
+      setError("Failed to create link");
+    } finally {
+      setSaving(false);
+    }
+  }, [splatId, usePin, pin, useExpiry, expiryHours, maxViews]);
 
   // ── Save settings ──
   const handleSave = React.useCallback(async () => {
@@ -269,7 +301,7 @@ export function ShareDialog({ splatId, title, open, onClose }: ShareDialogProps)
       setShare(null);
       setConfirmRevoke(false);
       setShowSettings(false);
-      setUsePin(false); setPin(""); setUseExpiry(false); setExpiryHours(168); setMaxViews("");
+      setUsePin(true); setPin(""); setUseExpiry(true); setExpiryHours(DEFAULT_EXPIRY_HOURS); setMaxViews("");
     } catch { setError("Failed to revoke"); }
     setActionLoading(false);
   }, [share]);
@@ -292,7 +324,7 @@ export function ShareDialog({ splatId, title, open, onClose }: ShareDialogProps)
     <div className="fixed inset-0 z-50 flex items-end justify-center sm:items-center" role="dialog" aria-modal="true" aria-label={`Share ${title}`}>
       <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" onClick={onClose} />
 
-      <div className="relative mx-0 w-full max-w-sm max-h-[min(92dvh,48rem)] overflow-y-auto rounded-t-3xl border border-border bg-background shadow-2xl sm:mx-4 sm:max-h-[90dvh] sm:rounded-2xl">
+      <div className="relative mx-0 w-full max-w-lg max-h-[min(92dvh,48rem)] overflow-y-auto rounded-t-2xl border border-border bg-background shadow-2xl sm:mx-4 sm:max-h-[90dvh] sm:rounded-lg">
         {/* Header */}
         <div className="flex items-center justify-between px-5 py-3.5 border-b border-border">
           <div className="flex items-center gap-2">
@@ -307,42 +339,106 @@ export function ShareDialog({ splatId, title, open, onClose }: ShareDialogProps)
         {loading ? (
           <div className="flex flex-col items-center justify-center py-12 gap-2">
             <div className="animate-spin h-5 w-5 border-2 border-foreground/20 border-t-foreground rounded-full" />
-            <p className="text-xs text-muted-foreground">Creating link...</p>
+            <p className="text-xs text-muted-foreground">Checking sharing status...</p>
           </div>
         ) : !share ? (
-          /* No share (revoked or failed to create) */
-          <div className="px-5 py-6 space-y-3 text-center">
+          <div className="px-5 py-5 space-y-4">
             {error && (
               <div className="rounded-lg bg-destructive/5 border border-destructive/20 px-3 py-2">
                 <p className="text-xs text-destructive">{error}</p>
               </div>
             )}
-            <p className="text-sm text-muted-foreground">No active share link.</p>
+            <div>
+              <p className="text-sm font-medium">Create a controlled link</p>
+              <p className="text-xs text-muted-foreground mt-1">
+                Choose who can open this tour before a link exists.
+              </p>
+            </div>
+
+            <div className="space-y-0 rounded-xl border border-border divide-y divide-border">
+              <div className="px-3.5 py-3 space-y-2">
+                <div className="flex items-center justify-between gap-4">
+                  <div>
+                    <p className="text-sm font-medium">Require PIN</p>
+                    <p className="text-[11px] text-muted-foreground">Best for clients, sellers, and private previews</p>
+                  </div>
+                  <Switch checked={usePin} onCheckedChange={(v) => { setUsePin(v); if (!v) setPin(""); }} size="sm" />
+                </div>
+                {usePin && (
+                  <Input
+                    type="text"
+                    inputMode="numeric"
+                    pattern="[0-9]*"
+                    placeholder="Enter 4-10 digit PIN"
+                    value={pin}
+                    onChange={(e) => setPin(e.target.value.replace(/\D/g, "").slice(0, 10))}
+                    className="h-8 text-sm"
+                    autoFocus
+                  />
+                )}
+              </div>
+
+              <div className="px-3.5 py-3 space-y-2">
+                <div className="flex items-start justify-between gap-4">
+                  <div className="min-w-0">
+                    <p className="text-sm font-medium">Auto-expire</p>
+                    <p className="text-[11px] text-muted-foreground">Limit how long the link can circulate</p>
+                  </div>
+                  <Switch checked={useExpiry} onCheckedChange={setUseExpiry} size="sm" />
+                </div>
+                {useExpiry && (
+                  <div className="flex items-center gap-1.5 flex-wrap">
+                    {EXPIRY_PRESETS.map((p) => (
+                      <button
+                        key={p.hours}
+                        type="button"
+                        onClick={() => setExpiryHours(p.hours)}
+                        className={`px-2.5 py-1 rounded-lg text-xs font-medium transition-all ${
+                          expiryHours === p.hours
+                            ? "bg-foreground text-background"
+                            : "bg-muted text-muted-foreground hover:text-foreground"
+                        }`}
+                      >
+                        {p.label}
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              <div className="px-3.5 py-3">
+                <div className="flex items-start justify-between gap-4">
+                  <div className="min-w-0">
+                    <p className="text-sm font-medium">View limit</p>
+                    <p className="text-[11px] text-muted-foreground">Optional cap on opens</p>
+                  </div>
+                  <Input
+                    type="number"
+                    min={1}
+                    placeholder="None"
+                    value={maxViews}
+                    onChange={(e) => setMaxViews(e.target.value)}
+                    className="h-8 w-full max-w-[7rem] text-sm text-right"
+                  />
+                </div>
+              </div>
+            </div>
+
+            {!usePin && !useExpiry && (
+              <div className="rounded-lg border border-border bg-muted/25 px-3 py-2">
+                <p className="text-xs text-muted-foreground">
+                  Anyone with this link will be able to open the tour until you pause or revoke it.
+                </p>
+              </div>
+            )}
+
             <Button
               className="w-full h-9"
-              onClick={async () => {
-                setSaving(true);
-                setError(null);
-                try {
-                  const s = await createSplatShare(splatId, {});
-                  setShare(s);
-                  setUsePin(false);
-                  setUseExpiry(false);
-                  const url = `${window.location.origin}/shared/${s.token}`;
-                  copyToClipboard(url).then((ok) => {
-                    if (ok) {
-                      setCopied(true);
-                      copiedTimerRef.current = setTimeout(() => setCopied(false), 3000);
-                    }
-                  });
-                } catch {
-                  setError("Failed to create link");
-                }
-                setSaving(false);
-              }}
+              onClick={handleCreateShare}
+              disabled={saving || (usePin && pin.length < 4)}
               loading={saving}
             >
-              Create new link
+              Create and copy link
             </Button>
           </div>
         ) : (
@@ -386,10 +482,8 @@ export function ShareDialog({ splatId, title, open, onClose }: ShareDialogProps)
             {/* Status + stats row */}
             <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
               <div className="flex flex-wrap items-center gap-2">
-                <span className={`inline-flex items-center gap-1 text-[11px] font-medium px-2 py-0.5 rounded-full ${
-                  isActive ? "bg-foreground/10 text-foreground" : "bg-amber-500/10 text-amber-600"
-                }`}>
-                  <span className={`w-1.5 h-1.5 rounded-full ${isActive ? "bg-foreground" : "bg-amber-500"}`} />
+                <span className="inline-flex items-center gap-1 rounded-full bg-foreground/10 px-2 py-0.5 text-[11px] font-medium text-foreground">
+                  <span className={`w-1.5 h-1.5 rounded-full ${isActive ? "bg-foreground" : "bg-foreground/45"}`} />
                   {isActive ? "Active" : "Paused"}
                 </span>
                 {viewCount > 0 && (

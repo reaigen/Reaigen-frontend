@@ -24,8 +24,26 @@ async function copyToClipboard(text: string): Promise<boolean> {
 }
 
 function StatusDot({ status }: { status: string }) {
-  const c: Record<string, string> = { active: "bg-emerald-500", paused: "bg-amber-500", expired: "bg-foreground/30", revoked: "bg-destructive" };
+  const c: Record<string, string> = { active: "bg-foreground", paused: "bg-foreground/45", expired: "bg-foreground/25", revoked: "bg-foreground/15" };
   return <span className={`w-2 h-2 rounded-full ${c[status] ?? c.expired}`} />;
+}
+
+function shareUrl(token: string) {
+  return `${window.location.origin}/shared/${token}`;
+}
+
+function maskedShareUrl(token: string) {
+  const prefix = typeof window !== "undefined" ? `${window.location.origin}/shared/` : "/shared/";
+  return `${prefix}${token.slice(0, 6)}...${token.slice(-4)}`;
+}
+
+function accessLabel(share: ShareData) {
+  const controls = [
+    share.requires_pin && "PIN",
+    share.expires_at && "expires",
+    share.max_access_count && "limited",
+  ].filter(Boolean);
+  return controls.length ? controls.join(" · ") : "public";
 }
 
 export default function SharesPage() {
@@ -75,7 +93,7 @@ export default function SharesPage() {
   }, [expandedId, loadStats]);
 
   const handleCopy = React.useCallback(async (share: ShareData) => {
-    if (await copyToClipboard(`${window.location.origin}/shared/${share.token}`)) {
+    if (await copyToClipboard(shareUrl(share.token))) {
       setCopiedId(share.id);
       setTimeout(() => setCopiedId(null), 2000);
     }
@@ -109,30 +127,37 @@ export default function SharesPage() {
 
   const lang = getUserLanguage(user.localization);
   const filtered = filter === "active" ? shares.filter((s) => s.status === "active" || s.status === "paused") : shares;
+  const activeShares = shares.filter((s) => s.status === "active");
+  const pausedShares = shares.filter((s) => s.status === "paused");
+  const unprotectedShares = activeShares.filter((s) => !s.requires_pin && !s.expires_at && !s.max_access_count);
+  const failedPinAttempts = Object.values(stats).reduce((total, item) => total + item.failed_pin_attempts, 0);
 
   return (
     <AppShell user={user} onLogout={logout}>
-      <div className="animate-fade-in space-y-5 sm:space-y-6">
+      <div className="mx-auto max-w-5xl animate-fade-in space-y-6">
         {/* Header */}
-        <div className="flex flex-col gap-3 rounded-[1.75rem] bg-card px-5 py-5 shadow-[0_10px_30px_rgba(15,23,42,0.04)] sm:flex-row sm:items-center sm:justify-between sm:px-6">
+        <div className="border-b border-border/70 pb-5">
           <div className="min-w-0">
             <h1 className="text-[22px] sm:text-2xl font-bold tracking-tight">{t("shares.title", lang)}</h1>
             <p className="text-[13px] text-muted-foreground mt-0.5">{t("shares.manage", lang)}</p>
           </div>
-          <div className="flex w-full overflow-hidden rounded-lg border border-border sm:w-auto">
-            <button
-              onClick={() => setFilter("all")}
-              className={`flex-1 px-3 py-2 text-[12px] font-medium transition-colors sm:flex-none ${filter === "all" ? "bg-foreground text-background" : "text-foreground/50 hover:text-foreground"}`}
+        </div>
+
+        <div className="flex flex-col gap-3 border-b border-border/70 pb-4 sm:flex-row sm:items-center sm:justify-between">
+          <p className="text-[12px] text-muted-foreground">
+            {activeShares.length} active, {pausedShares.length} paused, {unprotectedShares.length} public without limits, {failedPinAttempts} failed PIN attempts loaded
+          </p>
+          <label className="flex items-center gap-2 text-[12px] text-muted-foreground">
+            <span>View</span>
+            <select
+              value={filter}
+              onChange={(e) => setFilter(e.target.value as "all" | "active")}
+              className="h-9 rounded-lg border border-border bg-background px-3 text-[13px] text-foreground outline-none focus:border-foreground/40"
             >
-              {t("shares.allShares", lang)}
-            </button>
-            <button
-              onClick={() => setFilter("active")}
-              className={`flex-1 border-l border-border px-3 py-2 text-[12px] font-medium transition-colors sm:flex-none ${filter === "active" ? "bg-foreground text-background" : "text-foreground/50 hover:text-foreground"}`}
-            >
-              {t("shares.activeOnly", lang)}
-            </button>
-          </div>
+              <option value="all">{t("shares.allShares", lang)}</option>
+              <option value="active">{t("shares.activeOnly", lang)}</option>
+            </select>
+          </label>
         </div>
 
         {/* List */}
@@ -152,7 +177,13 @@ export default function SharesPage() {
             <p className="text-[12px] text-muted-foreground mt-1">{t("shares.noSharesHint", lang)}</p>
           </div>
         ) : (
-          <div className="space-y-2">
+          <div className="border-y border-border/70">
+            <div className="hidden grid-cols-[minmax(0,1fr)_8rem_9rem_5rem] border-b border-border/70 py-2 text-[11px] font-medium uppercase tracking-wide text-muted-foreground sm:grid">
+              <span>Tour</span>
+              <span>Status</span>
+              <span>Access</span>
+              <span className="text-right">Actions</span>
+            </div>
             {filtered.map((share) => {
               const isExpanded = expandedId === share.id;
               const isCopied = copiedId === share.id;
@@ -164,68 +195,80 @@ export default function SharesPage() {
               const tourName = share.title || draftTitles[share.draft] || "Untitled Tour";
 
               return (
-                <div key={share.id} className={`rounded-[1.4rem] border bg-card transition-colors ${isExpanded ? "border-border shadow-[0_12px_24px_rgba(15,23,42,0.06)]" : "border-border/60 hover:border-border hover:shadow-[0_12px_24px_rgba(15,23,42,0.04)]"}`}>
+                <div key={share.id} className="border-b border-border/60 last:border-b-0">
                   {/* Main row */}
-                  <div className="px-4 py-3.5 cursor-pointer" onClick={() => toggle(share.id)}>
-                    <div className="flex items-start gap-3 sm:items-center">
-                      <StatusDot status={share.status} />
-                      <div className="flex-1 min-w-0">
+                  <button type="button" className="w-full px-0 py-4 text-left" onClick={() => toggle(share.id)}>
+                    <div className="grid gap-3 sm:grid-cols-[minmax(0,1fr)_8rem_9rem_5rem] sm:items-center">
+                      <div className="flex min-w-0 items-start gap-3">
+                        <StatusDot status={share.status} />
+                        <div className="min-w-0">
                         <p className="text-[14px] font-medium truncate">{tourName}</p>
                         <p className="text-[11px] text-muted-foreground mt-0.5">
                           {share.access_count} {t("shares.views", lang)}
-                          {share.requires_pin && " · PIN"}
+                          {` · ${accessLabel(share)}`}
                           {share.expires_at && ` · ${t("shares.expires", lang)} ${new Date(share.expires_at).toLocaleDateString()}`}
                           {share.max_access_count && ` · ${t("shares.viewLimit", lang)} ${share.max_access_count}`}
                         </p>
+                        </div>
                       </div>
-                      <div className="flex shrink-0 items-center gap-1.5 self-start sm:self-center">
-                        {isLive && (
-                          <button
+                      <div className="hidden text-[12px] text-muted-foreground sm:block">{share.status}</div>
+                      <div className="hidden text-[12px] text-muted-foreground sm:block">{accessLabel(share)}</div>
+                      <div className="flex shrink-0 items-center justify-start gap-1.5 self-start sm:justify-end sm:self-center">
+                        {isActive && (
+                          <span
                             onClick={(e) => { e.stopPropagation(); handleCopy(share); }}
-                            className={`h-7 px-2.5 rounded-md text-[11px] font-medium transition-all ${isCopied ? "bg-foreground text-background" : "bg-foreground/[0.06] text-foreground/60 hover:text-foreground hover:bg-foreground/[0.1]"}`}
+                            className={`inline-flex h-7 items-center px-2.5 rounded-md text-[11px] font-medium transition-all ${isCopied ? "bg-foreground text-background" : "bg-foreground/[0.06] text-foreground/60 hover:text-foreground hover:bg-foreground/[0.1]"}`}
                           >
                             {isCopied ? t("shares.copied", lang) : t("shares.copyLink", lang)}
-                          </button>
+                          </span>
                         )}
                         <svg width="14" height="14" viewBox="0 0 16 16" fill="none" className={`text-foreground/30 transition-transform ${isExpanded ? "rotate-180" : ""}`}>
                           <path d="M4 6L8 10L12 6" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
                         </svg>
                       </div>
                     </div>
-                  </div>
+                  </button>
 
                   {/* Expanded panel */}
                   {isExpanded && (
-                    <div className="px-4 pb-4 space-y-3 border-t border-border/40 pt-3">
+                    <div className="space-y-4 border-t border-border/50 pb-4 pt-4">
                       {/* Analytics */}
                       {statsLoading === share.id ? (
                         <div className="flex justify-center py-3">
                           <div className="animate-spin h-4 w-4 border-2 border-foreground/20 border-t-foreground rounded-full" />
                         </div>
                       ) : shareStats ? (
-                        <div className="grid grid-cols-1 gap-2 sm:grid-cols-3 sm:gap-3">
-                          <div className="rounded-lg bg-muted/50 px-3 py-2.5 text-center">
-                            <p className="text-[18px] font-semibold tabular-nums">{shareStats.total_accesses}</p>
-                            <p className="text-[10px] text-muted-foreground mt-0.5">{t("shares.totalViews", lang)}</p>
+                        <div className="grid grid-cols-3 gap-4">
+                          <div>
+                            <p className="text-[17px] font-semibold tabular-nums">{shareStats.total_accesses}</p>
+                            <p className="text-[11px] text-muted-foreground mt-0.5">{t("shares.totalViews", lang)}</p>
                           </div>
-                          <div className="rounded-lg bg-muted/50 px-3 py-2.5 text-center">
-                            <p className="text-[18px] font-semibold tabular-nums">{shareStats.unique_ips}</p>
-                            <p className="text-[10px] text-muted-foreground mt-0.5">{t("shares.uniqueVisitors", lang)}</p>
+                          <div>
+                            <p className="text-[17px] font-semibold tabular-nums">{shareStats.unique_ips}</p>
+                            <p className="text-[11px] text-muted-foreground mt-0.5">{t("shares.uniqueVisitors", lang)}</p>
                           </div>
-                          <div className="rounded-lg bg-muted/50 px-3 py-2.5 text-center">
-                            <p className={`text-[18px] font-semibold tabular-nums ${shareStats.failed_pin_attempts > 0 ? "text-destructive" : ""}`}>
+                          <div>
+                            <p className="text-[17px] font-semibold tabular-nums">
                               {shareStats.failed_pin_attempts}
                             </p>
-                            <p className="text-[10px] text-muted-foreground mt-0.5">{t("shares.failedPins", lang)}</p>
+                            <p className="text-[11px] text-muted-foreground mt-0.5">{t("shares.failedPins", lang)}</p>
                           </div>
                         </div>
                       ) : null}
 
                       {/* Link URL */}
-                      <div className="flex flex-col gap-1.5 rounded-lg bg-muted/30 px-3 py-2 sm:flex-row sm:items-center sm:gap-2">
+                      <div className="flex flex-col gap-1.5 border-t border-border/50 pt-3 sm:flex-row sm:items-center sm:gap-2">
                         <p className="text-[11px] font-mono truncate text-foreground/50 flex-1">
-                          {typeof window !== "undefined" ? `${window.location.origin}/shared/${share.token}` : `/shared/${share.token}`}
+                          {maskedShareUrl(share.token)}
                         </p>
+                        {isActive && (
+                          <button
+                            onClick={() => handleCopy(share)}
+                            className="text-[11px] font-medium text-foreground/50 hover:text-foreground transition-colors"
+                          >
+                            {isCopied ? t("shares.copied", lang) : t("shares.copyLink", lang)}
+                          </button>
+                        )}
                         {share.max_access_count && (
                           <span className="text-[10px] text-muted-foreground shrink-0">{t("shares.viewLimit", lang)}: {share.max_access_count}</span>
                         )}

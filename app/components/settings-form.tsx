@@ -2,7 +2,6 @@
 
 import * as React from "react";
 import { Button } from "../lib/ui/button";
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "../lib/ui/card";
 import { Input } from "../lib/ui/input";
 import { Label } from "../lib/ui/label";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "../lib/ui/tabs";
@@ -23,17 +22,61 @@ import {
   type PreferenceOption,
 } from "../lib/api/client";
 import { t, getUserLanguage } from "../lib/i18n";
+import { cn } from "../lib/utils";
 
 function parseError(err: unknown): string {
   if (err instanceof ApiError) {
+    if (err.status >= 500) return "Something went wrong. Please try again.";
     try {
       const body = JSON.parse(err.body);
-      return body.detail ?? Object.values(body).flat().join(", ");
+      const detail = body.detail ?? Object.values(body).flat().join(", ");
+      return String(detail || "Request failed").slice(0, 240);
     } catch {
-      return err.body || "Request failed";
+      return err.body ? err.body.slice(0, 240) : "Request failed";
     }
   }
   return err instanceof Error ? err.message : "Unknown error";
+}
+
+function Card({ className, ...props }: React.HTMLAttributes<HTMLElement>) {
+  return (
+    <section
+      className={cn("border-t border-border/70 pt-6 first:border-t-0 first:pt-0", className)}
+      {...props}
+    />
+  );
+}
+
+function CardHeader({ className, ...props }: React.HTMLAttributes<HTMLDivElement>) {
+  return <div className={cn("pb-4", className)} {...props} />;
+}
+
+function CardTitle({ className, ...props }: React.HTMLAttributes<HTMLHeadingElement>) {
+  return <h2 className={cn("text-[15px] font-semibold tracking-normal", className)} {...props} />;
+}
+
+function CardDescription({ className, ...props }: React.HTMLAttributes<HTMLParagraphElement>) {
+  return <p className={cn("mt-1 text-[13px] leading-relaxed text-muted-foreground", className)} {...props} />;
+}
+
+function CardContent({ className, ...props }: React.HTMLAttributes<HTMLDivElement>) {
+  return <div className={cn("max-w-2xl", className)} {...props} />;
+}
+
+function formatAccountDate(value: string | null | undefined) {
+  if (!value) return "Not recorded";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "Not recorded";
+  return date.toLocaleDateString(undefined, { year: "numeric", month: "short", day: "numeric" });
+}
+
+function DataRow({ label, value }: { label: string; value: React.ReactNode }) {
+  return (
+    <div className="grid grid-cols-1 gap-1 border-b border-border/60 py-3 last:border-b-0 sm:grid-cols-[12rem_minmax(0,1fr)] sm:gap-4">
+      <dt className="text-[12px] text-muted-foreground">{label}</dt>
+      <dd className="min-w-0 text-[13px] font-medium text-foreground/85">{value}</dd>
+    </div>
+  );
 }
 
 /* ── Profile Tab ─────────────────────────────────────────────────────── */
@@ -288,6 +331,14 @@ function PrivacyTab({ user, onSaved, lang }: { user: UserProfile; onSaved: () =>
   const [error, setError] = React.useState<string | null>(null);
   const [success, setSuccess] = React.useState(false);
 
+  React.useEffect(() => {
+    if (!isPublic) {
+      setShowEmail(false);
+      setShowPhone(false);
+      setAllowContact(false);
+    }
+  }, [isPublic]);
+
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     setError(null);
@@ -296,9 +347,9 @@ function PrivacyTab({ user, onSaved, lang }: { user: UserProfile; onSaved: () =>
       setLoading(true);
       await updateSellerProfile({
         is_public: isPublic,
-        show_email: showEmail,
-        show_phone: showPhone,
-        allow_contact: allowContact,
+        show_email: isPublic ? showEmail : false,
+        show_phone: isPublic ? showPhone : false,
+        allow_contact: isPublic ? allowContact : false,
       });
       setSuccess(true);
       onSaved();
@@ -309,15 +360,52 @@ function PrivacyTab({ user, onSaved, lang }: { user: UserProfile; onSaved: () =>
     }
   }
 
+  const visibleContactDetails = [showEmail, showPhone].filter(Boolean).length;
+  const hasPublicContactDetails = isPublic && visibleContactDetails > 0;
+  const statusLabel = !isPublic
+    ? t("settings.privacy.statusPrivate", lang)
+    : allowContact || hasPublicContactDetails
+      ? t("settings.privacy.statusPublicContact", lang)
+      : t("settings.privacy.statusPublicLimited", lang);
+  const statusHint = !isPublic
+    ? t("settings.privacy.statusPrivateHint", lang)
+    : hasPublicContactDetails
+      ? t("settings.privacy.statusPublicContactHint", lang)
+      : t("settings.privacy.statusPublicLimitedHint", lang);
+
+  const gdpr = user.gdpr;
+  const licenseStatus = p?.is_real_estate_professional
+    ? (p.license_number ? `${p.license_number}${p.agency_name ? ` · ${p.agency_name}` : ""}` : "Professional profile enabled, license not entered")
+    : "Not marked as a real estate professional";
+
   return (
-    <Card>
-      <CardHeader>
-        <CardTitle>{t("settings.privacy.title", lang)}</CardTitle>
-        <CardDescription>{t("settings.privacy.subtitle", lang)}</CardDescription>
-      </CardHeader>
-      <CardContent>
-        <form className="space-y-1" onSubmit={handleSubmit}>
-          <div className="divide-y divide-border">
+    <div className="space-y-6">
+      <Card>
+        <CardHeader>
+          <CardTitle>{t("settings.privacy.title", lang)}</CardTitle>
+          <CardDescription>{t("settings.privacy.subtitle", lang)}</CardDescription>
+        </CardHeader>
+        <CardContent>
+          <form className="space-y-4" onSubmit={handleSubmit} aria-describedby="privacy-status-summary">
+          <div
+            id="privacy-status-summary"
+            role="status"
+            aria-live="polite"
+            className="rounded-lg border border-border bg-muted/25 px-4 py-3"
+          >
+            <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+              <div className="min-w-0">
+                <p className="text-sm font-medium">{statusLabel}</p>
+                <p className="text-[12px] text-muted-foreground mt-1 leading-relaxed">{statusHint}</p>
+              </div>
+              <span className="shrink-0 rounded-full bg-foreground/10 px-2.5 py-1 text-[11px] font-medium text-foreground/70">
+                {isPublic ? t("settings.privacy.badgePublic", lang) : t("settings.privacy.badgePrivate", lang)}
+              </span>
+            </div>
+          </div>
+
+          <fieldset className="divide-y divide-border">
+            <legend className="sr-only">{t("settings.privacy.title", lang)}</legend>
             <ToggleRow
               label={t("settings.privacy.publicProfile", lang)}
               hint={t("settings.privacy.publicProfileHint", lang)}
@@ -326,31 +414,80 @@ function PrivacyTab({ user, onSaved, lang }: { user: UserProfile; onSaved: () =>
             />
             <ToggleRow
               label={t("settings.privacy.showEmail", lang)}
-              hint={t("settings.privacy.showEmailHint", lang)}
+              hint={isPublic ? t("settings.privacy.showEmailHint", lang) : t("settings.privacy.disabledByPrivate", lang)}
               checked={showEmail}
               onChange={setShowEmail}
+              disabled={!isPublic}
             />
             <ToggleRow
               label={t("settings.privacy.showPhone", lang)}
-              hint={t("settings.privacy.showPhoneHint", lang)}
+              hint={isPublic ? t("settings.privacy.showPhoneHint", lang) : t("settings.privacy.disabledByPrivate", lang)}
               checked={showPhone}
               onChange={setShowPhone}
+              disabled={!isPublic}
             />
             <ToggleRow
               label={t("settings.privacy.allowContact", lang)}
-              hint={t("settings.privacy.allowContactHint", lang)}
+              hint={isPublic ? t("settings.privacy.allowContactHint", lang) : t("settings.privacy.disabledByPrivate", lang)}
               checked={allowContact}
               onChange={setAllowContact}
+              disabled={!isPublic}
             />
-          </div>
-          {error && <p className="text-sm text-destructive pt-3">{error}</p>}
-          {success && <p className="text-sm text-muted-foreground pt-3">{t("settings.privacy.saved", lang)}</p>}
-          <div className="pt-4">
-            <Button type="submit" loading={loading}>{t("settings.privacy.save", lang)}</Button>
-          </div>
-        </form>
-      </CardContent>
-    </Card>
+          </fieldset>
+          {hasPublicContactDetails && (
+            <div className="rounded-lg border border-border bg-muted/25 px-3 py-2" role="note">
+              <p className="text-[12px] text-muted-foreground">{t("settings.privacy.publicContactWarning", lang)}</p>
+            </div>
+          )}
+          {error && <p className="text-sm text-destructive pt-3" role="alert">{error}</p>}
+          {success && <p className="text-sm text-muted-foreground pt-3" role="status">{t("settings.privacy.saved", lang)}</p>}
+            <div className="pt-1">
+              <Button type="submit" loading={loading}>{t("settings.privacy.save", lang)}</Button>
+            </div>
+          </form>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>Terms, Data, and Licensing</CardTitle>
+          <CardDescription>
+            Account records that affect how Reaigen stores your data, presents your profile, and identifies your professional credentials.
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <dl className="rounded-lg border border-border/70 px-4">
+            <DataRow
+              label="Data processing"
+              value={gdpr?.data_processing_consent ? "Allowed" : "Not allowed"}
+            />
+            <DataRow
+              label="GDPR consent"
+              value={gdpr?.has_given_consent ? `Given ${formatAccountDate(gdpr.consent_date)}` : "Not recorded"}
+            />
+            <DataRow
+              label="Privacy version"
+              value={gdpr?.consent_version || "Not recorded"}
+            />
+            <DataRow
+              label="Marketing consent"
+              value={gdpr?.marketing_consent ? "Allowed" : "Not allowed"}
+            />
+            <DataRow
+              label="Terms"
+              value={`Accepted when this account was created on ${formatAccountDate(user.date_joined)}`}
+            />
+            <DataRow
+              label="License"
+              value={licenseStatus}
+            />
+          </dl>
+          <p className="mt-3 text-[12px] leading-relaxed text-muted-foreground">
+            Profile visibility controls what other people can see. GDPR consent and terms records are account-level data kept by the backend for compliance and audit history.
+          </p>
+        </CardContent>
+      </Card>
+    </div>
   );
 }
 
@@ -448,19 +585,30 @@ function NotificationsTab({ user, onSaved, lang }: { user: UserProfile; onSaved:
 
 /* ── Toggle Row (reusable) ───────────────────────────────────────────── */
 
-function ToggleRow({ label, hint, checked, onChange }: {
+function ToggleRow({ label, hint, checked, onChange, disabled = false }: {
   label: string;
   hint?: string;
   checked: boolean;
   onChange: (v: boolean) => void;
+  disabled?: boolean;
 }) {
+  const id = React.useId();
+  const labelId = `${id}-label`;
+  const hintId = hint ? `${id}-hint` : undefined;
+
   return (
-    <div className="flex items-start justify-between gap-4 py-3.5">
+    <div className={`flex items-start justify-between gap-4 py-3.5 ${disabled ? "opacity-60" : ""}`}>
       <div className="min-w-0 pr-2">
-        <p className="text-sm font-medium">{label}</p>
-        {hint && <p className="text-[11px] text-muted-foreground mt-0.5">{hint}</p>}
+        <p id={labelId} className="text-sm font-medium">{label}</p>
+        {hint && <p id={hintId} className="text-[11px] text-muted-foreground mt-0.5">{hint}</p>}
       </div>
-      <Switch checked={checked} onCheckedChange={onChange} />
+      <Switch
+        checked={checked}
+        onCheckedChange={onChange}
+        disabled={disabled}
+        aria-labelledby={labelId}
+        aria-describedby={hintId}
+      />
     </div>
   );
 }
@@ -469,22 +617,45 @@ function ToggleRow({ label, hint, checked, onChange }: {
 
 const COMMON_TIMEZONES = [
   { code: "UTC", name: "UTC" },
-  { code: "Europe/Bratislava", name: "Europe/Bratislava (CET)" },
-  { code: "Europe/Prague", name: "Europe/Prague (CET)" },
-  { code: "Europe/Vienna", name: "Europe/Vienna (CET)" },
-  { code: "Europe/Berlin", name: "Europe/Berlin (CET)" },
-  { code: "Europe/London", name: "Europe/London (GMT)" },
-  { code: "Europe/Paris", name: "Europe/Paris (CET)" },
-  { code: "Europe/Warsaw", name: "Europe/Warsaw (CET)" },
-  { code: "Europe/Budapest", name: "Europe/Budapest (CET)" },
-  { code: "America/New_York", name: "America/New York (ET)" },
-  { code: "America/Los_Angeles", name: "America/Los Angeles (PT)" },
-  { code: "Australia/Sydney", name: "Australia/Sydney (AEST)" },
+  { code: "Europe/Bratislava", name: "Bratislava — Europe/Bratislava" },
+  { code: "Europe/Prague", name: "Prague — Europe/Prague" },
+  { code: "Europe/Vienna", name: "Vienna — Europe/Vienna" },
+  { code: "Europe/Berlin", name: "Berlin — Europe/Berlin" },
+  { code: "Europe/London", name: "London — Europe/London" },
+  { code: "Europe/Paris", name: "Paris — Europe/Paris" },
+  { code: "Europe/Warsaw", name: "Warsaw — Europe/Warsaw" },
+  { code: "Europe/Budapest", name: "Budapest — Europe/Budapest" },
+  { code: "America/New_York", name: "New York — America/New_York" },
+  { code: "America/Los_Angeles", name: "Los Angeles — America/Los_Angeles" },
+  { code: "Australia/Sydney", name: "Sydney — Australia/Sydney" },
 ];
 
 function flattenUnits(grouped: { METRIC?: PreferenceOption[]; IMPERIAL?: PreferenceOption[] } | null | undefined): PreferenceOption[] {
   if (!grouped) return [];
   return [...(grouped.METRIC ?? []), ...(grouped.IMPERIAL ?? [])];
+}
+
+function optionName(options: PreferenceOption[], code: string): string {
+  return options.find((option) => option.code === code)?.name ?? code;
+}
+
+function symbolFor(options: PreferenceOption[], code: string): string {
+  return options.find((option) => option.code === code)?.symbol ?? code;
+}
+
+function stableOptionLabel(option: PreferenceOption): string {
+  return option.symbol ? `${option.code} · ${option.name} (${option.symbol})` : `${option.code} · ${option.name}`;
+}
+
+function SettingsField({ label, children, hint }: { label: string; children: React.ReactNode; hint?: string }) {
+  const hintId = React.useId();
+  return (
+    <div className="grid min-h-[5.5rem] grid-rows-[auto_2.75rem_auto] gap-1.5">
+      <Label>{label}</Label>
+      {children}
+      <p id={hintId} className="min-h-4 text-[11px] leading-4 text-muted-foreground">{hint ?? ""}</p>
+    </div>
+  );
 }
 
 function LocalizationTab({ user, onSaved, lang }: { user: UserProfile; onSaved: () => void; lang: string }) {
@@ -556,6 +727,9 @@ function LocalizationTab({ user, onSaved, lang }: { user: UserProfile; onSaved: 
     { code: "US", name: "US (MM/DD/YYYY)" },
     { code: "ISO", name: "ISO 8601 (YYYY-MM-DD)" },
   ];
+  const formattedDateSample = dateFormat === "US" ? "06/11/2026" : dateFormat === "ISO" ? "2026-06-11" : "11.06.2026";
+  const formattedAreaSample = `82 ${symbolFor(areaUnits, areaUnit)}`;
+  const formattedDistanceSample = `1.4 ${symbolFor(distanceUnits, distanceUnit)}`;
 
   return (
     <Card>
@@ -565,87 +739,91 @@ function LocalizationTab({ user, onSaved, lang }: { user: UserProfile; onSaved: 
       </CardHeader>
       <CardContent>
         <form className="space-y-5" onSubmit={handleSubmit}>
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div className="space-y-1.5">
-              <Label>{t("settings.localization.language", lang)}</Label>
+          <div className="rounded-lg border border-border bg-muted/20 px-4 py-3">
+            <p className="text-[13px] font-medium">Format preview</p>
+            <div className="mt-2 grid grid-cols-1 gap-x-4 gap-y-1 text-[12px] sm:grid-cols-2">
+              <p className="text-muted-foreground">Date <span className="font-medium text-foreground">{formattedDateSample}</span></p>
+              <p className="text-muted-foreground">Currency <span className="font-medium text-foreground">{currency}</span></p>
+              <p className="text-muted-foreground">Area <span className="font-medium text-foreground">{formattedAreaSample}</span></p>
+              <p className="text-muted-foreground">Distance <span className="font-medium text-foreground">{formattedDistanceSample}</span></p>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 gap-x-4 gap-y-3 md:grid-cols-2">
+            <SettingsField label={t("settings.localization.language", lang)} hint={optionName(languages, language)}>
               <Select value={language} onValueChange={setLanguage}>
-                <SelectTrigger className="h-11"><SelectValue /></SelectTrigger>
+                <SelectTrigger className="h-11 rounded-md shadow-none"><SelectValue /></SelectTrigger>
                 <SelectContent>
                   {languages.map((l) => (
-                    <SelectItem key={l.code} value={l.code}>{l.name}</SelectItem>
+                    <SelectItem key={l.code} value={l.code}>{stableOptionLabel(l)}</SelectItem>
                   ))}
                 </SelectContent>
               </Select>
-            </div>
-            <div className="space-y-1.5">
-              <Label>{t("settings.localization.timezone", lang)}</Label>
+            </SettingsField>
+            <SettingsField label={t("settings.localization.timezone", lang)} hint={timezone}>
               <Select value={timezone} onValueChange={setTimezone}>
-                <SelectTrigger className="h-11"><SelectValue /></SelectTrigger>
+                <SelectTrigger className="h-11 rounded-md shadow-none"><SelectValue /></SelectTrigger>
                 <SelectContent>
                   {COMMON_TIMEZONES.map((tz) => (
                     <SelectItem key={tz.code} value={tz.code}>{tz.name}</SelectItem>
                   ))}
                 </SelectContent>
               </Select>
-            </div>
+            </SettingsField>
           </div>
 
           <Separator />
 
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div className="space-y-1.5">
-              <Label>{t("settings.localization.currency", lang)}</Label>
+          <div className="grid grid-cols-1 gap-x-4 gap-y-3 md:grid-cols-2">
+            <SettingsField label={t("settings.localization.currency", lang)} hint={optionName(currencies, currency)}>
               <Select value={currency} onValueChange={setCurrency}>
-                <SelectTrigger className="h-11"><SelectValue /></SelectTrigger>
+                <SelectTrigger className="h-11 rounded-md shadow-none"><SelectValue /></SelectTrigger>
                 <SelectContent>
                   {currencies.map((c) => (
                     <SelectItem key={c.code} value={c.code}>
-                      {c.symbol ? `${c.code} — ${c.name} (${c.symbol})` : `${c.code} — ${c.name}`}
+                      {stableOptionLabel(c)}
                     </SelectItem>
                   ))}
                 </SelectContent>
               </Select>
-            </div>
-            <div className="space-y-1.5">
-              <Label>{t("settings.localization.dateFormat", lang)}</Label>
+            </SettingsField>
+            <SettingsField label={t("settings.localization.dateFormat", lang)} hint={formattedDateSample}>
               <Select value={dateFormat} onValueChange={setDateFormat}>
-                <SelectTrigger className="h-11"><SelectValue /></SelectTrigger>
+                <SelectTrigger className="h-11 rounded-md shadow-none"><SelectValue /></SelectTrigger>
                 <SelectContent>
                   {dateFormats.map((d) => (
-                    <SelectItem key={d.code} value={d.code}>{d.name}</SelectItem>
+                    <SelectItem key={d.code} value={d.code}>{d.code} · {d.name}</SelectItem>
                   ))}
                 </SelectContent>
               </Select>
-            </div>
+            </SettingsField>
           </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div className="space-y-1.5">
-              <Label>{t("settings.localization.areaUnit", lang)}</Label>
+          <div className="grid grid-cols-1 gap-x-4 gap-y-3 md:grid-cols-2">
+            <SettingsField label={t("settings.localization.areaUnit", lang)} hint={formattedAreaSample}>
               <Select value={areaUnit} onValueChange={setAreaUnit}>
-                <SelectTrigger className="h-11"><SelectValue /></SelectTrigger>
+                <SelectTrigger className="h-11 rounded-md shadow-none"><SelectValue /></SelectTrigger>
                 <SelectContent>
                   {areaUnits.map((u) => (
                     <SelectItem key={u.code} value={u.code}>
-                      {u.symbol ? `${u.name} (${u.symbol})` : u.name}
+                      {stableOptionLabel(u)}
                     </SelectItem>
                   ))}
                 </SelectContent>
               </Select>
-            </div>
-            <div className="space-y-1.5">
-              <Label>{t("settings.localization.distanceUnit", lang)}</Label>
+            </SettingsField>
+            <SettingsField label={t("settings.localization.distanceUnit", lang)} hint={formattedDistanceSample}>
               <Select value={distanceUnit} onValueChange={setDistanceUnit}>
-                <SelectTrigger className="h-11"><SelectValue /></SelectTrigger>
+                <SelectTrigger className="h-11 rounded-md shadow-none"><SelectValue /></SelectTrigger>
                 <SelectContent>
                   {distanceUnits.map((u) => (
                     <SelectItem key={u.code} value={u.code}>
-                      {u.symbol ? `${u.name} (${u.symbol})` : u.name}
+                      {stableOptionLabel(u)}
                     </SelectItem>
                   ))}
                 </SelectContent>
               </Select>
-            </div>
+            </SettingsField>
           </div>
 
           {error && <p className="text-sm text-destructive">{error}</p>}
@@ -801,7 +979,7 @@ function BillingTab({ user, onSaved, lang }: { user: UserProfile; onSaved: () =>
             {b.is_trial && (
               <>
                 <span className="text-muted-foreground">{t("settings.billing.trial", lang)}</span>
-                <span className="font-medium text-amber-600">{b.days_until_expiry != null ? `${b.days_until_expiry}d` : "—"}</span>
+                <span className="font-medium">{b.days_until_expiry != null ? `${b.days_until_expiry}d` : "—"}</span>
               </>
             )}
           </div>
@@ -865,37 +1043,39 @@ export function SettingsForm({ user, onSaved }: { user: UserProfile; onSaved: ()
   const lang = getUserLanguage(user.localization);
 
   return (
-    <Tabs defaultValue="profile" className="w-full">
-      <TabsList className="mb-5 flex w-full flex-wrap gap-1 sm:mb-6">
-        <TabsTrigger value="profile">{t("settings.tab.profile", lang)}</TabsTrigger>
-        <TabsTrigger value="seller">{t("settings.tab.seller", lang)}</TabsTrigger>
-        <TabsTrigger value="privacy">{t("settings.tab.privacy", lang)}</TabsTrigger>
-        <TabsTrigger value="localization">{t("settings.tab.localization", lang)}</TabsTrigger>
-        <TabsTrigger value="notifications">{t("settings.tab.notifications", lang)}</TabsTrigger>
-        <TabsTrigger value="billing">{t("settings.tab.billing", lang)}</TabsTrigger>
-        <TabsTrigger value="security">{t("settings.tab.security", lang)}</TabsTrigger>
+    <Tabs defaultValue="profile" className="grid w-full gap-6 lg:grid-cols-[13.5rem_minmax(0,1fr)] lg:gap-10">
+      <TabsList className="flex w-full gap-1 overflow-x-auto rounded-none bg-transparent p-0 text-muted-foreground lg:sticky lg:top-24 lg:block lg:h-fit lg:space-y-1 lg:overflow-visible">
+        <TabsTrigger value="profile" className="shrink-0 justify-start rounded-md px-3 text-[13px] shadow-none data-[state=active]:bg-foreground/[0.06] data-[state=active]:shadow-none lg:w-full">{t("settings.tab.profile", lang)}</TabsTrigger>
+        <TabsTrigger value="seller" className="shrink-0 justify-start rounded-md px-3 text-[13px] shadow-none data-[state=active]:bg-foreground/[0.06] data-[state=active]:shadow-none lg:w-full">{t("settings.tab.seller", lang)}</TabsTrigger>
+        <TabsTrigger value="privacy" className="shrink-0 justify-start rounded-md px-3 text-[13px] shadow-none data-[state=active]:bg-foreground/[0.06] data-[state=active]:shadow-none lg:w-full">{t("settings.tab.privacy", lang)}</TabsTrigger>
+        <TabsTrigger value="localization" className="shrink-0 justify-start rounded-md px-3 text-[13px] shadow-none data-[state=active]:bg-foreground/[0.06] data-[state=active]:shadow-none lg:w-full">{t("settings.tab.localization", lang)}</TabsTrigger>
+        <TabsTrigger value="notifications" className="shrink-0 justify-start rounded-md px-3 text-[13px] shadow-none data-[state=active]:bg-foreground/[0.06] data-[state=active]:shadow-none lg:w-full">{t("settings.tab.notifications", lang)}</TabsTrigger>
+        <TabsTrigger value="billing" className="shrink-0 justify-start rounded-md px-3 text-[13px] shadow-none data-[state=active]:bg-foreground/[0.06] data-[state=active]:shadow-none lg:w-full">{t("settings.tab.billing", lang)}</TabsTrigger>
+        <TabsTrigger value="security" className="shrink-0 justify-start rounded-md px-3 text-[13px] shadow-none data-[state=active]:bg-foreground/[0.06] data-[state=active]:shadow-none lg:w-full">{t("settings.tab.security", lang)}</TabsTrigger>
       </TabsList>
-      <TabsContent value="profile">
-        <ProfileTab user={user} onSaved={onSaved} lang={lang} />
-      </TabsContent>
-      <TabsContent value="seller">
-        <SellerTab user={user} onSaved={onSaved} lang={lang} />
-      </TabsContent>
-      <TabsContent value="privacy">
-        <PrivacyTab user={user} onSaved={onSaved} lang={lang} />
-      </TabsContent>
-      <TabsContent value="localization">
-        <LocalizationTab user={user} onSaved={onSaved} lang={lang} />
-      </TabsContent>
-      <TabsContent value="notifications">
-        <NotificationsTab user={user} onSaved={onSaved} lang={lang} />
-      </TabsContent>
-      <TabsContent value="billing">
-        <BillingTab user={user} onSaved={onSaved} lang={lang} />
-      </TabsContent>
-      <TabsContent value="security">
-        <SecurityTab lang={lang} />
-      </TabsContent>
+      <div className="min-w-0">
+        <TabsContent value="profile" className="mt-0">
+          <ProfileTab user={user} onSaved={onSaved} lang={lang} />
+        </TabsContent>
+        <TabsContent value="seller" className="mt-0">
+          <SellerTab user={user} onSaved={onSaved} lang={lang} />
+        </TabsContent>
+        <TabsContent value="privacy" className="mt-0">
+          <PrivacyTab user={user} onSaved={onSaved} lang={lang} />
+        </TabsContent>
+        <TabsContent value="localization" className="mt-0">
+          <LocalizationTab user={user} onSaved={onSaved} lang={lang} />
+        </TabsContent>
+        <TabsContent value="notifications" className="mt-0">
+          <NotificationsTab user={user} onSaved={onSaved} lang={lang} />
+        </TabsContent>
+        <TabsContent value="billing" className="mt-0">
+          <BillingTab user={user} onSaved={onSaved} lang={lang} />
+        </TabsContent>
+        <TabsContent value="security" className="mt-0">
+          <SecurityTab lang={lang} />
+        </TabsContent>
+      </div>
     </Tabs>
   );
 }

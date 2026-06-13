@@ -41,7 +41,7 @@ export default function FloorplanNav({ floorplanUrl, rooms, onRoomClick, activeR
     <div className="absolute bottom-20 left-3 z-20 animate-fade-in sm:left-4">
       <button
         onClick={() => setExpanded(!expanded)}
-        className={`mb-2 flex items-center gap-1.5 bg-black/50 backdrop-blur-xl rounded-full px-3 py-2 text-xs font-medium shadow-lg border border-white/10 text-white/80 hover:text-white hover:bg-black/60 transition-all ${expanded ? "bg-black/60" : ""}`}
+        className={`mb-2 flex items-center gap-1.5 rounded-full border border-white/10 bg-black/75 px-3 py-2 text-xs font-medium text-white/80 shadow-lg transition-all hover:bg-black/85 hover:text-white ${expanded ? "bg-black/85" : ""}`}
       >
         <svg width="12" height="12" viewBox="0 0 16 16" fill="none" className={`transition-transform duration-200 ${expanded ? "rotate-45" : ""}`}>
           <rect x="2" y="2" width="5" height="5" rx="1" stroke="currentColor" strokeWidth="1.5" />
@@ -53,7 +53,7 @@ export default function FloorplanNav({ floorplanUrl, rooms, onRoomClick, activeR
       </button>
 
       {expanded && (
-        <div className="max-w-[calc(100vw-1.5rem)] rounded-2xl border border-white/10 bg-black/50 p-3 shadow-2xl backdrop-blur-xl animate-fade-in-up sm:max-w-none">
+        <div className="max-w-[calc(100vw-1.5rem)] animate-fade-in-up rounded-2xl border border-white/10 bg-black/80 p-3 shadow-2xl sm:max-w-none">
           {/* Floorplan image as background */}
           <div className="relative" style={{ width: svgW, height: svgH }}>
             {/* eslint-disable-next-line @next/next/no-img-element */}
