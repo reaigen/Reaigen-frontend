@@ -4,7 +4,7 @@ import * as React from "react";
 import { Button } from "../lib/ui/button";
 import { Input } from "../lib/ui/input";
 import { Switch } from "../lib/ui/switch";
-import { t, type LocaleKey } from "../lib/i18n";
+import { t, formatDateShort, type LocaleKey } from "../lib/i18n";
 import type { ShareData } from "../lib/tour-types";
 import {
   getSplatShare,
@@ -370,7 +370,7 @@ export function ShareDialog({ splatId, title, open, onClose, lang }: ShareDialog
                   {share.expires_at && (
                     <span className="inline-flex items-center gap-1 rounded-md bg-foreground/[0.04] px-2 py-0.5 text-[10px] font-medium text-foreground/60">
                       <svg width="10" height="10" viewBox="0 0 16 16" fill="none"><circle cx="8" cy="8" r="5.5" stroke="currentColor" strokeWidth="1.5" /><path d="M8 5v3.5l2.5 1" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" /></svg>
-                      {new Date(share.expires_at).toLocaleDateString(lang)}
+                      {formatDateShort(share.expires_at, lang)}
                     </span>
                   )}
                 </div>

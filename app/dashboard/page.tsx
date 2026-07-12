@@ -46,7 +46,14 @@ function factsLine(draft: DraftListingItem, lang: string): string {
   if (layout.bathrooms != null && layout.bathrooms !== "") parts.push(`${layout.bathrooms} ${t("dashboard.bathroomsShort", lang)}`);
   const area = draft.area_preferred ?? draft.area;
   const areaUnit = draft.area_preferred_unit ?? draft.area_unit_display;
-  if (area != null && area !== "") parts.push(`${compactNumber(area, lang)}${areaUnit ? ` ${areaUnit}` : ""}`);
+  if (area != null && area !== "") {
+    let areaStr = `${compactNumber(area, lang)}${areaUnit ? ` ${areaUnit}` : ""}`;
+    // Show original in parentheses if different unit
+    if (draft.area_preferred && draft.area && draft.area_preferred_unit !== draft.area_unit_display && draft.area_unit_display) {
+      areaStr += ` (${compactNumber(draft.area, lang)} ${draft.area_unit_display})`;
+    }
+    parts.push(areaStr);
+  }
   return parts.join(" · ");
 }
 
@@ -199,7 +206,10 @@ export default function DashboardPage() {
           <>
           <div className={`grid grid-cols-1 gap-6 ${gridCols === 2 ? "md:grid-cols-2" : "mx-auto max-w-2xl"}`}>
             {drafts.map((draft, idx) => {
-              const price = formatMoney(draft.price_preferred ?? draft.price, draft.price_preferred_currency ?? draft.currency, lang);
+              const prefPrice = formatMoney(draft.price_preferred, draft.price_preferred_currency, lang);
+              const origPrice = formatMoney(draft.price, draft.currency, lang);
+              const price = prefPrice || origPrice;
+              const showOrigPrice = prefPrice && origPrice && draft.price_preferred_currency !== draft.currency;
               const facts = factsLine(draft, lang);
               const address = draft.display_address || [draft.city, draft.state, draft.country].filter(Boolean).join(", ");
               const thumbUrl = getDraftThumbnail(draft);
@@ -239,7 +249,12 @@ export default function DashboardPage() {
                         )}
                       </div>
                       {price && (
-                        <span className="text-[15px] font-semibold tabular-nums shrink-0">{price}</span>
+                        <div className="text-right shrink-0">
+                          <span className="text-[15px] font-semibold tabular-nums">{price}</span>
+                          {showOrigPrice && (
+                            <p className="text-[11px] text-muted-foreground tabular-nums">{origPrice}</p>
+                          )}
+                        </div>
                       )}
                     </div>
                     {facts && (

@@ -20,7 +20,7 @@ import {
   type PreferenceOption,
 } from "../lib/api/client";
 import { getSafeApiErrorMessage } from "../lib/api/error-message";
-import { t, getUserLanguage } from "../lib/i18n";
+import { t, getUserLanguage, formatDate as fmtDate } from "../lib/i18n";
 import { cn } from "../lib/utils";
 import { ManagedLegalDocuments } from "./content-documents";
 
@@ -57,11 +57,10 @@ function CardContent({ className, ...props }: React.HTMLAttributes<HTMLDivElemen
   return <div className={cn("max-w-2xl", className)} {...props} />;
 }
 
-function formatAccountDate(value: string | null | undefined, lang: string) {
+function formatAccountDate(value: string | null | undefined, lang: string, dateFormat?: string | null) {
   if (!value) return t("common.notRecorded", lang);
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return t("common.notRecorded", lang);
-  return date.toLocaleDateString(lang, { year: "numeric", month: "short", day: "numeric" });
+  const result = fmtDate(value, dateFormat, lang);
+  return result || t("common.notRecorded", lang);
 }
 
 function DataRow({ label, value }: { label: string; value: React.ReactNode }) {
@@ -459,7 +458,7 @@ function PrivacyTab({ user, onSaved, lang }: { user: UserProfile; onSaved: () =>
             />
             <DataRow
               label={t("settings.privacy.legal.gdprConsent", lang)}
-              value={gdpr?.has_given_consent ? `${t("settings.privacy.legal.given", lang)} ${formatAccountDate(gdpr.consent_date, lang)}` : t("common.notRecorded", lang)}
+              value={gdpr?.has_given_consent ? `${t("settings.privacy.legal.given", lang)} ${formatAccountDate(gdpr.consent_date, lang, user.localization?.date_format)}` : t("common.notRecorded", lang)}
             />
             <DataRow
               label={t("settings.privacy.legal.privacyVersion", lang)}
@@ -471,7 +470,7 @@ function PrivacyTab({ user, onSaved, lang }: { user: UserProfile; onSaved: () =>
             />
             <DataRow
               label={t("settings.privacy.legal.terms", lang)}
-              value={`${t("settings.privacy.legal.termsAcceptedOn", lang)} ${formatAccountDate(user.date_joined, lang)}`}
+              value={`${t("settings.privacy.legal.termsAcceptedOn", lang)} ${formatAccountDate(user.date_joined, lang, user.localization?.date_format)}`}
             />
             <DataRow
               label={t("settings.privacy.legal.license", lang)}
@@ -686,8 +685,9 @@ function LocalizationTab({ user, onSaved, lang }: { user: UserProfile; onSaved: 
         preferred_timezone: timezone,
         preferred_date_format_code: dateFormat,
       });
-      setSuccess(true);
-      onSaved();
+      // Localization changes affect all data (prices, units, language).
+      // Full reload ensures every page fetches fresh data from the backend.
+      window.location.reload();
     } catch (err) {
       setError(getSafeApiErrorMessage(err, lang));
     } finally {

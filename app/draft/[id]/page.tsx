@@ -111,18 +111,24 @@ const I = {
 
 // ── Facts grid (hero stats like iOS) ──────────────────────────────────────
 
-interface Fact { icon: ReactNode; value: string; label: string }
+interface Fact { icon: ReactNode; value: string; label: string; sub?: string }
 
 function buildFacts(d: DraftDetailItem, lang: string): Fact[] {
   const facts: Fact[] = [];
-  const addFact = (icon: ReactNode, value: unknown, label: string) => {
-    if (value != null && value !== "" && value !== 0) facts.push({ icon, value: String(value), label });
+  const addFact = (icon: ReactNode, value: unknown, label: string, sub?: string | null) => {
+    if (value != null && value !== "" && value !== 0) facts.push({ icon, value: String(value), label, sub: sub || undefined });
   };
   addFact(I.bed, sec(d, "layout", "bedrooms"), t("draft.bedrooms", lang));
   addFact(I.bath, sec(d, "layout", "bathrooms"), t("draft.bathrooms", lang));
+
+  // Area: show preferred, with original as sub if different unit
   const area = d.area_preferred ?? d.area;
   const areaUnit = d.area_preferred_unit ?? d.area_unit_display ?? "";
-  if (area) addFact(I.area, `${fmt(area, lang)} ${areaUnit}`.trim(), t("draft.area", lang));
+  const origAreaStr = d.area && d.area_unit_display && d.area_preferred_unit !== d.area_unit_display
+    ? `${fmt(d.area, lang)} ${d.area_unit_display}`
+    : null;
+  if (area) addFact(I.area, `${fmt(area, lang)} ${areaUnit}`.trim(), t("draft.area", lang), origAreaStr);
+
   addFact(I.floor, sec(d, "layout", "floors") ?? sec(d, "technical", "total_floors"), t("draft.totalFloors", lang));
   addFact(I.parking, sec(d, "layout", "parking_spaces"), t("draft.parkingSpaces", lang));
   addFact(I.year, d.year_built ?? sec(d, "technical", "year_built"), t("draft.yearBuilt", lang));
@@ -389,7 +395,19 @@ export default function DraftPreviewPage({ params }: { params: Promise<{ id: str
 
   if (!draft || !user) return null;
 
-  const price = fmtMoney(draft.price_preferred ?? draft.price, draft.price_preferred_currency ?? draft.currency, lang);
+  // Price: show preferred (converted) price prominently, original smaller if different currency
+  const prefPrice = fmtMoney(draft.price_preferred, draft.price_preferred_currency, lang);
+  const origPrice = fmtMoney(draft.price, draft.currency, lang);
+  const price = prefPrice || origPrice;
+  const showOrigPrice = prefPrice && origPrice && draft.price_preferred_currency !== draft.currency;
+
+  // Area: preferred vs original
+  const prefArea = draft.area_preferred;
+  const prefAreaUnit = draft.area_preferred_unit;
+  const origArea = draft.area;
+  const origAreaUnit = draft.area_unit_display;
+  const showOrigArea = prefArea && origArea && prefAreaUnit !== origAreaUnit;
+
   const address = draft.display_address || [draft.city, draft.state, draft.country].filter(Boolean).join(", ");
   const images = getImages(draft.raw_uploads);
   const facts = buildFacts(draft, lang);
@@ -435,7 +453,14 @@ export default function DraftPreviewPage({ params }: { params: Promise<{ id: str
               {address}
             </p>
           )}
-          {price && <p className="text-[18px] font-semibold text-foreground pt-0.5">{price}</p>}
+          {price && (
+            <div className="pt-0.5">
+              <p className="text-[18px] font-semibold text-foreground">{price}</p>
+              {showOrigPrice && (
+                <p className="text-[12px] text-muted-foreground">{origPrice}</p>
+              )}
+            </div>
+          )}
         </div>
 
         {/* Facts */}
@@ -447,6 +472,7 @@ export default function DraftPreviewPage({ params }: { params: Promise<{ id: str
                 <div>
                   <span className="text-[14px] font-semibold tabular-nums leading-tight">{f.value}</span>
                   <span className="ml-1 text-[11px] text-muted-foreground">{f.label}</span>
+                  {f.sub && <p className="text-[10px] text-muted-foreground/70">{f.sub}</p>}
                 </div>
               </div>
             ))}

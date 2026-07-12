@@ -6,7 +6,7 @@ import Link from "next/link";
 import { useAuth } from "../components/hooks/use-auth";
 import { AppShell } from "../components/app-shell";
 import { Button } from "../lib/ui/button";
-import { t, getUserLanguage } from "../lib/i18n";
+import { t, getUserLanguage, formatDateShort } from "../lib/i18n";
 import {
   listShares,
   listSplats,
@@ -24,9 +24,7 @@ function shareUrl(token: string) {
   return `${window.location.origin}/shared/${token}`;
 }
 
-function formatDate(dateStr: string, lang: string): string {
-  return new Date(dateStr).toLocaleDateString(lang, { month: "short", day: "numeric" });
-}
+// Removed local formatDate — now using formatDateShort from i18n
 
 function expiryLabel(dateStr: string | null, lang: string): string | null {
   if (!dateStr) return null;
@@ -125,7 +123,7 @@ function ShareRow({
         {share.requires_pin && <span className="text-foreground/50">PIN</span>}
         {share.max_access_count && <span>{t("shares.viewLimit", lang)}: {share.max_access_count}</span>}
         {expiry && <span>{expiry}</span>}
-        <span>{formatDate(share.created_at, lang)}</span>
+        <span>{formatDateShort(share.created_at, lang)}</span>
       </div>
 
       {/* Actions row */}
