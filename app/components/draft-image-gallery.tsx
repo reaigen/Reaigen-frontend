@@ -208,7 +208,7 @@ export function DraftImageGallery({ images, alt, fallbackUrl }: DraftImageGaller
   // No images — show fallback or placeholder
   if (count === 0) {
     return (
-      <div className="relative aspect-[4/3] w-full overflow-hidden rounded-xl bg-muted/30">
+      <div className="relative aspect-[16/10] w-full overflow-hidden rounded-xl bg-muted/30">
         {fallbackUrl ? (
           <Thumbnail src={fallbackUrl} alt={alt} className="absolute inset-0 h-full w-full object-cover" priority />
         ) : (
@@ -229,7 +229,7 @@ export function DraftImageGallery({ images, alt, fallbackUrl }: DraftImageGaller
     return (
       <>
         <div
-          className="relative aspect-[4/3] w-full overflow-hidden rounded-xl bg-muted/30 cursor-pointer"
+          className="relative aspect-[16/10] w-full overflow-hidden rounded-xl bg-muted/30 cursor-pointer"
           onClick={() => setLightboxIndex(0)}
         >
           <Thumbnail src={images[0].url} alt={alt} className="absolute inset-0 h-full w-full object-cover" priority />
@@ -257,7 +257,7 @@ export function DraftImageGallery({ images, alt, fallbackUrl }: DraftImageGaller
           {images.map((img, i) => (
             <div
               key={img.url}
-              className="relative aspect-[4/3] w-full flex-none cursor-pointer"
+              className="relative aspect-[16/10] w-full flex-none cursor-pointer"
               style={{ scrollSnapAlign: "start" }}
               onClick={() => setLightboxIndex(i)}
             >

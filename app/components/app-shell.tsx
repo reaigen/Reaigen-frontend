@@ -154,11 +154,9 @@ export function AppShell({
       </header>
 
       {/* ── Content ──────────────────────────────────────────────── */}
-      <main className="min-h-[calc(100dvh-3rem)] w-full px-4 py-5 pb-24 md:px-6 md:py-8 md:pb-8 pl-safe pr-safe" style={{ marginLeft: `var(--sidebar-offset, 0px)` }}>
-        <div className="mx-auto max-w-4xl">
-          <AppContentMessages lang={lang} countryCode={user.profile?.country} regionCode={user.profile?.state} />
-          {children}
-        </div>
+      <main className="min-h-[calc(100dvh-3rem)] px-4 py-5 pb-24 md:px-6 md:py-8 md:pb-8 pl-safe pr-safe" style={{ marginLeft: `var(--sidebar-offset, 0px)` }}>
+        <AppContentMessages lang={lang} countryCode={user.profile?.country} regionCode={user.profile?.state} />
+        {children}
       </main>
 
       {/* ── Mobile bottom tab bar ────────────────────────────────── */}

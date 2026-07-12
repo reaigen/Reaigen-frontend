@@ -411,7 +411,7 @@ export default function DraftPreviewPage({ params }: { params: Promise<{ id: str
 
   return (
     <AppShell user={user} onLogout={logout}>
-      <div className="mx-auto w-full max-w-lg animate-fade-in pb-10">
+      <div className="mx-auto w-full max-w-2xl animate-fade-in pb-10">
         {/* Back */}
         <button onClick={() => router.back()} className="mb-3 flex items-center gap-1 text-[13px] text-muted-foreground hover:text-foreground transition-colors">
           <svg width="14" height="14" viewBox="0 0 16 16" fill="none"><path d="M10 12L6 8L10 4" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/></svg>
