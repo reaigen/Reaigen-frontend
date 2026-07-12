@@ -471,8 +471,9 @@ export async function listSplats(page = 1, pageSize = 20, search = ""): Promise<
   return request(`/api/reaigen/splats/?page=${page}&page_size=${pageSize}${q}`);
 }
 
-export async function listDrafts(page = 1, pageSize = 100): Promise<{ results: DraftListingItem[]; count: number; next: string | null }> {
-  return request(`/api/reaigen/drafts/?page=${page}&page_size=${pageSize}`);
+export async function listDrafts(page = 1, pageSize = 100, search = ""): Promise<{ results: DraftListingItem[]; count: number; next: string | null }> {
+  const q = search ? `&search=${encodeURIComponent(search)}` : "";
+  return request(`/api/reaigen/drafts/?page=${page}&page_size=${pageSize}${q}`);
 }
 
 export async function getDraft(draftId: number): Promise<DraftDetailItem> {

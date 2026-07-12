@@ -3,7 +3,7 @@
 import * as React from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { Cross2Icon, DashboardIcon, ExitIcon, GearIcon, HamburgerMenuIcon, Link2Icon } from "@radix-ui/react-icons";
+import { ExitIcon, GearIcon } from "@radix-ui/react-icons";
 import { Avatar, AvatarFallback, AvatarImage } from "../lib/ui/avatar";
 import type { UserProfile } from "../lib/api/client";
 import { cn } from "../lib/utils";
@@ -16,6 +16,23 @@ function getInitials(user: UserProfile): string {
   return (f + l).toUpperCase() || (user.email?.[0] ?? "?").toUpperCase();
 }
 
+// ── Icons ──
+const HomeIcon = (props: { className?: string }) => (
+  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" className={props.className}>
+    <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" />
+    <polyline points="9 22 9 12 15 12 15 22" />
+  </svg>
+);
+
+const ShareIcon = (props: { className?: string }) => (
+  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" className={props.className}>
+    <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71" />
+    <path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71" />
+  </svg>
+);
+
+const SIDEBAR_W = 180; // px
+
 export function AppShell({
   user,
   onLogout,
@@ -27,162 +44,127 @@ export function AppShell({
 }) {
   const pathname = usePathname();
   const lang = getUserLanguage(user.localization);
-  const [mobileMenuOpen, setMobileMenuOpen] = React.useState(false);
   const displayName = user.full_name || `${user.first_name ?? ""} ${user.last_name ?? ""}`.trim() || user.first_name || user.email;
   const avatarUrl = user.profile?.avatar_thumbnail_url ?? user.profile?.avatar_url;
 
-  const PRIMARY_NAV_ITEMS = [
-    { href: "/dashboard", label: t("nav.dashboard", lang), icon: DashboardIcon },
-    { href: "/shares", label: t("nav.shares", lang), icon: Link2Icon },
+  const NAV_ITEMS = [
+    { href: "/dashboard", label: t("nav.dashboard", lang), icon: HomeIcon },
+    { href: "/shares", label: t("nav.shares", lang), icon: ShareIcon },
   ];
-
-  React.useEffect(() => {
-    setMobileMenuOpen(false);
-  }, [pathname]);
 
   return (
     <div className="min-h-screen bg-background">
-      {/* ── header ──────────────────────────────────────────────── */}
-      <header className="sticky top-0 z-50 border-b border-border/50 bg-background/92 pt-safe backdrop-blur-xl supports-[backdrop-filter]:bg-background/70">
-        <div className="mx-auto flex h-14 max-w-7xl items-center justify-between px-4 sm:h-16 sm:px-6 pl-safe pr-safe">
-          <div className="flex min-w-0 items-center gap-3 sm:gap-8">
-            <Link href="/dashboard" className="flex items-center">
-              <span
-                className="text-[19px] sm:text-[21px]"
-                style={{ fontFamily: 'var(--font-brand), ui-serif, Georgia, serif', fontWeight: 400, letterSpacing: '0.01em' }}
-              >
-                Reaigen
-              </span>
-            </Link>
-            <nav className="hidden sm:flex items-center gap-0.5">
-              {PRIMARY_NAV_ITEMS.map((item) => (
-                <Link
-                  key={item.href}
-                  href={item.href}
-                  className={cn(
-                    "px-3 py-1.5 rounded-lg text-[13px] font-medium transition-colors",
-                    pathname === item.href
-                      ? "bg-foreground/[0.06] text-foreground"
-                      : "text-foreground/45 hover:text-foreground hover:bg-foreground/[0.04]"
-                  )}
-                >
-                  {item.label}
-                </Link>
-              ))}
-            </nav>
-          </div>
+      {/* ── Desktop sidebar ──────────────────────────────────────── */}
+      <aside
+        className="fixed inset-y-0 left-0 z-40 hidden border-r border-border/40 bg-background md:flex md:flex-col pl-safe"
+        style={{ width: SIDEBAR_W }}
+      >
+        {/* Brand */}
+        <div className="flex h-12 items-center px-5">
+          <Link href="/dashboard">
+            <span
+              className="text-[21px]"
+              style={{ fontFamily: 'var(--font-brand), ui-serif, Georgia, serif', fontWeight: 400, letterSpacing: '0.01em' }}
+            >
+              Reaigen
+            </span>
+          </Link>
+        </div>
 
-          <div className="flex items-center gap-2 sm:gap-3">
-            <div className="hidden items-center gap-1.5 sm:flex">
+        {/* Nav links */}
+        <nav className="flex-1 space-y-0.5 px-3 pt-3">
+          {NAV_ITEMS.map((item) => {
+            const active = pathname === item.href;
+            const Icon = item.icon;
+            return (
               <Link
-                href="/settings"
-                aria-label={t("nav.settings", lang)}
-                title={t("nav.settings", lang)}
+                key={item.href}
+                href={item.href}
                 className={cn(
-                  "flex max-w-[15rem] items-center gap-2 rounded-full py-1 pl-1 pr-2.5 text-left transition-colors",
-                  pathname === "/settings" ? "bg-foreground/[0.06] text-foreground" : "text-foreground/70 hover:bg-foreground/[0.04] hover:text-foreground"
+                  "flex items-center gap-2.5 rounded-lg px-2.5 py-2 text-[13px] font-medium transition-colors",
+                  active
+                    ? "bg-foreground/[0.06] text-foreground"
+                    : "text-foreground/45 hover:bg-foreground/[0.04] hover:text-foreground"
                 )}
               >
-                <Avatar size="sm">
-                  {avatarUrl && <AvatarImage src={avatarUrl as string} />}
-                  <AvatarFallback>{getInitials(user)}</AvatarFallback>
-                </Avatar>
-                <span className="min-w-0">
-                  <span className="block truncate text-[13px] font-medium">{displayName}</span>
-                </span>
+                <Icon className={active ? "text-foreground" : "text-foreground/35"} />
+                {item.label}
               </Link>
-              <button
-                type="button"
-                onClick={onLogout}
-                aria-label={t("nav.signout", lang)}
-                title={t("nav.signout", lang)}
-                className="inline-flex h-9 w-9 items-center justify-center rounded-full text-foreground/45 transition-colors hover:bg-foreground/[0.04] hover:text-foreground"
-              >
-                <ExitIcon className="h-4 w-4" />
-              </button>
-            </div>
+            );
+          })}
+        </nav>
 
-            <button
-              className="sm:hidden p-2 -mr-2 rounded-lg hover:bg-foreground/[0.04] transition-colors"
-              onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
-              aria-label={t("nav.accountActions", lang)}
+        {/* Bottom: settings */}
+        <div className="border-t border-border/40 px-3 py-2">
+          <Link
+            href="/settings"
+            className={cn(
+              "flex items-center gap-2.5 rounded-lg px-2.5 py-2 text-[13px] font-medium transition-colors",
+              pathname === "/settings"
+                ? "bg-foreground/[0.06] text-foreground"
+                : "text-foreground/45 hover:bg-foreground/[0.04] hover:text-foreground"
+            )}
+          >
+            <GearIcon className="h-[18px] w-[18px]" />
+            {t("nav.settings", lang)}
+          </Link>
+        </div>
+      </aside>
+
+      {/* ── Top header ───────────────────────────────────────────── */}
+      <header
+        className="sticky top-0 z-50 border-b border-border/40 bg-background/92 pt-safe backdrop-blur-xl supports-[backdrop-filter]:bg-background/70"
+        style={{ marginLeft: `var(--sidebar-offset, 0px)` }}
+      >
+        <div className="flex h-12 items-center justify-between px-4 sm:px-5 pl-safe pr-safe">
+          {/* Mobile/tablet: logo (sidebar hidden below md) */}
+          <Link href="/dashboard" className="flex items-center md:hidden">
+            <span
+              className="text-[19px]"
+              style={{ fontFamily: 'var(--font-brand), ui-serif, Georgia, serif', fontWeight: 400, letterSpacing: '0.01em' }}
             >
-              {mobileMenuOpen ? (
-                <Cross2Icon className="h-5 w-5 text-foreground/60" />
-              ) : (
-                <HamburgerMenuIcon className="h-5 w-5 text-foreground/60" />
-              )}
+              Reaigen
+            </span>
+          </Link>
+          {/* Desktop: spacer (logo in sidebar) */}
+          <div className="hidden md:block" />
+
+          {/* Right: user + sign out */}
+          <div className="flex items-center gap-1.5">
+            <Link
+              href="/settings"
+              className="flex items-center gap-2 rounded-full py-1 pl-1 pr-2.5 text-foreground/70 hover:bg-foreground/[0.04] transition-colors"
+            >
+              <Avatar size="sm">
+                {avatarUrl && <AvatarImage src={avatarUrl as string} />}
+                <AvatarFallback>{getInitials(user)}</AvatarFallback>
+              </Avatar>
+              <span className="hidden md:block text-[12px] font-medium text-foreground/55 max-w-[10rem] truncate">{displayName}</span>
+            </Link>
+            <button
+              type="button"
+              onClick={onLogout}
+              title={t("nav.signout", lang)}
+              className="hidden md:flex h-8 w-8 items-center justify-center rounded-full text-foreground/30 hover:text-foreground hover:bg-foreground/[0.04] transition-colors"
+            >
+              <ExitIcon className="h-3.5 w-3.5" />
             </button>
           </div>
         </div>
       </header>
 
-      {/* ── mobile menu (animated) ─────────────────────────────── */}
-      <div
-        className={cn(
-          "sm:hidden overflow-hidden transition-all duration-200 ease-out border-b border-border/40 bg-background",
-          mobileMenuOpen ? "max-h-96 opacity-100" : "max-h-0 opacity-0 border-b-0"
-        )}
-      >
-        <div className="space-y-3 px-4 py-3 pl-safe pr-safe">
-          <div className="flex items-center gap-3 border-b border-border/60 pb-3">
-            <Avatar size="sm">
-              {avatarUrl && <AvatarImage src={avatarUrl as string} />}
-              <AvatarFallback>{getInitials(user)}</AvatarFallback>
-            </Avatar>
-            <div className="min-w-0 flex-1">
-              <p className="truncate text-[13px] font-medium text-foreground">{displayName}</p>
-              <p className="truncate text-[11px] text-muted-foreground">{user.email}</p>
-            </div>
-          </div>
-          <div className="grid gap-1">
-            {PRIMARY_NAV_ITEMS.map((item) => {
-              const active = pathname === item.href;
-              const Icon = item.icon;
-              return (
-                <Link
-                  key={item.href}
-                  href={item.href}
-                  className={cn(
-                    "flex items-center gap-2 rounded-md px-3 py-2 text-[13px] font-medium transition-colors",
-                    active ? "bg-foreground/[0.06] text-foreground" : "text-foreground/62 hover:bg-foreground/[0.04] hover:text-foreground"
-                  )}
-                >
-                  <Icon className="h-4 w-4" />
-                  {item.label}
-                </Link>
-              );
-            })}
-            <Link
-              href="/settings"
-              className={cn(
-                "flex items-center gap-2 rounded-md px-3 py-2 text-[13px] font-medium transition-colors",
-                pathname === "/settings" ? "bg-foreground/[0.06] text-foreground" : "text-foreground/62 hover:bg-foreground/[0.04] hover:text-foreground"
-              )}
-            >
-              <GearIcon className="h-4 w-4" />
-              {t("nav.settings", lang)}
-            </Link>
-            <button
-              onClick={onLogout}
-              className="flex w-full items-center gap-2 rounded-md px-3 py-2 text-left text-[13px] font-medium text-foreground/60 transition-colors hover:bg-foreground/[0.04] hover:text-foreground"
-            >
-              <ExitIcon className="h-4 w-4" />
-              {t("nav.signout", lang)}
-            </button>
-          </div>
+      {/* ── Content ──────────────────────────────────────────────── */}
+      <main className="min-h-[calc(100dvh-3rem)] w-full px-4 py-5 pb-24 md:px-6 md:py-8 md:pb-8 pl-safe pr-safe" style={{ marginLeft: `var(--sidebar-offset, 0px)` }}>
+        <div className="mx-auto max-w-4xl">
+          <AppContentMessages lang={lang} countryCode={user.profile?.country} regionCode={user.profile?.state} />
+          {children}
         </div>
-      </div>
-
-      {/* ── content ─────────────────────────────────────────────── */}
-      <main className="mx-auto min-h-[calc(100dvh-3.5rem)] w-full max-w-4xl px-4 py-5 pb-24 sm:min-h-[calc(100dvh-4rem)] sm:px-6 sm:py-8 sm:pb-8 pl-safe pr-safe">
-        <AppContentMessages lang={lang} countryCode={user.profile?.country} regionCode={user.profile?.state} />
-        {children}
       </main>
 
-      <nav className="fixed inset-x-0 bottom-0 z-40 border-t border-border/50 bg-background/92 pb-safe backdrop-blur-xl sm:hidden">
+      {/* ── Mobile bottom tab bar ────────────────────────────────── */}
+      <nav className="fixed inset-x-0 bottom-0 z-40 border-t border-border/50 bg-background/92 pb-safe backdrop-blur-xl md:hidden">
         <div className="grid grid-cols-2 gap-1 px-3 pb-2 pt-2 pl-safe pr-safe">
-          {PRIMARY_NAV_ITEMS.map((item) => {
+          {NAV_ITEMS.map((item) => {
             const active = pathname === item.href;
             const Icon = item.icon;
             return (
@@ -203,6 +185,9 @@ export function AppShell({
           })}
         </div>
       </nav>
+
+      {/* CSS variable for sidebar offset (desktop only) */}
+      <style>{`@media (min-width: 768px) { :root { --sidebar-offset: ${SIDEBAR_W}px; } }`}</style>
     </div>
   );
 }

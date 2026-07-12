@@ -6,9 +6,9 @@ import { useAuth } from "../components/hooks/use-auth";
 import { AppShell } from "../components/app-shell";
 import { Button } from "../lib/ui/button";
 import { t, getUserLanguage } from "../lib/i18n";
-import { listAllDrafts, listSplats } from "../lib/api/client";
+import { listDrafts, getSplatsByDraft } from "../lib/api/client";
 import { ShareDialog } from "../components/share-dialog";
-import type { DraftListingItem, SplatListItem } from "../lib/tour-types";
+import type { DraftListingItem } from "../lib/tour-types";
 import Link from "next/link";
 import { Thumbnail } from "../components/thumbnail";
 
@@ -60,16 +60,16 @@ export default function DashboardPage() {
   const { isAuthenticated, isLoading, user, logout } = useAuth();
   const router = useRouter();
 
-  // Splats = paginated list (for pagination + server-side search)
-  const [splats, setSplats] = React.useState<SplatListItem[]>([]);
-  const [splatsLoading, setSplatsLoading] = React.useState(true);
+  // Drafts = paginated primary listing
+  const [drafts, setDrafts] = React.useState<DraftListingItem[]>([]);
+  const [draftsLoading, setDraftsLoading] = React.useState(true);
   const [loadingMore, setLoadingMore] = React.useState(false);
   const [hasMore, setHasMore] = React.useState(false);
   const [totalCount, setTotalCount] = React.useState(0);
   const pageRef = React.useRef(1);
 
-  // Drafts = full list for metadata (thumbnails, address, price, specs)
-  const [draftsById, setDraftsById] = React.useState<Map<number, DraftListingItem>>(new Map());
+  // Splat IDs per draft (for share/tour buttons)
+  const [splatIds, setSplatIds] = React.useState<Record<number, number>>({});
 
   const [shareTarget, setShareTarget] = React.useState<{ splatId: number; title: string } | null>(null);
   const [searchInput, setSearchInput] = React.useState("");
@@ -79,25 +79,25 @@ export default function DashboardPage() {
     if (!isLoading && !isAuthenticated) router.replace("/");
   }, [isLoading, isAuthenticated, router]);
 
-  // Paginated splat loading with server-side search
+  // Paginated draft loading with server-side search
   const loadPage = React.useCallback(async (page: number, append: boolean) => {
-    const data = await listSplats(page, 20, searchQuery);
+    const data = await listDrafts(page, 20, searchQuery);
     const results = data.results ?? [];
-    setSplats((prev) => {
-      const merged = append ? [...prev, ...results] : results;
-      const seenId = new Set<number>();
-      const seenDraft = new Set<number>();
-      return merged.filter((s) => {
-        if (seenId.has(s.id)) return false;
-        seenId.add(s.id);
-        if (s.source_draft && seenDraft.has(s.source_draft)) return false;
-        if (s.source_draft) seenDraft.add(s.source_draft);
-        return true;
-      });
-    });
+    setDrafts((prev) => append ? [...prev, ...results] : results);
     setHasMore(!!data.next);
     setTotalCount(data.count ?? 0);
     pageRef.current = page;
+
+    // Resolve splat IDs for new drafts (for share/tour buttons)
+    const map: Record<number, number> = {};
+    await Promise.all(
+      results.map((d) =>
+        getSplatsByDraft(d.id)
+          .then((res) => { if (res?.parent_splat_id) map[d.id] = res.parent_splat_id; else if (res?.splats?.[0]) map[d.id] = res.splats[0].splat_id; })
+          .catch(() => {})
+      )
+    );
+    setSplatIds((prev) => ({ ...prev, ...map }));
   }, [searchQuery]);
 
   // Debounce search input → server query
@@ -106,25 +106,12 @@ export default function DashboardPage() {
     return () => clearTimeout(timer);
   }, [searchInput]);
 
-  // Fetch splats when search query or auth changes
+  // Fetch drafts when search query or auth changes
   React.useEffect(() => {
     if (!isAuthenticated) return;
-    setSplatsLoading(true);
-    loadPage(1, false).catch(() => {}).finally(() => setSplatsLoading(false));
+    setDraftsLoading(true);
+    loadPage(1, false).catch(() => {}).finally(() => setDraftsLoading(false));
   }, [searchQuery, isAuthenticated, loadPage]);
-
-  // Fetch all drafts for metadata cross-reference
-  React.useEffect(() => {
-    if (!isAuthenticated) return;
-    let cancelled = false;
-    listAllDrafts()
-      .then((drafts) => {
-        if (cancelled) return;
-        setDraftsById(new Map(drafts.map((d) => [d.id, d])));
-      })
-      .catch(() => {});
-    return () => { cancelled = true; };
-  }, [isAuthenticated]);
 
   const handleLoadMore = React.useCallback(async () => {
     setLoadingMore(true);
@@ -172,12 +159,12 @@ export default function DashboardPage() {
             )}
           </label>
           <span className="text-[12px] text-muted-foreground tabular-nums shrink-0">
-            {splats.length}{totalCount > 0 ? ` / ${totalCount}` : ""}
+            {drafts.length}{totalCount > 0 ? ` / ${totalCount}` : ""}
           </span>
         </div>
 
         {/* Cards */}
-        {splatsLoading ? (
+        {draftsLoading ? (
           <div className="space-y-4">
             {Array.from({ length: 3 }).map((_, i) => (
               <div key={i} className="animate-pulse rounded-xl overflow-hidden border border-border/40">
@@ -189,7 +176,7 @@ export default function DashboardPage() {
               </div>
             ))}
           </div>
-        ) : splats.length === 0 ? (
+        ) : drafts.length === 0 ? (
           <div className="flex flex-col items-center justify-center py-20 text-center">
             <div className="mb-4 flex h-12 w-12 items-center justify-center rounded-full bg-foreground/[0.04]">
               <svg width="22" height="22" viewBox="0 0 24 24" fill="none" className="text-foreground/25" aria-hidden="true">
@@ -202,24 +189,20 @@ export default function DashboardPage() {
           </div>
         ) : (
           <div className="space-y-4">
-            {splats.map((splat, idx) => {
-              const draft = draftsById.get(splat.source_draft);
-              const price = draft
-                ? formatMoney(draft.price_preferred ?? draft.price, draft.price_preferred_currency ?? draft.currency, lang)
-                : null;
-              const facts = draft ? listingFacts(draft, lang) : [];
-              const address = draft?.display_address || [draft?.city, draft?.state, draft?.country].filter(Boolean).join(", ");
-              const thumbUrl = draft ? getDraftThumbnail(draft) : splat.thumbnail_url;
-              const title = draft?.title || splat.title;
-              const linkTarget = draft ? `/draft/${draft.id}` : `/tour/${splat.id}`;
+            {drafts.map((draft, idx) => {
+              const price = formatMoney(draft.price_preferred ?? draft.price, draft.price_preferred_currency ?? draft.currency, lang);
+              const facts = listingFacts(draft, lang);
+              const address = draft.display_address || [draft.city, draft.state, draft.country].filter(Boolean).join(", ");
+              const thumbUrl = getDraftThumbnail(draft);
+              const draftSplatId = splatIds[draft.id];
 
               return (
-                <div key={splat.id} className="overflow-hidden rounded-xl border border-border/60 transition-shadow hover:shadow-lg">
+                <div key={draft.id} className="overflow-hidden rounded-xl border border-border/60 transition-shadow hover:shadow-lg">
                   {/* Hero image with overlay */}
-                  <Link href={linkTarget} className="block">
+                  <Link href={`/draft/${draft.id}`} className="block">
                     <div className="relative aspect-[16/10] bg-muted/20">
                       {thumbUrl ? (
-                        <Thumbnail src={thumbUrl} alt={title} className="absolute inset-0 w-full h-full object-cover" priority={idx < 4} />
+                        <Thumbnail src={thumbUrl} alt={draft.title} className="absolute inset-0 w-full h-full object-cover" priority={idx < 4} />
                       ) : (
                         <div className="absolute inset-0 flex items-center justify-center">
                           <svg width="40" height="40" viewBox="0 0 24 24" fill="none" className="text-foreground/8">
@@ -231,7 +214,7 @@ export default function DashboardPage() {
                       )}
                       <div className="absolute inset-x-0 bottom-0 h-2/3 bg-gradient-to-t from-black/60 via-black/25 to-transparent" />
                       <div className="absolute inset-x-0 bottom-0 p-3.5">
-                        <h2 className="text-[15px] font-semibold text-white leading-tight truncate">{title}</h2>
+                        <h2 className="text-[15px] font-semibold text-white leading-tight truncate">{draft.title}</h2>
                         {address && (
                           <p className="mt-0.5 flex items-center gap-1 text-[12px] text-white/75 truncate">
                             <svg width="11" height="11" viewBox="0 0 16 16" fill="none" className="flex-shrink-0"><path d="M8 1.5a4.5 4.5 0 0 1 4.5 4.5c0 3.5-4.5 8.5-4.5 8.5S3.5 9.5 3.5 6A4.5 4.5 0 0 1 8 1.5Z" stroke="currentColor" strokeWidth="1.2"/><circle cx="8" cy="6" r="1.5" stroke="currentColor" strokeWidth="1.2"/></svg>
@@ -259,18 +242,20 @@ export default function DashboardPage() {
                       </div>
                     ) : <div />}
 
-                    <div className="flex items-center gap-1 shrink-0 ml-2">
-                      <button
-                        onClick={() => setShareTarget({ splatId: splat.id, title })}
-                        className="p-1.5 rounded-md text-foreground/40 hover:text-foreground hover:bg-foreground/[0.04] transition-colors"
-                        aria-label={t("dashboard.share", lang)}
-                      >
-                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><path d="M8.59 13.51l6.83 3.98M15.41 6.51l-6.82 3.98"/></svg>
-                      </button>
-                      <Link href={`/tour/${splat.id}`} className="p-1.5 rounded-md text-foreground/40 hover:text-foreground hover:bg-foreground/[0.04] transition-colors" aria-label={t("dashboard.viewTour", lang)}>
-                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/><path d="M3.27 6.96L12 12.01l8.73-5.05M12 22.08V12"/></svg>
-                      </Link>
-                    </div>
+                    {draftSplatId && (
+                      <div className="flex items-center gap-1 shrink-0 ml-2">
+                        <button
+                          onClick={() => setShareTarget({ splatId: draftSplatId, title: draft.title })}
+                          className="p-1.5 rounded-md text-foreground/40 hover:text-foreground hover:bg-foreground/[0.04] transition-colors"
+                          aria-label={t("dashboard.share", lang)}
+                        >
+                          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><path d="M8.59 13.51l6.83 3.98M15.41 6.51l-6.82 3.98"/></svg>
+                        </button>
+                        <Link href={`/tour/${draftSplatId}`} className="p-1.5 rounded-md text-foreground/40 hover:text-foreground hover:bg-foreground/[0.04] transition-colors" aria-label={t("dashboard.viewTour", lang)}>
+                          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/><path d="M3.27 6.96L12 12.01l8.73-5.05M12 22.08V12"/></svg>
+                        </Link>
+                      </div>
+                    )}
                   </div>
                 </div>
               );

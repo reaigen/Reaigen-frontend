@@ -1,6 +1,7 @@
 "use client";
 
 import { useRef, useState, useCallback, useEffect } from "react";
+import { createPortal } from "react-dom";
 import { Thumbnail } from "./thumbnail";
 
 interface DraftImageGalleryProps {
@@ -73,35 +74,36 @@ function Lightbox({
     scrollRef.current?.scrollTo({ left: i * (scrollRef.current?.clientWidth ?? 0), behavior: "smooth" });
   };
 
-  return (
-    <div className="fixed inset-0 z-50 bg-background animate-fade-in flex flex-col">
+  const content = (
+    <div className="fixed inset-0 bg-background flex flex-col" style={{ zIndex: 9999 }}>
       {/* Top bar */}
-      <div className="flex items-center justify-between px-4 py-3 border-b border-border/50 shrink-0">
-        <span className="text-[13px] text-muted-foreground tabular-nums">
-          {index + 1} / {count}
-        </span>
+      <div className="flex items-center justify-between px-3 py-2.5 border-b border-border/50 shrink-0">
         <button
           type="button"
           onClick={onClose}
-          className="flex h-8 w-8 items-center justify-center rounded-full text-foreground/50 hover:text-foreground hover:bg-foreground/[0.05] transition-colors"
-          aria-label="Close"
+          className="flex items-center gap-1 rounded-lg px-2 py-1.5 text-[13px] text-foreground/70 hover:text-foreground hover:bg-foreground/[0.05] transition-colors"
         >
-          <svg width="18" height="18" viewBox="0 0 16 16" fill="none">
-            <path d="M4 4l8 8M12 4l-8 8" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+          <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+            <path d="M10 12L6 8l4-4" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
           </svg>
+          Back
         </button>
+        <span className="text-[13px] text-muted-foreground tabular-nums">
+          {index + 1} / {count}
+        </span>
       </div>
 
-      {/* Scrollable images */}
+      {/* Scrollable images — tap background to close */}
       <div
         ref={scrollRef}
-        className="flex flex-1 min-h-0 w-full overflow-x-auto scrollbar-none"
+        className="flex flex-1 min-h-0 w-full overflow-x-auto scrollbar-none items-stretch"
         style={{ scrollSnapType: "x mandatory", WebkitOverflowScrolling: "touch" }}
+        onClick={onClose}
       >
         {images.map((img, i) => (
           <div
             key={img.url}
-            className="flex w-full flex-none items-center justify-center p-4 sm:p-8"
+            className="flex w-full flex-none items-center justify-center p-4 sm:p-10"
             style={{ scrollSnapAlign: "start" }}
           >
             {/* eslint-disable-next-line @next/next/no-img-element */}
@@ -110,13 +112,28 @@ function Lightbox({
               alt={`${alt} ${i + 1}`}
               className="max-h-full max-w-full object-contain select-none rounded-lg"
               draggable={false}
+              onClick={(e) => e.stopPropagation()}
             />
           </div>
         ))}
       </div>
 
-      {/* Bottom dots / counter */}
-      <div className="flex justify-center py-3 border-t border-border/50 shrink-0">
+      {/* Bottom bar: arrows + dots */}
+      <div className="flex items-center justify-between px-4 py-3 border-t border-border/50 shrink-0">
+        {/* Prev arrow */}
+        <button
+          type="button"
+          onClick={() => goTo(index - 1)}
+          disabled={index === 0}
+          className="flex h-8 w-8 items-center justify-center rounded-full text-foreground/40 hover:text-foreground hover:bg-foreground/[0.05] transition-colors disabled:opacity-20 disabled:pointer-events-none"
+          aria-label="Previous"
+        >
+          <svg width="18" height="18" viewBox="0 0 16 16" fill="none">
+            <path d="M10 12L6 8l4-4" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+          </svg>
+        </button>
+
+        {/* Dots / counter */}
         {count <= 12 ? (
           <div className="flex gap-1.5" role="tablist">
             {images.map((_, i) => (
@@ -136,35 +153,24 @@ function Lightbox({
         ) : (
           <span className="text-[12px] text-muted-foreground tabular-nums">{index + 1} / {count}</span>
         )}
-      </div>
 
-      {/* Prev / Next arrows */}
-      {index > 0 && (
-        <button
-          type="button"
-          onClick={() => goTo(index - 1)}
-          className="absolute left-3 top-1/2 -translate-y-1/2 flex h-9 w-9 items-center justify-center rounded-full text-foreground/30 hover:text-foreground hover:bg-foreground/[0.05] transition-colors"
-          aria-label="Previous"
-        >
-          <svg width="18" height="18" viewBox="0 0 16 16" fill="none">
-            <path d="M10 12L6 8l4-4" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
-          </svg>
-        </button>
-      )}
-      {index < count - 1 && (
+        {/* Next arrow */}
         <button
           type="button"
           onClick={() => goTo(index + 1)}
-          className="absolute right-3 top-1/2 -translate-y-1/2 flex h-9 w-9 items-center justify-center rounded-full text-foreground/30 hover:text-foreground hover:bg-foreground/[0.05] transition-colors"
+          disabled={index >= count - 1}
+          className="flex h-8 w-8 items-center justify-center rounded-full text-foreground/40 hover:text-foreground hover:bg-foreground/[0.05] transition-colors disabled:opacity-20 disabled:pointer-events-none"
           aria-label="Next"
         >
           <svg width="18" height="18" viewBox="0 0 16 16" fill="none">
             <path d="M6 4l4 4-4 4" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
           </svg>
         </button>
-      )}
+      </div>
     </div>
   );
+
+  return createPortal(content, document.body);
 }
 
 // ── Gallery ──────────────────────────────────────────────────────────────
@@ -270,7 +276,7 @@ export function DraftImageGallery({ images, alt, fallbackUrl }: DraftImageGaller
           <button
             type="button"
             onClick={(e) => { e.stopPropagation(); goPrev(); }}
-            className="absolute left-2 top-1/2 -translate-y-1/2 flex h-8 w-8 items-center justify-center rounded-full bg-black/30 text-white backdrop-blur-sm transition-opacity hover:bg-black/50 opacity-0 group-hover:opacity-100 sm:h-9 sm:w-9"
+            className="absolute left-2 top-1/2 -translate-y-1/2 flex h-8 w-8 items-center justify-center rounded-full bg-black/30 text-white backdrop-blur-sm transition-opacity hover:bg-black/50 sm:h-9 sm:w-9"
             aria-label="Previous"
           >
             <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
@@ -282,7 +288,7 @@ export function DraftImageGallery({ images, alt, fallbackUrl }: DraftImageGaller
           <button
             type="button"
             onClick={(e) => { e.stopPropagation(); goNext(); }}
-            className="absolute right-2 top-1/2 -translate-y-1/2 flex h-8 w-8 items-center justify-center rounded-full bg-black/30 text-white backdrop-blur-sm transition-opacity hover:bg-black/50 opacity-0 group-hover:opacity-100 sm:h-9 sm:w-9"
+            className="absolute right-2 top-1/2 -translate-y-1/2 flex h-8 w-8 items-center justify-center rounded-full bg-black/30 text-white backdrop-blur-sm transition-opacity hover:bg-black/50 sm:h-9 sm:w-9"
             aria-label="Next"
           >
             <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
