@@ -844,6 +844,15 @@ const en = {
 
   "draft.descriptionPending":            "Translation in progress…",
 
+  // ── Floorplan Viewer ─────────────────────────────────────────────────
+  "floorplan.walls":                     "Walls",
+  "floorplan.doors":                     "Doors",
+  "floorplan.windows":                   "Windows",
+  "floorplan.roomLabels":                "Labels",
+  "floorplan.area":                      "Area",
+  "floorplan.sqm":                       "m²",
+  "floorplan.rooms":                     "Rooms",
+
 } as const;
 
 export default en;

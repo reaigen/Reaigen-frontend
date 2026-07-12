@@ -8,7 +8,7 @@
 
 import { useState } from "react";
 import { t } from "../lib/i18n";
-import type { SharedDraftData } from "../lib/tour-types";
+import type { SharedDraftData, RoomData } from "../lib/tour-types";
 
 // ── Helpers ────────────────────────────────────────────────────────────
 
@@ -65,13 +65,86 @@ function Lightbox({ photos, index, onClose, onNav }: {
   );
 }
 
+// ── Shared floorplan (composite + room labels, no geometry/zoom) ──────
+
+function SharedFloorplan({ floorplanUrl, rooms, lang }: { floorplanUrl: string; rooms: RoomData[]; lang: string }) {
+  const allPoints = rooms.flatMap((r) => r.boundary_points ?? []);
+  const hasRooms = allPoints.length > 0;
+
+  if (!hasRooms) {
+    return (
+      <div className="rounded-xl overflow-hidden border border-border/50 bg-white">
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img src={floorplanUrl} alt={t("tour.floorplan.alt", lang)} className="w-full" loading="lazy" />
+      </div>
+    );
+  }
+
+  const xs = allPoints.map((p) => p[0]);
+  const zs = allPoints.map((p) => p[1]);
+  const minX = Math.min(...xs);
+  const maxX = Math.max(...xs);
+  const minZ = Math.min(...zs);
+  const maxZ = Math.max(...zs);
+  const rangeX = maxX - minX || 1;
+  const rangeZ = maxZ - minZ || 1;
+  const svgW = 600;
+  const svgH = svgW * (rangeZ / rangeX);
+  const pad = 20;
+  const toSvg = (x: number, z: number): [number, number] => [
+    pad + ((x - minX) / rangeX) * (svgW - 2 * pad),
+    pad + ((z - minZ) / rangeZ) * (svgH - 2 * pad),
+  ];
+
+  return (
+    <div className="relative rounded-xl overflow-hidden border border-border/50 bg-white">
+      {/* eslint-disable-next-line @next/next/no-img-element */}
+      <img src={floorplanUrl} alt={t("tour.floorplan.alt", lang)} className="w-full block" loading="lazy" />
+      <svg viewBox={`0 0 ${svgW} ${svgH}`} className="absolute inset-0 w-full h-full" style={{ pointerEvents: "none" }}>
+        {rooms.map((room) => {
+          const pts = room.boundary_points;
+          if (!pts?.length) return null;
+          const svgPts = pts.map(([x, z]) => toSvg(x, z));
+          const pointsStr = svgPts.map(([x, z]) => `${x},${z}`).join(" ");
+          const cx = room.center_x != null ? toSvg(room.center_x, room.center_z!)[0] : svgPts.reduce((s, p) => s + p[0], 0) / svgPts.length;
+          const cy = room.center_x != null ? toSvg(room.center_x, room.center_z!)[1] : svgPts.reduce((s, p) => s + p[1], 0) / svgPts.length;
+          return (
+            <g key={room.id}>
+              <polygon
+                points={pointsStr}
+                fill="rgba(0,0,0,0.04)"
+                stroke="rgba(0,0,0,0.2)"
+                strokeWidth={1}
+              />
+              <text
+                x={cx}
+                y={cy}
+                textAnchor="middle"
+                dominantBaseline="central"
+                fill="rgba(0,0,0,0.55)"
+                fontSize={10}
+                fontWeight={500}
+                className="select-none"
+              >
+                {room.label}
+              </text>
+            </g>
+          );
+        })}
+      </svg>
+    </div>
+  );
+}
+
 // ── Component ──────────────────────────────────────────────────────────
 
-export function SharedDraftView({ draftData, lang, hasTour, onOpenTour }: {
+export function SharedDraftView({ draftData, lang, hasTour, onOpenTour, floorplanUrl, rooms }: {
   draftData: SharedDraftData;
   lang: string;
   hasTour?: boolean;
   onOpenTour?: () => void;
+  floorplanUrl?: string | null;
+  rooms?: RoomData[];
 }) {
   const [lightboxIdx, setLightboxIdx] = useState<number | null>(null);
 
@@ -202,6 +275,11 @@ export function SharedDraftView({ draftData, lang, hasTour, onOpenTour }: {
               <div className="rounded-xl border border-border/50 px-4 py-3.5">
                 <p className="text-[13px] leading-[1.75] text-foreground/65 whitespace-pre-line">{draftData.description}</p>
               </div>
+            )}
+
+            {/* Floorplan (annotated composite) */}
+            {floorplanUrl && (
+              <SharedFloorplan floorplanUrl={floorplanUrl} rooms={rooms ?? []} lang={lang} />
             )}
 
             {/* 3D Tour button (between content and photo grid) */}

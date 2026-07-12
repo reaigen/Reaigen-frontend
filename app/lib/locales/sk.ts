@@ -826,6 +826,15 @@ const sk: LocaleStrings = {
   "enum.access_road.dirt":              "Poľná",
   "enum.access_road.none":              "Žiadna",
   "draft.descriptionPending":            "Preklad prebieha…",
+
+  // ── Floorplan Viewer ─────────────────────────────────────────────────
+  "floorplan.walls":                     "Steny",
+  "floorplan.doors":                     "Dvere",
+  "floorplan.windows":                   "Okná",
+  "floorplan.roomLabels":                "Popisky",
+  "floorplan.area":                      "Plocha",
+  "floorplan.sqm":                       "m²",
+  "floorplan.rooms":                     "Miestnosti",
 };
 
 export default sk;

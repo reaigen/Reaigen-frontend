@@ -826,6 +826,15 @@ const de: LocaleStrings = {
   "enum.access_road.dirt":              "Feldweg",
   "enum.access_road.none":              "Keine",
   "draft.descriptionPending":            "Übersetzung läuft…",
+
+  // ── Floorplan Viewer ─────────────────────────────────────────────────
+  "floorplan.walls":                     "Wände",
+  "floorplan.doors":                     "Türen",
+  "floorplan.windows":                   "Fenster",
+  "floorplan.roomLabels":                "Beschriftungen",
+  "floorplan.area":                      "Fläche",
+  "floorplan.sqm":                       "m²",
+  "floorplan.rooms":                     "Räume",
 };
 
 export default de;

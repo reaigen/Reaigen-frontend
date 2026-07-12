@@ -656,6 +656,50 @@ export async function getFloorplan(floorplanId: number): Promise<FloorplanDetail
   return request(`/api/reaigen/floorplans/${floorplanId}/`);
 }
 
+// ─── Floorplan Rendering ──────────────────────────────────────────────
+
+export interface GeometryMesh {
+  id: string;
+  points: number[][];
+  faces: number[][];
+}
+
+export interface GeometryLayer {
+  available: boolean;
+  meshes: GeometryMesh[];
+}
+
+export interface FloorplanRoom {
+  id: number;
+  label: string;
+  room_number: number | null;
+  center: number[];
+  floor_area: number | null;
+  boundary_points: number[][];
+  room_type_code: string | null;
+  label_offset_x: number;
+  label_offset_z: number;
+}
+
+export interface FloorplanRenderingData {
+  composite: { url: string };
+  geometry: {
+    layers: {
+      walls: GeometryLayer;
+      doors: GeometryLayer;
+      windows: GeometryLayer;
+    };
+  };
+  rooms: FloorplanRoom[];
+  passes: {
+    passes: Record<string, string>;
+  };
+}
+
+export async function getFloorplanRendering(floorplanId: number, signal?: AbortSignal): Promise<FloorplanRenderingData> {
+  return abortableRequest(`/api/reaigen/floorplans/${floorplanId}/rendering/`, signal);
+}
+
 export interface TranslateDescriptionResponse {
   translation?: string;
   lang: string;

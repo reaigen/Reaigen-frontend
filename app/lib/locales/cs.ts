@@ -826,6 +826,15 @@ const cs: LocaleStrings = {
   "enum.access_road.dirt":              "Polní",
   "enum.access_road.none":              "Žádná",
   "draft.descriptionPending":            "Překlad probíhá…",
+
+  // ── Floorplan Viewer ─────────────────────────────────────────────────
+  "floorplan.walls":                     "Stěny",
+  "floorplan.doors":                     "Dveře",
+  "floorplan.windows":                   "Okna",
+  "floorplan.roomLabels":                "Popisky",
+  "floorplan.area":                      "Plocha",
+  "floorplan.sqm":                       "m²",
+  "floorplan.rooms":                     "Místnosti",
 };
 
 export default cs;

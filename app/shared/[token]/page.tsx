@@ -357,7 +357,7 @@ export default function SharedPage({ params }: { params: Promise<{ token: string
   // ── Property card (primary view) ──────────────────────────────────
 
   if (draftData) {
-    return <SharedDraftView draftData={draftData} lang={lang} hasTour={hasTour} onOpenTour={() => setTourOpen(true)} />;
+    return <SharedDraftView draftData={draftData} lang={lang} hasTour={hasTour} onOpenTour={() => setTourOpen(true)} floorplanUrl={tourViewerData?.floorplan_url} rooms={tourViewerData?.rooms} />;
   }
 
   return null;

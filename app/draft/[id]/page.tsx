@@ -6,11 +6,11 @@ import Link from "next/link";
 import { useAuth } from "../../components/hooks/use-auth";
 import { AppShell } from "../../components/app-shell";
 import { Button } from "../../lib/ui/button";
-import { getDraft, getSplatsByDraft, getFloorplan, translateDraftDescription } from "../../lib/api/client";
-import type { FloorplanDetail } from "../../lib/api/client";
+import { getDraft, getSplatsByDraft, translateDraftDescription } from "../../lib/api/client";
 import { isApiNotFound } from "../../lib/api/error-message";
 import { getUserLanguage, t } from "../../lib/i18n";
 import { DraftImageGallery } from "../../components/draft-image-gallery";
+import FloorplanViewer from "../../components/floorplan-viewer";
 import type { DraftDetailItem, DraftUpload, SplatsByDraftPayload } from "../../lib/tour-types";
 
 // ── Formatting ────────────────────────────────────────────────────────────
@@ -367,10 +367,8 @@ export default function DraftPreviewPage({ params }: { params: Promise<{ id: str
 
   const [draft, setDraft] = useState<DraftDetailItem | null>(null);
   const [splatData, setSplatData] = useState<SplatsByDraftPayload | null>(null);
-  const [floorplan, setFloorplan] = useState<FloorplanDetail | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [descExpanded, setDescExpanded] = useState(false);
-  const [floorplanOpen, setFloorplanOpen] = useState(false);
   const [translationPending, setTranslationPending] = useState(false);
 
   useEffect(() => {
@@ -385,7 +383,6 @@ export default function DraftPreviewPage({ params }: { params: Promise<{ id: str
     ]).then(([d, s]) => {
       setDraft(d);
       setSplatData(s);
-      if (d.floorplan_id) getFloorplan(d.floorplan_id).then(setFloorplan).catch(() => {});
       // Trigger description translation if not yet available and user's lang ≠ en
       if (d.description && lang !== "en" && d.translation_status !== "completed") {
         setTranslationPending(true);
@@ -479,7 +476,7 @@ export default function DraftPreviewPage({ params }: { params: Promise<{ id: str
   const hasTour = !!primarySplat;
   const primarySplatId = primarySplat ? (primarySplat.splat_id ?? primarySplat.id) : undefined;
   const thumbUrl = primarySplat?.signed_outputs?.thumbnail ?? null;
-  const fpUrl = floorplan?.composite_url ?? null;
+
 
   return (
     <AppShell user={user} onLogout={logout}>
@@ -601,21 +598,9 @@ export default function DraftPreviewPage({ params }: { params: Promise<{ id: str
         {/* Location map — placeholder, awaiting Google Maps API key */}
 
         {/* Floorplan */}
-        {fpUrl && (
+        {draft.floorplan_id && draft.draft_data?.length > 0 && (
           <div className="mt-5">
-            <button onClick={() => setFloorplanOpen(!floorplanOpen)} className="flex w-full items-center justify-between rounded-lg border border-border/70 px-3.5 py-2.5 hover:bg-muted/20 transition-colors">
-              <span className="flex items-center gap-2 text-[14px] font-semibold">
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" className="text-foreground/40"><rect x="2" y="2" width="20" height="20" rx="2"/><path d="M2 8h20M8 2v20M14 8v14"/></svg>
-                {t("draft.floorplan", lang)}
-              </span>
-              <svg width="14" height="14" viewBox="0 0 16 16" fill="none" className={`text-foreground/40 transition-transform duration-200 ${floorplanOpen ? "rotate-180" : ""}`}><path d="M4 6l4 4 4-4" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/></svg>
-            </button>
-            {floorplanOpen && (
-              <div className="mt-2 overflow-hidden rounded-lg border border-border/70 bg-white">
-                {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img src={fpUrl} alt={t("tour.floorplan.alt", lang)} className="w-full" loading="lazy" />
-              </div>
-            )}
+            <FloorplanViewer draftData={draft.draft_data} floorplanId={draft.floorplan_id} lang={lang} />
           </div>
         )}
 
