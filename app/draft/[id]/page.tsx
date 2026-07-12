@@ -26,7 +26,7 @@ function fmt(value: string | number | null | undefined, lang: string) {
 function fmtMoney(value: string | number | null | undefined, currency: string | null | undefined, lang: string) {
   if (value == null || value === "") return null;
   const n = typeof value === "number" ? value : Number(value);
-  if (!Number.isFinite(n)) return `${value}${currency ? ` ${currency}` : ""}`;
+  if (!Number.isFinite(n) || n === 0) return null;
   try {
     return new Intl.NumberFormat(lang, { style: "currency", currency: currency || "EUR", maximumFractionDigits: 0 }).format(n);
   } catch {
@@ -438,14 +438,16 @@ export default function DraftPreviewPage({ params }: { params: Promise<{ id: str
           {price && <p className="text-[18px] font-semibold text-foreground pt-0.5">{price}</p>}
         </div>
 
-        {/* Facts grid */}
+        {/* Facts */}
         {facts.length > 0 && (
-          <div className={`mt-4 grid gap-px rounded-xl border border-border/60 bg-border/50 overflow-hidden ${facts.length <= 2 ? "grid-cols-2" : "grid-cols-3"}`}>
+          <div className="mt-4 flex flex-wrap gap-3">
             {facts.map((f, i) => (
-              <div key={i} className="bg-background flex flex-col items-center justify-center py-3.5 px-2">
-                <span className="text-foreground/35 mb-1.5">{f.icon}</span>
-                <span className="text-[16px] font-semibold tabular-nums leading-tight">{f.value}</span>
-                <span className="mt-0.5 text-[10px] uppercase tracking-wider text-muted-foreground">{f.label}</span>
+              <div key={i} className="flex items-center gap-2 rounded-lg border border-border/60 px-3 py-2">
+                <span className="text-foreground/35">{f.icon}</span>
+                <div>
+                  <span className="text-[14px] font-semibold tabular-nums leading-tight">{f.value}</span>
+                  <span className="ml-1 text-[11px] text-muted-foreground">{f.label}</span>
+                </div>
               </div>
             ))}
           </div>

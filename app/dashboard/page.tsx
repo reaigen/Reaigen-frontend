@@ -22,7 +22,7 @@ function compactNumber(value: string | number | null | undefined, lang?: string)
 function formatMoney(value: string | number | null | undefined, currency: string | null | undefined, lang: string) {
   if (value == null || value === "") return null;
   const n = typeof value === "number" ? value : Number(value);
-  if (!Number.isFinite(n)) return `${value}${currency ? ` ${currency}` : ""}`;
+  if (!Number.isFinite(n) || n === 0) return null;
   try {
     return new Intl.NumberFormat(lang, { style: "currency", currency: currency || "EUR", maximumFractionDigits: 0 }).format(n);
   } catch {
