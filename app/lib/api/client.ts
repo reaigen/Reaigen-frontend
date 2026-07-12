@@ -621,7 +621,7 @@ export async function acceptAppContentDocument(data: {
 
 // ─── Splat Viewer & Tour ──────────────────────────────────────────────────
 
-import type { SplatViewerPayload, CameraData, TourViewerData, SplatListItem, ShareData, SplatsByDraftPayload, DraftListingItem, DraftDetailItem } from "../tour-types";
+import type { SplatViewerPayload, CameraData, TourViewerData, SplatListItem, ShareData, SharedDraftData, SplatsByDraftPayload, DraftListingItem, DraftDetailItem } from "../tour-types";
 
 export async function listSplats(page = 1, pageSize = 20, search = ""): Promise<{ results: SplatListItem[]; count: number; next: string | null }> {
   const q = search ? `&search=${encodeURIComponent(search)}` : "";
@@ -767,6 +767,42 @@ export async function getSharedTourViewer(token: string): Promise<TourViewerData
   return request(`/api/reaigen/shared/${encodeURIComponent(token)}/tour-viewer/`);
 }
 
+export async function getSharedDraftData(token: string): Promise<SharedDraftData | null> {
+  try {
+    const raw = await request(`/api/reaigen/shared/${encodeURIComponent(token)}/`);
+    if (!raw) return null;
+    // Map backend response to frontend SharedDraftData format
+    // Backend uses: raw_uploads[].file_url, draft_data[].data_key/data_value, area_unit_display
+    const uploads = (raw.raw_uploads ?? raw.uploads ?? [])
+      .map((u: Record<string, unknown>) => ({
+        url: (u.file_url ?? u.url ?? "") as string,
+        name: (u.file_name ?? u.name ?? "") as string,
+        mime_type: (u.mime_type ?? "") as string,
+      }))
+      .filter((u: { url: string }) => u.url);
+    return {
+      title: raw.title,
+      description: raw.description,
+      display_address: raw.display_address,
+      price: raw.price,
+      currency: raw.currency,
+      bedrooms: raw.bedrooms,
+      bathrooms: raw.bathrooms,
+      area: raw.area,
+      area_unit: raw.area_unit_display ?? raw.area_unit,
+      lot_size: raw.lot_size,
+      lot_size_unit: raw.lot_size_unit_display ?? raw.lot_size_unit,
+      year_built: raw.year_built,
+      city: raw.city,
+      state: raw.state,
+      country: raw.country,
+      uploads,
+    };
+  } catch {
+    return null;
+  }
+}
+
 export async function verifySharePin(token: string, pin: string): Promise<{ verified: boolean }> {
   return request(`/api/reaigen/shared/${encodeURIComponent(token)}/verify-pin/`, {
     method: "POST",
@@ -781,6 +817,25 @@ export async function listShares(): Promise<ShareData[]> {
   return data.results ?? data ?? [];
 }
 
+export async function createDraftShare(
+  draftId: number,
+  opts?: { share_type?: string; pin?: string; expires_in_hours?: number; max_access_count?: number; field_names?: string[]; data_features?: string[] | null },
+): Promise<ShareData> {
+  return request("/api/reaigen/shares/", {
+    method: "POST",
+    body: JSON.stringify({ draft: draftId, ...opts }),
+  });
+}
+
+export async function getDraftShare(draftId: number): Promise<ShareData | null> {
+  try {
+    const all = await listShares();
+    return all.find((s) => s.draft === draftId && s.status !== "revoked") ?? null;
+  } catch {
+    return null;
+  }
+}
+
 export async function getSplatShare(splatId: number): Promise<ShareData | null> {
   try {
     return await request(`/api/reaigen/splats/${splatId}/share/`);
@@ -791,7 +846,7 @@ export async function getSplatShare(splatId: number): Promise<ShareData | null> 
 
 export async function createSplatShare(
   splatId: number,
-  opts?: { share_type?: string; pin?: string; expires_in_hours?: number; max_access_count?: number },
+  opts?: { share_type?: string; pin?: string; expires_in_hours?: number; max_access_count?: number; field_names?: string[]; data_features?: string[] | null },
 ): Promise<ShareData> {
   return request(`/api/reaigen/splats/${splatId}/share/`, {
     method: "POST",
@@ -805,6 +860,8 @@ export async function updateShare(shareId: number, data: Partial<{
   pin: string;
   expires_in_hours: number;
   max_access_count: number | null;
+  field_names: string[];
+  data_features: string[] | null;
 }>): Promise<ShareData> {
   return request(`/api/reaigen/shares/${shareId}/`, {
     method: "PATCH",

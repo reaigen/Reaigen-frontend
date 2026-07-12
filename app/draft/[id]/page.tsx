@@ -10,7 +10,6 @@ import { getDraft, getSplatsByDraft, getFloorplan, translateDraftDescription } f
 import type { FloorplanDetail } from "../../lib/api/client";
 import { isApiNotFound } from "../../lib/api/error-message";
 import { getUserLanguage, t } from "../../lib/i18n";
-import { ShareDialog } from "../../components/share-dialog";
 import { DraftImageGallery } from "../../components/draft-image-gallery";
 import type { DraftDetailItem, DraftUpload, SplatsByDraftPayload } from "../../lib/tour-types";
 
@@ -372,7 +371,6 @@ export default function DraftPreviewPage({ params }: { params: Promise<{ id: str
   const [error, setError] = useState<string | null>(null);
   const [descExpanded, setDescExpanded] = useState(false);
   const [floorplanOpen, setFloorplanOpen] = useState(false);
-  const [shareTarget, setShareTarget] = useState<{ splatId: number; title: string } | null>(null);
   const [translationPending, setTranslationPending] = useState(false);
 
   useEffect(() => {
@@ -622,23 +620,22 @@ export default function DraftPreviewPage({ params }: { params: Promise<{ id: str
         )}
 
         {/* Actions */}
-        {hasTour && (
-          <div className="mt-6 flex gap-2">
-            <Button variant="outline" size="sm" className="flex-1" onClick={() => setShareTarget({ splatId: primarySplatId!, title: draft.title })}>
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" className="mr-1.5"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><path d="M8.59 13.51l6.83 3.98M15.41 6.51l-6.82 3.98"/></svg>
-              {t("draft.share", lang)}
-            </Button>
+        <div className="mt-6 flex gap-2">
+          <Button variant="outline" size="sm" className="flex-1" onClick={() => router.push(`/draft/${draftId}/sharing`)}>
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" className="mr-1.5"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><path d="M8.59 13.51l6.83 3.98M15.41 6.51l-6.82 3.98"/></svg>
+            {t("draft.share", lang)}
+          </Button>
+          {hasTour && (
             <Link href={`/tour/${primarySplatId}`} className="flex-1">
               <Button variant="default" size="sm" className="w-full">
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" className="mr-1.5"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/><path d="M3.27 6.96L12 12.01l8.73-5.05M12 22.08V12"/></svg>
                 {t("draft.viewTour", lang)}
               </Button>
             </Link>
-          </div>
-        )}
+          )}
+        </div>
       </div>
 
-      {shareTarget && <ShareDialog splatId={shareTarget.splatId} title={shareTarget.title} open={!!shareTarget} onClose={() => setShareTarget(null)} lang={lang} />}
     </AppShell>
   );
 }

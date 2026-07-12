@@ -1,17 +1,37 @@
 "use client";
 
+/**
+ * Public shared view — renders content for a share token.
+ *
+ * Always shows the property card (SharedDraftView) as the primary view.
+ * When a 3D tour exists, a "View 3D Tour" button opens the full-screen
+ * SplatViewer as an overlay. This way the recipient always sees the
+ * property info first, and can explore the tour if available.
+ *
+ * Flow:
+ *   1. Load draft data via GET /shared/{token}/ (always)
+ *   2. Try tour-viewer endpoint in parallel (may 404 if no tour)
+ *   3. If PIN required → show PIN gate first
+ *   4. Render: property card + optional tour overlay
+ */
+
 import { useEffect, useState, useRef, useCallback, use } from "react";
-import { getSharedTourViewer, verifySharePin } from "../../lib/api/client";
+import { getSharedTourViewer, verifySharePin, getSharedDraftData } from "../../lib/api/client";
 import { getApiErrorJson, getSafeApiErrorMessage } from "../../lib/api/error-message";
-import type { TourViewerData, TourData, TourShot, RoomData, CameraData } from "../../lib/tour-types";
+import type { TourViewerData, TourData, RoomData, CameraData, SharedDraftData } from "../../lib/tour-types";
 import dynamic from "next/dynamic";
 import TourControls from "../../components/tour-controls";
 import FloorplanNav from "../../components/floorplan-nav";
+import { SharedPropertyPanel } from "../../components/shared-property-panel";
+import { SharedDraftView } from "../../components/shared-draft-view";
 import { Button } from "../../lib/ui/button";
 import { Input } from "../../lib/ui/input";
 import { getBrowserLanguage, t } from "../../lib/i18n";
 
 const SplatViewer = dynamic(() => import("../../components/splat-viewer"), { ssr: false });
+
+// ── Splat URL selection ────────────────────────────────────────────────
+
 const SOG_READY_TIMEOUT_MS = 15000;
 
 function pickRenderableUrl(data: TourViewerData): string {
@@ -35,9 +55,11 @@ function pickFallbackRenderableUrl(data: TourViewerData): string | null {
     ?? null;
 }
 
+// ── Error classification ───────────────────────────────────────────────
+
 type SharedErrorKind = "notAvailable" | "expired" | "limit" | "paused" | "generic";
 
-function sanitizeError(msg: string, lang: string): { kind: SharedErrorKind; message: string } {
+function classifyError(msg: string, lang: string): { kind: SharedErrorKind; message: string } {
   const lower = msg.toLowerCase();
   if (lower.includes("requires_pin")) return { kind: "generic", message: t("shared.error.pinRequired", lang) };
   if (lower.includes("not found") || lower.includes("revoked")) return { kind: "notAvailable", message: t("shared.error.notAvailable", lang) };
@@ -46,6 +68,8 @@ function sanitizeError(msg: string, lang: string): { kind: SharedErrorKind; mess
   if (lower.includes("paused")) return { kind: "paused", message: t("shared.error.paused", lang) };
   return { kind: "generic", message: t("shared.error.loadFailed", lang) };
 }
+
+// ── Branding ───────────────────────────────────────────────────────────
 
 function Brand() {
   return (
@@ -58,81 +82,130 @@ function Brand() {
   );
 }
 
-export default function SharedTourPage({ params }: { params: Promise<{ token: string }> }) {
+// ── Page ───────────────────────────────────────────────────────────────
+
+export default function SharedPage({ params }: { params: Promise<{ token: string }> }) {
   const { token } = use(params);
 
   const [lang, setLang] = useState("en");
-  const [data, setData] = useState<TourViewerData | null>(null);
+  useEffect(() => { setLang(getBrowserLanguage()); }, []);
+
+  // Data
+  const [tourViewerData, setTourViewerData] = useState<TourViewerData | null>(null);
+  const [draftData, setDraftData] = useState<SharedDraftData | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [hasTour, setHasTour] = useState(false);
+
+  // Error / PIN
   const [error, setError] = useState<string | null>(null);
   const [errorKind, setErrorKind] = useState<SharedErrorKind | null>(null);
   const [requiresPin, setRequiresPin] = useState(false);
   const [pin, setPin] = useState("");
   const [pinError, setPinError] = useState<string | null>(null);
   const [pinLoading, setPinLoading] = useState(false);
-  const [tourData, setTourData] = useState<TourData | null>(null);
+
+  // Tour overlay
+  const [tourOpen, setTourOpen] = useState(false);
+  const [tourMeta, setTourMeta] = useState<TourData | null>(null);
   const [shotIdx, setShotIdx] = useState(0);
   const [activeRoomId, setActiveRoomId] = useState<number | null>(null);
   const [activeRenderUrl, setActiveRenderUrl] = useState<string | null>(null);
   const [viewerReady, setViewerReady] = useState(false);
-
   const splatRef = useRef<any>(null);
 
-  useEffect(() => {
-    setLang(getBrowserLanguage());
-  }, []);
+  // ── Load both draft data and tour data in parallel ────────────────
 
-  const loadViewer = useCallback(async () => {
-    try {
-      setError(null);
-      setErrorKind(null);
-      const result = await getSharedTourViewer(token);
-      setData(result);
-    } catch (err) {
+  const loadContent = useCallback(async () => {
+    setError(null);
+    setErrorKind(null);
+    setLoading(true);
+
+    // Load draft data and tour data in parallel
+    const [draftResult, tourResult] = await Promise.allSettled([
+      getSharedDraftData(token),
+      getSharedTourViewer(token),
+    ]);
+
+    // Check for PIN requirement from tour endpoint
+    if (tourResult.status === "rejected") {
+      const err = tourResult.reason;
       const body = getApiErrorJson(err);
       if (body?.requires_pin) {
         setRequiresPin(true);
+        setLoading(false);
         return;
       }
-      const rawMessage = typeof body?.error === "string" ? body.error : typeof body?.message === "string" ? body.message : "";
-      const nextError = rawMessage
-        ? sanitizeError(rawMessage, lang)
-        : { kind: "generic" as const, message: getSafeApiErrorMessage(err, lang, "shared.error.loadFailed") };
-      setErrorKind(nextError.kind);
-      setError(nextError.message);
     }
+
+    // Draft data
+    if (draftResult.status === "fulfilled" && draftResult.value) {
+      setDraftData(draftResult.value);
+    }
+
+    // Tour data
+    if (tourResult.status === "fulfilled" && tourResult.value) {
+      setTourViewerData(tourResult.value);
+      setHasTour(true);
+      // Tour response may also include inline draft data
+      if (!draftData && tourResult.value.draft_data) {
+        setDraftData(tourResult.value.draft_data);
+      }
+    }
+
+    // If we got neither, show error
+    const gotDraft = draftResult.status === "fulfilled" && draftResult.value;
+    const gotTour = tourResult.status === "fulfilled" && tourResult.value;
+    if (!gotDraft && !gotTour) {
+      // Try to classify the error from whichever endpoint failed
+      const err = tourResult.status === "rejected" ? tourResult.reason : null;
+      if (err) {
+        const body = getApiErrorJson(err);
+        const rawMessage = typeof body?.error === "string" ? body.error : typeof body?.message === "string" ? body.message : "";
+        const classified = rawMessage
+          ? classifyError(rawMessage, lang)
+          : { kind: "generic" as const, message: getSafeApiErrorMessage(err, lang, "shared.error.loadFailed") };
+        setErrorKind(classified.kind);
+        setError(classified.message);
+      } else {
+        setError(t("shared.error.loadFailed", lang));
+        setErrorKind("generic");
+      }
+    }
+
+    setLoading(false);
   }, [token, lang]);
 
-  useEffect(() => { loadViewer(); }, [loadViewer]);
+  useEffect(() => { loadContent(); }, [loadContent]);
+
+  // ── Render URL management ─────────────────────────────────────────
+
   useEffect(() => {
-    setActiveRenderUrl(data ? pickRenderableUrl(data) : null);
+    setActiveRenderUrl(tourViewerData ? pickRenderableUrl(tourViewerData) : null);
     setViewerReady(false);
-  }, [data]);
+  }, [tourViewerData]);
+
   useEffect(() => {
-    if (!data || !activeRenderUrl) return;
-    if (viewerReady) return;
-    const fallbackUrl = pickFallbackRenderableUrl(data);
+    if (!tourViewerData || !activeRenderUrl || viewerReady) return;
+    const fallbackUrl = pickFallbackRenderableUrl(tourViewerData);
     if (!fallbackUrl || activeRenderUrl === fallbackUrl) return;
     if (!activeRenderUrl.split("?")[0].toLowerCase().endsWith(".sog")) return;
-
-    const timer = window.setTimeout(() => {
-      setActiveRenderUrl(fallbackUrl);
-    }, SOG_READY_TIMEOUT_MS);
-
+    const timer = window.setTimeout(() => setActiveRenderUrl(fallbackUrl), SOG_READY_TIMEOUT_MS);
     return () => window.clearTimeout(timer);
-  }, [activeRenderUrl, data, viewerReady]);
+  }, [activeRenderUrl, tourViewerData, viewerReady]);
+
+  // ── PIN verification ──────────────────────────────────────────────
 
   const handlePinSubmit = useCallback(async (e: React.FormEvent) => {
     e.preventDefault();
     if (pinLoading) return;
     setPinLoading(true);
     setPinError(null);
-    setError(null);
     try {
       const result = await verifySharePin(token, pin);
       if (result.verified) {
         setRequiresPin(false);
         setPin("");
-        await loadViewer();
+        await loadContent();
       } else {
         setPinError(t("shared.pin.invalid", lang));
       }
@@ -147,27 +220,21 @@ export default function SharedTourPage({ params }: { params: Promise<{ token: st
     } finally {
       setPinLoading(false);
     }
-  }, [token, pin, loadViewer, pinLoading, lang]);
+  }, [token, pin, loadContent, pinLoading, lang]);
 
-  const handleShotChange = useCallback((idx: number) => {
-    setShotIdx(idx);
-  }, []);
-
-  const handleTourLoaded = useCallback((data: TourData) => {
-    setTourData(data);
-  }, []);
+  // ── Tour overlay handlers ─────────────────────────────────────────
 
   const handleRoomClick = useCallback((room: RoomData) => {
     setActiveRoomId(room.id);
-    if (tourData?.rooms) {
-      const featured = tourData.rooms.find((r) => r.id === room.id);
-      if (featured && featured.featuredShotIdx >= 0) {
-        splatRef.current?.goToShot(featured.featuredShotIdx);
-      }
+    if (tourMeta?.rooms) {
+      const featured = tourMeta.rooms.find((r) => r.id === room.id);
+      if (featured && featured.featuredShotIdx >= 0) splatRef.current?.goToShot(featured.featuredShotIdx);
     }
-  }, [tourData]);
+  }, [tourMeta]);
 
-  // ── PIN gate ──
+  // ── Render ────────────────────────────────────────────────────────
+
+  // PIN gate
   if (requiresPin) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-[hsl(var(--muted))]/35 px-4">
@@ -176,50 +243,28 @@ export default function SharedTourPage({ params }: { params: Promise<{ token: st
             <Brand />
             <div className="pt-2">
               <div className="mx-auto w-12 h-12 rounded-full bg-muted flex items-center justify-center mb-3">
-                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" className="text-muted-foreground">
-                  <rect x="3" y="11" width="18" height="11" rx="2" stroke="currentColor" strokeWidth="2" />
-                  <path d="M7 11V7a5 5 0 0110 0v4" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
-                </svg>
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" className="text-muted-foreground"><rect x="3" y="11" width="18" height="11" rx="2" stroke="currentColor" strokeWidth="2" /><path d="M7 11V7a5 5 0 0110 0v4" stroke="currentColor" strokeWidth="2" strokeLinecap="round" /></svg>
               </div>
               <h2 className="text-base font-semibold">{t("shared.pin.title", lang)}</h2>
               <p className="text-sm text-muted-foreground mt-1">{t("shared.pin.subtitle", lang)}</p>
             </div>
           </div>
-
           <form onSubmit={handlePinSubmit} className="space-y-3">
-            <Input
-              type="text"
-              inputMode="numeric"
-              pattern="[0-9]*"
-              placeholder={t("shared.pin.placeholder", lang)}
-              value={pin}
-              onChange={(e) => setPin(e.target.value.replace(/\D/g, "").slice(0, 10))}
-              disabled={pinLoading}
-              autoFocus
-              autoComplete="off"
-              className="h-10 text-center text-sm tracking-[0.2em] tabular-nums"
-            />
-            {pinError && (
-              <div className="rounded-lg bg-foreground/[0.04] border border-foreground/[0.08] px-3 py-2">
-                <p className="text-xs text-foreground/60 text-center">{pinError}</p>
-              </div>
-            )}
-            <Button className="w-full h-10" loading={pinLoading} disabled={pinLoading || pin.length < 4}>
-              {t("shared.pin.viewTour", lang)}
-            </Button>
+            <Input type="text" inputMode="numeric" pattern="[0-9]*" placeholder={t("shared.pin.placeholder", lang)} value={pin} onChange={(e) => setPin(e.target.value.replace(/\D/g, "").slice(0, 10))} disabled={pinLoading} autoFocus autoComplete="off" className="h-10 text-center text-sm tracking-[0.2em] tabular-nums" />
+            {pinError && <div className="rounded-lg bg-foreground/[0.04] border border-foreground/[0.08] px-3 py-2"><p className="text-xs text-foreground/60 text-center">{pinError}</p></div>}
+            <Button className="w-full h-10" loading={pinLoading} disabled={pinLoading || pin.length < 4}>{t("shared.pin.viewTour", lang)}</Button>
           </form>
         </div>
       </div>
     );
   }
 
-  // ── Error state ──
+  // Error
   if (error) {
     const isExpired = errorKind === "expired" || errorKind === "notAvailable";
     const isPaused = errorKind === "paused";
     const isLimitReached = errorKind === "limit";
     const showRetry = !isExpired && !isPaused && !isLimitReached;
-
     return (
       <div className="min-h-screen flex items-center justify-center bg-[hsl(var(--muted))]/35 px-4">
         <div className="text-center space-y-4 px-6 max-w-xs">
@@ -227,20 +272,11 @@ export default function SharedTourPage({ params }: { params: Promise<{ token: st
           <div className="pt-2">
             <div className="mx-auto w-12 h-12 rounded-full bg-foreground/[0.04] flex items-center justify-center mb-3">
               {isExpired ? (
-                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" className="text-foreground/30">
-                  <circle cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="1.5" />
-                  <path d="M12 6v6l4 2" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
-                </svg>
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" className="text-foreground/30"><circle cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="1.5" /><path d="M12 6v6l4 2" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" /></svg>
               ) : isPaused ? (
-                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" className="text-foreground/30">
-                  <circle cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="1.5" />
-                  <path d="M10 15V9M14 15V9" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
-                </svg>
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" className="text-foreground/30"><circle cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="1.5" /><path d="M10 15V9M14 15V9" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" /></svg>
               ) : (
-                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" className="text-foreground/30">
-                  <circle cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="1.5" />
-                  <path d="M12 8v4M12 16h.01" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
-                </svg>
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" className="text-foreground/30"><circle cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="1.5" /><path d="M12 8v4M12 16h.01" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" /></svg>
               )}
             </div>
             <p className="text-[14px] font-medium text-foreground/70 mb-1">
@@ -248,18 +284,14 @@ export default function SharedTourPage({ params }: { params: Promise<{ token: st
             </p>
             <p className="text-[13px] text-foreground/40 leading-relaxed">{error}</p>
           </div>
-          {showRetry && (
-            <Button variant="outline" size="sm" onClick={() => { setError(null); loadViewer(); }}>
-              {t("common.tryAgain", lang)}
-            </Button>
-          )}
+          {showRetry && <Button variant="outline" size="sm" onClick={() => { setError(null); loadContent(); }}>{t("common.tryAgain", lang)}</Button>}
         </div>
       </div>
     );
   }
 
-  // ── Loading ──
-  if (!data) {
+  // Loading
+  if (loading) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-background">
         <div className="text-center space-y-3">
@@ -270,70 +302,63 @@ export default function SharedTourPage({ params }: { params: Promise<{ token: st
     );
   }
 
-  // ── Viewer ──
-  return (
-    <div className="relative h-[100dvh] w-screen overflow-hidden bg-black">
-      <SplatViewer
-        ref={splatRef}
-        splatUrl={activeRenderUrl ?? pickRenderableUrl(data)}
-        tourUrl={data.tour_url ?? undefined}
-        initialCameras={data.cameras as CameraData ?? undefined}
-        preferSavedCameras={!!data.cameras?.cameras?.length}
-        readOnly
-        onReady={() => setViewerReady(true)}
-        onError={() => {
-          const fallbackUrl = pickFallbackRenderableUrl(data);
-          if (fallbackUrl && activeRenderUrl !== fallbackUrl) {
-            setViewerReady(false);
-            setActiveRenderUrl(fallbackUrl);
-          }
-        }}
-        onShotChange={handleShotChange}
-        onTourLoaded={handleTourLoaded}
-        lang={lang}
-      />
+  // ── Full-screen tour overlay ──────────────────────────────────────
 
-      {/* Title badge */}
-      {data.draft_title && (
-        <div className="absolute left-3 top-3 z-20 max-w-[calc(100%-5.5rem)] animate-fade-in sm:left-4 sm:top-4 sm:max-w-[calc(100%-6rem)]">
-          <span className="text-sm font-medium text-white bg-black/40 backdrop-blur-xl px-3.5 py-2 rounded-full border border-white/10 shadow-lg block truncate">
-            {data.draft_title}
-          </span>
-        </div>
-      )}
+  if (tourOpen && tourViewerData) {
+    return (
+      <div className="relative h-[100dvh] w-screen overflow-hidden bg-black">
+        <SplatViewer
+          ref={splatRef}
+          splatUrl={activeRenderUrl ?? pickRenderableUrl(tourViewerData)}
+          tourUrl={tourViewerData.tour_url ?? undefined}
+          initialCameras={tourViewerData.cameras as CameraData ?? undefined}
+          preferSavedCameras={!!tourViewerData.cameras?.cameras?.length}
+          readOnly
+          onReady={() => setViewerReady(true)}
+          onError={() => {
+            const fallbackUrl = pickFallbackRenderableUrl(tourViewerData);
+            if (fallbackUrl && activeRenderUrl !== fallbackUrl) {
+              setViewerReady(false);
+              setActiveRenderUrl(fallbackUrl);
+            }
+          }}
+          onShotChange={setShotIdx}
+          onTourLoaded={setTourMeta}
+          lang={lang}
+        />
 
-      {/* Branding */}
-      <div className="absolute right-3 top-3 z-20 animate-fade-in sm:right-4 sm:top-4">
-        <span
-          className="text-[13px] text-white/50 bg-black/20 backdrop-blur-sm px-2.5 py-1 rounded-full"
-          style={{ fontFamily: "var(--font-brand), ui-serif, Georgia, serif", fontWeight: 400 }}
+        {/* Close button — back to property card */}
+        <button
+          onClick={() => setTourOpen(false)}
+          className="absolute left-3 top-3 z-20 flex items-center gap-1.5 bg-black/40 backdrop-blur-xl text-white/70 rounded-full px-3 py-1.5 text-[11px] font-medium border border-white/10 hover:bg-black/50 transition-colors sm:left-4 sm:top-4"
         >
-          Reaigen
-        </span>
+          <svg width="12" height="12" viewBox="0 0 16 16" fill="none"><path d="M10 12L6 8l4-4" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/></svg>
+          {t("common.back", lang)}
+        </button>
+
+        {/* Branding */}
+        <div className="absolute right-3 top-3 z-20 animate-fade-in sm:right-4 sm:top-4">
+          <span className="text-[13px] text-white/50 bg-black/20 backdrop-blur-sm px-2.5 py-1 rounded-full" style={{ fontFamily: "var(--font-brand), ui-serif, Georgia, serif", fontWeight: 400 }}>Reaigen</span>
+        </div>
+
+        {tourMeta && (
+          <TourControls shots={tourMeta.shots} currentIdx={shotIdx} onGoToShot={(i) => splatRef.current?.goToShot(i)} onPrev={() => splatRef.current?.goToPrev()} onNext={() => splatRef.current?.goToNext()} lang={lang} />
+        )}
+
+        {tourViewerData.floorplan_url && tourViewerData.rooms.length > 0 && (
+          <FloorplanNav floorplanUrl={tourViewerData.floorplan_url} rooms={tourViewerData.rooms} onRoomClick={handleRoomClick} activeRoomId={activeRoomId} lang={lang} />
+        )}
+
+        {draftData && <SharedPropertyPanel draftData={draftData} lang={lang} />}
       </div>
+    );
+  }
 
-      {/* Tour controls */}
-      {tourData && (
-        <TourControls
-          shots={tourData.shots}
-          currentIdx={shotIdx}
-          onGoToShot={(i) => splatRef.current?.goToShot(i)}
-          onPrev={() => splatRef.current?.goToPrev()}
-          onNext={() => splatRef.current?.goToNext()}
-          lang={lang}
-        />
-      )}
+  // ── Property card (primary view) ──────────────────────────────────
 
-      {/* Floorplan */}
-      {data.floorplan_url && data.rooms.length > 0 && (
-        <FloorplanNav
-          floorplanUrl={data.floorplan_url}
-          rooms={data.rooms}
-          onRoomClick={handleRoomClick}
-          activeRoomId={activeRoomId}
-          lang={lang}
-        />
-      )}
-    </div>
-  );
+  if (draftData) {
+    return <SharedDraftView draftData={draftData} lang={lang} hasTour={hasTour} onOpenTour={() => setTourOpen(true)} />;
+  }
+
+  return null;
 }

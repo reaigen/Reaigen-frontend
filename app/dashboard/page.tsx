@@ -7,7 +7,6 @@ import { AppShell } from "../components/app-shell";
 import { Button } from "../lib/ui/button";
 import { t, getUserLanguage } from "../lib/i18n";
 import { listDrafts, getSplatsByDraft } from "../lib/api/client";
-import { ShareDialog } from "../components/share-dialog";
 import type { DraftListingItem } from "../lib/tour-types";
 import Link from "next/link";
 import { Thumbnail } from "../components/thumbnail";
@@ -69,7 +68,6 @@ export default function DashboardPage() {
   const pageRef = React.useRef(1);
 
   const [splatIds, setSplatIds] = React.useState<Record<number, number>>({});
-  const [shareTarget, setShareTarget] = React.useState<{ splatId: number; title: string } | null>(null);
   const [searchInput, setSearchInput] = React.useState("");
   const [searchQuery, setSearchQuery] = React.useState("");
   const [gridCols, setGridCols] = React.useState<1 | 2>(() => {
@@ -254,6 +252,14 @@ export default function DashboardPage() {
                         3D
                       </div>
                     )}
+                    {/* Share button */}
+                    <button
+                      onClick={(e) => { e.preventDefault(); e.stopPropagation(); router.push(`/draft/${draft.id}/sharing`); }}
+                      className="absolute top-3 right-3 w-8 h-8 rounded-full bg-black/50 backdrop-blur-sm flex items-center justify-center text-white/70 hover:text-white hover:bg-black/60 transition-all opacity-0 group-hover:opacity-100"
+                      aria-label={t("draft.share", lang)}
+                    >
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><path d="M8.59 13.51l6.83 3.98M15.41 6.51l-6.82 3.98"/></svg>
+                    </button>
                   </div>
 
                   {/* Property info */}
@@ -298,9 +304,6 @@ export default function DashboardPage() {
         )}
       </div>
 
-      {shareTarget && (
-        <ShareDialog splatId={shareTarget.splatId} title={shareTarget.title} open={!!shareTarget} onClose={() => setShareTarget(null)} lang={lang} />
-      )}
     </AppShell>
   );
 }
