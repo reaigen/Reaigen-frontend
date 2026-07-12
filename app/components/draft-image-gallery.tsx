@@ -79,7 +79,7 @@ function Lightbox({
   };
 
   const content = (
-    <div className="fixed inset-0 bg-background flex flex-col" style={{ zIndex: 9999 }}>
+    <div className="fixed inset-0 bg-background flex flex-col animate-fade-in" style={{ zIndex: 9999 }}>
       {/* Top bar */}
       <div className="flex items-center justify-between px-3 py-2.5 border-b border-border/50 shrink-0">
         <button

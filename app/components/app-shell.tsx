@@ -156,7 +156,9 @@ export function AppShell({
       {/* ── Content ──────────────────────────────────────────────── */}
       <main className="min-h-[calc(100dvh-3rem)] px-4 py-5 pb-24 md:px-6 md:py-8 md:pb-8 pl-safe pr-safe" style={{ marginLeft: `var(--sidebar-offset, 0px)` }}>
         <AppContentMessages lang={lang} countryCode={user.profile?.country} regionCode={user.profile?.state} />
-        {children}
+        <div key={pathname} className="animate-fade-in">
+          {children}
+        </div>
       </main>
 
       {/* ── Mobile bottom tab bar ────────────────────────────────── */}

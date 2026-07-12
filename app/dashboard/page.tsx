@@ -231,7 +231,13 @@ export default function DashboardPage() {
               const draftSplatId = splatIds[draft.id];
 
               return (
-                <Link key={draft.id} href={`/draft/${draft.id}`} className="group block">
+                <Link
+                  key={draft.id}
+                  href={`/draft/${draft.id}`}
+                  className="group block opacity-0 animate-fade-in-up [animation-fill-mode:forwards]"
+                  style={{ animationDelay: `${idx * 50}ms` }}
+                  onMouseEnter={() => router.prefetch(`/draft/${draft.id}`)}
+                >
                   {/* Image */}
                   <div className="relative aspect-[16/10] overflow-hidden rounded-xl bg-muted/20 transition-shadow group-hover:shadow-lg">
                     {thumbUrl ? (

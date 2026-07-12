@@ -8,8 +8,68 @@ export class ApiError extends Error {
   }
 }
 
+// ─── In-memory GET cache + request deduplication ─────────────────────────
+
+const inFlight = new Map<string, Promise<unknown>>();
+const cache = new Map<string, { data: unknown; ts: number }>();
+
+const CACHE_TTL = 30_000; // 30s default
+const LONG_TTL = 300_000; // 5 min — profile / localization / preferences
+const CONTENT_TTL = 600_000; // 10 min — legal / content documents
+
+function ttlForPath(path: string): number {
+  if (path.startsWith("/api/reaigen/users/") || path.startsWith("/api/reaigen/profiles/") || path.startsWith("/api/reaigen/personalized-data/") || path.startsWith("/api/reaigen/billing/")) return LONG_TTL;
+  if (path.startsWith("/api/reaigen/content/")) return CONTENT_TTL;
+  return CACHE_TTL;
+}
+
+/** Invalidate cache entries whose key starts with any of the given prefixes. */
+function invalidateCache(path: string) {
+  // Derive prefix: e.g. "/api/reaigen/users/me/" → "/api/reaigen/users/"
+  const segments = path.split("/").slice(0, -1); // drop last segment
+  const prefix = segments.length > 3 ? segments.slice(0, -1).join("/") + "/" : path;
+  for (const key of cache.keys()) {
+    if (key.startsWith(prefix)) cache.delete(key);
+  }
+}
+
 async function request(path: string, options: RequestInit = {}) {
   const isGet = !options.method || options.method === "GET";
+
+  // GET deduplication + caching
+  if (isGet) {
+    const cached = cache.get(path);
+    if (cached && Date.now() - cached.ts < ttlForPath(path)) {
+      return cached.data;
+    }
+
+    const existing = inFlight.get(path);
+    if (existing) return existing;
+
+    const promise = (async () => {
+      const res = await fetch(path, {
+        ...options,
+        credentials: "include",
+        headers: { "Content-Type": "application/json", ...options.headers },
+      });
+      if (!res.ok) {
+        const body = await res.text();
+        throw new ApiError(res.status, body);
+      }
+      const text = await res.text();
+      const data = text ? JSON.parse(text) : null;
+      cache.set(path, { data, ts: Date.now() });
+      return data;
+    })();
+
+    inFlight.set(path, promise);
+    promise.finally(() => inFlight.delete(path));
+    return promise;
+  }
+
+  // Non-GET: invalidate related cache entries
+  invalidateCache(path);
+
   const res = await fetch(path, {
     ...options,
     credentials: "include",
@@ -17,8 +77,7 @@ async function request(path: string, options: RequestInit = {}) {
       "Content-Type": "application/json",
       ...options.headers,
     },
-    // Allow browser to use HTTP cache for GET requests (proxy returns short-lived cache headers)
-    ...(isGet ? {} : { cache: "no-store" as const }),
+    cache: "no-store" as const,
   });
 
   if (!res.ok) {
