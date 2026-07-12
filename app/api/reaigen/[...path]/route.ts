@@ -41,6 +41,23 @@ function noStoreHeaders(contentType: string) {
   };
 }
 
+/** Allow caching for read-only list/detail endpoints (splats list, viewer data). */
+function cacheableHeaders(contentType: string, maxAge = 60) {
+  return {
+    "Content-Type": contentType,
+    "Cache-Control": `private, max-age=${maxAge}, stale-while-revalidate=${maxAge * 4}`,
+  };
+}
+
+/** Paths where GET responses can be briefly cached (private, short TTL). */
+const CACHEABLE_GET_PREFIXES = ["splats", "drafts", "shares"];
+
+function isCacheableGet(method: string, joined: string): boolean {
+  if (method !== "GET") return false;
+  // Only cache list / detail reads, not auth or mutation-like endpoints
+  return CACHEABLE_GET_PREFIXES.some((p) => joined.startsWith(p));
+}
+
 function sharePinCookieName(token: string): string {
   return `${SHARE_PIN_COOKIE_PREFIX}${createHash("sha256").update(token).digest("hex").slice(0, 24)}`;
 }
@@ -66,7 +83,7 @@ function getSharedTokenForPath(joined: string, suffix: string): string | null {
 // Map frontend proxy paths to Django API paths
 function resolveTarget(baseUrl: string, joined: string): string {
   // Core app endpoints → /api/v1/core/*
-  const coreRoutes = ["users", "profiles", "personalized-data", "billing", "activities", "contact-links", "auth"];
+  const coreRoutes = ["users", "profiles", "personalized-data", "billing", "activities", "contact-links", "auth", "content"];
   for (const prefix of coreRoutes) {
     if (joined.startsWith(prefix)) {
       return `${baseUrl}/api/v1/core/${joined}`;
@@ -156,9 +173,10 @@ async function proxy(
 
       const data = await res.text();
       const contentType = res.headers.get("Content-Type") ?? "application/json";
+      const useCache = res.ok && isCacheableGet(req.method, joined);
       const response = new NextResponse(data, {
         status: res.status,
-        headers: noStoreHeaders(contentType),
+        headers: useCache ? cacheableHeaders(contentType) : noStoreHeaders(contentType),
       });
 
       const verifiedShareToken = getSharedTokenForPath(joined, "verify-pin");

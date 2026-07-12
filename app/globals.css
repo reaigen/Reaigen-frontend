@@ -72,15 +72,9 @@
 
   h1, h2, h3, h4 {
     font-family: var(--font-primary);
-    letter-spacing: -0.02em;
-    line-height: 1.2;
-    font-weight: 700;
+    line-height: 1.3;
+    font-weight: 600;
   }
-
-  h1 { font-size: clamp(1.85rem, 3.2vw, 2.8rem); }
-  h2 { font-size: clamp(1.35rem, 2vw, 1.85rem); }
-  h3 { font-size: clamp(1.08rem, 1.2vw, 1.22rem); }
-  h4 { font-size: clamp(1rem, 1vw, 1.08rem); }
 }
 
 @layer utilities {
@@ -115,6 +109,31 @@
 @keyframes fadeInUp {
   from { opacity: 0; transform: translateY(8px); }
   to { opacity: 1; transform: translateY(0); }
+}
+@keyframes slideUp {
+  from { opacity: 0; transform: translateY(100%); }
+  to { opacity: 1; transform: translateY(0); }
+}
+@keyframes fadeInScale {
+  from { opacity: 0; transform: scale(0.96); }
+  to { opacity: 1; transform: scale(1); }
+}
+.animate-slide-up {
+  animation: slideUp 0.3s var(--motion-ease-smooth) both;
+}
+.animate-fade-in-scale {
+  animation: fadeInScale 0.2s var(--motion-ease-smooth) both;
+}
+@keyframes shimmer {
+  0% { background-position: 200% 0; }
+  100% { background-position: -200% 0; }
+}
+.animate-shimmer {
+  animation: shimmer 1.5s ease-in-out infinite;
+}
+@keyframes shimmer-bar {
+  0% { transform: translateX(-100%); }
+  100% { transform: translateX(200%); }
 }
 
 input:-webkit-autofill,

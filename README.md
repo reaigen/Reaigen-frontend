@@ -29,13 +29,16 @@ Copy `.env.local.example` to `.env.local`:
 REAIGEN_BACKEND_URL=http://localhost:80
 ```
 
-In Docker production, this is set to `http://host.docker.internal:80` (reaches Nginx on the host).
+In standalone frontend Docker, this is set to `http://host.docker.internal:80` so the container reaches backend Nginx on the host.
+
+In the full Reaigen stack, the backend repo's `docker-compose.frontend.yml` sets this to `http://nginx:80`, so the frontend talks to the backend through Docker networking inside the same Compose project.
 
 ---
 
-## Development
+## Local Development
 
 ```bash
+cd /Users/reaigen/Documents/Reaigen/Reaigen-stack/Reaigen-frontend
 npm install
 npm run dev
 ```
@@ -44,15 +47,43 @@ Runs on `http://localhost:3055` (bound to `0.0.0.0`).
 
 Requires the backend running on port 80 via Nginx in this workspace. The proxy also falls back between `localhost:80` and `localhost:8000` for local development.
 
+If port 3055 is already occupied, run the same frontend on a temporary local port:
+
+```bash
+npx next dev --hostname 0.0.0.0 --port 3057
+```
+
+Then open `http://localhost:3057`. This is only for local testing; Docker and public runtime still use port 3055.
+
 ---
 
 ## Production (Docker)
+
+The public Dockerized frontend is not the Next.js dev server. It is a production standalone Next.js build created by the `Dockerfile`:
+
+```dockerfile
+RUN npm run build
+CMD ["node", "server.js"]
+```
+
+### Standalone frontend container
 
 ```bash
 docker compose up --build -d
 ```
 
-Builds a multi-stage image (deps → build → standalone) and runs on port **3055**.
+Builds this repo as a multi-stage image (deps → build → standalone), runs on port **3055**, and expects backend Nginx at `http://host.docker.internal:80`.
+
+### Full Reaigen stack
+
+From the backend repo, include the frontend override:
+
+```bash
+cd ../Reaigen-backend
+docker compose -f docker-compose.yml -f docker-compose.frontend.yml up -d --build
+```
+
+That Compose override builds the frontend from `../Reaigen-frontend` by default, runs container `reaigen_frontend`, publishes `3055:3055`, joins the `reaigen_network`, and sends server-side API traffic to `http://nginx:80`.
 
 The app is reverse-proxied via publicrouter at `https://app-reaigen.publicrouter.sk`.
 
@@ -89,6 +120,33 @@ npm run dev
 
 ---
 
+## Tour Camera Editor
+
+The owner camera editor lives on `/tour/[id]` and is implemented mainly in:
+
+- `app/components/camera-editor.tsx`
+- `app/components/splat-viewer.tsx`
+
+UX contract:
+
+- Use camera wording in the UI, not shot wording.
+- Keep the panel compact, quick, and usable over the 3D viewer.
+- Preview and edit controls must feel like one unified translucent card surface.
+- Do not mix a black preview pill with a white/light edit panel.
+- Do not add instructional text blocks into the camera panel unless they are necessary for an empty/error state.
+- The current camera must be visible while editing.
+- Clicking a camera or the look-through icon must move the viewer to that saved camera.
+- Saved camera FOV must be applied when looking through or previewing a camera.
+
+Behavior contract:
+
+- `CameraEditor` captures `position`, `forward`, `up`, and `fov` from `SplatViewerHandle.getCurrentCamera()`.
+- Look-through and preview navigation call `SplatViewerHandle.navigateToCamera(position, forward, true, fov)`.
+- Save persists ordered cameras through `PATCH /api/reaigen/splats/{id}/cameras/`.
+- Camera order is meaningful because shared playback follows the saved order.
+
+---
+
 ## API Proxy
 
 The browser never calls Django directly. All API requests go through Next.js server routes:
@@ -102,6 +160,25 @@ This handles:
 - JWT storage in HTTP-only cookies
 - Automatic token refresh on 401
 - Backend URL hidden from client
+
+---
+
+## Production Posture
+
+The frontend follows the research notes in `docs/frontend-production-research.md`:
+
+- authenticated and tokenized app routes are marked non-indexable
+- global security headers and CSP are configured in `next.config.ts`
+- API proxy responses are private and no-store
+- managed HTML content is sanitized before rendering
+- the login route keeps a server-rendered shell and lazy-loads the auth panel
+- Core Web Vitals can be reported with `NEXT_PUBLIC_WEB_VITALS_ENDPOINT`
+
+```bash
+NEXT_PUBLIC_WEB_VITALS_ENDPOINT=/api/analytics/web-vitals
+```
+
+If the endpoint is not set, metrics are only logged in development.
 
 ---
 
@@ -137,7 +214,7 @@ This handles:
 ```bash
 npm run dev      # Development server (port 3055)
 npm run build    # Production build
-npm run start    # Start production server (port 3050)
+npm run start    # Start production server (port 3055)
 npm run lint     # ESLint
 ```
 

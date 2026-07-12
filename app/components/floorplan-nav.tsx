@@ -2,15 +2,17 @@
 
 import { useState } from "react";
 import type { RoomData } from "@/app/lib/tour-types";
+import { t } from "@/app/lib/i18n";
 
 interface Props {
   floorplanUrl: string;
   rooms: RoomData[];
   onRoomClick: (room: RoomData) => void;
   activeRoomId?: number | null;
+  lang?: string;
 }
 
-export default function FloorplanNav({ floorplanUrl, rooms, onRoomClick, activeRoomId }: Props) {
+export default function FloorplanNav({ floorplanUrl, rooms, onRoomClick, activeRoomId, lang = "en" }: Props) {
   const [expanded, setExpanded] = useState(false);
 
   // Find bounds for normalizing room coordinates to SVG viewport
@@ -49,7 +51,7 @@ export default function FloorplanNav({ floorplanUrl, rooms, onRoomClick, activeR
           <rect x="2" y="9" width="5" height="5" rx="1" stroke="currentColor" strokeWidth="1.5" />
           <rect x="9" y="9" width="5" height="5" rx="1" stroke="currentColor" strokeWidth="1.5" />
         </svg>
-        {expanded ? "Close" : "Floorplan"}
+        {expanded ? t("tour.floorplan.close", lang) : t("tour.floorplan.open", lang)}
       </button>
 
       {expanded && (
@@ -59,7 +61,9 @@ export default function FloorplanNav({ floorplanUrl, rooms, onRoomClick, activeR
             {/* eslint-disable-next-line @next/next/no-img-element */}
             <img
               src={floorplanUrl}
-              alt="Floorplan"
+              alt={t("tour.floorplan.alt", lang)}
+              loading="lazy"
+              decoding="async"
               className="absolute inset-0 w-full h-full object-contain rounded-xl opacity-20 invert"
             />
             <svg

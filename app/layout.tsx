@@ -1,11 +1,12 @@
 import type { Metadata, Viewport } from "next";
-import { Noto_Serif_Display } from "next/font/google";
+import { DM_Serif_Display } from "next/font/google";
 import "./globals.css";
 import { AuthProvider } from "./components/hooks/use-auth";
+import { WebVitalsReporter } from "./components/web-vitals-reporter";
 
-export const brandSerif = Noto_Serif_Display({
+export const brandSerif = DM_Serif_Display({
   subsets: ["latin"],
-  weight: ["300", "500"],
+  weight: "400",
   variable: "--font-brand",
   display: "swap",
 });
@@ -16,16 +17,45 @@ export const viewport: Viewport = {
   viewportFit: "cover",
 };
 
+function metadataBase() {
+  try {
+    return new URL(process.env.NEXT_PUBLIC_SITE_URL ?? "https://app-reaigen.publicrouter.sk");
+  } catch {
+    return new URL("https://app-reaigen.publicrouter.sk");
+  }
+}
+
 export const metadata: Metadata = {
-  title: "Reaigen",
-  description: "Reaigen Creator Platform",
+  metadataBase: metadataBase(),
+  applicationName: "Reaigen",
+  title: {
+    default: "Reaigen",
+    template: "%s | Reaigen",
+  },
+  description: "Reaigen virtual tour creator platform.",
+  robots: {
+    index: false,
+    follow: false,
+    googleBot: {
+      index: false,
+      follow: false,
+      noimageindex: true,
+    },
+  },
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html lang="en" className={brandSerif.variable}>
+      <head>
+        <link rel="dns-prefetch" href="//app-reaigen.publicrouter.sk" />
+        <link rel="preconnect" href="https://app-reaigen.publicrouter.sk" crossOrigin="anonymous" />
+      </head>
       <body>
-        <AuthProvider>{children}</AuthProvider>
+        <AuthProvider>
+          <WebVitalsReporter />
+          {children}
+        </AuthProvider>
       </body>
     </html>
   );

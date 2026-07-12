@@ -1,9 +1,11 @@
 "use client";
 
 import { useState, useCallback, useEffect, useRef, type RefObject } from "react";
+import { ArrowDownIcon, ArrowUpIcon, CheckIcon, ChevronDownIcon, EyeOpenIcon, PlusIcon, PlayIcon, TrashIcon, UpdateIcon } from "@radix-ui/react-icons";
 import { Button } from "@/app/lib/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/app/lib/ui/card";
 import { saveCameras, getCameras } from "@/app/lib/api/client";
+import { getSafeApiErrorMessage } from "@/app/lib/api/error-message";
+import { t } from "@/app/lib/i18n";
 import type { TourData, Vec3 } from "@/app/lib/tour-types";
 import type { SplatViewerHandle } from "./splat-viewer";
 
@@ -19,11 +21,14 @@ interface Props {
   splatId: number;
   viewerRef: RefObject<SplatViewerHandle | null>;
   tourData: TourData | null;
+  /** Shot index reported by the viewer (arrow-key / tour navigation). */
+  activeShotIdx?: number;
   defaultMode?: "edit" | "preview";
   onSaved?: () => void;
+  lang?: string;
 }
 
-export default function CameraEditor({ splatId, viewerRef, tourData, defaultMode = "edit", onSaved }: Props) {
+export default function CameraEditor({ splatId, viewerRef, tourData, activeShotIdx, defaultMode = "edit", onSaved, lang = "en" }: Props) {
   const [shots, setShots] = useState<CameraShot[]>([]);
   const [mode, setMode] = useState<"edit" | "preview">(defaultMode);
   const [previewIdx, setPreviewIdx] = useState(0);
@@ -47,10 +52,11 @@ export default function CameraEditor({ splatId, viewerRef, tourData, defaultMode
             forward: c.forward,
             up: c.up ?? [0, 1, 0],
             fov: Number(c.fov ?? data.fovY ?? 0.66),
-            label: `Shot ${i + 1}`,
+            label: `${t("cameraEditor.camera", lang)} ${i + 1}`,
           }));
           setShots(loaded);
-          setSelectedIdx(0);
+          setSelectedIdx(defaultMode === "preview" ? 0 : null);
+          setPreviewIdx(0);
           // Start in preview mode — fly to first shot but don't auto-loop
           if (defaultMode === "preview" && loaded.length > 0) {
             setMode("preview");
@@ -65,6 +71,14 @@ export default function CameraEditor({ splatId, viewerRef, tourData, defaultMode
       .catch(() => {})
       .finally(() => setLoaded(true));
   }, [splatId]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Sync with external shot index (arrow-key navigation in viewer)
+  useEffect(() => {
+    if (activeShotIdx == null || !shots.length) return;
+    const idx = Math.max(0, Math.min(activeShotIdx, shots.length - 1));
+    setSelectedIdx(idx);
+    setPreviewIdx(idx);
+  }, [activeShotIdx, shots.length]);
 
   // Cleanup preview timer on unmount
   useEffect(() => {
@@ -88,13 +102,14 @@ export default function CameraEditor({ splatId, viewerRef, tourData, defaultMode
     setSelectedIdx(idx);
     setPreviewIdx(idx);
     if (preview) setMode("preview");
-    viewerRef.current?.navigateToCamera(shot.position, shot.forward);
-  }, [shots, viewerRef]);
+    viewerRef.current?.navigateToCamera(shot.position, shot.forward, false, shot.fov);
+    if (!preview) setTransientMessage(`${t("cameraEditor.viewing", lang)} ${idx + 1}`, 1000);
+  }, [lang, setTransientMessage, shots, viewerRef]);
 
   useEffect(() => {
     if (!loaded || !shots.length) return;
     if (defaultMode === "preview" && selectedIdx === 0) {
-      viewerRef.current?.navigateToCamera(shots[0].position, shots[0].forward, true);
+      viewerRef.current?.navigateToCamera(shots[0].position, shots[0].forward, true, shots[0].fov);
     }
   }, [defaultMode, loaded, selectedIdx, shots, viewerRef]);
 
@@ -111,7 +126,7 @@ export default function CameraEditor({ splatId, viewerRef, tourData, defaultMode
           forward: cam.forward,
           up: cam.up,
           fov: cam.fov,
-          label: `Shot ${prev.length + 1}`,
+          label: `${t("cameraEditor.camera", lang)} ${prev.length + 1}`,
         },
       ];
       const nextIdx = next.length - 1;
@@ -121,8 +136,8 @@ export default function CameraEditor({ splatId, viewerRef, tourData, defaultMode
     });
     setMode("edit");
     setIsCollapsed(false);
-    setTransientMessage("Camera captured");
-  }, [viewerRef, setTransientMessage]);
+    setTransientMessage(t("cameraEditor.messageCaptured", lang));
+  }, [viewerRef, setTransientMessage, lang]);
 
   const [updatedIdx, setUpdatedIdx] = useState<number | null>(null);
 
@@ -138,12 +153,12 @@ export default function CameraEditor({ splatId, viewerRef, tourData, defaultMode
     setSelectedIdx(idx);
     setPreviewIdx(idx);
     setTimeout(() => setUpdatedIdx(null), 1500);
-    setTransientMessage("Camera updated");
-  }, [viewerRef, setTransientMessage]);
+    setTransientMessage(t("cameraEditor.messageUpdated", lang));
+  }, [viewerRef, setTransientMessage, lang]);
 
   const removeShot = useCallback((idx: number) => {
     setShots((prev) => {
-      const next = prev.filter((_, i) => i !== idx).map((s, i) => ({ ...s, label: `Shot ${i + 1}` }));
+      const next = prev.filter((_, i) => i !== idx).map((s, i) => ({ ...s, label: `${t("cameraEditor.camera", lang)} ${i + 1}` }));
       if (!next.length) {
         setSelectedIdx(null);
         setPreviewIdx(0);
@@ -156,8 +171,8 @@ export default function CameraEditor({ splatId, viewerRef, tourData, defaultMode
       }
       return next;
     });
-    setTransientMessage("Camera removed");
-  }, []);
+    setTransientMessage(t("cameraEditor.messageRemoved", lang));
+  }, [setTransientMessage, lang]);
 
   const moveShot = useCallback((idx: number, dir: -1 | 1) => {
     setShots((prev) => {
@@ -170,18 +185,14 @@ export default function CameraEditor({ splatId, viewerRef, tourData, defaultMode
       if (previewIdx === idx) setPreviewIdx(target);
       else if (previewIdx === target) setPreviewIdx(idx);
       // Renumber labels after reorder
-      return next.map((s, i) => ({ ...s, label: `Shot ${i + 1}` }));
+      return next.map((s, i) => ({ ...s, label: `${t("cameraEditor.camera", lang)} ${i + 1}` }));
     });
-    setTransientMessage("Order updated", 1400);
-  }, [previewIdx, selectedIdx, setTransientMessage]);
-
-  const flyToShot = useCallback((shot: CameraShot) => {
-    viewerRef.current?.navigateToCamera(shot.position, shot.forward);
-  }, [viewerRef]);
+    setTransientMessage(t("cameraEditor.messageOrderUpdated", lang), 1400);
+  }, [previewIdx, selectedIdx, setTransientMessage, lang]);
 
   const handleSave = useCallback(async () => {
     if (!shots.length) {
-      setMessage("Add at least one shot first");
+      setMessage(t("cameraEditor.messageAddShotFirst", lang));
       return;
     }
     setSaving(true);
@@ -197,14 +208,14 @@ export default function CameraEditor({ splatId, viewerRef, tourData, defaultMode
         fovY: shots[0]?.fov ?? 0.66,
         sceneFov,
       });
-      setTransientMessage("Saved!");
+      setTransientMessage(t("cameraEditor.messageSaved", lang));
       onSaved?.();
-    } catch (e: any) {
-      setMessage("Save failed: " + (e.body || e.message));
+    } catch (err) {
+      setMessage(`${t("cameraEditor.messageSaveFailed", lang)} ${getSafeApiErrorMessage(err, lang)}`);
     } finally {
       setSaving(false);
     }
-  }, [shots, splatId, sceneFov, setTransientMessage, onSaved]);
+  }, [shots, splatId, sceneFov, setTransientMessage, onSaved, lang]);
 
   // ── Preview mode ───────────────────────────────────────────────────────────
 
@@ -213,7 +224,7 @@ export default function CameraEditor({ splatId, viewerRef, tourData, defaultMode
     setMode("preview");
     const targetIdx = selectedIdx ?? 0;
     setPreviewIdx(targetIdx);
-    viewerRef.current?.navigateToCamera(shots[targetIdx].position, shots[targetIdx].forward);
+    viewerRef.current?.navigateToCamera(shots[targetIdx].position, shots[targetIdx].forward, false, shots[targetIdx].fov);
   }, [selectedIdx, shots, viewerRef]);
 
   const stopPreview = useCallback(() => {
@@ -230,8 +241,8 @@ export default function CameraEditor({ splatId, viewerRef, tourData, defaultMode
       const next = (previewIdx + 1) % shots.length;
       setPreviewIdx(next);
       setSelectedIdx(next);
-      viewerRef.current?.navigateToCamera(shots[next].position, shots[next].forward);
-    }, 4000);
+      viewerRef.current?.navigateToCamera(shots[next].position, shots[next].forward, false, shots[next].fov);
+    }, 5200);
     return () => { if (previewTimerRef.current) clearTimeout(previewTimerRef.current); };
   }, [mode, looping, previewIdx, shots, viewerRef]);
 
@@ -240,22 +251,48 @@ export default function CameraEditor({ splatId, viewerRef, tourData, defaultMode
     goToLocalShot(idx, true);
   }, [goToLocalShot]);
 
+  // ── Helpers ──────────────────────────────────────────────────────────────
+
+  const prevShot = useCallback(() => {
+    if (!shots.length) return;
+    const next = selectedIdx == null || selectedIdx <= 0 ? shots.length - 1 : selectedIdx - 1;
+    goToLocalShot(next, mode === "preview");
+  }, [goToLocalShot, mode, selectedIdx, shots.length]);
+
+  const nextShot = useCallback(() => {
+    if (!shots.length) return;
+    const next = selectedIdx == null || selectedIdx >= shots.length - 1 ? 0 : selectedIdx + 1;
+    goToLocalShot(next, mode === "preview");
+  }, [goToLocalShot, mode, selectedIdx, shots.length]);
+
   // ── Render ─────────────────────────────────────────────────────────────────
 
   if (!loaded) return null;
 
-  // ── Preview mode: compact floating pill ─────────────────────────────────
+  // Shared arrow SVG
+  const ArrowLeft = (
+    <svg width="14" height="14" viewBox="0 0 16 16" fill="none">
+      <path d="M10 12L6 8L10 4" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  );
+  const ArrowRight = (
+    <svg width="14" height="14" viewBox="0 0 16 16" fill="none">
+      <path d="M6 4L10 8L6 12" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  );
+
+  // ── Preview mode: floating pill with arrows ─────────────────────────────
   if (mode === "preview") {
     return (
-      <div className="absolute inset-x-2 top-4 z-30 flex justify-end sm:inset-x-auto sm:right-4">
-        <div className="flex max-w-full items-center gap-1 rounded-xl border border-white/15 bg-black/70 px-1 py-1 shadow-[0_16px_40px_rgba(0,0,0,0.24)]">
+      <div className="absolute inset-x-2 top-4 z-30 flex justify-end animate-fade-in sm:inset-x-auto sm:right-4">
+        <div className="flex max-w-full items-center gap-1 rounded-full border border-white/[0.08] bg-black/70 px-1.5 py-1 text-white shadow-2xl backdrop-blur-2xl">
           {/* Play / Pause */}
           <button
             onClick={() => setLooping((v) => !v)}
-            className={`rounded-lg p-1.5 transition-colors ${
-              looping ? "bg-white/20 text-white" : "text-white/70 hover:text-white hover:bg-white/10"
+            className={`rounded-full p-1.5 transition-colors ${
+              looping ? "bg-white/15 text-white" : "text-white/60 hover:bg-white/10 hover:text-white"
             }`}
-            title={looping ? "Pause auto-play" : "Auto-play"}
+            title={looping ? t("cameraEditor.pauseAutoplay", lang) : t("cameraEditor.autoplay", lang)}
           >
             <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
               {looping ? (
@@ -269,34 +306,56 @@ export default function CameraEditor({ splatId, viewerRef, tourData, defaultMode
             </svg>
           </button>
 
-          {/* Shot dots */}
+          {/* Prev arrow */}
           {shots.length > 1 && (
-            <div className="flex items-center gap-1 px-1">
+            <button
+              onClick={prevShot}
+              className="rounded-full p-1 text-white/55 transition-colors hover:bg-white/10 hover:text-white"
+              aria-label={t("cameraEditor.prev", lang)}
+            >
+              {ArrowLeft}
+            </button>
+          )}
+
+          {/* Camera dots */}
+          {shots.length > 1 && (
+            <div className="flex items-center gap-1 px-0.5">
               {shots.map((_, i) => (
                 <button
                   key={i}
                   onClick={() => previewGoTo(i)}
-                  className={`h-1.5 w-1.5 rounded-full transition-all ${
-                    i === previewIdx ? "bg-white scale-125" : "bg-white/40 hover:bg-white/60"
+                  className={`h-1.5 rounded-full transition-all duration-300 ${
+                    i === previewIdx ? "w-4 bg-white" : "w-1.5 bg-white/30 hover:bg-white/55"
                   }`}
-                  aria-label={`Shot ${i + 1}`}
+                  aria-label={`${t("cameraEditor.camera", lang)} ${i + 1}`}
                 />
               ))}
             </div>
           )}
 
+          {/* Next arrow */}
+          {shots.length > 1 && (
+            <button
+              onClick={nextShot}
+              className="rounded-full p-1 text-white/55 transition-colors hover:bg-white/10 hover:text-white"
+              aria-label={t("cameraEditor.next", lang)}
+            >
+              {ArrowRight}
+            </button>
+          )}
+
           {/* Divider */}
-          <div className="w-px h-4 bg-white/20" />
+          <div className="h-4 w-px bg-white/15" />
 
           {/* Edit button */}
           <button
             onClick={stopPreview}
-            className="rounded-lg px-2 py-1 text-[11px] font-medium text-white/80 transition-colors hover:bg-white/10 hover:text-white"
+            className="rounded-full px-2.5 py-1 text-[11px] font-medium text-white/60 transition-colors hover:bg-white/10 hover:text-white"
           >
-            Edit
+            {t("cameraEditor.edit", lang)}
           </button>
 
-          <div className="hidden sm:block pl-1 pr-2 text-[11px] font-medium text-white/60">
+          <div className="hidden pl-1 pr-2 text-[11px] font-medium text-white/45 sm:block">
             {previewIdx + 1} / {shots.length}
           </div>
         </div>
@@ -304,159 +363,227 @@ export default function CameraEditor({ splatId, viewerRef, tourData, defaultMode
     );
   }
 
-  // ── Edit mode: full panel ───────────────────────────────────────────────
-  return (
-    <div className="absolute inset-x-2 top-16 z-30 sm:inset-x-auto sm:right-4 sm:w-[22rem]">
-      <Card className="max-h-[calc(100dvh-5.5rem)] overflow-hidden rounded-2xl border border-border/70 bg-background shadow-[0_18px_55px_rgba(0,0,0,0.18)]">
-        <CardHeader className="border-b border-border/45 pb-3">
-          <div className="flex items-center justify-between">
-            <div>
-              <CardTitle className="text-sm">Camera Editor</CardTitle>
-              <p className="mt-1 text-[11px] text-muted-foreground">
-                Capture exact view, direction, and FOV.
-              </p>
+  // ── Edit collapsed: compact pill ────────────────────────────────────────
+  if (isCollapsed) {
+    return (
+      <div className="absolute inset-x-2 top-4 z-30 flex justify-end animate-fade-in sm:inset-x-auto sm:right-4">
+        <div className="flex max-w-full items-center gap-1 rounded-full border border-white/[0.08] bg-black/70 px-1.5 py-1 text-white shadow-2xl backdrop-blur-2xl">
+          {/* Prev arrow */}
+          {shots.length > 1 && (
+            <button
+              onClick={prevShot}
+              className="rounded-full p-1 text-white/55 transition-colors hover:bg-white/10 hover:text-white"
+              aria-label={t("cameraEditor.prev", lang)}
+            >
+              {ArrowLeft}
+            </button>
+          )}
+
+          {/* Camera dots */}
+          {shots.length > 1 && (
+            <div className="flex items-center gap-1 px-0.5">
+              {shots.map((_, i) => (
+                <button
+                  key={i}
+                  onClick={() => goToLocalShot(i)}
+                  className={`h-1.5 rounded-full transition-all duration-300 ${
+                    i === selectedIdx ? "w-4 bg-white" : "w-1.5 bg-white/30 hover:bg-white/55"
+                  }`}
+                  aria-label={`${t("cameraEditor.camera", lang)} ${i + 1}`}
+                />
+              ))}
             </div>
-            <div className="flex items-center gap-2">
+          )}
+
+          {/* Next arrow */}
+          {shots.length > 1 && (
+            <button
+              onClick={nextShot}
+              className="rounded-full p-1 text-white/55 transition-colors hover:bg-white/10 hover:text-white"
+              aria-label={t("cameraEditor.next", lang)}
+            >
+              {ArrowRight}
+            </button>
+          )}
+
+          {/* Divider */}
+          <div className="h-4 w-px bg-white/15" />
+
+          {/* Preview */}
+          {shots.length > 0 && (
+            <button
+              onClick={startPreview}
+              className="rounded-full p-1.5 text-white/55 transition-colors hover:bg-white/10 hover:text-white"
+              title={t("cameraEditor.preview", lang)}
+            >
+              <PlayIcon className="h-3.5 w-3.5" />
+            </button>
+          )}
+
+          {/* Expand */}
+          <button
+            onClick={() => setIsCollapsed(false)}
+            className="rounded-full p-1.5 text-white/50 transition-colors hover:bg-white/10 hover:text-white"
+            aria-label={t("cameraEditor.expand", lang)}
+          >
+            <ChevronDownIcon className="h-3.5 w-3.5 rotate-180" />
+          </button>
+
+          <div className="hidden pl-0.5 pr-2 text-[11px] font-medium text-white/45 sm:block">
+            {(selectedIdx ?? 0) + 1} / {shots.length}
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // ── Edit mode expanded: full camera panel ───────────────────────────────
+  return (
+    <div className="absolute inset-x-2 top-14 z-30 animate-fade-in sm:inset-x-auto sm:right-4 sm:top-4 sm:w-[19.5rem]">
+      <div className="max-h-[calc(100dvh-4.5rem)] overflow-hidden rounded-2xl border border-white/[0.08] bg-black/70 text-white shadow-2xl backdrop-blur-2xl">
+        <div className="border-b border-white/[0.08] p-2.5">
+          <div className="flex items-center justify-between">
+            <div className="flex min-w-0 items-center gap-2">
+              <h3 className="truncate text-[13px] font-semibold">{t("cameraEditor.title", lang)}</h3>
+              <span className="rounded-full bg-white/10 px-2 py-0.5 text-[10px] font-medium text-white/50 tabular-nums">
+                {shots.length}
+              </span>
+            </div>
+            <div className="flex items-center gap-1">
               {shots.length > 0 && (
                 <button
+                  type="button"
                   onClick={startPreview}
-                  className="rounded-lg px-2 py-1 text-xs text-muted-foreground transition-colors hover:bg-foreground/[0.06] hover:text-foreground"
+                  className="inline-flex h-7 items-center gap-1 rounded-full px-2 text-[11px] font-medium text-white/55 transition-colors hover:bg-white/10 hover:text-white"
                 >
-                  Preview
+                  <PlayIcon className="h-3 w-3" />
+                  {t("cameraEditor.preview", lang)}
                 </button>
               )}
               <button
-                onClick={() => setIsCollapsed((v) => !v)}
-                className="rounded-lg p-1 text-muted-foreground transition-colors hover:bg-foreground/[0.04] hover:text-foreground"
-                aria-label={isCollapsed ? "Expand camera editor" : "Collapse camera editor"}
+                type="button"
+                onClick={() => setIsCollapsed(true)}
+                className="inline-flex h-7 w-7 items-center justify-center rounded-full text-white/50 transition-colors hover:bg-white/10 hover:text-white"
+                aria-label={t("cameraEditor.collapse", lang)}
               >
-                <svg width="14" height="14" viewBox="0 0 16 16" fill="none" className={`transition-transform ${isCollapsed ? "rotate-180" : ""}`}>
-                  <path d="M4 6L8 10L12 6" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
-                </svg>
+                <ChevronDownIcon className="h-4 w-4 transition-transform duration-200" />
               </button>
             </div>
           </div>
-        </CardHeader>
-        {!isCollapsed && (
-        <CardContent className="space-y-3 overflow-y-auto p-3 sm:p-4">
-          <Button variant="outline" size="sm" className="h-9 w-full rounded-xl" onClick={addShot}>
-            Capture Current View
-          </Button>
-
-          <div className="rounded-xl border border-border/60 bg-muted/30 px-3 py-2">
-            <div className="flex items-center justify-between gap-3">
-              <span className="text-[11px] font-medium text-foreground/70">
-                {selectedIdx != null ? `Selected: Shot ${selectedIdx + 1}` : "No shot selected"}
-              </span>
-              <span className="text-[11px] text-muted-foreground">
-                {shots.length} total
-              </span>
-            </div>
-            {selectedIdx != null && (
-              <p className="mt-1 text-[10px] text-muted-foreground">
-                Order matters. Shared tour plays from Shot 1 to Shot {shots.length}.
-              </p>
-            )}
+        </div>
+        <div className="space-y-2 overflow-y-auto p-2.5">
+          <div className="grid grid-cols-[1fr_auto] gap-2">
+            <Button
+              variant="outline"
+              size="sm"
+              className="h-8 rounded-full border-white/[0.08] bg-white/10 px-3 text-[12px] text-white shadow-none hover:translate-y-0 hover:bg-white/15 hover:shadow-none"
+              onClick={addShot}
+            >
+              <PlusIcon className="h-3.5 w-3.5" />
+              {t("cameraEditor.captureCurrentView", lang)}
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              className="h-8 rounded-full border-white/[0.08] bg-white/10 px-3 text-[12px] text-white/65 shadow-none hover:bg-white/15 hover:text-white"
+              onClick={handleSave}
+              loading={saving}
+              disabled={!shots.length}
+            >
+              {t("cameraEditor.saveCameras", lang)}
+            </Button>
           </div>
 
-          {/* Scene FOV */}
-          <div className="space-y-1 rounded-xl border border-border/60 bg-muted/30 px-3 py-2.5">
-            <div className="flex items-center justify-between">
-              <label className="text-xs text-muted-foreground">Scene FOV</label>
-              <span className="text-xs font-mono tabular-nums">{sceneFov}°</span>
+          {shots.length === 0 ? (
+            <div className="rounded-xl border border-white/[0.06] bg-white/[0.04] px-3 py-3">
+              <p className="text-[12px] font-medium text-white/65">{t("cameraEditor.emptyTitle", lang)}</p>
+              <p className="mt-0.5 text-[11px] leading-relaxed text-white/40">{t("cameraEditor.emptyHint", lang)}</p>
             </div>
-            <input
-              type="range"
-              min={30}
-              max={120}
-              step={1}
-              value={sceneFov}
-              onChange={(e) => {
-                const v = Number(e.target.value);
-                setSceneFov(v);
-                viewerRef.current?.setFov(v);
-              }}
-              className="h-1.5 w-full cursor-pointer appearance-none rounded-full bg-muted accent-primary"
-            />
-            <div className="flex justify-between text-[10px] text-muted-foreground/60">
-              <span>Tight</span>
-              <span>Wide</span>
-            </div>
-          </div>
-
-          {shots.length > 0 && (
-            <div className="max-h-[38dvh] space-y-1.5 overflow-y-auto pr-0.5 sm:max-h-72">
+          ) : (
+            <div className="max-h-[42dvh] space-y-1 overflow-y-auto pr-0.5 sm:max-h-[22rem]">
               {shots.map((shot, i) => (
                 <div
                   key={i}
-                  className={`rounded-xl border px-2.5 py-2 text-xs transition-colors ${
+                  className={`grid grid-cols-[1fr_auto] items-center gap-1.5 rounded-xl border px-2 py-1.5 text-xs transition-colors duration-200 ${
                     updatedIdx === i
-                      ? "border-foreground/20 bg-background"
+                      ? "border-white/15 bg-white/10"
                       : selectedIdx === i
-                        ? "border-foreground/15 bg-background"
-                        : "border-border/60 bg-muted/25"
+                        ? "border-white/10 bg-white/[0.06]"
+                        : "border-white/[0.06] bg-white/[0.03] hover:bg-white/[0.06]"
                   }`}
                 >
-                  <div className="flex items-center justify-between">
-                    <button
-                      onClick={() => {
-                        setSelectedIdx(i);
-                        flyToShot(shot);
-                      }}
-                      className="flex min-w-0 items-center gap-2 text-left font-medium transition-colors hover:text-foreground"
-                    >
-                      <span className="inline-flex h-5 min-w-5 items-center justify-center rounded bg-foreground/[0.06] px-1.5 text-[10px] font-semibold text-foreground/65">
-                        {i + 1}
-                      </span>
-                      <span>{shot.label}</span>
-                    </button>
-                    <div className="flex items-center gap-0.5">
-                      <button
-                        onClick={() => moveShot(i, -1)}
-                        disabled={i === 0}
-                        className="text-muted-foreground hover:text-foreground disabled:opacity-30 p-0.5"
-                      >
-                        <svg width="10" height="10" viewBox="0 0 12 12" fill="none"><path d="M6 3L3 6H9L6 3Z" fill="currentColor" /></svg>
-                      </button>
-                      <button
-                        onClick={() => moveShot(i, 1)}
-                        disabled={i === shots.length - 1}
-                        className="text-muted-foreground hover:text-foreground disabled:opacity-30 p-0.5"
-                      >
-                        <svg width="10" height="10" viewBox="0 0 12 12" fill="none"><path d="M6 9L9 6H3L6 9Z" fill="currentColor" /></svg>
-                      </button>
-                      <button
-                        onClick={() => removeShot(i)}
-                        className="text-muted-foreground hover:text-destructive p-0.5 ml-1"
-                      >
-                        <svg width="10" height="10" viewBox="0 0 12 12" fill="none"><path d="M3 3L9 9M9 3L3 9" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" /></svg>
-                      </button>
-                    </div>
-                  </div>
-                  <div className="mt-1 flex items-center gap-1.5">
+                  <button
+                    type="button"
+                    onClick={() => goToLocalShot(i)}
+                    className="flex min-w-0 items-center gap-2 rounded-lg py-1 text-left font-medium text-white/75 outline-none transition-colors hover:text-white focus-visible:ring-2 focus-visible:ring-white/30 focus-visible:ring-offset-2 focus-visible:ring-offset-black/70"
+                    title={t("cameraEditor.jumpToShot", lang)}
+                  >
+                    <span className="inline-flex h-5 min-w-5 items-center justify-center rounded-full bg-white/10 px-1.5 text-[10px] font-semibold text-white/55">
+                      {i + 1}
+                    </span>
+                    <span className="truncate text-[12px]">{shot.label}</span>
                     {selectedIdx === i && (
-                      <span className="rounded bg-foreground px-2 py-0.5 text-[10px] font-medium text-background">
-                        Selected
-                      </span>
+                      <CheckIcon className="h-3.5 w-3.5 shrink-0 text-white/55" aria-label={t("cameraEditor.viewing", lang)} />
                     )}
-                    {previewIdx === i && (
-                      <span className="rounded bg-foreground/[0.06] px-2 py-0.5 text-[10px] font-medium text-foreground/65">
-                        Preview start
-                      </span>
-                    )}
-                  </div>
-                  <div className="mt-1.5 grid grid-cols-2 gap-1.5">
+                  </button>
+
+                  <div className="flex items-center gap-0.5">
                     <button
+                      type="button"
                       onClick={() => goToLocalShot(i)}
-                      className="h-7 rounded-lg bg-foreground/[0.04] text-[11px] font-medium text-foreground/65 transition-colors hover:bg-foreground/[0.08] hover:text-foreground"
+                      className="inline-flex h-7 w-7 items-center justify-center rounded-full text-white/40 transition-colors hover:bg-white/10 hover:text-white"
+                      aria-label={t("cameraEditor.jumpToShot", lang)}
+                      title={t("cameraEditor.jumpToShot", lang)}
                     >
-                      Jump to shot
+                      <EyeOpenIcon className="h-3.5 w-3.5" />
                     </button>
                     <button
+                      type="button"
                       onClick={() => updateShot(i)}
-                      className="h-7 rounded-lg bg-foreground/[0.06] text-[11px] font-medium text-foreground/60 transition-colors hover:bg-foreground/[0.1] hover:text-foreground"
+                      className={`inline-flex h-7 w-7 items-center justify-center rounded-full transition-colors ${
+                        updatedIdx === i
+                          ? "bg-white/15 text-white"
+                          : selectedIdx === i
+                            ? "bg-white/10 text-white/60 hover:bg-white/15 hover:text-white"
+                            : "text-white/45 hover:bg-white/10 hover:text-white"
+                      }`}
+                      aria-label={updatedIdx === i ? t("cameraEditor.updated", lang) : t("cameraEditor.useCurrentView", lang)}
+                      title={updatedIdx === i ? t("cameraEditor.updated", lang) : t("cameraEditor.useCurrentView", lang)}
                     >
-                      {updatedIdx === i ? "Updated" : "Use current view"}
+                      {updatedIdx === i ? (
+                        <CheckIcon className="h-3.5 w-3.5" />
+                      ) : (
+                        <UpdateIcon className="h-3.5 w-3.5" />
+                      )}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => moveShot(i, -1)}
+                      disabled={i === 0}
+                      className="inline-flex h-7 w-7 items-center justify-center rounded-full text-white/35 transition-colors hover:bg-white/10 hover:text-white disabled:opacity-25"
+                      aria-label={`${t("cameraEditor.moveUp", lang)} ${i + 1}`}
+                      title={t("cameraEditor.moveUp", lang)}
+                    >
+                      <ArrowUpIcon className="h-3.5 w-3.5" />
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => moveShot(i, 1)}
+                      disabled={i === shots.length - 1}
+                      className="inline-flex h-7 w-7 items-center justify-center rounded-full text-white/35 transition-colors hover:bg-white/10 hover:text-white disabled:opacity-25"
+                      aria-label={`${t("cameraEditor.moveDown", lang)} ${i + 1}`}
+                      title={t("cameraEditor.moveDown", lang)}
+                    >
+                      <ArrowDownIcon className="h-3.5 w-3.5" />
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => removeShot(i)}
+                      className="inline-flex h-7 w-7 items-center justify-center rounded-full text-white/30 transition-colors hover:bg-red-500/15 hover:text-red-400"
+                      aria-label={`${t("cameraEditor.delete", lang)} ${i + 1}`}
+                      title={t("cameraEditor.delete", lang)}
+                    >
+                      <TrashIcon className="h-3.5 w-3.5" />
                     </button>
                   </div>
                 </div>
@@ -464,20 +591,13 @@ export default function CameraEditor({ splatId, viewerRef, tourData, defaultMode
             </div>
           )}
 
-          {shots.length > 0 && (
-            <Button size="sm" className="h-9 w-full rounded-xl" onClick={handleSave} loading={saving}>
-              Save Cameras
-            </Button>
-          )}
-
           {message && (
-            <p className={`text-xs ${message.startsWith("Save failed") ? "text-destructive" : "text-muted-foreground"}`}>
+            <p className={`px-1 text-[11px] ${message.startsWith(t("cameraEditor.messageSaveFailed", lang)) ? "text-red-400" : "text-white/55"}`}>
               {message}
             </p>
           )}
-        </CardContent>
-        )}
-      </Card>
+        </div>
+      </div>
     </div>
   );
 }

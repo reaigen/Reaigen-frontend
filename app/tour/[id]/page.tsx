@@ -1,14 +1,15 @@
 "use client";
 
-import { useEffect, useState, useRef, useCallback, use } from "react";
+import { useEffect, useState, useRef, use, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import { useAuth } from "../../components/hooks/use-auth";
 import { getSplatViewer, getSplatsByDraft } from "../../lib/api/client";
+import { isApiNotFound } from "../../lib/api/error-message";
 import type { CameraData, SplatViewerPayload, TourData, TourShot } from "../../lib/tour-types";
 import dynamic from "next/dynamic";
-import TourControls from "../../components/tour-controls";
 import CameraEditor from "../../components/camera-editor";
 import { Button } from "../../lib/ui/button";
+import { getUserLanguage, t } from "../../lib/i18n";
 
 const SplatViewer = dynamic(() => import("../../components/splat-viewer"), { ssr: false });
 const SOG_READY_TIMEOUT_MS = 15000;
@@ -37,8 +38,9 @@ function pickFallbackRenderableUrl(viewer: SplatViewerPayload): string | null {
 export default function TourPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params);
   const splatId = parseInt(id, 10);
-  const { isAuthenticated, isLoading } = useAuth();
+  const { isAuthenticated, isLoading, user } = useAuth();
   const router = useRouter();
+  const lang = getUserLanguage(user?.localization);
 
   const [viewer, setViewer] = useState<SplatViewerPayload | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -47,6 +49,7 @@ export default function TourPage({ params }: { params: Promise<{ id: string }> }
   const [editorVersion, setEditorVersion] = useState(0);
   const [activeRenderUrl, setActiveRenderUrl] = useState<string | null>(null);
   const [viewerReady, setViewerReady] = useState(false);
+  const [retryCount, setRetryCount] = useState(0);
   const splatRef = useRef<any>(null);
   const resolvedSplatId = viewer?.splat_id ?? splatId;
   const viewerCameras = viewer?.cameras as CameraData | undefined;
@@ -96,17 +99,16 @@ export default function TourPage({ params }: { params: Promise<{ id: string }> }
         return data;
       })
       .then((data) => setViewer(data))
-      .catch((e) => {
-        const raw = e.body || e.message || "";
-        if (raw.toLowerCase().includes("not found")) {
-          setError("This tour could not be found.");
+      .catch((err) => {
+        if (isApiNotFound(err)) {
+          setError(t("tour.error.notFound", lang));
         } else {
-          setError("Something went wrong loading this tour.");
+          setError(t("tour.error.loadFailed", lang));
         }
       });
-  }, [isAuthenticated, splatId, router]);
+  }, [isAuthenticated, splatId, router, lang, retryCount]);
 
-  const handleShotChange = useCallback((idx: number, shot: TourShot | null) => {
+  const handleShotChange = useCallback((idx: number, _shot: TourShot | null) => {
     setShotIdx(idx);
   }, []);
 
@@ -114,32 +116,64 @@ export default function TourPage({ params }: { params: Promise<{ id: string }> }
     setTourData(data);
   }, []);
 
-  if (isLoading) {
+  if (isLoading || (!viewer && !error)) {
     return (
-      <div className="min-h-screen flex items-center justify-center">
-        <div className="animate-spin h-8 w-8 border-2 border-foreground/20 border-t-foreground rounded-full" />
-      </div>
-    );
-  }
-
-  if (error) {
-    return (
-      <div className="min-h-screen flex items-center justify-center">
-        <div className="text-center space-y-4">
-          <p className="text-destructive">{error}</p>
-          <Button variant="outline" onClick={() => router.back()}>Go back</Button>
+      <div className="min-h-screen flex items-center justify-center bg-background">
+        <div className="text-center space-y-3">
+          <div className="animate-spin h-7 w-7 border-2 border-foreground/15 border-t-foreground/60 rounded-full mx-auto" />
+          <p className="text-xs text-muted-foreground">{t("tour.loading", lang)}</p>
         </div>
       </div>
     );
   }
 
-  if (!viewer) {
+  if (error) {
+    const isNotFound = error === t("tour.error.notFound", lang);
     return (
-      <div className="min-h-screen flex items-center justify-center">
-        <div className="animate-spin h-8 w-8 border-2 border-foreground/20 border-t-foreground rounded-full" />
+      <div className="min-h-screen flex items-center justify-center bg-[hsl(var(--muted))]/35 px-4">
+        <div className="text-center space-y-4 px-6 max-w-xs">
+          <span
+            className="text-[22px] text-foreground/80"
+            style={{ fontFamily: "var(--font-brand), ui-serif, Georgia, serif", fontWeight: 400, letterSpacing: "0.01em" }}
+          >
+            Reaigen
+          </span>
+          <div className="pt-2">
+            <div className="mx-auto w-12 h-12 rounded-full bg-foreground/[0.04] flex items-center justify-center mb-3">
+              {isNotFound ? (
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" className="text-foreground/30">
+                  <circle cx="11" cy="11" r="8" stroke="currentColor" strokeWidth="1.5" />
+                  <path d="M21 21l-4.35-4.35" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+                  <path d="M8 11h6" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+                </svg>
+              ) : (
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" className="text-foreground/30">
+                  <circle cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="1.5" />
+                  <path d="M12 8v4M12 16h.01" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+                </svg>
+              )}
+            </div>
+            <p className="text-[14px] font-medium text-foreground/70 mb-1">
+              {isNotFound ? t("tour.error.notFoundTitle", lang) : t("tour.error.failedTitle", lang)}
+            </p>
+            <p className="text-[13px] text-foreground/40 leading-relaxed">{error}</p>
+          </div>
+          <div className="flex items-center justify-center gap-2 pt-1">
+            {!isNotFound && (
+              <Button variant="outline" size="sm" onClick={() => { setError(null); setRetryCount((c) => c + 1); }}>
+                {t("common.tryAgain", lang)}
+              </Button>
+            )}
+            <Button variant="outline" size="sm" onClick={() => router.push("/dashboard")}>
+              {t("nav.dashboard", lang)}
+            </Button>
+          </div>
+        </div>
       </div>
     );
   }
+
+  if (!viewer) return null;
 
   return (
     <div className="relative h-[100dvh] w-screen overflow-hidden bg-black">
@@ -162,33 +196,30 @@ export default function TourPage({ params }: { params: Promise<{ id: string }> }
         }}
         onShotChange={handleShotChange}
         onTourLoaded={handleTourLoaded}
+        lang={lang}
       />
 
-      {tourData && (
-        <TourControls
-          shots={tourData.shots}
-          currentIdx={shotIdx}
-          onGoToShot={(i) => splatRef.current?.goToShot(i)}
-          onPrev={() => splatRef.current?.goToPrev()}
-          onNext={() => splatRef.current?.goToNext()}
-        />
-      )}
-
       {/* Top bar */}
-      <div className="absolute left-3 top-3 z-20 flex items-center gap-2 sm:left-4 sm:top-4">
-        <Button variant="ghost" size="icon-sm" onClick={() => router.back()} aria-label="Back">
+      <div className="absolute left-3 top-3 z-20 flex items-center gap-2 sm:left-4 sm:top-4 animate-fade-in">
+        <button
+          onClick={() => router.back()}
+          aria-label={t("common.back", lang)}
+          className="flex items-center justify-center w-9 h-9 rounded-full bg-black/40 backdrop-blur-xl border border-white/10 text-white/90 shadow-lg transition-all hover:bg-black/50 active:scale-95"
+        >
           <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
             <path d="M10 12L6 8L10 4" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
           </svg>
-        </Button>
+        </button>
       </div>
 
       <CameraEditor
         splatId={resolvedSplatId}
         viewerRef={splatRef}
         tourData={tourData}
+        activeShotIdx={shotIdx}
         defaultMode="edit"
         onSaved={() => setEditorVersion((v) => v + 1)}
+        lang={lang}
       />
     </div>
   );

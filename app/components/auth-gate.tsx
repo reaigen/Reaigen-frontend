@@ -1,15 +1,14 @@
 "use client";
 
 import * as React from "react";
-
-import { AnimatePresence, motion } from "framer-motion";
 import { Button } from "../lib/ui/button";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "../lib/ui/card";
 import { Checkbox } from "../lib/ui/checkbox";
 import { Input } from "../lib/ui/input";
 import { Label } from "../lib/ui/label";
-import { ApiError, requestPasswordReset } from "../lib/api/client";
-import { t } from "../lib/i18n";
+import { requestPasswordReset } from "../lib/api/client";
+import { getSafeApiErrorMessage } from "../lib/api/error-message";
+import { getBrowserLanguage, t } from "../lib/i18n";
+import { RegistrationLegalText } from "./content-documents";
 
 type RegisterData = {
   email: string;
@@ -29,52 +28,46 @@ type AuthGateProps = {
   onRegister: (data: RegisterData) => Promise<void>;
 };
 
-const AUTH_FOCUS_RESET =
-  "focus:outline-none focus-visible:outline-none focus-visible:ring-0 focus-visible:ring-transparent focus-visible:ring-offset-0";
+/* ── Shared input style ───────────────────────────────────────────────── */
 
-/* ── responsive class tokens ─────────────────────────────────────────── */
+const INPUT_CLASS =
+  "border-black/[0.1] bg-white text-foreground placeholder:text-foreground/35 h-[46px] text-[14px] rounded-[12px] shadow-[0_1px_2px_rgba(0,0,0,0.04)] focus-visible:ring-0 focus-visible:border-foreground/30 focus-visible:shadow-[0_0_0_3px_rgba(0,0,0,0.04),0_1px_2px_rgba(0,0,0,0.04)] transition-all duration-150";
 
-const AUTH_LABEL_CLASS = "text-[13px] sm:text-[12px] text-foreground/82";
-
-const AUTH_INPUT_CLASS =
-  `border-foreground/[0.22] bg-white text-foreground placeholder:text-foreground/48 shadow-[inset_0_1px_0_rgba(255,255,255,0.7)] ${AUTH_FOCUS_RESET} focus-visible:border-foreground/60 focus-visible:shadow-[0_0_0_1px_rgba(15,23,42,0.14)] h-[52px] text-[16px] rounded-[14px] sm:h-11 sm:text-sm sm:rounded-xl`;
-
-const AUTH_CHECKBOX_CLASS =
-  `border-foreground/[0.26] ${AUTH_FOCUS_RESET} focus-visible:border-foreground/60`;
-const AUTH_TEXT_BUTTON_CLASS = `${AUTH_FOCUS_RESET} transition-colors`;
-const AUTH_SWITCH_EASE: [number, number, number, number] = [0.76, 0, 0.24, 1];
-const AUTH_SWITCH_DURATION = 0.52;
-
-/* ── browser language detection (pre-login, no user object) ──────────── */
+/* ── Helpers ──────────────────────────────────────────────────────────── */
 
 function useBrowserLang(): string {
   const [lang, setLang] = React.useState("en");
-  React.useEffect(() => {
-    const raw = navigator.language?.slice(0, 2).toLowerCase() ?? "en";
-    const supported = ["en", "sk", "cs", "de"];
-    setLang(supported.includes(raw) ? raw : "en");
-  }, []);
+  React.useEffect(() => { setLang(getBrowserLanguage()); }, []);
   return lang;
 }
 
-/* ── social sign-in ──────────────────────────────────────────────────── */
+function ReaigenLogo() {
+  return (
+    <span
+      className="text-[28px] text-foreground"
+      style={{ fontFamily: "var(--font-brand), ui-serif, Georgia, serif", fontWeight: 400, letterSpacing: "0.01em" }}
+    >
+      Reaigen
+    </span>
+  );
+}
 
-function SocialSignInButtons({ lang }: { lang: string }) {
+/* ── Social sign-in ───────────────────────────────────────────────────── */
+
+function SocialButtons({ lang }: { lang: string }) {
   return (
     <>
-      <div className="flex items-center gap-3 my-2 sm:my-1">
-        <div className="flex-1 h-px bg-foreground/[0.12]" />
-        <span className="text-[12px] sm:text-[11px] text-foreground/58 font-medium">
-          {t("auth.login.socialDivider", lang)}
-        </span>
-        <div className="flex-1 h-px bg-foreground/[0.12]" />
+      <div className="flex items-center gap-3 pt-1">
+        <div className="flex-1 h-px bg-foreground/[0.08]" />
+        <span className="text-[11px] text-foreground/40 font-medium uppercase tracking-wider">{t("auth.login.socialDivider", lang)}</span>
+        <div className="flex-1 h-px bg-foreground/[0.08]" />
       </div>
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-2.5">
+      <div className="grid grid-cols-2 gap-2.5">
         <button
           type="button"
-          className={`flex items-center justify-center gap-2.5 h-[52px] sm:h-12 rounded-[14px] sm:rounded-xl border border-foreground/[0.14] bg-white hover:bg-foreground/[0.04] text-[15px] sm:text-[14px] font-semibold text-foreground shadow-sm ${AUTH_TEXT_BUTTON_CLASS}`}
+          className="flex items-center justify-center gap-2.5 h-[46px] rounded-[12px] border border-black/[0.08] bg-white text-[13px] font-medium text-foreground/75 shadow-[0_1px_3px_rgba(0,0,0,0.04)] transition-all hover:shadow-[0_2px_8px_rgba(0,0,0,0.06)] hover:border-black/[0.12] active:scale-[0.98]"
         >
-          <svg viewBox="0 0 24 24" className="h-[21px] w-[21px]" aria-hidden="true">
+          <svg viewBox="0 0 24 24" className="h-[18px] w-[18px]" aria-hidden="true">
             <path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92a5.06 5.06 0 0 1-2.2 3.32v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.1z" fill="#4285F4"/>
             <path d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" fill="#34A853"/>
             <path d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z" fill="#FBBC05"/>
@@ -84,9 +77,9 @@ function SocialSignInButtons({ lang }: { lang: string }) {
         </button>
         <button
           type="button"
-          className={`flex items-center justify-center gap-2.5 h-[52px] sm:h-12 rounded-[14px] sm:rounded-xl border border-foreground/[0.14] bg-white hover:bg-foreground/[0.04] text-[15px] sm:text-[14px] font-medium text-black shadow-sm ${AUTH_TEXT_BUTTON_CLASS}`}
+          className="flex items-center justify-center gap-2.5 h-[46px] rounded-[12px] border border-black/[0.08] bg-white text-[13px] font-medium text-foreground/75 shadow-[0_1px_3px_rgba(0,0,0,0.04)] transition-all hover:shadow-[0_2px_8px_rgba(0,0,0,0.06)] hover:border-black/[0.12] active:scale-[0.98]"
         >
-          <svg viewBox="0 0 24 24" className="h-[22px] w-[22px]" fill="black" aria-hidden="true">
+          <svg viewBox="0 0 24 24" className="h-[18px] w-[18px]" fill="currentColor" aria-hidden="true">
             <path d="M17.05 20.28c-.98.95-2.05.88-3.08.4-1.09-.5-2.08-.48-3.24 0-1.44.62-2.2.44-3.06-.4C2.79 15.25 3.51 7.59 9.05 7.31c1.35.07 2.29.74 3.08.8 1.18-.24 2.31-.93 3.57-.84 1.51.12 2.65.72 3.4 1.8-3.12 1.87-2.38 5.98.48 7.13-.57 1.5-1.31 2.99-2.54 4.09zM12.03 7.25c-.15-2.23 1.66-4.07 3.74-4.25.29 2.58-2.34 4.5-3.74 4.25z"/>
           </svg>
           {t("auth.social.apple", lang)}
@@ -96,34 +89,7 @@ function SocialSignInButtons({ lang }: { lang: string }) {
   );
 }
 
-/* ── helpers ──────────────────────────────────────────────────────────── */
-
-function parseApiError(err: unknown): string {
-  if (err instanceof ApiError) {
-    try {
-      const body = JSON.parse(err.body);
-      return body.detail ?? body.error ?? Object.values(body).flat().join(", ") ?? "Request failed";
-    } catch {
-      return err.body || "Request failed";
-    }
-  }
-  return err instanceof Error ? err.message : "Unknown error";
-}
-
-function ReaigenLogo() {
-  return (
-    <div className="mb-4">
-      <span
-        className="text-[32px] sm:text-[28px] text-foreground"
-        style={{ fontFamily: 'var(--font-brand), ui-serif, Georgia, serif', fontWeight: 500, letterSpacing: '0.03em' }}
-      >
-        Reaigen
-      </span>
-    </div>
-  );
-}
-
-/* ── login card ──────────────────────────────────────────────────────── */
+/* ── Login Form ───────────────────────────────────────────────────────── */
 
 function LoginCard({
   lang,
@@ -145,148 +111,116 @@ function LoginCard({
   const emailIsValid = /\S+@\S+\.\S+/.test(email.trim());
   const canSubmit = emailIsValid && password.length > 0;
 
-  async function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
-    event.preventDefault();
+  async function handleSubmit(e: React.FormEvent) {
+    e.preventDefault();
     setError(null);
     if (!canSubmit) return;
     try {
       setLoading(true);
       await onSubmit(email.trim(), password);
     } catch (err) {
-      setError(parseApiError(err));
+      setError(getSafeApiErrorMessage(err, lang));
     } finally {
       setLoading(false);
     }
   }
 
   return (
-    <Card
-      className={
-        "w-full bg-white" +
-        " border-0 shadow-none rounded-none min-h-[100dvh] flex flex-col" +
-        " sm:w-[34rem] sm:border sm:border-foreground/[0.16] sm:shadow-[0_28px_90px_rgba(15,23,42,0.20)] sm:rounded-2xl sm:min-h-0 sm:block"
-      }
-    >
-      <div className="pt-safe sm:hidden" aria-hidden="true" />
+    <form className="space-y-5" onSubmit={handleSubmit}>
+      <div className="space-y-1.5">
+        <Label htmlFor="login-email" className="text-[12px] font-medium text-foreground/70">
+          {t("auth.login.emailLabel", lang)}
+        </Label>
+        <Input
+          id="login-email"
+          type="email"
+          placeholder={t("auth.login.emailPlaceholder", lang)}
+          value={email}
+          onChange={(e) => setEmail(e.target.value)}
+          autoComplete="email"
+          className={INPUT_CLASS}
+        />
+      </div>
 
-      <CardHeader className="pb-3 pt-10 px-6  sm:pb-2 sm:pt-7 sm:px-7">
-        <ReaigenLogo />
-        <CardTitle className="text-foreground text-[26px] sm:text-[20px] pt-1">
-          {t("auth.login.title", lang)}
-        </CardTitle>
-        <CardDescription className="text-foreground/62 text-[15px] sm:text-[13px]">
-          {t("auth.login.subtitle", lang)}
-        </CardDescription>
-      </CardHeader>
-
-      <CardContent className="px-6 pb-0 flex-1 flex flex-col  sm:px-7 sm:pb-7 sm:flex-none sm:block">
-        <form className="space-y-5 sm:space-y-4" onSubmit={handleSubmit}>
-          <div className="space-y-1.5">
-            <Label htmlFor="login-email" required className={AUTH_LABEL_CLASS}>
-              {t("auth.login.emailLabel", lang)}
-            </Label>
-            <Input
-              id="login-email"
-              type="email"
-              placeholder={t("auth.login.emailPlaceholder", lang)}
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              autoComplete="email"
-              className={AUTH_INPUT_CLASS}
-            />
-          </div>
-
-          <div className="space-y-1.5">
-            <div className="flex items-center justify-between gap-3">
-              <Label htmlFor="login-password" required className={AUTH_LABEL_CLASS}>
-                {t("auth.login.passwordLabel", lang)}
-              </Label>
-              <button
-                type="button"
-                tabIndex={-1}
-                disabled={resetLoading || !emailIsValid}
-                onClick={async () => {
-                  if (!emailIsValid) return;
-                  setResetLoading(true);
-                  try {
-                    await requestPasswordReset(email.trim());
-                    setResetSent(true);
-                  } catch (err) {
-                    setError(parseApiError(err));
-                  }
-                  setResetLoading(false);
-                }}
-                className={`inline-flex items-center text-[12px] sm:text-[11px] text-foreground/60 hover:text-foreground disabled:opacity-40 ${AUTH_TEXT_BUTTON_CLASS}`}
-              >
-                {resetSent
-                  ? t("auth.login.forgotSent", lang)
-                  : resetLoading
-                    ? t("auth.login.forgotSending", lang)
-                    : t("auth.login.forgot", lang)}
-              </button>
-            </div>
-            <div className="relative">
-              <Input
-                id="login-password"
-                type={showPassword ? "text" : "password"}
-                placeholder={t("auth.login.passwordPlaceholder", lang)}
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                autoComplete="current-password"
-                className={`${AUTH_INPUT_CLASS} pr-14 sm:pr-12`}
-              />
-              <button
-                type="button"
-                tabIndex={-1}
-                onClick={() => setShowPassword((v) => !v)}
-                className={`absolute right-3.5 sm:right-3 top-1/2 -translate-y-1/2 text-[13px] sm:text-[11px] font-medium text-foreground/62 hover:text-foreground ${AUTH_TEXT_BUTTON_CLASS}`}
-              >
-                {showPassword ? "Hide" : "Show"}
-              </button>
-            </div>
-          </div>
-
-          <label className="flex items-center gap-2.5 sm:gap-2 text-[14px] sm:text-[12px] text-foreground/72 cursor-pointer" tabIndex={-1}>
-            <Checkbox
-              className={AUTH_CHECKBOX_CLASS}
-              checked={rememberMe}
-              onCheckedChange={(checked) => setRememberMe(checked === true)}
-              tabIndex={-1}
-            />
-            {t("auth.login.rememberMe", lang)}
-          </label>
-
-          {error && (
-            <p className="rounded-xl border border-destructive/35 bg-destructive/6 px-3.5 py-2.5 text-[13px] sm:text-[12px] text-destructive">
-              {error}
-            </p>
-          )}
-
-          <Button
-            type="submit"
-            className={`w-full h-[52px] text-[16px] rounded-[14px] sm:h-11 sm:text-[14px] sm:rounded-xl ${AUTH_FOCUS_RESET}`}
-            loading={loading}
-            disabled={!canSubmit || loading}
+      <div className="space-y-1.5">
+        <div className="flex items-center justify-between">
+          <Label htmlFor="login-password" className="text-[12px] font-medium text-foreground/70">
+            {t("auth.login.passwordLabel", lang)}
+          </Label>
+          <button
+            type="button"
+            tabIndex={-1}
+            disabled={resetLoading || !emailIsValid}
+            onClick={async () => {
+              if (!emailIsValid) return;
+              setResetLoading(true);
+              try { await requestPasswordReset(email.trim()); setResetSent(true); }
+              catch (err) { setError(getSafeApiErrorMessage(err, lang)); }
+              setResetLoading(false);
+            }}
+            className="text-[11px] text-foreground/45 hover:text-foreground transition-colors disabled:opacity-40"
           >
-            {t("auth.login.submit", lang)}
-          </Button>
-
-          <SocialSignInButtons lang={lang} />
-        </form>
-
-        <div className="mt-auto pt-6 pb-4 sm:mt-4 sm:pt-1 sm:pb-0 flex items-center justify-center text-[14px] sm:text-[12px] text-foreground/62">
-          <button type="button" onClick={onSwitchToRegister} className={`hover:text-foreground ${AUTH_TEXT_BUTTON_CLASS}`}>
-            {t("auth.login.switchToRegister", lang)}
+            {resetSent ? t("auth.login.forgotSent", lang) : resetLoading ? t("auth.login.forgotSending", lang) : t("auth.login.forgot", lang)}
           </button>
         </div>
+        <div className="relative">
+          <Input
+            id="login-password"
+            type={showPassword ? "text" : "password"}
+            placeholder={t("auth.login.passwordPlaceholder", lang)}
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
+            autoComplete="current-password"
+            className={`${INPUT_CLASS} pr-14`}
+          />
+          <button
+            type="button"
+            tabIndex={-1}
+            onClick={() => setShowPassword((v) => !v)}
+            className="absolute right-3.5 top-1/2 -translate-y-1/2 text-[11px] font-medium text-foreground/45 hover:text-foreground transition-colors"
+          >
+            {showPassword ? t("common.hide", lang) : t("common.show", lang)}
+          </button>
+        </div>
+      </div>
 
-        <div className="pb-safe sm:hidden" aria-hidden="true" />
-      </CardContent>
-    </Card>
+      <label className="flex items-center gap-2.5 text-[12px] text-foreground/60 cursor-pointer select-none">
+        <Checkbox
+          checked={rememberMe}
+          onCheckedChange={(checked) => setRememberMe(checked === true)}
+          tabIndex={-1}
+          className="border-foreground/20"
+        />
+        {t("auth.login.rememberMe", lang)}
+      </label>
+
+      {error && (
+        <p className="rounded-[10px] border border-destructive/25 bg-destructive/[0.04] px-3.5 py-2.5 text-[12px] text-destructive leading-relaxed">
+          {error}
+        </p>
+      )}
+
+      <Button
+        type="submit"
+        className="w-full h-[46px] text-[14px] font-semibold rounded-[12px] shadow-[0_1px_3px_rgba(0,0,0,0.1),0_1px_2px_rgba(0,0,0,0.06)] active:scale-[0.99] transition-transform"
+        loading={loading}
+        disabled={!canSubmit || loading}
+      >
+        {t("auth.login.submit", lang)}
+      </Button>
+
+      <SocialButtons lang={lang} />
+
+      <div className="pt-3 text-center">
+        <button type="button" onClick={onSwitchToRegister} className="text-[12px] text-foreground/50 hover:text-foreground transition-colors">
+          {t("auth.login.switchToRegister", lang)}
+        </button>
+      </div>
+    </form>
   );
 }
 
-/* ── registration card ───────────────────────────────────────────────── */
+/* ── Registration Form ────────────────────────────────────────────────── */
 
 function RegistrationCard({
   lang,
@@ -312,8 +246,8 @@ function RegistrationCard({
   const username = `${firstName.trim().toLowerCase()}_${lastName.trim().toLowerCase()}`.replace(/\s+/g, "");
   const canSubmit = firstName.trim().length > 0 && lastName.trim().length > 0 && emailIsValid && passwordIsValid && passwordsMatch && agreeToTerms;
 
-  async function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
-    event.preventDefault();
+  async function handleSubmit(e: React.FormEvent) {
+    e.preventDefault();
     setError(null);
     if (!canSubmit) return;
     try {
@@ -329,165 +263,132 @@ function RegistrationCard({
         accept_terms: agreeToTerms,
       });
     } catch (err) {
-      setError(parseApiError(err));
+      setError(getSafeApiErrorMessage(err, lang));
     } finally {
       setLoading(false);
     }
   }
 
   return (
-    <Card
-      className={
-        "w-full bg-white" +
-        " border-0 shadow-none rounded-none min-h-[100dvh] flex flex-col" +
-        " sm:w-[38rem] sm:border sm:border-foreground/[0.16] sm:shadow-[0_28px_90px_rgba(15,23,42,0.20)] sm:rounded-2xl sm:min-h-0 sm:block"
-      }
-    >
-      <div className="pt-safe sm:hidden" aria-hidden="true" />
-
-      <CardHeader className="pb-3 pt-10 px-6  sm:pb-2 sm:pt-8 sm:px-8">
-        <ReaigenLogo />
-        <CardTitle className="text-foreground text-[26px] sm:text-[20px] pt-1">
-          {t("auth.register.title", lang)}
-        </CardTitle>
-        <CardDescription className="text-foreground/62 text-[15px] sm:text-[13px]">
-          {t("auth.register.subtitle", lang)}
-        </CardDescription>
-      </CardHeader>
-
-      <CardContent className="px-6 pb-0 flex-1 flex flex-col  sm:px-8 sm:pb-8 sm:flex-none sm:block">
-        <form className="space-y-5 sm:space-y-4" onSubmit={handleSubmit}>
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-            <div className="space-y-1.5">
-              <Label htmlFor="register-first-name" required className={AUTH_LABEL_CLASS}>
-                {t("auth.register.firstNameLabel", lang)}
-              </Label>
-              <Input id="register-first-name" type="text" placeholder={t("auth.register.firstNamePlaceholder", lang)} value={firstName}
-                onChange={(e) => setFirstName(e.target.value)} autoComplete="given-name" className={AUTH_INPUT_CLASS} />
-            </div>
-            <div className="space-y-1.5">
-              <Label htmlFor="register-last-name" required className={AUTH_LABEL_CLASS}>
-                {t("auth.register.lastNameLabel", lang)}
-              </Label>
-              <Input id="register-last-name" type="text" placeholder={t("auth.register.lastNamePlaceholder", lang)} value={lastName}
-                onChange={(e) => setLastName(e.target.value)} autoComplete="family-name" className={AUTH_INPUT_CLASS} />
-            </div>
-          </div>
-
-          <div className="space-y-1.5">
-            <Label htmlFor="register-email" required className={AUTH_LABEL_CLASS}>
-              {t("auth.register.emailLabel", lang)}
-            </Label>
-            <Input id="register-email" type="email" placeholder={t("auth.register.emailPlaceholder", lang)} value={email}
-              onChange={(e) => setEmail(e.target.value)} autoComplete="email" className={AUTH_INPUT_CLASS} />
-          </div>
-
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-            <div className="space-y-1.5">
-              <Label htmlFor="register-password" required className={AUTH_LABEL_CLASS}>
-                {t("auth.register.passwordLabel", lang)}
-              </Label>
-              <div className="relative">
-                <Input id="register-password" type={showPassword ? "text" : "password"} placeholder={t("auth.register.passwordPlaceholder", lang)}
-                  value={password} onChange={(e) => setPassword(e.target.value)} autoComplete="new-password" className={`${AUTH_INPUT_CLASS} pr-14 sm:pr-12`} />
-                <button type="button" onClick={() => setShowPassword((v) => !v)}
-                  className={`absolute right-3.5 sm:right-3 top-1/2 -translate-y-1/2 text-[13px] sm:text-[11px] font-medium text-foreground/62 hover:text-foreground ${AUTH_TEXT_BUTTON_CLASS}`}>
-                  {showPassword ? "Hide" : "Show"}
-                </button>
-              </div>
-            </div>
-            <div className="space-y-1.5">
-              <Label htmlFor="register-confirm" required className={AUTH_LABEL_CLASS}>
-                {t("auth.register.confirmLabel", lang)}
-              </Label>
-              <Input id="register-confirm" type="password" placeholder={t("auth.register.confirmPlaceholder", lang)}
-                value={confirmPassword} onChange={(e) => setConfirmPassword(e.target.value)} autoComplete="new-password" className={AUTH_INPUT_CLASS} />
-            </div>
-          </div>
-          {!passwordsMatch && confirmPassword.length > 0 && (
-            <p className="text-[12px] sm:text-[11px] font-medium text-destructive">
-              {t("auth.register.passwordMismatch", lang)}
-            </p>
-          )}
-
-          <label className="flex items-center gap-2.5 sm:gap-2 text-[14px] sm:text-[12px] text-foreground/72 cursor-pointer">
-            <Checkbox className={AUTH_CHECKBOX_CLASS} checked={agreeToTerms} onCheckedChange={(checked) => setAgreeToTerms(checked === true)} />
-            {t("auth.register.terms", lang)}
-          </label>
-
-          {error && (
-            <p className="rounded-xl border border-destructive/35 bg-destructive/6 px-3.5 py-2.5 text-[13px] sm:text-[12px] text-destructive">
-              {error}
-            </p>
-          )}
-
-          <Button
-            type="submit"
-            className={`w-full h-[52px] text-[16px] rounded-[14px] sm:h-11 sm:text-[14px] sm:rounded-xl ${AUTH_FOCUS_RESET}`}
-            loading={loading}
-            disabled={!canSubmit || loading}
-          >
-            {t("auth.register.submit", lang)}
-          </Button>
-
-          <SocialSignInButtons lang={lang} />
-        </form>
-
-        <div className="mt-auto pt-6 pb-4 sm:mt-4 sm:pt-1 sm:pb-0 flex items-center justify-center text-[14px] sm:text-[12px] text-foreground/62">
-          <button type="button" onClick={onSwitchToLogin} className={`hover:text-foreground ${AUTH_TEXT_BUTTON_CLASS}`}>
-            {t("auth.register.switchToLogin", lang)}
-          </button>
+    <form className="space-y-4" onSubmit={handleSubmit}>
+      <div className="grid grid-cols-2 gap-3">
+        <div className="space-y-1.5">
+          <Label htmlFor="register-first-name" className="text-[12px] font-medium text-foreground/70">
+            {t("auth.register.firstNameLabel", lang)}
+          </Label>
+          <Input id="register-first-name" type="text" placeholder={t("auth.register.firstNamePlaceholder", lang)}
+            value={firstName} onChange={(e) => setFirstName(e.target.value)} autoComplete="given-name" className={INPUT_CLASS} />
         </div>
+        <div className="space-y-1.5">
+          <Label htmlFor="register-last-name" className="text-[12px] font-medium text-foreground/70">
+            {t("auth.register.lastNameLabel", lang)}
+          </Label>
+          <Input id="register-last-name" type="text" placeholder={t("auth.register.lastNamePlaceholder", lang)}
+            value={lastName} onChange={(e) => setLastName(e.target.value)} autoComplete="family-name" className={INPUT_CLASS} />
+        </div>
+      </div>
 
-        <div className="pb-safe sm:hidden" aria-hidden="true" />
-      </CardContent>
-    </Card>
+      <div className="space-y-1.5">
+        <Label htmlFor="register-email" className="text-[12px] font-medium text-foreground/70">
+          {t("auth.register.emailLabel", lang)}
+        </Label>
+        <Input id="register-email" type="email" placeholder={t("auth.register.emailPlaceholder", lang)}
+          value={email} onChange={(e) => setEmail(e.target.value)} autoComplete="email" className={INPUT_CLASS} />
+      </div>
+
+      <div className="grid grid-cols-2 gap-3">
+        <div className="space-y-1.5">
+          <Label htmlFor="register-password" className="text-[12px] font-medium text-foreground/70">
+            {t("auth.register.passwordLabel", lang)}
+          </Label>
+          <div className="relative">
+            <Input id="register-password" type={showPassword ? "text" : "password"} placeholder={t("auth.register.passwordPlaceholder", lang)}
+              value={password} onChange={(e) => setPassword(e.target.value)} autoComplete="new-password" className={`${INPUT_CLASS} pr-14`} />
+            <button type="button" onClick={() => setShowPassword((v) => !v)}
+              className="absolute right-3.5 top-1/2 -translate-y-1/2 text-[11px] font-medium text-foreground/45 hover:text-foreground transition-colors">
+              {showPassword ? t("common.hide", lang) : t("common.show", lang)}
+            </button>
+          </div>
+        </div>
+        <div className="space-y-1.5">
+          <Label htmlFor="register-confirm" className="text-[12px] font-medium text-foreground/70">
+            {t("auth.register.confirmLabel", lang)}
+          </Label>
+          <Input id="register-confirm" type="password" placeholder={t("auth.register.confirmPlaceholder", lang)}
+            value={confirmPassword} onChange={(e) => setConfirmPassword(e.target.value)} autoComplete="new-password" className={INPUT_CLASS} />
+        </div>
+      </div>
+      {!passwordsMatch && confirmPassword.length > 0 && (
+        <p className="text-[11px] text-destructive">{t("auth.register.passwordMismatch", lang)}</p>
+      )}
+
+      <div className="flex items-start gap-2.5 text-[12px] text-foreground/60">
+        <Checkbox
+          id="register-terms"
+          className="mt-0.5 border-foreground/20"
+          checked={agreeToTerms}
+          onCheckedChange={(checked) => setAgreeToTerms(checked === true)}
+        />
+        <div className="min-w-0 leading-relaxed">
+          <RegistrationLegalText lang={lang} />
+        </div>
+      </div>
+
+      {error && (
+        <p className="rounded-[10px] border border-destructive/25 bg-destructive/[0.04] px-3.5 py-2.5 text-[12px] text-destructive leading-relaxed">
+          {error}
+        </p>
+      )}
+
+      <Button
+        type="submit"
+        className="w-full h-[46px] text-[14px] font-semibold rounded-[12px] shadow-[0_1px_3px_rgba(0,0,0,0.1),0_1px_2px_rgba(0,0,0,0.06)] active:scale-[0.99] transition-transform"
+        loading={loading}
+        disabled={!canSubmit || loading}
+      >
+        {t("auth.register.submit", lang)}
+      </Button>
+
+      <SocialButtons lang={lang} />
+
+      <div className="pt-3 text-center">
+        <button type="button" onClick={onSwitchToLogin} className="text-[12px] text-foreground/50 hover:text-foreground transition-colors">
+          {t("auth.register.switchToLogin", lang)}
+        </button>
+      </div>
+    </form>
   );
 }
 
-/* ── auth gate ───────────────────────────────────────────────────────── */
+/* ── Auth Gate ─────────────────────────────────────────────────────────── */
 
-export function AuthGate({ open, onClose, onLogin, onRegister }: AuthGateProps) {
+export function AuthGate({ open, onLogin, onRegister }: AuthGateProps) {
   const [mode, setMode] = React.useState<"login" | "register">("login");
   const lang = useBrowserLang();
 
   if (!open) return null;
 
   return (
-    <div className="fixed inset-0 z-[9999] flex items-start justify-center overflow-y-auto bg-[hsl(var(--muted))]/35 sm:items-center">
-      <motion.div
-        layout
-        className="relative w-full sm:w-auto"
-        transition={{
-          layout: { duration: AUTH_SWITCH_DURATION, ease: AUTH_SWITCH_EASE },
-        }}
-      >
-        <AnimatePresence initial={false} mode="wait">
-          <motion.div
-            key={mode}
-            layout
-            initial={{ opacity: 0, scale: 1.035, y: 16 }}
-            animate={{ opacity: 1, scale: 1, y: 0 }}
-            exit={{ opacity: 0, scale: 0.94, y: 10 }}
-            transition={{ duration: AUTH_SWITCH_DURATION, ease: AUTH_SWITCH_EASE }}
-            style={{ transformOrigin: "50% 50%" }}
-          >
-            {mode === "login" ? (
-              <LoginCard
-                lang={lang}
-                onSubmit={async (email, password) => { await onLogin(email, password); onClose(); }}
-                onSwitchToRegister={() => setMode("register")}
-              />
-            ) : (
-              <RegistrationCard
-                lang={lang}
-                onSubmit={async (data) => { await onRegister(data); onClose(); }}
-                onSwitchToLogin={() => setMode("login")}
-              />
-            )}
-          </motion.div>
-        </AnimatePresence>
-      </motion.div>
+    <div className="w-full sm:max-w-[26rem] sm:mx-auto">
+      <div className="bg-white min-h-[100dvh] px-6 py-10 sm:min-h-0 sm:border sm:border-black/[0.06] sm:rounded-[20px] sm:shadow-[0_30px_100px_-12px_rgba(0,0,0,0.14),0_4px_12px_-2px_rgba(0,0,0,0.05),0_0_0_1px_rgba(0,0,0,0.02)] sm:px-9 sm:py-10">
+        {/* Header */}
+        <div className="mb-8">
+          <ReaigenLogo />
+          <h1 className="text-[22px] font-semibold tracking-[-0.01em] mt-5 text-foreground">
+            {mode === "login" ? t("auth.login.title", lang) : t("auth.register.title", lang)}
+          </h1>
+          <p className="text-[13px] text-foreground/45 mt-1.5 leading-relaxed">
+            {mode === "login" ? t("auth.login.subtitle", lang) : t("auth.register.subtitle", lang)}
+          </p>
+        </div>
+
+        {/* Form */}
+        {mode === "login" ? (
+          <LoginCard lang={lang} onSubmit={onLogin} onSwitchToRegister={() => setMode("register")} />
+        ) : (
+          <RegistrationCard lang={lang} onSubmit={onRegister} onSwitchToLogin={() => setMode("login")} />
+        )}
+      </div>
     </div>
   );
 }

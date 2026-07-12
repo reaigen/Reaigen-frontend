@@ -6,7 +6,7 @@
 - **3D Engine**: BabylonJS (Gaussian Splatting renderer)
 - **UI**: Tailwind CSS + Radix UI primitives
 - **Auth**: HTTP-only cookie JWT (proxied through Next.js API routes)
-- **Deployment**: Standalone Docker build on port 3050, dev on port 3055
+- **Deployment**: Standalone Docker build on port 3055, dev on port 3055
 - **Public URL**: `https://app-reaigen.publicrouter.sk`
 
 ---
@@ -30,7 +30,7 @@ app/
 │   ├── app-shell.tsx           # Header nav + layout wrapper
 │   ├── profile-card.tsx        # User profile summary card
 │   ├── splat-viewer.tsx        # BabylonJS Gaussian Splat viewer (core)
-│   ├── camera-editor.tsx       # Camera shot editor (capture, reorder, save)
+│   ├── camera-editor.tsx       # Camera editor (capture, look through, reorder, save)
 │   ├── share-dialog.tsx        # Share link creation & management modal
 │   ├── tour-controls.tsx       # Shot navigation pill (dots + arrows)
 │   ├── floorplan-nav.tsx       # Floorplan overlay with room polygons
@@ -76,9 +76,10 @@ Authenticated page for the tour owner.
 2. Create FreeCamera (WASD movement, QE up/down)
 3. Download `.splat`/`.ply` file (with progress bar)
 4. Convert PLY → splat format, cache in IndexedDB
-5. Create `GaussianSplattingMesh`, apply `scaling(-1, 1, 1)` (mirror fix)
-6. Place camera from COLMAP poses (first camera + back-off)
-7. If `tour_url` exists → fetch tour JSON, place at shot 0
+5. Create `GaussianSplattingMesh`
+6. Use viewer-space camera coordinates directly; camera up vector is `(0, 1, 0)`
+7. Place camera from COLMAP poses (first camera + back-off)
+8. If `tour_url` exists → fetch tour JSON, place at shot 0
 
 ### Tour Playback
 - Tour JSON defines: `positions[]`, `forwards[]`, `arcLens[]`, `shots[]`
@@ -88,11 +89,20 @@ Authenticated page for the tour owner.
 - Scroll: Steadicam-style path scrubbing (edit mode only)
 
 ### Camera Editor
-- Capture current view as a shot (position + forward + up)
-- Reorder, update, delete shots
-- Scene FOV slider (30°–120°)
+- Capture current view as a camera (`position`, `forward`, `up`, `fov`)
+- Reorder, update, delete cameras
+- Look through a saved camera from the row or eye control
+- Apply saved camera FOV during look-through and preview
+- Mark the active/current camera while editing
 - Save → `PATCH /api/reaigen/splats/{id}/cameras/`
-- Preview mode: auto-loop through saved shots
+- Preview mode: auto-loop through saved cameras
+
+### Camera Editor UX Contract
+- Visible UI uses camera wording, not shot wording
+- Panel stays compact and fast over the 3D viewer
+- Preview and edit states share one translucent card/muted material
+- Do not mix black preview pills with white/light edit panels
+- Avoid explanatory text inside the panel except for empty/error states
 
 ### Keyboard Controls
 | Key | Action |
@@ -221,6 +231,7 @@ Benefits:
 - **Colors**: Monochrome (no green/blue accents). Foreground/background only.
 - **Font**: System SF Pro stack + Noto Serif Display for brand wordmark
 - **Radius**: 0.625rem (10px) base
-- **Overlays on 3D**: Dark glass (`bg-black/50 backdrop-blur-xl border-white/10`)
+- **Overlays on 3D**: Translucent surfaces with blur and restrained borders
+- **Camera editor overlay**: Unified `card`/`muted` glass surface across preview and edit modes; no mixed black/white panel treatment
 - **Animations**: `animate-fade-in`, `animate-fade-in-up` (custom keyframes)
 - **Status indicators**: Foreground dot (active), amber dot (paused)

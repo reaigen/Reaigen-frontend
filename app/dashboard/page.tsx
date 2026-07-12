@@ -10,55 +10,67 @@ import { listAllDrafts, listSplats } from "../lib/api/client";
 import { ShareDialog } from "../components/share-dialog";
 import type { DraftListingItem, SplatListItem } from "../lib/tour-types";
 import Link from "next/link";
+import { Thumbnail } from "../components/thumbnail";
 
-function statusLabel(status: string) {
-  return status.charAt(0).toUpperCase() + status.slice(1);
-}
-
-function compactNumber(value: string | number | null | undefined) {
+function compactNumber(value: string | number | null | undefined, lang?: string) {
   if (value == null || value === "") return null;
   const n = typeof value === "number" ? value : Number(value);
   if (!Number.isFinite(n)) return String(value);
-  return new Intl.NumberFormat(undefined, { maximumFractionDigits: n % 1 === 0 ? 0 : 1 }).format(n);
+  return new Intl.NumberFormat(lang, { maximumFractionDigits: n % 1 === 0 ? 0 : 1 }).format(n);
 }
 
-function formatMoney(value: string | number | null | undefined, currency: string | null | undefined) {
+function formatMoney(value: string | number | null | undefined, currency: string | null | undefined, lang: string) {
   if (value == null || value === "") return null;
   const n = typeof value === "number" ? value : Number(value);
   if (!Number.isFinite(n)) return `${value}${currency ? ` ${currency}` : ""}`;
   try {
-    return new Intl.NumberFormat(undefined, {
-      style: "currency",
-      currency: currency || "EUR",
-      maximumFractionDigits: 0,
-    }).format(n);
+    return new Intl.NumberFormat(lang, { style: "currency", currency: currency || "EUR", maximumFractionDigits: 0 }).format(n);
   } catch {
-    return `${compactNumber(n)}${currency ? ` ${currency}` : ""}`;
+    return `${compactNumber(n, lang)}${currency ? ` ${currency}` : ""}`;
   }
 }
 
-function listingFacts(draft: DraftListingItem | undefined) {
-  if (!draft) return [];
+function getDraftThumbnail(draft: DraftListingItem): string | null {
+  const uploads = draft.raw_uploads ?? [];
+  const img = uploads
+    .filter((u) => u.mime_type?.startsWith("image") || u.asset_type === "photo")
+    .sort((a, b) => a.sort_order - b.sort_order)[0];
+  return img?.file_url ?? null;
+}
+
+// ── Fact icons ──
+const FactIcon = {
+  bed: <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" className="flex-shrink-0"><path d="M2 4v16"/><path d="M2 8h18a2 2 0 0 1 2 2v10"/><path d="M2 17h20"/><path d="M6 8v9"/></svg>,
+  bath: <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" className="flex-shrink-0"><path d="M4 12h16a1 1 0 0 1 1 1v3a4 4 0 0 1-4 4H7a4 4 0 0 1-4-4v-3a1 1 0 0 1 1-1Z"/><path d="M6 12V5a2 2 0 0 1 2-2h3v2.25"/></svg>,
+  area: <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" className="flex-shrink-0"><rect x="3" y="3" width="18" height="18" rx="1"/><path d="M3 9h18"/><path d="M9 3v18"/></svg>,
+} as Record<string, React.ReactNode>;
+
+function listingFacts(draft: DraftListingItem, lang: string) {
   const layout = draft.specs?.layout ?? {};
-  const facts: string[] = [];
-  if (layout.bedrooms != null && layout.bedrooms !== "") facts.push(`${layout.bedrooms} bd`);
-  if (layout.bathrooms != null && layout.bathrooms !== "") facts.push(`${layout.bathrooms} ba`);
+  const facts: { icon: string; text: string }[] = [];
+  if (layout.bedrooms != null && layout.bedrooms !== "") facts.push({ icon: "bed", text: `${layout.bedrooms} ${t("dashboard.bedroomsShort", lang)}` });
+  if (layout.bathrooms != null && layout.bathrooms !== "") facts.push({ icon: "bath", text: `${layout.bathrooms} ${t("dashboard.bathroomsShort", lang)}` });
   const area = draft.area_preferred ?? draft.area;
   const areaUnit = draft.area_preferred_unit ?? draft.area_unit_display;
-  if (area != null && area !== "") facts.push(`${compactNumber(area)}${areaUnit ? ` ${areaUnit}` : ""}`);
+  if (area != null && area !== "") facts.push({ icon: "area", text: `${compactNumber(area, lang)}${areaUnit ? ` ${areaUnit}` : ""}` });
   return facts;
 }
 
 export default function DashboardPage() {
   const { isAuthenticated, isLoading, user, logout } = useAuth();
   const router = useRouter();
+
+  // Splats = paginated list (for pagination + server-side search)
   const [splats, setSplats] = React.useState<SplatListItem[]>([]);
-  const [draftsById, setDraftsById] = React.useState<Map<number, DraftListingItem>>(new Map());
   const [splatsLoading, setSplatsLoading] = React.useState(true);
   const [loadingMore, setLoadingMore] = React.useState(false);
   const [hasMore, setHasMore] = React.useState(false);
   const [totalCount, setTotalCount] = React.useState(0);
   const pageRef = React.useRef(1);
+
+  // Drafts = full list for metadata (thumbnails, address, price, specs)
+  const [draftsById, setDraftsById] = React.useState<Map<number, DraftListingItem>>(new Map());
+
   const [shareTarget, setShareTarget] = React.useState<{ splatId: number; title: string } | null>(null);
   const [searchInput, setSearchInput] = React.useState("");
   const [searchQuery, setSearchQuery] = React.useState("");
@@ -67,6 +79,7 @@ export default function DashboardPage() {
     if (!isLoading && !isAuthenticated) router.replace("/");
   }, [isLoading, isAuthenticated, router]);
 
+  // Paginated splat loading with server-side search
   const loadPage = React.useCallback(async (page: number, append: boolean) => {
     const data = await listSplats(page, 20, searchQuery);
     const results = data.results ?? [];
@@ -87,29 +100,30 @@ export default function DashboardPage() {
     pageRef.current = page;
   }, [searchQuery]);
 
+  // Debounce search input → server query
   React.useEffect(() => {
     const timer = setTimeout(() => setSearchQuery(searchInput.trim()), 250);
     return () => clearTimeout(timer);
   }, [searchInput]);
 
+  // Fetch splats when search query or auth changes
   React.useEffect(() => {
     if (!isAuthenticated) return;
     setSplatsLoading(true);
     loadPage(1, false).catch(() => {}).finally(() => setSplatsLoading(false));
   }, [searchQuery, isAuthenticated, loadPage]);
 
+  // Fetch all drafts for metadata cross-reference
   React.useEffect(() => {
     if (!isAuthenticated) return;
     let cancelled = false;
     listAllDrafts()
       .then((drafts) => {
         if (cancelled) return;
-        setDraftsById(new Map(drafts.map((draft) => [draft.id, draft])));
+        setDraftsById(new Map(drafts.map((d) => [d.id, d])));
       })
       .catch(() => {});
-    return () => {
-      cancelled = true;
-    };
+    return () => { cancelled = true; };
   }, [isAuthenticated]);
 
   const handleLoadMore = React.useCallback(async () => {
@@ -121,195 +135,164 @@ export default function DashboardPage() {
   if (isLoading || !user) {
     return (
       <div className="min-h-screen flex items-center justify-center">
-        <div className="animate-spin h-8 w-8 border-2 border-foreground/20 border-t-foreground rounded-full" />
+        <div className="animate-spin h-7 w-7 border-2 border-foreground/15 border-t-foreground/60 rounded-full" />
       </div>
     );
   }
 
   const lang = getUserLanguage(user.localization);
-  const visibleSplats = searchQuery
-    ? splats.filter((splat) => {
-        const draft = draftsById.get(splat.source_draft);
-        const haystack = [
-          splat.title,
-          draft?.title,
-          draft?.display_address,
-          draft?.city,
-          draft?.state,
-          draft?.country,
-          draft?.postal_code,
-        ].filter(Boolean).join(" ").toLowerCase();
-        return haystack.includes(searchQuery.toLowerCase());
-      })
-    : splats;
 
   return (
     <AppShell user={user} onLogout={logout}>
-      <div className="mx-auto max-w-5xl animate-fade-in space-y-6">
-        {/* Greeting */}
-        <div className="border-b border-border/70 pb-5">
-          <h1 className="text-[22px] sm:text-2xl font-bold tracking-tight">
-            {t("dashboard.title", lang)}
-          </h1>
-          <p className="text-[13px] text-muted-foreground mt-0.5">
-            {t("dashboard.welcome", lang)}, {user.first_name || user.email}.
-          </p>
+      <div className="mx-auto w-full max-w-xl animate-fade-in">
+        {/* Search bar */}
+        <div className="mb-4 flex items-center gap-3 border-b border-border/70 pb-3">
+          <label className="relative block flex-1 min-w-0">
+            <span className="sr-only">{t("dashboard.searchPlaceholder", lang)}</span>
+            <svg width="15" height="15" viewBox="0 0 16 16" fill="none" className="pointer-events-none absolute left-0 top-1/2 -translate-y-1/2 text-muted-foreground" aria-hidden="true">
+              <circle cx="7" cy="7" r="4.5" stroke="currentColor" strokeWidth="1.5" />
+              <path d="M10.5 10.5L14 14" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+            </svg>
+            <input
+              type="search"
+              value={searchInput}
+              onChange={(e) => setSearchInput(e.target.value)}
+              placeholder={t("dashboard.searchPlaceholder", lang)}
+              className="h-9 w-full border-0 border-b border-transparent bg-transparent pl-6 pr-8 text-[13px] outline-none placeholder:text-muted-foreground/60 focus:border-foreground/35"
+            />
+            {searchInput && (
+              <button
+                type="button"
+                onClick={() => { setSearchInput(""); setSearchQuery(""); }}
+                className="absolute right-0 top-1/2 -translate-y-1/2 rounded p-1 text-muted-foreground hover:text-foreground"
+                aria-label={t("dashboard.clearSearch", lang)}
+              >
+                <svg width="13" height="13" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M4.5 4.5L11.5 11.5M11.5 4.5L4.5 11.5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" /></svg>
+              </button>
+            )}
+          </label>
+          <span className="text-[12px] text-muted-foreground tabular-nums shrink-0">
+            {splats.length}{totalCount > 0 ? ` / ${totalCount}` : ""}
+          </span>
         </div>
 
-        {/* Tours header */}
-        <section className="space-y-4">
-          <div className="mb-3">
-            <h2 className="text-[16px] sm:text-lg font-semibold tracking-tight">
-              {t("dashboard.virtualTours", lang)}
-            </h2>
+        {/* Cards */}
+        {splatsLoading ? (
+          <div className="space-y-4">
+            {Array.from({ length: 3 }).map((_, i) => (
+              <div key={i} className="animate-pulse rounded-xl overflow-hidden border border-border/40">
+                <div className="aspect-[16/10] bg-muted/30" />
+                <div className="px-3.5 py-2.5 flex gap-3">
+                  <div className="h-3 w-16 rounded bg-muted/40" />
+                  <div className="h-3 w-12 rounded bg-muted/30" />
+                </div>
+              </div>
+            ))}
           </div>
-
-          <div className="mb-3 flex flex-col gap-2 border-y border-border/70 py-3 sm:flex-row sm:items-center sm:justify-between">
-            <label className="relative block w-full sm:max-w-sm">
-              <span className="sr-only">{t("dashboard.searchPlaceholder", lang)}</span>
-              <svg
-                width="15"
-                height="15"
-                viewBox="0 0 16 16"
-                fill="none"
-                className="pointer-events-none absolute left-0 top-1/2 -translate-y-1/2 text-muted-foreground"
-                aria-hidden="true"
-              >
-                <circle cx="7" cy="7" r="4.5" stroke="currentColor" strokeWidth="1.5" />
-                <path d="M10.5 10.5L14 14" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
-              </svg>
-              <input
-                type="search"
-                value={searchInput}
-                onChange={(e) => setSearchInput(e.target.value)}
-                placeholder={t("dashboard.searchPlaceholder", lang)}
-                className="h-9 w-full border-0 border-b border-transparent bg-transparent pl-6 pr-8 text-[13px] outline-none placeholder:text-muted-foreground/60 focus:border-foreground/35"
-              />
-              {searchInput && (
-                <button
-                  type="button"
-                  onClick={() => {
-                    setSearchInput("");
-                    setSearchQuery("");
-                  }}
-                  className="absolute right-0 top-1/2 -translate-y-1/2 rounded p-1 text-muted-foreground hover:text-foreground"
-                  aria-label="Clear search"
-                >
-                  <svg width="13" height="13" viewBox="0 0 16 16" fill="none" aria-hidden="true">
-                    <path d="M4.5 4.5L11.5 11.5M11.5 4.5L4.5 11.5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
-                  </svg>
-                </button>
-              )}
-            </label>
-            <p className="text-[12px] text-muted-foreground tabular-nums">
-              {visibleSplats.length}{totalCount > 0 ? ` / ${totalCount}` : ""} tours
-            </p>
-          </div>
-
-          {splatsLoading ? (
-            <div className="flex items-center justify-center py-16">
-              <div className="animate-spin h-6 w-6 border-2 border-foreground/20 border-t-foreground rounded-full" />
-            </div>
-          ) : visibleSplats.length === 0 ? (
-            <div className="flex flex-col items-center justify-center py-20 text-center">
-              <div className="mb-4 flex h-12 w-12 items-center justify-center rounded-full bg-foreground/[0.04]">
+        ) : splats.length === 0 ? (
+          <div className="flex flex-col items-center justify-center py-20 text-center">
+            <div className="mb-4 flex h-12 w-12 items-center justify-center rounded-full bg-foreground/[0.04]">
               <svg width="22" height="22" viewBox="0 0 24 24" fill="none" className="text-foreground/25" aria-hidden="true">
                 <path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
                 <path d="M3.27 6.96L12 12.01l8.73-5.05M12 22.08V12" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
               </svg>
-              </div>
-              <p className="text-[14px] font-medium text-foreground/60">{t("dashboard.noSplatsTitle", lang)}</p>
-              <p className="mt-1 max-w-[260px] text-[12px] leading-relaxed text-muted-foreground">{t("dashboard.noSplats", lang)}</p>
             </div>
-          ) : (
-            <div className="grid grid-cols-2 gap-x-4 gap-y-6">
-            {visibleSplats.map((splat) => {
-              const isReady = splat.status === "completed" && (splat.has_ply || splat.has_splat || splat.has_sog);
+            <p className="text-[14px] font-medium text-foreground/60">{t("dashboard.noSplatsTitle", lang)}</p>
+            <p className="mt-1 max-w-[260px] text-[12px] leading-relaxed text-muted-foreground">{t("dashboard.noSplats", lang)}</p>
+          </div>
+        ) : (
+          <div className="space-y-4">
+            {splats.map((splat, idx) => {
               const draft = draftsById.get(splat.source_draft);
-              const price = draft ? formatMoney(draft.price_preferred ?? draft.price, draft.price_preferred_currency ?? draft.currency) : null;
-              const facts = listingFacts(draft);
+              const price = draft
+                ? formatMoney(draft.price_preferred ?? draft.price, draft.price_preferred_currency ?? draft.currency, lang)
+                : null;
+              const facts = draft ? listingFacts(draft, lang) : [];
               const address = draft?.display_address || [draft?.city, draft?.state, draft?.country].filter(Boolean).join(", ");
-              return (
-                <div key={splat.id} className="min-w-0">
-                  {/* Thumbnail */}
-                  <div className="aspect-[16/10] bg-muted/30 relative overflow-hidden rounded-md border border-border/70">
-                    {splat.thumbnail_url ? (
-                      <img src={splat.thumbnail_url} alt={splat.title} className="w-full h-full object-cover" />
-                    ) : (
-                      <div className="w-full h-full flex items-center justify-center">
-                        <svg width="32" height="32" viewBox="0 0 24 24" fill="none" className="text-foreground/10">
-                          <path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z" stroke="currentColor" strokeWidth="1.5" />
-                          <path d="M3.27 6.96L12 12.01l8.73-5.05M12 22.08V12" stroke="currentColor" strokeWidth="1.5" />
-                        </svg>
-                      </div>
-                    )}
-                    <span className="absolute top-2 right-2 text-[10px] font-medium px-1.5 py-0.5 rounded-lg bg-background/90 text-foreground/70">
-                      {statusLabel(splat.status)}
-                    </span>
-                  </div>
+              const thumbUrl = draft ? getDraftThumbnail(draft) : splat.thumbnail_url;
+              const title = draft?.title || splat.title;
+              const linkTarget = draft ? `/draft/${draft.id}` : `/tour/${splat.id}`;
 
-                  {/* Info */}
-                  <div className="pt-2.5">
-                    <p className="text-[13px] font-medium truncate">{splat.title}</p>
-                    {address ? (
-                      <p className="mt-0.5 truncate text-[11px] text-muted-foreground">{address}</p>
-                    ) : (
-                      <p className="mt-0.5 text-[11px] text-muted-foreground">{new Date(splat.created_at).toLocaleDateString()}</p>
-                    )}
-                    {(price || facts.length > 0) && (
-                      <div className="mt-1.5 flex flex-wrap items-center gap-x-2 gap-y-1 text-[11px] text-foreground/70">
-                        {price && <span className="font-medium text-foreground/80">{price}</span>}
-                        {facts.map((fact) => (
-                          <span key={fact}>{fact}</span>
+              return (
+                <div key={splat.id} className="overflow-hidden rounded-xl border border-border/60 transition-shadow hover:shadow-lg">
+                  {/* Hero image with overlay */}
+                  <Link href={linkTarget} className="block">
+                    <div className="relative aspect-[16/10] bg-muted/20">
+                      {thumbUrl ? (
+                        <Thumbnail src={thumbUrl} alt={title} className="absolute inset-0 w-full h-full object-cover" priority={idx < 4} />
+                      ) : (
+                        <div className="absolute inset-0 flex items-center justify-center">
+                          <svg width="40" height="40" viewBox="0 0 24 24" fill="none" className="text-foreground/8">
+                            <rect x="3" y="3" width="18" height="18" rx="2" stroke="currentColor" strokeWidth="1.5" />
+                            <circle cx="8.5" cy="8.5" r="1.5" fill="currentColor" />
+                            <path d="M21 15l-5-5L5 21" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+                          </svg>
+                        </div>
+                      )}
+                      <div className="absolute inset-x-0 bottom-0 h-2/3 bg-gradient-to-t from-black/60 via-black/25 to-transparent" />
+                      <div className="absolute inset-x-0 bottom-0 p-3.5">
+                        <h2 className="text-[15px] font-semibold text-white leading-tight truncate">{title}</h2>
+                        {address && (
+                          <p className="mt-0.5 flex items-center gap-1 text-[12px] text-white/75 truncate">
+                            <svg width="11" height="11" viewBox="0 0 16 16" fill="none" className="flex-shrink-0"><path d="M8 1.5a4.5 4.5 0 0 1 4.5 4.5c0 3.5-4.5 8.5-4.5 8.5S3.5 9.5 3.5 6A4.5 4.5 0 0 1 8 1.5Z" stroke="currentColor" strokeWidth="1.2"/><circle cx="8" cy="6" r="1.5" stroke="currentColor" strokeWidth="1.2"/></svg>
+                            {address}
+                          </p>
+                        )}
+                      </div>
+                      {price && (
+                        <div className="absolute top-3 right-3 rounded-full bg-white/90 backdrop-blur-sm px-2.5 py-1 text-[12px] font-semibold text-foreground shadow-sm">
+                          {price}
+                        </div>
+                      )}
+                    </div>
+                  </Link>
+
+                  {/* Facts footer + actions */}
+                  <div className="flex items-center justify-between px-3.5 py-2 bg-background">
+                    {facts.length > 0 ? (
+                      <div className="flex items-center gap-3 min-w-0">
+                        {facts.map((f) => (
+                          <span key={f.text} className="inline-flex items-center gap-1.5 text-[12px] text-foreground/60">
+                            {FactIcon[f.icon]} {f.text}
+                          </span>
                         ))}
                       </div>
-                    )}
-                    {draft && (
-                      <div className="mt-2 flex flex-wrap gap-1.5">
-                        <span className="rounded-full bg-foreground/[0.05] px-2 py-0.5 text-[10px] font-medium text-foreground/55">
-                          {draft.is_complete ? "Listing complete" : "Listing draft"}
-                        </span>
-                        <span className="rounded-full bg-foreground/[0.05] px-2 py-0.5 text-[10px] font-medium text-foreground/55">
-                          {draft.is_portfolio_visible ? "Portfolio visible" : "Not in portfolio"}
-                        </span>
-                      </div>
-                    )}
+                    ) : <div />}
 
-                    {isReady && (
-                      <div className="mt-2 flex flex-col gap-1.5 sm:flex-row">
-                        <Button
-                          variant="ghost" size="sm"
-                          className="h-8 flex-1 justify-start px-0 text-[11px] text-foreground/50 hover:bg-transparent hover:text-foreground sm:justify-center sm:px-3"
-                          onClick={() => setShareTarget({ splatId: splat.id, title: splat.title })}
-                        >
-                          {t("dashboard.share", lang)}
-                        </Button>
-                        <Link href={`/tour/${splat.id}`} className="sm:flex-1">
-                          <Button variant="ghost" size="sm" className="h-8 w-full justify-start px-0 text-[11px] text-foreground/50 hover:bg-transparent hover:text-foreground sm:justify-center sm:px-3">
-                            {t("dashboard.viewTour", lang)}
-                          </Button>
-                        </Link>
-                      </div>
-                    )}
+                    <div className="flex items-center gap-1 shrink-0 ml-2">
+                      <button
+                        onClick={() => setShareTarget({ splatId: splat.id, title })}
+                        className="p-1.5 rounded-md text-foreground/40 hover:text-foreground hover:bg-foreground/[0.04] transition-colors"
+                        aria-label={t("dashboard.share", lang)}
+                      >
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><path d="M8.59 13.51l6.83 3.98M15.41 6.51l-6.82 3.98"/></svg>
+                      </button>
+                      <Link href={`/tour/${splat.id}`} className="p-1.5 rounded-md text-foreground/40 hover:text-foreground hover:bg-foreground/[0.04] transition-colors" aria-label={t("dashboard.viewTour", lang)}>
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/><path d="M3.27 6.96L12 12.01l8.73-5.05M12 22.08V12"/></svg>
+                      </Link>
+                    </div>
                   </div>
                 </div>
               );
             })}
 
-              {hasMore && (
-                <div className="col-span-full flex justify-center pt-3">
-                  <Button variant="ghost" size="sm" className="text-[12px] text-foreground/45" onClick={handleLoadMore} loading={loadingMore}>
-                    {t("dashboard.loadMore", lang)}
-                  </Button>
-                </div>
-              )}
-            </div>
-          )}
-        </section>
+            {hasMore && (
+              <div className="flex justify-center pt-2 pb-4">
+                <Button variant="ghost" size="sm" className="text-[12px] text-foreground/45" onClick={handleLoadMore} disabled={loadingMore}>
+                  {loadingMore ? (
+                    <div className="animate-spin h-4 w-4 border-2 border-foreground/15 border-t-foreground/60 rounded-full" />
+                  ) : (
+                    t("dashboard.loadMore", lang)
+                  )}
+                </Button>
+              </div>
+            )}
+          </div>
+        )}
       </div>
 
       {shareTarget && (
-        <ShareDialog splatId={shareTarget.splatId} title={shareTarget.title} open={!!shareTarget} onClose={() => setShareTarget(null)} />
+        <ShareDialog splatId={shareTarget.splatId} title={shareTarget.title} open={!!shareTarget} onClose={() => setShareTarget(null)} lang={lang} />
       )}
     </AppShell>
   );

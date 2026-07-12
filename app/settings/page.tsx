@@ -20,7 +20,7 @@ export default function SettingsPage() {
   if (isLoading || !user) {
     return (
       <div className="min-h-screen flex items-center justify-center">
-        <div className="animate-spin h-8 w-8 border-2 border-foreground/20 border-t-foreground rounded-full" />
+        <div className="animate-spin h-7 w-7 border-2 border-foreground/15 border-t-foreground/60 rounded-full" />
       </div>
     );
   }
@@ -29,7 +29,7 @@ export default function SettingsPage() {
 
   return (
     <AppShell user={user} onLogout={logout}>
-      <div className="mx-auto max-w-5xl animate-fade-in space-y-6">
+      <div className="mx-auto w-full max-w-2xl animate-fade-in space-y-6">
         <div className="border-b border-border/70 pb-5">
           <h1 className="text-[22px] sm:text-2xl font-bold tracking-tight">{t("settings.title", lang)}</h1>
           <p className="text-[14px] text-muted-foreground mt-1">{t("settings.subtitle", lang)}</p>

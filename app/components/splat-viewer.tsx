@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState, useCallback, forwardRef, useImperativeHandle } from "react";
 import { AllocateShBuffers } from "@babylonjs/core/Meshes/GaussianSplatting/gaussianSplattingMeshBase.js";
 import { getCache, putCache } from "@/app/lib/splat-cache";
+import { t } from "@/app/lib/i18n";
 import type { CameraData, Vec3, TourData, TourShot } from "@/app/lib/tour-types";
 
 /**
@@ -35,17 +36,17 @@ const LOOK = 5;
 const TILT_Y = LOOK * Math.tan(5 * Math.PI / 180);
 const SH_C0 = 0.28209479177387814;
 
-function buildFallbackShots(data: TourData): TourShot[] {
+function buildFallbackShots(data: TourData, lang: string): TourShot[] {
   const n = data.positions?.length ?? 0;
   if (n < 2) return [];
   const count = Math.max(3, Math.min(10, Math.floor(n / 250)));
   const shots: TourShot[] = [];
   for (let i = 0; i < count; i++) {
-    const t = count === 1 ? 0 : i / (count - 1);
-    const idx = Math.max(0, Math.min(n - 1, Math.round(t * (n - 1))));
+    const progress = count === 1 ? 0 : i / (count - 1);
+    const idx = Math.max(0, Math.min(n - 1, Math.round(progress * (n - 1))));
     shots.push({
       storyBeat: "auto",
-      label: `Shot ${i + 1}`,
+      label: `${t("tour.controls.shot", lang)} ${i + 1}`,
       startIdx: idx,
       fov: 0.66,
       holdAfter: 3.5,
@@ -351,6 +352,8 @@ interface Anim {
   toPos: Vec3;
   fromAngle: number;
   toAngle: number;
+  fromPitch: number;
+  toPitch: number;
   fromFov: number;
   toFov: number;
   holdActive: boolean;
@@ -366,6 +369,7 @@ const defaultAnim = (): Anim => ({
   active: false, elapsed: 0, duration: 1.5,
   fromPos: [0, 0, 0], toPos: [0, 0, 0],
   fromAngle: 0, toAngle: 0,
+  fromPitch: 0, toPitch: 0,
   fromFov: 0.66, toFov: 0.66,
   holdActive: false, holdElapsed: 0, holdDuration: 4.5,
   holdPos: [0, 0, 0], holdAngle: 0, holdPanAmt: 0, holdBaseFov: 0.66,
@@ -389,6 +393,7 @@ interface Props {
   onReady?: () => void;
   onError?: (msg: string) => void;
   onTourLoaded?: (tour: TourData) => void;
+  lang?: string;
 }
 
 export interface SplatViewerHandle {
@@ -397,7 +402,7 @@ export interface SplatViewerHandle {
   goToNext: () => void;
   getCurrentCamera: () => { position: Vec3; forward: Vec3; up: Vec3; fov: number } | null;
   getTourData: () => TourData | null;
-  navigateToCamera: (pos: Vec3, fwd: Vec3, instant?: boolean) => void;
+  navigateToCamera: (pos: Vec3, fwd: Vec3, instant?: boolean, fov?: number) => void;
   enableFreeCamera: () => void;
   /** Set camera FOV in degrees (applies immediately to the live BabylonJS camera). */
   setFov: (degrees: number) => void;
@@ -406,7 +411,7 @@ export interface SplatViewerHandle {
 // ── Component ────────────────────────────────────────────────────────────────
 
 const SplatViewer = forwardRef<SplatViewerHandle, Props>(function SplatViewer(
-  { splatUrl, splatId, tourUrl, camerasUrl, initialCameras, preferSavedCameras, readOnly, outputsVersion, className, onShotChange, onReady, onError, onTourLoaded },
+  { splatUrl, splatId, tourUrl, camerasUrl, initialCameras, preferSavedCameras, readOnly, outputsVersion, className, onShotChange, onReady, onError, onTourLoaded, lang = "en" },
   ref,
 ) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -428,7 +433,7 @@ const SplatViewer = forwardRef<SplatViewerHandle, Props>(function SplatViewer(
   const gravityAppliedRef = useRef<string | null>(null);
   const freeModeRef = useRef(false);
 
-  const [status, setStatus] = useState("Loading...");
+  const [status, setStatus] = useState(() => t("viewer.status.loading", lang));
   const [downloadPct, setDownloadPct] = useState(0);
   const [ready, setReady] = useState(false);
   const [tourData, setTourData] = useState<TourData | null>(null);
@@ -509,7 +514,7 @@ const SplatViewer = forwardRef<SplatViewerHandle, Props>(function SplatViewer(
 
       shots.push({
         storyBeat: "saved-camera",
-        label: `Shot ${i + 1}`,
+        label: `${t("tour.controls.shot", lang)} ${i + 1}`,
         startIdx: i,
         fov: Number(cam.fov ?? cameraData.fovY ?? 0.66),
         holdAfter: 3.5,
@@ -550,27 +555,24 @@ const SplatViewer = forwardRef<SplatViewerHandle, Props>(function SplatViewer(
     const cur: Vec3 = [cam.position.x, cam.position.y, cam.position.z];
     const target = cam.getTarget();
     const dx = target.x - cam.position.x;
+    const dy = target.y - cam.position.y;
     const dz = target.z - cam.position.z;
+    const dlen = Math.hypot(dx, dy, dz) || 1;
 
     const anim = animRef.current;
     (anim as any).editorNav = false;
     anim.fromPos = cur;
     anim.toPos = [tPos[0], tPos[1], tPos[2]];
-    anim.fromAngle = Math.atan2(dz, dx);
+    anim.fromAngle = Math.atan2(dz / dlen, dx / dlen);
     anim.toAngle = Math.atan2(tFwd[2], tFwd[0]);
+    anim.fromPitch = Math.asin(Math.max(-1, Math.min(1, dy / dlen)));
+    anim.toPitch = Math.asin(Math.max(-1, Math.min(1, tFwd[1])));
     anim.fromFov = cam.fov;
     anim.toFov = shot.fov;
     anim.elapsed = 0;
     anim.duration = instant ? 0.001 : 1.5;
     anim.active = true;
     (anim as any).exactForward = useExactForward;
-    (anim as any).toForward = tFwd;
-    (anim as any).fromTarget = [target.x, target.y, target.z] as Vec3;
-    (anim as any).toTarget = [
-      tPos[0] + tFwd[0] * LOOK,
-      tPos[1] + tFwd[1] * LOOK,
-      tPos[2] + tFwd[2] * LOOK,
-    ] as Vec3;
 
     const panDir = idx % 2 === 0 ? 1 : -1;
     anim.holdActive = false;
@@ -617,10 +619,11 @@ const SplatViewer = forwardRef<SplatViewerHandle, Props>(function SplatViewer(
 
   const getTourData = useCallback(() => tourData, [tourData]);
 
-  const navigateToCamera = useCallback((pos: Vec3, fwd: Vec3, instant = false) => {
+  const navigateToCamera = useCallback((pos: Vec3, fwd: Vec3, instant = false, fov?: number) => {
     const cam = cameraRef.current;
     const B = babylonRef.current;
     if (!cam || !B) return;
+    const targetFov = typeof fov === "number" && Number.isFinite(fov) ? fov : cam.fov;
 
     // Stop everything — no hold phase, no scroll, no path scrub
     pathScrubRef.current = null;
@@ -638,6 +641,7 @@ const SplatViewer = forwardRef<SplatViewerHandle, Props>(function SplatViewer(
       cam.position.set(pos[0], pos[1], pos[2]);
       cam.setTarget(new B.Vector3(toTarget[0], toTarget[1], toTarget[2]));
       cam.rotation.z = 0;
+      cam.fov = targetFov;
       animRef.current.active = false;
       animRef.current.holdActive = false;
       if (canvasRef.current) cam.attachControl(canvasRef.current, true);
@@ -648,16 +652,26 @@ const SplatViewer = forwardRef<SplatViewerHandle, Props>(function SplatViewer(
     const anim = animRef.current;
     anim.fromPos = [cam.position.x, cam.position.y, cam.position.z];
     anim.toPos = [pos[0], pos[1], pos[2]];
-    // Store full 3D targets for direct interpolation
-    (anim as any).fromTarget = [target.x, target.y, target.z] as Vec3;
-    (anim as any).toTarget = toTarget;
     (anim as any).editorNav = true;
-    anim.fromAngle = 0;
-    anim.toAngle = 0;
+    // Decompose current look direction into yaw/pitch for smooth rotation
+    const cdx = target.x - cam.position.x;
+    const cdy = target.y - cam.position.y;
+    const cdz = target.z - cam.position.z;
+    const clen = Math.hypot(cdx, cdy, cdz) || 1;
+    anim.fromAngle = Math.atan2(cdz / clen, cdx / clen);
+    anim.toAngle = Math.atan2(fwd[2], fwd[0]);
+    anim.fromPitch = Math.asin(Math.max(-1, Math.min(1, cdy / clen)));
+    anim.toPitch = Math.asin(Math.max(-1, Math.min(1, fwd[1])));
     anim.fromFov = cam.fov;
-    anim.toFov = cam.fov;
+    anim.toFov = targetFov;
     anim.elapsed = 0;
-    anim.duration = 1.2;
+    // Adaptive duration based on distance
+    const dist = Math.hypot(
+      pos[0] - cam.position.x,
+      pos[1] - cam.position.y,
+      pos[2] - cam.position.z,
+    );
+    anim.duration = Math.max(0.8, Math.min(2.0, dist * 0.35));
     anim.active = true;
     anim.holdActive = false;
     anim.holdDuration = 0;
@@ -767,7 +781,7 @@ const SplatViewer = forwardRef<SplatViewerHandle, Props>(function SplatViewer(
                 return;
               }
               if (!data.shots?.length) {
-                const fallbackShots = buildFallbackShots(data);
+                const fallbackShots = buildFallbackShots(data, lang);
                 if (!fallbackShots.length) {
                   retryTimer = setTimeout(tryLoad, 6000);
                   return;
@@ -788,7 +802,7 @@ const SplatViewer = forwardRef<SplatViewerHandle, Props>(function SplatViewer(
             return;
           }
           if (!data.shots?.length) {
-            const fallbackShots = buildFallbackShots(data);
+            const fallbackShots = buildFallbackShots(data, lang);
             if (!fallbackShots.length) {
               retryTimer = setTimeout(tryLoad, 6000);
               return;
@@ -882,7 +896,7 @@ const SplatViewer = forwardRef<SplatViewerHandle, Props>(function SplatViewer(
     async function init() {
       if (!canvasRef.current) return;
       try {
-        setStatus("Loading engine...");
+        setStatus(t("viewer.status.loadingEngine", lang));
         const BABYLON = await import("@babylonjs/core");
         await import("@babylonjs/loaders");
         babylonRef.current = BABYLON;
@@ -1011,29 +1025,24 @@ const SplatViewer = forwardRef<SplatViewerHandle, Props>(function SplatViewer(
 
           // Travel animation
           anim.elapsed = Math.min(anim.elapsed + dt, anim.duration);
-          const et = quintic(anim.elapsed / anim.duration);
+          const rawT = anim.elapsed / anim.duration;
+          const et = quintic(rawT);
+          // Rotation leads position slightly for cinematic "look where you're going" feel
+          const rotT = quintic(Math.min(1, rawT * 1.15));
           const px = anim.fromPos[0] + (anim.toPos[0] - anim.fromPos[0]) * et;
           const py = anim.fromPos[1] + (anim.toPos[1] - anim.fromPos[1]) * et;
           const pz = anim.fromPos[2] + (anim.toPos[2] - anim.fromPos[2]) * et;
           camera.position.set(px, py, pz);
 
-          if ((anim as any).editorNav || (anim as any).exactForward) {
-            // Direct 3D target interpolation for editor navigation
-            const ft = (anim as any).fromTarget as Vec3;
-            const tt = (anim as any).toTarget as Vec3;
-            camera.setTarget(new BABYLON.Vector3(
-              ft[0] + (tt[0] - ft[0]) * et,
-              ft[1] + (tt[1] - ft[1]) * et,
-              ft[2] + (tt[2] - ft[2]) * et,
-            ));
-          } else {
-            const angle = slerpAngle(anim.fromAngle, anim.toAngle, et);
-            camera.setTarget(new BABYLON.Vector3(
-              px + Math.cos(angle) * LOOK,
-              py - TILT_Y,
-              pz + Math.sin(angle) * LOOK,
-            ));
-          }
+          // Angle-based look direction interpolation (avoids mirror-flip on opposing cameras)
+          const yaw = slerpAngle(anim.fromAngle, anim.toAngle, rotT);
+          const pitch = anim.fromPitch + (anim.toPitch - anim.fromPitch) * rotT;
+          const cosPitch = Math.cos(pitch);
+          camera.setTarget(new BABYLON.Vector3(
+            px + Math.cos(yaw) * cosPitch * LOOK,
+            py + Math.sin(pitch) * LOOK,
+            pz + Math.sin(yaw) * cosPitch * LOOK,
+          ));
           camera.rotation.z = 0;
           camera.fov = anim.fromFov + (anim.toFov - anim.fromFov) * et;
 
@@ -1122,7 +1131,7 @@ const SplatViewer = forwardRef<SplatViewerHandle, Props>(function SplatViewer(
         if (disposed) return;
 
         // Download the file
-        setStatus("Downloading...");
+        setStatus(t("viewer.status.downloading", lang));
         let rawBuffer: ArrayBuffer | null = cachedFull;
 
         if (!rawBuffer) {
@@ -1155,7 +1164,7 @@ const SplatViewer = forwardRef<SplatViewerHandle, Props>(function SplatViewer(
 
         if (isZip || isSogUrl) {
           // SOG format: unzip and parse with BabylonJS SOG parser
-          setStatus("Processing...");
+          setStatus(t("viewer.status.processing", lang));
           const { ParseSogMeta } = await import("@babylonjs/loaders/SPLAT/sog");
           const fflate = await import("fflate");
           const zipData = fflate.unzipSync(new Uint8Array(rawBuffer));
@@ -1211,7 +1220,7 @@ const SplatViewer = forwardRef<SplatViewerHandle, Props>(function SplatViewer(
           gs.alwaysSelectAsActiveMesh = true;
         } else if (isGZippedSpz || isNgspSpz || isSpzUrl) {
           // SPZ format: this is the current R&D-packed web format.
-          setStatus("Processing...");
+          setStatus(t("viewer.status.processing", lang));
           const { ParseSpz, GetSpzModule, ConvertSpzToSplatAsync } = await import("@babylonjs/loaders/SPLAT/spz");
           let parsedSPZ: {
             data: ArrayBuffer;
@@ -1251,7 +1260,7 @@ const SplatViewer = forwardRef<SplatViewerHandle, Props>(function SplatViewer(
           gs.alwaysSelectAsActiveMesh = true;
         } else {
           // PLY/splat format
-          setStatus("Processing...");
+          setStatus(t("viewer.status.processing", lang));
           const conv: { buffer: ArrayBuffer } = await GaussianSplattingMesh.ConvertPLYWithSHToSplatAsync(rawBuffer) as { buffer: ArrayBuffer };
           if (disposed) return;
           const fullConv = conv.buffer;
@@ -1293,7 +1302,7 @@ const SplatViewer = forwardRef<SplatViewerHandle, Props>(function SplatViewer(
 
       } catch (err: any) {
         if (!disposed) {
-          setStatus("Error: " + (err?.message || String(err)));
+          setStatus(`${t("viewer.status.error", lang)} ${err?.message || String(err)}`);
           console.error("[REAI]", err);
           onError?.(err?.message);
         }

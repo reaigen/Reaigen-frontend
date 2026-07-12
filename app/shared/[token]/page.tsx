@@ -2,12 +2,14 @@
 
 import { useEffect, useState, useRef, useCallback, use } from "react";
 import { getSharedTourViewer, verifySharePin } from "../../lib/api/client";
+import { getApiErrorJson, getSafeApiErrorMessage } from "../../lib/api/error-message";
 import type { TourViewerData, TourData, TourShot, RoomData, CameraData } from "../../lib/tour-types";
 import dynamic from "next/dynamic";
 import TourControls from "../../components/tour-controls";
 import FloorplanNav from "../../components/floorplan-nav";
 import { Button } from "../../lib/ui/button";
 import { Input } from "../../lib/ui/input";
+import { getBrowserLanguage, t } from "../../lib/i18n";
 
 const SplatViewer = dynamic(() => import("../../components/splat-viewer"), { ssr: false });
 const SOG_READY_TIMEOUT_MS = 15000;
@@ -33,21 +35,23 @@ function pickFallbackRenderableUrl(data: TourViewerData): string | null {
     ?? null;
 }
 
-// Map raw backend errors to user-friendly messages
-function sanitizeError(msg: string): string {
-  if (msg.includes("requires_pin")) return "PIN required to view this link.";
-  if (msg.includes("not found") || msg.includes("revoked")) return "This link is no longer available.";
-  if (msg.includes("expired")) return "This link has expired.";
-  if (msg.includes("maximum")) return "This link has reached its view limit.";
-  if (msg.includes("paused")) return "This link has been paused by the owner.";
-  return "Unable to load tour. Please try again.";
+type SharedErrorKind = "notAvailable" | "expired" | "limit" | "paused" | "generic";
+
+function sanitizeError(msg: string, lang: string): { kind: SharedErrorKind; message: string } {
+  const lower = msg.toLowerCase();
+  if (lower.includes("requires_pin")) return { kind: "generic", message: t("shared.error.pinRequired", lang) };
+  if (lower.includes("not found") || lower.includes("revoked")) return { kind: "notAvailable", message: t("shared.error.notAvailable", lang) };
+  if (lower.includes("expired")) return { kind: "expired", message: t("shared.error.expired", lang) };
+  if (lower.includes("maximum")) return { kind: "limit", message: t("shared.error.viewLimit", lang) };
+  if (lower.includes("paused")) return { kind: "paused", message: t("shared.error.paused", lang) };
+  return { kind: "generic", message: t("shared.error.loadFailed", lang) };
 }
 
 function Brand() {
   return (
     <span
       className="text-[22px] text-foreground/80"
-      style={{ fontFamily: "var(--font-brand), ui-serif, Georgia, serif", fontWeight: 500, letterSpacing: "0.02em" }}
+      style={{ fontFamily: "var(--font-brand), ui-serif, Georgia, serif", fontWeight: 400, letterSpacing: "0.02em" }}
     >
       Reaigen
     </span>
@@ -57,8 +61,10 @@ function Brand() {
 export default function SharedTourPage({ params }: { params: Promise<{ token: string }> }) {
   const { token } = use(params);
 
+  const [lang, setLang] = useState("en");
   const [data, setData] = useState<TourViewerData | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [errorKind, setErrorKind] = useState<SharedErrorKind | null>(null);
   const [requiresPin, setRequiresPin] = useState(false);
   const [pin, setPin] = useState("");
   const [pinError, setPinError] = useState<string | null>(null);
@@ -71,24 +77,30 @@ export default function SharedTourPage({ params }: { params: Promise<{ token: st
 
   const splatRef = useRef<any>(null);
 
+  useEffect(() => {
+    setLang(getBrowserLanguage());
+  }, []);
+
   const loadViewer = useCallback(async () => {
     try {
       setError(null);
+      setErrorKind(null);
       const result = await getSharedTourViewer(token);
       setData(result);
-    } catch (e: any) {
-      try {
-        const body = JSON.parse(e.body);
-        if (body.requires_pin) {
-          setRequiresPin(true);
-          return;
-        }
-        setError(sanitizeError(body.error || body.message || e.message));
-      } catch {
-        setError(sanitizeError(e.message));
+    } catch (err) {
+      const body = getApiErrorJson(err);
+      if (body?.requires_pin) {
+        setRequiresPin(true);
+        return;
       }
+      const rawMessage = typeof body?.error === "string" ? body.error : typeof body?.message === "string" ? body.message : "";
+      const nextError = rawMessage
+        ? sanitizeError(rawMessage, lang)
+        : { kind: "generic" as const, message: getSafeApiErrorMessage(err, lang, "shared.error.loadFailed") };
+      setErrorKind(nextError.kind);
+      setError(nextError.message);
     }
-  }, [token]);
+  }, [token, lang]);
 
   useEffect(() => { loadViewer(); }, [loadViewer]);
   useEffect(() => {
@@ -122,23 +134,20 @@ export default function SharedTourPage({ params }: { params: Promise<{ token: st
         setPin("");
         await loadViewer();
       } else {
-        setPinError("Invalid PIN. Please try again.");
+        setPinError(t("shared.pin.invalid", lang));
       }
-    } catch (err: any) {
-      let msg = "Invalid PIN. Please try again.";
-      try {
-        const body = JSON.parse(err.body);
-        if (body.error) msg = body.error;
-        if (body.retry_after_seconds) {
-          const mins = Math.ceil(body.retry_after_seconds / 60);
-          msg = `Too many attempts. Try again in ${mins} minute${mins > 1 ? "s" : ""}.`;
-        }
-      } catch {}
+    } catch (err) {
+      let msg = getSafeApiErrorMessage(err, lang, "shared.pin.invalid");
+      const body = getApiErrorJson(err);
+      if (typeof body?.retry_after_seconds === "number") {
+        const mins = Math.ceil(body.retry_after_seconds / 60);
+        msg = `${t("shared.pin.tooManyAttempts", lang)} ${mins} ${mins === 1 ? t("shared.pin.minute", lang) : t("shared.pin.minutes", lang)}.`;
+      }
       setPinError(msg);
     } finally {
       setPinLoading(false);
     }
-  }, [token, pin, loadViewer, pinLoading]);
+  }, [token, pin, loadViewer, pinLoading, lang]);
 
   const handleShotChange = useCallback((idx: number) => {
     setShotIdx(idx);
@@ -172,8 +181,8 @@ export default function SharedTourPage({ params }: { params: Promise<{ token: st
                   <path d="M7 11V7a5 5 0 0110 0v4" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
                 </svg>
               </div>
-              <h2 className="text-base font-semibold">This tour is protected</h2>
-              <p className="text-sm text-muted-foreground mt-1">Enter the PIN to view this virtual tour.</p>
+              <h2 className="text-base font-semibold">{t("shared.pin.title", lang)}</h2>
+              <p className="text-sm text-muted-foreground mt-1">{t("shared.pin.subtitle", lang)}</p>
             </div>
           </div>
 
@@ -182,7 +191,7 @@ export default function SharedTourPage({ params }: { params: Promise<{ token: st
               type="text"
               inputMode="numeric"
               pattern="[0-9]*"
-              placeholder="Enter PIN"
+              placeholder={t("shared.pin.placeholder", lang)}
               value={pin}
               onChange={(e) => setPin(e.target.value.replace(/\D/g, "").slice(0, 10))}
               disabled={pinLoading}
@@ -196,7 +205,7 @@ export default function SharedTourPage({ params }: { params: Promise<{ token: st
               </div>
             )}
             <Button className="w-full h-10" loading={pinLoading} disabled={pinLoading || pin.length < 4}>
-              View tour
+              {t("shared.pin.viewTour", lang)}
             </Button>
           </form>
         </div>
@@ -206,9 +215,9 @@ export default function SharedTourPage({ params }: { params: Promise<{ token: st
 
   // ── Error state ──
   if (error) {
-    const isExpired = error.includes("expired") || error.includes("no longer");
-    const isPaused = error.includes("paused");
-    const isLimitReached = error.includes("limit");
+    const isExpired = errorKind === "expired" || errorKind === "notAvailable";
+    const isPaused = errorKind === "paused";
+    const isLimitReached = errorKind === "limit";
     const showRetry = !isExpired && !isPaused && !isLimitReached;
 
     return (
@@ -235,13 +244,13 @@ export default function SharedTourPage({ params }: { params: Promise<{ token: st
               )}
             </div>
             <p className="text-[14px] font-medium text-foreground/70 mb-1">
-              {isExpired ? "Link expired" : isPaused ? "Link paused" : isLimitReached ? "View limit reached" : "Something went wrong"}
+              {isExpired ? t("shared.error.titleExpired", lang) : isPaused ? t("shared.error.titlePaused", lang) : isLimitReached ? t("shared.error.titleLimit", lang) : t("shared.error.titleGeneric", lang)}
             </p>
             <p className="text-[13px] text-foreground/40 leading-relaxed">{error}</p>
           </div>
           {showRetry && (
             <Button variant="outline" size="sm" onClick={() => { setError(null); loadViewer(); }}>
-              Try again
+              {t("common.tryAgain", lang)}
             </Button>
           )}
         </div>
@@ -255,7 +264,7 @@ export default function SharedTourPage({ params }: { params: Promise<{ token: st
       <div className="min-h-screen flex items-center justify-center bg-background">
         <div className="text-center space-y-3">
           <div className="animate-spin h-7 w-7 border-2 border-foreground/15 border-t-foreground/60 rounded-full mx-auto" />
-          <p className="text-xs text-muted-foreground">Loading tour...</p>
+          <p className="text-xs text-muted-foreground">{t("shared.loadingTour", lang)}</p>
         </div>
       </div>
     );
@@ -281,6 +290,7 @@ export default function SharedTourPage({ params }: { params: Promise<{ token: st
         }}
         onShotChange={handleShotChange}
         onTourLoaded={handleTourLoaded}
+        lang={lang}
       />
 
       {/* Title badge */}
@@ -296,7 +306,7 @@ export default function SharedTourPage({ params }: { params: Promise<{ token: st
       <div className="absolute right-3 top-3 z-20 animate-fade-in sm:right-4 sm:top-4">
         <span
           className="text-[13px] text-white/50 bg-black/20 backdrop-blur-sm px-2.5 py-1 rounded-full"
-          style={{ fontFamily: "var(--font-brand), ui-serif, Georgia, serif", fontWeight: 500 }}
+          style={{ fontFamily: "var(--font-brand), ui-serif, Georgia, serif", fontWeight: 400 }}
         >
           Reaigen
         </span>
@@ -310,6 +320,7 @@ export default function SharedTourPage({ params }: { params: Promise<{ token: st
           onGoToShot={(i) => splatRef.current?.goToShot(i)}
           onPrev={() => splatRef.current?.goToPrev()}
           onNext={() => splatRef.current?.goToNext()}
+          lang={lang}
         />
       )}
 
@@ -320,6 +331,7 @@ export default function SharedTourPage({ params }: { params: Promise<{ token: st
           rooms={data.rooms}
           onRoomClick={handleRoomClick}
           activeRoomId={activeRoomId}
+          lang={lang}
         />
       )}
     </div>

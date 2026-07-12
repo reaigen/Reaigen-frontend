@@ -141,6 +141,7 @@ export interface DraftListingItem {
     };
     [key: string]: unknown;
   };
+  raw_uploads?: DraftUpload[];
   created_at: string;
   updated_at: string;
 }
@@ -156,6 +157,44 @@ export interface SplatViewerPayload {
   metadata: Record<string, unknown>;
   outputs_updated_at: string | null;
   cameras?: CameraData | null;
+}
+
+export interface DraftUpload {
+  id: number;
+  file_url: string;
+  file_name: string;
+  file_size: number;
+  mime_type: string;
+  asset_type: string;
+  asset_type_detail: string;
+  sort_order: number;
+  role: string;
+  status: string;
+  is_master: boolean;
+  uploaded_at: string;
+}
+
+export interface DraftDataEntry {
+  id: number;
+  data_key: string;
+  data_value: string;
+  data_type: string;
+  sort_order: number;
+}
+
+export interface DraftDetailItem extends DraftListingItem {
+  raw_uploads: DraftUpload[];
+  draft_data: DraftDataEntry[];
+  year_built: number | null;
+  floorplan_id: number | null;
+  splat_id: number | null;
+  description_translated?: string | null;
+  translation_status?: string | null;
+  lot_size: string | number | null;
+  lot_size_unit: string | null;
+  lot_size_preferred: string | number | null;
+  latitude: string | number | null;
+  longitude: string | number | null;
 }
 
 export interface SplatsByDraftPayload {

@@ -9,33 +9,27 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from ".
 import { Separator } from "../lib/ui/separator";
 import { Switch } from "../lib/ui/switch";
 import {
-  ApiError,
   updateProfile,
   updateSellerProfile,
   updateLocalization,
   updatePersonalizedData,
-  updateBilling,
   changePassword,
   getAvailablePreferences,
   type UserProfile,
   type AvailablePreferences,
   type PreferenceOption,
 } from "../lib/api/client";
+import { getSafeApiErrorMessage } from "../lib/api/error-message";
 import { t, getUserLanguage } from "../lib/i18n";
 import { cn } from "../lib/utils";
+import { ManagedLegalDocuments } from "./content-documents";
 
-function parseError(err: unknown): string {
-  if (err instanceof ApiError) {
-    if (err.status >= 500) return "Something went wrong. Please try again.";
-    try {
-      const body = JSON.parse(err.body);
-      const detail = body.detail ?? Object.values(body).flat().join(", ");
-      return String(detail || "Request failed").slice(0, 240);
-    } catch {
-      return err.body ? err.body.slice(0, 240) : "Request failed";
-    }
-  }
-  return err instanceof Error ? err.message : "Unknown error";
+function useAutoDismiss(value: boolean, setter: (v: boolean) => void, ms = 3000) {
+  React.useEffect(() => {
+    if (!value) return;
+    const timer = setTimeout(() => setter(false), ms);
+    return () => clearTimeout(timer);
+  }, [value, setter, ms]);
 }
 
 function Card({ className, ...props }: React.HTMLAttributes<HTMLElement>) {
@@ -63,11 +57,11 @@ function CardContent({ className, ...props }: React.HTMLAttributes<HTMLDivElemen
   return <div className={cn("max-w-2xl", className)} {...props} />;
 }
 
-function formatAccountDate(value: string | null | undefined) {
-  if (!value) return "Not recorded";
+function formatAccountDate(value: string | null | undefined, lang: string) {
+  if (!value) return t("common.notRecorded", lang);
   const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return "Not recorded";
-  return date.toLocaleDateString(undefined, { year: "numeric", month: "short", day: "numeric" });
+  if (Number.isNaN(date.getTime())) return t("common.notRecorded", lang);
+  return date.toLocaleDateString(lang, { year: "numeric", month: "short", day: "numeric" });
 }
 
 function DataRow({ label, value }: { label: string; value: React.ReactNode }) {
@@ -88,6 +82,7 @@ function ProfileTab({ user, onSaved, lang }: { user: UserProfile; onSaved: () =>
   const [loading, setLoading] = React.useState(false);
   const [error, setError] = React.useState<string | null>(null);
   const [success, setSuccess] = React.useState(false);
+  useAutoDismiss(success, setSuccess);
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -99,7 +94,7 @@ function ProfileTab({ user, onSaved, lang }: { user: UserProfile; onSaved: () =>
       setSuccess(true);
       onSaved();
     } catch (err) {
-      setError(parseError(err));
+      setError(getSafeApiErrorMessage(err, lang));
     } finally {
       setLoading(false);
     }
@@ -132,10 +127,10 @@ function ProfileTab({ user, onSaved, lang }: { user: UserProfile; onSaved: () =>
             <Input id="email" value={user.email} disabled className="opacity-50 cursor-not-allowed" />
             <p className="text-[11px] text-muted-foreground">{t("settings.profile.emailHint", lang)}</p>
           </div>
-          {error && <p className="text-sm text-destructive">{error}</p>}
-          {success && <p className="text-sm text-muted-foreground">{t("settings.profile.saved", lang)}</p>}
+          {error && <p className="text-[12px] text-destructive">{error}</p>}
+          {success && <p className="text-[12px] text-emerald-600">{t("settings.profile.saved", lang)}</p>}
           <div className="pt-2">
-            <Button type="submit" loading={loading}>{t("settings.profile.save", lang)}</Button>
+            <Button type="submit" size="sm" loading={loading}>{t("settings.profile.save", lang)}</Button>
           </div>
         </form>
       </CardContent>
@@ -146,7 +141,7 @@ function ProfileTab({ user, onSaved, lang }: { user: UserProfile; onSaved: () =>
 /* ── Seller Profile Tab ──────────────────────────────────────────────── */
 
 function SellerTab({ user, onSaved, lang }: { user: UserProfile; onSaved: () => void; lang: string }) {
-  const p = user.profile;
+  const p = user.profile ?? {} as Partial<NonNullable<typeof user.profile>>;
   const [phone, setPhone] = React.useState(p?.phone ?? "");
   const [company, setCompany] = React.useState(p?.company ?? "");
   const [website, setWebsite] = React.useState(p?.website ?? "");
@@ -166,6 +161,7 @@ function SellerTab({ user, onSaved, lang }: { user: UserProfile; onSaved: () => 
   const [loading, setLoading] = React.useState(false);
   const [error, setError] = React.useState<string | null>(null);
   const [success, setSuccess] = React.useState(false);
+  useAutoDismiss(success, setSuccess);
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -194,7 +190,7 @@ function SellerTab({ user, onSaved, lang }: { user: UserProfile; onSaved: () => 
       setSuccess(true);
       onSaved();
     } catch (err) {
-      setError(parseError(err));
+      setError(getSafeApiErrorMessage(err, lang));
     } finally {
       setLoading(false);
     }
@@ -308,10 +304,10 @@ function SellerTab({ user, onSaved, lang }: { user: UserProfile; onSaved: () => 
             </div>
           </div>
 
-          {error && <p className="text-sm text-destructive">{error}</p>}
-          {success && <p className="text-sm text-muted-foreground">{t("settings.seller.saved", lang)}</p>}
+          {error && <p className="text-[12px] text-destructive">{error}</p>}
+          {success && <p className="text-[12px] text-emerald-600">{t("settings.seller.saved", lang)}</p>}
           <div className="pt-2">
-            <Button type="submit" loading={loading}>{t("settings.seller.save", lang)}</Button>
+            <Button type="submit" size="sm" loading={loading}>{t("settings.seller.save", lang)}</Button>
           </div>
         </form>
       </CardContent>
@@ -322,7 +318,7 @@ function SellerTab({ user, onSaved, lang }: { user: UserProfile; onSaved: () => 
 /* ── Privacy Tab ─────────────────────────────────────────────────────── */
 
 function PrivacyTab({ user, onSaved, lang }: { user: UserProfile; onSaved: () => void; lang: string }) {
-  const p = user.profile;
+  const p = user.profile ?? {} as Partial<NonNullable<typeof user.profile>>;
   const [isPublic, setIsPublic] = React.useState(p?.is_public ?? true);
   const [showEmail, setShowEmail] = React.useState(p?.show_email ?? false);
   const [showPhone, setShowPhone] = React.useState(p?.show_phone ?? false);
@@ -354,7 +350,7 @@ function PrivacyTab({ user, onSaved, lang }: { user: UserProfile; onSaved: () =>
       setSuccess(true);
       onSaved();
     } catch (err) {
-      setError(parseError(err));
+      setError(getSafeApiErrorMessage(err, lang));
     } finally {
       setLoading(false);
     }
@@ -375,8 +371,8 @@ function PrivacyTab({ user, onSaved, lang }: { user: UserProfile; onSaved: () =>
 
   const gdpr = user.gdpr;
   const licenseStatus = p?.is_real_estate_professional
-    ? (p.license_number ? `${p.license_number}${p.agency_name ? ` · ${p.agency_name}` : ""}` : "Professional profile enabled, license not entered")
-    : "Not marked as a real estate professional";
+    ? (p.license_number ? `${p.license_number}${p.agency_name ? ` · ${p.agency_name}` : ""}` : t("settings.privacy.legal.licenseEnabledMissing", lang))
+    : t("settings.privacy.legal.notProfessional", lang);
 
   return (
     <div className="space-y-6">
@@ -439,10 +435,10 @@ function PrivacyTab({ user, onSaved, lang }: { user: UserProfile; onSaved: () =>
               <p className="text-[12px] text-muted-foreground">{t("settings.privacy.publicContactWarning", lang)}</p>
             </div>
           )}
-          {error && <p className="text-sm text-destructive pt-3" role="alert">{error}</p>}
-          {success && <p className="text-sm text-muted-foreground pt-3" role="status">{t("settings.privacy.saved", lang)}</p>}
+          {error && <p className="text-[12px] text-destructive pt-3" role="alert">{error}</p>}
+          {success && <p className="text-[12px] text-emerald-600 pt-3" role="status">{t("settings.privacy.saved", lang)}</p>}
             <div className="pt-1">
-              <Button type="submit" loading={loading}>{t("settings.privacy.save", lang)}</Button>
+              <Button type="submit" size="sm" loading={loading}>{t("settings.privacy.save", lang)}</Button>
             </div>
           </form>
         </CardContent>
@@ -450,41 +446,49 @@ function PrivacyTab({ user, onSaved, lang }: { user: UserProfile; onSaved: () =>
 
       <Card>
         <CardHeader>
-          <CardTitle>Terms, Data, and Licensing</CardTitle>
+          <CardTitle>{t("settings.privacy.legal.title", lang)}</CardTitle>
           <CardDescription>
-            Account records that affect how Reaigen stores your data, presents your profile, and identifies your professional credentials.
+            {t("settings.privacy.legal.subtitle", lang)}
           </CardDescription>
         </CardHeader>
         <CardContent>
           <dl className="rounded-lg border border-border/70 px-4">
             <DataRow
-              label="Data processing"
-              value={gdpr?.data_processing_consent ? "Allowed" : "Not allowed"}
+              label={t("settings.privacy.legal.dataProcessing", lang)}
+              value={gdpr?.data_processing_consent ? t("common.allowed", lang) : t("common.notAllowed", lang)}
             />
             <DataRow
-              label="GDPR consent"
-              value={gdpr?.has_given_consent ? `Given ${formatAccountDate(gdpr.consent_date)}` : "Not recorded"}
+              label={t("settings.privacy.legal.gdprConsent", lang)}
+              value={gdpr?.has_given_consent ? `${t("settings.privacy.legal.given", lang)} ${formatAccountDate(gdpr.consent_date, lang)}` : t("common.notRecorded", lang)}
             />
             <DataRow
-              label="Privacy version"
-              value={gdpr?.consent_version || "Not recorded"}
+              label={t("settings.privacy.legal.privacyVersion", lang)}
+              value={gdpr?.consent_version || t("common.notRecorded", lang)}
             />
             <DataRow
-              label="Marketing consent"
-              value={gdpr?.marketing_consent ? "Allowed" : "Not allowed"}
+              label={t("settings.privacy.legal.marketingConsent", lang)}
+              value={gdpr?.marketing_consent ? t("common.allowed", lang) : t("common.notAllowed", lang)}
             />
             <DataRow
-              label="Terms"
-              value={`Accepted when this account was created on ${formatAccountDate(user.date_joined)}`}
+              label={t("settings.privacy.legal.terms", lang)}
+              value={`${t("settings.privacy.legal.termsAcceptedOn", lang)} ${formatAccountDate(user.date_joined, lang)}`}
             />
             <DataRow
-              label="License"
+              label={t("settings.privacy.legal.license", lang)}
               value={licenseStatus}
             />
           </dl>
           <p className="mt-3 text-[12px] leading-relaxed text-muted-foreground">
-            Profile visibility controls what other people can see. GDPR consent and terms records are account-level data kept by the backend for compliance and audit history.
+            {t("settings.privacy.legal.hint", lang)}
           </p>
+          <div className="mt-5">
+            <ManagedLegalDocuments
+              lang={lang}
+              countryCode={p?.country}
+              regionCode={p?.state}
+              onAccepted={onSaved}
+            />
+          </div>
         </CardContent>
       </Card>
     </div>
@@ -500,10 +504,10 @@ function NotificationsTab({ user, onSaved, lang }: { user: UserProfile; onSaved:
   const [processing, setProcessing] = React.useState(pd?.notify_processing_complete ?? true);
   const [processingFailed, setProcessingFailed] = React.useState(pd?.notify_processing_failed ?? true);
   const [newFeatures, setNewFeatures] = React.useState(pd?.notify_new_features ?? true);
-  const [billing, setBilling] = React.useState(pd?.notify_billing ?? true);
   const [loading, setLoading] = React.useState(false);
   const [error, setError] = React.useState<string | null>(null);
   const [success, setSuccess] = React.useState(false);
+  useAutoDismiss(success, setSuccess);
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -517,12 +521,11 @@ function NotificationsTab({ user, onSaved, lang }: { user: UserProfile; onSaved:
         notify_processing_complete: processing,
         notify_processing_failed: processingFailed,
         notify_new_features: newFeatures,
-        notify_billing: billing,
       });
       setSuccess(true);
       onSaved();
     } catch (err) {
-      setError(parseError(err));
+      setError(getSafeApiErrorMessage(err, lang));
     } finally {
       setLoading(false);
     }
@@ -564,18 +567,13 @@ function NotificationsTab({ user, onSaved, lang }: { user: UserProfile; onSaved:
                   checked={newFeatures}
                   onChange={setNewFeatures}
                 />
-                <ToggleRow
-                  label={t("settings.notifications.billing", lang)}
-                  checked={billing}
-                  onChange={setBilling}
-                />
               </>
             )}
           </div>
-          {error && <p className="text-sm text-destructive pt-3">{error}</p>}
-          {success && <p className="text-sm text-muted-foreground pt-3">{t("settings.notifications.saved", lang)}</p>}
+          {error && <p className="text-[12px] text-destructive pt-3">{error}</p>}
+          {success && <p className="text-[12px] text-emerald-600 pt-3">{t("settings.notifications.saved", lang)}</p>}
           <div className="pt-4">
-            <Button type="submit" loading={loading}>{t("settings.notifications.save", lang)}</Button>
+            <Button type="submit" size="sm" loading={loading}>{t("settings.notifications.save", lang)}</Button>
           </div>
         </form>
       </CardContent>
@@ -648,12 +646,11 @@ function stableOptionLabel(option: PreferenceOption): string {
 }
 
 function SettingsField({ label, children, hint }: { label: string; children: React.ReactNode; hint?: string }) {
-  const hintId = React.useId();
   return (
-    <div className="grid min-h-[5.5rem] grid-rows-[auto_2.75rem_auto] gap-1.5">
+    <div className="space-y-1.5">
       <Label>{label}</Label>
       {children}
-      <p id={hintId} className="min-h-4 text-[11px] leading-4 text-muted-foreground">{hint ?? ""}</p>
+      {hint && <p className="text-[11px] leading-4 text-muted-foreground">{hint}</p>}
     </div>
   );
 }
@@ -692,7 +689,7 @@ function LocalizationTab({ user, onSaved, lang }: { user: UserProfile; onSaved: 
       setSuccess(true);
       onSaved();
     } catch (err) {
-      setError(parseError(err));
+      setError(getSafeApiErrorMessage(err, lang));
     } finally {
       setLoading(false);
     }
@@ -740,12 +737,12 @@ function LocalizationTab({ user, onSaved, lang }: { user: UserProfile; onSaved: 
       <CardContent>
         <form className="space-y-5" onSubmit={handleSubmit}>
           <div className="rounded-lg border border-border bg-muted/20 px-4 py-3">
-            <p className="text-[13px] font-medium">Format preview</p>
+            <p className="text-[13px] font-medium">{t("settings.localization.preview", lang)}</p>
             <div className="mt-2 grid grid-cols-1 gap-x-4 gap-y-1 text-[12px] sm:grid-cols-2">
-              <p className="text-muted-foreground">Date <span className="font-medium text-foreground">{formattedDateSample}</span></p>
-              <p className="text-muted-foreground">Currency <span className="font-medium text-foreground">{currency}</span></p>
-              <p className="text-muted-foreground">Area <span className="font-medium text-foreground">{formattedAreaSample}</span></p>
-              <p className="text-muted-foreground">Distance <span className="font-medium text-foreground">{formattedDistanceSample}</span></p>
+              <p className="text-muted-foreground">{t("settings.localization.previewDate", lang)} <span className="font-medium text-foreground">{formattedDateSample}</span></p>
+              <p className="text-muted-foreground">{t("settings.localization.previewCurrency", lang)} <span className="font-medium text-foreground">{currency}</span></p>
+              <p className="text-muted-foreground">{t("settings.localization.previewArea", lang)} <span className="font-medium text-foreground">{formattedAreaSample}</span></p>
+              <p className="text-muted-foreground">{t("settings.localization.previewDistance", lang)} <span className="font-medium text-foreground">{formattedDistanceSample}</span></p>
             </div>
           </div>
 
@@ -826,10 +823,10 @@ function LocalizationTab({ user, onSaved, lang }: { user: UserProfile; onSaved: 
             </SettingsField>
           </div>
 
-          {error && <p className="text-sm text-destructive">{error}</p>}
-          {success && <p className="text-sm text-muted-foreground">{t("settings.localization.saved", lang)}</p>}
+          {error && <p className="text-[12px] text-destructive">{error}</p>}
+          {success && <p className="text-[12px] text-emerald-600">{t("settings.localization.saved", lang)}</p>}
           <div className="pt-2">
-            <Button type="submit" loading={loading}>{t("settings.localization.save", lang)}</Button>
+            <Button type="submit" size="sm" loading={loading}>{t("settings.localization.save", lang)}</Button>
           </div>
         </form>
       </CardContent>
@@ -846,7 +843,7 @@ function SecurityTab({ lang }: { lang: string }) {
   const [loading, setLoading] = React.useState(false);
   const [error, setError] = React.useState<string | null>(null);
   const [success, setSuccess] = React.useState(false);
-  const canSubmit = currentPassword.length >= 6 && newPassword.length >= 8 && newPassword === confirmPassword;
+  const canSubmit = currentPassword.length > 0 && newPassword.length >= 8 && newPassword === confirmPassword;
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -861,7 +858,7 @@ function SecurityTab({ lang }: { lang: string }) {
       setNewPassword("");
       setConfirmPassword("");
     } catch (err) {
-      setError(parseError(err));
+      setError(getSafeApiErrorMessage(err, lang));
     } finally {
       setLoading(false);
     }
@@ -894,10 +891,10 @@ function SecurityTab({ lang }: { lang: string }) {
           {!canSubmit && confirmPassword.length > 0 && newPassword !== confirmPassword && (
             <p className="text-[11px] text-destructive">{t("settings.security.mismatch", lang)}</p>
           )}
-          {error && <p className="text-sm text-destructive">{error}</p>}
-          {success && <p className="text-sm text-muted-foreground">{t("settings.security.saved", lang)}</p>}
+          {error && <p className="text-[12px] text-destructive">{error}</p>}
+          {success && <p className="text-[12px] text-emerald-600">{t("settings.security.saved", lang)}</p>}
           <div className="pt-2">
-            <Button type="submit" loading={loading} disabled={!canSubmit || loading}>{t("settings.security.save", lang)}</Button>
+            <Button type="submit" size="sm" loading={loading} disabled={!canSubmit || loading}>{t("settings.security.save", lang)}</Button>
           </div>
         </form>
       </CardContent>
@@ -905,153 +902,22 @@ function SecurityTab({ lang }: { lang: string }) {
   );
 }
 
-/* ── Billing Tab ──────────────────────────────────────────────────────── */
-
-function BillingTab({ user, onSaved, lang }: { user: UserProfile; onSaved: () => void; lang: string }) {
-  const b = user.billing_account;
-  const [billingName, setBillingName] = React.useState(b?.billing_name ?? "");
-  const [billingEmail, setBillingEmail] = React.useState(b?.billing_email ?? "");
-  const [billingAddress, setBillingAddress] = React.useState(b?.billing_address ?? "");
-  const [billingCity, setBillingCity] = React.useState(b?.billing_city ?? "");
-  const [billingPostalCode, setBillingPostalCode] = React.useState(b?.billing_postal_code ?? "");
-  const [billingCountry, setBillingCountry] = React.useState(b?.billing_country ?? "");
-  const [vatNumber, setVatNumber] = React.useState(b?.vat_number ?? "");
-  const [loading, setLoading] = React.useState(false);
-  const [error, setError] = React.useState<string | null>(null);
-  const [success, setSuccess] = React.useState(false);
-
-  async function handleSubmit(e: React.FormEvent) {
-    e.preventDefault();
-    setError(null);
-    setSuccess(false);
-    try {
-      setLoading(true);
-      await updateBilling({
-        billing_name: billingName.trim(),
-        billing_email: billingEmail.trim(),
-        billing_address: billingAddress.trim(),
-        billing_city: billingCity.trim(),
-        billing_postal_code: billingPostalCode.trim(),
-        billing_country: billingCountry.trim(),
-        vat_number: vatNumber.trim(),
-      });
-      setSuccess(true);
-      onSaved();
-    } catch (err) {
-      setError(parseError(err));
-    } finally {
-      setLoading(false);
-    }
-  }
-
-  if (!b) {
-    return (
-      <Card>
-        <CardContent className="py-8 text-center text-muted-foreground text-sm">
-          No billing account found.
-        </CardContent>
-      </Card>
-    );
-  }
-
-  const tier = b.subscription_tier_detail;
-
-  return (
-    <div className="space-y-6">
-      {/* Subscription overview */}
-      <Card>
-        <CardHeader>
-          <CardTitle>{t("settings.billing.title", lang)}</CardTitle>
-          <CardDescription>{t("settings.billing.subtitle", lang)}</CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-3">
-          <div className="grid grid-cols-1 gap-x-4 gap-y-2 text-sm sm:grid-cols-2">
-            <span className="text-muted-foreground">{t("settings.billing.plan", lang)}</span>
-            <span className="font-medium">{tier?.name ?? "—"}</span>
-            <span className="text-muted-foreground">{t("settings.billing.status", lang)}</span>
-            <span className="font-medium">{b.is_active ? t("settings.billing.active", lang) : t("settings.billing.inactive", lang)}</span>
-            <span className="text-muted-foreground">{t("settings.billing.cycle", lang)}</span>
-            <span className="font-medium capitalize">{b.billing_cycle || "—"}</span>
-            <span className="text-muted-foreground">{t("settings.billing.storage", lang)}</span>
-            <span className="font-medium">{b.current_storage_gb} / {tier?.max_storage_gb ?? "∞"} GB</span>
-            <span className="text-muted-foreground">{t("settings.billing.posts", lang)}</span>
-            <span className="font-medium">{b.current_posts_count} / {tier?.max_posts ?? "∞"}</span>
-            {b.is_trial && (
-              <>
-                <span className="text-muted-foreground">{t("settings.billing.trial", lang)}</span>
-                <span className="font-medium">{b.days_until_expiry != null ? `${b.days_until_expiry}d` : "—"}</span>
-              </>
-            )}
-          </div>
-        </CardContent>
-      </Card>
-
-      {/* Editable billing details */}
-      <Card>
-        <CardHeader>
-          <CardTitle>{t("settings.billing.detailsTitle", lang)}</CardTitle>
-        </CardHeader>
-        <CardContent>
-          <form className="space-y-4" onSubmit={handleSubmit}>
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              <div className="space-y-1.5">
-                <Label>{t("settings.billing.name", lang)}</Label>
-                <Input value={billingName} onChange={(e) => setBillingName(e.target.value)} />
-              </div>
-              <div className="space-y-1.5">
-                <Label>{t("settings.billing.email", lang)}</Label>
-                <Input type="email" value={billingEmail} onChange={(e) => setBillingEmail(e.target.value)} />
-              </div>
-            </div>
-            <div className="space-y-1.5">
-              <Label>{t("settings.billing.address", lang)}</Label>
-              <Input value={billingAddress} onChange={(e) => setBillingAddress(e.target.value)} />
-            </div>
-            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
-              <div className="space-y-1.5">
-                <Label>{t("settings.billing.city", lang)}</Label>
-                <Input value={billingCity} onChange={(e) => setBillingCity(e.target.value)} />
-              </div>
-              <div className="space-y-1.5">
-                <Label>{t("settings.billing.postalCode", lang)}</Label>
-                <Input value={billingPostalCode} onChange={(e) => setBillingPostalCode(e.target.value)} />
-              </div>
-              <div className="space-y-1.5">
-                <Label>{t("settings.billing.country", lang)}</Label>
-                <Input value={billingCountry} onChange={(e) => setBillingCountry(e.target.value)} maxLength={2} placeholder="SK" />
-              </div>
-              <div className="space-y-1.5">
-                <Label>{t("settings.billing.vat", lang)}</Label>
-                <Input value={vatNumber} onChange={(e) => setVatNumber(e.target.value)} placeholder="SK2020123456" />
-              </div>
-            </div>
-            {error && <p className="text-sm text-destructive">{error}</p>}
-            {success && <p className="text-sm text-muted-foreground">{t("settings.billing.saved", lang)}</p>}
-            <div className="pt-2">
-              <Button type="submit" loading={loading}>{t("settings.billing.save", lang)}</Button>
-            </div>
-          </form>
-        </CardContent>
-      </Card>
-    </div>
-  );
-}
-
 /* ── Settings Form (main export) ─────────────────────────────────────── */
 
 export function SettingsForm({ user, onSaved }: { user: UserProfile; onSaved: () => void }) {
   const lang = getUserLanguage(user.localization);
+  const triggerClassName =
+    "shrink-0 justify-start rounded-none border-b-2 border-transparent px-1.5 pb-3 pt-0 text-[13px] shadow-none data-[state=active]:border-foreground data-[state=active]:bg-transparent data-[state=active]:shadow-none";
 
   return (
-    <Tabs defaultValue="profile" className="grid w-full gap-6 lg:grid-cols-[13.5rem_minmax(0,1fr)] lg:gap-10">
-      <TabsList className="flex w-full gap-1 overflow-x-auto rounded-none bg-transparent p-0 text-muted-foreground lg:sticky lg:top-24 lg:block lg:h-fit lg:space-y-1 lg:overflow-visible">
-        <TabsTrigger value="profile" className="shrink-0 justify-start rounded-md px-3 text-[13px] shadow-none data-[state=active]:bg-foreground/[0.06] data-[state=active]:shadow-none lg:w-full">{t("settings.tab.profile", lang)}</TabsTrigger>
-        <TabsTrigger value="seller" className="shrink-0 justify-start rounded-md px-3 text-[13px] shadow-none data-[state=active]:bg-foreground/[0.06] data-[state=active]:shadow-none lg:w-full">{t("settings.tab.seller", lang)}</TabsTrigger>
-        <TabsTrigger value="privacy" className="shrink-0 justify-start rounded-md px-3 text-[13px] shadow-none data-[state=active]:bg-foreground/[0.06] data-[state=active]:shadow-none lg:w-full">{t("settings.tab.privacy", lang)}</TabsTrigger>
-        <TabsTrigger value="localization" className="shrink-0 justify-start rounded-md px-3 text-[13px] shadow-none data-[state=active]:bg-foreground/[0.06] data-[state=active]:shadow-none lg:w-full">{t("settings.tab.localization", lang)}</TabsTrigger>
-        <TabsTrigger value="notifications" className="shrink-0 justify-start rounded-md px-3 text-[13px] shadow-none data-[state=active]:bg-foreground/[0.06] data-[state=active]:shadow-none lg:w-full">{t("settings.tab.notifications", lang)}</TabsTrigger>
-        <TabsTrigger value="billing" className="shrink-0 justify-start rounded-md px-3 text-[13px] shadow-none data-[state=active]:bg-foreground/[0.06] data-[state=active]:shadow-none lg:w-full">{t("settings.tab.billing", lang)}</TabsTrigger>
-        <TabsTrigger value="security" className="shrink-0 justify-start rounded-md px-3 text-[13px] shadow-none data-[state=active]:bg-foreground/[0.06] data-[state=active]:shadow-none lg:w-full">{t("settings.tab.security", lang)}</TabsTrigger>
+    <Tabs defaultValue="profile" className="w-full">
+      <TabsList className="mb-7 flex min-h-0 w-full gap-4 overflow-x-auto scroll-smooth rounded-none border-b border-border/70 bg-transparent p-0 text-muted-foreground [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden">
+        <TabsTrigger value="profile" className={triggerClassName}>{t("settings.tab.profile", lang)}</TabsTrigger>
+        <TabsTrigger value="seller" className={triggerClassName}>{t("settings.tab.seller", lang)}</TabsTrigger>
+        <TabsTrigger value="privacy" className={triggerClassName}>{t("settings.tab.privacy", lang)}</TabsTrigger>
+        <TabsTrigger value="localization" className={triggerClassName}>{t("settings.tab.localization", lang)}</TabsTrigger>
+        <TabsTrigger value="notifications" className={triggerClassName}>{t("settings.tab.notifications", lang)}</TabsTrigger>
+        <TabsTrigger value="security" className={triggerClassName}>{t("settings.tab.security", lang)}</TabsTrigger>
       </TabsList>
       <div className="min-w-0">
         <TabsContent value="profile" className="mt-0">
@@ -1068,9 +934,6 @@ export function SettingsForm({ user, onSaved }: { user: UserProfile; onSaved: ()
         </TabsContent>
         <TabsContent value="notifications" className="mt-0">
           <NotificationsTab user={user} onSaved={onSaved} lang={lang} />
-        </TabsContent>
-        <TabsContent value="billing" className="mt-0">
-          <BillingTab user={user} onSaved={onSaved} lang={lang} />
         </TabsContent>
         <TabsContent value="security" className="mt-0">
           <SecurityTab lang={lang} />

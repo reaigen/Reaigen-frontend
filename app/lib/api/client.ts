@@ -9,6 +9,7 @@ export class ApiError extends Error {
 }
 
 async function request(path: string, options: RequestInit = {}) {
+  const isGet = !options.method || options.method === "GET";
   const res = await fetch(path, {
     ...options,
     credentials: "include",
@@ -16,7 +17,8 @@ async function request(path: string, options: RequestInit = {}) {
       "Content-Type": "application/json",
       ...options.headers,
     },
-    cache: "no-store",
+    // Allow browser to use HTTP cache for GET requests (proxy returns short-lived cache headers)
+    ...(isGet ? {} : { cache: "no-store" as const }),
   });
 
   if (!res.ok) {
@@ -24,6 +26,22 @@ async function request(path: string, options: RequestInit = {}) {
     throw new ApiError(res.status, body);
   }
 
+  const text = await res.text();
+  if (!text) return null;
+  return JSON.parse(text);
+}
+
+/** Abortable request — same as request() but respects AbortSignal. */
+async function abortableRequest(path: string, signal?: AbortSignal) {
+  const res = await fetch(path, {
+    credentials: "include",
+    headers: { "Content-Type": "application/json" },
+    signal,
+  });
+  if (!res.ok) {
+    const body = await res.text();
+    throw new ApiError(res.status, body);
+  }
   const text = await res.text();
   if (!text) return null;
   return JSON.parse(text);
@@ -328,9 +346,125 @@ export async function changePassword(data: {
   });
 }
 
+// ─── App Content / Legal Documents ───────────────────────────────────────
+
+export type AppContentDocumentType = "terms" | "privacy" | "gdpr" | "license" | "message" | "text" | "cookie";
+export type AppContentPlatform = "all" | "web" | "ios" | "android";
+export type AppContentScope = "all" | "reaigen" | "reailist";
+export type AppContentAudience = "all" | "guest" | "authenticated" | "creator" | "admin";
+export type AppContentBodyFormat = "markdown" | "plain" | "html";
+
+export interface AppContentDocument {
+  id: number;
+  key: string;
+  document_type: AppContentDocumentType;
+  document_type_display: string;
+  app_scope: AppContentScope;
+  app_scope_display: string;
+  platform: AppContentPlatform;
+  platform_display: string;
+  audience: AppContentAudience;
+  audience_display: string;
+  language: string;
+  country_code: string;
+  region_code: string;
+  version: string;
+  title: string;
+  summary: string;
+  body: string;
+  body_format: AppContentBodyFormat;
+  requires_acceptance: boolean;
+  is_effective: boolean;
+  sort_order: number;
+  effective_from: string;
+  expires_at: string | null;
+  metadata: Record<string, unknown>;
+  updated_at: string;
+}
+
+export interface UserContentAcceptance {
+  id: number;
+  document: number;
+  key: string;
+  document_type: string;
+  app_scope: string;
+  platform: string;
+  language: string;
+  country_code: string;
+  region_code: string;
+  version: string;
+  accepted_at: string;
+  metadata: Record<string, unknown>;
+}
+
+type AppContentQuery = Partial<{
+  keys: string[];
+  document_type: AppContentDocumentType;
+  language: string;
+  country_code: string;
+  region_code: string;
+  platform: AppContentPlatform;
+  app_scope: AppContentScope;
+  audience: AppContentAudience;
+}>;
+
+function appContentQuery(params: AppContentQuery = {}) {
+  const qs = new URLSearchParams();
+  if (params.keys?.length) qs.set("keys", params.keys.join(","));
+  if (params.document_type) qs.set("document_type", params.document_type);
+  if (params.language) qs.set("language", params.language);
+  if (params.country_code) qs.set("country_code", params.country_code);
+  if (params.region_code) qs.set("region_code", params.region_code);
+  if (params.platform) qs.set("platform", params.platform);
+  if (params.app_scope) qs.set("app_scope", params.app_scope);
+  if (params.audience) qs.set("audience", params.audience);
+  const query = qs.toString();
+  return query ? `?${query}` : "";
+}
+
+export async function listAppContentDocuments(params: AppContentQuery = {}): Promise<AppContentDocument[]> {
+  return request(`/api/reaigen/content/documents/${appContentQuery(params)}`);
+}
+
+export async function getAppContentDocument(
+  key: string,
+  params: Omit<AppContentQuery, "keys"> & { version?: string } = {},
+): Promise<AppContentDocument> {
+  const qs = new URLSearchParams();
+  if (params.document_type) qs.set("document_type", params.document_type);
+  if (params.language) qs.set("language", params.language);
+  if (params.country_code) qs.set("country_code", params.country_code);
+  if (params.region_code) qs.set("region_code", params.region_code);
+  if (params.platform) qs.set("platform", params.platform);
+  if (params.app_scope) qs.set("app_scope", params.app_scope);
+  if (params.audience) qs.set("audience", params.audience);
+  if (params.version) qs.set("version", params.version);
+  const query = qs.toString();
+  return request(`/api/reaigen/content/documents/${encodeURIComponent(key)}/${query ? `?${query}` : ""}`);
+}
+
+export async function acceptAppContentDocument(data: {
+  document_id?: number;
+  key?: string;
+  version?: string;
+  language?: string;
+  country_code?: string;
+  region_code?: string;
+  platform?: AppContentPlatform;
+  app_scope?: AppContentScope;
+  accepted?: boolean;
+  marketing_consent?: boolean;
+  metadata?: Record<string, unknown>;
+}): Promise<UserContentAcceptance> {
+  return request("/api/reaigen/content/documents/accept/", {
+    method: "POST",
+    body: JSON.stringify({ accepted: true, ...data }),
+  });
+}
+
 // ─── Splat Viewer & Tour ──────────────────────────────────────────────────
 
-import type { SplatViewerPayload, CameraData, TourViewerData, SplatListItem, ShareData, SplatsByDraftPayload, DraftListingItem } from "../tour-types";
+import type { SplatViewerPayload, CameraData, TourViewerData, SplatListItem, ShareData, SplatsByDraftPayload, DraftListingItem, DraftDetailItem } from "../tour-types";
 
 export async function listSplats(page = 1, pageSize = 20, search = ""): Promise<{ results: SplatListItem[]; count: number; next: string | null }> {
   const q = search ? `&search=${encodeURIComponent(search)}` : "";
@@ -341,28 +475,112 @@ export async function listDrafts(page = 1, pageSize = 100): Promise<{ results: D
   return request(`/api/reaigen/drafts/?page=${page}&page_size=${pageSize}`);
 }
 
+export async function getDraft(draftId: number): Promise<DraftDetailItem> {
+  return request(`/api/reaigen/drafts/${draftId}/`);
+}
+
+export interface FloorplanDetail {
+  id: number;
+  source_draft: number;
+  status: string;
+  composite_url: string | null;
+  signed_render_passes: Record<string, string> | null;
+  signed_outputs: Record<string, string> | null;
+  geometry_ready: boolean;
+  has_composite: boolean;
+  has_render_passes: boolean;
+  has_outputs: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+export async function getFloorplan(floorplanId: number): Promise<FloorplanDetail> {
+  return request(`/api/reaigen/floorplans/${floorplanId}/`);
+}
+
+export interface TranslateDescriptionResponse {
+  translation?: string;
+  lang: string;
+  status: "ready" | "pending";
+  cached?: boolean;
+}
+
+export async function translateDraftDescription(
+  draftId: number,
+  targetLang?: string,
+): Promise<TranslateDescriptionResponse> {
+  return request(`/api/reaigen/drafts/${draftId}/translate-description/`, {
+    method: "POST",
+    body: JSON.stringify(targetLang ? { target_lang: targetLang } : {}),
+  });
+}
+
 export async function listAllDrafts(): Promise<DraftListingItem[]> {
-  const all: DraftListingItem[] = [];
-  let page = 1;
-  while (true) {
-    const data = await listDrafts(page, 100);
-    all.push(...(data.results ?? []));
-    if (!data.next) break;
-    page++;
-  }
+  const pageSize = 500;
+  const first = await listDrafts(1, pageSize);
+  const all = [...(first.results ?? [])];
+  if (!first.next) return all;
+  const totalPages = Math.ceil((first.count ?? all.length) / pageSize);
+  const remaining = await Promise.all(
+    Array.from({ length: totalPages - 1 }, (_, i) => listDrafts(i + 2, pageSize))
+  );
+  for (const page of remaining) all.push(...(page.results ?? []));
   return all;
 }
 
 export async function listAllSplats(): Promise<SplatListItem[]> {
-  const all: SplatListItem[] = [];
-  let page = 1;
-  while (true) {
-    const data = await listSplats(page, 100);
-    all.push(...(data.results ?? []));
-    if (!data.next) break;
-    page++;
-  }
+  const pageSize = 500;
+  const first = await listSplats(1, pageSize);
+  const all = [...(first.results ?? [])];
+  if (!first.next) return all;
+  const totalPages = Math.ceil((first.count ?? all.length) / pageSize);
+  const remaining = await Promise.all(
+    Array.from({ length: totalPages - 1 }, (_, i) => listSplats(i + 2, pageSize))
+  );
+  for (const page of remaining) all.push(...(page.results ?? []));
   return all;
+}
+
+/** Fast initial loader: fetches first page quickly, loads remaining pages only if needed. */
+export async function listSplatsProgressive(onFirst: (splats: SplatListItem[], drafts: DraftListingItem[]) => void): Promise<{ splats: SplatListItem[]; drafts: DraftListingItem[] }> {
+  // Small first page for instant UI
+  const firstPageSize = 50;
+  const [firstSplats, firstDrafts] = await Promise.all([
+    listSplats(1, firstPageSize),
+    listDrafts(1, firstPageSize),
+  ]);
+  const splats = [...(firstSplats.results ?? [])];
+  const drafts = [...(firstDrafts.results ?? [])];
+  onFirst(splats, drafts);
+  // Only fetch remaining pages (skip page 1 — already have it)
+  const promises: Promise<void>[] = [];
+  if (firstSplats.count > firstPageSize) {
+    const remainingPages = Math.ceil((firstSplats.count - firstPageSize) / firstPageSize);
+    promises.push(
+      Promise.all(Array.from({ length: remainingPages }, (_, i) => listSplats(i + 2, firstPageSize)))
+        .then((pages) => { for (const p of pages) splats.push(...(p.results ?? [])); })
+    );
+  }
+  if (firstDrafts.count > firstPageSize) {
+    const remainingPages = Math.ceil((firstDrafts.count - firstPageSize) / firstPageSize);
+    promises.push(
+      Promise.all(Array.from({ length: remainingPages }, (_, i) => listDrafts(i + 2, firstPageSize)))
+        .then((pages) => { for (const p of pages) drafts.push(...(p.results ?? [])); })
+    );
+  }
+  await Promise.all(promises);
+  return { splats, drafts };
+}
+
+/** Server-side search — fast, cancellable, no need to load all data first. */
+export async function searchSplats(query: string, signal?: AbortSignal): Promise<{ results: SplatListItem[]; count: number; next: string | null }> {
+  const q = encodeURIComponent(query);
+  return abortableRequest(`/api/reaigen/splats/?page=1&page_size=50&search=${q}`, signal);
+}
+
+export async function searchDrafts(query: string, signal?: AbortSignal): Promise<{ results: DraftListingItem[]; count: number; next: string | null }> {
+  const q = encodeURIComponent(query);
+  return abortableRequest(`/api/reaigen/drafts/?page=1&page_size=50&search=${q}`, signal);
 }
 
 export async function getSplatViewer(splatId: number): Promise<SplatViewerPayload> {
