@@ -48,7 +48,8 @@ export interface CameraData {
 }
 
 export interface TourViewerData {
-  splat_id: number;
+  id: number;
+  splat_id?: number;
   draft_id: number;
   status: string;
   url: string;

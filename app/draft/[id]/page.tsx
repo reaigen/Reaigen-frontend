@@ -421,9 +421,10 @@ export default function DraftPreviewPage({ params }: { params: Promise<{ id: str
   const offerType = sec(draft, "taxonomy", "offer_type");
 
   const primarySplat = splatData?.parent_splat_id
-    ? splatData.splats.find((s) => s.splat_id === splatData.parent_splat_id) ?? splatData.splats[0]
+    ? splatData.splats.find((s) => (s.splat_id ?? s.id) === splatData.parent_splat_id) ?? splatData.splats[0]
     : splatData?.splats[0];
   const hasTour = !!primarySplat;
+  const primarySplatId = primarySplat ? (primarySplat.splat_id ?? primarySplat.id) : undefined;
   const thumbUrl = primarySplat?.signed_outputs?.thumbnail ?? null;
   const fpUrl = floorplan?.composite_url ?? null;
 
@@ -568,11 +569,11 @@ export default function DraftPreviewPage({ params }: { params: Promise<{ id: str
         {/* Actions */}
         {hasTour && (
           <div className="mt-6 flex gap-2">
-            <Button variant="outline" size="sm" className="flex-1" onClick={() => setShareTarget({ splatId: primarySplat!.splat_id, title: draft.title })}>
+            <Button variant="outline" size="sm" className="flex-1" onClick={() => setShareTarget({ splatId: primarySplatId!, title: draft.title })}>
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" className="mr-1.5"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><path d="M8.59 13.51l6.83 3.98M15.41 6.51l-6.82 3.98"/></svg>
               {t("draft.share", lang)}
             </Button>
-            <Link href={`/tour/${primarySplat!.splat_id}`} className="flex-1">
+            <Link href={`/tour/${primarySplatId}`} className="flex-1">
               <Button variant="default" size="sm" className="w-full">
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" className="mr-1.5"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/><path d="M3.27 6.96L12 12.01l8.73-5.05M12 22.08V12"/></svg>
                 {t("draft.viewTour", lang)}

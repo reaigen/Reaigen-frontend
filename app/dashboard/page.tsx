@@ -100,7 +100,7 @@ export default function DashboardPage() {
     Promise.all(
       results.map((d) =>
         getSplatsByDraft(d.id)
-          .then((res) => { if (res?.parent_splat_id) map[d.id] = res.parent_splat_id; else if (res?.splats?.[0]) map[d.id] = res.splats[0].splat_id; })
+          .then((res) => { if (res?.parent_splat_id) map[d.id] = res.parent_splat_id; else if (res?.splats?.[0]) map[d.id] = res.splats[0].splat_id ?? res.splats[0].id; })
           .catch(() => {})
       )
     ).then(() => { if (!controller.signal.aborted) setSplatIds((prev) => ({ ...prev, ...map })); });
