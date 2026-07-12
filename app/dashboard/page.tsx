@@ -72,7 +72,15 @@ export default function DashboardPage() {
   const [shareTarget, setShareTarget] = React.useState<{ splatId: number; title: string } | null>(null);
   const [searchInput, setSearchInput] = React.useState("");
   const [searchQuery, setSearchQuery] = React.useState("");
-  const [gridCols, setGridCols] = React.useState<1 | 2>(2);
+  const [gridCols, setGridCols] = React.useState<1 | 2>(() => {
+    if (typeof window === "undefined") return 2;
+    const cached = localStorage.getItem("reaigen:gridCols");
+    return cached === "1" ? 1 : 2;
+  });
+  const handleGridCols = React.useCallback((cols: 1 | 2) => {
+    setGridCols(cols);
+    localStorage.setItem("reaigen:gridCols", String(cols));
+  }, []);
   const abortRef = React.useRef<AbortController | null>(null);
 
   React.useEffect(() => {
@@ -169,7 +177,7 @@ export default function DashboardPage() {
             <div className="hidden md:flex items-center gap-0.5 rounded-md bg-foreground/[0.04] p-0.5">
               <button
                 type="button"
-                onClick={() => setGridCols(1)}
+                onClick={() => handleGridCols(1)}
                 className={`flex h-6 w-6 items-center justify-center rounded transition-colors ${gridCols === 1 ? "bg-background text-foreground shadow-sm" : "text-foreground/35 hover:text-foreground/60"}`}
                 aria-label="Single column"
               >
@@ -177,7 +185,7 @@ export default function DashboardPage() {
               </button>
               <button
                 type="button"
-                onClick={() => setGridCols(2)}
+                onClick={() => handleGridCols(2)}
                 className={`flex h-6 w-6 items-center justify-center rounded transition-colors ${gridCols === 2 ? "bg-background text-foreground shadow-sm" : "text-foreground/35 hover:text-foreground/60"}`}
                 aria-label="Two columns"
               >

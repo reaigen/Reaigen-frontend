@@ -330,6 +330,7 @@ export interface AvailablePreferences {
   address_formats: { code: string; name: string; description?: string }[];
   date_formats: { code: string; name: string; description?: string }[];
   countries: { code: string; name: string; currency: string; area_unit: string; distance_unit: string }[];
+  timezones: PreferenceOption[];
 }
 
 export async function getAvailablePreferences(): Promise<AvailablePreferences> {
@@ -343,6 +344,162 @@ export async function changePassword(data: {
   return request("/api/auth/change-password/", {
     method: "POST",
     body: JSON.stringify(data),
+  });
+}
+
+// ─── TOTP / 2FA ──────────────────────────────────────────────────────────
+
+export interface TotpStatus {
+  enabled: boolean;
+  pending_setup: boolean;
+  name: string;
+  last_used_at: string | null;
+  backup_codes_remaining: number;
+}
+
+export interface TotpSetupResponse {
+  secret: string;
+  provisioning_uri: string;
+}
+
+export async function getTotpStatus(): Promise<TotpStatus> {
+  return request("/api/auth/totp/status/");
+}
+
+export async function setupTotp(): Promise<TotpSetupResponse> {
+  return request("/api/auth/totp/setup/", { method: "POST" });
+}
+
+export async function confirmTotp(code: string): Promise<{ backup_codes?: string[] }> {
+  return request("/api/auth/totp/confirm/", {
+    method: "POST",
+    body: JSON.stringify({ code }),
+  });
+}
+
+export async function disableTotp(code: string) {
+  return request("/api/auth/totp/disable/", {
+    method: "POST",
+    body: JSON.stringify({ code }),
+  });
+}
+
+// ─── Social / Linked Accounts ────────────────────────────────────────────
+
+export interface SocialAccount {
+  id: number;
+  provider: string;
+  email: string;
+  first_name: string;
+  last_name: string;
+  is_active: boolean;
+  last_login_at: string | null;
+  created_at: string;
+}
+
+export interface LinkedAccountsResponse {
+  social_accounts: SocialAccount[];
+  phone: string | null;
+  has_password: boolean;
+}
+
+export async function getLinkedAccounts(): Promise<LinkedAccountsResponse> {
+  return request("/api/auth/linked-accounts/");
+}
+
+export async function unlinkSocialAccount(provider: string) {
+  return request(`/api/auth/unlink/social/${encodeURIComponent(provider)}/`, {
+    method: "DELETE",
+  });
+}
+
+// ─── Email Verification ──────────────────────────────────────────────────
+
+export async function resendVerification(email: string) {
+  return request("/api/auth/resend-verification/", {
+    method: "POST",
+    body: JSON.stringify({ email }),
+  });
+}
+
+// ─── Phone Linking ───────────────────────────────────────────────────────
+
+export async function requestPhoneLinkOtp(phone: string) {
+  return request("/api/auth/link/phone/request-otp/", {
+    method: "POST",
+    body: JSON.stringify({ phone }),
+  });
+}
+
+export async function verifyPhoneLinkOtp(data: { phone: string; code: string }) {
+  return request("/api/auth/link/phone/verify-otp/", {
+    method: "POST",
+    body: JSON.stringify(data),
+  });
+}
+
+// ─── Profile Images ──────────────────────────────────────────────────────
+
+export interface PresignResponse {
+  upload_key: string;
+  presigned_url: string;
+  expires_in: number;
+}
+
+export async function presignAvatar(data: { filename: string; content_type: string }): Promise<PresignResponse> {
+  return request("/api/reaigen/profiles/presign-avatar/", {
+    method: "POST",
+    body: JSON.stringify(data),
+  });
+}
+
+export async function confirmAvatar(key: string) {
+  return request("/api/reaigen/profiles/confirm-avatar/", {
+    method: "POST",
+    body: JSON.stringify({ upload_key: key }),
+  });
+}
+
+export async function presignCover(data: { filename: string; content_type: string }): Promise<PresignResponse> {
+  return request("/api/reaigen/profiles/presign-cover/", {
+    method: "POST",
+    body: JSON.stringify(data),
+  });
+}
+
+export async function confirmCover(key: string) {
+  return request("/api/reaigen/profiles/confirm-cover/", {
+    method: "POST",
+    body: JSON.stringify({ upload_key: key }),
+  });
+}
+
+// ─── Portfolio ───────────────────────────────────────────────────────────
+
+export interface PortfolioData {
+  portfolio_visibility: string;
+  portfolio_slug: string | null;
+  portfolio_title: string;
+  portfolio_headline: string;
+  portfolio_urls: string[];
+  portfolio_capabilities: string[];
+  portfolio_token: string | null;
+}
+
+export async function getPortfolio(): Promise<PortfolioData> {
+  return request("/api/reaigen/profiles/portfolio_me/");
+}
+
+export async function updatePortfolio(data: Partial<PortfolioData>): Promise<PortfolioData> {
+  return request("/api/reaigen/profiles/portfolio_update/", {
+    method: "PATCH",
+    body: JSON.stringify(data),
+  });
+}
+
+export async function regeneratePortfolioToken(): Promise<{ portfolio_token: string }> {
+  return request("/api/reaigen/profiles/portfolio_regenerate_token/", {
+    method: "POST",
   });
 }
 

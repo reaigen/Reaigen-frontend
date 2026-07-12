@@ -40,7 +40,7 @@ function humanize(s: string) {
 
 /** Translate a backend enum value using the enum.* i18n keys. Falls back to humanize. */
 function enumT(prefix: string, value: unknown, lang: string): string | null {
-  if (value == null || value === "") return null;
+  if (value == null || value === "" || typeof value === "boolean") return null;
   const v = String(value).toLowerCase();
   const key = `enum.${prefix}.${v}` as import("../../lib/locales/en").LocaleKey;
   const translated = t(key, lang);
@@ -207,7 +207,7 @@ function buildRows(d: DraftDetailItem, lang: string): Row[] {
   if (energyClass) push(I.energy, t("draft.energyClass", lang), enumT("energy", energyClass, lang));
   push(I.compass, t("draft.orientation", lang), enumT("orientation", sec(d, "technical", "orientation"), lang));
   const roofType = sec(d, "technical", "roof_type");
-  if (roofType) push(I.building, t("draft.roofType", lang), humanize(String(roofType)));
+  if (roofType) push(I.building, t("draft.roofType", lang), enumT("roof", roofType, lang));
   const view = sec(d, "technical", "view");
   if (view) push(I.compass, t("draft.view", lang), humanize(String(view)));
   const ceilingH = sec(d, "technical", "ceiling_height");
@@ -216,10 +216,21 @@ function buildRows(d: DraftDetailItem, lang: string): Row[] {
   // ── Utilities ──
   push(I.heating, t("draft.heating", lang), enumT("heating", sec(d, "utilities", "heating_source"), lang));
   const heatDist = sec(d, "utilities", "heat_distribution");
-  if (heatDist) push(I.heating, t("draft.heatDistribution", lang), enumT("heat_dist", heatDist, lang));
+  if (heatDist) {
+    const hdArr = Array.isArray(heatDist) ? heatDist : [heatDist];
+    const hdStr = hdArr.map(h => enumT("heat_dist", h, lang) ?? humanize(String(h))).join(", ");
+    push(I.heating, t("draft.heatDistribution", lang), hdStr);
+  }
   const cooling = sec(d, "utilities", "cooling") ?? sec(d, "utilities", "cooling_types");
-  if (cooling) push(I.dot, t("draft.cooling", lang), humanize(String(cooling)));
-  push(I.water, t("draft.water", lang), enumT("water", sec(d, "utilities", "water"), lang));
+  if (cooling) {
+    // cooling_types can be an array or comma-separated string
+    const coolingArr = Array.isArray(cooling) ? cooling : String(cooling).split(",").map(s => s.trim()).filter(Boolean);
+    const coolingStr = coolingArr.map(c => enumT("cooling", c, lang) ?? humanize(String(c))).join(", ");
+    push(I.dot, t("draft.cooling", lang), coolingStr);
+  }
+  const waterVal = sec(d, "utilities", "water");
+  // water can be a boolean (has connection) or enum string (source type) — only show enum strings as rows
+  if (waterVal && typeof waterVal === "string") push(I.water, t("draft.water", lang), enumT("water", waterVal, lang));
   const furnishing = sec(d, "utilities", "furnishing_level");
   if (furnishing) push(I.dot, t("draft.furnishing", lang), enumT("furnishing", furnishing, lang));
 
@@ -234,10 +245,10 @@ function buildRows(d: DraftDetailItem, lang: string): Row[] {
   if (zoningInfo) push(I.legal, t("draft.zoningInfo", lang), String(zoningInfo));
   const landUsePlan = sec(d, "legal", "land_use_plan");
   if (landUsePlan) push(I.legal, t("draft.landUsePlan", lang), String(landUsePlan));
-  const buildability = sec(d, "legal", "buildability");
-  if (buildability) push(I.legal, t("draft.buildability", lang), String(buildability));
-  const accessRoad = sec(d, "legal", "access_road");
-  if (accessRoad) push(I.legal, t("draft.accessRoad", lang), String(accessRoad));
+  const buildability = sec(d, "legal", "buildability") ?? sec(d, "layout", "buildability");
+  if (buildability) push(I.legal, t("draft.buildability", lang), enumT("buildability", buildability, lang));
+  const accessRoad = sec(d, "legal", "access_road") ?? sec(d, "layout", "access_road");
+  if (accessRoad) push(I.legal, t("draft.accessRoad", lang), enumT("access_road", accessRoad, lang));
 
   // ── Pricing extras ──
   const deposit = sec(d, "pricing_extra", "deposit");
@@ -253,7 +264,7 @@ function buildRows(d: DraftDetailItem, lang: string): Row[] {
   const storPrice = sec(d, "pricing_extra", "storage_price");
   if (storPrice && Number(storPrice) > 0) push(I.money, t("draft.storagePrice", lang), fmt(storPrice as number, lang));
   const vatMode = sec(d, "pricing_extra", "vat_mode");
-  if (vatMode) push(I.money, t("draft.vatMode", lang), humanize(String(vatMode)));
+  if (vatMode) push(I.money, t("draft.vatMode", lang), enumT("vat", vatMode, lang));
   const vatRate = sec(d, "pricing_extra", "vat_rate");
   if (vatRate && Number(vatRate) > 0) push(I.money, t("draft.vatRate", lang), `${vatRate}%`);
 
@@ -290,16 +301,60 @@ function buildMonthlyCosts(d: DraftDetailItem, lang: string): Row[] {
 /** Keys already shown as attribute rows — exclude from feature chips to avoid duplication */
 const ATTR_FEATURE_KEYS = new Set(["elevator", "garage"]);
 
+/** Boolean fields in specs.utilities that represent infrastructure/amenities */
+const UTILITY_FEATURE_KEYS = ["electricity", "water", "sewer", "gas", "optic_internet", "kitchen_with_appliances"];
+
+/** Boolean fields in specs.technical that represent amenities */
+const TECHNICAL_FEATURE_KEYS = ["photovoltaics", "smart_features", "recuperation", "ventilation", "loading_ramp", "reception", "pool", "attic"];
+
+/** Boolean fields in specs.legal that represent property attributes */
+const LEGAL_FEATURE_KEYS = ["permanent_residence_allowed", "mortgage_eligible"];
+
 function getFeatureChips(d: DraftDetailItem, lang: string): string[] {
+  const chips: string[] = [];
+  const seen = new Set<string>();
+
+  function addChip(k: string) {
+    if (seen.has(k) || ATTR_FEATURE_KEYS.has(k)) return;
+    seen.add(k);
+    const key = `draft.feat.${k}` as import("../../lib/locales/en").LocaleKey;
+    const translated = t(key, lang);
+    chips.push(translated === key ? humanize(k) : translated);
+  }
+
+  // Primary features section
   const features = d.specs?.features;
-  if (!features || typeof features !== "object" || Array.isArray(features)) return [];
-  return Object.entries(features as Record<string, unknown>)
-    .filter(([k, v]) => v === true && !ATTR_FEATURE_KEYS.has(k))
-    .map(([k]) => {
-      const key = `draft.feat.${k}` as import("../../lib/locales/en").LocaleKey;
-      const translated = t(key, lang);
-      return translated === key ? humanize(k) : translated;
-    });
+  if (features && typeof features === "object" && !Array.isArray(features)) {
+    for (const [k, v] of Object.entries(features as Record<string, unknown>)) {
+      if (v === true) addChip(k);
+    }
+  }
+
+  // Boolean flags from utilities (infrastructure connections)
+  const utilities = d.specs?.utilities;
+  if (utilities && typeof utilities === "object" && !Array.isArray(utilities)) {
+    for (const k of UTILITY_FEATURE_KEYS) {
+      if ((utilities as Record<string, unknown>)[k] === true) addChip(k);
+    }
+  }
+
+  // Boolean flags from technical (amenities)
+  const technical = d.specs?.technical;
+  if (technical && typeof technical === "object" && !Array.isArray(technical)) {
+    for (const k of TECHNICAL_FEATURE_KEYS) {
+      if ((technical as Record<string, unknown>)[k] === true) addChip(k);
+    }
+  }
+
+  // Boolean flags from legal (property attributes)
+  const legal = d.specs?.legal;
+  if (legal && typeof legal === "object" && !Array.isArray(legal)) {
+    for (const k of LEGAL_FEATURE_KEYS) {
+      if ((legal as Record<string, unknown>)[k] === true) addChip(k);
+    }
+  }
+
+  return chips;
 }
 
 // ── Page ──────────────────────────────────────────────────────────────────

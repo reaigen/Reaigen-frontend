@@ -13,11 +13,28 @@ import {
   updateSellerProfile,
   updateLocalization,
   updatePersonalizedData,
+  updateBilling,
   changePassword,
   getAvailablePreferences,
+  presignAvatar,
+  confirmAvatar,
+  presignCover,
+  confirmCover,
+  resendVerification,
+  getTotpStatus,
+  setupTotp,
+  confirmTotp,
+  disableTotp,
+  getLinkedAccounts,
+  unlinkSocialAccount,
+  requestPhoneLinkOtp,
+  verifyPhoneLinkOtp,
   type UserProfile,
   type AvailablePreferences,
   type PreferenceOption,
+  type TotpStatus,
+  type TotpSetupResponse,
+  type LinkedAccountsResponse,
 } from "../lib/api/client";
 import { getSafeApiErrorMessage } from "../lib/api/error-message";
 import { t, getUserLanguage, formatDate as fmtDate } from "../lib/i18n";
@@ -72,6 +89,53 @@ function DataRow({ label, value }: { label: string; value: React.ReactNode }) {
   );
 }
 
+/* ── Collapsible Section ─────────────────────────────────────────────── */
+
+function CollapsibleSection({ title, defaultOpen, children }: {
+  title: string;
+  defaultOpen: boolean;
+  children: React.ReactNode;
+}) {
+  const [open, setOpen] = React.useState(defaultOpen);
+  return (
+    <div>
+      <button
+        type="button"
+        className="flex w-full items-center justify-between py-2 text-sm font-medium text-foreground/80 hover:text-foreground"
+        onClick={() => setOpen(!open)}
+      >
+        {title}
+        <svg
+          className={cn("h-4 w-4 shrink-0 text-muted-foreground transition-transform", open && "rotate-180")}
+          fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}
+        >
+          <path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" />
+        </svg>
+      </button>
+      {open && <div className="pt-2 space-y-4">{children}</div>}
+    </div>
+  );
+}
+
+/* ── Image Upload Helper ─────────────────────────────────────────────── */
+
+async function uploadPresigned(
+  presignFn: (data: { filename: string; content_type: string }) => Promise<{ upload_key: string; presigned_url: string }>,
+  confirmFn: (key: string) => Promise<unknown>,
+  file: File,
+) {
+  const { upload_key, presigned_url } = await presignFn({
+    filename: file.name,
+    content_type: file.type,
+  });
+  await fetch(presigned_url, {
+    method: "PUT",
+    body: file,
+    headers: { "Content-Type": file.type },
+  });
+  await confirmFn(upload_key);
+}
+
 /* ── Profile Tab ─────────────────────────────────────────────────────── */
 
 function ProfileTab({ user, onSaved, lang }: { user: UserProfile; onSaved: () => void; lang: string }) {
@@ -81,7 +145,39 @@ function ProfileTab({ user, onSaved, lang }: { user: UserProfile; onSaved: () =>
   const [loading, setLoading] = React.useState(false);
   const [error, setError] = React.useState<string | null>(null);
   const [success, setSuccess] = React.useState(false);
+  const [avatarUploading, setAvatarUploading] = React.useState(false);
+  const [emailResending, setEmailResending] = React.useState(false);
+  const [emailResent, setEmailResent] = React.useState(false);
+  const avatarInputRef = React.useRef<HTMLInputElement>(null);
   useAutoDismiss(success, setSuccess);
+  useAutoDismiss(emailResent, setEmailResent);
+
+  async function handleAvatarChange(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    try {
+      setAvatarUploading(true);
+      await uploadPresigned(presignAvatar, confirmAvatar, file);
+      onSaved();
+    } catch (err) {
+      setError(getSafeApiErrorMessage(err, lang));
+    } finally {
+      setAvatarUploading(false);
+      if (avatarInputRef.current) avatarInputRef.current.value = "";
+    }
+  }
+
+  async function handleResendVerification() {
+    try {
+      setEmailResending(true);
+      await resendVerification(user.email);
+      setEmailResent(true);
+    } catch (err) {
+      setError(getSafeApiErrorMessage(err, lang));
+    } finally {
+      setEmailResending(false);
+    }
+  }
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -99,6 +195,9 @@ function ProfileTab({ user, onSaved, lang }: { user: UserProfile; onSaved: () =>
     }
   }
 
+  const initials = `${(user.first_name || "")[0] ?? ""}${(user.last_name || "")[0] ?? ""}`.toUpperCase() || "?";
+  const avatarUrl = user.profile?.avatar_thumbnail_url || user.profile?.avatar_url;
+
   return (
     <Card>
       <CardHeader>
@@ -107,6 +206,29 @@ function ProfileTab({ user, onSaved, lang }: { user: UserProfile; onSaved: () =>
       </CardHeader>
       <CardContent>
         <form className="space-y-4" onSubmit={handleSubmit}>
+          {/* Avatar */}
+          <div className="flex items-center gap-4">
+            <div className="relative h-16 w-16 shrink-0 overflow-hidden rounded-full bg-muted">
+              {avatarUrl ? (
+                <img src={avatarUrl} alt={t("settings.profile.avatar", lang)} className="h-full w-full object-cover" />
+              ) : (
+                <span className="flex h-full w-full items-center justify-center text-lg font-semibold text-muted-foreground">{initials}</span>
+              )}
+            </div>
+            <div>
+              <input ref={avatarInputRef} type="file" accept="image/*" className="hidden" onChange={handleAvatarChange} />
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                loading={avatarUploading}
+                onClick={() => avatarInputRef.current?.click()}
+              >
+                {avatarUploading ? t("settings.profile.avatarUploading", lang) : t("settings.profile.avatarChange", lang)}
+              </Button>
+            </div>
+          </div>
+
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div className="space-y-1.5">
               <Label htmlFor="first-name">{t("settings.profile.firstName", lang)}</Label>
@@ -123,7 +245,28 @@ function ProfileTab({ user, onSaved, lang }: { user: UserProfile; onSaved: () =>
           </div>
           <div className="space-y-1.5">
             <Label htmlFor="email">{t("settings.profile.email", lang)}</Label>
-            <Input id="email" value={user.email} disabled className="opacity-50 cursor-not-allowed" />
+            <div className="flex items-center gap-2">
+              <Input id="email" value={user.email} disabled className="opacity-50 cursor-not-allowed" />
+              {user.email_verified ? (
+                <span className="shrink-0 text-[12px] font-medium text-emerald-600">{t("settings.profile.emailVerified", lang)}</span>
+              ) : (
+                <span className="flex shrink-0 items-center gap-1.5">
+                  <span className="text-[12px] font-medium text-amber-600">{t("settings.profile.emailUnverified", lang)}</span>
+                  {emailResent ? (
+                    <span className="text-[11px] text-emerald-600">{t("settings.profile.emailResent", lang)}</span>
+                  ) : (
+                    <button
+                      type="button"
+                      className="text-[11px] font-medium text-primary underline underline-offset-2 hover:no-underline disabled:opacity-50"
+                      onClick={handleResendVerification}
+                      disabled={emailResending}
+                    >
+                      {t("settings.profile.emailResend", lang)}
+                    </button>
+                  )}
+                </span>
+              )}
+            </div>
             <p className="text-[11px] text-muted-foreground">{t("settings.profile.emailHint", lang)}</p>
           </div>
           {error && <p className="text-[12px] text-destructive">{error}</p>}
@@ -157,10 +300,33 @@ function SellerTab({ user, onSaved, lang }: { user: UserProfile; onSaved: () => 
   const [state, setState] = React.useState(p?.state ?? "");
   const [country, setCountry] = React.useState(p?.country ?? "");
   const [postalCode, setPostalCode] = React.useState(p?.postal_code ?? "");
+  const [portfolioVis, setPortfolioVis] = React.useState(p?.portfolio_visibility ?? "private");
+  const [portfolioSlug, setPortfolioSlug] = React.useState(p?.portfolio_slug ?? "");
+  const [portfolioTitle, setPortfolioTitle] = React.useState(p?.portfolio_title ?? "");
+  const [portfolioHeadline, setPortfolioHeadline] = React.useState(p?.portfolio_headline ?? "");
   const [loading, setLoading] = React.useState(false);
   const [error, setError] = React.useState<string | null>(null);
   const [success, setSuccess] = React.useState(false);
+  const [coverUploading, setCoverUploading] = React.useState(false);
+  const [portfolioCopied, setPortfolioCopied] = React.useState(false);
+  const coverInputRef = React.useRef<HTMLInputElement>(null);
   useAutoDismiss(success, setSuccess);
+  useAutoDismiss(portfolioCopied, setPortfolioCopied);
+
+  async function handleCoverChange(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    try {
+      setCoverUploading(true);
+      await uploadPresigned(presignCover, confirmCover, file);
+      onSaved();
+    } catch (err) {
+      setError(getSafeApiErrorMessage(err, lang));
+    } finally {
+      setCoverUploading(false);
+      if (coverInputRef.current) coverInputRef.current.value = "";
+    }
+  }
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -185,6 +351,10 @@ function SellerTab({ user, onSaved, lang }: { user: UserProfile; onSaved: () => 
         state: state.trim(),
         country: country.trim(),
         postal_code: postalCode.trim(),
+        portfolio_visibility: portfolioVis,
+        portfolio_slug: portfolioSlug.trim(),
+        portfolio_title: portfolioTitle.trim(),
+        portfolio_headline: portfolioHeadline.trim(),
       });
       setSuccess(true);
       onSaved();
@@ -195,6 +365,12 @@ function SellerTab({ user, onSaved, lang }: { user: UserProfile; onSaved: () => 
     }
   }
 
+  const hasSocial = !!(linkedin || twitter || instagram);
+  const hasAddress = !!(address || city || state || country || postalCode);
+  const hasPortfolio = !!(portfolioSlug || portfolioTitle || portfolioHeadline) || portfolioVis !== "private";
+
+  const portfolioLink = portfolioSlug ? `https://reaigen.com/p/${portfolioSlug}` : "";
+
   return (
     <Card>
       <CardHeader>
@@ -203,11 +379,33 @@ function SellerTab({ user, onSaved, lang }: { user: UserProfile; onSaved: () => 
       </CardHeader>
       <CardContent>
         <form className="space-y-5" onSubmit={handleSubmit}>
+          {/* Cover Image */}
+          <div className="relative">
+            <div className="h-28 w-full overflow-hidden rounded-lg bg-muted sm:h-36">
+              {p?.cover_image_url ? (
+                <img src={p.cover_image_url} alt={t("settings.seller.coverImage", lang)} className="h-full w-full object-cover" />
+              ) : (
+                <div className="flex h-full w-full items-center justify-center text-sm text-muted-foreground">{t("settings.seller.coverImage", lang)}</div>
+              )}
+            </div>
+            <input ref={coverInputRef} type="file" accept="image/*" className="hidden" onChange={handleCoverChange} />
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              loading={coverUploading}
+              className="absolute bottom-2 right-2 bg-background/80 backdrop-blur-sm"
+              onClick={() => coverInputRef.current?.click()}
+            >
+              {coverUploading ? t("settings.seller.coverUploading", lang) : t("settings.seller.coverChange", lang)}
+            </Button>
+          </div>
+
           {/* Contact */}
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div className="space-y-1.5">
               <Label>{t("settings.seller.phone", lang)}</Label>
-              <Input value={phone} onChange={(e) => setPhone(e.target.value)} placeholder="+421..." />
+              <Input value={phone} onChange={(e) => setPhone(e.target.value)} placeholder="+421 900 123 456" />
             </div>
             <div className="space-y-1.5">
               <Label>{t("settings.seller.company", lang)}</Label>
@@ -222,7 +420,7 @@ function SellerTab({ user, onSaved, lang }: { user: UserProfile; onSaved: () => 
             </div>
             <div className="space-y-1.5">
               <Label>{t("settings.seller.website", lang)}</Label>
-              <Input value={website} onChange={(e) => setWebsite(e.target.value)} placeholder="https://..." />
+              <Input value={website} onChange={(e) => setWebsite(e.target.value)} placeholder="https://www.example.com" />
             </div>
           </div>
 
@@ -232,31 +430,32 @@ function SellerTab({ user, onSaved, lang }: { user: UserProfile; onSaved: () => 
               value={bio}
               onChange={(e) => setBio(e.target.value)}
               rows={3}
+              placeholder={t("settings.seller.bio", lang) + "…"}
               className="flex w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
             />
           </div>
 
+          {/* Social — collapsible */}
           <Separator />
-
-          {/* Social */}
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-            <div className="space-y-1.5">
-              <Label>{t("settings.seller.linkedin", lang)}</Label>
-              <Input value={linkedin} onChange={(e) => setLinkedin(e.target.value)} placeholder="https://linkedin.com/in/..." />
+          <CollapsibleSection title={t("settings.seller.sectionSocial", lang)} defaultOpen={hasSocial}>
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+              <div className="space-y-1.5">
+                <Label>{t("settings.seller.linkedin", lang)}</Label>
+                <Input value={linkedin} onChange={(e) => setLinkedin(e.target.value)} placeholder="https://linkedin.com/in/your-name" />
+              </div>
+              <div className="space-y-1.5">
+                <Label>{t("settings.seller.twitter", lang)}</Label>
+                <Input value={twitter} onChange={(e) => setTwitter(e.target.value)} placeholder="@yourhandle" />
+              </div>
+              <div className="space-y-1.5">
+                <Label>{t("settings.seller.instagram", lang)}</Label>
+                <Input value={instagram} onChange={(e) => setInstagram(e.target.value)} placeholder="@yourhandle" />
+              </div>
             </div>
-            <div className="space-y-1.5">
-              <Label>{t("settings.seller.twitter", lang)}</Label>
-              <Input value={twitter} onChange={(e) => setTwitter(e.target.value)} placeholder="@handle" />
-            </div>
-            <div className="space-y-1.5">
-              <Label>{t("settings.seller.instagram", lang)}</Label>
-              <Input value={instagram} onChange={(e) => setInstagram(e.target.value)} placeholder="@handle" />
-            </div>
-          </div>
-
-          <Separator />
+          </CollapsibleSection>
 
           {/* RE Professional */}
+          <Separator />
           <div className="flex items-start justify-between gap-4">
             <div className="min-w-0">
               <p className="text-sm font-medium">{t("settings.seller.reAgent", lang)}</p>
@@ -277,31 +476,87 @@ function SellerTab({ user, onSaved, lang }: { user: UserProfile; onSaved: () => 
             </div>
           )}
 
+          {/* Address — collapsible */}
           <Separator />
+          <CollapsibleSection title={t("settings.seller.sectionAddress", lang)} defaultOpen={hasAddress}>
+            <div className="space-y-1.5">
+              <Label>{t("settings.seller.address", lang)}</Label>
+              <Input value={address} onChange={(e) => setAddress(e.target.value)} />
+            </div>
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+              <div className="space-y-1.5">
+                <Label>{t("settings.seller.city", lang)}</Label>
+                <Input value={city} onChange={(e) => setCity(e.target.value)} />
+              </div>
+              <div className="space-y-1.5">
+                <Label>{t("settings.seller.state", lang)}</Label>
+                <Input value={state} onChange={(e) => setState(e.target.value)} />
+              </div>
+              <div className="space-y-1.5">
+                <Label>{t("settings.seller.country", lang)}</Label>
+                <Input value={country} onChange={(e) => setCountry(e.target.value)} maxLength={2} placeholder="SK" />
+              </div>
+              <div className="space-y-1.5">
+                <Label>{t("settings.seller.postalCode", lang)}</Label>
+                <Input value={postalCode} onChange={(e) => setPostalCode(e.target.value)} />
+              </div>
+            </div>
+          </CollapsibleSection>
 
-          {/* Address */}
-          <div className="space-y-1.5">
-            <Label>{t("settings.seller.address", lang)}</Label>
-            <Input value={address} onChange={(e) => setAddress(e.target.value)} />
-          </div>
-          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
-            <div className="space-y-1.5">
-              <Label>{t("settings.seller.city", lang)}</Label>
-              <Input value={city} onChange={(e) => setCity(e.target.value)} />
+          {/* Portfolio — collapsible */}
+          <Separator />
+          <CollapsibleSection title={t("settings.seller.sectionPortfolio", lang)} defaultOpen={hasPortfolio}>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div className="space-y-1.5">
+                <Label>{t("settings.seller.portfolioVisibility", lang)}</Label>
+                <Select value={portfolioVis} onValueChange={setPortfolioVis}>
+                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="private">{t("settings.seller.portfolioPrivate", lang)}</SelectItem>
+                    <SelectItem value="unlisted">{t("settings.seller.portfolioUnlisted", lang)}</SelectItem>
+                    <SelectItem value="public">{t("settings.seller.portfolioPublic", lang)}</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-1.5">
+                <Label>{t("settings.seller.portfolioSlug", lang)}</Label>
+                <div className="flex items-center gap-0">
+                  <span className="shrink-0 rounded-l-md border border-r-0 border-input bg-muted px-2.5 py-2 text-xs text-muted-foreground">
+                    {t("settings.seller.portfolioSlugPrefix", lang)}
+                  </span>
+                  <Input
+                    value={portfolioSlug}
+                    onChange={(e) => setPortfolioSlug(e.target.value)}
+                    className="rounded-l-none"
+                  />
+                </div>
+              </div>
             </div>
             <div className="space-y-1.5">
-              <Label>{t("settings.seller.state", lang)}</Label>
-              <Input value={state} onChange={(e) => setState(e.target.value)} />
+              <Label>{t("settings.seller.portfolioTitleLabel", lang)}</Label>
+              <Input value={portfolioTitle} onChange={(e) => setPortfolioTitle(e.target.value)} maxLength={120} />
             </div>
             <div className="space-y-1.5">
-              <Label>{t("settings.seller.country", lang)}</Label>
-              <Input value={country} onChange={(e) => setCountry(e.target.value)} maxLength={2} placeholder="SK" />
+              <Label>{t("settings.seller.portfolioHeadline", lang)}</Label>
+              <Input value={portfolioHeadline} onChange={(e) => setPortfolioHeadline(e.target.value)} maxLength={200} />
             </div>
-            <div className="space-y-1.5">
-              <Label>{t("settings.seller.postalCode", lang)}</Label>
-              <Input value={postalCode} onChange={(e) => setPostalCode(e.target.value)} />
-            </div>
-          </div>
+            {portfolioVis !== "private" && portfolioLink && (
+              <div className="space-y-1.5">
+                <Label>{t("settings.seller.portfolioLink", lang)}</Label>
+                <div className="flex items-center gap-2">
+                  <Input value={portfolioLink} readOnly className="opacity-70" />
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={() => { navigator.clipboard.writeText(portfolioLink); setPortfolioCopied(true); }}
+                  >
+                    {portfolioCopied ? t("settings.seller.portfolioCopied", lang) : t("shares.copyLink", lang)}
+                  </Button>
+                </div>
+              </div>
+            )}
+          </CollapsibleSection>
 
           {error && <p className="text-[12px] text-destructive">{error}</p>}
           {success && <p className="text-[12px] text-emerald-600">{t("settings.seller.saved", lang)}</p>}
@@ -503,32 +758,41 @@ function NotificationsTab({ user, onSaved, lang }: { user: UserProfile; onSaved:
   const [processing, setProcessing] = React.useState(pd?.notify_processing_complete ?? true);
   const [processingFailed, setProcessingFailed] = React.useState(pd?.notify_processing_failed ?? true);
   const [newFeatures, setNewFeatures] = React.useState(pd?.notify_new_features ?? true);
-  const [loading, setLoading] = React.useState(false);
+  const [systemUpdates, setSystemUpdates] = React.useState(pd?.notify_system_updates ?? true);
+  const [billing, setBilling] = React.useState(pd?.notify_billing ?? true);
+  const [theme, setTheme] = React.useState(pd?.theme ?? "auto");
+  const [saving, setSaving] = React.useState(false);
   const [error, setError] = React.useState<string | null>(null);
   const [success, setSuccess] = React.useState(false);
   useAutoDismiss(success, setSuccess);
 
-  async function handleSubmit(e: React.FormEvent) {
-    e.preventDefault();
-    setError(null);
-    setSuccess(false);
-    try {
-      setLoading(true);
-      await updatePersonalizedData({
+  // Auto-save on any change (debounced to avoid rapid fire)
+  const isFirstRender = React.useRef(true);
+  React.useEffect(() => {
+    if (isFirstRender.current) {
+      isFirstRender.current = false;
+      return;
+    }
+    const timeout = setTimeout(() => {
+      setSaving(true);
+      setError(null);
+      updatePersonalizedData({
         notifications_enabled: enabled,
         email_notifications: email,
         notify_processing_complete: processing,
         notify_processing_failed: processingFailed,
         notify_new_features: newFeatures,
-      });
-      setSuccess(true);
-      onSaved();
-    } catch (err) {
-      setError(getSafeApiErrorMessage(err, lang));
-    } finally {
-      setLoading(false);
-    }
-  }
+        notify_system_updates: systemUpdates,
+        notify_billing: billing,
+        theme,
+      })
+        .then(() => { setSuccess(true); onSaved(); })
+        .catch((err) => setError(getSafeApiErrorMessage(err, lang)))
+        .finally(() => setSaving(false));
+    }, 400);
+    return () => clearTimeout(timeout);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [enabled, email, processing, processingFailed, newFeatures, systemUpdates, billing, theme]);
 
   return (
     <Card>
@@ -537,7 +801,7 @@ function NotificationsTab({ user, onSaved, lang }: { user: UserProfile; onSaved:
         <CardDescription>{t("settings.notifications.subtitle", lang)}</CardDescription>
       </CardHeader>
       <CardContent>
-        <form className="space-y-1" onSubmit={handleSubmit}>
+        <div className="space-y-1">
           <div className="divide-y divide-border">
             <ToggleRow
               label={t("settings.notifications.master", lang)}
@@ -566,15 +830,45 @@ function NotificationsTab({ user, onSaved, lang }: { user: UserProfile; onSaved:
                   checked={newFeatures}
                   onChange={setNewFeatures}
                 />
+                <ToggleRow
+                  label={t("settings.notifications.systemUpdates", lang)}
+                  checked={systemUpdates}
+                  onChange={setSystemUpdates}
+                />
+                <ToggleRow
+                  label={t("settings.notifications.billing", lang)}
+                  checked={billing}
+                  onChange={setBilling}
+                />
               </>
             )}
           </div>
-          {error && <p className="text-[12px] text-destructive pt-3">{error}</p>}
-          {success && <p className="text-[12px] text-emerald-600 pt-3">{t("settings.notifications.saved", lang)}</p>}
-          <div className="pt-4">
-            <Button type="submit" size="sm" loading={loading}>{t("settings.notifications.save", lang)}</Button>
+
+          <Separator className="!my-4" />
+
+          {/* Appearance / Theme */}
+          <div className="space-y-2">
+            <p className="text-sm font-medium">{t("settings.notifications.appearance", lang)}</p>
+            <div className="space-y-1.5">
+              <Label>{t("settings.notifications.theme", lang)}</Label>
+              <Select value={theme} onValueChange={setTheme}>
+                <SelectTrigger className="w-48"><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="light">{t("settings.notifications.themeLight", lang)}</SelectItem>
+                  <SelectItem value="dark">{t("settings.notifications.themeDark", lang)}</SelectItem>
+                  <SelectItem value="auto">{t("settings.notifications.themeSystem", lang)}</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
           </div>
-        </form>
+
+          {/* Status feedback */}
+          <div className="h-6 pt-3">
+            {saving && <p className="text-[12px] text-muted-foreground">{t("common.saved", lang)}…</p>}
+            {error && <p className="text-[12px] text-destructive">{error}</p>}
+            {success && !saving && <p className="text-[12px] text-emerald-600">{t("settings.notifications.saved", lang)}</p>}
+          </div>
+        </div>
       </CardContent>
     </Card>
   );
@@ -612,21 +906,6 @@ function ToggleRow({ label, hint, checked, onChange, disabled = false }: {
 
 /* ── Localization Tab ────────────────────────────────────────────────── */
 
-const COMMON_TIMEZONES = [
-  { code: "UTC", name: "UTC" },
-  { code: "Europe/Bratislava", name: "Bratislava — Europe/Bratislava" },
-  { code: "Europe/Prague", name: "Prague — Europe/Prague" },
-  { code: "Europe/Vienna", name: "Vienna — Europe/Vienna" },
-  { code: "Europe/Berlin", name: "Berlin — Europe/Berlin" },
-  { code: "Europe/London", name: "London — Europe/London" },
-  { code: "Europe/Paris", name: "Paris — Europe/Paris" },
-  { code: "Europe/Warsaw", name: "Warsaw — Europe/Warsaw" },
-  { code: "Europe/Budapest", name: "Budapest — Europe/Budapest" },
-  { code: "America/New_York", name: "New York — America/New_York" },
-  { code: "America/Los_Angeles", name: "Los Angeles — America/Los_Angeles" },
-  { code: "Australia/Sydney", name: "Sydney — Australia/Sydney" },
-];
-
 function flattenUnits(grouped: { METRIC?: PreferenceOption[]; IMPERIAL?: PreferenceOption[] } | null | undefined): PreferenceOption[] {
   if (!grouped) return [];
   return [...(grouped.METRIC ?? []), ...(grouped.IMPERIAL ?? [])];
@@ -660,16 +939,26 @@ function LocalizationTab({ user, onSaved, lang }: { user: UserProfile; onSaved: 
   const [currency, setCurrency] = React.useState(loc?.currency ?? "EUR");
   const [areaUnit, setAreaUnit] = React.useState(loc?.area_unit ?? "SQM");
   const [distanceUnit, setDistanceUnit] = React.useState(loc?.distance_unit ?? "M");
-  const [timezone, setTimezone] = React.useState(loc?.timezone ?? "UTC");
+  const browserTz = typeof Intl !== "undefined" ? Intl.DateTimeFormat().resolvedOptions().timeZone : "UTC";
+  const [timezone, setTimezone] = React.useState(loc?.timezone || browserTz);
   const [dateFormat, setDateFormat] = React.useState(loc?.date_format ?? "EU");
   const [loading, setLoading] = React.useState(false);
   const [error, setError] = React.useState<string | null>(null);
   const [success, setSuccess] = React.useState(false);
   const [prefs, setPrefs] = React.useState<AvailablePreferences | null>(null);
+  const [prefsLoading, setPrefsLoading] = React.useState(true);
+  const [prefsError, setPrefsError] = React.useState(false);
 
-  React.useEffect(() => {
-    getAvailablePreferences().then(setPrefs).catch(() => {});
+  const loadPrefs = React.useCallback(() => {
+    setPrefsLoading(true);
+    setPrefsError(false);
+    getAvailablePreferences()
+      .then(setPrefs)
+      .catch(() => setPrefsError(true))
+      .finally(() => setPrefsLoading(false));
   }, []);
+
+  React.useEffect(() => { loadPrefs(); }, [loadPrefs]);
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -695,36 +984,13 @@ function LocalizationTab({ user, onSaved, lang }: { user: UserProfile; onSaved: 
     }
   }
 
-  const languages = prefs?.languages ?? [
-    { code: "en", name: "English" },
-    { code: "sk", name: "Slovencina" },
-    { code: "cs", name: "Cestina" },
-    { code: "de", name: "Deutsch" },
-  ];
-  const currencies = prefs?.currencies ?? [
-    { code: "EUR", name: "Euro", symbol: "€" },
-    { code: "USD", name: "US Dollar", symbol: "$" },
-    { code: "CZK", name: "Czech Koruna", symbol: "Kč" },
-    { code: "GBP", name: "British Pound", symbol: "£" },
-  ];
-  const areaUnits = prefs ? flattenUnits(prefs.area_units) : [
-    { code: "SQM", name: "Square Meter", symbol: "m²" },
-    { code: "SQFT", name: "Square Foot", symbol: "ft²" },
-    { code: "HECTARE", name: "Hectare", symbol: "ha" },
-    { code: "ACRE", name: "Acre", symbol: "ac" },
-  ];
-  const distanceUnits = prefs ? flattenUnits(prefs.distance_units) : [
-    { code: "M", name: "Meter", symbol: "m" },
-    { code: "KM", name: "Kilometer", symbol: "km" },
-    { code: "FT", name: "Foot", symbol: "ft" },
-    { code: "MI", name: "Mile", symbol: "mi" },
-  ];
-  const dateFormats = prefs?.date_formats ?? [
-    { code: "EU", name: "EU (DD.MM.YYYY)" },
-    { code: "US", name: "US (MM/DD/YYYY)" },
-    { code: "ISO", name: "ISO 8601 (YYYY-MM-DD)" },
-  ];
-  const formattedDateSample = dateFormat === "US" ? "06/11/2026" : dateFormat === "ISO" ? "2026-06-11" : "11.06.2026";
+  const languages = prefs?.languages ?? [];
+  const currencies = prefs?.currencies ?? [];
+  const areaUnits = prefs ? flattenUnits(prefs.area_units) : [];
+  const distanceUnits = prefs ? flattenUnits(prefs.distance_units) : [];
+  const dateFormats = prefs?.date_formats ?? [];
+  const timezones = prefs?.timezones ?? [];
+  const formattedDateSample = dateFormats.find((d) => d.code === dateFormat)?.name ?? dateFormat;
   const formattedAreaSample = `82 ${symbolFor(areaUnits, areaUnit)}`;
   const formattedDistanceSample = `1.4 ${symbolFor(distanceUnits, distanceUnit)}`;
 
@@ -735,6 +1001,14 @@ function LocalizationTab({ user, onSaved, lang }: { user: UserProfile; onSaved: 
         <CardDescription>{t("settings.localization.subtitle", lang)}</CardDescription>
       </CardHeader>
       <CardContent>
+        {prefsLoading ? (
+          <p className="py-8 text-center text-sm text-muted-foreground">{t("settings.localization.loading", lang)}</p>
+        ) : prefsError ? (
+          <div className="flex flex-col items-center gap-3 py-8">
+            <p className="text-sm text-destructive">{t("settings.localization.loadError", lang)}</p>
+            <Button type="button" variant="outline" size="sm" onClick={loadPrefs}>{t("settings.localization.retry", lang)}</Button>
+          </div>
+        ) : (
         <form className="space-y-5" onSubmit={handleSubmit}>
           <div className="rounded-lg border border-border bg-muted/20 px-4 py-3">
             <p className="text-[13px] font-medium">{t("settings.localization.preview", lang)}</p>
@@ -759,9 +1033,9 @@ function LocalizationTab({ user, onSaved, lang }: { user: UserProfile; onSaved: 
             </SettingsField>
             <SettingsField label={t("settings.localization.timezone", lang)} hint={timezone}>
               <Select value={timezone} onValueChange={setTimezone}>
-                <SelectTrigger className="h-11 rounded-md shadow-none"><SelectValue /></SelectTrigger>
+                <SelectTrigger className="h-11 rounded-md shadow-none"><SelectValue placeholder={timezone || "—"} /></SelectTrigger>
                 <SelectContent>
-                  {COMMON_TIMEZONES.map((tz) => (
+                  {timezones.map((tz) => (
                     <SelectItem key={tz.code} value={tz.code}>{tz.name}</SelectItem>
                   ))}
                 </SelectContent>
@@ -829,14 +1103,225 @@ function LocalizationTab({ user, onSaved, lang }: { user: UserProfile; onSaved: 
             <Button type="submit" size="sm" loading={loading}>{t("settings.localization.save", lang)}</Button>
           </div>
         </form>
+        )}
       </CardContent>
     </Card>
   );
 }
 
+/* ── Billing Tab ─────────────────────────────────────────────────────── */
+
+function UsageBar({ current, max, label, unit }: { current: number; max: number; label: string; unit?: string }) {
+  const unlimited = max === 0;
+  const pct = unlimited ? 0 : Math.min((current / max) * 100, 100);
+  const color = pct >= 100 ? "bg-destructive" : pct >= 75 ? "bg-amber-500" : "bg-emerald-500";
+  return (
+    <div className="space-y-1.5">
+      <div className="flex items-baseline justify-between text-[12px]">
+        <span className="font-medium">{label}</span>
+        <span className="text-muted-foreground">
+          {current}{unit ? ` ${unit}` : ""} / {unlimited ? "∞" : `${max}${unit ? ` ${unit}` : ""}`}
+        </span>
+      </div>
+      <div className="h-2 w-full overflow-hidden rounded-full bg-muted">
+        <div className={cn("h-full rounded-full transition-all", color)} style={{ width: unlimited ? "0%" : `${pct}%` }} />
+      </div>
+    </div>
+  );
+}
+
+const tierBadgeColors: Record<string, string> = {
+  FREE: "bg-muted text-muted-foreground",
+  TRIAL: "bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-300",
+  LITE: "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300",
+  PRO: "bg-purple-100 text-purple-700 dark:bg-purple-900/40 dark:text-purple-300",
+  ENTERPRISE: "bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300",
+};
+
+function tierBadgeKey(code: string, lang: string): string {
+  const map: Record<string, string> = {
+    FREE: t("settings.billing.badgeFree", lang),
+    TRIAL: t("settings.billing.badgeTrial", lang),
+    LITE: t("settings.billing.badgeLite", lang),
+    PRO: t("settings.billing.badgePro", lang),
+    ENTERPRISE: t("settings.billing.badgeEnterprise", lang),
+  };
+  return map[code.toUpperCase()] ?? code;
+}
+
+function BillingTab({ user, onSaved, lang }: { user: UserProfile; onSaved: () => void; lang: string }) {
+  const ba = user.billing_account;
+  const tier = ba?.subscription_tier_detail;
+  const tierCode = tier?.code?.toUpperCase() ?? "FREE";
+
+  // Billing address form
+  const [billingName, setBillingName] = React.useState(ba?.billing_name ?? "");
+  const [billingEmail, setBillingEmail] = React.useState(ba?.billing_email ?? "");
+  const [billingAddress, setBillingAddress] = React.useState(ba?.billing_address ?? "");
+  const [billingCity, setBillingCity] = React.useState(ba?.billing_city ?? "");
+  const [billingPostal, setBillingPostal] = React.useState(ba?.billing_postal_code ?? "");
+  const [billingCountry, setBillingCountry] = React.useState(ba?.billing_country ?? "");
+  const [vat, setVat] = React.useState(ba?.vat_number ?? "");
+  const [loading, setLoading] = React.useState(false);
+  const [error, setError] = React.useState<string | null>(null);
+  const [success, setSuccess] = React.useState(false);
+  useAutoDismiss(success, setSuccess);
+
+  const hasAddressData = !!(billingName || billingEmail || billingAddress || billingCity || billingPostal || billingCountry || vat);
+
+  async function handleSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    setError(null);
+    setSuccess(false);
+    try {
+      setLoading(true);
+      await updateBilling({
+        billing_name: billingName.trim(),
+        billing_email: billingEmail.trim(),
+        billing_address: billingAddress.trim(),
+        billing_city: billingCity.trim(),
+        billing_postal_code: billingPostal.trim(),
+        billing_country: billingCountry.trim(),
+        vat_number: vat.trim(),
+      });
+      setSuccess(true);
+      onSaved();
+    } catch (err) {
+      setError(getSafeApiErrorMessage(err, lang));
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  const cycleLabel = ba?.billing_cycle === "monthly"
+    ? t("settings.billing.cycleMonthly", lang)
+    : ba?.billing_cycle === "yearly"
+      ? t("settings.billing.cycleYearly", lang)
+      : t("settings.billing.cycleNa", lang);
+
+  const maxPosts = tier?.max_posts ?? 0;
+  const maxStorage = tier?.max_storage_gb ?? 0;
+  const currentPosts = ba?.current_posts_count ?? 0;
+  const currentStorage = parseFloat(ba?.current_storage_gb ?? "0");
+
+  return (
+    <div className="space-y-6">
+      {/* Plan Info */}
+      <Card>
+        <CardHeader>
+          <CardTitle>{t("settings.billing.title", lang)}</CardTitle>
+          <CardDescription>{t("settings.billing.subtitle", lang)}</CardDescription>
+        </CardHeader>
+        <CardContent>
+          <dl className="rounded-lg border border-border/70 px-4">
+            <DataRow
+              label={t("settings.billing.plan", lang)}
+              value={
+                <span className="flex items-center gap-2">
+                  {tier?.name ?? "—"}
+                  <span className={cn("rounded-full px-2 py-0.5 text-[10px] font-semibold", tierBadgeColors[tierCode] ?? tierBadgeColors.FREE)}>
+                    {tierBadgeKey(tierCode, lang)}
+                  </span>
+                </span>
+              }
+            />
+            <DataRow label={t("settings.billing.status", lang)} value={ba?.subscription_status ?? "—"} />
+            <DataRow label={t("settings.billing.cycle", lang)} value={cycleLabel} />
+            {ba?.is_trial && ba.days_until_expiry != null && (
+              <DataRow label={t("settings.billing.trial", lang)} value={`${ba.days_until_expiry} ${t("settings.billing.trialDaysLeft", lang)}`} />
+            )}
+            <DataRow label={t("settings.billing.provider", lang)} value={ba?.payment_provider || t("common.none", lang)} />
+          </dl>
+        </CardContent>
+      </Card>
+
+      {/* Usage */}
+      <Card>
+        <CardHeader>
+          <CardTitle>{t("settings.billing.usageTitle", lang)}</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <div className="space-y-4 rounded-lg border border-border/70 p-4">
+            <UsageBar current={currentPosts} max={maxPosts} label={t("settings.billing.posts", lang)} />
+            <UsageBar current={currentStorage} max={maxStorage} label={t("settings.billing.storage", lang)} unit="GB" />
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* Billing Address */}
+      <Card>
+        <CardHeader>
+          <CardTitle>{t("settings.billing.addressTitle", lang)}</CardTitle>
+          <CardDescription>{t("settings.billing.addressSubtitle", lang)}</CardDescription>
+        </CardHeader>
+        <CardContent>
+          <CollapsibleSection title={t("settings.billing.addressTitle", lang)} defaultOpen={hasAddressData}>
+            <form className="space-y-4" onSubmit={handleSubmit}>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div className="space-y-1.5">
+                  <Label>{t("settings.billing.name", lang)}</Label>
+                  <Input value={billingName} onChange={(e) => setBillingName(e.target.value)} />
+                </div>
+                <div className="space-y-1.5">
+                  <Label>{t("settings.billing.email", lang)}</Label>
+                  <Input value={billingEmail} onChange={(e) => setBillingEmail(e.target.value)} type="email" />
+                </div>
+              </div>
+              <div className="space-y-1.5">
+                <Label>{t("settings.billing.address", lang)}</Label>
+                <Input value={billingAddress} onChange={(e) => setBillingAddress(e.target.value)} />
+              </div>
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+                <div className="space-y-1.5">
+                  <Label>{t("settings.billing.city", lang)}</Label>
+                  <Input value={billingCity} onChange={(e) => setBillingCity(e.target.value)} />
+                </div>
+                <div className="space-y-1.5">
+                  <Label>{t("settings.billing.postalCode", lang)}</Label>
+                  <Input value={billingPostal} onChange={(e) => setBillingPostal(e.target.value)} />
+                </div>
+                <div className="space-y-1.5">
+                  <Label>{t("settings.billing.country", lang)}</Label>
+                  <Input value={billingCountry} onChange={(e) => setBillingCountry(e.target.value)} maxLength={2} placeholder="SK" />
+                </div>
+                <div className="space-y-1.5">
+                  <Label>{t("settings.billing.vat", lang)}</Label>
+                  <Input value={vat} onChange={(e) => setVat(e.target.value)} />
+                </div>
+              </div>
+              {error && <p className="text-[12px] text-destructive">{error}</p>}
+              {success && <p className="text-[12px] text-emerald-600">{t("settings.billing.saved", lang)}</p>}
+              <div className="pt-2">
+                <Button type="submit" size="sm" loading={loading}>{t("settings.billing.save", lang)}</Button>
+              </div>
+            </form>
+          </CollapsibleSection>
+        </CardContent>
+      </Card>
+    </div>
+  );
+}
+
 /* ── Security Tab ────────────────────────────────────────────────────── */
 
-function SecurityTab({ lang }: { lang: string }) {
+function SecurityTab({ user, onSaved, lang }: { user: UserProfile; onSaved: () => void; lang: string }) {
+  return (
+    <div className="space-y-6">
+      <Card>
+        <CardHeader>
+          <CardTitle>{t("settings.security.title", lang)}</CardTitle>
+          <CardDescription>{t("settings.security.subtitle", lang)}</CardDescription>
+        </CardHeader>
+      </Card>
+      <PasswordSection lang={lang} />
+      <TwoFactorSection lang={lang} />
+      <LinkedAccountsSection lang={lang} />
+      <PhoneSection user={user} onSaved={onSaved} lang={lang} />
+    </div>
+  );
+}
+
+function PasswordSection({ lang }: { lang: string }) {
   const [currentPassword, setCurrentPassword] = React.useState("");
   const [newPassword, setNewPassword] = React.useState("");
   const [confirmPassword, setConfirmPassword] = React.useState("");
@@ -867,8 +1352,8 @@ function SecurityTab({ lang }: { lang: string }) {
   return (
     <Card>
       <CardHeader>
-        <CardTitle>{t("settings.security.title", lang)}</CardTitle>
-        <CardDescription>{t("settings.security.subtitle", lang)}</CardDescription>
+        <CardTitle>{t("settings.security.passwordTitle", lang)}</CardTitle>
+        <CardDescription>{t("settings.security.passwordSubtitle", lang)}</CardDescription>
       </CardHeader>
       <CardContent>
         <form className="space-y-4" onSubmit={handleSubmit}>
@@ -902,6 +1387,352 @@ function SecurityTab({ lang }: { lang: string }) {
   );
 }
 
+function TwoFactorSection({ lang }: { lang: string }) {
+  const [status, setStatus] = React.useState<TotpStatus | null>(null);
+  const [setup, setSetup] = React.useState<TotpSetupResponse | null>(null);
+  const [backupCodes, setBackupCodes] = React.useState<string[] | null>(null);
+  const [code, setCode] = React.useState("");
+  const [loading, setLoading] = React.useState(false);
+  const [fetchLoading, setFetchLoading] = React.useState(true);
+  const [error, setError] = React.useState<string | null>(null);
+  const [disabling, setDisabling] = React.useState(false);
+
+  const loadStatus = React.useCallback(() => {
+    setFetchLoading(true);
+    getTotpStatus()
+      .then(setStatus)
+      .catch(() => {})
+      .finally(() => setFetchLoading(false));
+  }, []);
+
+  React.useEffect(() => { loadStatus(); }, [loadStatus]);
+
+  async function handleEnable() {
+    setError(null);
+    try {
+      setLoading(true);
+      const result = await setupTotp();
+      setSetup(result);
+    } catch (err) {
+      setError(getSafeApiErrorMessage(err, lang));
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function handleConfirm() {
+    if (code.length < 6) return;
+    setError(null);
+    try {
+      setLoading(true);
+      const result = await confirmTotp(code);
+      setBackupCodes(result.backup_codes ?? null);
+      setSetup(null);
+      setCode("");
+      loadStatus();
+    } catch (err) {
+      setError(getSafeApiErrorMessage(err, lang));
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function handleDisable() {
+    if (code.length < 6) return;
+    setError(null);
+    try {
+      setLoading(true);
+      await disableTotp(code);
+      setDisabling(false);
+      setCode("");
+      loadStatus();
+    } catch (err) {
+      setError(getSafeApiErrorMessage(err, lang));
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  if (fetchLoading) return null;
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle>{t("settings.security.twoFaTitle", lang)}</CardTitle>
+        <CardDescription>{t("settings.security.twoFaSubtitle", lang)}</CardDescription>
+      </CardHeader>
+      <CardContent>
+        {/* Show backup codes after first-time setup */}
+        {backupCodes && (
+          <div className="space-y-3 mb-4">
+            <p className="text-sm font-medium">{t("settings.security.twoFaBackupTitle", lang)}</p>
+            <p className="text-[12px] text-muted-foreground">{t("settings.security.twoFaBackupHint", lang)}</p>
+            <div className="grid grid-cols-2 gap-1 rounded-lg border border-border p-3 font-mono text-[13px]">
+              {backupCodes.map((c) => <span key={c}>{c}</span>)}
+            </div>
+            <Button type="button" variant="outline" size="sm" onClick={() => setBackupCodes(null)}>
+              {t("common.dismiss", lang)}
+            </Button>
+          </div>
+        )}
+
+        {/* Setup flow */}
+        {setup && (
+          <div className="space-y-4">
+            <p className="text-[12px] text-muted-foreground">{t("settings.security.twoFaSetupHint", lang)}</p>
+            <div className="space-y-2">
+              <Label>{t("settings.security.twoFaSecret", lang)}</Label>
+              <Input value={setup.secret} readOnly className="font-mono text-xs" onClick={(e) => (e.target as HTMLInputElement).select()} />
+            </div>
+            <div className="space-y-2">
+              <Label>{t("settings.security.twoFaUri", lang)}</Label>
+              <Input value={setup.provisioning_uri} readOnly className="font-mono text-xs" onClick={(e) => (e.target as HTMLInputElement).select()} />
+            </div>
+            <div className="space-y-2">
+              <Label>{t("settings.security.twoFaCode", lang)}</Label>
+              <Input
+                value={code}
+                onChange={(e) => setCode(e.target.value.replace(/\D/g, "").slice(0, 6))}
+                placeholder={t("settings.security.twoFaCodePlaceholder", lang)}
+                maxLength={6}
+                className="w-40 font-mono"
+              />
+            </div>
+            {error && <p className="text-[12px] text-destructive">{error}</p>}
+            <div className="flex gap-2">
+              <Button type="button" size="sm" loading={loading} disabled={code.length < 6} onClick={handleConfirm}>
+                {t("settings.security.twoFaConfirm", lang)}
+              </Button>
+              <Button type="button" variant="outline" size="sm" onClick={() => { setSetup(null); setCode(""); setError(null); }}>
+                {t("settings.security.twoFaCancel", lang)}
+              </Button>
+            </div>
+          </div>
+        )}
+
+        {/* Disable flow */}
+        {!setup && disabling && (
+          <div className="space-y-4">
+            <p className="text-[12px] text-muted-foreground">{t("settings.security.twoFaDisableHint", lang)}</p>
+            <div className="space-y-2">
+              <Label>{t("settings.security.twoFaCode", lang)}</Label>
+              <Input
+                value={code}
+                onChange={(e) => setCode(e.target.value.replace(/\D/g, "").slice(0, 6))}
+                placeholder={t("settings.security.twoFaCodePlaceholder", lang)}
+                maxLength={6}
+                className="w-40 font-mono"
+              />
+            </div>
+            {error && <p className="text-[12px] text-destructive">{error}</p>}
+            <div className="flex gap-2">
+              <Button type="button" variant="destructive" size="sm" loading={loading} disabled={code.length < 6} onClick={handleDisable}>
+                {t("settings.security.twoFaDisable", lang)}
+              </Button>
+              <Button type="button" variant="outline" size="sm" onClick={() => { setDisabling(false); setCode(""); setError(null); }}>
+                {t("settings.security.twoFaCancel", lang)}
+              </Button>
+            </div>
+          </div>
+        )}
+
+        {/* Idle state */}
+        {!setup && !disabling && !backupCodes && (
+          <div className="flex items-center justify-between">
+            <span className={cn("rounded-full px-2.5 py-1 text-[11px] font-semibold",
+              status?.enabled
+                ? "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300"
+                : "bg-muted text-muted-foreground"
+            )}>
+              {status?.enabled ? t("settings.security.twoFaEnabled", lang) : t("settings.security.twoFaDisabled", lang)}
+            </span>
+            {status?.enabled ? (
+              <Button type="button" variant="outline" size="sm" onClick={() => setDisabling(true)}>
+                {t("settings.security.twoFaDisable", lang)}
+              </Button>
+            ) : (
+              <Button type="button" size="sm" loading={loading} onClick={handleEnable}>
+                {t("settings.security.twoFaEnable", lang)}
+              </Button>
+            )}
+          </div>
+        )}
+        {!setup && !disabling && !backupCodes && error && (
+          <p className="mt-2 text-[12px] text-destructive">{error}</p>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
+function LinkedAccountsSection({ lang }: { lang: string }) {
+  const [data, setData] = React.useState<LinkedAccountsResponse | null>(null);
+  const [loading, setLoading] = React.useState(true);
+  const [unlinking, setUnlinking] = React.useState<string | null>(null);
+  const [error, setError] = React.useState<string | null>(null);
+
+  const load = React.useCallback(() => {
+    setLoading(true);
+    getLinkedAccounts()
+      .then(setData)
+      .catch(() => {})
+      .finally(() => setLoading(false));
+  }, []);
+
+  React.useEffect(() => { load(); }, [load]);
+
+  async function handleUnlink(provider: string) {
+    setError(null);
+    try {
+      setUnlinking(provider);
+      await unlinkSocialAccount(provider);
+      load();
+    } catch (err) {
+      setError(getSafeApiErrorMessage(err, lang));
+    } finally {
+      setUnlinking(null);
+    }
+  }
+
+  if (loading) return null;
+
+  const accounts = data?.social_accounts ?? [];
+  const canUnlink = data?.has_password || accounts.length > 1;
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle>{t("settings.security.linkedTitle", lang)}</CardTitle>
+        <CardDescription>{t("settings.security.linkedSubtitle", lang)}</CardDescription>
+      </CardHeader>
+      <CardContent>
+        {accounts.length === 0 ? (
+          <p className="text-[13px] text-muted-foreground">{t("settings.security.linkedNone", lang)}</p>
+        ) : (
+          <div className="divide-y divide-border">
+            {accounts.map((acc) => (
+              <div key={acc.id} className="flex items-center justify-between py-3">
+                <div className="min-w-0">
+                  <p className="text-sm font-medium capitalize">{acc.provider}</p>
+                  <p className="text-[12px] text-muted-foreground truncate">{acc.email}</p>
+                </div>
+                <div className="shrink-0">
+                  {canUnlink ? (
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      loading={unlinking === acc.provider}
+                      onClick={() => handleUnlink(acc.provider)}
+                    >
+                      {t("settings.security.linkedUnlink", lang)}
+                    </Button>
+                  ) : (
+                    <p className="text-[11px] text-muted-foreground">{t("settings.security.linkedOnlyAuth", lang)}</p>
+                  )}
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+        {error && <p className="mt-2 text-[12px] text-destructive">{error}</p>}
+      </CardContent>
+    </Card>
+  );
+}
+
+function PhoneSection({ user, onSaved, lang }: { user: UserProfile; onSaved: () => void; lang: string }) {
+  const phone = user.profile?.phone;
+  const verified = user.phone_verified;
+  const [otpSent, setOtpSent] = React.useState(false);
+  const [code, setCode] = React.useState("");
+  const [loading, setLoading] = React.useState(false);
+  const [error, setError] = React.useState<string | null>(null);
+
+  async function handleRequestOtp() {
+    if (!phone) return;
+    setError(null);
+    try {
+      setLoading(true);
+      await requestPhoneLinkOtp(phone);
+      setOtpSent(true);
+    } catch (err) {
+      setError(getSafeApiErrorMessage(err, lang));
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function handleVerify() {
+    if (!phone || !code) return;
+    setError(null);
+    try {
+      setLoading(true);
+      await verifyPhoneLinkOtp({ phone, code });
+      setOtpSent(false);
+      setCode("");
+      onSaved();
+    } catch (err) {
+      setError(getSafeApiErrorMessage(err, lang));
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle>{t("settings.security.phoneTitle", lang)}</CardTitle>
+        <CardDescription>{t("settings.security.phoneSubtitle", lang)}</CardDescription>
+      </CardHeader>
+      <CardContent>
+        {!phone ? (
+          <p className="text-[13px] text-muted-foreground">{t("settings.security.phoneNoPhone", lang)}</p>
+        ) : (
+          <div className="space-y-3">
+            <div className="flex items-center gap-3">
+              <span className="text-sm font-medium">{phone}</span>
+              <span className={cn("rounded-full px-2.5 py-0.5 text-[10px] font-semibold",
+                verified
+                  ? "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300"
+                  : "bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300"
+              )}>
+                {verified ? t("settings.security.phoneVerified", lang) : t("settings.security.phoneUnverified", lang)}
+              </span>
+            </div>
+
+            {!verified && !otpSent && (
+              <Button type="button" size="sm" loading={loading} onClick={handleRequestOtp}>
+                {t("settings.security.phoneVerify", lang)}
+              </Button>
+            )}
+
+            {otpSent && (
+              <div className="flex items-end gap-2">
+                <div className="space-y-1.5">
+                  <Label>{t("settings.security.phoneOtpSent", lang)}</Label>
+                  <Input
+                    value={code}
+                    onChange={(e) => setCode(e.target.value.replace(/\D/g, "").slice(0, 6))}
+                    placeholder={t("settings.security.phoneOtpPlaceholder", lang)}
+                    maxLength={6}
+                    className="w-40 font-mono"
+                  />
+                </div>
+                <Button type="button" size="sm" loading={loading} disabled={code.length < 4} onClick={handleVerify}>
+                  {t("settings.security.phoneOtpConfirm", lang)}
+                </Button>
+              </div>
+            )}
+
+            {error && <p className="text-[12px] text-destructive">{error}</p>}
+          </div>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
 /* ── Settings Form (main export) ─────────────────────────────────────── */
 
 export function SettingsForm({ user, onSaved }: { user: UserProfile; onSaved: () => void }) {
@@ -917,6 +1748,7 @@ export function SettingsForm({ user, onSaved }: { user: UserProfile; onSaved: ()
         <TabsTrigger value="privacy" className={triggerClassName}>{t("settings.tab.privacy", lang)}</TabsTrigger>
         <TabsTrigger value="localization" className={triggerClassName}>{t("settings.tab.localization", lang)}</TabsTrigger>
         <TabsTrigger value="notifications" className={triggerClassName}>{t("settings.tab.notifications", lang)}</TabsTrigger>
+        <TabsTrigger value="billing" className={triggerClassName}>{t("settings.tab.billing", lang)}</TabsTrigger>
         <TabsTrigger value="security" className={triggerClassName}>{t("settings.tab.security", lang)}</TabsTrigger>
       </TabsList>
       <div className="min-w-0">
@@ -935,8 +1767,11 @@ export function SettingsForm({ user, onSaved }: { user: UserProfile; onSaved: ()
         <TabsContent value="notifications" className="mt-0">
           <NotificationsTab user={user} onSaved={onSaved} lang={lang} />
         </TabsContent>
+        <TabsContent value="billing" className="mt-0">
+          <BillingTab user={user} onSaved={onSaved} lang={lang} />
+        </TabsContent>
         <TabsContent value="security" className="mt-0">
-          <SecurityTab lang={lang} />
+          <SecurityTab user={user} onSaved={onSaved} lang={lang} />
         </TabsContent>
       </div>
     </Tabs>
