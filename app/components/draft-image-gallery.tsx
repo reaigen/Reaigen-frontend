@@ -3,12 +3,14 @@
 import { useRef, useState, useCallback, useEffect } from "react";
 import { createPortal } from "react-dom";
 import { Thumbnail } from "./thumbnail";
+import { t } from "../lib/i18n";
 
 interface DraftImageGalleryProps {
   images: { url: string; thumbnail_url?: string | null }[];
   alt: string;
   /** Fallback thumbnail URL if no images */
   fallbackUrl?: string | null;
+  lang?: string;
 }
 
 // ── Lightbox overlay ─────────────────────────────────────────────────────
@@ -18,11 +20,13 @@ function Lightbox({
   alt,
   startIndex,
   onClose,
+  lang = "en",
 }: {
   images: { url: string }[];
   alt: string;
   startIndex: number;
   onClose: () => void;
+  lang?: string;
 }) {
   const scrollRef = useRef<HTMLDivElement>(null);
   const [index, setIndex] = useState(startIndex);
@@ -86,7 +90,7 @@ function Lightbox({
           <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
             <path d="M10 12L6 8l4-4" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
           </svg>
-          Back
+          {t("common.back", lang)}
         </button>
         <span className="text-[13px] text-muted-foreground tabular-nums">
           {index + 1} / {count}
@@ -175,7 +179,7 @@ function Lightbox({
 
 // ── Gallery ──────────────────────────────────────────────────────────────
 
-export function DraftImageGallery({ images, alt, fallbackUrl }: DraftImageGalleryProps) {
+export function DraftImageGallery({ images, alt, fallbackUrl, lang = "en" }: DraftImageGalleryProps) {
   const scrollRef = useRef<HTMLDivElement>(null);
   const [activeIndex, setActiveIndex] = useState(0);
   const [lightboxIndex, setLightboxIndex] = useState<number | null>(null);
@@ -235,7 +239,7 @@ export function DraftImageGallery({ images, alt, fallbackUrl }: DraftImageGaller
           <Thumbnail src={images[0].url} alt={alt} className="absolute inset-0 h-full w-full object-cover" priority />
         </div>
         {lightboxIndex !== null && (
-          <Lightbox images={images} alt={alt} startIndex={0} onClose={() => setLightboxIndex(null)} />
+          <Lightbox images={images} alt={alt} startIndex={0} onClose={() => setLightboxIndex(null)} lang={lang} />
         )}
       </>
     );
@@ -325,7 +329,7 @@ export function DraftImageGallery({ images, alt, fallbackUrl }: DraftImageGaller
 
       {/* Lightbox */}
       {lightboxIndex !== null && (
-        <Lightbox images={images} alt={alt} startIndex={lightboxIndex} onClose={() => setLightboxIndex(null)} />
+        <Lightbox images={images} alt={alt} startIndex={lightboxIndex} onClose={() => setLightboxIndex(null)} lang={lang} />
       )}
     </>
   );

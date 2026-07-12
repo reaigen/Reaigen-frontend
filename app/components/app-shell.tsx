@@ -170,13 +170,13 @@ export function AppShell({
                 key={item.href}
                 href={item.href}
                 className={cn(
-                  "flex flex-col items-center justify-center gap-1 rounded-2xl px-2 py-2.5 text-[11px] font-medium transition-all",
+                  "flex flex-col items-center justify-center gap-1 rounded-xl px-2 py-2 text-[11px] font-medium transition-colors",
                   active
-                    ? "bg-foreground text-background shadow-sm"
-                    : "text-foreground/45 hover:bg-foreground/[0.04] hover:text-foreground"
+                    ? "text-foreground"
+                    : "text-foreground/35"
                 )}
               >
-                <Icon className="h-4 w-4" />
+                <Icon className="h-[18px] w-[18px]" />
                 <span>{item.label}</span>
               </Link>
             );

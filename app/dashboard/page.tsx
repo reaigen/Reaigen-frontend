@@ -133,7 +133,7 @@ export default function DashboardPage() {
               value={searchInput}
               onChange={(e) => setSearchInput(e.target.value)}
               placeholder={t("dashboard.searchPlaceholder", lang)}
-              className="h-9 w-full border-0 border-b border-transparent bg-transparent pl-6 pr-8 text-[13px] outline-none placeholder:text-muted-foreground/60 focus:border-foreground/35"
+              className="h-9 w-full border-0 border-b border-border/30 bg-transparent pl-6 pr-8 text-[13px] outline-none transition-colors placeholder:text-muted-foreground/50 focus:border-foreground/40"
             />
             {searchInput && (
               <button
@@ -173,8 +173,8 @@ export default function DashboardPage() {
 
         {/* Cards */}
         {draftsLoading ? (
-          <div className="space-y-5">
-            {Array.from({ length: 3 }).map((_, i) => (
+          <div className={`grid grid-cols-1 gap-6 ${gridCols === 2 ? "md:grid-cols-2" : "mx-auto max-w-2xl"}`}>
+            {Array.from({ length: gridCols === 2 ? 4 : 3 }).map((_, i) => (
               <div key={i} className="animate-pulse">
                 <div className="aspect-[16/10] rounded-xl bg-muted/30" />
                 <div className="mt-3 space-y-2 px-1">
@@ -233,7 +233,7 @@ export default function DashboardPage() {
                   <div className="mt-2.5 px-0.5">
                     <div className="flex items-start justify-between gap-3">
                       <div className="min-w-0 flex-1">
-                        <h2 className="text-[15px] font-semibold leading-snug truncate">{draft.title}</h2>
+                        <h2 className="text-[15px] font-semibold leading-snug truncate">{draft.title || t("dashboard.untitled", lang)}</h2>
                         {address && (
                           <p className="mt-0.5 text-[13px] text-muted-foreground truncate">{address}</p>
                         )}

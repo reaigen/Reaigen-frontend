@@ -246,7 +246,7 @@ export default function SharesPage() {
         {/* Header */}
         <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           <div>
-            <h1 className="text-[18px] font-semibold tracking-tight sm:text-xl">{t("shares.title", lang)}</h1>
+            <h1 className="text-[20px] font-semibold tracking-tight">{t("shares.title", lang)}</h1>
             {shares.length > 0 && (
               <p className="text-[12px] text-muted-foreground mt-0.5">
                 {activeCount} {t("shares.summaryActive", lang)} · {shares.length} {t("shares.allShares", lang).toLowerCase()}

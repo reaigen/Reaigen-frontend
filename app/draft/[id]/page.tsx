@@ -419,7 +419,7 @@ export default function DraftPreviewPage({ params }: { params: Promise<{ id: str
         </button>
 
         {/* Gallery */}
-        <DraftImageGallery images={images} alt={draft.title} fallbackUrl={thumbUrl} />
+        <DraftImageGallery images={images} alt={draft.title} fallbackUrl={thumbUrl} lang={lang} />
 
         {/* Header */}
         <div className="mt-4 space-y-1">
@@ -428,7 +428,7 @@ export default function DraftPreviewPage({ params }: { params: Promise<{ id: str
               {enumT("offer", offerType, lang)}
             </span>
           ) : null}
-          <h1 className="text-[20px] font-semibold tracking-tight leading-tight">{draft.title}</h1>
+          <h1 className="text-[20px] font-semibold tracking-tight leading-tight">{draft.title || t("dashboard.untitled", lang)}</h1>
           {address && (
             <p className="flex items-center gap-1.5 text-[13px] text-muted-foreground">
               <svg width="13" height="13" viewBox="0 0 16 16" fill="none" className="flex-shrink-0"><path d="M8 1.5a4.5 4.5 0 0 1 4.5 4.5c0 3.5-4.5 8.5-4.5 8.5S3.5 9.5 3.5 6A4.5 4.5 0 0 1 8 1.5Z" stroke="currentColor" strokeWidth="1.2"/><circle cx="8" cy="6" r="1.5" stroke="currentColor" strokeWidth="1.2"/></svg>
