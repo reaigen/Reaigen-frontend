@@ -73,28 +73,37 @@ export default function DashboardPage() {
   const [searchInput, setSearchInput] = React.useState("");
   const [searchQuery, setSearchQuery] = React.useState("");
   const [gridCols, setGridCols] = React.useState<1 | 2>(2);
+  const abortRef = React.useRef<AbortController | null>(null);
 
   React.useEffect(() => {
     if (!isLoading && !isAuthenticated) router.replace("/");
   }, [isLoading, isAuthenticated, router]);
 
   const loadPage = React.useCallback(async (page: number, append: boolean) => {
+    // Cancel any in-flight search request to prevent race conditions
+    abortRef.current?.abort();
+    const controller = new AbortController();
+    abortRef.current = controller;
+
     const data = await listDrafts(page, 20, searchQuery);
+    // If this request was superseded, discard results
+    if (controller.signal.aborted) return;
+
     const results = data.results ?? [];
     setDrafts((prev) => append ? [...prev, ...results] : results);
     setHasMore(!!data.next);
     setTotalCount(data.count ?? 0);
     pageRef.current = page;
 
+    // Fire-and-forget: load splat IDs in the background so cards render immediately
     const map: Record<number, number> = {};
-    await Promise.all(
+    Promise.all(
       results.map((d) =>
         getSplatsByDraft(d.id)
           .then((res) => { if (res?.parent_splat_id) map[d.id] = res.parent_splat_id; else if (res?.splats?.[0]) map[d.id] = res.splats[0].splat_id; })
           .catch(() => {})
       )
-    );
-    setSplatIds((prev) => ({ ...prev, ...map }));
+    ).then(() => { if (!controller.signal.aborted) setSplatIds((prev) => ({ ...prev, ...map })); });
   }, [searchQuery]);
 
   React.useEffect(() => {
