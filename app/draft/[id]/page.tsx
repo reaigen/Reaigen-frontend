@@ -88,24 +88,24 @@ function sec(draft: DraftDetailItem, section: string, key: string): unknown {
 // ── Icons (16×16 SVG strokes) ─────────────────────────────────────────────
 
 const I = {
-  bed: <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" className="text-foreground/40 flex-shrink-0"><path d="M2 4v16"/><path d="M2 8h18a2 2 0 0 1 2 2v10"/><path d="M2 17h20"/><path d="M6 8v9"/></svg>,
-  bath: <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" className="text-foreground/40 flex-shrink-0"><path d="M4 12h16a1 1 0 0 1 1 1v3a4 4 0 0 1-4 4H7a4 4 0 0 1-4-4v-3a1 1 0 0 1 1-1Z"/><path d="M6 12V5a2 2 0 0 1 2-2h3v2.25"/><path d="M4 21l1-1.5"/><path d="M20 21l-1-1.5"/></svg>,
-  rooms: <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" className="text-foreground/40 flex-shrink-0"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 12h18"/><path d="M12 3v18"/></svg>,
-  area: <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" className="text-foreground/40 flex-shrink-0"><rect x="3" y="3" width="18" height="18" rx="1"/><path d="M3 9h18"/><path d="M9 3v18"/></svg>,
-  lot: <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" className="text-foreground/40 flex-shrink-0"><path d="M2 22l5-5"/><path d="M7 22H2v-5"/><path d="M22 2l-5 5"/><path d="M17 2h5v5"/><rect x="6" y="6" width="12" height="12" rx="1"/></svg>,
-  year: <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" className="text-foreground/40 flex-shrink-0"><rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4"/><path d="M8 2v4"/><path d="M3 10h18"/></svg>,
-  building: <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" className="text-foreground/40 flex-shrink-0"><rect x="4" y="2" width="16" height="20" rx="2"/><path d="M9 22v-4h6v4"/><path d="M8 6h.01M16 6h.01M12 6h.01M12 10h.01M12 14h.01M16 10h.01M16 14h.01M8 10h.01M8 14h.01"/></svg>,
-  floor: <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" className="text-foreground/40 flex-shrink-0"><path d="M22 20H2"/><path d="M6 20v-4"/><path d="M10 20V10"/><path d="M14 20V6"/><path d="M18 20V4"/></svg>,
-  condition: <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" className="text-foreground/40 flex-shrink-0"><circle cx="12" cy="12" r="10"/><path d="m9 12 2 2 4-4"/></svg>,
-  energy: <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" className="text-foreground/40 flex-shrink-0"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8Z"/></svg>,
-  heating: <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" className="text-foreground/40 flex-shrink-0"><path d="M8.5 14.5A2.5 2.5 0 0 0 11 12c0-1.38-.5-2-1-3-1.07-2.14 0-5.5 2.5-7 .75 1.5 1 2.5 1 4 0 2.5-1.5 3-2.5 5s-.5 3 1 5"/><path d="M12.5 18a2.5 2.5 0 0 0 0-5 2.5 2.5 0 0 0 0 5Z"/></svg>,
-  elevator: <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" className="text-foreground/40 flex-shrink-0"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M8 7l4-4 4 4"/><path d="M8 17l4 4 4-4"/></svg>,
-  parking: <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" className="text-foreground/40 flex-shrink-0"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M9 17V7h4a3 3 0 0 1 0 6H9"/></svg>,
-  compass: <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" className="text-foreground/40 flex-shrink-0"><circle cx="12" cy="12" r="10"/><path d="M16.24 7.76l-2.12 6.36-6.36 2.12 2.12-6.36 6.36-2.12Z"/></svg>,
-  water: <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" className="text-foreground/40 flex-shrink-0"><path d="M12 2s-6 7-6 11a6 6 0 0 0 12 0c0-4-6-11-6-11Z"/></svg>,
-  legal: <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" className="text-foreground/40 flex-shrink-0"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10Z"/></svg>,
-  money: <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" className="text-foreground/40 flex-shrink-0"><path d="M12 2v20M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>,
-  dot: <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" className="text-foreground/40 flex-shrink-0"><circle cx="12" cy="12" r="4"/></svg>,
+  bed: <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" className="text-foreground/55 flex-shrink-0"><path d="M2 4v16"/><path d="M2 8h18a2 2 0 0 1 2 2v10"/><path d="M2 17h20"/><path d="M6 8v9"/></svg>,
+  bath: <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" className="text-foreground/55 flex-shrink-0"><path d="M4 12h16a1 1 0 0 1 1 1v3a4 4 0 0 1-4 4H7a4 4 0 0 1-4-4v-3a1 1 0 0 1 1-1Z"/><path d="M6 12V5a2 2 0 0 1 2-2h3v2.25"/><path d="M4 21l1-1.5"/><path d="M20 21l-1-1.5"/></svg>,
+  rooms: <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" className="text-foreground/55 flex-shrink-0"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 12h18"/><path d="M12 3v18"/></svg>,
+  area: <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" className="text-foreground/55 flex-shrink-0"><rect x="3" y="3" width="18" height="18" rx="1"/><path d="M3 9h18"/><path d="M9 3v18"/></svg>,
+  lot: <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" className="text-foreground/55 flex-shrink-0"><path d="M2 22l5-5"/><path d="M7 22H2v-5"/><path d="M22 2l-5 5"/><path d="M17 2h5v5"/><rect x="6" y="6" width="12" height="12" rx="1"/></svg>,
+  year: <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" className="text-foreground/55 flex-shrink-0"><rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4"/><path d="M8 2v4"/><path d="M3 10h18"/></svg>,
+  building: <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" className="text-foreground/55 flex-shrink-0"><rect x="4" y="2" width="16" height="20" rx="2"/><path d="M9 22v-4h6v4"/><path d="M8 6h.01M16 6h.01M12 6h.01M12 10h.01M12 14h.01M16 10h.01M16 14h.01M8 10h.01M8 14h.01"/></svg>,
+  floor: <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" className="text-foreground/55 flex-shrink-0"><path d="M22 20H2"/><path d="M6 20v-4"/><path d="M10 20V10"/><path d="M14 20V6"/><path d="M18 20V4"/></svg>,
+  condition: <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" className="text-foreground/55 flex-shrink-0"><circle cx="12" cy="12" r="10"/><path d="m9 12 2 2 4-4"/></svg>,
+  energy: <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" className="text-foreground/55 flex-shrink-0"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8Z"/></svg>,
+  heating: <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" className="text-foreground/55 flex-shrink-0"><path d="M8.5 14.5A2.5 2.5 0 0 0 11 12c0-1.38-.5-2-1-3-1.07-2.14 0-5.5 2.5-7 .75 1.5 1 2.5 1 4 0 2.5-1.5 3-2.5 5s-.5 3 1 5"/><path d="M12.5 18a2.5 2.5 0 0 0 0-5 2.5 2.5 0 0 0 0 5Z"/></svg>,
+  elevator: <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" className="text-foreground/55 flex-shrink-0"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M8 7l4-4 4 4"/><path d="M8 17l4 4 4-4"/></svg>,
+  parking: <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" className="text-foreground/55 flex-shrink-0"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M9 17V7h4a3 3 0 0 1 0 6H9"/></svg>,
+  compass: <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" className="text-foreground/55 flex-shrink-0"><circle cx="12" cy="12" r="10"/><path d="M16.24 7.76l-2.12 6.36-6.36 2.12 2.12-6.36 6.36-2.12Z"/></svg>,
+  water: <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" className="text-foreground/55 flex-shrink-0"><path d="M12 2s-6 7-6 11a6 6 0 0 0 12 0c0-4-6-11-6-11Z"/></svg>,
+  legal: <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" className="text-foreground/55 flex-shrink-0"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10Z"/></svg>,
+  money: <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" className="text-foreground/55 flex-shrink-0"><path d="M12 2v20M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>,
+  dot: <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" className="text-foreground/55 flex-shrink-0"><circle cx="12" cy="12" r="4"/></svg>,
   check: <svg width="10" height="10" viewBox="0 0 16 16" fill="none" className="text-foreground/30 flex-shrink-0"><path d="M2 8l4 4 8-8" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/></svg>,
 };
 
@@ -470,6 +470,11 @@ export default function DraftPreviewPage({ params }: { params: Promise<{ id: str
   const hasTour = !!primarySplat;
   const primarySplatId = primarySplat ? (primarySplat.splat_id ?? primarySplat.id) : undefined;
   const thumbUrl = primarySplat?.signed_outputs?.thumbnail ?? null;
+  const hasMedia = images.length > 0 || !!thumbUrl;
+  const hasFloorplan = !!(
+    draft.floorplan_id ||
+    draft.draft_data?.some((d) => d.data_key === "captured_room_json" || d.data_key === "wall_graph_json")
+  );
 
 
   return (
@@ -481,12 +486,14 @@ export default function DraftPreviewPage({ params }: { params: Promise<{ id: str
           {t("common.back", lang)}
         </button>
 
-        {/* Gallery — full bleed on mobile */}
-        <div className="-mx-4 md:mx-0">
-          <div className="md:rounded-xl overflow-hidden">
-            <DraftImageGallery images={images} alt={draft.title} fallbackUrl={thumbUrl} lang={lang} />
+        {/* Gallery — only when there are photos or a tour thumbnail */}
+        {hasMedia && (
+          <div className="-mx-4 md:mx-0">
+            <div className="md:rounded-xl overflow-hidden">
+              <DraftImageGallery images={images} alt={draft.title} fallbackUrl={thumbUrl} lang={lang} />
+            </div>
           </div>
-        </div>
+        )}
 
         {/* Header */}
         <div className="mt-5 animate-fade-in-up">
@@ -513,7 +520,7 @@ export default function DraftPreviewPage({ params }: { params: Promise<{ id: str
         {facts.length > 0 && (
           <div className="mt-5 flex flex-wrap gap-2 animate-fade-in-up" style={{ animationDelay: "60ms" }}>
             {facts.map((f, i) => (
-              <div key={i} className="flex items-center gap-2.5 rounded-xl border border-border/40 px-3 py-2">
+              <div key={i} className="flex items-center gap-2.5 rounded-xl bg-foreground/[0.04] px-3 py-2">
                 {f.icon}
                 <div className="leading-tight">
                   <p className="text-[14px] font-semibold tabular-nums">{f.value}</p>
@@ -531,11 +538,11 @@ export default function DraftPreviewPage({ params }: { params: Promise<{ id: str
         {rows.length > 0 && (
           <div className="mt-5 animate-fade-in-up" style={{ animationDelay: "120ms" }}>
             <h2 className="text-[14px] font-semibold mb-2">{t("draft.details", lang)}</h2>
-            <div className="rounded-xl border border-border/40">
+            <div className="rounded-2xl bg-foreground/[0.03] overflow-hidden">
               {rows.map((r, i) => (
-                <div key={i} className={`grid grid-cols-[minmax(0,42%)_1fr] items-baseline gap-3 px-3.5 py-2.5 ${i < rows.length - 1 ? "border-b border-border/20" : ""}`}>
+                <div key={i} className={`flex items-baseline justify-between gap-4 px-4 py-2.5 ${i < rows.length - 1 ? "border-b border-black/[0.05]" : ""}`}>
                   <span className="text-[13px] text-muted-foreground">{r.label}</span>
-                  <span className="text-[13px] font-medium text-foreground tabular-nums">{r.value}</span>
+                  <span className="text-right text-[13px] font-medium text-foreground tabular-nums">{r.value}</span>
                 </div>
               ))}
             </div>
@@ -550,7 +557,7 @@ export default function DraftPreviewPage({ params }: { params: Promise<{ id: str
               <p className="text-[12px] text-foreground/40 italic mb-2">{t("draft.descriptionPending", lang)}</p>
             )}
             {description && (
-              <div className="rounded-xl border border-border/40 px-3.5 py-3">
+              <div className="rounded-2xl bg-foreground/[0.03] px-4 py-3.5">
                 <div className={`overflow-hidden transition-all duration-300 ${!descExpanded && descLong ? "max-h-[7.5em]" : "max-h-[200em]"}`}>
                   <p className="text-[13px] leading-[1.75] text-foreground/65 whitespace-pre-line">
                     {description}
@@ -572,7 +579,7 @@ export default function DraftPreviewPage({ params }: { params: Promise<{ id: str
             <h2 className="text-[14px] font-semibold mb-2">{t("draft.features", lang)}</h2>
             <div className="flex flex-wrap gap-1.5">
               {features.map((f) => (
-                <span key={f} className="inline-flex items-center gap-1 rounded-full border border-border/40 px-2.5 py-1 text-[12px] text-foreground/70">
+                <span key={f} className="inline-flex items-center gap-1 rounded-full bg-foreground/[0.04] px-2.5 py-1 text-[12px] text-foreground/70">
                   {I.check} {f}
                 </span>
               ))}
@@ -584,11 +591,11 @@ export default function DraftPreviewPage({ params }: { params: Promise<{ id: str
         {monthlyCosts.length > 0 && (
           <div className="mt-5 animate-fade-in-up" style={{ animationDelay: "300ms" }}>
             <h2 className="text-[14px] font-semibold mb-2">{t("draft.monthlyCosts", lang)}</h2>
-            <div className="rounded-xl border border-border/40">
+            <div className="rounded-2xl bg-foreground/[0.03] overflow-hidden">
               {monthlyCosts.map((r, i) => (
-                <div key={i} className={`grid grid-cols-[minmax(0,42%)_1fr] items-baseline gap-3 px-3.5 py-2.5 ${i < monthlyCosts.length - 1 ? "border-b border-border/20" : ""}`}>
+                <div key={i} className={`flex items-baseline justify-between gap-4 px-4 py-2.5 ${i < monthlyCosts.length - 1 ? "border-b border-black/[0.05]" : ""}`}>
                   <span className="text-[13px] text-muted-foreground">{r.label}</span>
-                  <span className="text-[13px] font-medium text-foreground tabular-nums">{r.value}</span>
+                  <span className="text-right text-[13px] font-medium text-foreground tabular-nums">{r.value}</span>
                 </div>
               ))}
             </div>
@@ -596,10 +603,10 @@ export default function DraftPreviewPage({ params }: { params: Promise<{ id: str
         )}
 
         {/* Floorplan */}
-        {draft.floorplan_id && draft.draft_data?.length > 0 && (
+        {hasFloorplan && (
           <div className="mt-5 animate-fade-in-up" style={{ animationDelay: "360ms" }}>
             <h2 className="text-[14px] font-semibold mb-2">{t("draft.floorplan", lang)}</h2>
-            <FloorplanViewer draftData={draft.draft_data} floorplanId={draft.floorplan_id} lang={lang} />
+            <FloorplanViewer draftData={draft.draft_data ?? []} floorplanId={draft.floorplan_id} lang={lang} />
           </div>
         )}
 

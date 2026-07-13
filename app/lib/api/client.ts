@@ -694,6 +694,7 @@ export interface GeometryMesh {
   id: string;
   points: number[][];
   faces: number[][];
+  hinge_xz?: number[];
 }
 
 export interface GeometryLayer {
