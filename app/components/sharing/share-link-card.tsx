@@ -186,8 +186,9 @@ export function ShareLinkCard({ share, lang, onUpdate, onEdit }: ShareLinkCardPr
       </div>
 
       {/* Expanded panel */}
-      {expanded && (
-        <div className="border-t border-border/40 px-4 py-3.5 space-y-3">
+      <div className="grid transition-[grid-template-rows] duration-200 ease-out" style={{ gridTemplateRows: expanded ? "1fr" : "0fr" }}>
+        <div className="overflow-hidden">
+          <div className={`border-t border-border/40 px-4 py-3.5 space-y-3 ${expanded ? "" : "invisible"}`}>
           {isLive && (
             <div className="flex items-center gap-2 rounded-lg border border-border/40 bg-foreground/[0.02] px-3 py-2">
               <p className="flex-1 text-[11px] font-mono text-foreground/70 truncate select-all">{shareUrl(share.token)}</p>
@@ -281,8 +282,9 @@ export function ShareLinkCard({ share, lang, onUpdate, onEdit }: ShareLinkCardPr
               )}
             </div>
           )}
+          </div>
         </div>
-      )}
+      </div>
     </div>
   );
 }

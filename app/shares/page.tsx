@@ -195,8 +195,9 @@ function ShareRow({
       </div>
 
       {/* Expanded detail panel */}
-      {expanded && (
-        <div className="border-t border-border/40 px-4 py-3.5 space-y-3">
+      <div className="grid transition-[grid-template-rows] duration-200 ease-out" style={{ gridTemplateRows: expanded ? "1fr" : "0fr" }}>
+        <div className="overflow-hidden">
+          <div className={`border-t border-border/40 px-4 py-3.5 space-y-3 ${expanded ? "" : "invisible"}`}>
           {/* URL row */}
           {isLive && (
             <div className="flex items-center gap-2 rounded-lg border border-border/40 bg-foreground/[0.02] px-3 py-2">
@@ -298,8 +299,9 @@ function ShareRow({
               )}
             </div>
           )}
+          </div>
         </div>
-      )}
+      </div>
     </div>
   );
 }
@@ -321,14 +323,17 @@ export default function SharesPage() {
 
   React.useEffect(() => {
     if (!isAuthenticated) return;
-    Promise.all([
-      listShares().then(setShares).catch(() => setShares([])),
-      listSplats(1, 50).then((res) => {
-        const map: Record<number, { title: string; splatId: number }> = {};
-        for (const s of (res.results ?? [])) { if (s.source_draft) map[s.source_draft] = { title: s.title, splatId: s.id }; }
-        setSplatsByDraft(map);
-      }).catch(() => {}),
-    ]).finally(() => setLoading(false));
+    // Show shares immediately, load splat names in background
+    listShares()
+      .then(setShares)
+      .catch(() => setShares([]))
+      .finally(() => setLoading(false));
+    // Background: fetch splat titles for fallback names
+    listSplats(1, 50).then((res) => {
+      const map: Record<number, { title: string; splatId: number }> = {};
+      for (const s of (res.results ?? [])) { if (s.source_draft) map[s.source_draft] = { title: s.title, splatId: s.id }; }
+      setSplatsByDraft(map);
+    }).catch(() => {});
   }, [isAuthenticated]);
 
   const handleShareUpdate = React.useCallback((id: number, updated: ShareData | null) => {

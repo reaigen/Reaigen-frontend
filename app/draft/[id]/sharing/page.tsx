@@ -118,12 +118,38 @@ export default function SharingPage({ params }: { params: Promise<{ id: string }
 
   if (isLoading || (loading && !draft)) {
     return (
-      <div className="min-h-screen flex items-center justify-center">
-        <div className="text-center space-y-3">
-          <div className="animate-spin h-7 w-7 border-2 border-foreground/15 border-t-foreground/60 rounded-full mx-auto" />
-          <p className="text-xs text-muted-foreground">{t("draft.loading", lang)}</p>
+      <AppShell user={user ?? { email: "" }} onLogout={logout}>
+        <div className="mx-auto w-full max-w-5xl pb-10">
+          {/* Skeleton header */}
+          <div className="mb-5 flex items-center gap-2">
+            <div className="h-4 w-12 rounded bg-muted/40 animate-pulse" />
+            <div className="h-4 w-40 rounded bg-muted/30 animate-pulse" />
+          </div>
+          {/* Skeleton two-panel */}
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+            <div className="lg:order-2 space-y-4">
+              <div className="rounded-xl border border-border/40 p-4 space-y-3 animate-pulse">
+                <div className="h-4 w-1/3 rounded bg-muted/40" />
+                <div className="h-10 w-full rounded-lg bg-muted/25" />
+                <div className="h-10 w-full rounded-lg bg-muted/25" />
+                <div className="h-9 w-full rounded-lg bg-muted/30" />
+              </div>
+            </div>
+            <div className="lg:order-1">
+              <div className="space-y-3 animate-pulse">
+                <div className="h-3 w-20 rounded bg-muted/30" />
+                <div className="rounded-2xl border border-border/40 overflow-hidden">
+                  <div className="aspect-[16/9] bg-muted/20" />
+                  <div className="px-4 py-3 space-y-2">
+                    <div className="h-4 w-2/3 rounded bg-muted/40" />
+                    <div className="h-3 w-1/2 rounded bg-muted/25" />
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
         </div>
-      </div>
+      </AppShell>
     );
   }
 
