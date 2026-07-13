@@ -47,6 +47,26 @@ export interface CameraData {
   cached?: boolean;
 }
 
+export interface SharedDraftData {
+  title?: string;
+  description?: string;
+  display_address?: string;
+  price?: string | number | null;
+  currency?: string;
+  bedrooms?: number | null;
+  bathrooms?: number | null;
+  area?: string | number | null;
+  area_unit?: string;
+  lot_size?: string | number | null;
+  lot_size_unit?: string;
+  year_built?: number | null;
+  city?: string;
+  state?: string;
+  country?: string;
+  uploads?: { url: string; name?: string; mime_type?: string }[];
+  data?: { key: string; value: string }[];
+}
+
 export interface TourViewerData {
   id: number;
   splat_id?: number;
@@ -64,6 +84,16 @@ export interface TourViewerData {
   rooms: RoomData[];
   room_splats: RoomSplatData[];
   cameras: { cameras: { position: number[]; forward: number[]; up?: number[] }[]; fovY?: number; sceneFov?: number } | null;
+  draft_data?: SharedDraftData | null;
+}
+
+export interface ShareFieldData {
+  id: number;
+  field_type: string;
+  field_name: string;
+  is_visible: boolean;
+  custom_label: string | null;
+  sort_order: number;
 }
 
 export interface ShareData {
@@ -75,14 +105,47 @@ export interface ShareData {
   share_context: string;
   status: string;
   title: string;
+  description: string;
   expires_at: string | null;
   max_access_count: number | null;
   max_accesses: number | null;
   access_count: number;
   requires_pin: boolean;
   is_accessible: boolean;
+  fields: ShareFieldData[];
+  data_features: string[] | null;
   created_at: string;
+  updated_at: string;
 }
+
+// ─── Share Field Bundles & Groups ──────────────────────────────────────
+
+/** Mirrors backend DraftShareField bundles */
+export const SHARE_BUNDLES = {
+  minimal: ["title"],
+  less: ["title", "description", "display_address", "price", "currency", "bedrooms", "bathrooms", "area", "area_unit", "uploads"],
+  all: [
+    "title", "description", "display_address", "price", "currency",
+    "bedrooms", "bathrooms", "area", "area_unit", "lot_size", "lot_size_unit",
+    "year_built", "city", "state", "country", "uploads", "data", "pipeline",
+  ],
+} as const;
+
+export type ShareBundleName = keyof typeof SHARE_BUNDLES;
+
+/** All known share field names */
+export const ALL_SHARE_FIELDS = SHARE_BUNDLES.all;
+
+/** Logical UI groupings for field permission toggles */
+export const SHARE_FIELD_GROUPS = [
+  { key: "basics", fields: ["title", "description", "display_address"] },
+  { key: "pricing", fields: ["price", "currency"] },
+  { key: "specs", fields: ["bedrooms", "bathrooms", "area", "area_unit", "lot_size", "lot_size_unit", "year_built"] },
+  { key: "location", fields: ["city", "state", "country"] },
+  { key: "media", fields: ["uploads"] },
+  { key: "features", fields: ["data"] },
+  { key: "processing", fields: ["pipeline"] },
+] as const;
 
 export interface RoomData {
   id: number;

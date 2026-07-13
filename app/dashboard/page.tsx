@@ -4,7 +4,6 @@ import * as React from "react";
 import { useRouter } from "next/navigation";
 import { useAuth } from "../components/hooks/use-auth";
 import { AppShell } from "../components/app-shell";
-import { Button } from "../lib/ui/button";
 import { t, getUserLanguage } from "../lib/i18n";
 import { listDrafts, getSplatsByDraft } from "../lib/api/client";
 import type { DraftListingItem } from "../lib/tour-types";
@@ -80,6 +79,7 @@ export default function DashboardPage() {
     localStorage.setItem("reaigen:gridCols", String(cols));
   }, []);
   const abortRef = React.useRef<AbortController | null>(null);
+  const sentinelRef = React.useRef<HTMLDivElement>(null);
 
   React.useEffect(() => {
     if (!isLoading && !isAuthenticated) router.replace("/");
@@ -113,7 +113,7 @@ export default function DashboardPage() {
   }, [searchQuery]);
 
   React.useEffect(() => {
-    const timer = setTimeout(() => setSearchQuery(searchInput.trim()), 250);
+    const timer = setTimeout(() => setSearchQuery(searchInput.trim()), 150);
     return () => clearTimeout(timer);
   }, [searchInput]);
 
@@ -128,6 +128,42 @@ export default function DashboardPage() {
     try { await loadPage(pageRef.current + 1, true); } catch {}
     setLoadingMore(false);
   }, [loadPage]);
+
+  // Infinite scroll: observe sentinel div to auto-load next page
+  React.useEffect(() => {
+    if (!hasMore || loadingMore) return;
+    const el = sentinelRef.current;
+    if (!el) return;
+    const observer = new IntersectionObserver(
+      ([entry]) => { if (entry.isIntersecting) handleLoadMore(); },
+      { rootMargin: "400px" }
+    );
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, [hasMore, loadingMore, handleLoadMore]);
+
+  // Background polling: refresh page 1 every 60s when tab is visible
+  React.useEffect(() => {
+    if (!isAuthenticated) return;
+    const poll = () => {
+      if (document.hidden) return;
+      listDrafts(1, 20, searchQuery).then((data) => {
+        const results = data.results ?? [];
+        if (results[0]?.id !== drafts[0]?.id || results.length !== Math.min(drafts.length, 20)) {
+          setDrafts((prev) => {
+            const appended = prev.slice(20);
+            return [...results, ...appended];
+          });
+          setTotalCount(data.count ?? 0);
+          setHasMore(!!data.next);
+        }
+      }).catch(() => {});
+    };
+    const id = setInterval(poll, 60_000);
+    const onVisible = () => { if (document.visibilityState === "visible") poll(); };
+    document.addEventListener("visibilitychange", onVisible);
+    return () => { clearInterval(id); document.removeEventListener("visibilitychange", onVisible); };
+  }, [isAuthenticated, searchQuery, drafts]);
 
   if (isLoading || !user) {
     return (
@@ -169,9 +205,11 @@ export default function DashboardPage() {
             )}
           </label>
           <div className="flex items-center gap-2 shrink-0">
-            <span className="text-[12px] text-muted-foreground tabular-nums">
-              {drafts.length}{totalCount > 0 ? ` / ${totalCount}` : ""}
-            </span>
+            {totalCount > 0 && (
+              <span className="text-[12px] text-muted-foreground tabular-nums">
+                {totalCount}
+              </span>
+            )}
             <div className="hidden md:flex items-center gap-0.5 rounded-md bg-foreground/[0.04] p-0.5">
               <button
                 type="button"
@@ -295,15 +333,18 @@ export default function DashboardPage() {
             })}
 
           </div>
-          {hasMore && (
-            <div className="flex justify-center pt-4 pb-4">
-              <Button variant="ghost" size="sm" className="text-[12px] text-muted-foreground" onClick={handleLoadMore} disabled={loadingMore}>
-                {loadingMore ? (
-                  <div className="animate-spin h-4 w-4 border-2 border-foreground/15 border-t-foreground/60 rounded-full" />
-                ) : (
-                  t("dashboard.loadMore", lang)
-                )}
-              </Button>
+          {hasMore && <div ref={sentinelRef} className="h-px" />}
+          {loadingMore && (
+            <div className={`grid grid-cols-1 gap-6 pt-6 ${gridCols === 2 ? "md:grid-cols-2" : "mx-auto max-w-2xl"}`}>
+              {Array.from({ length: gridCols === 2 ? 2 : 1 }).map((_, i) => (
+                <div key={i} className="animate-pulse">
+                  <div className="aspect-[16/10] rounded-xl bg-muted/30" />
+                  <div className="mt-3 space-y-2 px-1">
+                    <div className="h-4 w-2/3 rounded bg-muted/40" />
+                    <div className="h-3 w-1/2 rounded bg-muted/30" />
+                  </div>
+                </div>
+              ))}
             </div>
           )}
           </>

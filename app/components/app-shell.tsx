@@ -63,7 +63,7 @@ export function AppShell({
         <div className="pt-5 px-5 pb-6">
           <Link href="/dashboard" className="inline-block">
             <span
-              className="text-[28px]"
+              className="text-[32px]"
               style={{ fontFamily: 'var(--font-brand), ui-serif, Georgia, serif', fontWeight: 400, letterSpacing: '0.01em' }}
             >
               Reaigen
