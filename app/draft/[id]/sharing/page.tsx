@@ -132,7 +132,7 @@ export default function SharingPage({ params }: { params: Promise<{ id: string }
       <div className="min-h-screen flex items-center justify-center px-4">
         <div className="text-center space-y-4 max-w-xs">
           <p className="text-[14px] font-medium text-foreground/70">{error || t("draft.error.failedTitle", lang)}</p>
-          <Button variant="outline" size="sm" onClick={() => router.push(`/draft/${draftId}`)}>{t("common.goBack", lang)}</Button>
+          <Button variant="outline" size="sm" onClick={() => router.back()}>{t("common.goBack", lang)}</Button>
         </div>
       </div>
     );
@@ -146,7 +146,7 @@ export default function SharingPage({ params }: { params: Promise<{ id: string }
         {/* Header */}
         <div className="mb-5 flex items-center gap-2">
           <button
-            onClick={() => router.push(`/draft/${draftId}`)}
+            onClick={() => router.back()}
             className="flex items-center gap-1 text-[13px] text-muted-foreground hover:text-foreground transition-colors shrink-0"
           >
             <svg width="14" height="14" viewBox="0 0 16 16" fill="none"><path d="M10 12L6 8L10 4" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/></svg>
