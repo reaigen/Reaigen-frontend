@@ -603,6 +603,8 @@ const sk: LocaleStrings = {
   "draft.totalFloors":                   "Celkový počet poschodí",
   "draft.share":                         "Zdieľať",
   "draft.viewTour":                      "Zobraziť 3D prehliadku",
+  "draft.tourAvailable":                 "Dostupná interaktívna 3D prehliadka",
+  "draft.details":                       "Detaily",
   "draft.viewListing":                   "Zobraziť ponuku",
   "draft.noImages":                      "Žiadne obrázky",
   "draft.imageOf":                       "z",

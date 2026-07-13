@@ -54,6 +54,8 @@ async function request(path: string, options: RequestInit = {}) {
       });
       if (!res.ok) {
         const body = await res.text();
+        // 401 = session expired — flush entire cache so re-auth gets fresh data
+        if (res.status === 401) cache.clear();
         throw new ApiError(res.status, body);
       }
       const text = await res.text();
@@ -63,7 +65,7 @@ async function request(path: string, options: RequestInit = {}) {
     })();
 
     inFlight.set(path, promise);
-    promise.finally(() => inFlight.delete(path));
+    promise.catch(() => {}).finally(() => inFlight.delete(path));
     return promise;
   }
 

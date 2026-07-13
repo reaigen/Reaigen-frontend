@@ -6,7 +6,7 @@
  * photos with lightbox, specs, and description in a clean branded layout.
  */
 
-import { useState } from "react";
+import { useState, useCallback } from "react";
 import { t } from "../lib/i18n";
 import type { SharedDraftData, RoomData } from "../lib/tour-types";
 
@@ -36,6 +36,21 @@ const I = {
 
 // ── Lightbox ───────────────────────────────────────────────────────────
 
+/** Image that fades in when loaded */
+function LightboxImage({ src, alt }: { src: string; alt: string }) {
+  const [loaded, setLoaded] = useState(false);
+  return (
+    // eslint-disable-next-line @next/next/no-img-element
+    <img
+      src={src}
+      alt={alt}
+      className={`max-h-[85dvh] max-w-[92vw] object-contain rounded-lg shadow-2xl transition-opacity duration-300 ${loaded ? "opacity-100" : "opacity-0"}`}
+      onClick={(e) => e.stopPropagation()}
+      onLoad={() => setLoaded(true)}
+    />
+  );
+}
+
 function Lightbox({ photos, index, onClose, onNav }: {
   photos: { url: string; name?: string }[];
   index: number;
@@ -58,8 +73,7 @@ function Lightbox({ photos, index, onClose, onNav }: {
           </button>
         </>
       )}
-      {/* eslint-disable-next-line @next/next/no-img-element */}
-      <img src={photos[index].url} alt={photos[index].name || ""} className="max-h-[85dvh] max-w-[92vw] object-contain rounded-lg shadow-2xl" onClick={(e) => e.stopPropagation()} />
+      <LightboxImage src={photos[index].url} alt={photos[index].name || ""} />
       {multi && <div className="absolute bottom-4 left-1/2 -translate-x-1/2 text-white/50 text-[12px] font-medium bg-black/40 px-3 py-1 rounded-full">{index + 1} / {photos.length}</div>}
     </div>
   );
@@ -297,7 +311,13 @@ export function SharedDraftView({ draftData, lang, hasTour, onOpenTour, floorpla
             {has.photos && photos.length > 1 && (
               <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
                 {photos.map((p, i) => (
-                  <button key={i} type="button" onClick={() => setLightboxIdx(i)} className="aspect-[4/3] rounded-xl overflow-hidden bg-muted/20 hover:opacity-90 transition-opacity">
+                  <button
+                    key={i}
+                    type="button"
+                    onClick={() => setLightboxIdx(i)}
+                    className="aspect-[4/3] rounded-xl overflow-hidden bg-muted/20 hover:opacity-90 transition-opacity opacity-0 animate-fade-in-up [animation-fill-mode:forwards]"
+                    style={{ animationDelay: `${i * 60}ms` }}
+                  >
                     {/* eslint-disable-next-line @next/next/no-img-element */}
                     <img src={p.url} alt={p.name || ""} className="w-full h-full object-cover" />
                   </button>

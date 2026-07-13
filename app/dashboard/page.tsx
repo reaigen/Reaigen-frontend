@@ -155,13 +155,13 @@ export default function DashboardPage() {
               value={searchInput}
               onChange={(e) => setSearchInput(e.target.value)}
               placeholder={t("dashboard.searchPlaceholder", lang)}
-              className="h-9 w-full border-0 border-b border-border/30 bg-transparent pl-6 pr-8 text-[13px] outline-none transition-colors placeholder:text-muted-foreground/50 focus:border-foreground/40"
+              className="h-9 w-full border-0 border-b border-border/20 bg-transparent pl-6 pr-8 text-[13px] outline-none transition-colors placeholder:text-muted-foreground/50 focus:border-foreground/40"
             />
             {searchInput && (
               <button
                 type="button"
                 onClick={() => { setSearchInput(""); setSearchQuery(""); }}
-                className="absolute right-0 top-1/2 -translate-y-1/2 rounded p-1 text-muted-foreground hover:text-foreground"
+                className="absolute right-0 top-1/2 -translate-y-1/2 rounded-lg p-1 text-muted-foreground hover:text-foreground transition-colors"
                 aria-label={t("dashboard.clearSearch", lang)}
               >
                 <svg width="13" height="13" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M4.5 4.5L11.5 11.5M11.5 4.5L4.5 11.5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" /></svg>
@@ -297,7 +297,7 @@ export default function DashboardPage() {
           </div>
           {hasMore && (
             <div className="flex justify-center pt-4 pb-4">
-              <Button variant="ghost" size="sm" className="text-[12px] text-foreground/45" onClick={handleLoadMore} disabled={loadingMore}>
+              <Button variant="ghost" size="sm" className="text-[12px] text-muted-foreground" onClick={handleLoadMore} disabled={loadingMore}>
                 {loadingMore ? (
                   <div className="animate-spin h-4 w-4 border-2 border-foreground/15 border-t-foreground/60 rounded-full" />
                 ) : (

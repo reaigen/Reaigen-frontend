@@ -5,6 +5,22 @@ import { createPortal } from "react-dom";
 import { Thumbnail } from "./thumbnail";
 import { t } from "../lib/i18n";
 
+/** Image that fades in when loaded — used inside lightbox */
+function FadeImg({ src, alt, className = "" }: { src: string; alt: string; className?: string }) {
+  const [loaded, setLoaded] = useState(false);
+  return (
+    // eslint-disable-next-line @next/next/no-img-element
+    <img
+      src={src}
+      alt={alt}
+      className={`${className} transition-opacity duration-300 ${loaded ? "opacity-100" : "opacity-0"}`}
+      draggable={false}
+      onLoad={() => setLoaded(true)}
+      onClick={(e) => e.stopPropagation()}
+    />
+  );
+}
+
 interface DraftImageGalleryProps {
   images: { url: string; thumbnail_url?: string | null }[];
   alt: string;
@@ -32,10 +48,12 @@ function Lightbox({
   const [index, setIndex] = useState(startIndex);
   const count = images.length;
 
-  // Scroll to start position on mount
+  // Scroll to start position on mount (RAF ensures element is sized)
   useEffect(() => {
-    const el = scrollRef.current;
-    if (el) el.scrollTo({ left: startIndex * el.clientWidth, behavior: "instant" as ScrollBehavior });
+    requestAnimationFrame(() => {
+      const el = scrollRef.current;
+      if (el && el.clientWidth > 0) el.scrollTo({ left: startIndex * el.clientWidth, behavior: "instant" as ScrollBehavior });
+    });
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Track scroll position
@@ -79,98 +97,87 @@ function Lightbox({
   };
 
   const content = (
-    <div className="fixed inset-0 bg-background flex flex-col animate-fade-in" style={{ zIndex: 9999 }}>
-      {/* Top bar */}
-      <div className="flex items-center justify-between px-3 py-2.5 border-b border-border/50 shrink-0">
-        <button
-          type="button"
-          onClick={onClose}
-          className="flex items-center gap-1 rounded-lg px-2 py-1.5 text-[13px] text-foreground/70 hover:text-foreground hover:bg-foreground/[0.05] transition-colors"
-        >
-          <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
-            <path d="M10 12L6 8l4-4" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
-          </svg>
-          {t("common.back", lang)}
-        </button>
-        <span className="text-[13px] text-muted-foreground tabular-nums">
-          {index + 1} / {count}
-        </span>
-      </div>
+    <div className="fixed inset-0 bg-black/95 flex items-center justify-center animate-fade-in" style={{ zIndex: 9999 }} onClick={onClose}>
+      {/* Close button */}
+      <button
+        type="button"
+        onClick={onClose}
+        className="absolute top-4 right-4 z-10 flex h-10 w-10 items-center justify-center rounded-full bg-white/10 text-white/70 hover:bg-white/20 hover:text-white transition-colors"
+        aria-label={t("common.back", lang)}
+      >
+        <svg width="18" height="18" viewBox="0 0 16 16" fill="none">
+          <path d="M4 4l8 8M12 4l-8 8" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+        </svg>
+      </button>
 
-      {/* Scrollable images — tap background to close */}
+      {/* Counter */}
+      {count > 1 && (
+        <div className="absolute top-4 left-1/2 -translate-x-1/2 z-10 text-[13px] text-white/50 font-medium tabular-nums">
+          {index + 1} / {count}
+        </div>
+      )}
+
+      {/* Prev arrow */}
+      <button
+        type="button"
+        onClick={(e) => { e.stopPropagation(); goTo(index - 1); }}
+        className={`absolute left-3 top-1/2 -translate-y-1/2 z-10 flex h-10 w-10 items-center justify-center rounded-full bg-white/10 text-white/70 hover:bg-white/20 hover:text-white transition-all duration-200 ${index > 0 ? "opacity-100" : "opacity-0 pointer-events-none"}`}
+        aria-label="Previous"
+      >
+        <svg width="20" height="20" viewBox="0 0 16 16" fill="none">
+          <path d="M10 12L6 8l4-4" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+        </svg>
+      </button>
+
+      {/* Next arrow */}
+      <button
+        type="button"
+        onClick={(e) => { e.stopPropagation(); goTo(index + 1); }}
+        className={`absolute right-3 top-1/2 -translate-y-1/2 z-10 flex h-10 w-10 items-center justify-center rounded-full bg-white/10 text-white/70 hover:bg-white/20 hover:text-white transition-all duration-200 ${index < count - 1 ? "opacity-100" : "opacity-0 pointer-events-none"}`}
+        aria-label="Next"
+      >
+        <svg width="20" height="20" viewBox="0 0 16 16" fill="none">
+          <path d="M6 4l4 4-4 4" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+        </svg>
+      </button>
+
+      {/* Scrollable images */}
       <div
         ref={scrollRef}
-        className="flex flex-1 min-h-0 w-full overflow-x-auto scrollbar-none items-stretch"
+        className="flex w-full h-full overflow-x-auto scrollbar-none items-stretch"
         style={{ scrollSnapType: "x mandatory", WebkitOverflowScrolling: "touch" }}
-        onClick={onClose}
       >
         {images.map((img, i) => (
           <div
             key={img.url}
-            className="flex w-full flex-none items-center justify-center p-4 sm:p-10"
+            className="flex w-full flex-none items-center justify-center px-14 py-16"
             style={{ scrollSnapAlign: "start" }}
           >
-            {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img
+            <FadeImg
               src={img.url}
               alt={`${alt} ${i + 1}`}
-              className="max-h-full max-w-full object-contain select-none rounded-lg"
-              draggable={false}
-              onClick={(e) => e.stopPropagation()}
+              className="max-h-full max-w-full object-contain select-none rounded-lg shadow-2xl"
             />
           </div>
         ))}
       </div>
 
-      {/* Bottom bar: arrows + dots */}
-      <div className="flex items-center justify-between px-4 py-3 border-t border-border/50 shrink-0">
-        {/* Prev arrow */}
-        <button
-          type="button"
-          onClick={() => goTo(index - 1)}
-          disabled={index === 0}
-          className="flex h-8 w-8 items-center justify-center rounded-full text-foreground/40 hover:text-foreground hover:bg-foreground/[0.05] transition-colors disabled:opacity-20 disabled:pointer-events-none"
-          aria-label="Previous"
-        >
-          <svg width="18" height="18" viewBox="0 0 16 16" fill="none">
-            <path d="M10 12L6 8l4-4" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
-          </svg>
-        </button>
-
-        {/* Dots / counter */}
-        {count <= 12 ? (
-          <div className="flex gap-1.5" role="tablist">
-            {images.map((_, i) => (
-              <button
-                key={i}
-                type="button"
-                role="tab"
-                aria-selected={i === index}
-                aria-label={`Image ${i + 1}`}
-                onClick={() => goTo(i)}
-                className={`h-1.5 rounded-full transition-all duration-200 ${
-                  i === index ? "w-4 bg-foreground/60" : "w-1.5 bg-foreground/15"
-                }`}
-              />
-            ))}
-          </div>
-        ) : (
-          <span className="text-[12px] text-muted-foreground tabular-nums">{index + 1} / {count}</span>
-        )}
-
-        {/* Next arrow */}
-        <button
-          type="button"
-          onClick={() => goTo(index + 1)}
-          disabled={index >= count - 1}
-          className="flex h-8 w-8 items-center justify-center rounded-full text-foreground/40 hover:text-foreground hover:bg-foreground/[0.05] transition-colors disabled:opacity-20 disabled:pointer-events-none"
-          aria-label="Next"
-        >
-          <svg width="18" height="18" viewBox="0 0 16 16" fill="none">
-            <path d="M6 4l4 4-4 4" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
-          </svg>
-        </button>
-      </div>
+      {/* Dot indicators */}
+      {count > 1 && count <= 12 && (
+        <div className="absolute bottom-5 left-1/2 -translate-x-1/2 z-10 flex gap-1.5">
+          {images.map((_, i) => (
+            <button
+              key={i}
+              type="button"
+              aria-label={`Image ${i + 1}`}
+              onClick={(e) => { e.stopPropagation(); goTo(i); }}
+              className={`h-1.5 rounded-full transition-all duration-200 ${
+                i === index ? "w-4 bg-white/80" : "w-1.5 bg-white/25"
+              }`}
+            />
+          ))}
+        </div>
+      )}
     </div>
   );
 
@@ -275,31 +282,27 @@ export function DraftImageGallery({ images, alt, fallbackUrl, lang = "en" }: Dra
           ))}
         </div>
 
-        {/* Prev / Next arrows */}
-        {activeIndex > 0 && (
-          <button
-            type="button"
-            onClick={(e) => { e.stopPropagation(); goPrev(); }}
-            className="absolute left-2 top-1/2 -translate-y-1/2 flex h-8 w-8 items-center justify-center rounded-full bg-black/30 text-white backdrop-blur-sm transition-opacity hover:bg-black/50 sm:h-9 sm:w-9"
-            aria-label="Previous"
-          >
-            <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
-              <path d="M10 12L6 8l4-4" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
-            </svg>
-          </button>
-        )}
-        {activeIndex < count - 1 && (
-          <button
-            type="button"
-            onClick={(e) => { e.stopPropagation(); goNext(); }}
-            className="absolute right-2 top-1/2 -translate-y-1/2 flex h-8 w-8 items-center justify-center rounded-full bg-black/30 text-white backdrop-blur-sm transition-opacity hover:bg-black/50 sm:h-9 sm:w-9"
-            aria-label="Next"
-          >
-            <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
-              <path d="M6 4l4 4-4 4" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
-            </svg>
-          </button>
-        )}
+        {/* Prev / Next arrows (always rendered, fade via opacity) */}
+        <button
+          type="button"
+          onClick={(e) => { e.stopPropagation(); goPrev(); }}
+          className={`absolute left-3 top-1/2 -translate-y-1/2 flex h-9 w-9 items-center justify-center rounded-full bg-white/90 text-foreground/70 shadow-sm backdrop-blur-sm transition-all duration-200 hover:bg-white hover:text-foreground hover:shadow-md sm:h-10 sm:w-10 ${activeIndex > 0 ? "opacity-100 scale-100" : "opacity-0 scale-90 pointer-events-none"}`}
+          aria-label="Previous"
+        >
+          <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+            <path d="M10 12L6 8l4-4" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+          </svg>
+        </button>
+        <button
+          type="button"
+          onClick={(e) => { e.stopPropagation(); goNext(); }}
+          className={`absolute right-3 top-1/2 -translate-y-1/2 flex h-9 w-9 items-center justify-center rounded-full bg-white/90 text-foreground/70 shadow-sm backdrop-blur-sm transition-all duration-200 hover:bg-white hover:text-foreground hover:shadow-md sm:h-10 sm:w-10 ${activeIndex < count - 1 ? "opacity-100 scale-100" : "opacity-0 scale-90 pointer-events-none"}`}
+          aria-label="Next"
+        >
+          <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+            <path d="M6 4l4 4-4 4" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+          </svg>
+        </button>
 
         {/* Dot indicators / counter */}
         <div className="absolute bottom-3 inset-x-0 flex justify-center pointer-events-none">

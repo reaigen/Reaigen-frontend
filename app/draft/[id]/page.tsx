@@ -480,49 +480,50 @@ export default function DraftPreviewPage({ params }: { params: Promise<{ id: str
 
   return (
     <AppShell user={user} onLogout={logout}>
-      <div className="mx-auto w-full max-w-2xl animate-fade-in pb-10">
+      <div className="mx-auto w-full max-w-2xl pb-16 md:pb-10">
         {/* Back */}
-        <button onClick={() => router.back()} className="mb-3 flex items-center gap-1 text-[13px] text-muted-foreground hover:text-foreground transition-colors">
-          <svg width="14" height="14" viewBox="0 0 16 16" fill="none"><path d="M10 12L6 8L10 4" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/></svg>
+        <button onClick={() => router.back()} className="mb-4 inline-flex items-center gap-1.5 rounded-xl px-2 py-1.5 -ml-2 text-[13px] text-muted-foreground hover:text-foreground hover:bg-foreground/[0.04] transition-colors">
+          <svg width="15" height="15" viewBox="0 0 16 16" fill="none"><path d="M10 12L6 8L10 4" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/></svg>
           {t("common.back", lang)}
         </button>
 
-        {/* Gallery */}
-        <DraftImageGallery images={images} alt={draft.title} fallbackUrl={thumbUrl} lang={lang} />
+        {/* Gallery — full bleed on mobile */}
+        <div className="-mx-4 md:mx-0">
+          <div className="md:rounded-xl overflow-hidden">
+            <DraftImageGallery images={images} alt={draft.title} fallbackUrl={thumbUrl} lang={lang} />
+          </div>
+        </div>
 
         {/* Header */}
-        <div className="mt-4 space-y-1">
+        <div className="mt-4 opacity-0 animate-fade-in-up [animation-fill-mode:forwards]">
           {offerType ? (
-            <span className="inline-block text-[11px] font-medium uppercase tracking-wider text-foreground/40 mb-0.5">
+            <p className="text-[11px] font-medium uppercase tracking-wider text-foreground/40 mb-1">
               {enumT("offer", offerType, lang)}
-            </span>
-          ) : null}
-          <h1 className="text-[20px] font-semibold tracking-tight leading-tight">{draft.title || t("dashboard.untitled", lang)}</h1>
-          {address && (
-            <p className="flex items-center gap-1.5 text-[13px] text-muted-foreground">
-              <svg width="13" height="13" viewBox="0 0 16 16" fill="none" className="flex-shrink-0"><path d="M8 1.5a4.5 4.5 0 0 1 4.5 4.5c0 3.5-4.5 8.5-4.5 8.5S3.5 9.5 3.5 6A4.5 4.5 0 0 1 8 1.5Z" stroke="currentColor" strokeWidth="1.2"/><circle cx="8" cy="6" r="1.5" stroke="currentColor" strokeWidth="1.2"/></svg>
-              {address}
             </p>
+          ) : null}
+          <h1 className="text-[20px] font-bold tracking-tight leading-tight">{draft.title || t("dashboard.untitled", lang)}</h1>
+          {address && (
+            <p className="mt-1 text-[13px] text-muted-foreground">{address}</p>
           )}
           {price && (
-            <div className="pt-0.5">
-              <p className="text-[18px] font-semibold text-foreground">{price}</p>
+            <p className="mt-2 text-[24px] font-bold tabular-nums">
+              {price}
               {showOrigPrice && (
-                <p className="text-[12px] text-muted-foreground">{origPrice}</p>
+                <span className="ml-2 text-[13px] font-normal text-muted-foreground tabular-nums">{origPrice}</span>
               )}
-            </div>
+            </p>
           )}
         </div>
 
-        {/* Facts */}
+        {/* Key facts */}
         {facts.length > 0 && (
           <div className="mt-4 flex flex-wrap gap-3">
             {facts.map((f, i) => (
-              <div key={i} className="flex items-center gap-2 rounded-lg border border-border/60 px-3 py-2">
+              <div key={i} className="flex items-center gap-2 rounded-xl border border-border/20 px-3 py-2">
                 <span className="text-foreground/35">{f.icon}</span>
                 <div>
-                  <span className="text-[14px] font-semibold tabular-nums leading-tight">{f.value}</span>
-                  <span className="ml-1 text-[11px] text-muted-foreground">{f.label}</span>
+                  <span className="text-[11px] text-muted-foreground">{f.label}</span>
+                  <span className="ml-1 text-[14px] font-semibold tabular-nums leading-tight">{f.value}</span>
                   {f.sub && <p className="text-[10px] text-muted-foreground/70">{f.sub}</p>}
                 </div>
               </div>
@@ -532,14 +533,16 @@ export default function DraftPreviewPage({ params }: { params: Promise<{ id: str
 
         {/* Detail attributes */}
         {rows.length > 0 && (
-          <div className="mt-5 rounded-lg border border-border/70 divide-y divide-border/50">
-            {rows.map((r, i) => (
-              <div key={i} className="flex items-center gap-3 px-3.5 py-2.5">
-                {r.icon}
-                <span className="text-[13px] text-muted-foreground flex-1">{r.label}</span>
-                <span className="text-[13px] font-medium text-foreground/85">{r.value}</span>
-              </div>
-            ))}
+          <div className="mt-5 opacity-0 animate-fade-in-up [animation-fill-mode:forwards]" style={{ animationDelay: "180ms" }}>
+            <h2 className="text-[14px] font-semibold mb-2">{t("draft.details", lang)}</h2>
+            <div className="rounded-xl border border-border/20">
+              {rows.map((r, i) => (
+                <div key={i} className={`flex items-baseline justify-between gap-4 px-3.5 py-2.5 ${i < rows.length - 1 ? "border-b border-border/15" : ""}`}>
+                  <span className="text-[13px] text-muted-foreground">{r.label}</span>
+                  <span className="text-[13px] font-medium text-foreground text-right tabular-nums">{r.value}</span>
+                </div>
+              ))}
+            </div>
           </div>
         )}
 
@@ -551,12 +554,14 @@ export default function DraftPreviewPage({ params }: { params: Promise<{ id: str
               <p className="text-[12px] text-foreground/40 italic mb-2">{t("draft.descriptionPending", lang)}</p>
             )}
             {description && (
-              <div className="rounded-lg border border-border/70 px-3.5 py-3">
-                <p className={`text-[13px] leading-[1.7] text-foreground/70 whitespace-pre-line ${!descExpanded && descLong ? "line-clamp-5" : ""}`}>
-                  {description}
-                </p>
+              <div className="rounded-xl border border-border/20 px-3.5 py-3">
+                <div className={`overflow-hidden transition-all duration-300 ${!descExpanded && descLong ? "max-h-[7.5em]" : "max-h-[200em]"}`}>
+                  <p className="text-[13px] leading-[1.75] text-foreground/65 whitespace-pre-line">
+                    {description}
+                  </p>
+                </div>
                 {descLong && (
-                  <button onClick={() => setDescExpanded(!descExpanded)} className="mt-2 text-[12px] font-medium text-foreground/50 hover:text-foreground transition-colors">
+                  <button onClick={() => setDescExpanded(!descExpanded)} className="mt-2 text-[12px] font-medium text-foreground/45 hover:text-foreground transition-colors">
                     {descExpanded ? t("draft.showLess", lang) : t("draft.showMore", lang)}
                   </button>
                 )}
@@ -571,7 +576,7 @@ export default function DraftPreviewPage({ params }: { params: Promise<{ id: str
             <h2 className="text-[14px] font-semibold mb-2">{t("draft.features", lang)}</h2>
             <div className="flex flex-wrap gap-1.5">
               {features.map((f) => (
-                <span key={f} className="inline-flex items-center gap-1 rounded-full border border-border/70 bg-muted/30 px-2.5 py-1 text-[12px] text-foreground/70">
+                <span key={f} className="inline-flex items-center gap-1 rounded-full border border-border/20 px-2.5 py-1 text-[12px] text-foreground/70">
                   {I.check} {f}
                 </span>
               ))}
@@ -583,19 +588,16 @@ export default function DraftPreviewPage({ params }: { params: Promise<{ id: str
         {monthlyCosts.length > 0 && (
           <div className="mt-5">
             <h2 className="text-[14px] font-semibold mb-2">{t("draft.monthlyCosts", lang)}</h2>
-            <div className="rounded-lg border border-border/70 divide-y divide-border/50">
+            <div className="rounded-xl border border-border/20">
               {monthlyCosts.map((r, i) => (
-                <div key={i} className="flex items-center gap-3 px-3.5 py-2.5">
-                  {r.icon}
-                  <span className="text-[13px] text-muted-foreground flex-1">{r.label}</span>
-                  <span className="text-[13px] font-medium text-foreground/85">{r.value}</span>
+                <div key={i} className={`flex items-baseline justify-between gap-4 px-3.5 py-2.5 ${i < monthlyCosts.length - 1 ? "border-b border-border/15" : ""}`}>
+                  <span className="text-[13px] text-muted-foreground">{r.label}</span>
+                  <span className="text-[13px] font-medium text-foreground tabular-nums">{r.value}</span>
                 </div>
               ))}
             </div>
           </div>
         )}
-
-        {/* Location map — placeholder, awaiting Google Maps API key */}
 
         {/* Floorplan */}
         {draft.floorplan_id && draft.draft_data?.length > 0 && (
@@ -604,16 +606,16 @@ export default function DraftPreviewPage({ params }: { params: Promise<{ id: str
           </div>
         )}
 
-        {/* Actions */}
-        <div className="mt-6 flex gap-2">
-          <Button variant="outline" size="sm" className="flex-1" onClick={() => router.push(`/draft/${draftId}/sharing`)}>
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" className="mr-1.5"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><path d="M8.59 13.51l6.83 3.98M15.41 6.51l-6.82 3.98"/></svg>
+        {/* Actions — desktop */}
+        <div className="mt-8 hidden md:flex gap-3">
+          <Button variant="outline" className="flex-1" onClick={() => router.push(`/draft/${draftId}/sharing`)}>
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" className="mr-2"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><path d="M8.59 13.51l6.83 3.98M15.41 6.51l-6.82 3.98"/></svg>
             {t("draft.share", lang)}
           </Button>
           {hasTour && (
             <Link href={`/tour/${primarySplatId}`} className="flex-1">
-              <Button variant="default" size="sm" className="w-full">
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" className="mr-1.5"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/><path d="M3.27 6.96L12 12.01l8.73-5.05M12 22.08V12"/></svg>
+              <Button variant="default" className="w-full">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" className="mr-2"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/><path d="M3.27 6.96L12 12.01l8.73-5.05M12 22.08V12"/></svg>
                 {t("draft.viewTour", lang)}
               </Button>
             </Link>
@@ -621,6 +623,21 @@ export default function DraftPreviewPage({ params }: { params: Promise<{ id: str
         </div>
       </div>
 
+      {/* Sticky mobile action bar */}
+      <div className="fixed inset-x-0 bottom-0 z-30 border-t border-border/15 bg-background/95 backdrop-blur-xl px-4 py-2.5 pb-safe flex gap-2.5 md:hidden">
+        <Button variant="outline" size="sm" className="flex-1" onClick={() => router.push(`/draft/${draftId}/sharing`)}>
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" className="mr-1.5"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><path d="M8.59 13.51l6.83 3.98M15.41 6.51l-6.82 3.98"/></svg>
+          {t("draft.share", lang)}
+        </Button>
+        {hasTour && (
+          <Link href={`/tour/${primarySplatId}`} className="flex-1">
+            <Button variant="default" size="sm" className="w-full">
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" className="mr-1.5"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/><path d="M3.27 6.96L12 12.01l8.73-5.05M12 22.08V12"/></svg>
+              {t("draft.viewTour", lang)}
+            </Button>
+          </Link>
+        )}
+      </div>
     </AppShell>
   );
 }

@@ -603,6 +603,8 @@ const de: LocaleStrings = {
   "draft.totalFloors":                   "Gesamtzahl der Etagen",
   "draft.share":                         "Teilen",
   "draft.viewTour":                      "3D-Tour ansehen",
+  "draft.tourAvailable":                 "Interaktive 3D-Besichtigung verfügbar",
+  "draft.details":                       "Details",
   "draft.viewListing":                   "Angebot ansehen",
   "draft.noImages":                      "Keine Bilder",
   "draft.imageOf":                       "von",

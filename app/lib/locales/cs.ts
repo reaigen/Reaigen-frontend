@@ -603,6 +603,8 @@ const cs: LocaleStrings = {
   "draft.totalFloors":                   "Celkový počet pater",
   "draft.share":                         "Sdílet",
   "draft.viewTour":                      "Zobrazit 3D prohlídku",
+  "draft.tourAvailable":                 "Dostupná interaktivní 3D prohlídka",
+  "draft.details":                       "Detaily",
   "draft.viewListing":                   "Zobrazit nabídku",
   "draft.noImages":                      "Žádné obrázky",
   "draft.imageOf":                       "z",

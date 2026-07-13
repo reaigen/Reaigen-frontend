@@ -615,6 +615,8 @@ const en = {
   "draft.totalFloors":                   "Total floors",
   "draft.share":                         "Share",
   "draft.viewTour":                      "View 3D Tour",
+  "draft.tourAvailable":                 "Interactive 3D walkthrough available",
+  "draft.details":                       "Details",
   "draft.viewListing":                   "View Listing",
   "draft.noImages":                      "No images",
   "draft.imageOf":                       "of",
