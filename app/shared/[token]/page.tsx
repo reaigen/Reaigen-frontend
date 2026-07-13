@@ -58,7 +58,7 @@ function pickFallbackRenderableUrl(data: TourViewerData): string | null {
 
 // ── Error classification ───────────────────────────────────────────────
 
-type SharedErrorKind = "notAvailable" | "expired" | "limit" | "paused" | "generic";
+type SharedErrorKind = "notAvailable" | "expired" | "limit" | "paused" | "auth" | "generic";
 
 function classifyError(msg: string, lang: string): { kind: SharedErrorKind; message: string } {
   const lower = msg.toLowerCase();
@@ -127,15 +127,21 @@ export default function SharedPage({ params }: { params: Promise<{ token: string
       getSharedTourViewer(token),
     ]);
 
-    // Check for PIN requirement from tour endpoint
-    if (tourResult.status === "rejected") {
-      const err = tourResult.reason;
-      const body = getApiErrorJson(err);
-      if (body?.requires_pin) {
-        setRequiresPin(true);
-        setLoading(false);
-        return;
-      }
+    // Check for PIN / sign-in requirement from either endpoint.
+    // (A share may exclude the tour, so the tour endpoint alone is not
+    // authoritative — the draft endpoint reports the same gates.)
+    const tourErrBody = tourResult.status === "rejected" ? getApiErrorJson(tourResult.reason) : null;
+    const draftErrBody = draftResult.status === "rejected" ? getApiErrorJson(draftResult.reason) : null;
+    if (tourErrBody?.requires_pin || draftErrBody?.requires_pin) {
+      setRequiresPin(true);
+      setLoading(false);
+      return;
+    }
+    if (tourErrBody?.requires_auth || draftErrBody?.requires_auth) {
+      setErrorKind("auth");
+      setError(t("shared.error.signInRequired", lang));
+      setLoading(false);
+      return;
     }
 
     // Draft data
@@ -157,8 +163,12 @@ export default function SharedPage({ params }: { params: Promise<{ token: string
     const gotDraft = draftResult.status === "fulfilled" && draftResult.value;
     const gotTour = tourResult.status === "fulfilled" && tourResult.value;
     if (!gotDraft && !gotTour) {
-      // Try to classify the error from whichever endpoint failed
-      const err = tourResult.status === "rejected" ? tourResult.reason : null;
+      // Try to classify the error from whichever endpoint failed.
+      // Prefer the draft endpoint — the tour endpoint 404s for shares
+      // that simply don't include the tour.
+      const err = draftResult.status === "rejected"
+        ? draftResult.reason
+        : tourResult.status === "rejected" ? tourResult.reason : null;
       if (err) {
         const body = getApiErrorJson(err);
         const rawMessage = typeof body?.error === "string" ? body.error : typeof body?.message === "string" ? body.message : "";
@@ -265,7 +275,8 @@ export default function SharedPage({ params }: { params: Promise<{ token: string
     const isExpired = errorKind === "expired" || errorKind === "notAvailable";
     const isPaused = errorKind === "paused";
     const isLimitReached = errorKind === "limit";
-    const showRetry = !isExpired && !isPaused && !isLimitReached;
+    const isAuthRequired = errorKind === "auth";
+    const showRetry = !isExpired && !isPaused && !isLimitReached && !isAuthRequired;
     return (
       <div className="min-h-screen flex items-center justify-center bg-[hsl(var(--muted))]/35 px-4">
         <div className="text-center space-y-4 px-6 max-w-xs">
@@ -281,10 +292,15 @@ export default function SharedPage({ params }: { params: Promise<{ token: string
               )}
             </div>
             <p className="text-[14px] font-medium text-foreground/70 mb-1">
-              {isExpired ? t("shared.error.titleExpired", lang) : isPaused ? t("shared.error.titlePaused", lang) : isLimitReached ? t("shared.error.titleLimit", lang) : t("shared.error.titleGeneric", lang)}
+              {isExpired ? t("shared.error.titleExpired", lang) : isPaused ? t("shared.error.titlePaused", lang) : isLimitReached ? t("shared.error.titleLimit", lang) : isAuthRequired ? t("shared.error.titleSignIn", lang) : t("shared.error.titleGeneric", lang)}
             </p>
             <p className="text-[13px] text-foreground/40 leading-relaxed">{error}</p>
           </div>
+          {isAuthRequired && (
+            <Button variant="outline" size="sm" onClick={() => { window.location.href = `/?next=${encodeURIComponent(`/shared/${token}`)}`; }}>
+              {t("shared.error.signIn", lang)}
+            </Button>
+          )}
           {showRetry && <Button variant="outline" size="sm" onClick={() => { setError(null); loadContent(); }}>{t("common.tryAgain", lang)}</Button>}
         </div>
       </div>

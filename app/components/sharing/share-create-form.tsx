@@ -45,17 +45,20 @@ export function ShareCreateForm({
   const pinValid = privacyLevel !== "pin" || pin.length >= 4;
 
   const handleSubmit = async () => {
-    // The scope toggles shape the actual field list: photos ⇄ uploads,
-    // floorplan ⇄ floorplan; details off strips everything but title/media.
+    // The scope toggles shape the actual field list: tour ⇄ tour,
+    // photos ⇄ uploads, floorplan ⇄ floorplan; details off strips
+    // everything but title/media.
     const fields = new Set(scope.selectedFields);
     fields.add("title");
+    if (scope.tour) fields.add("tour");
+    else fields.delete("tour");
     if (scope.photos) fields.add("uploads");
     else fields.delete("uploads");
     if (scope.floorplan) fields.add("floorplan");
     else fields.delete("floorplan");
     if (!scope.details) {
       for (const f of Array.from(fields)) {
-        if (f !== "title" && f !== "uploads" && f !== "floorplan") fields.delete(f);
+        if (f !== "title" && f !== "uploads" && f !== "floorplan" && f !== "tour") fields.delete(f);
       }
     }
     const opts: ShareFormData = {

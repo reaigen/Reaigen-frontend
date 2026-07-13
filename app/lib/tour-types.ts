@@ -148,7 +148,7 @@ export const SHARE_BUNDLES = {
   all: [
     "title", "description", "display_address", "price", "currency",
     "bedrooms", "bathrooms", "area", "area_unit", "lot_size", "lot_size_unit",
-    "year_built", "city", "state", "country", "uploads", "data", "pipeline", "floorplan",
+    "year_built", "city", "state", "country", "uploads", "data", "pipeline", "floorplan", "tour",
   ],
 } as const;
 

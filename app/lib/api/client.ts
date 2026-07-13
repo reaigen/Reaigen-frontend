@@ -845,40 +845,38 @@ export async function getSharedTourViewer(token: string): Promise<TourViewerData
 }
 
 export async function getSharedDraftData(token: string): Promise<SharedDraftData | null> {
-  try {
-    const raw = await request(`/api/reaigen/shared/${encodeURIComponent(token)}/`);
-    if (!raw) return null;
-    // Map backend response to frontend SharedDraftData format
-    // Backend uses: raw_uploads[].file_url, draft_data[].data_key/data_value, area_unit_display
-    const uploads = (raw.raw_uploads ?? raw.uploads ?? [])
-      .map((u: Record<string, unknown>) => ({
-        url: (u.file_url ?? u.url ?? "") as string,
-        name: (u.file_name ?? u.name ?? "") as string,
-        mime_type: (u.mime_type ?? "") as string,
-      }))
-      .filter((u: { url: string }) => u.url);
-    return {
-      title: raw.title,
-      description: raw.description,
-      display_address: raw.display_address,
-      price: raw.price,
-      currency: raw.currency,
-      bedrooms: raw.bedrooms,
-      bathrooms: raw.bathrooms,
-      area: raw.area,
-      area_unit: raw.area_unit_display ?? raw.area_unit,
-      lot_size: raw.lot_size,
-      lot_size_unit: raw.lot_size_unit_display ?? raw.lot_size_unit,
-      year_built: raw.year_built,
-      city: raw.city,
-      state: raw.state,
-      country: raw.country,
-      uploads,
-      floorplan: raw.floorplan ?? null,
-    };
-  } catch {
-    return null;
-  }
+  // Errors propagate so callers can react to gating responses
+  // (requires_pin / requires_auth / expired / paused).
+  const raw = await request(`/api/reaigen/shared/${encodeURIComponent(token)}/`);
+  if (!raw) return null;
+  // Map backend response to frontend SharedDraftData format
+  // Backend uses: raw_uploads[].file_url, draft_data[].data_key/data_value, area_unit_display
+  const uploads = (raw.raw_uploads ?? raw.uploads ?? [])
+    .map((u: Record<string, unknown>) => ({
+      url: (u.file_url ?? u.url ?? "") as string,
+      name: (u.file_name ?? u.name ?? "") as string,
+      mime_type: (u.mime_type ?? "") as string,
+    }))
+    .filter((u: { url: string }) => u.url);
+  return {
+    title: raw.title,
+    description: raw.description,
+    display_address: raw.display_address,
+    price: raw.price,
+    currency: raw.currency,
+    bedrooms: raw.bedrooms,
+    bathrooms: raw.bathrooms,
+    area: raw.area,
+    area_unit: raw.area_unit_display ?? raw.area_unit,
+    lot_size: raw.lot_size,
+    lot_size_unit: raw.lot_size_unit_display ?? raw.lot_size_unit,
+    year_built: raw.year_built,
+    city: raw.city,
+    state: raw.state,
+    country: raw.country,
+    uploads,
+    floorplan: raw.floorplan ?? null,
+  };
 }
 
 export async function verifySharePin(token: string, pin: string): Promise<{ verified: boolean }> {
