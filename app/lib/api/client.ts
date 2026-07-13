@@ -858,6 +858,12 @@ export async function getSharedDraftData(token: string): Promise<SharedDraftData
       mime_type: (u.mime_type ?? "") as string,
     }))
     .filter((u: { url: string }) => u.url);
+  const data = (raw.draft_data ?? raw.data ?? [])
+    .map((e: Record<string, unknown>) => ({
+      key: (e.data_key ?? e.key ?? "") as string,
+      value: (e.data_value ?? e.value ?? "") as string,
+    }))
+    .filter((e: { key: string }) => e.key);
   return {
     title: raw.title,
     description: raw.description,
@@ -875,6 +881,7 @@ export async function getSharedDraftData(token: string): Promise<SharedDraftData
     state: raw.state,
     country: raw.country,
     uploads,
+    data: data.length ? data : undefined,
     floorplan: raw.floorplan ?? null,
   };
 }
