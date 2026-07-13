@@ -90,13 +90,13 @@ export function ContentScopeSelector({ scope, onChange, hasTour, hasPhotos, hasF
   const visibleCards = cards.filter((c) => c.available);
 
   return (
-    <div className="space-y-2.5">
-      <h3 className="text-[11px] font-medium text-foreground/40 uppercase tracking-wider">
+    <div className="space-y-3">
+      <h3 className="text-[12px] font-medium text-foreground/50">
         {t("sharing.whatToShare", lang)}
       </h3>
 
-      {/* Toggle chips — compact inline row */}
-      <div className="flex flex-wrap gap-1.5">
+      {/* Toggle chips — pill-shaped */}
+      <div className="flex flex-wrap gap-2">
         {visibleCards.map((card) => {
           const active = scope[card.key];
           return (
@@ -104,15 +104,14 @@ export function ContentScopeSelector({ scope, onChange, hasTour, hasPhotos, hasF
               key={card.key}
               type="button"
               onClick={() => toggleCard(card.key)}
-              className={`inline-flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-left transition-all ${
+              className={`inline-flex items-center gap-1.5 rounded-full px-3.5 py-1.5 text-left transition-all ${
                 active
-                  ? "border-foreground/20 bg-foreground/[0.04]"
-                  : "border-border/40 bg-transparent text-foreground/35"
+                  ? "border border-foreground/20 bg-foreground/[0.06] text-foreground"
+                  : "border border-transparent bg-foreground/[0.04] text-foreground/45 hover:bg-foreground/[0.07] hover:text-foreground/60"
               }`}
             >
-              {active && <span className="text-foreground/50">{icons.check}</span>}
-              <span className={active ? "text-foreground/60" : ""}>{card.icon}</span>
-              <span className={`text-[12px] font-medium ${active ? "text-foreground/80" : ""}`}>
+              <span>{card.icon}</span>
+              <span className="text-[12px] font-medium">
                 {t(card.labelKey, lang)}
               </span>
             </button>
@@ -120,19 +119,19 @@ export function ContentScopeSelector({ scope, onChange, hasTour, hasPhotos, hasF
         })}
       </div>
 
-      {/* Details sub-section — bundle pills + optional custom toggles */}
+      {/* Details sub-section — bundle pills inline + optional custom toggles */}
       {scope.details && (
-        <div className="rounded-lg border border-border/50 p-2.5 space-y-2">
-          <div className="flex items-center gap-1">
+        <div className="space-y-2.5">
+          <div className="flex items-center gap-1.5">
             {BUNDLE_OPTIONS.map(({ name, labelKey }) => (
               <button
                 key={name}
                 type="button"
                 onClick={() => handleBundleClick(name)}
-                className={`px-2 py-0.5 rounded-md text-[10px] font-medium transition-all ${
+                className={`px-2.5 py-1 rounded-full text-[11px] font-medium transition-all ${
                   activeBundle === name
-                    ? "bg-foreground text-background"
-                    : "bg-foreground/[0.05] text-foreground/50 hover:text-foreground"
+                    ? "bg-foreground/[0.10] text-foreground border border-foreground/15"
+                    : "bg-foreground/[0.04] text-foreground/45 border border-transparent hover:text-foreground/65"
                 }`}
               >
                 {t(labelKey, lang)}
@@ -142,7 +141,7 @@ export function ContentScopeSelector({ scope, onChange, hasTour, hasPhotos, hasF
             <button
               type="button"
               onClick={() => setDetailsExpanded((v) => !v)}
-              className="text-[10px] font-medium text-foreground/40 hover:text-foreground transition-colors"
+              className="text-[11px] font-medium text-foreground/40 hover:text-foreground transition-colors"
             >
               {t("shareDialog.customizeFields", lang)}
               <svg width="8" height="8" viewBox="0 0 16 16" fill="none" className={`inline ml-0.5 transition-transform ${detailsExpanded ? "rotate-180" : ""}`}>
@@ -152,7 +151,7 @@ export function ContentScopeSelector({ scope, onChange, hasTour, hasPhotos, hasF
           </div>
 
           {detailsExpanded && (
-            <div className="border-t border-border/40 pt-2 max-h-[180px] overflow-y-auto overscroll-contain space-y-1.5">
+            <div className="rounded-xl bg-foreground/[0.02] p-3 max-h-[180px] overflow-y-auto overscroll-contain space-y-2">
               {SHARE_FIELD_GROUPS.map((group) => (
                 <div key={group.key}>
                   <p className="text-[9px] font-medium text-foreground/30 uppercase tracking-wide mb-0.5">

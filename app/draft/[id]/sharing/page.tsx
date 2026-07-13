@@ -21,6 +21,7 @@ import { SharePreview } from "../../../components/sharing/share-preview";
 import { ShareCreateForm, defaultContentScope, type ShareFormData } from "../../../components/sharing/share-create-form";
 import { ShareLinkCard } from "../../../components/sharing/share-link-card";
 import type { ContentScope } from "../../../components/sharing/content-scope-selector";
+import { PageLoading } from "../../../components/page-loading";
 
 async function copyToClipboard(text: string): Promise<boolean> {
   try { await navigator.clipboard.writeText(text); return true; } catch { return false; }
@@ -117,40 +118,7 @@ export default function SharingPage({ params }: { params: Promise<{ id: string }
   }, []);
 
   if (isLoading || (loading && !draft)) {
-    return (
-      <AppShell user={user ?? { email: "" }} onLogout={logout}>
-        <div className="mx-auto w-full max-w-5xl pb-10">
-          {/* Skeleton header */}
-          <div className="mb-5 flex items-center gap-2">
-            <div className="h-4 w-12 rounded bg-muted/40 animate-pulse" />
-            <div className="h-4 w-40 rounded bg-muted/30 animate-pulse" />
-          </div>
-          {/* Skeleton two-panel */}
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-            <div className="lg:order-2 space-y-4">
-              <div className="rounded-xl border border-border/40 p-4 space-y-3 animate-pulse">
-                <div className="h-4 w-1/3 rounded bg-muted/40" />
-                <div className="h-10 w-full rounded-lg bg-muted/25" />
-                <div className="h-10 w-full rounded-lg bg-muted/25" />
-                <div className="h-9 w-full rounded-lg bg-muted/30" />
-              </div>
-            </div>
-            <div className="lg:order-1">
-              <div className="space-y-3 animate-pulse">
-                <div className="h-3 w-20 rounded bg-muted/30" />
-                <div className="rounded-2xl border border-border/40 overflow-hidden">
-                  <div className="aspect-[16/9] bg-muted/20" />
-                  <div className="px-4 py-3 space-y-2">
-                    <div className="h-4 w-2/3 rounded bg-muted/40" />
-                    <div className="h-3 w-1/2 rounded bg-muted/25" />
-                  </div>
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
-      </AppShell>
-    );
+    return <PageLoading />;
   }
 
   if (error || !draft || !user) {
@@ -169,40 +137,41 @@ export default function SharingPage({ params }: { params: Promise<{ id: string }
   return (
     <AppShell user={user} onLogout={logout}>
       <div className="mx-auto w-full max-w-5xl animate-fade-in pb-10">
-        {/* Header */}
-        <div className="mb-5 flex items-center gap-2">
-          <button
-            onClick={() => router.back()}
-            className="flex items-center gap-1 text-[13px] text-muted-foreground hover:text-foreground transition-colors shrink-0"
-          >
-            <svg width="14" height="14" viewBox="0 0 16 16" fill="none"><path d="M10 12L6 8L10 4" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/></svg>
-            {t("common.back", lang)}
-          </button>
-          <span className="text-foreground/15">·</span>
-          <h1 className="text-[14px] font-medium truncate">
-            <span className="text-foreground/80">{t("sharing.pageTitle", lang)}</span>
-            <span className="text-foreground/30 ml-1.5">{title}</span>
-          </h1>
-        </div>
+        {/* Back */}
+        <button onClick={() => router.back()} className="mb-4 inline-flex items-center gap-1.5 rounded-xl px-2 py-1.5 -ml-2 text-[13px] text-muted-foreground hover:text-foreground hover:bg-foreground/[0.04] transition-colors">
+          <svg width="15" height="15" viewBox="0 0 16 16" fill="none"><path d="M10 12L6 8L10 4" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/></svg>
+          {t("common.back", lang)}
+        </button>
 
-        {/* Success banner */}
+        {/* Title */}
+        <h1 className="mb-5 text-[16px] font-semibold">
+          {t("sharing.pageTitle", lang)}
+          <span className="text-foreground/25 ml-2 font-normal text-[13px]">{title}</span>
+        </h1>
+
+        {/* Success banner — toast-style */}
         {justCopied && (
-          <div className="mb-4 flex items-center gap-2 rounded-lg border border-border/50 bg-foreground/[0.03] px-3 py-2 animate-fade-in">
-            <svg width="14" height="14" viewBox="0 0 16 16" fill="none"><path d="M3 8.5L6.5 12L13 4" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-foreground/50" /></svg>
-            <span className="text-[12px] text-foreground/70 font-medium">{t("sharing.linkCopied", lang)}</span>
+          <div className="mb-5 flex items-center gap-2 rounded-xl border border-foreground/15 bg-foreground/[0.05] px-4 py-2.5 animate-fade-in">
+            <svg width="14" height="14" viewBox="0 0 16 16" fill="none"><path d="M3 8.5L6.5 12L13 4" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" /></svg>
+            <span className="text-[12px] font-medium">{t("sharing.linkCopied", lang)}</span>
           </div>
         )}
 
         {/* Two-panel layout */}
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-5 lg:gap-8">
           {/* Right panel — Controls (shown first on mobile) */}
-          <div className="lg:order-2 space-y-4">
+          <div className="lg:order-2 space-y-3">
             {/* Active links */}
             {shares.length > 0 && (
               <div className="space-y-1.5">
-                <h2 className="text-[11px] font-medium text-foreground/35 uppercase tracking-wider mb-1">
-                  {t("sharing.activeLinks", lang)}
-                </h2>
+                <div className="flex items-center gap-2 px-1">
+                  <h2 className="text-[12px] font-medium text-foreground/45">
+                    {t("sharing.activeLinks", lang)}
+                  </h2>
+                  <span className="inline-flex items-center justify-center h-[18px] min-w-[18px] rounded-full bg-foreground/[0.07] px-1.5 text-[10px] font-semibold text-foreground/45 tabular-nums">
+                    {shares.length}
+                  </span>
+                </div>
                 {shares.map((share) => (
                   <ShareLinkCard
                     key={share.id}
@@ -216,8 +185,8 @@ export default function SharingPage({ params }: { params: Promise<{ id: string }
             )}
 
             {/* Create new link */}
-            <div className="rounded-xl border border-border/60 bg-background p-4">
-              <h2 className="text-[13px] font-semibold mb-3">{t("sharing.createNewLink", lang)}</h2>
+            <div className="rounded-2xl border border-border/60 bg-background p-5">
+              <h2 className="text-[15px] font-semibold mb-4">{t("sharing.createNewLink", lang)}</h2>
               {scope && (
                 <ShareCreateForm
                   scope={scope}

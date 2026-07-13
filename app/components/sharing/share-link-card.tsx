@@ -128,7 +128,7 @@ export function ShareLinkCard({ share, lang, onUpdate, onEdit }: ShareLinkCardPr
         tabIndex={0}
         onClick={handleToggleExpand}
         onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); handleToggleExpand(); } }}
-        className="w-full text-left px-4 py-3 flex items-center gap-3 cursor-pointer"
+        className="w-full text-left px-3.5 py-2.5 flex items-center gap-2.5 cursor-pointer"
       >
         <span className={`w-2 h-2 rounded-full shrink-0 ${cfg.dot}`} />
 
@@ -188,7 +188,7 @@ export function ShareLinkCard({ share, lang, onUpdate, onEdit }: ShareLinkCardPr
       {/* Expanded panel */}
       <div className="grid transition-[grid-template-rows] duration-200 ease-out" style={{ gridTemplateRows: expanded ? "1fr" : "0fr" }}>
         <div className="overflow-hidden">
-          <div className={`border-t border-border/40 px-4 py-3.5 space-y-3 ${expanded ? "" : "invisible"}`}>
+          <div className={`border-t border-border/40 px-3.5 py-3 space-y-3 ${expanded ? "" : "invisible"}`}>
           {isLive && (
             <div className="flex items-center gap-2 rounded-lg border border-border/40 bg-foreground/[0.02] px-3 py-2">
               <p className="flex-1 text-[11px] font-mono text-foreground/70 truncate select-all">{shareUrl(share.token)}</p>

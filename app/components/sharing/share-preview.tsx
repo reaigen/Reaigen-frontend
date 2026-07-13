@@ -63,13 +63,16 @@ export function SharePreview({ draft, scope, hasTour, thumbUrl, fpUrl, lang }: S
   if (fpUrl) items.push({ label: t("sharing.scopeFloorplan", lang), on: floorplanIncluded });
 
   return (
-    <div className="space-y-3">
-      <p className="text-[11px] font-medium text-foreground/35 uppercase tracking-wider">
-        {t("sharing.previewTitle", lang)}
-      </p>
-
-      {/* Mock device card */}
+    <div>
+      {/* Preview card */}
       <div className="rounded-2xl border border-border/60 bg-background shadow-sm overflow-hidden">
+        {/* Card header */}
+        <div className="px-4 py-3 border-b border-border/30">
+          <p className="text-[12px] font-medium text-foreground/45">
+            {t("sharing.previewTitle", lang)}
+          </p>
+        </div>
+
         {/* Hero */}
         {hasHero && (
           <div className="relative aspect-[16/9] bg-muted/30">
@@ -154,26 +157,26 @@ export function SharePreview({ draft, scope, hasTour, thumbUrl, fpUrl, lang }: S
             </div>
           )}
         </div>
-      </div>
 
-      {/* Checklist */}
-      <div className="rounded-lg border border-border/40 px-3 py-2.5">
-        <p className="text-[9px] font-medium text-foreground/25 uppercase tracking-wider mb-1.5">
-          {t("sharing.previewChecklist", lang)}
-        </p>
-        <div className="grid grid-cols-2 gap-x-3 gap-y-0.5">
-          {items.map((item) => (
-            <div key={item.label} className="flex items-center gap-1.5">
-              {item.on ? (
-                <svg width="10" height="10" viewBox="0 0 16 16" fill="none" className="text-foreground/50 shrink-0"><path d="M3 8l4 4 6-6" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/></svg>
-              ) : (
-                <svg width="10" height="10" viewBox="0 0 16 16" fill="none" className="text-foreground/15 shrink-0"><path d="M4 4l8 8M12 4l-8 8" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/></svg>
-              )}
-              <span className={`text-[11px] truncate ${item.on ? "text-foreground/60" : "text-foreground/20 line-through"}`}>
-                {item.label}
-              </span>
-            </div>
-          ))}
+        {/* Checklist — inside card with divider */}
+        <div className="border-t border-border/40 px-4 py-3">
+          <p className="text-[9px] font-medium text-foreground/25 uppercase tracking-wider mb-1.5">
+            {t("sharing.previewChecklist", lang)}
+          </p>
+          <div className="grid grid-cols-2 gap-x-3 gap-y-0.5">
+            {items.map((item) => (
+              <div key={item.label} className="flex items-center gap-1.5">
+                {item.on ? (
+                  <svg width="10" height="10" viewBox="0 0 16 16" fill="none" className="text-foreground/50 shrink-0"><path d="M3 8l4 4 6-6" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/></svg>
+                ) : (
+                  <svg width="10" height="10" viewBox="0 0 16 16" fill="none" className="text-foreground/15 shrink-0"><path d="M4 4l8 8M12 4l-8 8" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/></svg>
+                )}
+                <span className={`text-[11px] truncate ${item.on ? "text-foreground/60" : "text-foreground/20 line-through"}`}>
+                  {item.label}
+                </span>
+              </div>
+            ))}
+          </div>
         </div>
       </div>
     </div>

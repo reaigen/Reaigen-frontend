@@ -39,9 +39,9 @@ export function ShareCreateForm({
   saving,
   error,
 }: ShareCreateFormProps) {
-  const [privacyLevel, setPrivacyLevel] = React.useState<PrivacyLevel>("pin");
+  const [privacyLevel, setPrivacyLevel] = React.useState<PrivacyLevel>("open");
   const [pin, setPin] = React.useState("");
-  const [lifetimeHours, setLifetimeHours] = React.useState(168);
+  const [lifetimeHours, setLifetimeHours] = React.useState(0);
   const [maxViews, setMaxViews] = React.useState("");
 
   const pinValid = privacyLevel !== "pin" || pin.length >= 4;
@@ -59,7 +59,7 @@ export function ShareCreateForm({
   };
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-5">
       {error && <p className="text-[12px] text-destructive">{error}</p>}
 
       <ContentScopeSelector
@@ -71,31 +71,36 @@ export function ShareCreateForm({
         lang={lang}
       />
 
-      <PrivacyLevelSelector
-        level={privacyLevel}
-        pin={pin}
-        onLevelChange={setPrivacyLevel}
-        onPinChange={setPin}
-        lang={lang}
-      />
+      <div className="border-t border-border/30 pt-5">
+        <PrivacyLevelSelector
+          level={privacyLevel}
+          pin={pin}
+          onLevelChange={setPrivacyLevel}
+          onPinChange={setPin}
+          lang={lang}
+        />
+      </div>
 
-      <LifetimeSelector
-        hours={lifetimeHours}
-        maxViews={maxViews}
-        onHoursChange={setLifetimeHours}
-        onMaxViewsChange={setMaxViews}
-        lang={lang}
-      />
+      <div className="border-t border-border/30 pt-5">
+        <LifetimeSelector
+          hours={lifetimeHours}
+          maxViews={maxViews}
+          onHoursChange={setLifetimeHours}
+          onMaxViewsChange={setMaxViews}
+          lang={lang}
+        />
+      </div>
 
-      <Button
-        className="w-full"
-        size="sm"
-        onClick={handleSubmit}
-        disabled={saving || !pinValid}
-        loading={saving}
-      >
-        {t("sharing.createAndCopy", lang)}
-      </Button>
+      <div className="border-t border-border/30 pt-5">
+        <Button
+          className="w-full h-11 text-[13px] font-semibold shadow-sm"
+          onClick={handleSubmit}
+          disabled={saving || !pinValid}
+          loading={saving}
+        >
+          {t("sharing.createAndCopy", lang)}
+        </Button>
+      </div>
     </div>
   );
 }
