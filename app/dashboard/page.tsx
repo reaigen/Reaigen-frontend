@@ -9,6 +9,7 @@ import { listDrafts, getSplatsByDraft } from "../lib/api/client";
 import type { DraftListingItem } from "../lib/tour-types";
 import Link from "next/link";
 import { Thumbnail } from "../components/thumbnail";
+import { PageLoading } from "../components/page-loading";
 
 function compactNumber(value: string | number | null | undefined, lang?: string) {
   if (value == null || value === "") return null;
@@ -165,12 +166,16 @@ export default function DashboardPage() {
     return () => { clearInterval(id); document.removeEventListener("visibilitychange", onVisible); };
   }, [isAuthenticated, searchQuery, drafts]);
 
+  // Show back-to-top button after scrolling down
+  const [showBackToTop, setShowBackToTop] = React.useState(false);
+  React.useEffect(() => {
+    const onScroll = () => setShowBackToTop(window.scrollY > 400);
+    window.addEventListener("scroll", onScroll, { passive: true });
+    return () => window.removeEventListener("scroll", onScroll);
+  }, []);
+
   if (isLoading || !user) {
-    return (
-      <div className="min-h-screen flex items-center justify-center">
-        <div className="animate-spin h-7 w-7 border-2 border-foreground/15 border-t-foreground/60 rounded-full" />
-      </div>
-    );
+    return <PageLoading />;
   }
 
   const lang = getUserLanguage(user.localization);
@@ -351,6 +356,19 @@ export default function DashboardPage() {
         )}
       </div>
 
+      {/* Back to top */}
+      {showBackToTop && (
+        <button
+          type="button"
+          onClick={() => window.scrollTo({ top: 0, behavior: "smooth" })}
+          className="fixed bottom-6 right-6 z-50 flex h-10 w-10 items-center justify-center rounded-full bg-foreground/80 text-background shadow-lg backdrop-blur-sm transition-all hover:bg-foreground active:scale-95 animate-fade-in"
+          aria-label="Back to top"
+        >
+          <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+            <path d="M8 13V3M4 7l4-4 4 4" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+          </svg>
+        </button>
+      )}
     </AppShell>
   );
 }
