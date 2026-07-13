@@ -15,7 +15,7 @@
  */
 
 import { useEffect, useId, useMemo, useState } from "react";
-import type { DraftDataEntry } from "../lib/tour-types";
+import type { DraftDataEntry, SharedFloorplanPayload } from "../lib/tour-types";
 import {
   getFloorplanRendering,
   type FloorplanRenderingData,
@@ -61,6 +61,9 @@ interface Props {
   draftData: DraftDataEntry[];
   floorplanId?: number | null;
   lang: string;
+  /** Public share mode: pre-fetched floorplan block from the share payload —
+   * used instead of the authenticated rendering endpoint. */
+  publicFloorplan?: SharedFloorplanPayload | null;
 }
 
 const SVG_W = 400;
@@ -93,17 +96,17 @@ interface LegendEntry {
 
 // ─────────────────────────────────────────────────────────────────────────────
 
-export default function FloorplanViewer({ draftData, floorplanId, lang }: Props) {
+export default function FloorplanViewer({ draftData, floorplanId, lang, publicFloorplan }: Props) {
   const [rendering, setRendering] = useState<FloorplanRenderingData | null>(null);
 
   useEffect(() => {
-    if (!floorplanId) return;
+    if (!floorplanId || publicFloorplan) return;
     const ctrl = new AbortController();
     getFloorplanRendering(floorplanId, ctrl.signal)
       .then(setRendering)
       .catch(() => {});
     return () => ctrl.abort();
-  }, [floorplanId]);
+  }, [floorplanId, publicFloorplan]);
 
   const model = useMemo(() => buildLocalModel(draftData), [draftData]);
 
@@ -112,7 +115,7 @@ export default function FloorplanViewer({ draftData, floorplanId, lang }: Props)
     const map = model.textData;
     const overrides = parseRoomAreaOverrides(map);
     const byNumber = new Map<number, LegendEntry>();
-    for (const room of rendering?.rooms ?? []) {
+    for (const room of publicFloorplan?.rooms ?? rendering?.rooms ?? []) {
       const n = room.room_number ?? byNumber.size + 1;
       const name = localizedRoomName(room.label, room.room_type_code, lang) ?? room.label;
       byNumber.set(n, { n, label: name, area: room.floor_area ?? 0 });
@@ -126,7 +129,7 @@ export default function FloorplanViewer({ draftData, floorplanId, lang }: Props)
       byNumber.set(n, { n, label: resolved, area: overrides[n] ?? byNumber.get(n)?.area ?? 0 });
     }
     return [...byNumber.values()].sort((a, b) => a.n - b.n);
-  }, [model.textData, rendering, lang]);
+  }, [model.textData, rendering, publicFloorplan, lang]);
 
   const meshLayers = rendering?.geometry?.layers;
   const hasMesh = !!meshLayers && [meshLayers.walls, meshLayers.doors, meshLayers.windows].some(
@@ -138,10 +141,11 @@ export default function FloorplanViewer({ draftData, floorplanId, lang }: Props)
     plan = <LocalPlan model={model.local} legendEntries={legendEntries} lang={lang} />;
   } else if (hasMesh) {
     plan = <MeshPlan data={rendering!} legendEntries={legendEntries} lang={lang} />;
-  } else if (rendering?.composite?.url) {
+  } else if (publicFloorplan?.composite_url || rendering?.composite?.url) {
+    const url = publicFloorplan?.composite_url ?? rendering!.composite.url;
     plan = (
       // eslint-disable-next-line @next/next/no-img-element
-      <img src={rendering.composite.url} alt="" className="w-full block bg-white" />
+      <img src={url} alt="" className="w-full block bg-white" />
     );
   } else {
     return null;

@@ -58,7 +58,7 @@ function expiryLabel(dateStr: string | null, lang: string): string | null {
 type ShareStats = { total_accesses: number; unique_ips: number; authenticated_accesses: number; failed_pin_attempts: number };
 
 const STATUS_CONFIG: Record<string, { dot: string; bg: string; text: string; labelKey: LocaleKey }> = {
-  active:  { dot: "bg-foreground",    bg: "bg-foreground/[0.10]", text: "text-foreground", labelKey: "shares.statusActive" },
+  active:  { dot: "bg-background",    bg: "bg-foreground", text: "text-background", labelKey: "shares.statusActive" },
   paused:  { dot: "bg-foreground/40", bg: "bg-foreground/[0.05]", text: "text-foreground/55", labelKey: "shares.statusPaused" },
   expired: { dot: "bg-foreground/20", bg: "bg-foreground/[0.04]", text: "text-foreground/40", labelKey: "shares.statusExpired" },
   revoked: { dot: "bg-foreground/20", bg: "bg-foreground/[0.04]", text: "text-foreground/40", labelKey: "shares.statusRevoked" },

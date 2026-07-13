@@ -24,7 +24,6 @@ export interface ShareFormData {
   share_type: string;
   pin?: string;
   expires_in_hours?: number;
-  max_access_count?: number;
   field_names: string[];
 }
 
@@ -42,19 +41,29 @@ export function ShareCreateForm({
   const [privacyLevel, setPrivacyLevel] = React.useState<PrivacyLevel>("open");
   const [pin, setPin] = React.useState("");
   const [lifetimeHours, setLifetimeHours] = React.useState(0);
-  const [maxViews, setMaxViews] = React.useState("");
 
   const pinValid = privacyLevel !== "pin" || pin.length >= 4;
 
   const handleSubmit = async () => {
+    // The scope toggles shape the actual field list: photos ⇄ uploads,
+    // floorplan ⇄ floorplan; details off strips everything but title/media.
+    const fields = new Set(scope.selectedFields);
+    fields.add("title");
+    if (scope.photos) fields.add("uploads");
+    else fields.delete("uploads");
+    if (scope.floorplan) fields.add("floorplan");
+    else fields.delete("floorplan");
+    if (!scope.details) {
+      for (const f of Array.from(fields)) {
+        if (f !== "title" && f !== "uploads" && f !== "floorplan") fields.delete(f);
+      }
+    }
     const opts: ShareFormData = {
       share_type: privacyLevel === "pin" ? "pin" : lifetimeHours > 0 ? "temporary" : "permanent",
-      field_names: Array.from(scope.selectedFields),
+      field_names: Array.from(fields),
     };
     if (privacyLevel === "pin") opts.pin = pin;
     if (lifetimeHours > 0) opts.expires_in_hours = lifetimeHours;
-    const mv = parseInt(maxViews);
-    if (mv > 0) opts.max_access_count = mv;
     await onSubmit(opts);
   };
 
@@ -84,9 +93,7 @@ export function ShareCreateForm({
       <div className="border-t border-border/30 pt-5">
         <LifetimeSelector
           hours={lifetimeHours}
-          maxViews={maxViews}
           onHoursChange={setLifetimeHours}
-          onMaxViewsChange={setMaxViews}
           lang={lang}
         />
       </div>

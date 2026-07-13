@@ -47,6 +47,26 @@ export interface CameraData {
   cached?: boolean;
 }
 
+export interface SharedFloorplanRoom {
+  id: number;
+  label: string;
+  room_number: number | null;
+  center: number[] | null;
+  floor_area: number | null;
+  boundary_points: number[][] | null;
+  room_type_code: string | null;
+  label_offset_x: number;
+  label_offset_z: number;
+}
+
+/** Floorplan block of a public share: whitelisted scan draft_data (same keys
+ * the app renders from), signed composite image, and room metadata. */
+export interface SharedFloorplanPayload {
+  draft_data: DraftDataEntry[];
+  composite_url: string | null;
+  rooms: SharedFloorplanRoom[];
+}
+
 export interface SharedDraftData {
   title?: string;
   description?: string;
@@ -65,6 +85,7 @@ export interface SharedDraftData {
   country?: string;
   uploads?: { url: string; name?: string; mime_type?: string }[];
   data?: { key: string; value: string }[];
+  floorplan?: SharedFloorplanPayload | null;
 }
 
 export interface TourViewerData {
@@ -127,7 +148,7 @@ export const SHARE_BUNDLES = {
   all: [
     "title", "description", "display_address", "price", "currency",
     "bedrooms", "bathrooms", "area", "area_unit", "lot_size", "lot_size_unit",
-    "year_built", "city", "state", "country", "uploads", "data", "pipeline",
+    "year_built", "city", "state", "country", "uploads", "data", "pipeline", "floorplan",
   ],
 } as const;
 

@@ -53,7 +53,7 @@ function expiryLabel(dateStr: string | null, lang: string): string | null {
 }
 
 const STATUS_CONFIG: Record<string, { dot: string; bg: string; text: string; labelKey: LocaleKey }> = {
-  active:  { dot: "bg-foreground",    bg: "bg-foreground/[0.10]", text: "text-foreground", labelKey: "shares.statusActive" },
+  active:  { dot: "bg-background",    bg: "bg-foreground", text: "text-background", labelKey: "shares.statusActive" },
   paused:  { dot: "bg-foreground/40", bg: "bg-foreground/[0.05]", text: "text-foreground/55", labelKey: "shares.statusPaused" },
   expired: { dot: "bg-foreground/20", bg: "bg-foreground/[0.04]", text: "text-foreground/40", labelKey: "shares.statusExpired" },
   revoked: { dot: "bg-foreground/20", bg: "bg-foreground/[0.04]", text: "text-foreground/40", labelKey: "shares.statusRevoked" },
@@ -121,7 +121,7 @@ export function ShareLinkCard({ share, lang, onUpdate, onEdit }: ShareLinkCardPr
   };
 
   return (
-    <div className={`rounded-xl border transition-colors ${isLive ? "border-border/70 bg-background hover:border-border" : "border-border/40 bg-muted/20"}`}>
+    <div className={`rounded-2xl border transition-colors ${isLive ? "border-black/[0.08] bg-background hover:border-black/[0.14]" : "border-black/[0.05] bg-foreground/[0.02]"}`}>
       {/* Collapsed row */}
       <div
         role="button"
@@ -190,7 +190,7 @@ export function ShareLinkCard({ share, lang, onUpdate, onEdit }: ShareLinkCardPr
         <div className="overflow-hidden">
           <div className={`border-t border-border/40 px-3.5 py-3 space-y-3 ${expanded ? "" : "invisible"}`}>
           {isLive && (
-            <div className="flex items-center gap-2 rounded-lg border border-border/40 bg-foreground/[0.02] px-3 py-2">
+            <div className="flex items-center gap-2 rounded-xl bg-foreground/[0.03] px-3 py-2">
               <p className="flex-1 text-[11px] font-mono text-foreground/70 truncate select-all">{shareUrl(share.token)}</p>
             </div>
           )}
@@ -203,82 +203,85 @@ export function ShareLinkCard({ share, lang, onUpdate, onEdit }: ShareLinkCardPr
               </div>
             ) : stats ? (
               <>
-                <div className="rounded-lg border border-border/40 px-3 py-2.5 text-center">
-                  <p className="text-[18px] font-semibold tabular-nums">{stats.total_accesses}</p>
-                  <p className="text-[10px] text-foreground/60 uppercase tracking-wider mt-0.5">{t("shareDialog.analytics.totalViews", lang)}</p>
+                <div className="rounded-xl bg-foreground/[0.03] px-3 py-2.5 text-center">
+                  <p className="text-[17px] font-semibold tabular-nums leading-tight">{stats.total_accesses}</p>
+                  <p className="text-[11px] text-muted-foreground mt-0.5">{t("shareDialog.analytics.totalViews", lang)}</p>
                 </div>
-                <div className="rounded-lg border border-border/40 px-3 py-2.5 text-center">
-                  <p className="text-[18px] font-semibold tabular-nums">{stats.unique_ips}</p>
-                  <p className="text-[10px] text-foreground/60 uppercase tracking-wider mt-0.5">{t("shareDialog.analytics.uniqueVisitors", lang)}</p>
+                <div className="rounded-xl bg-foreground/[0.03] px-3 py-2.5 text-center">
+                  <p className="text-[17px] font-semibold tabular-nums leading-tight">{stats.unique_ips}</p>
+                  <p className="text-[11px] text-muted-foreground mt-0.5">{t("shareDialog.analytics.uniqueVisitors", lang)}</p>
                 </div>
-                <div className="rounded-lg border border-border/40 px-3 py-2.5 text-center">
-                  <p className="text-[18px] font-semibold tabular-nums">{stats.authenticated_accesses}</p>
-                  <p className="text-[10px] text-foreground/60 uppercase tracking-wider mt-0.5">{t("shareDialog.analytics.authenticated", lang)}</p>
+                <div className="rounded-xl bg-foreground/[0.03] px-3 py-2.5 text-center">
+                  <p className="text-[17px] font-semibold tabular-nums leading-tight">{stats.authenticated_accesses}</p>
+                  <p className="text-[11px] text-muted-foreground mt-0.5">{t("shareDialog.analytics.authenticated", lang)}</p>
                 </div>
                 {share.requires_pin && (
-                  <div className="rounded-lg border border-border/40 px-3 py-2.5 text-center">
-                    <p className="text-[18px] font-semibold tabular-nums">{stats.failed_pin_attempts}</p>
-                    <p className="text-[10px] text-foreground/60 uppercase tracking-wider mt-0.5">{t("shareDialog.analytics.failedPins", lang)}</p>
+                  <div className="rounded-xl bg-foreground/[0.03] px-3 py-2.5 text-center">
+                    <p className="text-[17px] font-semibold tabular-nums leading-tight">{stats.failed_pin_attempts}</p>
+                    <p className="text-[11px] text-muted-foreground mt-0.5">{t("shareDialog.analytics.failedPins", lang)}</p>
                   </div>
                 )}
               </>
             ) : (
-              <div className="rounded-lg border border-border/40 px-3 py-2.5 text-center">
-                <p className="text-[18px] font-semibold tabular-nums">{share.access_count}</p>
-                <p className="text-[10px] text-foreground/60 uppercase tracking-wider mt-0.5">{t("shareDialog.analytics.totalViews", lang)}</p>
+              <div className="rounded-xl bg-foreground/[0.03] px-3 py-2.5 text-center">
+                <p className="text-[17px] font-semibold tabular-nums leading-tight">{share.access_count}</p>
+                <p className="text-[11px] text-muted-foreground mt-0.5">{t("shareDialog.analytics.totalViews", lang)}</p>
               </div>
             )}
           </div>
 
-          {/* Detail row */}
-          <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-[11px] text-foreground/60">
-            <span>{fieldSummaryLabel(share, lang)}</span>
-            {share.max_access_count && <span>{t("shares.viewLimit", lang)}: {share.max_access_count}</span>}
-            {share.expires_at && (
-              <span>
-                <svg width="10" height="10" viewBox="0 0 16 16" fill="none" className="inline mr-0.5 -mt-px"><circle cx="8" cy="8" r="5.5" stroke="currentColor" strokeWidth="1.5" /><path d="M8 5v3.5l2.5 1" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" /></svg>
-                {formatDateShort(share.expires_at, lang)}
-              </span>
-            )}
-          </div>
+          {(share.max_access_count || share.expires_at) && (
+            <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-[11px] text-muted-foreground">
+              {share.max_access_count && <span>{t("shares.viewLimit", lang)}: {share.max_access_count}</span>}
+              {share.expires_at && (
+                <span>
+                  <svg width="10" height="10" viewBox="0 0 16 16" fill="none" className="inline mr-0.5 -mt-px"><circle cx="8" cy="8" r="5.5" stroke="currentColor" strokeWidth="1.5" /><path d="M8 5v3.5l2.5 1" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" /></svg>
+                  {formatDateShort(share.expires_at, lang)}
+                </span>
+              )}
+            </div>
+          )}
 
           {/* Actions */}
           {isLive && (
-            <div className="flex items-center gap-2 pt-2 border-t border-border/40">
-              <button onClick={(e) => { e.stopPropagation(); onEdit(); }}
-                className="h-8 px-3.5 rounded-lg border border-border/50 text-[12px] font-medium text-foreground/80 hover:border-border hover:text-foreground transition-colors">
-                {t("shares.editSettings", lang)}
-              </button>
-              {isActive && (
-                <button onClick={handlePause} disabled={actionLoading}
-                  className="h-8 px-3.5 rounded-lg border border-border/50 text-[12px] text-foreground/60 hover:border-border hover:text-foreground transition-colors disabled:opacity-40">
-                  {t("shares.pause", lang)}
-                </button>
-              )}
-              {isPaused && (
-                <button onClick={handleResume} disabled={actionLoading}
-                  className="h-8 px-3.5 rounded-lg border border-border/50 text-[12px] font-medium text-foreground/70 hover:border-border hover:text-foreground transition-colors disabled:opacity-40">
-                  {t("shares.resume", lang)}
-                </button>
-              )}
-              <div className="flex-1" />
+            <div className="flex items-center gap-2 pt-2.5 border-t border-black/[0.05]">
               {!confirmRevoke ? (
-                <button onClick={(e) => { e.stopPropagation(); setConfirmRevoke(true); }}
-                  className="h-8 px-3.5 rounded-lg border border-border/40 text-[12px] text-foreground/50 hover:text-destructive hover:border-destructive/30 hover:bg-destructive/[0.04] transition-colors">
-                  {t("shares.revoke", lang)}
-                </button>
-              ) : (
-                <div className="flex items-center gap-2">
-                  <span className="text-[11px] text-destructive/70">{t("shares.revokeConfirm", lang)}</span>
-                  <button onClick={handleRevoke} disabled={actionLoading}
-                    className="h-8 px-3.5 rounded-lg text-[12px] font-medium text-destructive bg-destructive/[0.08] hover:bg-destructive/[0.12] transition-colors disabled:opacity-40">
+                <>
+                  <button onClick={(e) => { e.stopPropagation(); onEdit(); }}
+                    className="h-8 px-3.5 rounded-full bg-foreground/[0.05] text-[12px] font-medium text-foreground/80 hover:bg-foreground/[0.08] hover:text-foreground transition-colors">
+                    {t("shares.editSettings", lang)}
+                  </button>
+                  {isActive && (
+                    <button onClick={handlePause} disabled={actionLoading}
+                      className="h-8 px-3.5 rounded-full bg-foreground/[0.05] text-[12px] font-medium text-foreground/60 hover:bg-foreground/[0.08] hover:text-foreground transition-colors disabled:opacity-40">
+                      {t("shares.pause", lang)}
+                    </button>
+                  )}
+                  {isPaused && (
+                    <button onClick={handleResume} disabled={actionLoading}
+                      className="h-8 px-3.5 rounded-full bg-foreground/[0.05] text-[12px] font-medium text-foreground/70 hover:bg-foreground/[0.08] hover:text-foreground transition-colors disabled:opacity-40">
+                      {t("shares.resume", lang)}
+                    </button>
+                  )}
+                  <div className="flex-1" />
+                  <button onClick={(e) => { e.stopPropagation(); setConfirmRevoke(true); }}
+                    className="h-8 px-3.5 rounded-full text-[12px] font-medium text-foreground/45 hover:text-destructive hover:bg-destructive/[0.06] transition-colors">
                     {t("shares.revoke", lang)}
                   </button>
+                </>
+              ) : (
+                <>
+                  <span className="text-[12px] font-medium text-foreground/70">{t("shares.revokeConfirm", lang)}</span>
+                  <div className="flex-1" />
                   <button onClick={(e) => { e.stopPropagation(); setConfirmRevoke(false); }}
-                    className="h-8 px-3 rounded-lg text-[12px] text-foreground/50 hover:text-foreground transition-colors">
+                    className="h-8 px-3.5 rounded-full bg-foreground/[0.05] text-[12px] font-medium text-foreground/70 hover:bg-foreground/[0.08] hover:text-foreground transition-colors">
                     {t("shares.cancel", lang)}
                   </button>
-                </div>
+                  <button onClick={handleRevoke} disabled={actionLoading}
+                    className="h-8 px-3.5 rounded-full bg-destructive text-[12px] font-semibold text-white hover:bg-destructive/90 transition-colors disabled:opacity-40">
+                    {t("shares.revoke", lang)}
+                  </button>
+                </>
               )}
             </div>
           )}

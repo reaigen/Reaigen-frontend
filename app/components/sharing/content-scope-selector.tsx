@@ -1,7 +1,6 @@
 "use client";
 
 import * as React from "react";
-import { Switch } from "../../lib/ui/switch";
 import { t, type LocaleKey } from "../../lib/i18n";
 import {
   SHARE_BUNDLES,
@@ -106,8 +105,8 @@ export function ContentScopeSelector({ scope, onChange, hasTour, hasPhotos, hasF
               onClick={() => toggleCard(card.key)}
               className={`inline-flex items-center gap-1.5 rounded-full px-3.5 py-1.5 text-left transition-all ${
                 active
-                  ? "border border-foreground/20 bg-foreground/[0.06] text-foreground"
-                  : "border border-transparent bg-foreground/[0.04] text-foreground/45 hover:bg-foreground/[0.07] hover:text-foreground/60"
+                  ? "border border-foreground bg-foreground text-background"
+                  : "border border-transparent bg-foreground/[0.04] text-foreground/50 hover:bg-foreground/[0.07] hover:text-foreground/70"
               }`}
             >
               <span>{card.icon}</span>
@@ -130,8 +129,8 @@ export function ContentScopeSelector({ scope, onChange, hasTour, hasPhotos, hasF
                 onClick={() => handleBundleClick(name)}
                 className={`px-2.5 py-1 rounded-full text-[11px] font-medium transition-all ${
                   activeBundle === name
-                    ? "bg-foreground/[0.10] text-foreground border border-foreground/15"
-                    : "bg-foreground/[0.04] text-foreground/45 border border-transparent hover:text-foreground/65"
+                    ? "bg-foreground text-background border border-foreground"
+                    : "bg-foreground/[0.04] text-foreground/50 border border-transparent hover:bg-foreground/[0.07] hover:text-foreground/70"
                 }`}
               >
                 {t(labelKey, lang)}
@@ -151,33 +150,35 @@ export function ContentScopeSelector({ scope, onChange, hasTour, hasPhotos, hasF
           </div>
 
           {detailsExpanded && (
-            <div className="rounded-xl bg-foreground/[0.02] p-3 max-h-[180px] overflow-y-auto overscroll-contain space-y-2">
+            <div className="rounded-xl bg-foreground/[0.02] p-3.5 space-y-3">
               {SHARE_FIELD_GROUPS.map((group) => (
-                <div key={group.key}>
-                  <p className="text-[9px] font-medium text-foreground/30 uppercase tracking-wide mb-0.5">
+                <div key={group.key} className="space-y-1.5">
+                  <p className="text-[10px] font-medium text-foreground/45 uppercase tracking-wide">
                     {t(`shareDialog.fieldGroup.${group.key}` as LocaleKey, lang)}
                   </p>
-                  {group.fields.map((field) => {
-                    const isTitle = field === "title";
-                    const checked = scope.selectedFields.has(field);
-                    return (
-                      <div key={field} className="flex items-center justify-between gap-2 h-6">
-                        <span className={`text-[11px] ${isTitle ? "text-foreground/40" : "text-foreground/70"}`}>
+                  <div className="flex flex-wrap gap-1.5">
+                    {group.fields.map((field) => {
+                      const isTitle = field === "title";
+                      const checked = isTitle || scope.selectedFields.has(field);
+                      return (
+                        <button
+                          key={field}
+                          type="button"
+                          disabled={isTitle}
+                          onClick={() => handleFieldToggle(field, !checked)}
+                          className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-[12px] font-medium transition-all ${
+                            checked
+                              ? "bg-foreground text-background border border-foreground"
+                              : "bg-background text-foreground/70 border border-black/[0.08] hover:border-black/[0.16] hover:text-foreground"
+                          } ${isTitle ? "cursor-default opacity-60" : ""}`}
+                        >
+                          {checked && !isTitle && icons.check}
                           {t(`shareDialog.field.${field}` as LocaleKey, lang)}
-                          {isTitle && <span className="ml-1 text-[9px] text-foreground/25">{icons.lock}</span>}
-                        </span>
-                        {isTitle ? (
-                          <span className="text-[9px] text-foreground/30 uppercase tracking-wide">{t("common.required", lang)}</span>
-                        ) : (
-                          <Switch
-                            checked={checked}
-                            onCheckedChange={(v) => handleFieldToggle(field, v)}
-                            size="sm"
-                          />
-                        )}
-                      </div>
-                    );
-                  })}
+                          {isTitle && icons.lock}
+                        </button>
+                      );
+                    })}
+                  </div>
                 </div>
               ))}
             </div>

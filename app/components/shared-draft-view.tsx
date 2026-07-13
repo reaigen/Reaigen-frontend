@@ -8,6 +8,7 @@
 
 import { useState, useCallback } from "react";
 import { t } from "../lib/i18n";
+import FloorplanViewer from "./floorplan-viewer";
 import type { SharedDraftData, RoomData } from "../lib/tour-types";
 
 // ── Helpers ────────────────────────────────────────────────────────────
@@ -26,11 +27,11 @@ function formatPrice(price: string | number | null | undefined, currency?: strin
 // ── Icons ──────────────────────────────────────────────────────────────
 
 const I = {
-  bed:  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" className="text-foreground/40"><path d="M2 4v16"/><path d="M2 8h18a2 2 0 0 1 2 2v10"/><path d="M2 17h20"/><path d="M6 8v9"/></svg>,
-  bath: <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" className="text-foreground/40"><path d="M4 12h16a1 1 0 0 1 1 1v3a4 4 0 0 1-4 4H7a4 4 0 0 1-4-4v-3a1 1 0 0 1 1-1Z"/><path d="M6 12V5a2 2 0 0 1 2-2h3v2.25"/></svg>,
-  area: <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" className="text-foreground/40"><rect x="3" y="3" width="18" height="18" rx="1"/><path d="M3 9h18"/><path d="M9 3v18"/></svg>,
-  year: <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" className="text-foreground/40"><rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4"/><path d="M8 2v4"/><path d="M3 10h18"/></svg>,
-  lot:  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" className="text-foreground/40"><path d="M2 22l5-5"/><path d="M7 22H2v-5"/><path d="M22 2l-5 5"/><path d="M17 2h5v5"/><rect x="6" y="6" width="12" height="12" rx="1"/></svg>,
+  bed:  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" className="text-foreground/55"><path d="M2 4v16"/><path d="M2 8h18a2 2 0 0 1 2 2v10"/><path d="M2 17h20"/><path d="M6 8v9"/></svg>,
+  bath: <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" className="text-foreground/55"><path d="M4 12h16a1 1 0 0 1 1 1v3a4 4 0 0 1-4 4H7a4 4 0 0 1-4-4v-3a1 1 0 0 1 1-1Z"/><path d="M6 12V5a2 2 0 0 1 2-2h3v2.25"/></svg>,
+  area: <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" className="text-foreground/55"><rect x="3" y="3" width="18" height="18" rx="1"/><path d="M3 9h18"/><path d="M9 3v18"/></svg>,
+  year: <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" className="text-foreground/55"><rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4"/><path d="M8 2v4"/><path d="M3 10h18"/></svg>,
+  lot:  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" className="text-foreground/55"><path d="M2 22l5-5"/><path d="M7 22H2v-5"/><path d="M22 2l-5 5"/><path d="M17 2h5v5"/><rect x="6" y="6" width="12" height="12" rx="1"/></svg>,
   pin:  <svg width="12" height="12" viewBox="0 0 16 16" fill="none" className="text-muted-foreground shrink-0"><path d="M8 1.5a4.5 4.5 0 0 1 4.5 4.5c0 3.5-4.5 8.5-4.5 8.5S3.5 9.5 3.5 6A4.5 4.5 0 0 1 8 1.5Z" stroke="currentColor" strokeWidth="1.2"/><circle cx="8" cy="6" r="1.5" stroke="currentColor" strokeWidth="1.2"/></svg>,
 };
 
@@ -87,7 +88,7 @@ function SharedFloorplan({ floorplanUrl, rooms, lang }: { floorplanUrl: string; 
 
   if (!hasRooms) {
     return (
-      <div className="rounded-xl overflow-hidden border border-border/50 bg-white">
+      <div className="rounded-2xl overflow-hidden border border-black/[0.06] bg-white">
         {/* eslint-disable-next-line @next/next/no-img-element */}
         <img src={floorplanUrl} alt={t("tour.floorplan.alt", lang)} className="w-full" loading="lazy" />
       </div>
@@ -111,7 +112,7 @@ function SharedFloorplan({ floorplanUrl, rooms, lang }: { floorplanUrl: string; 
   ];
 
   return (
-    <div className="relative rounded-xl overflow-hidden border border-border/50 bg-white">
+    <div className="relative rounded-2xl overflow-hidden border border-black/[0.06] bg-white">
       {/* eslint-disable-next-line @next/next/no-img-element */}
       <img src={floorplanUrl} alt={t("tour.floorplan.alt", lang)} className="w-full block" loading="lazy" />
       <svg viewBox={`0 0 ${svgW} ${svgH}`} className="absolute inset-0 w-full h-full" style={{ pointerEvents: "none" }}>
@@ -173,8 +174,9 @@ export function SharedDraftView({ draftData, lang, hasTour, onOpenTour, floorpla
     facts: draftData.bedrooms != null || draftData.bathrooms != null || (draftData.area != null && draftData.area !== "") || draftData.year_built != null,
     description: !!draftData.description,
     photos: photos.length > 0,
+    floorplan: !!draftData.floorplan,
   };
-  const hasAny = has.title || has.address || has.price || has.facts || has.description || has.photos;
+  const hasAny = has.title || has.address || has.price || has.facts || has.description || has.photos || has.floorplan;
 
   return (
     <div className="min-h-screen bg-background">
@@ -226,7 +228,7 @@ export function SharedDraftView({ draftData, lang, hasTour, onOpenTour, floorpla
             {hasTour && onOpenTour && !has.photos && (
               <button
                 onClick={onOpenTour}
-                className="w-full flex items-center justify-center gap-2 rounded-2xl border border-border/60 bg-foreground/[0.02] py-8 text-foreground/60 hover:bg-foreground/[0.04] hover:text-foreground transition-colors"
+                className="w-full flex items-center justify-center gap-2 rounded-2xl bg-foreground/[0.03] py-8 text-foreground/60 hover:bg-foreground/[0.04] hover:text-foreground transition-colors"
               >
                 <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/><path d="M3.27 6.96L12 12.01l8.73-5.05M12 22.08V12"/></svg>
                 <span className="text-[14px] font-medium">{t("draft.viewTour", lang)}</span>
@@ -244,63 +246,61 @@ export function SharedDraftView({ draftData, lang, hasTour, onOpenTour, floorpla
               </div>
             )}
 
-            {/* Key facts */}
+            {/* Key facts — same chip design as the draft detail page */}
             {has.facts && (
-              <div className="flex flex-wrap gap-2.5">
-                {draftData.bedrooms != null && (
-                  <div className="flex items-center gap-2 rounded-lg border border-border/60 px-3 py-2">
-                    {I.bed}
-                    <span className="text-[14px] font-semibold tabular-nums">{draftData.bedrooms}</span>
-                    <span className="text-[11px] text-muted-foreground">{t("shared.bed", lang)}</span>
-                  </div>
-                )}
-                {draftData.bathrooms != null && (
-                  <div className="flex items-center gap-2 rounded-lg border border-border/60 px-3 py-2">
-                    {I.bath}
-                    <span className="text-[14px] font-semibold tabular-nums">{draftData.bathrooms}</span>
-                    <span className="text-[11px] text-muted-foreground">{t("shared.bath", lang)}</span>
-                  </div>
-                )}
-                {draftData.area != null && draftData.area !== "" && (
-                  <div className="flex items-center gap-2 rounded-lg border border-border/60 px-3 py-2">
-                    {I.area}
-                    <span className="text-[14px] font-semibold tabular-nums">{draftData.area}</span>
-                    <span className="text-[11px] text-muted-foreground">{draftData.area_unit || "m²"}</span>
-                  </div>
-                )}
-                {draftData.year_built != null && (
-                  <div className="flex items-center gap-2 rounded-lg border border-border/60 px-3 py-2">
-                    {I.year}
-                    <span className="text-[14px] font-semibold tabular-nums">{draftData.year_built}</span>
-                  </div>
-                )}
-                {draftData.lot_size != null && draftData.lot_size !== "" && (
-                  <div className="flex items-center gap-2 rounded-lg border border-border/60 px-3 py-2">
-                    {I.lot}
-                    <span className="text-[14px] font-semibold tabular-nums">{draftData.lot_size}</span>
-                    <span className="text-[11px] text-muted-foreground">{draftData.lot_size_unit || "m²"}</span>
-                  </div>
-                )}
+              <div className="flex flex-wrap gap-2">
+                {([
+                  [I.bed, draftData.bedrooms, t("shared.bed", lang)],
+                  [I.bath, draftData.bathrooms, t("shared.bath", lang)],
+                  [I.area, draftData.area, draftData.area_unit || "m²"],
+                  [I.year, draftData.year_built, null],
+                  [I.lot, draftData.lot_size, draftData.lot_size_unit || "m²"],
+                ] as [React.ReactNode, string | number | null | undefined, string | null][])
+                  .filter(([, value]) => value != null && value !== "")
+                  .map(([icon, value, label], i) => (
+                    <div key={i} className="flex items-center gap-2.5 rounded-xl bg-foreground/[0.04] px-3 py-2">
+                      {icon}
+                      <div className="leading-tight">
+                        <p className="text-[14px] font-semibold tabular-nums">{value}</p>
+                        {label && <p className="text-[11px] text-muted-foreground">{label}</p>}
+                      </div>
+                    </div>
+                  ))}
               </div>
             )}
 
             {/* Description */}
             {has.description && (
-              <div className="rounded-xl border border-border/50 px-4 py-3.5">
-                <p className="text-[13px] leading-[1.75] text-foreground/65 whitespace-pre-line">{draftData.description}</p>
+              <div>
+                <h2 className="text-[14px] font-semibold mb-2">{t("draft.description", lang)}</h2>
+                <div className="rounded-2xl bg-foreground/[0.03] px-4 py-3.5">
+                  <p className="text-[13px] leading-[1.75] text-foreground/65 whitespace-pre-line">{draftData.description}</p>
+                </div>
               </div>
             )}
 
-            {/* Floorplan (annotated composite) */}
-            {floorplanUrl && (
-              <SharedFloorplan floorplanUrl={floorplanUrl} rooms={rooms ?? []} lang={lang} />
+            {/* Floorplan — same vector renderer as the app when the share
+                includes the floorplan block; legacy composite as fallback */}
+            {(draftData.floorplan || floorplanUrl) && (
+              <div>
+                <h2 className="text-[14px] font-semibold mb-2">{t("draft.floorplan", lang)}</h2>
+                {draftData.floorplan ? (
+                  <FloorplanViewer
+                    draftData={draftData.floorplan.draft_data}
+                    publicFloorplan={draftData.floorplan}
+                    lang={lang}
+                  />
+                ) : (
+                  <SharedFloorplan floorplanUrl={floorplanUrl!} rooms={rooms ?? []} lang={lang} />
+                )}
+              </div>
             )}
 
             {/* 3D Tour button (between content and photo grid) */}
             {hasTour && onOpenTour && has.photos && (
               <button
                 onClick={onOpenTour}
-                className="w-full flex items-center justify-center gap-2.5 rounded-xl border border-foreground/15 bg-foreground text-background py-3 hover:bg-foreground/90 transition-colors"
+                className="w-full flex items-center justify-center gap-2.5 rounded-2xl bg-foreground text-background py-3 hover:bg-foreground/90 transition-colors"
               >
                 <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/><path d="M3.27 6.96L12 12.01l8.73-5.05M12 22.08V12"/></svg>
                 <span className="text-[14px] font-semibold">{t("draft.viewTour", lang)}</span>
@@ -330,8 +330,9 @@ export function SharedDraftView({ draftData, lang, hasTour, onOpenTour, floorpla
 
       {/* Footer */}
       <footer className="border-t border-border/30 mt-8 px-5 py-4 sm:px-8 text-center">
-        <span className="text-[11px] text-foreground/25" style={{ fontFamily: "var(--font-brand), ui-serif, Georgia, serif" }}>
-          Shared via Reaigen
+        <span className="text-[11px] text-muted-foreground">
+          {"Shared via "}
+          <span className="text-foreground/60" style={{ fontFamily: "var(--font-brand), ui-serif, Georgia, serif" }}>Reaigen</span>
         </span>
       </footer>
 

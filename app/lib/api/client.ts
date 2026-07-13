@@ -874,6 +874,7 @@ export async function getSharedDraftData(token: string): Promise<SharedDraftData
       state: raw.state,
       country: raw.country,
       uploads,
+      floorplan: raw.floorplan ?? null,
     };
   } catch {
     return null;

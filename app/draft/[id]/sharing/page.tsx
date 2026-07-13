@@ -70,7 +70,9 @@ export default function SharingPage({ params }: { params: Promise<{ id: string }
       const hasPhotos = (d.raw_uploads ?? []).some(
         (u: { mime_type?: string; asset_type?: string }) => u.mime_type?.startsWith("image") || u.asset_type === "photo"
       );
-      const hasFp = !!d.floorplan_id;
+      const hasFp = !!d.floorplan_id || (d.draft_data ?? []).some(
+        (e: { data_key: string }) => e.data_key === "captured_room_json" || e.data_key === "wall_graph_json"
+      );
       setScope(defaultContentScope(hasSplat, hasPhotos, hasFp));
     }).catch((err) => {
       setError(getSafeApiErrorMessage(err, lang) || "Failed to load");
@@ -87,13 +89,15 @@ export default function SharingPage({ params }: { params: Promise<{ id: string }
   const hasPhotos = (draft?.raw_uploads ?? []).some(
     (u) => u.mime_type?.startsWith("image") || u.asset_type === "photo"
   );
-  const hasFloorplan = !!fpUrl;
+  const hasFloorplan = !!fpUrl || (draft?.draft_data ?? []).some(
+    (e) => e.data_key === "captured_room_json" || e.data_key === "wall_graph_json"
+  );
 
   const handleCreate = useCallback(async (formData: ShareFormData) => {
     setFormError(null);
     setSaving(true);
     try {
-      const s = primarySplatId
+      const s = scope?.tour && primarySplatId
         ? await createSplatShare(primarySplatId, formData)
         : await createDraftShare(draftId, formData);
       setShares((prev) => [s, ...prev]);
@@ -107,7 +111,7 @@ export default function SharingPage({ params }: { params: Promise<{ id: string }
     } finally {
       setSaving(false);
     }
-  }, [primarySplatId, draftId, lang]);
+  }, [scope?.tour, primarySplatId, draftId, lang]);
 
   const handleShareUpdate = useCallback((shareId: number, updated: ShareData | null) => {
     if (!updated) {
