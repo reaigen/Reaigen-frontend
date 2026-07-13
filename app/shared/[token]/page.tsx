@@ -27,6 +27,7 @@ import { SharedDraftView } from "../../components/shared-draft-view";
 import { Button } from "../../lib/ui/button";
 import { Input } from "../../lib/ui/input";
 import { getBrowserLanguage, t } from "../../lib/i18n";
+import { PageLoading } from "../../components/page-loading";
 
 const SplatViewer = dynamic(() => import("../../components/splat-viewer"), { ssr: false });
 
@@ -292,14 +293,7 @@ export default function SharedPage({ params }: { params: Promise<{ token: string
 
   // Loading
   if (loading) {
-    return (
-      <div className="min-h-screen flex items-center justify-center bg-background">
-        <div className="text-center space-y-3">
-          <div className="animate-spin h-7 w-7 border-2 border-foreground/15 border-t-foreground/60 rounded-full mx-auto" />
-          <p className="text-xs text-muted-foreground">{t("shared.loadingTour", lang)}</p>
-        </div>
-      </div>
-    );
+    return <PageLoading />;
   }
 
   // ── Full-screen tour overlay ──────────────────────────────────────

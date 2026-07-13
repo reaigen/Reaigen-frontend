@@ -113,8 +113,11 @@ npm run dev
 | Route | Auth | Purpose |
 |-------|------|---------|
 | `/` | No | Login / register (redirects to dashboard if authed) |
-| `/dashboard` | Yes | Splat list, share actions, tour links |
+| `/dashboard` | Yes | Draft listing with search, pagination, grid toggle |
+| `/draft/[id]` | Yes | Draft detail (property specs, photo gallery, floorplan) |
+| `/draft/[id]/sharing` | Yes | Sharing configuration (two-panel: preview + controls) |
 | `/tour/[id]` | Yes | Full tour viewer + camera editor |
+| `/shares` | Yes | Share management dashboard |
 | `/settings` | Yes | Profile, localization, security |
 | `/shared/[token]` | No | Public shared tour viewer (PIN-gated) |
 
@@ -184,24 +187,30 @@ If the endpoint is not set, metrics are only logged in development.
 
 ## Key Features
 
+### Dashboard & Drafts
+- Draft listing with server-side search, infinite scroll, grid/list toggle
+- Draft detail page with property specs, photo gallery, and floorplan viewer
+- Per-draft sharing configuration (two-panel layout)
+
 ### Virtual Tour Viewer
-- BabylonJS Gaussian Splatting renderer
-- Tour playback with shot-based navigation
+- BabylonJS Gaussian Splatting renderer (SOG/SPZ/PLY formats)
+- Tour playback with camera-based navigation
 - Camera editor (capture, reorder, save preview angles)
 - Floorplan overlay with room navigation
-- IndexedDB caching for splat files
+- IndexedDB caching for splat files (14-day TTL, 1.5 GB budget, LRU eviction)
 
-### Sharing
-- One-click share link creation
+### Sharing & Share Management
+- Full-page sharing config with live preview
 - PIN protection (4–10 digits, rate-limited)
-- Auto-expire (1h / 24h / 7d / 30d)
-- View limits
+- Auto-expire (1h / 24h / 7d / 30d), view limits
 - Pause / resume / revoke
+- Shares dashboard for managing all active links
 - Analytics (views, unique IPs)
 
 ### Shared Tour Viewer (Public)
 - No auth required
 - PIN gate with lockout protection
+- Property info card with photo gallery and lightbox
 - Read-only viewer (no keyboard movement)
 - On-screen dot navigation
 - Floorplan room navigation

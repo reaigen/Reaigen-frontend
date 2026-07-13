@@ -28,7 +28,6 @@ app/
 ├── components/
 │   ├── auth-gate.tsx           # Login/register modal
 │   ├── app-shell.tsx           # Header nav + layout wrapper
-│   ├── profile-card.tsx        # User profile summary card
 │   ├── splat-viewer.tsx        # BabylonJS Gaussian Splat viewer (core)
 │   ├── camera-editor.tsx       # Camera editor (capture, look through, reorder, save)
 │   ├── share-dialog.tsx        # Share link creation & management modal

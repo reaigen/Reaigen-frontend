@@ -535,35 +535,6 @@ export async function confirmCover(key: string) {
   });
 }
 
-// ─── Portfolio ───────────────────────────────────────────────────────────
-
-export interface PortfolioData {
-  portfolio_visibility: string;
-  portfolio_slug: string | null;
-  portfolio_title: string;
-  portfolio_headline: string;
-  portfolio_urls: string[];
-  portfolio_capabilities: string[];
-  portfolio_token: string | null;
-}
-
-export async function getPortfolio(): Promise<PortfolioData> {
-  return request("/api/reaigen/profiles/portfolio_me/");
-}
-
-export async function updatePortfolio(data: Partial<PortfolioData>): Promise<PortfolioData> {
-  return request("/api/reaigen/profiles/portfolio_update/", {
-    method: "PATCH",
-    body: JSON.stringify(data),
-  });
-}
-
-export async function regeneratePortfolioToken(): Promise<{ portfolio_token: string }> {
-  return request("/api/reaigen/profiles/portfolio_regenerate_token/", {
-    method: "POST",
-  });
-}
-
 // ─── App Content / Legal Documents ───────────────────────────────────────
 
 export type AppContentDocumentType = "terms" | "privacy" | "gdpr" | "license" | "message" | "text" | "cookie";
@@ -936,14 +907,6 @@ export async function getDraftShare(draftId: number): Promise<ShareData | null> 
   try {
     const all = await listShares();
     return all.find((s) => s.draft === draftId && s.status !== "revoked") ?? null;
-  } catch {
-    return null;
-  }
-}
-
-export async function getSplatShare(splatId: number): Promise<ShareData | null> {
-  try {
-    return await request(`/api/reaigen/splats/${splatId}/share/`);
   } catch {
     return null;
   }

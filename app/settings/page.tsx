@@ -6,6 +6,7 @@ import { useAuth } from "../components/hooks/use-auth";
 import { AppShell } from "../components/app-shell";
 import { SettingsForm } from "../components/settings-form";
 import { t, getUserLanguage } from "../lib/i18n";
+import { PageLoading } from "../components/page-loading";
 
 export default function SettingsPage() {
   const { isAuthenticated, isLoading, user, logout, refreshProfile } = useAuth();
@@ -18,11 +19,7 @@ export default function SettingsPage() {
   }, [isLoading, isAuthenticated, router]);
 
   if (isLoading || !user) {
-    return (
-      <div className="min-h-screen flex items-center justify-center">
-        <div className="animate-spin h-7 w-7 border-2 border-foreground/15 border-t-foreground/60 rounded-full" />
-      </div>
-    );
+    return <PageLoading />;
   }
 
   const lang = getUserLanguage(user.localization);

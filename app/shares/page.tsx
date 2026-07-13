@@ -16,6 +16,7 @@ import {
   getShareAnalytics,
 } from "../lib/api/client";
 import { SHARE_BUNDLES, type ShareData, type ShareBundleName } from "../lib/tour-types";
+import { PageLoading } from "../components/page-loading";
 
 function detectBundleFromVisible(visible: string[]): ShareBundleName | null {
   const set = new Set(visible);
@@ -346,11 +347,7 @@ export default function SharesPage() {
 
 
   if (isLoading || !user) {
-    return (
-      <div className="min-h-screen flex items-center justify-center">
-        <div className="animate-spin h-7 w-7 border-2 border-foreground/15 border-t-foreground/60 rounded-full" />
-      </div>
-    );
+    return <PageLoading />;
   }
 
   const lang = getUserLanguage(user.localization);

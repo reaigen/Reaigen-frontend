@@ -54,10 +54,6 @@ const nextConfig: NextConfig = {
   output: "standalone",
   skipTrailingSlashRedirect: true,
   allowedDevOrigins: ["127.0.0.1", "localhost", "0.0.0.0", "100.115.47.42", "100.78.1.23", "app-reaigen.publicrouter.sk"],
-  // Include aholo-viewer worker files in standalone output
-  outputFileTracingIncludes: {
-    "/**": ["./node_modules/@manycore/aholo-viewer/dist/*.js"],
-  },
   async headers() {
     return [
       {

@@ -10,6 +10,7 @@ import dynamic from "next/dynamic";
 import CameraEditor from "../../components/camera-editor";
 import { Button } from "../../lib/ui/button";
 import { getUserLanguage, t } from "../../lib/i18n";
+import { PageLoading } from "../../components/page-loading";
 
 const SplatViewer = dynamic(() => import("../../components/splat-viewer"), { ssr: false });
 const SOG_READY_TIMEOUT_MS = 15000;
@@ -117,14 +118,7 @@ export default function TourPage({ params }: { params: Promise<{ id: string }> }
   }, []);
 
   if (isLoading || (!viewer && !error)) {
-    return (
-      <div className="min-h-screen flex items-center justify-center bg-background">
-        <div className="text-center space-y-3">
-          <div className="animate-spin h-7 w-7 border-2 border-foreground/15 border-t-foreground/60 rounded-full mx-auto" />
-          <p className="text-xs text-muted-foreground">{t("tour.loading", lang)}</p>
-        </div>
-      </div>
-    );
+    return <PageLoading />;
   }
 
   if (error) {
