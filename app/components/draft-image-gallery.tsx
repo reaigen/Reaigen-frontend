@@ -163,7 +163,7 @@ function Lightbox({
       </div>
 
       {/* Dot indicators */}
-      {count > 1 && count <= 12 && (
+      {count > 1 && count <= 10 && (
         <div className="absolute bottom-5 left-1/2 -translate-x-1/2 z-10 flex gap-1.5">
           {images.map((_, i) => (
             <button
@@ -219,7 +219,7 @@ export function DraftImageGallery({ images, alt, fallbackUrl, lang = "en" }: Dra
   // No images — show fallback or placeholder
   if (count === 0) {
     return (
-      <div className="relative aspect-[16/10] w-full overflow-hidden rounded-xl bg-muted/30">
+      <div className="relative aspect-[16/10] w-full overflow-hidden md:rounded-xl bg-muted/30">
         {fallbackUrl ? (
           <Thumbnail src={fallbackUrl} alt={alt} className="absolute inset-0 h-full w-full object-cover" priority />
         ) : (
@@ -240,7 +240,7 @@ export function DraftImageGallery({ images, alt, fallbackUrl, lang = "en" }: Dra
     return (
       <>
         <div
-          className="relative aspect-[16/10] w-full overflow-hidden rounded-xl bg-muted/30 cursor-pointer"
+          className="relative aspect-[16/10] w-full overflow-hidden md:rounded-xl bg-muted/30 cursor-pointer"
           onClick={() => setLightboxIndex(0)}
         >
           <Thumbnail src={images[0].url} alt={alt} className="absolute inset-0 h-full w-full object-cover" priority />
@@ -255,7 +255,7 @@ export function DraftImageGallery({ images, alt, fallbackUrl, lang = "en" }: Dra
   // Multiple images — carousel
   return (
     <>
-      <div className="group relative overflow-hidden rounded-xl bg-muted/30">
+      <div className="group relative overflow-hidden md:rounded-xl bg-muted/30">
         {/* Scrollable track */}
         <div
           ref={scrollRef}

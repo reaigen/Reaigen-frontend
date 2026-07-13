@@ -36,10 +36,13 @@ const SIDEBAR_W = 220; // px
 export function AppShell({
   user,
   onLogout,
+  hideMobileNav = false,
   children,
 }: {
   user: UserProfile;
   onLogout: () => void;
+  /** Hide the mobile bottom tab bar — for detail screens that provide their own bottom action bar */
+  hideMobileNav?: boolean;
   children: React.ReactNode;
 }) {
   const pathname = usePathname();
@@ -166,6 +169,7 @@ export function AppShell({
       </main>
 
       {/* ── Mobile bottom tab bar ────────────────────────────────── */}
+      {!hideMobileNav && (
       <nav className="fixed inset-x-0 bottom-0 z-40 border-t border-border/20 bg-background/92 pb-safe backdrop-blur-xl md:hidden">
         <div className="grid grid-cols-2 gap-1 px-3 pb-2 pt-2 pl-safe pr-safe">
           {NAV_ITEMS.map((item) => {
@@ -189,6 +193,7 @@ export function AppShell({
           })}
         </div>
       </nav>
+      )}
 
       {/* CSS variable for sidebar offset (desktop only) */}
       <style>{`@media (min-width: 768px) { :root { --sidebar-offset: ${SIDEBAR_W}px; } }`}</style>

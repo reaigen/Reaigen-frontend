@@ -12,6 +12,7 @@ import { getUserLanguage, t } from "../../lib/i18n";
 import { DraftImageGallery } from "../../components/draft-image-gallery";
 import FloorplanViewer from "../../components/floorplan-viewer";
 import type { DraftDetailItem, DraftUpload, SplatsByDraftPayload } from "../../lib/tour-types";
+import { PageLoading } from "../../components/page-loading";
 
 // ── Formatting ────────────────────────────────────────────────────────────
 
@@ -411,14 +412,7 @@ export default function DraftPreviewPage({ params }: { params: Promise<{ id: str
   }, [isAuthenticated, draftId, lang]);
 
   if (isLoading || (!draft && !error)) {
-    return (
-      <div className="min-h-screen flex items-center justify-center">
-        <div className="text-center space-y-3">
-          <div className="animate-spin h-7 w-7 border-2 border-foreground/15 border-t-foreground/60 rounded-full mx-auto" />
-          <p className="text-xs text-muted-foreground">{t("draft.loading", lang)}</p>
-        </div>
-      </div>
-    );
+    return <PageLoading />;
   }
 
   if (error) {
@@ -479,10 +473,10 @@ export default function DraftPreviewPage({ params }: { params: Promise<{ id: str
 
 
   return (
-    <AppShell user={user} onLogout={logout}>
+    <AppShell user={user} onLogout={logout} hideMobileNav>
       <div className="mx-auto w-full max-w-2xl pb-16 md:pb-10">
         {/* Back */}
-        <button onClick={() => router.back()} className="mb-4 inline-flex items-center gap-1.5 rounded-xl px-2 py-1.5 -ml-2 text-[13px] text-muted-foreground hover:text-foreground hover:bg-foreground/[0.04] transition-colors">
+        <button onClick={() => { if (window.history.length > 1) router.back(); else router.push("/dashboard"); }} className="mb-4 inline-flex items-center gap-1.5 rounded-xl px-2 py-1.5 -ml-2 text-[13px] text-muted-foreground hover:text-foreground hover:bg-foreground/[0.04] transition-colors">
           <svg width="15" height="15" viewBox="0 0 16 16" fill="none"><path d="M10 12L6 8L10 4" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/></svg>
           {t("common.back", lang)}
         </button>
@@ -495,9 +489,9 @@ export default function DraftPreviewPage({ params }: { params: Promise<{ id: str
         </div>
 
         {/* Header */}
-        <div className="mt-5 opacity-0 animate-fade-in-up [animation-fill-mode:forwards]">
+        <div className="mt-5 animate-fade-in-up">
           {offerType ? (
-            <p className="text-[11px] font-medium uppercase tracking-wider text-foreground/45 mb-1">
+            <p className="text-[11px] font-medium uppercase tracking-wider text-muted-foreground mb-1">
               {enumT("offer", offerType, lang)}
             </p>
           ) : null}
@@ -517,14 +511,16 @@ export default function DraftPreviewPage({ params }: { params: Promise<{ id: str
 
         {/* Key facts */}
         {facts.length > 0 && (
-          <div className="mt-5 flex flex-wrap gap-3">
+          <div className="mt-5 flex flex-wrap gap-2 animate-fade-in-up" style={{ animationDelay: "60ms" }}>
             {facts.map((f, i) => (
-              <div key={i} className="flex items-center gap-2 rounded-lg border border-border/50 px-3 py-2">
-                <span className="text-foreground/40">{f.icon}</span>
-                <div>
-                  <span className="text-[11px] text-muted-foreground">{f.label}</span>
-                  <span className="ml-1 text-[14px] font-semibold tabular-nums leading-tight">{f.value}</span>
-                  {f.sub && <p className="text-[10px] text-muted-foreground/70">{f.sub}</p>}
+              <div key={i} className="flex items-center gap-2.5 rounded-xl border border-border/40 px-3 py-2">
+                {f.icon}
+                <div className="leading-tight">
+                  <p className="text-[14px] font-semibold tabular-nums">{f.value}</p>
+                  <p className="text-[11px] text-muted-foreground">
+                    {f.label}
+                    {f.sub && <span className="text-muted-foreground/70"> · {f.sub}</span>}
+                  </p>
                 </div>
               </div>
             ))}
@@ -533,13 +529,13 @@ export default function DraftPreviewPage({ params }: { params: Promise<{ id: str
 
         {/* Detail attributes */}
         {rows.length > 0 && (
-          <div className="mt-5 opacity-0 animate-fade-in-up [animation-fill-mode:forwards]" style={{ animationDelay: "180ms" }}>
+          <div className="mt-5 animate-fade-in-up" style={{ animationDelay: "120ms" }}>
             <h2 className="text-[14px] font-semibold mb-2">{t("draft.details", lang)}</h2>
             <div className="rounded-xl border border-border/40">
               {rows.map((r, i) => (
-                <div key={i} className={`flex items-baseline justify-between gap-4 px-3.5 py-2.5 ${i < rows.length - 1 ? "border-b border-border/20" : ""}`}>
+                <div key={i} className={`grid grid-cols-[minmax(0,42%)_1fr] items-baseline gap-3 px-3.5 py-2.5 ${i < rows.length - 1 ? "border-b border-border/20" : ""}`}>
                   <span className="text-[13px] text-muted-foreground">{r.label}</span>
-                  <span className="text-[13px] font-medium text-foreground text-right tabular-nums">{r.value}</span>
+                  <span className="text-[13px] font-medium text-foreground tabular-nums">{r.value}</span>
                 </div>
               ))}
             </div>
@@ -548,7 +544,7 @@ export default function DraftPreviewPage({ params }: { params: Promise<{ id: str
 
         {/* Description */}
         {(description || translationPending) && (
-          <div className="mt-5">
+          <div className="mt-5 animate-fade-in-up" style={{ animationDelay: "180ms" }}>
             <h2 className="text-[14px] font-semibold mb-2">{t("draft.description", lang)}</h2>
             {translationPending && !hasTranslation && (
               <p className="text-[12px] text-foreground/40 italic mb-2">{t("draft.descriptionPending", lang)}</p>
@@ -572,7 +568,7 @@ export default function DraftPreviewPage({ params }: { params: Promise<{ id: str
 
         {/* Features */}
         {features.length > 0 && (
-          <div className="mt-5">
+          <div className="mt-5 animate-fade-in-up" style={{ animationDelay: "240ms" }}>
             <h2 className="text-[14px] font-semibold mb-2">{t("draft.features", lang)}</h2>
             <div className="flex flex-wrap gap-1.5">
               {features.map((f) => (
@@ -586,11 +582,11 @@ export default function DraftPreviewPage({ params }: { params: Promise<{ id: str
 
         {/* Monthly costs */}
         {monthlyCosts.length > 0 && (
-          <div className="mt-5">
+          <div className="mt-5 animate-fade-in-up" style={{ animationDelay: "300ms" }}>
             <h2 className="text-[14px] font-semibold mb-2">{t("draft.monthlyCosts", lang)}</h2>
             <div className="rounded-xl border border-border/40">
               {monthlyCosts.map((r, i) => (
-                <div key={i} className={`flex items-baseline justify-between gap-4 px-3.5 py-2.5 ${i < monthlyCosts.length - 1 ? "border-b border-border/20" : ""}`}>
+                <div key={i} className={`grid grid-cols-[minmax(0,42%)_1fr] items-baseline gap-3 px-3.5 py-2.5 ${i < monthlyCosts.length - 1 ? "border-b border-border/20" : ""}`}>
                   <span className="text-[13px] text-muted-foreground">{r.label}</span>
                   <span className="text-[13px] font-medium text-foreground tabular-nums">{r.value}</span>
                 </div>
@@ -601,7 +597,8 @@ export default function DraftPreviewPage({ params }: { params: Promise<{ id: str
 
         {/* Floorplan */}
         {draft.floorplan_id && draft.draft_data?.length > 0 && (
-          <div className="mt-5">
+          <div className="mt-5 animate-fade-in-up" style={{ animationDelay: "360ms" }}>
+            <h2 className="text-[14px] font-semibold mb-2">{t("draft.floorplan", lang)}</h2>
             <FloorplanViewer draftData={draft.draft_data} floorplanId={draft.floorplan_id} lang={lang} />
           </div>
         )}
@@ -624,7 +621,7 @@ export default function DraftPreviewPage({ params }: { params: Promise<{ id: str
       </div>
 
       {/* Sticky mobile action bar */}
-      <div className="fixed inset-x-0 bottom-0 z-30 border-t border-border/30 bg-background/95 backdrop-blur-xl px-4 py-2.5 pb-safe flex gap-2.5 md:hidden">
+      <div className="fixed inset-x-0 bottom-0 z-40 border-t border-border/20 bg-background/92 backdrop-blur-xl px-4 py-2.5 pb-safe flex gap-2.5 md:hidden">
         <Button variant="outline" size="sm" className="flex-1" onClick={() => router.push(`/draft/${draftId}/sharing`)}>
           <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" className="mr-1.5"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><path d="M8.59 13.51l6.83 3.98M15.41 6.51l-6.82 3.98"/></svg>
           {t("draft.share", lang)}

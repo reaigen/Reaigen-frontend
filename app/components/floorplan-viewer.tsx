@@ -166,7 +166,7 @@ export default function FloorplanViewer({ draftData, floorplanId, lang }: Props)
   const projXY = (x: number, z: number): [number, number] => [ox + (x - minX) * s, oy + (z - minZ) * s];
 
   return (
-    <div className="rounded-lg border border-border/70 bg-white overflow-hidden">
+    <div className="rounded-xl border border-border/40 bg-white overflow-hidden">
       <svg viewBox={`0 0 ${svgW} ${svgH}`} className="w-full block" xmlns="http://www.w3.org/2000/svg">
         <rect width={svgW} height={svgH} fill="white" />
 
