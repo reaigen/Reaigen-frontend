@@ -165,7 +165,7 @@ export function SharePreview({ draft, scope, hasTour, thumbUrl, fpUrl, lang }: S
           {items.map((item) => (
             <div key={item.label} className="flex items-center gap-1.5">
               {item.on ? (
-                <svg width="10" height="10" viewBox="0 0 16 16" fill="none" className="text-emerald-500 shrink-0"><path d="M3 8l4 4 6-6" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/></svg>
+                <svg width="10" height="10" viewBox="0 0 16 16" fill="none" className="text-foreground/50 shrink-0"><path d="M3 8l4 4 6-6" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/></svg>
               ) : (
                 <svg width="10" height="10" viewBox="0 0 16 16" fill="none" className="text-foreground/15 shrink-0"><path d="M4 4l8 8M12 4l-8 8" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/></svg>
               )}

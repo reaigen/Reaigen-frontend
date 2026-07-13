@@ -161,9 +161,9 @@ export default function SharingPage({ params }: { params: Promise<{ id: string }
 
         {/* Success banner */}
         {justCopied && (
-          <div className="mb-4 flex items-center gap-2 rounded-lg border border-emerald-200 dark:border-emerald-900/50 bg-emerald-50 dark:bg-emerald-950/20 px-3 py-2 animate-fade-in">
-            <svg width="14" height="14" viewBox="0 0 16 16" fill="none"><path d="M3 8.5L6.5 12L13 4" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-emerald-600 dark:text-emerald-400" /></svg>
-            <span className="text-[12px] text-emerald-700 dark:text-emerald-400 font-medium">{t("sharing.linkCopied", lang)}</span>
+          <div className="mb-4 flex items-center gap-2 rounded-lg border border-border/50 bg-foreground/[0.03] px-3 py-2 animate-fade-in">
+            <svg width="14" height="14" viewBox="0 0 16 16" fill="none"><path d="M3 8.5L6.5 12L13 4" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-foreground/50" /></svg>
+            <span className="text-[12px] text-foreground/70 font-medium">{t("sharing.linkCopied", lang)}</span>
           </div>
         )}
 
