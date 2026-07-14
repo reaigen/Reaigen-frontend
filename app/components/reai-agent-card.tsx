@@ -256,6 +256,11 @@ export function ReaiAgentCard({
           detail: { query: response.search_query },
         }));
       }
+      if (response.action_code === "settings_navigation" && response.settings_section) {
+        window.dispatchEvent(new CustomEvent("reai-settings-navigate", {
+          detail: { section: response.settings_section },
+        }));
+      }
       if (response.improvement_conversation_id) setImprovementConversationId(response.improvement_conversation_id);
       setTurns((current) => [
         ...current,
@@ -775,22 +780,6 @@ export function ReaiAgentCard({
                             </div>
                           )}
                         </div>
-                      </div>
-                    )}
-                    {answer?.action_code === "settings_navigation" && answer.navigation_path && answer.settings_section && (
-                      <div className="mt-3 flex items-center justify-between gap-3 rounded-lg border border-border/55 bg-foreground/[0.018] px-3 py-2.5">
-                        <div className="min-w-0">
-                          <p className="text-xs font-semibold text-foreground">{t("reai.settingsNavigationTitle", lang)}</p>
-                          <p className="mt-0.5 text-[11px] text-muted-foreground">
-                            {t(`settings.tab.${answer.settings_section}` as LocaleKey, lang)}
-                          </p>
-                        </div>
-                        <Link
-                          href={answer.navigation_path}
-                          className="shrink-0 rounded-md bg-foreground px-2.5 py-1.5 text-[10px] font-medium text-background"
-                        >
-                          {t("reai.settingsNavigationOpen", lang)}
-                        </Link>
                       </div>
                     )}
                     {answer?.action_code === "create_draft_share" && (answer.action_token || shareUrl || turn.actionStatus) && (

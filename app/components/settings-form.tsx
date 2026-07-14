@@ -2006,15 +2006,26 @@ export function SettingsForm({ user, onSaved }: { user: UserProfile; onSaved: ()
   const lang = getUserLanguage(user.localization);
   const [activeTab, setActiveTab] = React.useState("profile");
   React.useEffect(() => {
+    const sections = ["profile", "seller", "privacy", "reai", "localization", "notifications", "billing", "security"];
+    const selectSection = (section: string) => {
+      if (!sections.includes(section)) return;
+      setActiveTab(section);
+      window.history.replaceState(null, "", `#${section}`);
+    };
     const selectHashTab = () => {
-      const section = window.location.hash.slice(1);
-      if (["profile", "seller", "privacy", "reai", "localization", "notifications", "billing", "security"].includes(section)) {
-        setActiveTab(section);
-      }
+      selectSection(window.location.hash.slice(1));
+    };
+    const navigateFromAgent = (event: Event) => {
+      const section = (event as CustomEvent<{ section?: string }>).detail?.section;
+      if (section) selectSection(section);
     };
     selectHashTab();
     window.addEventListener("hashchange", selectHashTab);
-    return () => window.removeEventListener("hashchange", selectHashTab);
+    window.addEventListener("reai-settings-navigate", navigateFromAgent);
+    return () => {
+      window.removeEventListener("hashchange", selectHashTab);
+      window.removeEventListener("reai-settings-navigate", navigateFromAgent);
+    };
   }, []);
   const triggerClassName =
     "shrink-0 justify-start rounded-none border-b-2 border-transparent px-1.5 pb-3 pt-0 text-[13px] shadow-none data-[state=active]:border-foreground data-[state=active]:bg-transparent data-[state=active]:shadow-none";
