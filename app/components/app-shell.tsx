@@ -73,6 +73,7 @@ export function AppShell({
       : pathname.startsWith("/draft/")
         ? t("nav.creation", lang)
         : t("nav.dashboard", lang);
+  const reaiContext = pathname.startsWith("/settings") ? "settings" : (reaiDraftId ? "draft" : "creator");
 
   React.useEffect(() => {
     let active = true;
@@ -298,7 +299,11 @@ export function AppShell({
                 <div>
                   <h2 id="reai-panel-title" className="text-[14px] font-semibold">Agent</h2>
                   <p className="max-w-[260px] truncate text-[11px] text-muted-foreground">
-                    {reaiDraftId ? (reaiDraftTitle || t("reai.draftContext", lang)) : t("reai.noDraftContext", lang)}
+                    {reaiContext === "settings"
+                      ? t("reai.settingsContext", lang)
+                      : reaiDraftId
+                        ? (reaiDraftTitle || t("reai.draftContext", lang))
+                        : t("reai.noDraftContext", lang)}
                   </p>
                 </div>
               </div>
@@ -312,7 +317,7 @@ export function AppShell({
               </button>
             </div>
             <div className="min-h-0 flex-1">
-              <ReaiAgentCard draftId={reaiDraftId} lang={lang} onDraftUpdated={onReaiDraftUpdated} panel />
+              <ReaiAgentCard draftId={reaiDraftId} workspaceContext={reaiContext} lang={lang} onDraftUpdated={onReaiDraftUpdated} panel />
             </div>
           </aside>
       )}

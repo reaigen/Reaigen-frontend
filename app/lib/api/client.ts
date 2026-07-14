@@ -711,7 +711,7 @@ export interface ReaiAgentResponse {
   proposed_changes: Record<string, unknown>;
   suggested_actions: string[];
   proposal_token: string | null;
-  action_code?: "revoke_all_shares" | "manage_shares" | "share_inventory" | "select_share_fields" | "create_draft_share";
+  action_code?: "revoke_all_shares" | "manage_shares" | "share_inventory" | "share_status" | "settings_navigation" | "select_share_fields" | "create_draft_share";
   action_token?: string | null;
   action_count?: number;
   share_action?: "list" | "pause" | "resume" | "revoke";
@@ -725,10 +725,13 @@ export interface ReaiAgentResponse {
     share_path: string;
   }>;
   share_id?: number | null;
+  share_status?: "active" | "paused" | "expired" | "revoked" | "not_shared";
   share_url?: string | null;
   share_path?: string | null;
   available_share_fields?: string[];
   selected_share_fields?: string[];
+  settings_section?: "profile" | "seller" | "privacy" | "reai" | "localization" | "notifications" | "billing" | "security" | null;
+  navigation_path?: string | null;
   operation?: "none" | "list" | "compare" | "bulk_edit";
   search_query?: string | null;
   matched_creation_count?: number;
@@ -773,7 +776,8 @@ export type ReaiToolCode =
   | "bulk_edit"
   | "floorplan"
   | "image"
-  | "sharing";
+  | "sharing"
+  | "settings_navigation";
 
 export interface ReaiToolPermissions {
   allow_all_tools: boolean;
@@ -884,6 +888,7 @@ export async function askReaiWorkspace(
   language?: string,
   shareFieldNames?: string[],
   pendingActionCode?: ReaiAgentResponse["action_code"],
+  workspaceContext?: "creator" | "draft" | "settings",
 ): Promise<ReaiAgentResponse> {
   return request("/api/reaigen/reai-agent/workspace/assist/", {
     method: "POST",
@@ -895,6 +900,7 @@ export async function askReaiWorkspace(
       language,
       share_field_names: shareFieldNames,
       pending_action_code: pendingActionCode,
+      workspace_context: workspaceContext,
     }),
   });
 }

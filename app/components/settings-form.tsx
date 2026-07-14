@@ -2006,7 +2006,15 @@ export function SettingsForm({ user, onSaved }: { user: UserProfile; onSaved: ()
   const lang = getUserLanguage(user.localization);
   const [activeTab, setActiveTab] = React.useState("profile");
   React.useEffect(() => {
-    if (window.location.hash === "#reai") setActiveTab("reai");
+    const selectHashTab = () => {
+      const section = window.location.hash.slice(1);
+      if (["profile", "seller", "privacy", "reai", "localization", "notifications", "billing", "security"].includes(section)) {
+        setActiveTab(section);
+      }
+    };
+    selectHashTab();
+    window.addEventListener("hashchange", selectHashTab);
+    return () => window.removeEventListener("hashchange", selectHashTab);
   }, []);
   const triggerClassName =
     "shrink-0 justify-start rounded-none border-b-2 border-transparent px-1.5 pb-3 pt-0 text-[13px] shadow-none data-[state=active]:border-foreground data-[state=active]:bg-transparent data-[state=active]:shadow-none";
@@ -2016,7 +2024,7 @@ export function SettingsForm({ user, onSaved }: { user: UserProfile; onSaved: ()
       value={activeTab}
       onValueChange={(value) => {
         setActiveTab(value);
-        window.history.replaceState(null, "", value === "reai" ? "#reai" : window.location.pathname);
+        window.history.replaceState(null, "", `#${value}`);
       }}
       className="w-full"
     >

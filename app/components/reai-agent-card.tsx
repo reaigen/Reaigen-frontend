@@ -169,11 +169,13 @@ function errorText(error: unknown, lang: string): string {
 
 export function ReaiAgentCard({
   draftId,
+  workspaceContext = draftId ? "draft" : "creator",
   lang,
   onDraftUpdated,
   panel = false,
 }: {
   draftId?: number;
+  workspaceContext?: "creator" | "draft" | "settings";
   lang: string;
   onDraftUpdated?: (draft: DraftDetailItem) => void;
   panel?: boolean;
@@ -191,7 +193,9 @@ export function ReaiAgentCard({
   const [historyNotice, setHistoryNotice] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [copiedShareUrl, setCopiedShareUrl] = useState<string | null>(null);
-  const quickActions = draftId
+  const quickActions = workspaceContext === "settings"
+    ? (["reai.quickSettingsAgent", "reai.quickSettingsLanguage", "reai.quickSettingsSecurity"] as const)
+    : draftId
     ? (["reai.quickImproveDescription", "reai.quickCheckFields", "reai.quickEditCurrent"] as const)
     : (["reai.quickFind", "reai.quickCompare", "reai.quickBulk"] as const);
 
@@ -214,11 +218,15 @@ export function ReaiAgentCard({
   };
 
   useEffect(() => {
+    setTurns([]);
+    setMessage("");
+    setImprovementConversationId(null);
     setShowHistory(false);
     setHistory([]);
     setRestoreCandidateId(null);
     setHistoryNotice(null);
-  }, [draftId]);
+    setError(null);
+  }, [draftId, workspaceContext]);
 
   const ask = async (override?: string) => {
     const requestText = (override ?? message).trim();
@@ -241,6 +249,7 @@ export function ReaiAgentCard({
         lang,
         undefined,
         pendingActionCode,
+        workspaceContext,
       );
       if (!draftId && response.operation === "list" && response.search_query) {
         window.dispatchEvent(new CustomEvent("reai-workspace-search", {
@@ -734,6 +743,56 @@ export function ReaiAgentCard({
                         ))}
                       </div>
                     )}
+                    {answer?.action_code === "share_status" && answer.share_status && (
+                      <div className="mt-3 rounded-lg border border-border/55 bg-foreground/[0.018] px-3 py-2.5">
+                        <div className="flex items-center justify-between gap-3">
+                          <div className="min-w-0">
+                            <p className="text-xs font-semibold text-foreground">{t("reai.currentShareTitle", lang)}</p>
+                            <p className="mt-0.5 text-[11px] text-muted-foreground">
+                              {t(`reai.shareStatus.${answer.share_status}` as LocaleKey, lang)}
+                              {!!answer.selected_share_fields?.length && (
+                                <> · {t("reai.currentShareFields", lang).replace("{count}", String(answer.selected_share_fields.length))}</>
+                              )}
+                            </p>
+                          </div>
+                          {shareUrl && (
+                            <div className="flex shrink-0 items-center gap-1">
+                              <button
+                                type="button"
+                                className="rounded-md border border-border/60 px-2 py-1 text-[10px] font-medium"
+                                onClick={() => void copyShareUrl(shareUrl)}
+                              >
+                                {t(copiedShareUrl === shareUrl ? "reai.shareCopied" : "reai.shareCopy", lang)}
+                              </button>
+                              <a
+                                href={shareUrl}
+                                target="_blank"
+                                rel="noreferrer"
+                                className="px-1 py-1 text-[10px] font-medium text-muted-foreground hover:text-foreground"
+                              >
+                                {t("reai.shareOpen", lang)}
+                              </a>
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    )}
+                    {answer?.action_code === "settings_navigation" && answer.navigation_path && answer.settings_section && (
+                      <div className="mt-3 flex items-center justify-between gap-3 rounded-lg border border-border/55 bg-foreground/[0.018] px-3 py-2.5">
+                        <div className="min-w-0">
+                          <p className="text-xs font-semibold text-foreground">{t("reai.settingsNavigationTitle", lang)}</p>
+                          <p className="mt-0.5 text-[11px] text-muted-foreground">
+                            {t(`settings.tab.${answer.settings_section}` as LocaleKey, lang)}
+                          </p>
+                        </div>
+                        <Link
+                          href={answer.navigation_path}
+                          className="shrink-0 rounded-md bg-foreground px-2.5 py-1.5 text-[10px] font-medium text-background"
+                        >
+                          {t("reai.settingsNavigationOpen", lang)}
+                        </Link>
+                      </div>
+                    )}
                     {answer?.action_code === "create_draft_share" && (answer.action_token || shareUrl || turn.actionStatus) && (
                       <div className="mt-3 rounded-lg border border-border/55 bg-foreground/[0.018] px-3 py-2.5">
                         <div className="flex items-center justify-between gap-3">
@@ -809,7 +868,7 @@ export function ReaiAgentCard({
           {!showHistory && panel && turns.length === 0 && (
             <div className="flex min-h-0 flex-1 flex-col items-center justify-center px-4 text-center">
               <p className="max-w-xs text-[13px] leading-relaxed text-muted-foreground">
-                {t(draftId ? "reai.startDraftConversation" : "reai.startConversation", lang)}
+                {t(workspaceContext === "settings" ? "reai.startSettingsConversation" : (draftId ? "reai.startDraftConversation" : "reai.startConversation"), lang)}
               </p>
               <div className="mt-5 flex max-w-xs flex-wrap justify-center gap-2">
                 {quickActions.map((key) => (
@@ -832,7 +891,7 @@ export function ReaiAgentCard({
               onChange={(event) => setMessage(event.target.value)}
               maxLength={2000}
               rows={2}
-              placeholder={t(draftId ? "reai.draftPlaceholder" : "reai.placeholder", lang)}
+              placeholder={t(workspaceContext === "settings" ? "reai.settingsPlaceholder" : (draftId ? "reai.draftPlaceholder" : "reai.placeholder"), lang)}
               onKeyDown={(event) => {
                 if (event.key === "Enter" && !event.shiftKey) {
                   event.preventDefault();
