@@ -337,6 +337,15 @@ export default function SharesPage() {
     }).catch(() => {});
   }, [isAuthenticated]);
 
+  React.useEffect(() => {
+    if (!isAuthenticated) return;
+    const refresh = () => {
+      listShares().then(setShares).catch(() => undefined);
+    };
+    window.addEventListener("reai-shares-updated", refresh);
+    return () => window.removeEventListener("reai-shares-updated", refresh);
+  }, [isAuthenticated]);
+
   const handleShareUpdate = React.useCallback((id: number, updated: ShareData | null) => {
     if (!updated) {
       setShares((p) => p.filter((s) => s.id !== id));

@@ -29,12 +29,24 @@ import {
   unlinkSocialAccount,
   requestPhoneLinkOtp,
   verifyPhoneLinkOtp,
+  getReaiAgentConsent,
+  grantReaiAgentConsent,
+  revokeReaiAgentConsent,
+  getReaiToolPermissions,
+  updateReaiToolPermissions,
+  getReaiImprovementConsent,
+  grantReaiImprovementConsent,
+  revokeReaiImprovementConsent,
   type UserProfile,
   type AvailablePreferences,
   type PreferenceOption,
   type TotpStatus,
   type TotpSetupResponse,
   type LinkedAccountsResponse,
+  type ReaiAgentConsent,
+  type ReaiToolCode,
+  type ReaiToolPermissions,
+  type ReaiImprovementConsent,
 } from "../lib/api/client";
 import { getSafeApiErrorMessage } from "../lib/api/error-message";
 import { t, getUserLanguage, formatDate as fmtDate } from "../lib/i18n";
@@ -566,6 +578,261 @@ function SellerTab({ user, onSaved, lang }: { user: UserProfile; onSaved: () => 
         </form>
       </CardContent>
     </Card>
+  );
+}
+
+/* ── Reai Tab ───────────────────────────────────────────────────────── */
+
+function ReaiTab({ lang }: { lang: string }) {
+  const [consent, setConsent] = React.useState<ReaiAgentConsent | null>(null);
+  const [toolPermissions, setToolPermissions] = React.useState<ReaiToolPermissions | null>(null);
+  const [improvementConsent, setImprovementConsent] = React.useState<ReaiImprovementConsent | null>(null);
+  const [acknowledged, setAcknowledged] = React.useState(false);
+  const [loading, setLoading] = React.useState(true);
+  const [saving, setSaving] = React.useState(false);
+  const [error, setError] = React.useState<string | null>(null);
+  const [success, setSuccess] = React.useState<string | null>(null);
+
+  React.useEffect(() => {
+    let active = true;
+    Promise.all([getReaiAgentConsent(), getReaiImprovementConsent()])
+      .then(async ([agentConsent, improvement]) => {
+        if (!active) return;
+        setConsent(agentConsent);
+        setImprovementConsent(improvement);
+        if (agentConsent.consented) setToolPermissions(await getReaiToolPermissions());
+      })
+      .catch((err) => {
+        if (active) setError(getSafeApiErrorMessage(err, lang));
+      })
+      .finally(() => {
+        if (active) setLoading(false);
+      });
+    return () => { active = false; };
+  }, [lang]);
+
+  async function enableReai() {
+    if (!consent || !acknowledged || saving) return;
+    setSaving(true);
+    setError(null);
+    setSuccess(null);
+    try {
+      setConsent(await grantReaiAgentConsent(consent.policy_version));
+      setToolPermissions(await getReaiToolPermissions());
+      setAcknowledged(false);
+      setSuccess(t("settings.reai.enabled", lang));
+      window.dispatchEvent(new CustomEvent("reai-consent-changed", { detail: { enabled: true } }));
+    } catch (err) {
+      setError(getSafeApiErrorMessage(err, lang));
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function disableReai() {
+    if (!consent || saving) return;
+    setSaving(true);
+    setError(null);
+    setSuccess(null);
+    try {
+      setConsent(await revokeReaiAgentConsent());
+      setSuccess(t("settings.reai.disabled", lang));
+      window.dispatchEvent(new CustomEvent("reai-consent-changed", { detail: { enabled: false } }));
+    } catch (err) {
+      setError(getSafeApiErrorMessage(err, lang));
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function toggleImprovement() {
+    if (!improvementConsent || saving) return;
+    setSaving(true);
+    setError(null);
+    setSuccess(null);
+    try {
+      if (improvementConsent.consented) {
+        setImprovementConsent(await revokeReaiImprovementConsent());
+        setSuccess(t("settings.reai.improvementDisabled", lang));
+      } else {
+        setImprovementConsent(await grantReaiImprovementConsent(improvementConsent.policy_version));
+        setSuccess(t("settings.reai.improvementEnabled", lang));
+      }
+    } catch (err) {
+      setError(getSafeApiErrorMessage(err, lang));
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function setAllTools(allowAll: boolean) {
+    if (!toolPermissions || saving) return;
+    setSaving(true);
+    setError(null);
+    setSuccess(null);
+    try {
+      const payload = allowAll
+        ? { allow_all_tools: true }
+        : { allow_all_tools: false, tools: toolPermissions.tools };
+      setToolPermissions(await updateReaiToolPermissions(payload));
+      setSuccess(t("settings.reai.toolsSaved", lang));
+    } catch (err) {
+      setError(getSafeApiErrorMessage(err, lang));
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function setTool(code: ReaiToolCode, allowed: boolean) {
+    if (!toolPermissions || toolPermissions.allow_all_tools || saving) return;
+    setSaving(true);
+    setError(null);
+    setSuccess(null);
+    try {
+      setToolPermissions(await updateReaiToolPermissions({ tools: { [code]: allowed } }));
+      setSuccess(t("settings.reai.toolsSaved", lang));
+    } catch (err) {
+      setError(getSafeApiErrorMessage(err, lang));
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <div className="space-y-6">
+      <Card>
+        <CardHeader>
+          <CardTitle>{t("settings.reai.title", lang)}</CardTitle>
+          <CardDescription>{t("settings.reai.subtitle", lang)}</CardDescription>
+        </CardHeader>
+        <CardContent>
+          {loading ? (
+            <p className="text-[13px] text-muted-foreground">{t("reai.working", lang)}</p>
+          ) : consent ? (
+            <div className="space-y-4">
+              <div className="flex flex-col gap-3 rounded-lg border border-border/70 px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
+                <div>
+                  <p className="text-[13px] font-medium">{t("settings.reai.access", lang)}</p>
+                  <p className="mt-1 text-[12px] text-muted-foreground">
+                    {consent.consented ? t("settings.reai.accessEnabled", lang) : t("settings.reai.accessDisabled", lang)}
+                  </p>
+                </div>
+                <span className={cn(
+                  "w-fit rounded-full px-2.5 py-1 text-[11px] font-medium",
+                  consent.consented ? "bg-emerald-500/10 text-emerald-700" : "bg-foreground/10 text-foreground/60",
+                )}>
+                  {consent.consented ? t("common.allowed", lang) : t("common.notAllowed", lang)}
+                </span>
+              </div>
+
+              <div className="rounded-lg bg-muted/25 p-4 text-[12px] leading-relaxed text-foreground/70">
+                <p>{t("reai.consentData", lang)}</p>
+                <p className="mt-1.5">{t("reai.consentNoData", lang)}</p>
+                <p className="mt-1.5">{t("reai.consentStorage", lang)}</p>
+                <p className="mt-1.5">{t("reai.consentMedia", lang)}</p>
+              </div>
+
+              {consent.consented ? (
+                <Button type="button" size="sm" variant="outline" loading={saving} onClick={disableReai}>
+                  {t("settings.reai.disable", lang)}
+                </Button>
+              ) : (
+                <div className="space-y-3">
+                  <label className="flex cursor-pointer items-start gap-2 text-[12px] leading-relaxed text-foreground/75">
+                    <input
+                      type="checkbox"
+                      checked={acknowledged}
+                      onChange={(event) => setAcknowledged(event.target.checked)}
+                      className="mt-0.5"
+                    />
+                    <span>{t("reai.consentLabel", lang)} · v{consent.policy_version}</span>
+                  </label>
+                  <Button type="button" size="sm" loading={saving} disabled={!acknowledged} onClick={enableReai}>
+                    {t("reai.enable", lang)}
+                  </Button>
+                </div>
+              )}
+            </div>
+          ) : null}
+        </CardContent>
+      </Card>
+
+      {consent?.consented && toolPermissions && (
+        <Card>
+          <CardHeader>
+            <CardTitle>{t("settings.reai.toolsTitle", lang)}</CardTitle>
+            <CardDescription>{t("settings.reai.toolsSubtitle", lang)}</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <div className="space-y-3">
+              <div className="flex items-start justify-between gap-4 rounded-lg border border-border/70 px-4 py-3">
+                <div className="min-w-0">
+                  <p className="text-[13px] font-medium">{t("settings.reai.allTools", lang)}</p>
+                  <p className="mt-1 text-[12px] leading-relaxed text-muted-foreground">{t("settings.reai.allToolsHelp", lang)}</p>
+                </div>
+                <Switch
+                  checked={toolPermissions.allow_all_tools}
+                  disabled={saving}
+                  onCheckedChange={(checked) => void setAllTools(checked)}
+                  aria-label={t("settings.reai.allTools", lang)}
+                />
+              </div>
+
+              {!toolPermissions.allow_all_tools && (
+                <div className="divide-y divide-border/50 rounded-lg border border-border/70 px-4">
+                  {toolPermissions.available_tools.map((code) => (
+                    <div key={code} className="flex items-center justify-between gap-4 py-3">
+                      <div className="min-w-0">
+                        <p className="text-[13px] font-medium">{t(`settings.reai.tool.${code}`, lang)}</p>
+                        <p className="mt-0.5 text-[11px] leading-relaxed text-muted-foreground">
+                          {t(`settings.reai.tool.${code}.help`, lang)}
+                        </p>
+                      </div>
+                      <Switch
+                        checked={toolPermissions.tools[code]}
+                        disabled={saving}
+                        onCheckedChange={(checked) => void setTool(code, checked)}
+                        aria-label={t(`settings.reai.tool.${code}`, lang)}
+                      />
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              <p className="text-[11px] leading-relaxed text-muted-foreground">{t("settings.reai.toolsConfirmation", lang)}</p>
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
+      <Card>
+        <CardHeader>
+          <CardTitle>{t("settings.reai.improvementTitle", lang)}</CardTitle>
+          <CardDescription>{t("settings.reai.improvementSubtitle", lang)}</CardDescription>
+        </CardHeader>
+        <CardContent>
+          {improvementConsent && (
+            <div className="flex items-start justify-between gap-4 rounded-lg border border-border/70 px-4 py-3">
+              <div className="min-w-0">
+                <p className="text-[13px] font-medium">{t("settings.reai.improvementPermission", lang)}</p>
+                <p className="mt-1 text-[12px] leading-relaxed text-muted-foreground">
+                  {t("reai.improvementConsent", lang)} · {improvementConsent.retention_days} {t("reai.days", lang)} · v{improvementConsent.policy_version}
+                </p>
+              </div>
+              <Switch
+                checked={improvementConsent.consented}
+                disabled={saving}
+                onCheckedChange={() => void toggleImprovement()}
+                aria-label={t("settings.reai.improvementPermission", lang)}
+              />
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
+      {error && <p className="text-[12px] text-destructive" role="alert">{error}</p>}
+      {success && <p className="text-[12px] text-emerald-600" role="status">{success}</p>}
+    </div>
   );
 }
 
@@ -1737,15 +2004,27 @@ function PhoneSection({ user, onSaved, lang }: { user: UserProfile; onSaved: () 
 
 export function SettingsForm({ user, onSaved }: { user: UserProfile; onSaved: () => void }) {
   const lang = getUserLanguage(user.localization);
+  const [activeTab, setActiveTab] = React.useState("profile");
+  React.useEffect(() => {
+    if (window.location.hash === "#reai") setActiveTab("reai");
+  }, []);
   const triggerClassName =
     "shrink-0 justify-start rounded-none border-b-2 border-transparent px-1.5 pb-3 pt-0 text-[13px] shadow-none data-[state=active]:border-foreground data-[state=active]:bg-transparent data-[state=active]:shadow-none";
 
   return (
-    <Tabs defaultValue="profile" className="w-full">
+    <Tabs
+      value={activeTab}
+      onValueChange={(value) => {
+        setActiveTab(value);
+        window.history.replaceState(null, "", value === "reai" ? "#reai" : window.location.pathname);
+      }}
+      className="w-full"
+    >
       <TabsList className="mb-7 flex min-h-0 w-full gap-4 overflow-x-auto scroll-smooth rounded-none border-b border-border/70 bg-transparent p-0 text-muted-foreground [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden">
         <TabsTrigger value="profile" className={triggerClassName}>{t("settings.tab.profile", lang)}</TabsTrigger>
         <TabsTrigger value="seller" className={triggerClassName}>{t("settings.tab.seller", lang)}</TabsTrigger>
         <TabsTrigger value="privacy" className={triggerClassName}>{t("settings.tab.privacy", lang)}</TabsTrigger>
+        <TabsTrigger value="reai" className={triggerClassName}>{t("settings.tab.reai", lang)}</TabsTrigger>
         <TabsTrigger value="localization" className={triggerClassName}>{t("settings.tab.localization", lang)}</TabsTrigger>
         <TabsTrigger value="notifications" className={triggerClassName}>{t("settings.tab.notifications", lang)}</TabsTrigger>
         <TabsTrigger value="billing" className={triggerClassName}>{t("settings.tab.billing", lang)}</TabsTrigger>
@@ -1760,6 +2039,9 @@ export function SettingsForm({ user, onSaved }: { user: UserProfile; onSaved: ()
         </TabsContent>
         <TabsContent value="privacy" className="mt-0">
           <PrivacyTab user={user} onSaved={onSaved} lang={lang} />
+        </TabsContent>
+        <TabsContent value="reai" className="mt-0">
+          <ReaiTab lang={lang} />
         </TabsContent>
         <TabsContent value="localization" className="mt-0">
           <LocalizationTab user={user} onSaved={onSaved} lang={lang} />

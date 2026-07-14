@@ -1,15 +1,7 @@
 import type { Metadata, Viewport } from "next";
-import { DM_Serif_Display } from "next/font/google";
 import "./globals.css";
 import { AuthProvider } from "./components/hooks/use-auth";
 import { WebVitalsReporter } from "./components/web-vitals-reporter";
-
-export const brandSerif = DM_Serif_Display({
-  subsets: ["latin"],
-  weight: "400",
-  variable: "--font-brand",
-  display: "swap",
-});
 
 export const viewport: Viewport = {
   width: "device-width",
@@ -46,7 +38,7 @@ export const metadata: Metadata = {
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="en" className={brandSerif.variable}>
+    <html lang="en" style={{ "--font-brand": "ui-serif, Georgia, serif" } as React.CSSProperties}>
       <head>
         <link rel="dns-prefetch" href="//app-reaigen.publicrouter.sk" />
         <link rel="preconnect" href="https://app-reaigen.publicrouter.sk" crossOrigin="anonymous" />

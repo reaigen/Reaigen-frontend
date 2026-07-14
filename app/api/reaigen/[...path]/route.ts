@@ -82,6 +82,10 @@ function getSharedTokenForPath(joined: string, suffix: string): string | null {
 
 // Map frontend proxy paths to Django API paths
 function resolveTarget(baseUrl: string, joined: string): string {
+  // Reai creator agent is a separate Django app and privacy boundary.
+  if (joined === "reai-agent" || joined.startsWith("reai-agent/")) {
+    return `${baseUrl}/api/v1/${joined}`;
+  }
   // Core app endpoints → /api/v1/core/*
   const coreRoutes = ["users", "profiles", "personalized-data", "billing", "activities", "contact-links", "auth", "content"];
   for (const prefix of coreRoutes) {

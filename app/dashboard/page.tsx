@@ -124,6 +124,21 @@ export default function DashboardPage() {
     loadPage(1, false).catch(() => {}).finally(() => setDraftsLoading(false));
   }, [searchQuery, isAuthenticated, loadPage]);
 
+  React.useEffect(() => {
+    if (!isAuthenticated) return;
+    const refreshAfterAgentEdit = () => { void loadPage(1, false); };
+    const applyAgentSearch = (event: Event) => {
+      const query = (event as CustomEvent<{ query?: string }>).detail?.query?.trim();
+      if (query) setSearchInput(query);
+    };
+    window.addEventListener("reai-creations-updated", refreshAfterAgentEdit);
+    window.addEventListener("reai-workspace-search", applyAgentSearch);
+    return () => {
+      window.removeEventListener("reai-creations-updated", refreshAfterAgentEdit);
+      window.removeEventListener("reai-workspace-search", applyAgentSearch);
+    };
+  }, [isAuthenticated, loadPage]);
+
   const handleLoadMore = React.useCallback(async () => {
     setLoadingMore(true);
     try { await loadPage(pageRef.current + 1, true); } catch {}

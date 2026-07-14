@@ -669,6 +669,250 @@ export async function getDraft(draftId: number): Promise<DraftDetailItem> {
   return request(`/api/reaigen/drafts/${draftId}/`);
 }
 
+export interface ReaiAgentConsent {
+  consented: boolean;
+  policy_version: string;
+  granted_at: string | null;
+  privacy: {
+    purpose: string;
+    sent_to_model: string;
+    never_sent: string[];
+    conversation_storage: boolean | string;
+    model_hosting: string;
+    media_processing: string;
+  };
+}
+
+export interface ReaiAgentResponse {
+  reply: string;
+  execution_mode?: "deterministic" | "fast" | "standard" | "reasoning";
+  reasoning_effort?: "none" | "minimal" | "low" | "high";
+  latency_ms?: number;
+  proposed_changes: Record<string, unknown>;
+  suggested_actions: string[];
+  proposal_token: string | null;
+  action_code?: "revoke_all_shares";
+  action_token?: string | null;
+  action_count?: number;
+  operation?: "none" | "list" | "compare" | "bulk_edit";
+  search_query?: string | null;
+  matched_creation_count?: number;
+  selected_creation_ids?: number[];
+  draft_results?: Array<{
+    id: number;
+    is_complete: boolean;
+    updated_at: string | null;
+    semantic_summary?: string;
+    creation_data: {
+      title?: string;
+      description?: string;
+      price?: string | number;
+      currency?: string;
+      area?: string | number;
+      area_unit?: string;
+      [key: string]: unknown;
+    };
+  }>;
+  improvement_conversation_id?: string | null;
+  knowledge_sources?: Array<{
+    title: string;
+    source: string;
+    version: string;
+    sha256: string;
+  }>;
+  privacy?: {
+    stored: boolean;
+    training: boolean;
+    inference_gateway: string;
+    zero_data_retention: boolean;
+    provider_data_collection: string;
+    model: string;
+    prompt_version: string;
+  };
+}
+
+export type ReaiToolCode =
+  | "creation_search"
+  | "creation_compare"
+  | "creation_edit"
+  | "bulk_edit"
+  | "floorplan"
+  | "image"
+  | "sharing";
+
+export interface ReaiToolPermissions {
+  allow_all_tools: boolean;
+  tools: Record<ReaiToolCode, boolean>;
+  overrides: Record<ReaiToolCode, boolean>;
+  available_tools: ReaiToolCode[];
+  confirmation_required_for_writes: true;
+  updated_at: string;
+}
+
+export interface ReaiImprovementConsent {
+  consented: boolean;
+  policy_version: string;
+  granted_at: string | null;
+  retention_days: number;
+  optional: true;
+  stored: string[];
+  never_stored: string[];
+  automatic_training: false;
+  erased?: boolean;
+}
+
+export interface AgentCreationRevision {
+  id: number;
+  sequence: number;
+  source: "initial" | "checkpoint" | "agent_edit" | "restore";
+  changed_fields: string[];
+  before_values: Record<string, unknown>;
+  after_values: Record<string, unknown>;
+  snapshot: Record<string, unknown>;
+  created_at: string;
+  restored_from_id: number | null;
+}
+
+export async function getReaiAgentConsent(): Promise<ReaiAgentConsent> {
+  return request("/api/reaigen/reai-agent/consent/");
+}
+
+export async function grantReaiAgentConsent(policyVersion: string): Promise<ReaiAgentConsent> {
+  return request("/api/reaigen/reai-agent/consent/", {
+    method: "POST",
+    body: JSON.stringify({ accepted: true, policy_version: policyVersion }),
+  });
+}
+
+export async function revokeReaiAgentConsent(): Promise<ReaiAgentConsent> {
+  return request("/api/reaigen/reai-agent/consent/", { method: "DELETE" });
+}
+
+export async function getReaiToolPermissions(): Promise<ReaiToolPermissions> {
+  return request("/api/reaigen/reai-agent/tool-permissions/");
+}
+
+export async function updateReaiToolPermissions(payload: {
+  allow_all_tools?: boolean;
+  tools?: Partial<Record<ReaiToolCode, boolean>>;
+}): Promise<ReaiToolPermissions> {
+  return request("/api/reaigen/reai-agent/tool-permissions/", {
+    method: "PATCH",
+    body: JSON.stringify(payload),
+  });
+}
+
+export async function getReaiImprovementConsent(): Promise<ReaiImprovementConsent> {
+  return request("/api/reaigen/reai-agent/improvement-consent/");
+}
+
+export async function grantReaiImprovementConsent(policyVersion: string): Promise<ReaiImprovementConsent> {
+  return request("/api/reaigen/reai-agent/improvement-consent/", {
+    method: "POST",
+    body: JSON.stringify({ accepted: true, policy_version: policyVersion }),
+  });
+}
+
+export async function revokeReaiImprovementConsent(): Promise<ReaiImprovementConsent> {
+  return request("/api/reaigen/reai-agent/improvement-consent/", { method: "DELETE" });
+}
+
+export async function askReaiAgent(
+  draftId: number,
+  message: string,
+  conversation: Array<{ role: "user" | "assistant"; content: string }> = [],
+  improvementConversationId: string | null = null,
+  language?: string,
+): Promise<ReaiAgentResponse> {
+  return request(`/api/reaigen/reai-agent/drafts/${draftId}/assist/`, {
+    method: "POST",
+    body: JSON.stringify({ message, conversation: conversation.slice(-4), improvement_conversation_id: improvementConversationId, language }),
+  });
+}
+
+export async function applyReaiAgentProposal(
+  draftId: number,
+  proposalToken: string,
+  improvementConversationId: string | null = null,
+): Promise<{ applied: string[]; draft: DraftDetailItem }> {
+  return request(`/api/reaigen/reai-agent/drafts/${draftId}/apply/`, {
+    method: "POST",
+    body: JSON.stringify({ proposal_token: proposalToken, confirmed: true, improvement_conversation_id: improvementConversationId }),
+  });
+}
+
+export async function askReaiWorkspace(
+  message: string,
+  currentDraftId?: number,
+  conversation: Array<{ role: "user" | "assistant"; content: string }> = [],
+  improvementConversationId: string | null = null,
+  language?: string,
+): Promise<ReaiAgentResponse> {
+  return request("/api/reaigen/reai-agent/workspace/assist/", {
+    method: "POST",
+    body: JSON.stringify({
+      message,
+      current_draft_id: currentDraftId,
+      conversation: conversation.slice(-4),
+      improvement_conversation_id: improvementConversationId,
+      language,
+    }),
+  });
+}
+
+export async function applyReaiWorkspaceProposal(
+  proposalToken: string,
+  currentDraftId?: number,
+  improvementConversationId: string | null = null,
+): Promise<{ applied: string[]; applied_draft_ids: number[]; current_draft: DraftDetailItem | null }> {
+  return request("/api/reaigen/reai-agent/workspace/apply/", {
+    method: "POST",
+    body: JSON.stringify({
+      proposal_token: proposalToken,
+      current_draft_id: currentDraftId,
+      confirmed: true,
+      improvement_conversation_id: improvementConversationId,
+    }),
+  });
+}
+
+export async function applyReaiWorkspaceAction(
+  actionToken: string,
+  improvementConversationId: string | null = null,
+): Promise<{ action: "revoke_all_shares"; revoked_count: number; execution_mode: "deterministic" }> {
+  return request("/api/reaigen/reai-agent/workspace/actions/apply/", {
+    method: "POST",
+    body: JSON.stringify({
+      action_token: actionToken,
+      confirmed: true,
+      improvement_conversation_id: improvementConversationId,
+    }),
+  });
+}
+
+export async function getAgentCreationHistory(
+  draftId: number,
+): Promise<{ draft_id: number; revisions: AgentCreationRevision[] }> {
+  return request(`/api/reaigen/reai-agent/workspace/drafts/${draftId}/history/`);
+}
+
+export async function restoreAgentCreationRevision(
+  draftId: number,
+  revisionId: number,
+): Promise<{ restored: boolean; revision_id: number | null; draft: DraftDetailItem }> {
+  return request(`/api/reaigen/reai-agent/workspace/drafts/${draftId}/history/${revisionId}/restore/`, {
+    method: "POST",
+    body: JSON.stringify({ confirmed: true }),
+  });
+}
+
+export async function saveReaiFeedback(conversationId: string, helpful: boolean): Promise<{ saved: boolean; feedback_id: number }> {
+  return request("/api/reaigen/reai-agent/improvement-conversations/", {
+    method: "POST",
+    body: JSON.stringify({ conversation_id: conversationId, helpful }),
+  });
+}
+
 export interface FloorplanDetail {
   id: number;
   source_draft: number;

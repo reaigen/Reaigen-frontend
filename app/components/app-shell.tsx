@@ -5,10 +5,12 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { ExitIcon, GearIcon } from "@radix-ui/react-icons";
 import { Avatar, AvatarFallback, AvatarImage } from "../lib/ui/avatar";
-import type { UserProfile } from "../lib/api/client";
+import { getReaiAgentConsent, type UserProfile } from "../lib/api/client";
+import type { DraftDetailItem } from "../lib/tour-types";
 import { cn } from "../lib/utils";
 import { t, getUserLanguage } from "../lib/i18n";
 import { AppContentMessages } from "./content-documents";
+import { ReaiAgentCard } from "./reai-agent-card";
 
 function getInitials(user: UserProfile): string {
   const f = user.first_name?.[0] ?? "";
@@ -37,15 +39,25 @@ export function AppShell({
   user,
   onLogout,
   hideMobileNav = false,
+  reaiDraftId,
+  reaiDraftTitle,
+  onReaiDraftUpdated,
   children,
 }: {
   user: UserProfile;
   onLogout: () => void;
   /** Hide the mobile bottom tab bar — for detail screens that provide their own bottom action bar */
   hideMobileNav?: boolean;
+  /** Current draft context. Reai stays read-only outside a draft page. */
+  reaiDraftId?: number;
+  /** Human-readable title for the current creation context. */
+  reaiDraftTitle?: string;
+  onReaiDraftUpdated?: (draft: DraftDetailItem) => void;
   children: React.ReactNode;
 }) {
   const pathname = usePathname();
+  const [reaiEnabled, setReaiEnabled] = React.useState(false);
+  const [reaiOpen, setReaiOpen] = React.useState(false);
   const lang = getUserLanguage(user.localization);
   const displayName = user.full_name || `${user.first_name ?? ""} ${user.last_name ?? ""}`.trim() || user.first_name || user.email;
   const avatarUrl = user.profile?.avatar_thumbnail_url ?? user.profile?.avatar_url;
@@ -54,9 +66,71 @@ export function AppShell({
     { href: "/dashboard", label: t("nav.dashboard", lang), icon: HomeIcon },
     { href: "/shares", label: t("nav.shares", lang), icon: ShareIcon },
   ];
+  const workspaceTitle = pathname.startsWith("/shares")
+    ? t("nav.shares", lang)
+      : pathname.startsWith("/settings")
+      ? t("nav.settings", lang)
+      : pathname.startsWith("/draft/")
+        ? t("nav.creation", lang)
+        : t("nav.dashboard", lang);
+
+  React.useEffect(() => {
+    let active = true;
+    const refresh = () => {
+      void getReaiAgentConsent()
+        .then((value) => {
+          if (!active) return;
+          setReaiEnabled(value.consented);
+          if (!value.consented) setReaiOpen(false);
+        })
+        .catch(() => {
+          if (active) setReaiEnabled(false);
+        });
+    };
+    const permissionChanged = (event: Event) => {
+      const enabled = (event as CustomEvent<{ enabled?: boolean }>).detail?.enabled;
+      if (typeof enabled === "boolean") {
+        setReaiEnabled(enabled);
+        if (!enabled) setReaiOpen(false);
+      } else {
+        refresh();
+      }
+    };
+    refresh();
+    window.addEventListener("reai-consent-changed", permissionChanged);
+    return () => {
+      active = false;
+      window.removeEventListener("reai-consent-changed", permissionChanged);
+    };
+  }, [pathname]);
+
+  React.useEffect(() => {
+    if (!reaiOpen) return;
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setReaiOpen(false);
+    };
+    window.addEventListener("keydown", closeOnEscape);
+    return () => window.removeEventListener("keydown", closeOnEscape);
+  }, [reaiOpen]);
+
+  const reaiLauncher = reaiEnabled ? (
+    <button
+      type="button"
+      onClick={() => setReaiOpen(true)}
+      title={t("reai.openAgent", lang)}
+      aria-label={t("reai.openAgent", lang)}
+      aria-expanded={reaiOpen}
+      className="group flex h-10 items-center gap-2 rounded-full border border-border/60 bg-background px-3.5 text-foreground/65 transition hover:border-foreground/25 hover:text-foreground"
+    >
+      <span className="px-0.5 text-[12px] font-semibold">Agent</span>
+    </button>
+  ) : null;
 
   return (
-    <div className="min-h-screen bg-background">
+    <div
+      className="min-h-screen bg-background transition-[padding] duration-200"
+      style={{ paddingRight: reaiOpen ? "var(--reai-panel-width, 0px)" : 0 }}
+    >
       {/* ── Desktop sidebar ──────────────────────────────────────── */}
       <aside
         className="fixed inset-y-0 left-0 z-40 hidden border-r border-border/10 bg-background md:flex md:flex-col pl-safe"
@@ -148,20 +222,38 @@ export function AppShell({
               Reaigen
             </span>
           </Link>
-          <Link
-            href="/settings"
-            className="flex items-center rounded-full p-1 hover:bg-foreground/[0.04] transition-colors"
-          >
-            <Avatar size="sm">
-              {avatarUrl && <AvatarImage src={avatarUrl as string} />}
-              <AvatarFallback>{getInitials(user)}</AvatarFallback>
-            </Avatar>
-          </Link>
+          <div className="flex items-center gap-2">
+            {reaiLauncher}
+            <Link
+              href="/settings"
+              className="flex items-center rounded-full p-1 hover:bg-foreground/[0.04] transition-colors"
+            >
+              <Avatar size="sm">
+                {avatarUrl && <AvatarImage src={avatarUrl as string} />}
+                <AvatarFallback>{getInitials(user)}</AvatarFallback>
+              </Avatar>
+            </Link>
+          </div>
         </div>
       </header>
 
+      {/* ── Desktop workspace header ────────────────────────────── */}
+      <header
+        className="fixed top-0 z-40 hidden h-14 items-center justify-between border-b border-border/30 bg-background px-6 transition-[right] duration-200 md:flex"
+        style={{ left: SIDEBAR_W, right: reaiOpen ? "var(--reai-panel-width)" : 0 }}
+      >
+        <p className="text-[14px] font-semibold text-foreground/70">{workspaceTitle}</p>
+        {reaiLauncher}
+      </header>
+
       {/* ── Content ──────────────────────────────────────────────── */}
-      <main className="min-h-[calc(100dvh-3rem)] px-4 py-5 pb-24 md:min-h-dvh md:px-8 md:py-8 md:pb-8 pl-safe pr-safe" style={{ marginLeft: `var(--sidebar-offset, 0px)` }}>
+      <main
+        className={cn(
+          "min-h-[calc(100dvh-3rem)] px-4 py-5 pb-24 md:min-h-dvh md:px-8 md:pb-8 pl-safe pr-safe",
+          "md:pt-16",
+        )}
+        style={{ marginLeft: `var(--sidebar-offset, 0px)` }}
+      >
         <AppContentMessages lang={lang} countryCode={user.profile?.country} regionCode={user.profile?.state} />
         <div key={pathname} className="animate-fade-in">
           {children}
@@ -195,8 +287,43 @@ export function AppShell({
       </nav>
       )}
 
+      {reaiEnabled && reaiOpen && (
+          <aside
+            role="complementary"
+            aria-labelledby="reai-panel-title"
+            className="fixed inset-y-0 right-0 z-[70] flex w-full flex-col border-l border-border/50 bg-background md:w-[var(--reai-panel-width)]"
+          >
+            <div className="flex h-14 shrink-0 items-center justify-between border-b border-border/40 px-4 pt-safe">
+              <div className="flex items-center gap-2.5">
+                <div>
+                  <h2 id="reai-panel-title" className="text-[14px] font-semibold">Agent</h2>
+                  <p className="max-w-[260px] truncate text-[11px] text-muted-foreground">
+                    {reaiDraftId ? (reaiDraftTitle || t("reai.draftContext", lang)) : t("reai.noDraftContext", lang)}
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setReaiOpen(false)}
+                aria-label={t("reai.closeAgent", lang)}
+                className="flex h-9 w-9 items-center justify-center rounded-full text-foreground/45 transition hover:bg-foreground/[0.05] hover:text-foreground"
+              >
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round"><path d="m6 6 12 12M18 6 6 18" /></svg>
+              </button>
+            </div>
+            <div className="min-h-0 flex-1">
+              <ReaiAgentCard draftId={reaiDraftId} lang={lang} onDraftUpdated={onReaiDraftUpdated} panel />
+            </div>
+          </aside>
+      )}
+
       {/* CSS variable for sidebar offset (desktop only) */}
-      <style>{`@media (min-width: 768px) { :root { --sidebar-offset: ${SIDEBAR_W}px; } }`}</style>
+      <style>{`
+        :root { --reai-panel-width: 0px; }
+        @media (min-width: 768px) {
+          :root { --sidebar-offset: ${SIDEBAR_W}px; --reai-panel-width: clamp(360px, 30vw, 420px); }
+        }
+      `}</style>
     </div>
   );
 }
