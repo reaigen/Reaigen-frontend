@@ -917,8 +917,6 @@ const cs: LocaleStrings = {
   "reai.shareCopy":                       "Kopírovat",
   "reai.shareCopied":                     "Zkopírováno",
   "reai.shareOpen":                       "Otevřít",
-  "reai.shareFieldsLabel":                "Vyberte veřejná pole",
-  "reai.shareFieldsContinue":             "Zkontrolovat odkaz",
   "reai.applied":                        "Potvrzené změny byly použity v konceptu.",
   "reai.error":                          "Agent momentálně není dostupný. Zkuste to později.",
   "reai.enableInSettings":               "Přístup k Agentovi se spravuje v nastavení účtu.",

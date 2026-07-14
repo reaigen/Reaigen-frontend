@@ -936,8 +936,6 @@ const en = {
   "reai.shareCopy":                       "Copy",
   "reai.shareCopied":                     "Copied",
   "reai.shareOpen":                       "Open",
-  "reai.shareFieldsLabel":                "Choose public fields",
-  "reai.shareFieldsContinue":             "Review link",
   "reai.applied":                        "The confirmed changes were applied to the draft.",
   "reai.error":                          "Agent is unavailable right now. Please try again later.",
   "reai.enableInSettings":               "Agent access is managed in your account settings.",

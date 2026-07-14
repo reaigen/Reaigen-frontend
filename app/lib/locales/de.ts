@@ -917,8 +917,6 @@ const de: LocaleStrings = {
   "reai.shareCopy":                       "Kopieren",
   "reai.shareCopied":                     "Kopiert",
   "reai.shareOpen":                       "Öffnen",
-  "reai.shareFieldsLabel":                "Öffentliche Felder auswählen",
-  "reai.shareFieldsContinue":             "Link prüfen",
   "reai.applied":                        "Die bestätigten Änderungen wurden auf den Entwurf angewendet.",
   "reai.error":                          "Agent ist derzeit nicht verfügbar. Bitte versuchen Sie es später erneut.",
   "reai.enableInSettings":               "Der Agent-Zugriff wird in Ihren Kontoeinstellungen verwaltet.",

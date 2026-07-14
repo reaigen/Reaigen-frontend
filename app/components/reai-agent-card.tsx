@@ -32,7 +32,6 @@ type ChatTurn = {
   feedback?: boolean;
   proposalStatus?: "applied" | "dismissed";
   actionStatus?: "applied" | "dismissed";
-  shareFields?: string[];
 };
 
 function contextualShareUrl(answer: ReaiAgentResponse): string | null {
@@ -352,43 +351,6 @@ export function ReaiAgentCard({
     await navigator.clipboard.writeText(url);
     setCopiedShareUrl(url);
     window.setTimeout(() => setCopiedShareUrl((current) => current === url ? null : current), 1800);
-  };
-
-  const toggleShareField = (turnId: number, field: string) => {
-    setTurns((current) => current.map((turn) => {
-      if (turn.id !== turnId) return turn;
-      const selected = new Set(turn.shareFields || []);
-      if (selected.has(field)) selected.delete(field);
-      else selected.add(field);
-      return { ...turn, shareFields: Array.from(selected) };
-    }));
-  };
-
-  const prepareShare = async (turnId: number, fields: string[]) => {
-    if (!draftId || fields.length === 0 || busy) return;
-    setBusy(true);
-    setError(null);
-    try {
-      const response = await askReaiWorkspace(
-        "share this creation",
-        draftId,
-        turns.slice(-4).map(({ role, content }) => ({ role, content })),
-        improvementConversationId,
-        lang,
-        fields,
-      );
-      if (response.improvement_conversation_id) setImprovementConversationId(response.improvement_conversation_id);
-      setTurns((current) => current.map((turn) => turn.id === turnId ? {
-        ...turn,
-        response,
-        content: response.reply,
-        shareFields: fields,
-      } : turn));
-    } catch (err) {
-      setError(errorText(err, lang));
-    } finally {
-      setBusy(false);
-    }
   };
 
   const sendFeedback = async (turnId: number, helpful: boolean, conversationId?: string | null) => {
@@ -759,40 +721,6 @@ export function ReaiAgentCard({
                             </span>
                           </div>
                         ))}
-                      </div>
-                    )}
-                    {answer?.action_code === "select_share_fields" && (
-                      <div className="mt-3 rounded-lg border border-border/55 bg-foreground/[0.018] px-3 py-2.5">
-                        <p className="text-[11px] font-medium text-foreground/75">{t("reai.shareFieldsLabel", lang)}</p>
-                        <div className="mt-2 flex flex-wrap gap-1.5">
-                          {(answer.available_share_fields || []).map((field) => {
-                            const selected = (turn.shareFields || []).includes(field);
-                            return (
-                              <button
-                                key={field}
-                                type="button"
-                                aria-pressed={selected}
-                                onClick={() => toggleShareField(turn.id, field)}
-                                className={cn(
-                                  "rounded-full border px-2 py-1 text-[10px] transition",
-                                  selected
-                                    ? "border-foreground bg-foreground text-background"
-                                    : "border-border/60 text-foreground/65 hover:border-foreground/30",
-                                )}
-                              >
-                                {t(`shareDialog.field.${field}` as LocaleKey, lang)}
-                              </button>
-                            );
-                          })}
-                        </div>
-                        <button
-                          type="button"
-                          disabled={busy || !(turn.shareFields?.length)}
-                          onClick={() => void prepareShare(turn.id, turn.shareFields || [])}
-                          className="mt-2.5 rounded-md bg-foreground px-2.5 py-1.5 text-[11px] font-medium text-background disabled:opacity-35"
-                        >
-                          {t("reai.shareFieldsContinue", lang)}
-                        </button>
                       </div>
                     )}
                     {answer?.action_code === "create_draft_share" && (answer.action_token || shareUrl || turn.actionStatus) && (
