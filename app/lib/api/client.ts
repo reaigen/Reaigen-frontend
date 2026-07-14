@@ -883,6 +883,7 @@ export async function askReaiWorkspace(
   improvementConversationId: string | null = null,
   language?: string,
   shareFieldNames?: string[],
+  pendingActionCode?: ReaiAgentResponse["action_code"],
 ): Promise<ReaiAgentResponse> {
   return request("/api/reaigen/reai-agent/workspace/assist/", {
     method: "POST",
@@ -893,6 +894,7 @@ export async function askReaiWorkspace(
       improvement_conversation_id: improvementConversationId,
       language,
       share_field_names: shareFieldNames,
+      pending_action_code: pendingActionCode,
     }),
   });
 }

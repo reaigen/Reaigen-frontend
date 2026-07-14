@@ -230,7 +230,18 @@ export function ReaiAgentCard({
     setBusy(true);
     setError(null);
     try {
-      const response = await askReaiWorkspace(requestText, draftId, conversation, improvementConversationId, lang);
+      const pendingActionCode = [...turns]
+        .reverse()
+        .find((turn) => turn.role === "assistant" && turn.response)?.response?.action_code;
+      const response = await askReaiWorkspace(
+        requestText,
+        draftId,
+        conversation,
+        improvementConversationId,
+        lang,
+        undefined,
+        pendingActionCode,
+      );
       if (!draftId && response.operation === "list" && response.search_query) {
         window.dispatchEvent(new CustomEvent("reai-workspace-search", {
           detail: { query: response.search_query },
