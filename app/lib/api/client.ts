@@ -711,7 +711,7 @@ export interface ReaiAgentResponse {
   proposed_changes: Record<string, unknown>;
   suggested_actions: string[];
   proposal_token: string | null;
-  action_code?: "revoke_all_shares" | "manage_shares" | "share_inventory" | "share_status" | "settings_navigation" | "settings_update" | "select_share_fields" | "create_draft_share";
+  action_code?: "revoke_all_shares" | "manage_shares" | "share_inventory" | "share_status" | "settings_navigation" | "settings_update" | "select_share_fields" | "create_draft_share" | "grade_draft_images" | "cleanplate_draft_images" | "generative_hdr_draft_image" | "organize_draft_images" | "generate_draft_video";
   action_token?: string | null;
   action_count?: number;
   share_action?: "list" | "pause" | "resume" | "revoke";
@@ -734,6 +734,16 @@ export interface ReaiAgentResponse {
   navigation_path?: string | null;
   settings_changes?: {
     preferred_language?: "en" | "sk" | "cs" | "de";
+  };
+  media_action?: {
+    mode: "grade" | "cleanplate" | "generative_hdr" | "organize" | "video";
+    scope: "selected" | "room" | "draft";
+    upload_ids: number[];
+    operations: Record<string, number | boolean>;
+    originals_preserved: true;
+    requires_version_review: boolean;
+    cloud_image_processor: boolean;
+    authenticity_boundary?: boolean;
   };
   operation?: "none" | "list" | "compare" | "bulk_edit";
   search_query?: string | null;
@@ -779,6 +789,10 @@ export type ReaiToolCode =
   | "bulk_edit"
   | "floorplan"
   | "image"
+  | "cleanplate"
+  | "generative_image"
+  | "media_organize"
+  | "video_generation"
   | "sharing"
   | "settings_navigation"
   | "settings_localization";
@@ -893,6 +907,7 @@ export async function askReaiWorkspace(
   shareFieldNames?: string[],
   pendingActionCode?: ReaiAgentResponse["action_code"],
   workspaceContext?: "creator" | "draft" | "settings",
+  currentUploadId?: number,
 ): Promise<ReaiAgentResponse> {
   return request("/api/reaigen/reai-agent/workspace/assist/", {
     method: "POST",
@@ -905,6 +920,7 @@ export async function askReaiWorkspace(
       share_field_names: shareFieldNames,
       pending_action_code: pendingActionCode,
       workspace_context: workspaceContext,
+      current_upload_id: currentUploadId,
     }),
   });
 }
@@ -961,6 +977,77 @@ export async function applyReaiWorkspaceAction(
   // invalidator cannot infer that the sharing collection is now stale.
   cache.delete("/api/reaigen/shares/");
   inFlight.delete("/api/reaigen/shares/");
+  return result;
+}
+
+export async function applyReaiMediaAction(
+  actionToken: string,
+  improvementConversationId: string | null = null,
+): Promise<{
+  action: "grade_draft_images" | "cleanplate_draft_images" | "generative_hdr_draft_image" | "organize_draft_images" | "generate_draft_video";
+  draft_id: number;
+  selected_upload_ids: number[];
+  service_ids?: number[];
+  completed_count?: number;
+  failed_count?: number;
+  status?: string;
+  service_id?: number;
+  requires_version_review: boolean;
+  execution_mode: "deterministic" | "cloud_image_edit" | "runpod_async";
+}> {
+  const result = await request("/api/reaigen/reai-agent/workspace/media-actions/apply/", {
+    method: "POST",
+    body: JSON.stringify({
+      action_token: actionToken,
+      confirmed: true,
+      improvement_conversation_id: improvementConversationId,
+    }),
+  });
+  cache.delete(`/api/reaigen/drafts/${result.draft_id}/`);
+  inFlight.delete(`/api/reaigen/drafts/${result.draft_id}/`);
+  return result;
+}
+
+export interface AgentMediaVersion {
+  id: number;
+  logical_asset_id: string;
+  version: number;
+  is_master: boolean;
+  is_deleted: boolean;
+  status: string;
+  file_name: string;
+  file_url: string | null;
+  uploaded_at: string;
+  source_upload_id: number | null;
+  supersedes_id: number | null;
+  processor: string;
+  operations: Record<string, number | boolean>;
+  mode: string;
+  authenticity_boundary: boolean;
+}
+
+export interface AgentMediaVersionGroup {
+  logical_asset_id: string;
+  versions: AgentMediaVersion[];
+}
+
+export async function getAgentMediaVersions(
+  draftId: number,
+): Promise<{ draft_id: number; groups: AgentMediaVersionGroup[]; physical_delete_available: false }> {
+  return request(`/api/reaigen/reai-agent/workspace/drafts/${draftId}/media-versions/`);
+}
+
+export async function manageAgentMediaVersion(
+  draftId: number,
+  uploadId: number,
+  action: "promote" | "hide" | "restore",
+): Promise<{ action: string; draft_id: number; version: AgentMediaVersion; physical_delete: false }> {
+  const result = await request(
+    `/api/reaigen/reai-agent/workspace/drafts/${draftId}/media-versions/${uploadId}/action/`,
+    { method: "POST", body: JSON.stringify({ action, confirmed: true }) },
+  );
+  cache.delete(`/api/reaigen/drafts/${draftId}/`);
+  inFlight.delete(`/api/reaigen/drafts/${draftId}/`);
   return result;
 }
 

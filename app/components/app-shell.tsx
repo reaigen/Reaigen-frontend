@@ -41,6 +41,7 @@ export function AppShell({
   hideMobileNav = false,
   reaiDraftId,
   reaiDraftTitle,
+  reaiUploadId,
   onReaiDraftUpdated,
   children,
 }: {
@@ -52,6 +53,8 @@ export function AppShell({
   reaiDraftId?: number;
   /** Human-readable title for the current creation context. */
   reaiDraftTitle?: string;
+  /** Exact current gallery photo; never inferred from URL or pixels. */
+  reaiUploadId?: number;
   onReaiDraftUpdated?: (draft: DraftDetailItem) => void;
   children: React.ReactNode;
 }) {
@@ -317,7 +320,7 @@ export function AppShell({
               </button>
             </div>
             <div className="min-h-0 flex-1">
-              <ReaiAgentCard draftId={reaiDraftId} workspaceContext={reaiContext} lang={lang} onDraftUpdated={onReaiDraftUpdated} panel />
+              <ReaiAgentCard draftId={reaiDraftId} currentUploadId={reaiUploadId} workspaceContext={reaiContext} lang={lang} onDraftUpdated={onReaiDraftUpdated} panel />
             </div>
           </aside>
       )}

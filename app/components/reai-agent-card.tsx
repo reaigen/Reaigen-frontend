@@ -5,16 +5,20 @@ import { useEffect, useState } from "react";
 
 import {
   ApiError,
+  applyReaiMediaAction,
   applyReaiWorkspaceAction,
   applyReaiWorkspaceProposal,
   askReaiWorkspace,
   getAgentCreationHistory,
+  getAgentMediaVersions,
   getReaiAgentConsent,
   getReaiImprovementConsent,
   restoreAgentCreationRevision,
+  manageAgentMediaVersion,
   saveReaiFeedback,
   updateLocalization,
   type AgentCreationRevision,
+  type AgentMediaVersionGroup,
   type ReaiAgentConsent,
   type ReaiAgentResponse,
   type ReaiImprovementConsent,
@@ -170,12 +174,14 @@ function errorText(error: unknown, lang: string): string {
 
 export function ReaiAgentCard({
   draftId,
+  currentUploadId,
   workspaceContext = draftId ? "draft" : "creator",
   lang,
   onDraftUpdated,
   panel = false,
 }: {
   draftId?: number;
+  currentUploadId?: number;
   workspaceContext?: "creator" | "draft" | "settings";
   lang: string;
   onDraftUpdated?: (draft: DraftDetailItem) => void;
@@ -188,10 +194,14 @@ export function ReaiAgentCard({
   const [turns, setTurns] = useState<ChatTurn[]>([]);
   const [busy, setBusy] = useState(false);
   const [showHistory, setShowHistory] = useState(false);
+  const [showMediaHistory, setShowMediaHistory] = useState(false);
   const [history, setHistory] = useState<AgentCreationRevision[]>([]);
   const [historyBusy, setHistoryBusy] = useState(false);
   const [restoreCandidateId, setRestoreCandidateId] = useState<number | null>(null);
   const [historyNotice, setHistoryNotice] = useState<string | null>(null);
+  const [mediaGroups, setMediaGroups] = useState<AgentMediaVersionGroup[]>([]);
+  const [mediaBusy, setMediaBusy] = useState(false);
+  const [mediaCandidate, setMediaCandidate] = useState<{ id: number; action: "promote" | "hide" | "restore" } | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [copiedShareUrl, setCopiedShareUrl] = useState<string | null>(null);
   const quickActions = workspaceContext === "settings"
@@ -218,12 +228,44 @@ export function ReaiAgentCard({
     }
   };
 
+  const loadMediaHistory = async () => {
+    if (!draftId) return;
+    setMediaBusy(true);
+    try {
+      const result = await getAgentMediaVersions(draftId);
+      setMediaGroups(result.groups);
+    } catch (err) {
+      setError(errorText(err, lang));
+    } finally {
+      setMediaBusy(false);
+    }
+  };
+
+  const manageMediaVersion = async () => {
+    if (!draftId || !mediaCandidate) return;
+    setMediaBusy(true);
+    try {
+      await manageAgentMediaVersion(draftId, mediaCandidate.id, mediaCandidate.action);
+      setMediaCandidate(null);
+      await loadMediaHistory();
+      window.dispatchEvent(new CustomEvent("reai-media-updated", { detail: { draftId } }));
+      window.dispatchEvent(new CustomEvent("reai-creations-updated", { detail: { draftIds: [draftId] } }));
+    } catch (err) {
+      setError(errorText(err, lang));
+    } finally {
+      setMediaBusy(false);
+    }
+  };
+
   useEffect(() => {
     setTurns([]);
     setMessage("");
     setImprovementConversationId(null);
     setShowHistory(false);
+    setShowMediaHistory(false);
     setHistory([]);
+    setMediaGroups([]);
+    setMediaCandidate(null);
     setRestoreCandidateId(null);
     setHistoryNotice(null);
     setError(null);
@@ -251,6 +293,7 @@ export function ReaiAgentCard({
         undefined,
         pendingActionCode,
         workspaceContext,
+        currentUploadId,
       );
       if (!draftId && response.operation === "list" && response.search_query) {
         window.dispatchEvent(new CustomEvent("reai-workspace-search", {
@@ -341,6 +384,22 @@ export function ReaiAgentCard({
     setBusy(true);
     setError(null);
     try {
+      if (["grade_draft_images", "cleanplate_draft_images", "generative_hdr_draft_image", "organize_draft_images", "generate_draft_video"].includes(answer.action_code || "")) {
+        const result = await applyReaiMediaAction(answer.action_token, improvementConversationId);
+        window.dispatchEvent(new CustomEvent("reai-media-updated", {
+          detail: { draftId: result.draft_id, action: result.action, pending: result.status === "pending" },
+        }));
+        window.dispatchEvent(new CustomEvent("reai-creations-updated", { detail: { draftIds: [result.draft_id] } }));
+        setTurns((current) => current.map((turn) => turn.id === turnId ? {
+          ...turn,
+          actionStatus: "applied",
+          response: { ...answer, action_token: null },
+        } : turn));
+        if (answer.action_code !== "generate_draft_video" && answer.action_code !== "organize_draft_images") {
+          setTimeout(() => void loadMediaHistory(), result.status === "pending" ? 2500 : 0);
+        }
+        return;
+      }
       const result = await applyReaiWorkspaceAction(answer.action_token, improvementConversationId);
       if (result.action === "revoke_all_shares" || result.action === "manage_shares") {
         window.dispatchEvent(new CustomEvent("reai-shares-updated", {
@@ -431,13 +490,26 @@ export function ReaiAgentCard({
       ) : (
         <div className={cn("mt-4", panel ? "flex min-h-0 flex-1 flex-col gap-3" : "space-y-3")}>
           {draftId && (
-            <div className="flex items-center justify-end border-b border-border/35 pb-2">
+            <div className="flex items-center justify-end gap-4 border-b border-border/35 pb-2">
               <button
                 type="button"
-                className="text-[11px] font-medium text-muted-foreground transition hover:text-foreground"
+                className={cn("text-[11px] font-medium transition hover:text-foreground", showMediaHistory ? "text-foreground" : "text-muted-foreground")}
+                onClick={() => {
+                  const next = !showMediaHistory;
+                  setShowMediaHistory(next);
+                  setShowHistory(false);
+                  if (next) void loadMediaHistory();
+                }}
+              >
+                {showMediaHistory ? t("reai.backToChat", lang) : t("reai.mediaVersions", lang)}
+              </button>
+              <button
+                type="button"
+                className={cn("text-[11px] font-medium transition hover:text-foreground", showHistory ? "text-foreground" : "text-muted-foreground")}
                 onClick={() => {
                   const next = !showHistory;
                   setShowHistory(next);
+                  setShowMediaHistory(false);
                   if (next) void loadHistory();
                 }}
               >
@@ -578,7 +650,76 @@ export function ReaiAgentCard({
               )}
             </div>
           )}
-          {!showHistory && turns.length > 0 && (
+          {showMediaHistory && draftId && (
+            <div className={cn("min-h-0 space-y-3 overflow-y-auto pr-1", panel && "flex-1")} aria-live="polite">
+              <div>
+                <h3 className="text-[13px] font-semibold">{t("reai.mediaVersions", lang)}</h3>
+                <p className="mt-1 text-[11px] leading-relaxed text-muted-foreground">{t("reai.mediaVersionsSafety", lang)}</p>
+              </div>
+              {mediaBusy && mediaGroups.length === 0 && <p className="py-3 text-[11px] text-muted-foreground">{t("reai.working", lang)}</p>}
+              {!mediaBusy && mediaGroups.length === 0 && (
+                <p className="rounded-xl border border-border/45 p-3 text-[11px] text-muted-foreground">{t("reai.mediaVersionsEmpty", lang)}</p>
+              )}
+              {mediaGroups.map((group, groupIndex) => (
+                <section key={group.logical_asset_id} className="overflow-hidden rounded-xl border border-border/55 bg-background">
+                  <div className="border-b border-border/40 px-3 py-2 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
+                    {t("reai.mediaAsset", lang).replace("{number}", String(groupIndex + 1))}
+                  </div>
+                  <div className="divide-y divide-border/40">
+                    {group.versions.map((version) => (
+                      <article key={version.id} className={cn("p-3", version.is_deleted && "bg-foreground/[0.025] opacity-70")}>
+                        <div className="flex gap-3">
+                          <div className="h-16 w-20 shrink-0 overflow-hidden rounded-lg bg-foreground/[0.05]">
+                            {version.file_url && <img src={version.file_url} alt="" className="h-full w-full object-cover" />}
+                          </div>
+                          <div className="min-w-0 flex-1">
+                            <div className="flex flex-wrap items-center gap-1.5">
+                              <span className="text-[12px] font-semibold">v{version.version}</span>
+                              {version.is_master && <span className="rounded-full bg-foreground px-1.5 py-0.5 text-[8px] font-medium text-background">{t("reai.mediaCurrent", lang)}</span>}
+                              {version.is_deleted && <span className="rounded-full bg-foreground/[0.08] px-1.5 py-0.5 text-[8px] font-medium">{t("reai.mediaHidden", lang)}</span>}
+                            </div>
+                            <p className="mt-1 truncate text-[10px] text-muted-foreground">{version.processor === "original" ? t("reai.mediaOriginal", lang) : version.processor}</p>
+                            <time className="mt-0.5 block text-[9px] text-muted-foreground/80">
+                              {new Intl.DateTimeFormat(lang || "en", { dateStyle: "medium", timeStyle: "short" }).format(new Date(version.uploaded_at))}
+                            </time>
+                          </div>
+                        </div>
+                        <div className="mt-2.5 flex flex-wrap items-center gap-3">
+                          {!version.is_deleted && !version.is_master && (
+                            <button type="button" disabled={mediaBusy} onClick={() => setMediaCandidate({ id: version.id, action: "promote" })} className="text-[10px] font-semibold hover:underline disabled:opacity-40">
+                              {t("reai.mediaUseVersion", lang)}
+                            </button>
+                          )}
+                          {!version.is_deleted && (
+                            <button type="button" disabled={mediaBusy} onClick={() => setMediaCandidate({ id: version.id, action: "hide" })} className="text-[10px] font-medium text-muted-foreground hover:text-foreground disabled:opacity-40">
+                              {t("reai.mediaHide", lang)}
+                            </button>
+                          )}
+                          {version.is_deleted && (
+                            <button type="button" disabled={mediaBusy} onClick={() => setMediaCandidate({ id: version.id, action: "restore" })} className="text-[10px] font-semibold hover:underline disabled:opacity-40">
+                              {t("reai.mediaRestore", lang)}
+                            </button>
+                          )}
+                        </div>
+                        {mediaCandidate?.id === version.id && (
+                          <div className="mt-3 rounded-lg bg-foreground/[0.04] p-2.5">
+                            <p className="text-[10px] leading-relaxed text-foreground/70">
+                              {t(mediaCandidate.action === "hide" ? "reai.mediaHideConfirm" : "reai.mediaActionConfirm", lang)}
+                            </p>
+                            <div className="mt-2 flex gap-2">
+                              <button type="button" disabled={mediaBusy} onClick={() => void manageMediaVersion()} className="rounded-md bg-foreground px-2.5 py-1.5 text-[10px] font-semibold text-background disabled:opacity-40">{t("reai.confirm", lang)}</button>
+                              <button type="button" disabled={mediaBusy} onClick={() => setMediaCandidate(null)} className="px-2 py-1.5 text-[10px] text-muted-foreground">{t("reai.restoreCancel", lang)}</button>
+                            </div>
+                          </div>
+                        )}
+                      </article>
+                    ))}
+                  </div>
+                </section>
+              ))}
+            </div>
+          )}
+          {!showHistory && !showMediaHistory && turns.length > 0 && (
             <div className={cn("space-y-2 overflow-y-auto pr-1", panel ? "min-h-0 flex-1" : "max-h-[420px]")} aria-live="polite">
               {turns.map((turn) => {
                 const answer = turn.response;
@@ -704,6 +845,96 @@ export function ReaiAgentCard({
                             )}>
                               {t(turn.proposalStatus === "applied" ? "reai.proposalApplied" : "reai.proposalDismissed", lang)}
                             </span>
+                          </div>
+                        )}
+                      </div>
+                    )}
+                    {answer && (["grade_draft_images", "cleanplate_draft_images", "generative_hdr_draft_image", "organize_draft_images", "generate_draft_video"].includes(answer.action_code || "")) && (answer.action_token || turn.actionStatus) && (
+                      <div className="mt-4 overflow-hidden rounded-xl border border-border/60 bg-foreground/[0.018]">
+                        <div className="px-3.5 py-3">
+                          <div className="flex items-start justify-between gap-3">
+                            <div>
+                              <p className="text-xs font-semibold text-foreground">
+                                {t(
+                                  answer.action_code === "cleanplate_draft_images"
+                                    ? "reai.mediaCleanplateTitle"
+                                    : answer.action_code === "organize_draft_images"
+                                      ? "reai.mediaOrganizeTitle"
+                                    : answer.action_code === "generate_draft_video"
+                                      ? "reai.mediaVideoTitle"
+                                    : answer.action_code === "generative_hdr_draft_image"
+                                      ? "reai.mediaHdrTitle"
+                                      : "reai.mediaGradeTitle",
+                                  lang,
+                                )}
+                              </p>
+                              <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
+                                {t("reai.mediaSelection", lang).replace("{count}", String(answer.action_count || 0))}
+                              </p>
+                            </div>
+                            <span className="rounded-full bg-foreground/[0.06] px-2 py-1 text-[10px] font-medium text-foreground/65">
+                              {answer.media_action?.cloud_image_processor
+                                ? t("reai.mediaCloud", lang)
+                                : t("reai.mediaLocal", lang)}
+                            </span>
+                          </div>
+                          <p className="mt-2 text-[11px] leading-relaxed text-foreground/70">
+                            {t(
+                              answer.action_code === "generate_draft_video"
+                                ? "reai.videoSafety"
+                                : answer.action_code === "organize_draft_images"
+                                  ? "reai.organizeSafety"
+                                  : "reai.mediaVersionWarning",
+                              lang,
+                            )}
+                          </p>
+                          {answer.media_action?.authenticity_boundary && (
+                            <p className="mt-2 rounded-lg bg-amber-500/10 px-2.5 py-2 text-[10px] leading-relaxed text-amber-900 dark:text-amber-100">
+                              {t("reai.mediaHdrBoundary", lang)}
+                            </p>
+                          )}
+                          {!!answer.media_action?.operations && Object.keys(answer.media_action.operations).length > 0 && (
+                            <div className="mt-2 flex flex-wrap gap-1.5">
+                              {Object.entries(answer.media_action.operations).map(([key, value]) => (
+                                <span key={key} className="rounded-md border border-border/50 bg-background px-2 py-1 text-[10px] text-foreground/70">
+                                  {t(`reai.mediaOperation.${key}` as LocaleKey, lang)}{typeof value === "number" ? ` · ${value}` : ""}
+                                </span>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                        {answer.action_token && (
+                          <div className="flex items-center gap-2 border-t border-border/45 px-3.5 py-3">
+                            <button
+                              type="button"
+                              className="rounded-lg bg-foreground px-3 py-2 text-xs font-medium text-background transition hover:bg-foreground/85 disabled:opacity-40"
+                              disabled={busy}
+                              onClick={() => void applyAction(turn.id, answer)}
+                            >
+                              {t("reai.mediaConfirm", lang)}
+                            </button>
+                            <button
+                              type="button"
+                              className="px-2 py-2 text-xs font-medium text-muted-foreground transition hover:text-foreground disabled:opacity-40"
+                              disabled={busy}
+                              onClick={() => dismissAction(turn.id)}
+                            >
+                              {t("reai.dismissProposal", lang)}
+                            </button>
+                          </div>
+                        )}
+                        {!answer.action_token && turn.actionStatus && (
+                          <div className="border-t border-border/45 px-3.5 py-3 text-xs font-medium text-foreground/75">
+                            {t(
+                              turn.actionStatus !== "applied"
+                                ? "reai.proposalDismissed"
+                                : answer.action_code === "generate_draft_video"
+                                  ? "reai.videoQueued"
+                                  : answer.action_code === "organize_draft_images"
+                                    ? "reai.galleryOrganized"
+                                    : "reai.mediaQueued",
+                              lang,
+                            )}
                           </div>
                         )}
                       </div>
@@ -866,7 +1097,7 @@ export function ReaiAgentCard({
               {busy && <div className="border-l border-foreground/15 py-1 pl-3 text-[12px] text-muted-foreground">{t("reai.working", lang)}</div>}
             </div>
           )}
-          {!showHistory && panel && turns.length === 0 && (
+          {!showHistory && !showMediaHistory && panel && turns.length === 0 && (
             <div className="flex min-h-0 flex-1 flex-col items-center justify-center px-4 text-center">
               <p className="max-w-xs text-[13px] leading-relaxed text-muted-foreground">
                 {t(workspaceContext === "settings" ? "reai.startSettingsConversation" : (draftId ? "reai.startDraftConversation" : "reai.startConversation"), lang)}
@@ -886,7 +1117,7 @@ export function ReaiAgentCard({
               </div>
             </div>
           )}
-          <div className="flex items-end gap-2 rounded-2xl border border-border/60 bg-background p-2 transition focus-within:border-foreground/30">
+          {!showHistory && !showMediaHistory && <div className="flex items-end gap-2 rounded-2xl border border-border/60 bg-background p-2 transition focus-within:border-foreground/30">
             <textarea
               value={message}
               onChange={(event) => setMessage(event.target.value)}
@@ -910,7 +1141,7 @@ export function ReaiAgentCard({
             >
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="m5 12 14-7-4.5 14-2.5-6.5L5 12Z" /></svg>
             </button>
-          </div>
+          </div>}
         </div>
       )}
       {error && <p className="mt-3 text-[12px] text-red-600" role="alert">{error}</p>}

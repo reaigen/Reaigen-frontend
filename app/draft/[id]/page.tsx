@@ -13,6 +13,7 @@ import { DraftImageGallery } from "../../components/draft-image-gallery";
 import FloorplanViewer from "../../components/floorplan-viewer";
 import type { DraftDetailItem, DraftUpload, SplatsByDraftPayload } from "../../lib/tour-types";
 import { PageLoading } from "../../components/page-loading";
+import { cn } from "../../lib/utils";
 
 // ── Formatting ────────────────────────────────────────────────────────────
 
@@ -73,7 +74,14 @@ function getImages(uploads: DraftUpload[]) {
   return (uploads ?? [])
     .filter((u) => u.mime_type?.startsWith("image") || u.asset_type === "photo")
     .sort((a, b) => a.sort_order - b.sort_order)
-    .map((u) => ({ url: u.file_url }));
+    .map((u) => ({ id: u.id, url: u.file_url }));
+}
+
+function getVideos(uploads: DraftUpload[]) {
+  return (uploads ?? [])
+    .filter((u) => u.mime_type?.startsWith("video/") && u.is_master !== false)
+    .sort((a, b) => a.sort_order - b.sort_order)
+    .map((u) => ({ id: u.id, url: u.file_url, name: u.file_name }));
 }
 
 /** Read from a specific spec section, e.g. sec("technical", "condition") */
@@ -371,6 +379,7 @@ export default function DraftPreviewPage({ params }: { params: Promise<{ id: str
   const [error, setError] = useState<string | null>(null);
   const [descExpanded, setDescExpanded] = useState(false);
   const [translationPending, setTranslationPending] = useState(false);
+  const [activeImageId, setActiveImageId] = useState<number | null>(null);
 
   useEffect(() => {
     if (!isLoading && !isAuthenticated) router.replace("/");
@@ -410,6 +419,24 @@ export default function DraftPreviewPage({ params }: { params: Promise<{ id: str
       setError(isApiNotFound(err) ? "notFound" : "loadFailed");
     });
   }, [isAuthenticated, draftId, lang]);
+
+  useEffect(() => {
+    const refreshMedia = (event: Event) => {
+      const detail = (event as CustomEvent<{ draftId?: number; pending?: boolean }>).detail;
+      if (detail?.draftId !== draftId) return;
+      const refresh = () => getDraft(draftId).then(setDraft).catch(() => {});
+      void refresh();
+      if (detail.pending) {
+        window.setTimeout(refresh, 2500);
+        window.setTimeout(refresh, 7000);
+        window.setTimeout(refresh, 15000);
+        window.setTimeout(refresh, 30000);
+        window.setTimeout(refresh, 60000);
+      }
+    };
+    window.addEventListener("reai-media-updated", refreshMedia);
+    return () => window.removeEventListener("reai-media-updated", refreshMedia);
+  }, [draftId]);
 
   if (isLoading || (!draft && !error)) {
     return <PageLoading />;
@@ -454,6 +481,7 @@ export default function DraftPreviewPage({ params }: { params: Promise<{ id: str
 
   const address = draft.display_address || [draft.city, draft.state, draft.country].filter(Boolean).join(", ");
   const images = getImages(draft.raw_uploads);
+  const videos = getVideos(draft.raw_uploads);
   const facts = buildFacts(draft, lang);
   const rows = buildRows(draft, lang);
   const features = getFeatureChips(draft, lang);
@@ -470,7 +498,7 @@ export default function DraftPreviewPage({ params }: { params: Promise<{ id: str
   const hasTour = !!primarySplat;
   const primarySplatId = primarySplat ? (primarySplat.splat_id ?? primarySplat.id) : undefined;
   const thumbUrl = primarySplat?.signed_outputs?.thumbnail ?? null;
-  const hasMedia = images.length > 0 || !!thumbUrl;
+  const hasMedia = images.length > 0 || videos.length > 0 || !!thumbUrl;
   const hasFloorplan = !!(
     draft.floorplan_id ||
     draft.draft_data?.some((d) => d.data_key === "captured_room_json" || d.data_key === "wall_graph_json")
@@ -478,7 +506,7 @@ export default function DraftPreviewPage({ params }: { params: Promise<{ id: str
 
 
   return (
-    <AppShell user={user} onLogout={logout} hideMobileNav reaiDraftId={draftId} reaiDraftTitle={draft?.title} onReaiDraftUpdated={setDraft}>
+    <AppShell user={user} onLogout={logout} hideMobileNav reaiDraftId={draftId} reaiDraftTitle={draft?.title} reaiUploadId={activeImageId ?? undefined} onReaiDraftUpdated={setDraft}>
       <div className="mx-auto w-full max-w-2xl pb-16 md:pb-10">
         {/* Back */}
         <button onClick={() => { if (window.history.length > 1) router.back(); else router.push("/dashboard"); }} className="mb-4 inline-flex items-center gap-1.5 rounded-xl px-2 py-1.5 -ml-2 text-[13px] text-muted-foreground hover:text-foreground hover:bg-foreground/[0.04] transition-colors">
@@ -489,9 +517,27 @@ export default function DraftPreviewPage({ params }: { params: Promise<{ id: str
         {/* Gallery — only when there are photos or a tour thumbnail */}
         {hasMedia && (
           <div className="-mx-4 md:mx-0">
-            <div className="md:rounded-xl overflow-hidden">
-              <DraftImageGallery images={images} alt={draft.title} fallbackUrl={thumbUrl} lang={lang} />
-            </div>
+            {(images.length > 0 || thumbUrl) && (
+              <div className="md:rounded-xl overflow-hidden">
+                <DraftImageGallery images={images} alt={draft.title} fallbackUrl={thumbUrl} lang={lang} onActiveImageChange={setActiveImageId} />
+              </div>
+            )}
+            {videos.length > 0 && (
+              <div className={cn("space-y-3", (images.length > 0 || thumbUrl) && "mt-4")}>
+                {videos.map((video) => (
+                  <video
+                    key={video.id}
+                    controls
+                    playsInline
+                    preload="metadata"
+                    className="aspect-video w-full bg-black md:rounded-xl"
+                    aria-label={video.name}
+                  >
+                    <source src={video.url} />
+                  </video>
+                ))}
+              </div>
+            )}
           </div>
         )}
 

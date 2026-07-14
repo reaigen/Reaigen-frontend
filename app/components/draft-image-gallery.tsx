@@ -22,11 +22,12 @@ function FadeImg({ src, alt, className = "" }: { src: string; alt: string; class
 }
 
 interface DraftImageGalleryProps {
-  images: { url: string; thumbnail_url?: string | null }[];
+  images: { id?: number; url: string; thumbnail_url?: string | null }[];
   alt: string;
   /** Fallback thumbnail URL if no images */
   fallbackUrl?: string | null;
   lang?: string;
+  onActiveImageChange?: (imageId: number | null) => void;
 }
 
 // ── Lightbox overlay ─────────────────────────────────────────────────────
@@ -37,12 +38,14 @@ function Lightbox({
   startIndex,
   onClose,
   lang = "en",
+  onIndexChange,
 }: {
-  images: { url: string }[];
+  images: { id?: number; url: string }[];
   alt: string;
   startIndex: number;
   onClose: () => void;
   lang?: string;
+  onIndexChange?: (index: number) => void;
 }) {
   const scrollRef = useRef<HTMLDivElement>(null);
   const [index, setIndex] = useState(startIndex);
@@ -69,6 +72,8 @@ function Lightbox({
     el.addEventListener("scroll", handleScroll, { passive: true });
     return () => el.removeEventListener("scroll", handleScroll);
   }, [handleScroll]);
+
+  useEffect(() => onIndexChange?.(index), [index, onIndexChange]);
 
   // Keyboard: arrows + escape
   useEffect(() => {
@@ -186,11 +191,16 @@ function Lightbox({
 
 // ── Gallery ──────────────────────────────────────────────────────────────
 
-export function DraftImageGallery({ images, alt, fallbackUrl, lang = "en" }: DraftImageGalleryProps) {
+export function DraftImageGallery({ images, alt, fallbackUrl, lang = "en", onActiveImageChange }: DraftImageGalleryProps) {
   const scrollRef = useRef<HTMLDivElement>(null);
   const [activeIndex, setActiveIndex] = useState(0);
   const [lightboxIndex, setLightboxIndex] = useState<number | null>(null);
   const count = images.length;
+
+  useEffect(() => {
+    const index = lightboxIndex ?? activeIndex;
+    onActiveImageChange?.(images[index]?.id ?? null);
+  }, [activeIndex, images, lightboxIndex, onActiveImageChange]);
 
   const handleScroll = useCallback(() => {
     const el = scrollRef.current;
@@ -332,7 +342,14 @@ export function DraftImageGallery({ images, alt, fallbackUrl, lang = "en" }: Dra
 
       {/* Lightbox */}
       {lightboxIndex !== null && (
-        <Lightbox images={images} alt={alt} startIndex={lightboxIndex} onClose={() => setLightboxIndex(null)} lang={lang} />
+        <Lightbox
+          images={images}
+          alt={alt}
+          startIndex={lightboxIndex}
+          onClose={() => setLightboxIndex(null)}
+          onIndexChange={(index) => onActiveImageChange?.(images[index]?.id ?? null)}
+          lang={lang}
+        />
       )}
     </>
   );
