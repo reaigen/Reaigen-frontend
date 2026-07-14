@@ -1003,6 +1003,7 @@ const en = {
   "reai.history.restore":               "Restored version",
   "reai.restore":                       "Restore",
   "reai.restoreConfirm":                "Restore this version? Your current creation will remain available in edit history.",
+  "reai.restoreCancel":                 "Keep current version",
   "reai.restored":                      "The selected version was restored. The state it replaced remains in edit history.",
   "reai.currentVersion":                "Current",
   "reai.emptyValue":                    "Not set",

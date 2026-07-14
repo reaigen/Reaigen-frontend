@@ -108,6 +108,26 @@ async function abortableRequest(path: string, signal?: AbortSignal) {
   return JSON.parse(text);
 }
 
+/** Force a network GET and replace the matching in-memory cache entry. */
+async function freshRequest(path: string) {
+  cache.delete(path);
+  inFlight.delete(path);
+  const res = await fetch(path, {
+    credentials: "include",
+    headers: { "Content-Type": "application/json" },
+    cache: "no-store",
+  });
+  if (!res.ok) {
+    const body = await res.text();
+    if (res.status === 401) cache.clear();
+    throw new ApiError(res.status, body);
+  }
+  const text = await res.text();
+  const data = text ? JSON.parse(text) : null;
+  cache.set(path, { data, ts: Date.now() });
+  return data;
+}
+
 // ─── Auth ─────────────────────────────────────────────────────────────────
 
 export async function login(email: string, password: string) {
@@ -917,7 +937,7 @@ export async function applyReaiWorkspaceAction(
       execution_mode: "deterministic";
     }
 > {
-  return request("/api/reaigen/reai-agent/workspace/actions/apply/", {
+  const result = await request("/api/reaigen/reai-agent/workspace/actions/apply/", {
     method: "POST",
     body: JSON.stringify({
       action_token: actionToken,
@@ -925,6 +945,11 @@ export async function applyReaiWorkspaceAction(
       improvement_conversation_id: improvementConversationId,
     }),
   });
+  // Agent sharing actions use a different API prefix, so the generic mutation
+  // invalidator cannot infer that the sharing collection is now stale.
+  cache.delete("/api/reaigen/shares/");
+  inFlight.delete("/api/reaigen/shares/");
+  return result;
 }
 
 export async function getAgentCreationHistory(
@@ -1176,8 +1201,10 @@ export async function verifySharePin(token: string, pin: string): Promise<{ veri
 
 // ─── Share Management ─────────────────────────────────────────────────────
 
-export async function listShares(): Promise<ShareData[]> {
-  const data = await request("/api/reaigen/shares/");
+export async function listShares(options: { fresh?: boolean } = {}): Promise<ShareData[]> {
+  const data = options.fresh
+    ? await freshRequest("/api/reaigen/shares/")
+    : await request("/api/reaigen/shares/");
   return data.results ?? data ?? [];
 }
 

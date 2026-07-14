@@ -188,6 +188,8 @@ export function ReaiAgentCard({
   const [showHistory, setShowHistory] = useState(false);
   const [history, setHistory] = useState<AgentCreationRevision[]>([]);
   const [historyBusy, setHistoryBusy] = useState(false);
+  const [restoreCandidateId, setRestoreCandidateId] = useState<number | null>(null);
+  const [historyNotice, setHistoryNotice] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [copiedShareUrl, setCopiedShareUrl] = useState<string | null>(null);
   const quickActions = draftId
@@ -215,6 +217,8 @@ export function ReaiAgentCard({
   useEffect(() => {
     setShowHistory(false);
     setHistory([]);
+    setRestoreCandidateId(null);
+    setHistoryNotice(null);
   }, [draftId]);
 
   const ask = async (override?: string) => {
@@ -271,20 +275,16 @@ export function ReaiAgentCard({
   };
 
   const restoreRevision = async (revision: AgentCreationRevision) => {
-    if (!draftId || busy || !window.confirm(t("reai.restoreConfirm", lang))) return;
+    if (!draftId || busy || restoreCandidateId !== revision.id) return;
     setBusy(true);
     setError(null);
     try {
       const result = await restoreAgentCreationRevision(draftId, revision.id);
       onDraftUpdated?.(result.draft);
       window.dispatchEvent(new CustomEvent("reai-creations-updated", { detail: { draftIds: [draftId] } }));
-      setTurns((current) => [...current, {
-        id: Date.now(),
-        role: "assistant",
-        content: t("reai.restored", lang),
-      }]);
       await loadHistory();
-      setShowHistory(false);
+      setRestoreCandidateId(null);
+      setHistoryNotice(t("reai.restored", lang));
     } catch (err) {
       setError(errorText(err, lang));
     } finally {
@@ -452,6 +452,11 @@ export function ReaiAgentCard({
                 <h3 className="text-[13px] font-semibold">{t("reai.editHistory", lang)}</h3>
                 <p className="mt-1 text-[11px] leading-relaxed text-muted-foreground">{t("reai.historySafety", lang)}</p>
               </div>
+              {historyNotice && (
+                <div className="rounded-lg border border-border/50 bg-foreground/[0.035] px-3 py-2.5 text-[11px] leading-relaxed text-foreground/75">
+                  {historyNotice}
+                </div>
+              )}
               {historyBusy && <p className="py-3 text-[11px] text-muted-foreground">{t("reai.working", lang)}</p>}
               {!historyBusy && history.length === 0 && (
                 <p className="rounded-xl border border-border/40 p-3 text-[11px] leading-relaxed text-muted-foreground">{t("reai.historyEmpty", lang)}</p>
@@ -488,7 +493,10 @@ export function ReaiAgentCard({
                             <button
                               type="button"
                               disabled={busy}
-                              onClick={() => void restoreRevision(revision)}
+                              onClick={() => {
+                                setHistoryNotice(null);
+                                setRestoreCandidateId(revision.id);
+                              }}
                               className="shrink-0 text-[10px] font-semibold text-muted-foreground underline-offset-4 transition hover:text-foreground hover:underline disabled:opacity-40"
                             >
                               {t("reai.restore", lang)}
@@ -541,6 +549,29 @@ export function ReaiAgentCard({
                             );
                           })}
                         </div>
+                        {restoreCandidateId === revision.id && (
+                          <div className="mt-3 border-t border-border/40 pt-3">
+                            <p className="text-[11px] leading-relaxed text-foreground/70">{t("reai.restoreConfirm", lang)}</p>
+                            <div className="mt-2.5 flex items-center gap-2">
+                              <button
+                                type="button"
+                                disabled={busy}
+                                onClick={() => void restoreRevision(revision)}
+                                className="rounded-lg bg-foreground px-3 py-1.5 text-[11px] font-semibold text-background transition hover:bg-foreground/85 disabled:opacity-40"
+                              >
+                                {t("reai.restore", lang)}
+                              </button>
+                              <button
+                                type="button"
+                                disabled={busy}
+                                onClick={() => setRestoreCandidateId(null)}
+                                className="rounded-lg px-3 py-1.5 text-[11px] font-medium text-muted-foreground transition hover:text-foreground disabled:opacity-40"
+                              >
+                                {t("reai.restoreCancel", lang)}
+                              </button>
+                            </div>
+                          </div>
+                        )}
                       </div>
                     </article>
                   ))}

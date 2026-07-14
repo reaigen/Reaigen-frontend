@@ -984,6 +984,7 @@ const sk: LocaleStrings = {
   "reai.history.restore":               "Obnovená verzia",
   "reai.restore":                       "Obnoviť",
   "reai.restoreConfirm":                "Obnoviť túto verziu? Aktuálny stav výtvoru zostane uložený v histórii úprav.",
+  "reai.restoreCancel":                 "Ponechať aktuálnu verziu",
   "reai.restored":                      "Vybraná verzia bola obnovená. Nahradený stav zostal uložený v histórii úprav.",
   "reai.currentVersion":                "Aktuálna",
   "reai.emptyValue":                    "Nevyplnené",

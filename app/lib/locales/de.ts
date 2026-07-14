@@ -984,6 +984,7 @@ const de: LocaleStrings = {
   "reai.history.restore":               "Wiederhergestellte Version",
   "reai.restore":                       "Wiederherstellen",
   "reai.restoreConfirm":                "Diese Version wiederherstellen? Der aktuelle Stand bleibt im Bearbeitungsverlauf erhalten.",
+  "reai.restoreCancel":                 "Aktuelle Version behalten",
   "reai.restored":                      "Die ausgewählte Version wurde wiederhergestellt. Der ersetzte Stand bleibt im Bearbeitungsverlauf erhalten.",
   "reai.currentVersion":                "Aktuell",
   "reai.emptyValue":                    "Nicht festgelegt",

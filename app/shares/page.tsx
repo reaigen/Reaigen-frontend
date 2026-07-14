@@ -340,7 +340,7 @@ export default function SharesPage() {
   React.useEffect(() => {
     if (!isAuthenticated) return;
     const refresh = () => {
-      listShares().then(setShares).catch(() => undefined);
+      listShares({ fresh: true }).then(setShares).catch(() => undefined);
     };
     window.addEventListener("reai-shares-updated", refresh);
     return () => window.removeEventListener("reai-shares-updated", refresh);
