@@ -384,7 +384,7 @@ export function ReaiAgentCard({
     setBusy(true);
     setError(null);
     try {
-      if (["grade_draft_images", "cleanplate_draft_images", "generative_hdr_draft_image", "organize_draft_images", "generate_draft_video"].includes(answer.action_code || "")) {
+      if (["grade_draft_images", "retouch_draft_image", "cleanplate_draft_images", "generative_hdr_draft_image", "organize_draft_images", "generate_draft_video"].includes(answer.action_code || "")) {
         const result = await applyReaiMediaAction(answer.action_token, improvementConversationId);
         window.dispatchEvent(new CustomEvent("reai-media-updated", {
           detail: { draftId: result.draft_id, action: result.action, pending: result.status === "pending" },
@@ -849,14 +849,16 @@ export function ReaiAgentCard({
                         )}
                       </div>
                     )}
-                    {answer && (["grade_draft_images", "cleanplate_draft_images", "generative_hdr_draft_image", "organize_draft_images", "generate_draft_video"].includes(answer.action_code || "")) && (answer.action_token || turn.actionStatus) && (
+                    {answer && (["grade_draft_images", "retouch_draft_image", "cleanplate_draft_images", "generative_hdr_draft_image", "organize_draft_images", "generate_draft_video"].includes(answer.action_code || "")) && (answer.action_token || turn.actionStatus) && (
                       <div className="mt-4 overflow-hidden rounded-xl border border-border/60 bg-foreground/[0.018]">
                         <div className="px-3.5 py-3">
                           <div className="flex items-start justify-between gap-3">
                             <div>
                               <p className="text-xs font-semibold text-foreground">
                                 {t(
-                                  answer.action_code === "cleanplate_draft_images"
+                                  answer.action_code === "retouch_draft_image"
+                                    ? "reai.mediaRetouchTitle"
+                                  : answer.action_code === "cleanplate_draft_images"
                                     ? "reai.mediaCleanplateTitle"
                                     : answer.action_code === "organize_draft_images"
                                       ? "reai.mediaOrganizeTitle"
@@ -880,7 +882,9 @@ export function ReaiAgentCard({
                           </div>
                           <p className="mt-2 text-[11px] leading-relaxed text-foreground/70">
                             {t(
-                              answer.action_code === "generate_draft_video"
+                              answer.action_code === "retouch_draft_image"
+                                ? "reai.retouchSafety"
+                              : answer.action_code === "generate_draft_video"
                                 ? "reai.videoSafety"
                                 : answer.action_code === "organize_draft_images"
                                   ? "reai.organizeSafety"

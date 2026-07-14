@@ -711,7 +711,7 @@ export interface ReaiAgentResponse {
   proposed_changes: Record<string, unknown>;
   suggested_actions: string[];
   proposal_token: string | null;
-  action_code?: "revoke_all_shares" | "manage_shares" | "share_inventory" | "share_status" | "settings_navigation" | "settings_update" | "select_share_fields" | "create_draft_share" | "grade_draft_images" | "cleanplate_draft_images" | "generative_hdr_draft_image" | "organize_draft_images" | "generate_draft_video";
+  action_code?: "revoke_all_shares" | "manage_shares" | "share_inventory" | "share_status" | "settings_navigation" | "settings_update" | "select_share_fields" | "create_draft_share" | "grade_draft_images" | "retouch_draft_image" | "cleanplate_draft_images" | "generative_hdr_draft_image" | "organize_draft_images" | "generate_draft_video";
   action_token?: string | null;
   action_count?: number;
   share_action?: "list" | "pause" | "resume" | "revoke";
@@ -790,6 +790,7 @@ export type ReaiToolCode =
   | "floorplan"
   | "image"
   | "cleanplate"
+  | "retouch"
   | "generative_image"
   | "media_organize"
   | "video_generation"
