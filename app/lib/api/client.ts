@@ -691,9 +691,11 @@ export interface ReaiAgentResponse {
   proposed_changes: Record<string, unknown>;
   suggested_actions: string[];
   proposal_token: string | null;
-  action_code?: "revoke_all_shares";
+  action_code?: "revoke_all_shares" | "create_draft_share";
   action_token?: string | null;
   action_count?: number;
+  share_id?: number | null;
+  share_url?: string | null;
   operation?: "none" | "list" | "compare" | "bulk_edit";
   search_query?: string | null;
   matched_creation_count?: number;
@@ -879,7 +881,17 @@ export async function applyReaiWorkspaceProposal(
 export async function applyReaiWorkspaceAction(
   actionToken: string,
   improvementConversationId: string | null = null,
-): Promise<{ action: "revoke_all_shares"; revoked_count: number; execution_mode: "deterministic" }> {
+): Promise<
+  | { action: "revoke_all_shares"; revoked_count: number; execution_mode: "deterministic" }
+  | {
+      action: "create_draft_share";
+      created: boolean;
+      draft_id: number;
+      share_id: number;
+      share_url: string;
+      execution_mode: "deterministic";
+    }
+> {
   return request("/api/reaigen/reai-agent/workspace/actions/apply/", {
     method: "POST",
     body: JSON.stringify({

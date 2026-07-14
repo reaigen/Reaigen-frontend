@@ -181,6 +181,7 @@ export function ReaiAgentCard({
   const [history, setHistory] = useState<AgentCreationRevision[]>([]);
   const [historyBusy, setHistoryBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [copiedShareUrl, setCopiedShareUrl] = useState<string | null>(null);
   const quickActions = draftId
     ? (["reai.quickImproveDescription", "reai.quickCheckFields", "reai.quickEditCurrent"] as const)
     : (["reai.quickFind", "reai.quickCompare", "reai.quickBulk"] as const);
@@ -301,11 +302,20 @@ export function ReaiAgentCard({
         window.dispatchEvent(new CustomEvent("reai-shares-updated", {
           detail: { revokedCount: result.revoked_count },
         }));
+      } else {
+        window.dispatchEvent(new CustomEvent("reai-shares-updated", {
+          detail: { created: result.created, draftId: result.draft_id, shareId: result.share_id },
+        }));
       }
       setTurns((current) => current.map((turn) => turn.id === turnId ? {
         ...turn,
         actionStatus: "applied",
-        response: { ...answer, action_token: null },
+        response: {
+          ...answer,
+          action_token: null,
+          share_id: result.action === "create_draft_share" ? result.share_id : answer.share_id,
+          share_url: result.action === "create_draft_share" ? result.share_url : answer.share_url,
+        },
       } : turn));
     } catch (err) {
       setError(errorText(err, lang));
@@ -320,6 +330,12 @@ export function ReaiAgentCard({
       actionStatus: "dismissed",
       response: { ...turn.response, action_token: null },
     } : turn));
+  };
+
+  const copyShareUrl = async (url: string) => {
+    await navigator.clipboard.writeText(url);
+    setCopiedShareUrl(url);
+    window.setTimeout(() => setCopiedShareUrl((current) => current === url ? null : current), 1800);
   };
 
   const sendFeedback = async (turnId: number, helpful: boolean, conversationId?: string | null) => {
@@ -640,6 +656,58 @@ export function ReaiAgentCard({
                         {!answer.action_token && turn.actionStatus && (
                           <div className="border-t border-border/45 px-3.5 py-3 text-xs font-medium text-foreground/75">
                             {t(turn.actionStatus === "applied" ? "reai.shareActionApplied" : "reai.proposalDismissed", lang)}
+                          </div>
+                        )}
+                      </div>
+                    )}
+                    {answer?.action_code === "create_draft_share" && (answer.action_token || answer.share_url || turn.actionStatus) && (
+                      <div className="mt-3 rounded-lg border border-border/55 bg-foreground/[0.018] px-3 py-2.5">
+                        <div className="flex items-center justify-between gap-3">
+                          <div className="min-w-0">
+                            <p className="text-xs font-semibold text-foreground">{t("reai.shareCreateTitle", lang)}</p>
+                            <p className="mt-0.5 text-[11px] leading-4 text-muted-foreground">
+                              {answer.share_url ? t("reai.shareCreateReady", lang) : t("reai.shareCreateBody", lang)}
+                            </p>
+                          </div>
+                          {answer.action_token && (
+                            <div className="flex shrink-0 items-center gap-1.5">
+                              <button
+                                type="button"
+                                className="rounded-md bg-foreground px-2.5 py-1.5 text-[11px] font-medium text-background disabled:opacity-40"
+                                disabled={busy}
+                                onClick={() => void applyAction(turn.id, answer)}
+                              >
+                                {t("reai.shareCreateConfirm", lang)}
+                              </button>
+                              <button
+                                type="button"
+                                className="px-1.5 py-1.5 text-[11px] text-muted-foreground hover:text-foreground"
+                                disabled={busy}
+                                onClick={() => dismissAction(turn.id)}
+                              >
+                                {t("reai.dismissProposal", lang)}
+                              </button>
+                            </div>
+                          )}
+                        </div>
+                        {answer.share_url && (
+                          <div className="mt-2 flex min-w-0 items-center gap-1.5 border-t border-border/40 pt-2">
+                            <span className="min-w-0 flex-1 truncate text-[11px] text-foreground/65">{answer.share_url}</span>
+                            <button
+                              type="button"
+                              className="shrink-0 rounded-md border border-border/60 px-2 py-1 text-[10px] font-medium"
+                              onClick={() => void copyShareUrl(answer.share_url as string)}
+                            >
+                              {t(copiedShareUrl === answer.share_url ? "reai.shareCopied" : "reai.shareCopy", lang)}
+                            </button>
+                            <a
+                              href={answer.share_url}
+                              target="_blank"
+                              rel="noreferrer"
+                              className="shrink-0 px-1 py-1 text-[10px] font-medium text-muted-foreground hover:text-foreground"
+                            >
+                              {t("reai.shareOpen", lang)}
+                            </a>
                           </div>
                         )}
                       </div>
