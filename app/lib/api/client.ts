@@ -711,7 +711,7 @@ export interface ReaiAgentResponse {
   proposed_changes: Record<string, unknown>;
   suggested_actions: string[];
   proposal_token: string | null;
-  action_code?: "revoke_all_shares" | "manage_shares" | "share_inventory" | "share_status" | "settings_navigation" | "select_share_fields" | "create_draft_share";
+  action_code?: "revoke_all_shares" | "manage_shares" | "share_inventory" | "share_status" | "settings_navigation" | "settings_update" | "select_share_fields" | "create_draft_share";
   action_token?: string | null;
   action_count?: number;
   share_action?: "list" | "pause" | "resume" | "revoke";
@@ -732,6 +732,9 @@ export interface ReaiAgentResponse {
   selected_share_fields?: string[];
   settings_section?: "profile" | "seller" | "privacy" | "reai" | "localization" | "notifications" | "billing" | "security" | null;
   navigation_path?: string | null;
+  settings_changes?: {
+    preferred_language?: "en" | "sk" | "cs" | "de";
+  };
   operation?: "none" | "list" | "compare" | "bulk_edit";
   search_query?: string | null;
   matched_creation_count?: number;
@@ -777,7 +780,8 @@ export type ReaiToolCode =
   | "floorplan"
   | "image"
   | "sharing"
-  | "settings_navigation";
+  | "settings_navigation"
+  | "settings_localization";
 
 export interface ReaiToolPermissions {
   allow_all_tools: boolean;

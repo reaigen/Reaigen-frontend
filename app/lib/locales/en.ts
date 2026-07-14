@@ -982,6 +982,8 @@ const en = {
   "settings.reai.tool.sharing.help":     "List, create, pause, resume, or revoke shared links; changes require confirmation.",
   "settings.reai.tool.settings_navigation": "Navigate Settings",
   "settings.reai.tool.settings_navigation.help": "Find and open a Settings section without exposing personal values to Agent.",
+  "settings.reai.tool.settings_localization": "Change interface language",
+  "settings.reai.tool.settings_localization.help": "Allow Agent to change only the interface language when you explicitly request it.",
   "settings.reai.improvementTitle":      "Optional improvement data",
   "settings.reai.improvementSubtitle":   "This permission is separate from using Agent and can be changed at any time.",
   "settings.reai.improvementPermission": "Save redacted improvement data",

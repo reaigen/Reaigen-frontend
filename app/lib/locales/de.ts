@@ -963,6 +963,8 @@ const de: LocaleStrings = {
   "settings.reai.tool.sharing.help":     "Links auflisten, erstellen, pausieren, fortsetzen oder widerrufen; Änderungen erfordern Bestätigung.",
   "settings.reai.tool.settings_navigation": "Einstellungen navigieren",
   "settings.reai.tool.settings_navigation.help": "Einen Einstellungsbereich finden und öffnen, ohne persönliche Werte für Agent offenzulegen.",
+  "settings.reai.tool.settings_localization": "Oberflächensprache ändern",
+  "settings.reai.tool.settings_localization.help": "Agent darf nur auf ausdrücklichen Wunsch die Sprache der Benutzeroberfläche ändern.",
   "settings.reai.improvementTitle":      "Optionale Verbesserungsdaten",
   "settings.reai.improvementSubtitle":   "Diese Berechtigung ist von der Agent-Nutzung getrennt und kann jederzeit geändert werden.",
   "settings.reai.improvementPermission": "Redigierte Verbesserungsdaten speichern",

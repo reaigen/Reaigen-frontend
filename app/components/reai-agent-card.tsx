@@ -13,6 +13,7 @@ import {
   getReaiImprovementConsent,
   restoreAgentCreationRevision,
   saveReaiFeedback,
+  updateLocalization,
   type AgentCreationRevision,
   type ReaiAgentConsent,
   type ReaiAgentResponse,
@@ -260,6 +261,17 @@ export function ReaiAgentCard({
         window.dispatchEvent(new CustomEvent("reai-settings-navigate", {
           detail: { section: response.settings_section },
         }));
+      }
+      if (response.action_code === "settings_update" && response.settings_changes?.preferred_language) {
+        window.dispatchEvent(new CustomEvent("reai-settings-navigate", {
+          detail: { section: "localization" },
+        }));
+        await updateLocalization({
+          preferred_language: response.settings_changes.preferred_language,
+        });
+        window.location.hash = "localization";
+        window.location.reload();
+        return;
       }
       if (response.improvement_conversation_id) setImprovementConversationId(response.improvement_conversation_id);
       setTurns((current) => [

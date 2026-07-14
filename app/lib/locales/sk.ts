@@ -963,6 +963,8 @@ const sk: LocaleStrings = {
   "settings.reai.tool.sharing.help":     "Zobraziť, vytvoriť, pozastaviť, obnoviť alebo zrušiť odkazy; zmeny vyžadujú potvrdenie.",
   "settings.reai.tool.settings_navigation": "Navigácia v nastaveniach",
   "settings.reai.tool.settings_navigation.help": "Nájsť a otvoriť sekciu nastavení bez sprístupnenia osobných hodnôt Agentovi.",
+  "settings.reai.tool.settings_localization": "Meniť jazyk rozhrania",
+  "settings.reai.tool.settings_localization.help": "Povoliť Agentovi zmeniť iba jazyk rozhrania na váš výslovný pokyn.",
   "settings.reai.improvementTitle":      "Voliteľné údaje na zlepšovanie",
   "settings.reai.improvementSubtitle":   "Toto povolenie je oddelené od používania Agenta a môžete ho kedykoľvek zmeniť.",
   "settings.reai.improvementPermission": "Ukladať redigované údaje na zlepšovanie",
