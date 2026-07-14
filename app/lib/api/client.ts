@@ -691,11 +691,14 @@ export interface ReaiAgentResponse {
   proposed_changes: Record<string, unknown>;
   suggested_actions: string[];
   proposal_token: string | null;
-  action_code?: "revoke_all_shares" | "create_draft_share";
+  action_code?: "revoke_all_shares" | "select_share_fields" | "create_draft_share";
   action_token?: string | null;
   action_count?: number;
   share_id?: number | null;
   share_url?: string | null;
+  share_path?: string | null;
+  available_share_fields?: string[];
+  selected_share_fields?: string[];
   operation?: "none" | "list" | "compare" | "bulk_edit";
   search_query?: string | null;
   matched_creation_count?: number;
@@ -849,6 +852,7 @@ export async function askReaiWorkspace(
   conversation: Array<{ role: "user" | "assistant"; content: string }> = [],
   improvementConversationId: string | null = null,
   language?: string,
+  shareFieldNames?: string[],
 ): Promise<ReaiAgentResponse> {
   return request("/api/reaigen/reai-agent/workspace/assist/", {
     method: "POST",
@@ -858,6 +862,7 @@ export async function askReaiWorkspace(
       conversation: conversation.slice(-4),
       improvement_conversation_id: improvementConversationId,
       language,
+      share_field_names: shareFieldNames,
     }),
   });
 }
@@ -889,6 +894,8 @@ export async function applyReaiWorkspaceAction(
       draft_id: number;
       share_id: number;
       share_url: string;
+      share_path: string;
+      selected_share_fields: string[];
       execution_mode: "deterministic";
     }
 > {

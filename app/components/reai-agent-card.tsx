@@ -32,7 +32,15 @@ type ChatTurn = {
   feedback?: boolean;
   proposalStatus?: "applied" | "dismissed";
   actionStatus?: "applied" | "dismissed";
+  shareFields?: string[];
 };
+
+function contextualShareUrl(answer: ReaiAgentResponse): string | null {
+  if (answer.share_path && typeof window !== "undefined") {
+    return new URL(answer.share_path, window.location.origin).toString();
+  }
+  return answer.share_url || null;
+}
 
 const revisionFieldKeys = {
   title: "reai.field.title",
@@ -315,6 +323,10 @@ export function ReaiAgentCard({
           action_token: null,
           share_id: result.action === "create_draft_share" ? result.share_id : answer.share_id,
           share_url: result.action === "create_draft_share" ? result.share_url : answer.share_url,
+          share_path: result.action === "create_draft_share" ? result.share_path : answer.share_path,
+          selected_share_fields: result.action === "create_draft_share"
+            ? result.selected_share_fields
+            : answer.selected_share_fields,
         },
       } : turn));
     } catch (err) {
@@ -336,6 +348,43 @@ export function ReaiAgentCard({
     await navigator.clipboard.writeText(url);
     setCopiedShareUrl(url);
     window.setTimeout(() => setCopiedShareUrl((current) => current === url ? null : current), 1800);
+  };
+
+  const toggleShareField = (turnId: number, field: string) => {
+    setTurns((current) => current.map((turn) => {
+      if (turn.id !== turnId) return turn;
+      const selected = new Set(turn.shareFields || []);
+      if (selected.has(field)) selected.delete(field);
+      else selected.add(field);
+      return { ...turn, shareFields: Array.from(selected) };
+    }));
+  };
+
+  const prepareShare = async (turnId: number, fields: string[]) => {
+    if (!draftId || fields.length === 0 || busy) return;
+    setBusy(true);
+    setError(null);
+    try {
+      const response = await askReaiWorkspace(
+        "share this creation",
+        draftId,
+        turns.slice(-4).map(({ role, content }) => ({ role, content })),
+        improvementConversationId,
+        lang,
+        fields,
+      );
+      if (response.improvement_conversation_id) setImprovementConversationId(response.improvement_conversation_id);
+      setTurns((current) => current.map((turn) => turn.id === turnId ? {
+        ...turn,
+        response,
+        content: response.reply,
+        shareFields: fields,
+      } : turn));
+    } catch (err) {
+      setError(errorText(err, lang));
+    } finally {
+      setBusy(false);
+    }
   };
 
   const sendFeedback = async (turnId: number, helpful: boolean, conversationId?: string | null) => {
@@ -499,6 +548,7 @@ export function ReaiAgentCard({
             <div className={cn("space-y-2 overflow-y-auto pr-1", panel ? "min-h-0 flex-1" : "max-h-[420px]")} aria-live="polite">
               {turns.map((turn) => {
                 const answer = turn.response;
+                const shareUrl = answer ? contextualShareUrl(answer) : null;
                 const visibleDraftResults = answer?.draft_results?.filter((draft) => !draftId || draft.id !== draftId) ?? [];
                 const targetTitle = answer?.draft_results?.find((draft) => answer.selected_creation_ids?.includes(draft.id))?.creation_data.title;
                 return (
@@ -660,14 +710,55 @@ export function ReaiAgentCard({
                         )}
                       </div>
                     )}
-                    {answer?.action_code === "create_draft_share" && (answer.action_token || answer.share_url || turn.actionStatus) && (
+                    {answer?.action_code === "select_share_fields" && (
+                      <div className="mt-3 rounded-lg border border-border/55 bg-foreground/[0.018] px-3 py-2.5">
+                        <p className="text-[11px] font-medium text-foreground/75">{t("reai.shareFieldsLabel", lang)}</p>
+                        <div className="mt-2 flex flex-wrap gap-1.5">
+                          {(answer.available_share_fields || []).map((field) => {
+                            const selected = (turn.shareFields || []).includes(field);
+                            return (
+                              <button
+                                key={field}
+                                type="button"
+                                aria-pressed={selected}
+                                onClick={() => toggleShareField(turn.id, field)}
+                                className={cn(
+                                  "rounded-full border px-2 py-1 text-[10px] transition",
+                                  selected
+                                    ? "border-foreground bg-foreground text-background"
+                                    : "border-border/60 text-foreground/65 hover:border-foreground/30",
+                                )}
+                              >
+                                {t(`shareDialog.field.${field}` as LocaleKey, lang)}
+                              </button>
+                            );
+                          })}
+                        </div>
+                        <button
+                          type="button"
+                          disabled={busy || !(turn.shareFields?.length)}
+                          onClick={() => void prepareShare(turn.id, turn.shareFields || [])}
+                          className="mt-2.5 rounded-md bg-foreground px-2.5 py-1.5 text-[11px] font-medium text-background disabled:opacity-35"
+                        >
+                          {t("reai.shareFieldsContinue", lang)}
+                        </button>
+                      </div>
+                    )}
+                    {answer?.action_code === "create_draft_share" && (answer.action_token || shareUrl || turn.actionStatus) && (
                       <div className="mt-3 rounded-lg border border-border/55 bg-foreground/[0.018] px-3 py-2.5">
                         <div className="flex items-center justify-between gap-3">
                           <div className="min-w-0">
                             <p className="text-xs font-semibold text-foreground">{t("reai.shareCreateTitle", lang)}</p>
                             <p className="mt-0.5 text-[11px] leading-4 text-muted-foreground">
-                              {answer.share_url ? t("reai.shareCreateReady", lang) : t("reai.shareCreateBody", lang)}
+                              {shareUrl ? t("reai.shareCreateReady", lang) : t("reai.shareCreateBody", lang)}
                             </p>
+                            {!!answer.selected_share_fields?.length && (
+                              <p className="mt-1 truncate text-[10px] text-foreground/55">
+                                {answer.selected_share_fields
+                                  .map((field) => t(`shareDialog.field.${field}` as LocaleKey, lang))
+                                  .join(" · ")}
+                              </p>
+                            )}
                           </div>
                           {answer.action_token && (
                             <div className="flex shrink-0 items-center gap-1.5">
@@ -690,18 +781,18 @@ export function ReaiAgentCard({
                             </div>
                           )}
                         </div>
-                        {answer.share_url && (
+                        {shareUrl && (
                           <div className="mt-2 flex min-w-0 items-center gap-1.5 border-t border-border/40 pt-2">
-                            <span className="min-w-0 flex-1 truncate text-[11px] text-foreground/65">{answer.share_url}</span>
+                            <span className="min-w-0 flex-1 truncate text-[11px] text-foreground/65">{shareUrl}</span>
                             <button
                               type="button"
                               className="shrink-0 rounded-md border border-border/60 px-2 py-1 text-[10px] font-medium"
-                              onClick={() => void copyShareUrl(answer.share_url as string)}
+                              onClick={() => void copyShareUrl(shareUrl)}
                             >
-                              {t(copiedShareUrl === answer.share_url ? "reai.shareCopied" : "reai.shareCopy", lang)}
+                              {t(copiedShareUrl === shareUrl ? "reai.shareCopied" : "reai.shareCopy", lang)}
                             </button>
                             <a
-                              href={answer.share_url}
+                              href={shareUrl}
                               target="_blank"
                               rel="noreferrer"
                               className="shrink-0 px-1 py-1 text-[10px] font-medium text-muted-foreground hover:text-foreground"
