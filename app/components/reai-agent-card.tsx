@@ -306,9 +306,13 @@ export function ReaiAgentCard({
     setError(null);
     try {
       const result = await applyReaiWorkspaceAction(answer.action_token, improvementConversationId);
-      if (result.action === "revoke_all_shares") {
+      if (result.action === "revoke_all_shares" || result.action === "manage_shares") {
         window.dispatchEvent(new CustomEvent("reai-shares-updated", {
-          detail: { revokedCount: result.revoked_count },
+          detail: {
+            revokedCount: result.revoked_count,
+            updatedCount: "updated_count" in result ? result.updated_count : result.revoked_count,
+            operation: "operation" in result ? result.operation : "revoke",
+          },
         }));
       } else {
         window.dispatchEvent(new CustomEvent("reai-shares-updated", {
@@ -674,14 +678,15 @@ export function ReaiAgentCard({
                         )}
                       </div>
                     )}
-                    {answer?.action_code === "revoke_all_shares" && (answer.action_token || turn.actionStatus) && (
+                    {(answer?.action_code === "revoke_all_shares" || answer?.action_code === "manage_shares") && (answer.action_token || turn.actionStatus) && (
                       <div className="mt-4 overflow-hidden rounded-xl border border-border/60 bg-foreground/[0.018]">
                         <div className="px-3.5 py-3">
-                          <p className="text-xs font-semibold text-foreground">{t("reai.shareActionTitle", lang)}</p>
+                          <p className="text-xs font-semibold text-foreground">{t("reai.shareManagerTitle", lang)}</p>
                           <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
-                            {t("reai.shareActionCount", lang).replace("{count}", String(answer.action_count || 0))}
+                            {t(`reai.shareManagerSelection.${answer.action_scope || "active_and_paused"}` as LocaleKey, lang)
+                              .replace("{count}", String(answer.action_count || 0))}
                           </p>
-                          <p className="mt-2 text-[11px] leading-relaxed text-foreground/70">{t("reai.shareActionWarning", lang)}</p>
+                          <p className="mt-2 text-[11px] leading-relaxed text-foreground/70">{t("reai.shareManagerWarning", lang)}</p>
                         </div>
                         {answer.action_token && (
                           <div className="flex items-center gap-2 border-t border-border/45 px-3.5 py-3">
@@ -691,7 +696,7 @@ export function ReaiAgentCard({
                               disabled={busy}
                               onClick={() => void applyAction(turn.id, answer)}
                             >
-                              {t("reai.shareActionConfirm", lang)}
+                              {t(`reai.shareManagerConfirm.${answer.share_action || "revoke"}` as LocaleKey, lang)}
                             </button>
                             <button
                               type="button"
@@ -705,9 +710,24 @@ export function ReaiAgentCard({
                         )}
                         {!answer.action_token && turn.actionStatus && (
                           <div className="border-t border-border/45 px-3.5 py-3 text-xs font-medium text-foreground/75">
-                            {t(turn.actionStatus === "applied" ? "reai.shareActionApplied" : "reai.proposalDismissed", lang)}
+                            {t(turn.actionStatus === "applied" ? "reai.shareManagerApplied" : "reai.proposalDismissed", lang)}
                           </div>
                         )}
+                      </div>
+                    )}
+                    {answer?.action_code === "share_inventory" && !!answer.share_results?.length && (
+                      <div className="mt-3 divide-y divide-border/40 overflow-hidden rounded-lg border border-border/55">
+                        {answer.share_results.map((share) => (
+                          <div key={share.id} className="flex items-center gap-2 px-3 py-2">
+                            <span className="min-w-0 flex-1 truncate text-[11px] font-medium">{share.title}</span>
+                            <span className="text-[10px] text-muted-foreground">
+                              {t("reai.shareManagerViews", lang).replace("{count}", String(share.access_count))}
+                            </span>
+                            <span className="rounded-full bg-foreground/[0.06] px-1.5 py-0.5 text-[9px] text-foreground/65">
+                              {t(`reai.shareStatus.${share.status}` as LocaleKey, lang)}
+                            </span>
+                          </div>
+                        ))}
                       </div>
                     )}
                     {answer?.action_code === "select_share_fields" && (

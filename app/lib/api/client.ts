@@ -691,9 +691,19 @@ export interface ReaiAgentResponse {
   proposed_changes: Record<string, unknown>;
   suggested_actions: string[];
   proposal_token: string | null;
-  action_code?: "revoke_all_shares" | "select_share_fields" | "create_draft_share";
+  action_code?: "revoke_all_shares" | "manage_shares" | "share_inventory" | "select_share_fields" | "create_draft_share";
   action_token?: string | null;
   action_count?: number;
+  share_action?: "list" | "pause" | "resume" | "revoke";
+  action_scope?: "active" | "paused" | "active_and_paused";
+  share_results?: Array<{
+    id: number;
+    title: string;
+    status: string;
+    access_count: number;
+    visible_field_count: number;
+    share_path: string;
+  }>;
   share_id?: number | null;
   share_url?: string | null;
   share_path?: string | null;
@@ -888,6 +898,14 @@ export async function applyReaiWorkspaceAction(
   improvementConversationId: string | null = null,
 ): Promise<
   | { action: "revoke_all_shares"; revoked_count: number; execution_mode: "deterministic" }
+  | {
+      action: "manage_shares";
+      operation: "pause" | "resume" | "revoke";
+      target_status: "active" | "paused" | "revoked";
+      updated_count: number;
+      revoked_count: number;
+      execution_mode: "deterministic";
+    }
   | {
       action: "create_draft_share";
       created: boolean;
