@@ -172,6 +172,22 @@ function errorText(error: unknown, lang: string): string {
   return t("reai.error", lang);
 }
 
+function isExplicitProposalConfirmation(value: string): boolean {
+  const normalized = value
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLocaleLowerCase()
+    .replace(/\s+/g, " ")
+    .trim();
+
+  return [
+    /\b(save|apply|confirm)\b/,
+    /\buse (it|this|that)(?: change)?\b/,
+    /\b(uloz|pouzi|potvrd|aplikuj)\b/,
+    /\b(speichern|anwenden|bestatigen|ubernehmen)\b/,
+  ].some((pattern) => pattern.test(normalized));
+}
+
 export function ReaiAgentCard({
   draftId,
   currentUploadId,
@@ -274,10 +290,30 @@ export function ReaiAgentCard({
   const ask = async (override?: string) => {
     const requestText = (override ?? message).trim();
     if (!requestText || busy) return;
-    const conversation = turns.slice(-4).map(({ role, content }) => ({ role, content }));
     const userTurn: ChatTurn = { id: Date.now(), role: "user", content: requestText };
     setTurns((current) => [...current, userTurn]);
     setMessage("");
+
+    const pendingProposal = [...turns].reverse().find((turn) => (
+      turn.role === "assistant"
+      && Boolean(turn.response?.proposal_token)
+      && !turn.proposalStatus
+    ));
+    if (
+      pendingProposal?.response?.proposal_token
+      && isExplicitProposalConfirmation(requestText)
+    ) {
+      const applied = await apply(pendingProposal.id, pendingProposal.response);
+      if (applied) {
+        setTurns((current) => [
+          ...current,
+          { id: Date.now() + 1, role: "assistant", content: t("reai.applied", lang) },
+        ]);
+      }
+      return;
+    }
+
+    const conversation = turns.slice(-4).map(({ role, content }) => ({ role, content }));
     setBusy(true);
     setError(null);
     try {
@@ -330,8 +366,8 @@ export function ReaiAgentCard({
     }
   };
 
-  const apply = async (turnId: number, answer: ReaiAgentResponse) => {
-    if (!answer.proposal_token) return;
+  const apply = async (turnId: number, answer: ReaiAgentResponse): Promise<boolean> => {
+    if (!answer.proposal_token) return false;
     setBusy(true);
     setError(null);
     try {
@@ -346,8 +382,10 @@ export function ReaiAgentCard({
         proposalStatus: "applied",
         response: { ...answer, proposal_token: null },
       } : turn));
+      return true;
     } catch (err) {
       setError(errorText(err, lang));
+      return false;
     } finally {
       setBusy(false);
     }
