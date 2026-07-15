@@ -77,8 +77,11 @@ reports Agent consent and returns those version records.
 - Owner and recipient views use the same gallery implementation: one page carousel and one
   fullscreen viewer. The thumbnail rail belongs to fullscreen, where it supports navigation; a
   second page grid or permanent dark filmstrip must not repeat the same photos.
-- Fullscreen supports swipe/scroll snapping, keyboard arrows, Home/End, Escape, native browser
-  fullscreen, and a clear close action. The active image remains synchronized with Agent media tools.
+- The viewer opens only from its explicit fullscreen control. It never opens from a general click on
+  the image and never closes from an accidental click in the image margins.
+- Fullscreen supports swipe/scroll snapping, keyboard arrows, Home/End, one-step Escape, a labeled
+  Close action, focus containment, and focus restoration. The active image remains synchronized with
+  Agent media tools.
 - Video remains in its native 16:9 player unless source metadata provides a deliberate alternative.
 
 ## Version manager contract

@@ -40,14 +40,10 @@ function Chevron({ direction }: { direction: "left" | "right" }) {
   );
 }
 
-function ExpandIcon({ collapse = false }: { collapse?: boolean }) {
+function ExpandIcon() {
   return (
     <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true">
-      {collapse ? (
-        <path d="M6 2.5V6H2.5M10 2.5V6h3.5M13.5 10H10v3.5M2.5 10H6v3.5" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" />
-      ) : (
-        <path d="M6 2.5H2.5V6M10 2.5h3.5V6M13.5 10v3.5H10M6 13.5H2.5V10" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" />
-      )}
+      <path d="M6 2.5H2.5V6M10 2.5h3.5V6M13.5 10v3.5H10M6 13.5H2.5V10" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" />
     </svg>
   );
 }
@@ -78,8 +74,8 @@ function GalleryLightbox({
   const rootRef = React.useRef<HTMLDivElement>(null);
   const scrollRef = React.useRef<HTMLDivElement>(null);
   const closeRef = React.useRef<HTMLButtonElement>(null);
+  const returnFocusRef = React.useRef<HTMLElement | null>(null);
   const [index, setIndex] = React.useState(startIndex);
-  const [nativeFullscreen, setNativeFullscreen] = React.useState(false);
   const count = images.length;
 
   const goTo = React.useCallback((next: number, behavior: ScrollBehavior = "smooth") => {
@@ -90,13 +86,19 @@ function GalleryLightbox({
     setIndex(clamped);
   }, [count]);
 
-  React.useEffect(() => {
+  React.useLayoutEffect(() => {
+    returnFocusRef.current = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    const element = scrollRef.current;
+    if (element) element.scrollLeft = startIndex * element.clientWidth;
+    setIndex(startIndex);
     const frame = requestAnimationFrame(() => {
-      goTo(startIndex, "auto");
       closeRef.current?.focus();
     });
-    return () => cancelAnimationFrame(frame);
-  }, [goTo, startIndex]);
+    return () => {
+      cancelAnimationFrame(frame);
+      returnFocusRef.current?.focus({ preventScroll: true });
+    };
+  }, [startIndex]);
 
   React.useEffect(() => {
     const element = scrollRef.current;
@@ -112,39 +114,53 @@ function GalleryLightbox({
   React.useEffect(() => onIndexChange(index), [index, onIndexChange]);
 
   React.useEffect(() => {
-    const root = rootRef.current;
     const previousOverflow = document.body.style.overflow;
+    const previousPaddingRight = document.body.style.paddingRight;
+    const scrollbarWidth = window.innerWidth - document.documentElement.clientWidth;
     document.body.style.overflow = "hidden";
+    if (scrollbarWidth > 0) document.body.style.paddingRight = `${scrollbarWidth}px`;
     return () => {
       document.body.style.overflow = previousOverflow;
-      if (document.fullscreenElement === root) void document.exitFullscreen();
+      document.body.style.paddingRight = previousPaddingRight;
     };
-  }, []);
-
-  React.useEffect(() => {
-    const handleFullscreen = () => setNativeFullscreen(document.fullscreenElement === rootRef.current);
-    document.addEventListener("fullscreenchange", handleFullscreen);
-    return () => document.removeEventListener("fullscreenchange", handleFullscreen);
   }, []);
 
   React.useEffect(() => {
     const handleKey = (event: KeyboardEvent) => {
       if (event.key === "Escape") {
-        if (document.fullscreenElement === rootRef.current) void document.exitFullscreen();
-        else onClose();
-      } else if (event.key === "ArrowLeft") goTo(index - 1);
-      else if (event.key === "ArrowRight") goTo(index + 1);
-      else if (event.key === "Home") goTo(0);
-      else if (event.key === "End") goTo(count - 1);
+        event.preventDefault();
+        onClose();
+      } else if (event.key === "ArrowLeft") {
+        event.preventDefault();
+        goTo(index - 1);
+      } else if (event.key === "ArrowRight") {
+        event.preventDefault();
+        goTo(index + 1);
+      } else if (event.key === "Home") {
+        event.preventDefault();
+        goTo(0);
+      } else if (event.key === "End") {
+        event.preventDefault();
+        goTo(count - 1);
+      } else if (event.key === "Tab") {
+        const controls = Array.from(
+          rootRef.current?.querySelectorAll<HTMLElement>("button:not(:disabled)") ?? [],
+        );
+        if (controls.length === 0) return;
+        const first = controls[0];
+        const last = controls[controls.length - 1];
+        if (event.shiftKey && document.activeElement === first) {
+          event.preventDefault();
+          last.focus();
+        } else if (!event.shiftKey && document.activeElement === last) {
+          event.preventDefault();
+          first.focus();
+        }
+      }
     };
     window.addEventListener("keydown", handleKey);
     return () => window.removeEventListener("keydown", handleKey);
   }, [count, goTo, index, onClose]);
-
-  const toggleNativeFullscreen = async () => {
-    if (document.fullscreenElement === rootRef.current) await document.exitFullscreen();
-    else if (rootRef.current?.requestFullscreen) await rootRef.current.requestFullscreen();
-  };
 
   return createPortal(
     <div
@@ -152,31 +168,22 @@ function GalleryLightbox({
       role="dialog"
       aria-modal="true"
       aria-label={alt}
-      className="fixed inset-0 z-[120] flex bg-black text-white animate-fade-in"
+      className="fixed inset-0 z-[120] flex overscroll-contain bg-white text-black"
     >
-      <div className="pointer-events-none absolute inset-x-0 top-0 z-30 flex h-16 items-center justify-between bg-gradient-to-b from-black/75 to-transparent px-3 pt-safe sm:px-5">
-        <span className="rounded-full bg-black/40 px-3 py-1 text-[11px] font-medium tabular-nums text-white/75 backdrop-blur-xl">
+      <div className="pointer-events-none absolute inset-x-0 top-0 z-40 flex h-[72px] items-center justify-between px-3 pt-safe sm:px-5">
+        <span aria-live="polite" aria-atomic="true" className="rounded-full border border-black/[0.07] bg-white/95 px-3 py-1.5 text-[11px] font-semibold tabular-nums text-black/60 shadow-sm backdrop-blur-xl">
           {counterLabel(index, count, lang)}
         </span>
-        <div className="pointer-events-auto flex items-center gap-2">
-          <button
-            type="button"
-            onClick={() => void toggleNativeFullscreen()}
-            className="flex h-9 w-9 items-center justify-center rounded-full border border-white/10 bg-black/45 text-white/75 backdrop-blur-xl transition-colors hover:bg-white hover:text-black"
-            aria-label={nativeFullscreen ? t("draft.gallery.exitFullscreen", lang) : t("draft.gallery.fullscreen", lang)}
-          >
-            <ExpandIcon collapse={nativeFullscreen} />
-          </button>
-          <button
-            ref={closeRef}
-            type="button"
-            onClick={onClose}
-            className="flex h-9 w-9 items-center justify-center rounded-full border border-white/10 bg-black/45 text-white/75 backdrop-blur-xl transition-colors hover:bg-white hover:text-black focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/40"
-            aria-label={t("common.close", lang)}
-          >
-            <CloseIcon />
-          </button>
-        </div>
+        <button
+          ref={closeRef}
+          type="button"
+          onClick={onClose}
+          className="pointer-events-auto flex h-11 items-center gap-2 rounded-full border border-black/[0.08] bg-white/95 px-4 text-[12px] font-semibold text-black/70 shadow-sm backdrop-blur-xl transition hover:bg-black hover:text-white hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-black/25"
+          aria-label={t("common.close", lang)}
+        >
+          <CloseIcon />
+          <span>{t("common.close", lang)}</span>
+        </button>
       </div>
 
       {count > 1 ? (
@@ -185,7 +192,7 @@ function GalleryLightbox({
             type="button"
             onClick={() => goTo(index - 1)}
             disabled={index === 0}
-            className="absolute left-2 top-1/2 z-30 flex h-10 w-10 -translate-y-1/2 items-center justify-center rounded-full border border-white/10 bg-black/45 text-white/80 backdrop-blur-xl transition disabled:pointer-events-none disabled:opacity-0 hover:bg-white hover:text-black sm:left-4"
+            className="absolute left-2 top-1/2 z-30 flex h-11 w-11 -translate-y-1/2 items-center justify-center rounded-full border border-black/[0.08] bg-white/95 text-black/65 shadow-sm backdrop-blur-xl transition hover:bg-black hover:text-white hover:shadow-md disabled:pointer-events-none disabled:scale-90 disabled:opacity-0 sm:left-5"
             aria-label={t("draft.gallery.previous", lang)}
           >
             <Chevron direction="left" />
@@ -194,7 +201,7 @@ function GalleryLightbox({
             type="button"
             onClick={() => goTo(index + 1)}
             disabled={index === count - 1}
-            className="absolute right-2 top-1/2 z-30 flex h-10 w-10 -translate-y-1/2 items-center justify-center rounded-full border border-white/10 bg-black/45 text-white/80 backdrop-blur-xl transition disabled:pointer-events-none disabled:opacity-0 hover:bg-white hover:text-black sm:right-4"
+            className="absolute right-2 top-1/2 z-30 flex h-11 w-11 -translate-y-1/2 items-center justify-center rounded-full border border-black/[0.08] bg-white/95 text-black/65 shadow-sm backdrop-blur-xl transition hover:bg-black hover:text-white hover:shadow-md disabled:pointer-events-none disabled:scale-90 disabled:opacity-0 sm:right-5"
             aria-label={t("draft.gallery.next", lang)}
           >
             <Chevron direction="right" />
@@ -204,37 +211,38 @@ function GalleryLightbox({
 
       <div
         ref={scrollRef}
-        className="flex h-full w-full snap-x snap-mandatory overflow-x-auto scrollbar-none"
+        className="flex h-full w-full touch-pan-x snap-x snap-mandatory overflow-x-auto scrollbar-none"
       >
         {images.map((image, imageIndex) => (
           <div
             key={`${image.id ?? image.url}-${imageIndex}`}
-            className="flex h-full w-full flex-none snap-start items-center justify-center px-3 pb-24 pt-16 sm:px-16 sm:pb-24"
-            onClick={onClose}
+            className={cn(
+              "flex h-full w-full flex-none snap-start items-center justify-center px-4 pt-[72px] sm:px-20",
+              count > 1 ? "pb-24" : "pb-5",
+            )}
           >
             {/* eslint-disable-next-line @next/next/no-img-element */}
             <img
               src={image.url}
               alt={image.name || `${alt} ${imageIndex + 1}`}
-              className="max-h-full max-w-full select-none object-contain"
+              className="max-h-full max-w-full select-none object-contain shadow-[0_12px_44px_rgba(0,0,0,0.08)]"
               draggable={false}
-              onClick={(event) => event.stopPropagation()}
             />
           </div>
         ))}
       </div>
 
       {count > 1 ? (
-        <div className="absolute inset-x-0 bottom-0 z-30 border-t border-white/10 bg-black/70 px-3 py-2 pb-safe backdrop-blur-2xl">
-          <div className="mx-auto flex max-w-4xl gap-2 overflow-x-auto scrollbar-none">
+        <div className="pointer-events-none absolute inset-x-0 bottom-3 z-30 flex justify-center px-3 pb-safe">
+          <div className="pointer-events-auto flex max-w-full gap-2 overflow-x-auto rounded-2xl border border-black/[0.07] bg-white/95 p-2 shadow-[0_8px_28px_rgba(0,0,0,0.10)] backdrop-blur-2xl scrollbar-none">
             {images.map((image, imageIndex) => (
               <button
                 key={`${image.id ?? image.url}-lightbox-thumb`}
                 type="button"
                 onClick={() => goTo(imageIndex)}
                 className={cn(
-                  "relative h-12 w-16 shrink-0 overflow-hidden rounded-lg border bg-white/5 transition",
-                  imageIndex === index ? "border-white ring-1 ring-white/30" : "border-white/10 opacity-55 hover:opacity-100",
+                  "relative h-12 w-16 shrink-0 overflow-hidden rounded-xl border bg-black/[0.03] transition",
+                  imageIndex === index ? "border-black/70 ring-1 ring-black/15" : "border-black/[0.07] opacity-55 hover:opacity-100",
                 )}
                 aria-label={counterLabel(imageIndex, count, lang)}
                 aria-current={imageIndex === index ? "true" : undefined}
@@ -290,6 +298,9 @@ export function DraftImageGallery({ images, alt, fallbackUrl, lang = "en", onAct
     setActiveIndex(clamped);
   }, [count]);
 
+  const closeLightbox = React.useCallback(() => setLightboxIndex(null), []);
+  const syncLightboxIndex = React.useCallback((next: number) => goTo(next, "auto"), [goTo]);
+
   if (count === 0) {
     return (
       <div className="relative aspect-[16/10] w-full overflow-hidden bg-muted/30 md:rounded-2xl">
@@ -309,12 +320,9 @@ export function DraftImageGallery({ images, alt, fallbackUrl, lang = "en", onAct
       <div className="group relative aspect-[16/10] overflow-hidden bg-white ring-1 ring-inset ring-black/[0.045] md:rounded-2xl">
         <div ref={scrollRef} className="flex h-full w-full snap-x snap-mandatory overflow-x-auto scrollbar-none">
           {displayImages.map((image, imageIndex) => (
-            <button
+            <div
               key={`${image.id ?? image.url}-${imageIndex}`}
-              type="button"
-              onClick={() => setLightboxIndex(imageIndex)}
-              className="relative h-full w-full flex-none snap-start bg-white focus-visible:z-10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-black/40"
-              aria-label={`${t("draft.gallery.fullscreen", lang)} · ${counterLabel(imageIndex, count, lang)}`}
+              className="relative h-full w-full flex-none snap-start bg-white"
             >
               <Thumbnail
                 src={image.url}
@@ -322,7 +330,7 @@ export function DraftImageGallery({ images, alt, fallbackUrl, lang = "en", onAct
                 className="absolute inset-0 h-full w-full object-cover"
                 priority={imageIndex === 0}
               />
-            </button>
+            </div>
           ))}
         </div>
 
@@ -339,7 +347,7 @@ export function DraftImageGallery({ images, alt, fallbackUrl, lang = "en", onAct
           <>
             <button
               type="button"
-              onClick={() => goTo(activeIndex - 1, "smooth")}
+              onClick={() => goTo(activeIndex - 1)}
               disabled={activeIndex === 0}
               className="absolute left-3 top-1/2 flex h-10 w-10 -translate-y-1/2 items-center justify-center rounded-full border border-black/10 bg-white/90 text-black/70 shadow-sm backdrop-blur-xl transition hover:bg-white hover:text-black hover:shadow-md disabled:pointer-events-none disabled:scale-90 disabled:opacity-0"
               aria-label={t("draft.gallery.previous", lang)}
@@ -348,7 +356,7 @@ export function DraftImageGallery({ images, alt, fallbackUrl, lang = "en", onAct
             </button>
             <button
               type="button"
-              onClick={() => goTo(activeIndex + 1, "smooth")}
+              onClick={() => goTo(activeIndex + 1)}
               disabled={activeIndex === count - 1}
               className="absolute right-3 top-1/2 flex h-10 w-10 -translate-y-1/2 items-center justify-center rounded-full border border-black/10 bg-white/90 text-black/70 shadow-sm backdrop-blur-xl transition hover:bg-white hover:text-black hover:shadow-md disabled:pointer-events-none disabled:scale-90 disabled:opacity-0"
               aria-label={t("draft.gallery.next", lang)}
@@ -366,7 +374,7 @@ export function DraftImageGallery({ images, alt, fallbackUrl, lang = "en", onAct
                   <button
                     key={`${image.id ?? image.url}-indicator`}
                     type="button"
-                    onClick={() => goTo(imageIndex, "smooth")}
+                    onClick={() => goTo(imageIndex)}
                     className={cn(
                       "h-1.5 rounded-full transition-all duration-200",
                       imageIndex === activeIndex ? "w-4 bg-black/75" : "w-1.5 bg-black/25 hover:bg-black/45",
@@ -391,8 +399,8 @@ export function DraftImageGallery({ images, alt, fallbackUrl, lang = "en", onAct
           alt={alt}
           startIndex={lightboxIndex}
           lang={lang}
-          onClose={() => setLightboxIndex(null)}
-          onIndexChange={(next) => goTo(next, "auto")}
+          onClose={closeLightbox}
+          onIndexChange={syncLightboxIndex}
         />
       ) : null}
     </>
