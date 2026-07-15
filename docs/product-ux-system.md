@@ -71,10 +71,12 @@ reports Agent consent and returns those version records.
 ## Media presentation contract
 
 - Inventory-card thumbnails use a stable crop ratio so lists remain scannable.
-- Creation and public-share galleries preserve every source aspect ratio inside a stable dark
-  presentation frame; portrait, landscape, square, and panoramic media must not be silently cut.
-- Owner and recipient views use the same gallery implementation: one carousel, one thumbnail rail,
-  one counter, and one fullscreen viewer. A second grid must not repeat the same photos.
+- Creation and public-share pages use a stable 16:10 editorial crop on a white gallery surface so
+  the surrounding page stays calm and predictable. Fullscreen preserves every source aspect ratio;
+  portrait, landscape, square, and panoramic media must be visible there without cropping.
+- Owner and recipient views use the same gallery implementation: one page carousel and one
+  fullscreen viewer. The thumbnail rail belongs to fullscreen, where it supports navigation; a
+  second page grid or permanent dark filmstrip must not repeat the same photos.
 - Fullscreen supports swipe/scroll snapping, keyboard arrows, Home/End, Escape, native browser
   fullscreen, and a clear close action. The active image remains synchronized with Agent media tools.
 - Video remains in its native 16:9 player unless source metadata provides a deliberate alternative.

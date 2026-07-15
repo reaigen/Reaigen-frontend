@@ -44,9 +44,9 @@ function ExpandIcon({ collapse = false }: { collapse?: boolean }) {
   return (
     <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true">
       {collapse ? (
-        <path d="M6 2v4H2M10 14v-4h4M2 6l4-4M14 10l-4 4" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round" />
+        <path d="M6 2.5V6H2.5M10 2.5V6h3.5M13.5 10H10v3.5M2.5 10H6v3.5" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" />
       ) : (
-        <path d="M6 2H2v4M10 14h4v-4M2 6l4-4M14 10l-4 4" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round" />
+        <path d="M6 2.5H2.5V6M10 2.5h3.5V6M13.5 10v3.5H10M6 13.5H2.5V10" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" />
       )}
     </svg>
   );
@@ -306,81 +306,81 @@ export function DraftImageGallery({ images, alt, fallbackUrl, lang = "en", onAct
 
   return (
     <>
-      <div className="overflow-hidden border-y border-black/10 bg-black md:rounded-2xl md:border">
-        <div className="group relative aspect-[16/10] overflow-hidden bg-black">
-          <div ref={scrollRef} className="flex h-full w-full snap-x snap-mandatory overflow-x-auto scrollbar-none">
-            {displayImages.map((image, imageIndex) => (
-              <button
-                key={`${image.id ?? image.url}-${imageIndex}`}
-                type="button"
-                onClick={() => setLightboxIndex(imageIndex)}
-                className="relative flex h-full w-full flex-none snap-start items-center justify-center bg-black focus-visible:z-10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-white/60"
-                aria-label={`${t("draft.gallery.fullscreen", lang)} · ${counterLabel(imageIndex, count, lang)}`}
-              >
-                <Thumbnail
-                  src={image.url}
-                  alt={image.name || `${alt} ${imageIndex + 1}`}
-                  className="absolute inset-0 h-full w-full object-contain"
-                  priority={imageIndex === 0}
-                />
-              </button>
-            ))}
-          </div>
-
-          <button
-            type="button"
-            onClick={() => setLightboxIndex(activeIndex)}
-            className="absolute right-3 top-3 flex h-9 w-9 items-center justify-center rounded-full border border-white/15 bg-black/55 text-white/85 shadow-sm backdrop-blur-xl transition-colors hover:bg-white hover:text-black"
-            aria-label={t("draft.gallery.fullscreen", lang)}
-          >
-            <ExpandIcon />
-          </button>
-
-          {count > 1 ? (
-            <>
-              <button
-                type="button"
-                onClick={() => goTo(activeIndex - 1)}
-                disabled={activeIndex === 0}
-                className="absolute left-3 top-1/2 flex h-10 w-10 -translate-y-1/2 items-center justify-center rounded-full border border-white/15 bg-black/55 text-white/85 shadow-sm backdrop-blur-xl transition disabled:pointer-events-none disabled:opacity-0 hover:bg-white hover:text-black"
-                aria-label={t("draft.gallery.previous", lang)}
-              >
-                <Chevron direction="left" />
-              </button>
-              <button
-                type="button"
-                onClick={() => goTo(activeIndex + 1)}
-                disabled={activeIndex === count - 1}
-                className="absolute right-3 top-1/2 flex h-10 w-10 -translate-y-1/2 items-center justify-center rounded-full border border-white/15 bg-black/55 text-white/85 shadow-sm backdrop-blur-xl transition disabled:pointer-events-none disabled:opacity-0 hover:bg-white hover:text-black"
-                aria-label={t("draft.gallery.next", lang)}
-              >
-                <Chevron direction="right" />
-              </button>
-            </>
-          ) : null}
-
-          <span className="pointer-events-none absolute bottom-3 right-3 rounded-full border border-white/10 bg-black/55 px-2.5 py-1 text-[10px] font-semibold tabular-nums text-white/80 backdrop-blur-xl">
-            {counterLabel(activeIndex, count, lang)}
-          </span>
+      <div className="group relative aspect-[16/10] overflow-hidden bg-white ring-1 ring-inset ring-black/[0.045] md:rounded-2xl">
+        <div ref={scrollRef} className="flex h-full w-full snap-x snap-mandatory overflow-x-auto scrollbar-none">
+          {displayImages.map((image, imageIndex) => (
+            <button
+              key={`${image.id ?? image.url}-${imageIndex}`}
+              type="button"
+              onClick={() => setLightboxIndex(imageIndex)}
+              className="relative h-full w-full flex-none snap-start bg-white focus-visible:z-10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-black/40"
+              aria-label={`${t("draft.gallery.fullscreen", lang)} · ${counterLabel(imageIndex, count, lang)}`}
+            >
+              <Thumbnail
+                src={image.url}
+                alt={image.name || `${alt} ${imageIndex + 1}`}
+                className="absolute inset-0 h-full w-full object-cover"
+                priority={imageIndex === 0}
+              />
+            </button>
+          ))}
         </div>
 
+        <button
+          type="button"
+          onClick={() => setLightboxIndex(activeIndex)}
+          className="absolute right-3 top-3 flex h-9 w-9 items-center justify-center rounded-full border border-black/10 bg-white/90 text-black/70 shadow-sm backdrop-blur-xl transition hover:bg-white hover:text-black hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-black/25"
+          aria-label={t("draft.gallery.fullscreen", lang)}
+        >
+          <ExpandIcon />
+        </button>
+
         {count > 1 ? (
-          <div className="flex gap-2 overflow-x-auto border-t border-white/10 bg-black px-2.5 py-2.5 scrollbar-none">
-            {displayImages.map((image, imageIndex) => (
-              <button
-                key={`${image.id ?? image.url}-thumb`}
-                type="button"
-                onClick={() => goTo(imageIndex)}
-                className={cn(
-                  "relative h-12 w-16 shrink-0 overflow-hidden rounded-lg border transition",
-                  imageIndex === activeIndex ? "border-white ring-1 ring-white/25" : "border-white/10 opacity-55 hover:opacity-100",
-                )}
-                aria-label={counterLabel(imageIndex, count, lang)}
-                aria-current={imageIndex === activeIndex ? "true" : undefined}
-              >
-                <Thumbnail src={image.thumbnail_url || image.url} alt="" className="absolute inset-0 h-full w-full object-cover" />
-              </button>
-            ))}
+          <>
+            <button
+              type="button"
+              onClick={() => goTo(activeIndex - 1, "smooth")}
+              disabled={activeIndex === 0}
+              className="absolute left-3 top-1/2 flex h-10 w-10 -translate-y-1/2 items-center justify-center rounded-full border border-black/10 bg-white/90 text-black/70 shadow-sm backdrop-blur-xl transition hover:bg-white hover:text-black hover:shadow-md disabled:pointer-events-none disabled:scale-90 disabled:opacity-0"
+              aria-label={t("draft.gallery.previous", lang)}
+            >
+              <Chevron direction="left" />
+            </button>
+            <button
+              type="button"
+              onClick={() => goTo(activeIndex + 1, "smooth")}
+              disabled={activeIndex === count - 1}
+              className="absolute right-3 top-1/2 flex h-10 w-10 -translate-y-1/2 items-center justify-center rounded-full border border-black/10 bg-white/90 text-black/70 shadow-sm backdrop-blur-xl transition hover:bg-white hover:text-black hover:shadow-md disabled:pointer-events-none disabled:scale-90 disabled:opacity-0"
+              aria-label={t("draft.gallery.next", lang)}
+            >
+              <Chevron direction="right" />
+            </button>
+          </>
+        ) : null}
+
+        {count > 1 ? (
+          <div className="pointer-events-none absolute inset-x-0 bottom-3 flex justify-center">
+            {count <= 10 ? (
+              <div className="pointer-events-auto flex items-center gap-1.5 rounded-full border border-black/[0.07] bg-white/90 px-2.5 py-2 shadow-sm backdrop-blur-xl">
+                {displayImages.map((image, imageIndex) => (
+                  <button
+                    key={`${image.id ?? image.url}-indicator`}
+                    type="button"
+                    onClick={() => goTo(imageIndex, "smooth")}
+                    className={cn(
+                      "h-1.5 rounded-full transition-all duration-200",
+                      imageIndex === activeIndex ? "w-4 bg-black/75" : "w-1.5 bg-black/25 hover:bg-black/45",
+                    )}
+                    aria-label={counterLabel(imageIndex, count, lang)}
+                    aria-current={imageIndex === activeIndex ? "true" : undefined}
+                  />
+                ))}
+              </div>
+            ) : (
+              <span className="rounded-full border border-black/[0.07] bg-white/90 px-2.5 py-1 text-[10px] font-semibold tabular-nums text-black/65 shadow-sm backdrop-blur-xl">
+                {counterLabel(activeIndex, count, lang)}
+              </span>
+            )}
           </div>
         ) : null}
       </div>

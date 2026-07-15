@@ -13,6 +13,7 @@ import { PageLoading } from "../components/page-loading";
 import { PageHeader } from "../components/page-header";
 import { StatusPill } from "../components/status-pill";
 import { SearchField } from "../components/search-field";
+import { GridLayoutToggle } from "../components/grid-layout-toggle";
 
 function compactNumber(value: string | number | null | undefined, lang?: string) {
   if (value == null || value === "") return null;
@@ -228,26 +229,7 @@ export default function DashboardPage() {
             clearLabel={t("dashboard.clearSearch", lang)}
             className="flex-1"
           />
-          <div className="flex items-center gap-2 shrink-0">
-            <div className="hidden md:flex items-center gap-0.5 rounded-md bg-foreground/[0.04] p-0.5">
-              <button
-                type="button"
-                onClick={() => handleGridCols(1)}
-                className={`flex h-6 w-6 items-center justify-center rounded transition-colors ${gridCols === 1 ? "bg-background text-foreground shadow-sm" : "text-foreground/35 hover:text-foreground/60"}`}
-                aria-label="Single column"
-              >
-                <svg width="14" height="14" viewBox="0 0 16 16" fill="none"><rect x="2" y="2" width="12" height="5" rx="1" stroke="currentColor" strokeWidth="1.2"/><rect x="2" y="9" width="12" height="5" rx="1" stroke="currentColor" strokeWidth="1.2"/></svg>
-              </button>
-              <button
-                type="button"
-                onClick={() => handleGridCols(2)}
-                className={`flex h-6 w-6 items-center justify-center rounded transition-colors ${gridCols === 2 ? "bg-background text-foreground shadow-sm" : "text-foreground/35 hover:text-foreground/60"}`}
-                aria-label="Two columns"
-              >
-                <svg width="14" height="14" viewBox="0 0 16 16" fill="none"><rect x="2" y="2" width="5" height="5" rx="1" stroke="currentColor" strokeWidth="1.2"/><rect x="9" y="2" width="5" height="5" rx="1" stroke="currentColor" strokeWidth="1.2"/><rect x="2" y="9" width="5" height="5" rx="1" stroke="currentColor" strokeWidth="1.2"/><rect x="9" y="9" width="5" height="5" rx="1" stroke="currentColor" strokeWidth="1.2"/></svg>
-              </button>
-            </div>
-          </div>
+          <GridLayoutToggle value={gridCols} onChange={handleGridCols} />
         </div>
 
         {/* Cards */}
