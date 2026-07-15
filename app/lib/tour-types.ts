@@ -188,12 +188,20 @@ export interface SplatListItem {
   source_draft: number;
   title: string;
   status: string;
+  product_publication_status?: string;
   scan_type: string;
   has_ply: boolean;
   has_splat: boolean;
   has_sog: boolean;
+  outputs?: Record<string, string>;
+  latest_delivery_version?: Record<string, unknown> | null;
+  delivery_versions_count?: number;
+  artifacts?: Record<string, unknown>;
+  metadata?: Record<string, unknown>;
   point_count: number | null;
   thumbnail_url: string | null;
+  processing_started_at?: string | null;
+  processing_completed_at?: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -268,6 +276,8 @@ export interface DraftDataEntry {
 }
 
 export interface DraftDetailItem extends DraftListingItem {
+  /** Owner-only street address. Public views must use display_address. */
+  address?: string;
   raw_uploads: DraftUpload[];
   draft_data: DraftDataEntry[];
   year_built: number | null;
@@ -282,8 +292,37 @@ export interface DraftDetailItem extends DraftListingItem {
   longitude: string | number | null;
 }
 
+/** Compact splat payload returned by `splats/by-draft/:id/?all=true`. */
+export interface DraftSplatVersion {
+  id: number;
+  splat_id?: number;
+  source_draft?: number;
+  title?: string;
+  status: string;
+  product_publication_status?: string;
+  scan_type?: string;
+  parent_splat_id?: number | null;
+  room_id?: number | null;
+  scan_bundle_id?: number | null;
+  has_ply?: boolean;
+  has_splat?: boolean;
+  has_sog?: boolean;
+  format?: string;
+  available_formats?: string[];
+  url?: string;
+  signed_outputs?: Record<string, string>;
+  thumbnail_url?: string | null;
+  latest_delivery_version?: Record<string, unknown> | null;
+  delivery_versions_count?: number;
+  point_count?: number | null;
+  outputs_updated_at?: string | null;
+  processing_completed_at?: string | null;
+  created_at?: string;
+  updated_at?: string;
+}
+
 export interface SplatsByDraftPayload {
-  splats: TourViewerData[];
+  splats: DraftSplatVersion[];
   parent_splat_id: number | null;
   room_splat_ids: number[];
 }

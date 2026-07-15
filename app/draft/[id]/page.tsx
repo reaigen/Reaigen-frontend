@@ -14,6 +14,10 @@ import FloorplanViewer from "../../components/floorplan-viewer";
 import type { DraftDetailItem, DraftUpload, SplatsByDraftPayload } from "../../lib/tour-types";
 import { PageLoading } from "../../components/page-loading";
 import { cn } from "../../lib/utils";
+import { DraftEditor } from "../../components/draft-editor";
+import { DraftVersionManager } from "../../components/draft-version-manager";
+import { EditIcon, ShareIcon, TourIcon, VersionsIcon } from "../../components/icons";
+import { StatusPill } from "../../components/status-pill";
 
 // ── Formatting ────────────────────────────────────────────────────────────
 
@@ -380,6 +384,9 @@ export default function DraftPreviewPage({ params }: { params: Promise<{ id: str
   const [descExpanded, setDescExpanded] = useState(false);
   const [translationPending, setTranslationPending] = useState(false);
   const [activeImageId, setActiveImageId] = useState<number | null>(null);
+  const [editorOpen, setEditorOpen] = useState(false);
+  const [versionsOpen, setVersionsOpen] = useState(false);
+  const [reloadNonce, setReloadNonce] = useState(0);
 
   useEffect(() => {
     if (!isLoading && !isAuthenticated) router.replace("/");
@@ -387,6 +394,7 @@ export default function DraftPreviewPage({ params }: { params: Promise<{ id: str
 
   useEffect(() => {
     if (!isAuthenticated || isNaN(draftId)) return;
+    setError(null);
     Promise.all([
       getDraft(draftId),
       getSplatsByDraft(draftId).catch(() => null),
@@ -418,7 +426,7 @@ export default function DraftPreviewPage({ params }: { params: Promise<{ id: str
     }).catch((err) => {
       setError(isApiNotFound(err) ? "notFound" : "loadFailed");
     });
-  }, [isAuthenticated, draftId, lang]);
+  }, [isAuthenticated, draftId, lang, reloadNonce]);
 
   useEffect(() => {
     const refreshMedia = (event: Event) => {
@@ -456,7 +464,7 @@ export default function DraftPreviewPage({ params }: { params: Promise<{ id: str
           <p className="text-[14px] font-medium text-foreground/70">{nf ? t("draft.error.notFoundTitle", lang) : t("draft.error.failedTitle", lang)}</p>
           <p className="text-[13px] text-foreground/40 leading-relaxed">{nf ? t("draft.error.notFound", lang) : t("draft.error.loadFailed", lang)}</p>
           <div className="flex items-center justify-center gap-2 pt-1">
-            {!nf && <Button variant="outline" size="sm" onClick={() => setError(null)}>{t("common.tryAgain", lang)}</Button>}
+            {!nf && <Button variant="outline" size="sm" onClick={() => setReloadNonce((value) => value + 1)}>{t("common.tryAgain", lang)}</Button>}
             <Button variant="outline" size="sm" onClick={() => router.push("/dashboard")}>{t("nav.dashboard", lang)}</Button>
           </div>
         </div>
@@ -471,13 +479,6 @@ export default function DraftPreviewPage({ params }: { params: Promise<{ id: str
   const origPrice = fmtMoney(draft.price, draft.currency, lang);
   const price = prefPrice || origPrice;
   const showOrigPrice = prefPrice && origPrice && draft.price_preferred_currency !== draft.currency;
-
-  // Area: preferred vs original
-  const prefArea = draft.area_preferred;
-  const prefAreaUnit = draft.area_preferred_unit;
-  const origArea = draft.area;
-  const origAreaUnit = draft.area_unit_display;
-  const showOrigArea = prefArea && origArea && prefAreaUnit !== origAreaUnit;
 
   const address = draft.display_address || [draft.city, draft.state, draft.country].filter(Boolean).join(", ");
   const images = getImages(draft.raw_uploads);
@@ -495,9 +496,11 @@ export default function DraftPreviewPage({ params }: { params: Promise<{ id: str
   const primarySplat = splatData?.parent_splat_id
     ? splatData.splats.find((s) => (s.splat_id ?? s.id) === splatData.parent_splat_id) ?? splatData.splats[0]
     : splatData?.splats[0];
-  const hasTour = !!primarySplat;
+  const hasTour = !!primarySplat && primarySplat.status === "completed" && Boolean(
+    primarySplat.has_sog || primarySplat.has_splat || primarySplat.has_ply || primarySplat.url || primarySplat.format || primarySplat.available_formats?.length || Object.keys(primarySplat.signed_outputs ?? {}).length,
+  );
   const primarySplatId = primarySplat ? (primarySplat.splat_id ?? primarySplat.id) : undefined;
-  const thumbUrl = primarySplat?.signed_outputs?.thumbnail ?? null;
+  const thumbUrl = primarySplat?.signed_outputs?.thumbnail ?? primarySplat?.thumbnail_url ?? null;
   const hasMedia = images.length > 0 || videos.length > 0 || !!thumbUrl;
   const hasFloorplan = !!(
     draft.floorplan_id ||
@@ -507,12 +510,30 @@ export default function DraftPreviewPage({ params }: { params: Promise<{ id: str
 
   return (
     <AppShell user={user} onLogout={logout} hideMobileNav reaiDraftId={draftId} reaiDraftTitle={draft?.title} reaiUploadId={activeImageId ?? undefined} onReaiDraftUpdated={setDraft}>
-      <div className="mx-auto w-full max-w-2xl pb-16 md:pb-10">
-        {/* Back */}
-        <button onClick={() => { if (window.history.length > 1) router.back(); else router.push("/dashboard"); }} className="mb-4 inline-flex items-center gap-1.5 rounded-xl px-2 py-1.5 -ml-2 text-[13px] text-muted-foreground hover:text-foreground hover:bg-foreground/[0.04] transition-colors">
-          <svg width="15" height="15" viewBox="0 0 16 16" fill="none"><path d="M10 12L6 8L10 4" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/></svg>
-          {t("common.back", lang)}
-        </button>
+      <div className="mx-auto w-full max-w-4xl pb-16 md:pb-10">
+        {/* Creation toolbar */}
+        <div className="mb-4 flex items-center justify-between gap-3">
+          <button onClick={() => { if (window.history.length > 1) router.back(); else router.push("/dashboard"); }} className="inline-flex items-center gap-1.5 rounded-xl px-2 py-1.5 -ml-2 text-[13px] text-muted-foreground hover:text-foreground hover:bg-foreground/[0.04] transition-colors">
+            <svg width="15" height="15" viewBox="0 0 16 16" fill="none"><path d="M10 12L6 8L10 4" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/></svg>
+            {t("common.back", lang)}
+          </button>
+          <div className="flex items-center gap-1.5">
+            <Button type="button" variant="ghost" size="icon-sm" onClick={() => setVersionsOpen(true)} aria-label={t("draft.versions.title", lang)} title={t("draft.versions.title", lang)}>
+              <VersionsIcon size={16} />
+            </Button>
+            <Button type="button" variant="outline" size="sm" onClick={() => setEditorOpen(true)} className="h-8 rounded-lg px-2.5 text-[11px] sm:px-3">
+              <EditIcon size={14} /> <span className="hidden sm:inline">{t("shareDialog.edit", lang)}</span>
+            </Button>
+            <Button type="button" variant="outline" size="sm" onClick={() => router.push(`/draft/${draftId}/sharing`)} className="hidden h-8 rounded-lg px-3 text-[11px] sm:inline-flex">
+              <ShareIcon size={14} /> {t("draft.share", lang)}
+            </Button>
+            {hasTour && (
+              <Button asChild size="sm" className="hidden h-8 rounded-lg px-3 text-[11px] sm:inline-flex">
+                <Link href={`/tour/${primarySplatId}`}><TourIcon size={14} /> {t("draft.viewTour", lang)}</Link>
+              </Button>
+            )}
+          </div>
+        </div>
 
         {/* Gallery — only when there are photos or a tour thumbnail */}
         {hasMedia && (
@@ -543,11 +564,17 @@ export default function DraftPreviewPage({ params }: { params: Promise<{ id: str
 
         {/* Header */}
         <div className="mt-5 animate-fade-in-up">
-          {offerType ? (
-            <p className="text-[11px] font-medium uppercase tracking-wider text-muted-foreground mb-1">
-              {enumT("offer", offerType, lang)}
-            </p>
-          ) : null}
+          <div className="mb-1.5 flex flex-wrap items-center gap-2">
+            {offerType ? (
+              <p className="text-[11px] font-medium uppercase tracking-wider text-muted-foreground">
+                {enumT("offer", offerType, lang)}
+              </p>
+            ) : null}
+            <StatusPill tone={draft.is_complete ? "success" : "neutral"} dot>
+              {t(draft.is_complete ? "dashboard.listingComplete" : "dashboard.listingDraft", lang)}
+            </StatusPill>
+            {hasTour ? <StatusPill tone="strong">{t("dashboard.tourReady", lang)}</StatusPill> : null}
+          </div>
           <h1 className="text-[22px] font-semibold tracking-tight leading-tight">{draft.title || t("dashboard.untitled", lang)}</h1>
           {address && (
             <p className="mt-1 text-[13px] text-muted-foreground">{address}</p>
@@ -656,33 +683,31 @@ export default function DraftPreviewPage({ params }: { params: Promise<{ id: str
           </div>
         )}
 
-        {/* Actions — desktop */}
-        <div className="mt-8 hidden md:flex gap-3">
-          <Button variant="outline" className="flex-1" onClick={() => router.push(`/draft/${draftId}/sharing`)}>
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" className="mr-2"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><path d="M8.59 13.51l6.83 3.98M15.41 6.51l-6.82 3.98"/></svg>
-            {t("draft.share", lang)}
-          </Button>
-          {hasTour && (
-            <Link href={`/tour/${primarySplatId}`} className="flex-1">
-              <Button variant="default" className="w-full">
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" className="mr-2"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/><path d="M3.27 6.96L12 12.01l8.73-5.05M12 22.08V12"/></svg>
-                {t("draft.viewTour", lang)}
-              </Button>
-            </Link>
-          )}
-        </div>
       </div>
 
+      <DraftEditor open={editorOpen} onOpenChange={setEditorOpen} draft={draft} lang={lang} onSaved={setDraft} />
+      <DraftVersionManager
+        open={versionsOpen}
+        onOpenChange={setVersionsOpen}
+        draft={draft}
+        splats={splatData}
+        lang={lang}
+        onActiveTourChanged={(activeSplatId) => setSplatData((current) => current ? { ...current, parent_splat_id: activeSplatId } : current)}
+        onDraftRestored={setDraft}
+      />
+
       {/* Sticky mobile action bar */}
-      <div className="fixed inset-x-0 bottom-0 z-40 border-t border-border/20 bg-background/92 backdrop-blur-xl px-4 py-2.5 pb-safe flex gap-2.5 md:hidden">
-        <Button variant="outline" size="sm" className="flex-1" onClick={() => router.push(`/draft/${draftId}/sharing`)}>
-          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" className="mr-1.5"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><path d="M8.59 13.51l6.83 3.98M15.41 6.51l-6.82 3.98"/></svg>
-          {t("draft.share", lang)}
+      <div className="fixed inset-x-0 bottom-0 z-40 flex gap-2 border-t border-border/45 bg-background px-4 py-2.5 pb-safe md:hidden">
+        <Button variant="outline" size="sm" className="flex-1" onClick={() => setEditorOpen(true)}>
+          <EditIcon size={15} /> {t("shareDialog.edit", lang)}
+        </Button>
+        <Button variant="outline" size="icon-sm" className="h-9 w-9 shrink-0" onClick={() => router.push(`/draft/${draftId}/sharing`)} aria-label={t("draft.share", lang)}>
+          <ShareIcon size={15} />
         </Button>
         {hasTour && (
           <Link href={`/tour/${primarySplatId}`} className="flex-1">
             <Button variant="default" size="sm" className="w-full">
-              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" className="mr-1.5"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/><path d="M3.27 6.96L12 12.01l8.73-5.05M12 22.08V12"/></svg>
+              <TourIcon size={15} />
               {t("draft.viewTour", lang)}
             </Button>
           </Link>

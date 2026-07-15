@@ -708,7 +708,11 @@ export function ReaiAgentCard({
                       <article key={version.id} className={cn("p-3", version.is_deleted && "bg-foreground/[0.025] opacity-70")}>
                         <div className="flex gap-3">
                           <div className="h-16 w-20 shrink-0 overflow-hidden rounded-lg bg-foreground/[0.05]">
-                            {version.file_url && <img src={version.file_url} alt="" className="h-full w-full object-cover" />}
+                            {version.file_url && (
+                              // Version URLs are short-lived, backend-signed media previews.
+                              // eslint-disable-next-line @next/next/no-img-element
+                              <img src={version.file_url} alt="" className="h-full w-full object-cover" />
+                            )}
                           </div>
                           <div className="min-w-0 flex-1">
                             <div className="flex flex-wrap items-center gap-1.5">

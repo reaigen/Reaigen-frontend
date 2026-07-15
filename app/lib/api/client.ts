@@ -689,6 +689,36 @@ export async function getDraft(draftId: number): Promise<DraftDetailItem> {
   return request(`/api/reaigen/drafts/${draftId}/`);
 }
 
+export type DraftUpdatePayload = Partial<{
+  title: string;
+  description: string;
+  address: string;
+  city: string;
+  state: string;
+  country: string;
+  postal_code: string;
+  price: string | number | null;
+  currency: string;
+  area: string | number | null;
+  lot_size: string | number | null;
+  year_built: number | null;
+  bedrooms: number | null;
+  bathrooms: number | null;
+  specs: Record<string, unknown>;
+  is_complete: boolean;
+}>;
+
+/** Persist owner edits through Django's ownership-checked draft endpoint. */
+export async function updateDraft(
+  draftId: number,
+  data: DraftUpdatePayload,
+): Promise<DraftDetailItem> {
+  return request(`/api/reaigen/drafts/${draftId}/`, {
+    method: "PATCH",
+    body: JSON.stringify(data),
+  });
+}
+
 export interface ReaiAgentConsent {
   consented: boolean;
   policy_version: string;
@@ -1230,6 +1260,24 @@ export async function getSplatViewer(splatId: number): Promise<SplatViewerPayloa
 
 export async function getSplatsByDraft(draftId: number): Promise<SplatsByDraftPayload> {
   return request(`/api/reaigen/splats/by-draft/${draftId}/?all=true`);
+}
+
+export async function setActiveSplat(
+  draftId: number,
+  splatId: number | null,
+): Promise<{
+  draft_id: number;
+  pinned_splat_id: number | null;
+  active_splat_id: number | null;
+  active_splat_status: string | null;
+}> {
+  const result = await request(`/api/reaigen/drafts/${draftId}/set-active-splat/`, {
+    method: "POST",
+    body: JSON.stringify({ splat_id: splatId }),
+  });
+  cache.delete(`/api/reaigen/splats/by-draft/${draftId}/?all=true`);
+  inFlight.delete(`/api/reaigen/splats/by-draft/${draftId}/?all=true`);
+  return result;
 }
 
 export async function getCameras(splatId: number): Promise<CameraData> {

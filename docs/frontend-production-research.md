@@ -25,6 +25,11 @@ Reaigen frontend.
   now passed through a strict allowlist before `dangerouslySetInnerHTML`.
 - Keep API responses private and uncached. Existing API proxy no-store behavior
   remains in place and is covered by the global browser-security headers.
+- Keep production dependency auditing actionable. Next 16.2.6 pins PostCSS
+  8.4.31, which is covered by a moderate stringification advisory. The
+  `package.json` override holds that nested dependency at 8.5.19; lint,
+  TypeScript, the optimized build, and `npm audit --omit=dev` pass with the
+  override. Reassess and remove it when Next updates its own pin.
 
 ## Not applied yet
 

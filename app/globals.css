@@ -9,7 +9,7 @@
     --motion-ease-smooth: cubic-bezier(0.22, 1, 0.36, 1);
     --motion-ease-standard: cubic-bezier(0.2, 0.8, 0.2, 1);
 
-    --background:             0 0% 100%;
+    --background:             0 0% 98.5%;
     --foreground:             0 0% 2%;
 
     --card:                   0 0% 100%;
@@ -21,11 +21,11 @@
     --primary:                0 0% 4%;
     --primary-foreground:     0 0% 99%;
 
-    --secondary:              0 0% 94%;
+    --secondary:              0 0% 94.5%;
     --secondary-foreground:   0 0% 14%;
 
-    --muted:                  0 0% 92%;
-    --muted-foreground:       0 0% 30%;
+    --muted:                  0 0% 93.5%;
+    --muted-foreground:       0 0% 34%;
 
     --accent:                 0 0% 90%;
     --accent-foreground:      0 0% 5%;
@@ -36,8 +36,8 @@
     --success:                142 72% 40%;
     --success-foreground:     0 0% 99%;
 
-    --border:                 0 0% 78%;
-    --input:                  0 0% 78%;
+    --border:                 0 0% 86%;
+    --input:                  0 0% 80%;
     --ring:                   0 0% 8%;
 
     --sidebar:                    0 0% 6%;
@@ -48,6 +48,13 @@
     --sidebar-muted:              0 0% 62%;
 
     --radius: 0.625rem;
+
+    /* Product surfaces: management stays light; 3D workspaces opt into studio. */
+    --surface:                0 0% 100%;
+    --surface-subtle:         0 0% 96%;
+    --studio:                 0 0% 5%;
+    --studio-surface:         0 0% 10%;
+    --studio-border:          0 0% 18%;
   }
 
   * { border-color: hsl(var(--border)); }
@@ -68,6 +75,13 @@
     font-weight: 400;
     min-width: 320px;
     overflow-x: hidden;
+  }
+
+  button, [role="button"], a { -webkit-tap-highlight-color: transparent; }
+
+  ::selection {
+    background: hsl(var(--foreground) / 0.14);
+    color: hsl(var(--foreground));
   }
 
   h1, h2, h3, h4 {
@@ -117,6 +131,18 @@
 @keyframes fadeInScale {
   from { opacity: 0; transform: scale(0.96); }
   to { opacity: 1; transform: scale(1); }
+}
+@keyframes fadeOut {
+  from { opacity: 1; }
+  to { opacity: 0; }
+}
+@keyframes panelIn {
+  from { opacity: 0; transform: translateX(24px); }
+  to { opacity: 1; transform: translateX(0); }
+}
+@keyframes panelOut {
+  from { opacity: 1; transform: translateX(0); }
+  to { opacity: 0; transform: translateX(24px); }
 }
 .animate-slide-up {
   animation: slideUp 0.3s var(--motion-ease-smooth) both;

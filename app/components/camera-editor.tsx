@@ -6,7 +6,7 @@ import { Button } from "@/app/lib/ui/button";
 import { saveCameras, getCameras } from "@/app/lib/api/client";
 import { getSafeApiErrorMessage } from "@/app/lib/api/error-message";
 import { t } from "@/app/lib/i18n";
-import type { TourData, Vec3 } from "@/app/lib/tour-types";
+import type { Vec3 } from "@/app/lib/tour-types";
 import type { SplatViewerHandle } from "./splat-viewer";
 
 interface CameraShot {
@@ -20,7 +20,6 @@ interface CameraShot {
 interface Props {
   splatId: number;
   viewerRef: RefObject<SplatViewerHandle | null>;
-  tourData: TourData | null;
   /** Shot index reported by the viewer (arrow-key / tour navigation). */
   activeShotIdx?: number;
   defaultMode?: "edit" | "preview";
@@ -28,7 +27,7 @@ interface Props {
   lang?: string;
 }
 
-export default function CameraEditor({ splatId, viewerRef, tourData, activeShotIdx, defaultMode = "edit", onSaved, lang = "en" }: Props) {
+export default function CameraEditor({ splatId, viewerRef, activeShotIdx, defaultMode = "edit", onSaved, lang = "en" }: Props) {
   const [shots, setShots] = useState<CameraShot[]>([]);
   const [mode, setMode] = useState<"edit" | "preview">(defaultMode);
   const [previewIdx, setPreviewIdx] = useState(0);

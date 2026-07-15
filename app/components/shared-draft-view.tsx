@@ -6,9 +6,9 @@
  * photos with lightbox, specs, and description in a clean branded layout.
  */
 
-import { useState, useCallback } from "react";
 import { t } from "../lib/i18n";
 import FloorplanViewer from "./floorplan-viewer";
+import { DraftImageGallery } from "./draft-image-gallery";
 import type { SharedDraftData, RoomData } from "../lib/tour-types";
 
 // ── Helpers ────────────────────────────────────────────────────────────
@@ -34,51 +34,6 @@ const I = {
   lot:  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" className="text-foreground/55"><path d="M2 22l5-5"/><path d="M7 22H2v-5"/><path d="M22 2l-5 5"/><path d="M17 2h5v5"/><rect x="6" y="6" width="12" height="12" rx="1"/></svg>,
   pin:  <svg width="12" height="12" viewBox="0 0 16 16" fill="none" className="text-muted-foreground shrink-0"><path d="M8 1.5a4.5 4.5 0 0 1 4.5 4.5c0 3.5-4.5 8.5-4.5 8.5S3.5 9.5 3.5 6A4.5 4.5 0 0 1 8 1.5Z" stroke="currentColor" strokeWidth="1.2"/><circle cx="8" cy="6" r="1.5" stroke="currentColor" strokeWidth="1.2"/></svg>,
 };
-
-// ── Lightbox ───────────────────────────────────────────────────────────
-
-/** Image that fades in when loaded */
-function LightboxImage({ src, alt }: { src: string; alt: string }) {
-  const [loaded, setLoaded] = useState(false);
-  return (
-    // eslint-disable-next-line @next/next/no-img-element
-    <img
-      src={src}
-      alt={alt}
-      className={`max-h-[85dvh] max-w-[92vw] object-contain rounded-lg shadow-2xl transition-opacity duration-300 ${loaded ? "opacity-100" : "opacity-0"}`}
-      onClick={(e) => e.stopPropagation()}
-      onLoad={() => setLoaded(true)}
-    />
-  );
-}
-
-function Lightbox({ photos, index, onClose, onNav }: {
-  photos: { url: string; name?: string }[];
-  index: number;
-  onClose: () => void;
-  onNav: (i: number) => void;
-}) {
-  const multi = photos.length > 1;
-  return (
-    <div className="fixed inset-0 z-50 bg-black/90 flex items-center justify-center animate-fade-in" onClick={onClose}>
-      <button className="absolute top-4 right-4 text-white/60 hover:text-white p-2 z-10" onClick={onClose}>
-        <svg width="20" height="20" viewBox="0 0 16 16" fill="none"><path d="M4 4l8 8M12 4l-8 8" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/></svg>
-      </button>
-      {multi && (
-        <>
-          <button className="absolute left-3 top-1/2 -translate-y-1/2 w-10 h-10 rounded-full bg-white/10 hover:bg-white/20 flex items-center justify-center text-white/70 transition-colors z-10" onClick={(e) => { e.stopPropagation(); onNav((index - 1 + photos.length) % photos.length); }}>
-            <svg width="18" height="18" viewBox="0 0 16 16" fill="none"><path d="M10 12L6 8l4-4" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/></svg>
-          </button>
-          <button className="absolute right-3 top-1/2 -translate-y-1/2 w-10 h-10 rounded-full bg-white/10 hover:bg-white/20 flex items-center justify-center text-white/70 transition-colors z-10" onClick={(e) => { e.stopPropagation(); onNav((index + 1) % photos.length); }}>
-            <svg width="18" height="18" viewBox="0 0 16 16" fill="none"><path d="M6 4l4 4-4 4" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/></svg>
-          </button>
-        </>
-      )}
-      <LightboxImage src={photos[index].url} alt={photos[index].name || ""} />
-      {multi && <div className="absolute bottom-4 left-1/2 -translate-x-1/2 text-white/50 text-[12px] font-medium bg-black/40 px-3 py-1 rounded-full">{index + 1} / {photos.length}</div>}
-    </div>
-  );
-}
 
 // ── Shared floorplan (composite + room labels, no geometry/zoom) ──────
 
@@ -161,11 +116,9 @@ export function SharedDraftView({ draftData, lang, hasTour, onOpenTour, floorpla
   floorplanUrl?: string | null;
   rooms?: RoomData[];
 }) {
-  const [lightboxIdx, setLightboxIdx] = useState<number | null>(null);
-
   const price = formatPrice(draftData.price, draftData.currency);
   const addressText = draftData.display_address || [draftData.city, draftData.state, draftData.country].filter(Boolean).join(", ");
-  const photos = draftData.uploads ?? [];
+  const photos = (draftData.uploads ?? []).filter((upload) => !upload.mime_type || upload.mime_type.startsWith("image/"));
 
   const has = {
     title: !!draftData.title,
@@ -201,37 +154,19 @@ export function SharedDraftView({ draftData, lang, hasTour, onOpenTour, floorpla
 
         {hasAny && (
           <div className="space-y-6">
-            {/* Hero photo */}
+            {/* One canonical gallery: original ratios in the viewer and fullscreen. */}
             {has.photos && (
-              <div className="relative aspect-[16/9] rounded-2xl overflow-hidden bg-muted/20 cursor-pointer group" onClick={() => setLightboxIdx(0)}>
-                {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img src={photos[0].url} alt={photos[0].name || ""} className="w-full h-full object-cover transition-transform duration-300 group-hover:scale-[1.02]" />
-                {photos.length > 1 && (
-                  <div className="absolute bottom-3 right-3 bg-black/50 backdrop-blur-sm text-white text-[11px] font-medium rounded-full px-2.5 py-1 border border-white/10">
-                    1 / {photos.length}
-                  </div>
-                )}
-                {/* 3D Tour badge on hero */}
-                {hasTour && onOpenTour && (
-                  <button
-                    onClick={(e) => { e.stopPropagation(); onOpenTour(); }}
-                    className="absolute top-3 left-3 flex items-center gap-1.5 bg-black/50 backdrop-blur-sm text-white rounded-full px-3 py-1.5 text-[11px] font-medium border border-white/10 hover:bg-black/60 transition-colors"
-                  >
-                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/></svg>
-                    {t("draft.viewTour", lang)}
-                  </button>
-                )}
-              </div>
+              <DraftImageGallery images={photos} alt={draftData.title || t("shared.propertyInfo", lang)} lang={lang} />
             )}
 
-            {/* Tour CTA (shown when no hero photo) */}
-            {hasTour && onOpenTour && !has.photos && (
+            {/* Virtual tour is the primary shared-property action. */}
+            {hasTour && onOpenTour && (
               <button
                 onClick={onOpenTour}
-                className="w-full flex items-center justify-center gap-2 rounded-2xl bg-foreground/[0.03] py-8 text-foreground/60 hover:bg-foreground/[0.04] hover:text-foreground transition-colors"
+                className="flex w-full items-center justify-center gap-2.5 rounded-2xl bg-foreground py-3 text-background transition-colors hover:bg-foreground/90"
               >
-                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/><path d="M3.27 6.96L12 12.01l8.73-5.05M12 22.08V12"/></svg>
-                <span className="text-[14px] font-medium">{t("draft.viewTour", lang)}</span>
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/><path d="M3.27 6.96 12 12.01l8.73-5.05M12 22.08V12"/></svg>
+                <span className="text-[14px] font-semibold">{t("draft.viewTour", lang)}</span>
               </button>
             )}
 
@@ -296,34 +231,6 @@ export function SharedDraftView({ draftData, lang, hasTour, onOpenTour, floorpla
               </div>
             )}
 
-            {/* 3D Tour button (between content and photo grid) */}
-            {hasTour && onOpenTour && has.photos && (
-              <button
-                onClick={onOpenTour}
-                className="w-full flex items-center justify-center gap-2.5 rounded-2xl bg-foreground text-background py-3 hover:bg-foreground/90 transition-colors"
-              >
-                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/><path d="M3.27 6.96L12 12.01l8.73-5.05M12 22.08V12"/></svg>
-                <span className="text-[14px] font-semibold">{t("draft.viewTour", lang)}</span>
-              </button>
-            )}
-
-            {/* Photo grid */}
-            {has.photos && photos.length > 1 && (
-              <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
-                {photos.map((p, i) => (
-                  <button
-                    key={i}
-                    type="button"
-                    onClick={() => setLightboxIdx(i)}
-                    className="aspect-[4/3] rounded-xl overflow-hidden bg-muted/20 hover:opacity-90 transition-opacity opacity-0 animate-fade-in-up [animation-fill-mode:forwards]"
-                    style={{ animationDelay: `${i * 60}ms` }}
-                  >
-                    {/* eslint-disable-next-line @next/next/no-img-element */}
-                    <img src={p.url} alt={p.name || ""} className="w-full h-full object-cover" />
-                  </button>
-                ))}
-              </div>
-            )}
           </div>
         )}
       </main>
@@ -336,10 +243,6 @@ export function SharedDraftView({ draftData, lang, hasTour, onOpenTour, floorpla
         </span>
       </footer>
 
-      {/* Lightbox */}
-      {lightboxIdx !== null && has.photos && (
-        <Lightbox photos={photos} index={lightboxIdx} onClose={() => setLightboxIdx(null)} onNav={setLightboxIdx} />
-      )}
     </div>
   );
 }

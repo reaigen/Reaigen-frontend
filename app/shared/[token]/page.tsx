@@ -28,6 +28,7 @@ import { Button } from "../../lib/ui/button";
 import { Input } from "../../lib/ui/input";
 import { getBrowserLanguage, t } from "../../lib/i18n";
 import { PageLoading } from "../../components/page-loading";
+import type { SplatViewerHandle } from "../../components/splat-viewer";
 
 const SplatViewer = dynamic(() => import("../../components/splat-viewer"), { ssr: false });
 
@@ -112,7 +113,7 @@ export default function SharedPage({ params }: { params: Promise<{ token: string
   const [activeRoomId, setActiveRoomId] = useState<number | null>(null);
   const [activeRenderUrl, setActiveRenderUrl] = useState<string | null>(null);
   const [viewerReady, setViewerReady] = useState(false);
-  const splatRef = useRef<any>(null);
+  const splatRef = useRef<SplatViewerHandle | null>(null);
 
   // ── Load both draft data and tour data in parallel ────────────────
 
@@ -154,7 +155,7 @@ export default function SharedPage({ params }: { params: Promise<{ token: string
       setTourViewerData(tourResult.value);
       setHasTour(true);
       // Tour response may also include inline draft data
-      if (!draftData && tourResult.value.draft_data) {
+      if (!(draftResult.status === "fulfilled" && draftResult.value) && tourResult.value.draft_data) {
         setDraftData(tourResult.value.draft_data);
       }
     }

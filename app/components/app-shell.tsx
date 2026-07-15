@@ -3,7 +3,7 @@
 import * as React from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { ExitIcon, GearIcon } from "@radix-ui/react-icons";
+import { ExitIcon } from "@radix-ui/react-icons";
 import { Avatar, AvatarFallback, AvatarImage } from "../lib/ui/avatar";
 import { getReaiAgentConsent, type UserProfile } from "../lib/api/client";
 import type { DraftDetailItem } from "../lib/tour-types";
@@ -11,6 +11,7 @@ import { cn } from "../lib/utils";
 import { t, getUserLanguage } from "../lib/i18n";
 import { AppContentMessages } from "./content-documents";
 import { ReaiAgentCard } from "./reai-agent-card";
+import { HomeIcon, LinkIcon, SettingsIcon, TourIcon } from "./icons";
 
 function getInitials(user: UserProfile): string {
   const f = user.first_name?.[0] ?? "";
@@ -18,22 +19,7 @@ function getInitials(user: UserProfile): string {
   return (f + l).toUpperCase() || (user.email?.[0] ?? "?").toUpperCase();
 }
 
-// ── Icons ──
-const HomeIcon = (props: { className?: string }) => (
-  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" className={props.className}>
-    <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" />
-    <polyline points="9 22 9 12 15 12 15 22" />
-  </svg>
-);
-
-const ShareIcon = (props: { className?: string }) => (
-  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" className={props.className}>
-    <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71" />
-    <path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71" />
-  </svg>
-);
-
-const SIDEBAR_W = 220; // px
+const SIDEBAR_W = 224; // px
 
 export function AppShell({
   user,
@@ -67,15 +53,9 @@ export function AppShell({
 
   const NAV_ITEMS = [
     { href: "/dashboard", label: t("nav.dashboard", lang), icon: HomeIcon },
-    { href: "/shares", label: t("nav.shares", lang), icon: ShareIcon },
+    { href: "/tours", label: t("nav.tours", lang), icon: TourIcon },
+    { href: "/shares", label: t("nav.shares", lang), icon: LinkIcon },
   ];
-  const workspaceTitle = pathname.startsWith("/shares")
-    ? t("nav.shares", lang)
-      : pathname.startsWith("/settings")
-      ? t("nav.settings", lang)
-      : pathname.startsWith("/draft/")
-        ? t("nav.creation", lang)
-        : t("nav.dashboard", lang);
   const reaiContext = pathname.startsWith("/settings") ? "settings" : (reaiDraftId ? "draft" : "creator");
 
   React.useEffect(() => {
@@ -124,9 +104,9 @@ export function AppShell({
       title={t("reai.openAgent", lang)}
       aria-label={t("reai.openAgent", lang)}
       aria-expanded={reaiOpen}
-      className="group flex h-10 items-center gap-2 rounded-full border border-border/60 bg-background px-3.5 text-foreground/65 transition hover:border-foreground/25 hover:text-foreground"
+      className="inline-flex h-8 items-center rounded-lg border border-black/[0.09] bg-white/80 px-2.5 text-[11px] font-semibold text-black/70 shadow-[0_1px_2px_rgba(0,0,0,0.04)] backdrop-blur-xl transition-colors hover:border-black hover:bg-black hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-black/15"
     >
-      <span className="px-0.5 text-[12px] font-semibold">Agent</span>
+      Agent
     </button>
   ) : null;
 
@@ -137,14 +117,14 @@ export function AppShell({
     >
       {/* ── Desktop sidebar ──────────────────────────────────────── */}
       <aside
-        className="fixed inset-y-0 left-0 z-40 hidden border-r border-border/10 bg-background md:flex md:flex-col pl-safe"
+        className="fixed inset-y-0 left-0 z-40 hidden border-r border-border/35 bg-surface md:flex md:flex-col pl-safe"
         style={{ width: SIDEBAR_W }}
       >
         {/* Brand */}
-        <div className="pt-5 px-5 pb-6">
+        <div className="px-5 pb-7 pt-5">
           <Link href="/dashboard" className="inline-block">
             <span
-              className="text-[32px]"
+              className="text-[29px]"
               style={{ fontFamily: 'var(--font-brand), ui-serif, Georgia, serif', fontWeight: 400, letterSpacing: '0.01em' }}
             >
               Reaigen
@@ -162,13 +142,13 @@ export function AppShell({
                 key={item.href}
                 href={item.href}
                 className={cn(
-                  "flex items-center gap-3.5 rounded-full px-3.5 py-2.5 text-[15px] transition-colors",
+                  "flex items-center gap-3 rounded-xl px-3 py-2.5 text-[14px] transition-colors",
                   active
-                    ? "font-bold text-foreground"
-                    : "font-medium text-foreground/50 hover:bg-foreground/[0.04] hover:text-foreground"
+                    ? "bg-foreground/[0.055] font-semibold text-foreground"
+                    : "font-medium text-foreground/50 hover:bg-foreground/[0.035] hover:text-foreground"
                 )}
               >
-                <Icon className={cn("h-[22px] w-[22px]", active ? "text-foreground" : "text-foreground/40")} />
+                <Icon size={19} className={cn(active ? "text-foreground" : "text-foreground/45")} />
                 {item.label}
               </Link>
             );
@@ -180,13 +160,13 @@ export function AppShell({
           <Link
             href="/settings"
             className={cn(
-              "flex items-center gap-3.5 rounded-full px-3.5 py-2.5 text-[15px] transition-colors",
+              "flex items-center gap-3 rounded-xl px-3 py-2.5 text-[14px] transition-colors",
               pathname === "/settings"
-                ? "font-bold text-foreground"
-                : "font-medium text-foreground/50 hover:bg-foreground/[0.04] hover:text-foreground"
+                ? "bg-foreground/[0.055] font-semibold text-foreground"
+                : "font-medium text-foreground/50 hover:bg-foreground/[0.035] hover:text-foreground"
             )}
           >
-            <GearIcon className="h-[22px] w-[22px]" />
+            <SettingsIcon size={19} />
             {t("nav.settings", lang)}
           </Link>
           {/* User pill */}
@@ -243,10 +223,9 @@ export function AppShell({
 
       {/* ── Desktop workspace header ────────────────────────────── */}
       <header
-        className="fixed top-0 z-40 hidden h-14 items-center justify-between border-b border-border/30 bg-background px-6 transition-[right] duration-200 md:flex"
+        className="fixed top-0 z-40 hidden h-14 items-center justify-end border-b border-border/35 bg-background/90 px-7 backdrop-blur-xl transition-[right] duration-200 md:flex"
         style={{ left: SIDEBAR_W, right: reaiOpen ? "var(--reai-panel-width)" : 0 }}
       >
-        <p className="text-[14px] font-semibold text-foreground/70">{workspaceTitle}</p>
         {reaiLauncher}
       </header>
 
@@ -266,8 +245,8 @@ export function AppShell({
 
       {/* ── Mobile bottom tab bar ────────────────────────────────── */}
       {!hideMobileNav && (
-      <nav className="fixed inset-x-0 bottom-0 z-40 border-t border-border/20 bg-background/92 pb-safe backdrop-blur-xl md:hidden">
-        <div className="grid grid-cols-2 gap-1 px-3 pb-2 pt-2 pl-safe pr-safe">
+      <nav className="fixed inset-x-0 bottom-0 z-40 border-t border-border/45 bg-background pb-safe md:hidden">
+        <div className="grid grid-cols-3 gap-1 px-3 pb-2 pt-2 pl-safe pr-safe">
           {NAV_ITEMS.map((item) => {
             const active = pathname === item.href;
             const Icon = item.icon;

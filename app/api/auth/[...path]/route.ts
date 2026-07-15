@@ -64,8 +64,6 @@ async function proxy(
     init.body = await req.text();
   }
 
-  let lastError: unknown = null;
-
   for (const baseUrl of backendCandidates()) {
     const target = `${baseUrl}/api/v1/core/auth/${joined}${slash}`;
     try {
@@ -104,8 +102,8 @@ async function proxy(
       }
 
       return response;
-    } catch (err) {
-      lastError = err;
+    } catch {
+      // Try the next configured local/backend candidate.
     }
   }
 

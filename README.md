@@ -113,11 +113,12 @@ npm run dev
 | Route | Auth | Purpose |
 |-------|------|---------|
 | `/` | No | Login / register (redirects to dashboard if authed) |
-| `/dashboard` | Yes | Draft listing with search, pagination, grid toggle |
-| `/draft/[id]` | Yes | Draft detail (property specs, photo gallery, floorplan) |
+| `/dashboard` | Yes | Image-led creation inventory with search and readiness state |
+| `/tours` | Yes | First-class virtual tour inventory and processing status |
+| `/draft/[id]` | Yes | Creation detail, owner editing, media, floorplan, and version manager |
 | `/draft/[id]/sharing` | Yes | Sharing configuration (two-panel: preview + controls) |
 | `/tour/[id]` | Yes | Full tour viewer + camera editor |
-| `/shares` | Yes | Share management dashboard |
+| `/shares` | Yes | Global controlled-link inventory, analytics, and creation picker |
 | `/settings` | Yes | Profile, localization, security |
 | `/shared/[token]` | No | Public shared tour viewer (PIN-gated) |
 
@@ -188,9 +189,15 @@ If the endpoint is not set, metrics are only logged in development.
 ## Key Features
 
 ### Dashboard & Drafts
-- Draft listing with server-side search, infinite scroll, grid/list toggle
-- Draft detail page with property specs, photo gallery, and floorplan viewer
-- Per-draft sharing configuration (two-panel layout)
+- Creation inventory with server-side search, infinite scroll, grid/list toggle, and batched tour availability
+- Owner draft editor with private-address handling and unsaved-change protection
+- Draft detail with property specs, photo/video gallery, floorplan, and explicit listing/tour readiness
+- Version manager for live tour selection plus Agent-backed listing and media history
+
+### Virtual Tour Inventory
+- Dedicated Tours route with ready, processing, and attention filters
+- Renderability-aware actions: incomplete assets never expose a broken viewer link
+- Live tour pinning controls which processed scan is consumed by existing app and share surfaces
 
 ### Virtual Tour Viewer
 - BabylonJS Gaussian Splatting renderer (SOG/SPZ/PLY formats)
@@ -204,7 +211,7 @@ If the endpoint is not set, metrics are only logged in development.
 - PIN protection (4–10 digits, rate-limited)
 - Auto-expire (1h / 24h / 7d / 30d), view limits
 - Pause / resume / revoke
-- Shares dashboard for managing all active links
+- Shares dashboard for managing all links and starting a new controlled link from any creation
 - Analytics (views, unique IPs)
 
 ### Shared Tour Viewer (Public)
@@ -225,6 +232,8 @@ npm run dev      # Development server (port 3055)
 npm run build    # Production build
 npm run start    # Start production server (port 3055)
 npm run lint     # ESLint
+npm run typecheck # TypeScript without emitting files
+npm run check    # Lint + typecheck + production build
 ```
 
 ---
@@ -233,7 +242,9 @@ npm run lint     # ESLint
 
 | File | Contents |
 |------|----------|
-| `ARCHITECTURE.md` | Full technical architecture — auth flow, viewer internals, sharing, caching, design system |
+| `doc/ARCHITECTURE.md` | Technical architecture — auth flow, viewer internals, sharing, caching |
+| `docs/product-ux-system.md` | Product model, information architecture, editing/version/share guarantees, responsive and release contracts |
+| `docs/agent-workspace-ui.md` | Agent context, proposal, confirmation, permission, and history contracts |
 
 ---
 

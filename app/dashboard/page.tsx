@@ -5,11 +5,14 @@ import { useRouter } from "next/navigation";
 import { useAuth } from "../components/hooks/use-auth";
 import { AppShell } from "../components/app-shell";
 import { t, getUserLanguage } from "../lib/i18n";
-import { listDrafts, getSplatsByDraft } from "../lib/api/client";
+import { listAllSplats, listDrafts } from "../lib/api/client";
 import type { DraftListingItem } from "../lib/tour-types";
 import Link from "next/link";
 import { Thumbnail } from "../components/thumbnail";
 import { PageLoading } from "../components/page-loading";
+import { PageHeader } from "../components/page-header";
+import { StatusPill } from "../components/status-pill";
+import { SearchField } from "../components/search-field";
 
 function compactNumber(value: string | number | null | undefined, lang?: string) {
   if (value == null || value === "") return null;
@@ -62,6 +65,8 @@ export default function DashboardPage() {
 
   const [drafts, setDrafts] = React.useState<DraftListingItem[]>([]);
   const [draftsLoading, setDraftsLoading] = React.useState(true);
+  const [draftsError, setDraftsError] = React.useState(false);
+  const [reloadNonce, setReloadNonce] = React.useState(0);
   const [loadingMore, setLoadingMore] = React.useState(false);
   const [hasMore, setHasMore] = React.useState(false);
   const [totalCount, setTotalCount] = React.useState(0);
@@ -102,16 +107,22 @@ export default function DashboardPage() {
     setTotalCount(data.count ?? 0);
     pageRef.current = page;
 
-    // Fire-and-forget: load splat IDs in the background so cards render immediately
-    const map: Record<number, number> = {};
-    Promise.all(
-      results.map((d) =>
-        getSplatsByDraft(d.id)
-          .then((res) => { if (res?.parent_splat_id) map[d.id] = res.parent_splat_id; else if (res?.splats?.[0]) map[d.id] = res.splats[0].splat_id ?? res.splats[0].id; })
-          .catch(() => {})
-      )
-    ).then(() => { if (!controller.signal.aborted) setSplatIds((prev) => ({ ...prev, ...map })); });
   }, [searchQuery]);
+
+  // Load tour availability in batches. This avoids one by-draft request per card.
+  React.useEffect(() => {
+    if (!isAuthenticated) return;
+    let active = true;
+    void listAllSplats().then((splats) => {
+      if (!active) return;
+      const map: Record<number, number> = {};
+      for (const splat of splats) {
+        if (!map[splat.source_draft]) map[splat.source_draft] = splat.id;
+      }
+      setSplatIds(map);
+    }).catch(() => undefined);
+    return () => { active = false; };
+  }, [isAuthenticated]);
 
   React.useEffect(() => {
     const timer = setTimeout(() => setSearchQuery(searchInput.trim()), 150);
@@ -121,8 +132,11 @@ export default function DashboardPage() {
   React.useEffect(() => {
     if (!isAuthenticated) return;
     setDraftsLoading(true);
-    loadPage(1, false).catch(() => {}).finally(() => setDraftsLoading(false));
-  }, [searchQuery, isAuthenticated, loadPage]);
+    setDraftsError(false);
+    loadPage(1, false)
+      .catch(() => setDraftsError(true))
+      .finally(() => setDraftsLoading(false));
+  }, [searchQuery, isAuthenticated, loadPage, reloadNonce]);
 
   React.useEffect(() => {
     if (!isAuthenticated) return;
@@ -197,39 +211,24 @@ export default function DashboardPage() {
 
   return (
     <AppShell user={user} onLogout={logout}>
-      <div className="w-full animate-fade-in">
+      <div className="mx-auto w-full max-w-[1180px] animate-fade-in">
+        <PageHeader
+          title={t("dashboard.creationsTitle", lang)}
+          description={t("dashboard.creationsSubtitle", lang)}
+          actions={totalCount > 0 ? <StatusPill>{totalCount} {t("dashboard.items", lang)}</StatusPill> : undefined}
+          className="mb-7"
+        />
         {/* Search bar */}
-        <div className="mb-5 flex items-center gap-3">
-          <label className="relative block flex-1 min-w-0">
-            <span className="sr-only">{t("dashboard.searchPlaceholder", lang)}</span>
-            <svg width="15" height="15" viewBox="0 0 16 16" fill="none" className="pointer-events-none absolute left-0 top-1/2 -translate-y-1/2 text-muted-foreground" aria-hidden="true">
-              <circle cx="7" cy="7" r="4.5" stroke="currentColor" strokeWidth="1.5" />
-              <path d="M10.5 10.5L14 14" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
-            </svg>
-            <input
-              type="search"
-              value={searchInput}
-              onChange={(e) => setSearchInput(e.target.value)}
-              placeholder={t("dashboard.searchPlaceholder", lang)}
-              className="h-9 w-full border-0 border-b border-border/20 bg-transparent pl-6 pr-8 text-[13px] outline-none transition-colors placeholder:text-muted-foreground/50 focus:border-foreground/40"
-            />
-            {searchInput && (
-              <button
-                type="button"
-                onClick={() => { setSearchInput(""); setSearchQuery(""); }}
-                className="absolute right-0 top-1/2 -translate-y-1/2 rounded-lg p-1 text-muted-foreground hover:text-foreground transition-colors"
-                aria-label={t("dashboard.clearSearch", lang)}
-              >
-                <svg width="13" height="13" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M4.5 4.5L11.5 11.5M11.5 4.5L4.5 11.5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" /></svg>
-              </button>
-            )}
-          </label>
+        <div className="mb-6 flex items-center gap-3 border-b border-border/40 pb-3">
+          <SearchField
+            value={searchInput}
+            onChange={setSearchInput}
+            onClear={() => setSearchQuery("")}
+            placeholder={t("dashboard.searchPlaceholder", lang)}
+            clearLabel={t("dashboard.clearSearch", lang)}
+            className="flex-1"
+          />
           <div className="flex items-center gap-2 shrink-0">
-            {totalCount > 0 && (
-              <span className="text-[12px] text-muted-foreground tabular-nums">
-                {totalCount}
-              </span>
-            )}
             <div className="hidden md:flex items-center gap-0.5 rounded-md bg-foreground/[0.04] p-0.5">
               <button
                 type="button"
@@ -263,6 +262,13 @@ export default function DashboardPage() {
                 </div>
               </div>
             ))}
+          </div>
+        ) : draftsError ? (
+          <div className="flex flex-col items-center justify-center rounded-2xl border border-border/55 bg-surface px-6 py-20 text-center">
+            <p className="text-[14px] font-semibold">{t("dashboard.loadFailed", lang)}</p>
+            <button type="button" onClick={() => setReloadNonce((value) => value + 1)} className="mt-3 text-[12px] font-semibold underline underline-offset-4">
+              {t("common.tryAgain", lang)}
+            </button>
           </div>
         ) : drafts.length === 0 ? (
           <div className="flex flex-col items-center justify-center py-20 text-center">
@@ -313,13 +319,18 @@ export default function DashboardPage() {
                     {draftSplatId && (
                       <div className="absolute top-3 left-3 flex items-center gap-1.5 rounded-full bg-black/50 backdrop-blur-sm px-2.5 py-1 text-[11px] font-medium text-white">
                         <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/></svg>
-                        3D
+                        {t("dashboard.tourReady", lang)}
+                      </div>
+                    )}
+                    {!draftSplatId && !draft.is_complete && (
+                      <div className="absolute left-3 top-3 rounded-full bg-white/90 px-2.5 py-1 text-[10px] font-semibold text-black/65 shadow-sm backdrop-blur-sm">
+                        {t("dashboard.listingDraft", lang)}
                       </div>
                     )}
                     {/* Share button */}
                     <button
                       onClick={(e) => { e.preventDefault(); e.stopPropagation(); router.push(`/draft/${draft.id}/sharing`); }}
-                      className="absolute top-3 right-3 w-8 h-8 rounded-full bg-black/50 backdrop-blur-sm flex items-center justify-center text-white/70 hover:text-white hover:bg-black/60 transition-all opacity-0 group-hover:opacity-100"
+                      className="absolute right-3 top-3 flex h-8 w-8 items-center justify-center rounded-full bg-black/50 text-white/75 opacity-100 backdrop-blur-sm transition-all hover:bg-black/65 hover:text-white sm:opacity-0 sm:group-hover:opacity-100 sm:group-focus-within:opacity-100"
                       aria-label={t("draft.share", lang)}
                     >
                       <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><path d="M8.59 13.51l6.83 3.98M15.41 6.51l-6.82 3.98"/></svg>

@@ -143,8 +143,6 @@ async function proxy(
     init.body = await req.text();
   }
 
-  let lastError: unknown = null;
-
   for (const baseUrl of backendCandidates()) {
     const target = `${resolveTarget(baseUrl, joined)}${slash}${qs}`;
     try {
@@ -205,8 +203,8 @@ async function proxy(
       }
 
       return response;
-    } catch (err) {
-      lastError = err;
+    } catch {
+      // Try the next configured local/backend candidate.
     }
   }
 

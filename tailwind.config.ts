@@ -24,6 +24,15 @@ const config: Config = {
         border: "hsl(var(--border))",
         input: "hsl(var(--input))",
         ring: "hsl(var(--ring))",
+        surface: {
+          DEFAULT: "hsl(var(--surface))",
+          subtle: "hsl(var(--surface-subtle))",
+        },
+        studio: {
+          DEFAULT: "hsl(var(--studio))",
+          surface: "hsl(var(--studio-surface))",
+          border: "hsl(var(--studio-border))",
+        },
         sidebar: {
           DEFAULT: "hsl(var(--sidebar))",
           foreground: "hsl(var(--sidebar-foreground))",

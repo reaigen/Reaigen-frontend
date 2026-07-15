@@ -5,7 +5,8 @@ import { useRouter } from "next/navigation";
 import { useAuth } from "../../components/hooks/use-auth";
 import { getSplatViewer, getSplatsByDraft } from "../../lib/api/client";
 import { isApiNotFound } from "../../lib/api/error-message";
-import type { CameraData, SplatViewerPayload, TourData, TourShot } from "../../lib/tour-types";
+import type { CameraData, SplatViewerPayload } from "../../lib/tour-types";
+import type { SplatViewerHandle } from "../../components/splat-viewer";
 import dynamic from "next/dynamic";
 import CameraEditor from "../../components/camera-editor";
 import { Button } from "../../lib/ui/button";
@@ -45,13 +46,12 @@ export default function TourPage({ params }: { params: Promise<{ id: string }> }
 
   const [viewer, setViewer] = useState<SplatViewerPayload | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [tourData, setTourData] = useState<TourData | null>(null);
   const [shotIdx, setShotIdx] = useState(0);
   const [editorVersion, setEditorVersion] = useState(0);
   const [activeRenderUrl, setActiveRenderUrl] = useState<string | null>(null);
   const [viewerReady, setViewerReady] = useState(false);
   const [retryCount, setRetryCount] = useState(0);
-  const splatRef = useRef<any>(null);
+  const splatRef = useRef<SplatViewerHandle | null>(null);
   const resolvedSplatId = viewer?.splat_id ?? splatId;
   const viewerCameras = viewer?.cameras as CameraData | undefined;
   const preferSavedCameras = !!viewerCameras?.cameras?.length || viewer?.format !== "sog";
@@ -109,12 +109,8 @@ export default function TourPage({ params }: { params: Promise<{ id: string }> }
       });
   }, [isAuthenticated, splatId, router, lang, retryCount]);
 
-  const handleShotChange = useCallback((idx: number, _shot: TourShot | null) => {
+  const handleShotChange = useCallback((idx: number) => {
     setShotIdx(idx);
-  }, []);
-
-  const handleTourLoaded = useCallback((data: TourData) => {
-    setTourData(data);
   }, []);
 
   if (isLoading || (!viewer && !error)) {
@@ -189,7 +185,6 @@ export default function TourPage({ params }: { params: Promise<{ id: string }> }
           }
         }}
         onShotChange={handleShotChange}
-        onTourLoaded={handleTourLoaded}
         lang={lang}
       />
 
@@ -209,7 +204,6 @@ export default function TourPage({ params }: { params: Promise<{ id: string }> }
       <CameraEditor
         splatId={resolvedSplatId}
         viewerRef={splatRef}
-        tourData={tourData}
         activeShotIdx={shotIdx}
         defaultMode="edit"
         onSaved={() => setEditorVersion((v) => v + 1)}

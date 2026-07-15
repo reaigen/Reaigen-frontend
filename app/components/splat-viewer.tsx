@@ -437,7 +437,6 @@ const SplatViewer = forwardRef<SplatViewerHandle, Props>(function SplatViewer(
   const [downloadPct, setDownloadPct] = useState(0);
   const [ready, setReady] = useState(false);
   const [tourData, setTourData] = useState<TourData | null>(null);
-  const [shotIdx, setShotIdx] = useState(0);
   const fallbackSceneRef = useRef<{ center: Vec3; radius: number } | null>(null);
 
   const setCameraFromForward = useCallback((cam: any, B: any, pos: Vec3, fwd: Vec3, exactForward: boolean, fov?: number) => {
@@ -481,7 +480,6 @@ const SplatViewer = forwardRef<SplatViewerHandle, Props>(function SplatViewer(
       if (readOnly) cam.detachControl();
     }
     shotIdxRef.current = 0;
-    setShotIdx(0);
     onShotChange?.(0, shot0);
   }, [onShotChange, onTourLoaded, readOnly, setCameraFromForward]);
 
@@ -533,7 +531,7 @@ const SplatViewer = forwardRef<SplatViewerHandle, Props>(function SplatViewer(
       shots,
       sceneType: "saved-cameras",
     };
-  }, []);
+  }, [lang]);
 
   // ── Navigate to a shot ─────────────────────────────────────────────────────
 
@@ -586,7 +584,6 @@ const SplatViewer = forwardRef<SplatViewerHandle, Props>(function SplatViewer(
     scrollVelocityRef.current = 0;
     progressRef.current = pathDataRef.current?.arcLens?.[shot.startIdx] ?? progressRef.current;
     shotIdxRef.current = idx;
-    setShotIdx(idx);
     onShotChange?.(idx, shot);
   }, [tourData, onShotChange]);
 

@@ -18,23 +18,31 @@ app/
 ├── page.tsx                    # Landing / login (redirects to /dashboard if authed)
 ├── layout.tsx                  # Root layout (brand font, metadata)
 ├── globals.css                 # Design tokens, animations, utilities
-├── dashboard/page.tsx          # Splat list, share actions, tour links
-├── settings/page.tsx           # Profile, localization, security tabs
+├── dashboard/page.tsx          # Creation inventory and batched tour readiness
+├── tours/page.tsx              # Virtual-tour asset inventory
+├── draft/[id]/
+│   ├── page.tsx                # Owner detail, editor, version manager
+│   └── sharing/page.tsx        # Recipient preview and controlled-link composer
+├── shares/page.tsx             # Global link inventory, analytics, creation picker
+├── settings/page.tsx           # Account settings with responsive section navigation
 ├── tour/[id]/page.tsx          # Authenticated tour viewer + camera editor
 ├── shared/[token]/page.tsx     # Public shared tour viewer (PIN gate)
 ├── api/
 │   ├── auth/[...path]/route.ts     # Proxy → Django /api/v1/core/auth/*
 │   └── reaigen/[...path]/route.ts  # Proxy → Django /api/v1/reaigen/* & /api/v1/core/users/*
 ├── components/
-│   ├── auth-gate.tsx           # Login/register modal
-│   ├── app-shell.tsx           # Header nav + layout wrapper
+│   ├── auth-gate.tsx           # Working email/password login and registration forms
+│   ├── app-shell.tsx           # Desktop rail, mobile nav, and optional Agent column
 │   ├── splat-viewer.tsx        # BabylonJS Gaussian Splat viewer (core)
 │   ├── camera-editor.tsx       # Camera editor (capture, look through, reorder, save)
-│   ├── share-dialog.tsx        # Share link creation & management modal
+│   ├── draft-editor.tsx        # Ownership-checked draft PATCH side panel
+│   ├── draft-version-manager.tsx # Tour pin plus listing/media history
+│   ├── side-panel.tsx          # Accessible Radix Dialog drawer primitive
+│   ├── sharing/                # Share scope, preview, creation, and link controls
 │   ├── tour-controls.tsx       # Shot navigation pill (dots + arrows)
 │   ├── floorplan-nav.tsx       # Floorplan overlay with room polygons
 │   ├── tour-loading.tsx        # Loading spinner overlay
-│   ├── settings-form.tsx       # Settings tabs (profile, locale, security)
+│   ├── settings-form.tsx       # Profile, seller, privacy, Agent, locale, notifications, billing, security
 │   └── hooks/use-auth.ts       # Auth state hook (login, logout, refresh)
 └── lib/
     ├── api/client.ts           # All API calls (typed, error handling)
@@ -113,30 +121,35 @@ Authenticated page for the tour owner.
 
 ---
 
-## Sharing Flow (`ShareDialog` component)
+## Sharing flow
 
-Triggered from dashboard "Share" button on a completed splat.
+Sharing is explicit and preview-first. Opening a manager or picker never creates a public link.
 
-### Creating a Share
-1. Dialog opens → `GET /api/reaigen/splats/{id}/share/` (check existing)
-2. If 404 → auto-creates: `POST /api/reaigen/splats/{id}/share/` (no options = permanent)
-3. Share URL: `https://app-reaigen.publicrouter.sk/shared/{token}`
-4. Auto-copies to clipboard on creation
+### Global manager (`/shares`)
 
-### Share Settings
-- **PIN protection**: 4–10 digit code, hashed server-side
-- **Auto-expire**: 1h / 24h / 7d / 30d presets
-- **View limit**: max number of opens
-- Save → `PATCH /api/reaigen/shares/{id}/`
+1. Load the share inventory, creation metadata, and splat thumbnails in parallel.
+2. Show active/paused/view totals plus search and status filters.
+3. Expand a row to load analytics and expose pause, resume, edit, or revoke actions.
+4. Create Link opens a creation picker and routes to that creation's composer.
 
-### Share Actions
-- **Pause**: `POST /api/reaigen/shares/{id}/pause/` — temporarily disables
-- **Resume**: `POST /api/reaigen/shares/{id}/resume/` — re-enables
-- **Revoke**: `POST /api/reaigen/shares/{id}/revoke/` — permanent delete
+### Composer (`/draft/[id]/sharing`)
 
-### Analytics
-- `GET /api/reaigen/shares/{id}/analytics/`
-- Shows: total views, unique IPs
+1. Load the owner draft, available tour/floorplan/media, and existing draft links.
+2. Initialize content scope only from assets that actually exist.
+3. Keep recipient preview and controls together so field/content changes are visible before publish.
+4. Create through the splat share endpoint when a tour is selected; otherwise use the draft share
+   endpoint. Copy feedback appears only after the request succeeds.
+
+### Protection and lifecycle
+
+- **PIN protection**: 4–10 digit code, hashed server-side.
+- **Auto-expire**: 1h / 24h / 7d / 30d presets or no expiry.
+- **View limit**: optional maximum number of opens.
+- **Pause**: `POST /api/reaigen/shares/{id}/pause/` — temporarily disables.
+- **Resume**: `POST /api/reaigen/shares/{id}/resume/` — re-enables.
+- **Revoke**: `POST /api/reaigen/shares/{id}/revoke/` — irreversible and confirmed.
+- **Analytics**: `GET /api/reaigen/shares/{id}/analytics/` — total views, unique visitors,
+  authenticated accesses, and failed PIN attempts when applicable.
 
 ---
 
@@ -213,10 +226,10 @@ Benefits:
 ## Caching
 
 ### Splat Files (IndexedDB)
-- Key: `splat_{id}_full`
+- Key: `splat:{id}:startup|full` with an optional output version suffix
 - Stores converted splat ArrayBuffer
 - Skips download + conversion on revisit
-- No expiry (manual cache via `splat-cache.ts`)
+- 14-day TTL with a 1.5 GB LRU budget
 
 ### PIN Tokens (sessionStorage)
 - Key: `reaigen_pin_{token}`
@@ -227,7 +240,7 @@ Benefits:
 
 ## Design System
 
-- **Colors**: Monochrome (no green/blue accents). Foreground/background only.
+- **Colors**: Neutral management surfaces; restrained semantic status colors; dark studio viewer.
 - **Font**: System SF Pro stack + Noto Serif Display for brand wordmark
 - **Radius**: 0.625rem (10px) base
 - **Overlays on 3D**: Translucent surfaces with blur and restrained borders

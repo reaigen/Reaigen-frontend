@@ -52,6 +52,7 @@ import { getSafeApiErrorMessage } from "../lib/api/error-message";
 import { t, getUserLanguage, formatDate as fmtDate } from "../lib/i18n";
 import { cn } from "../lib/utils";
 import { ManagedLegalDocuments } from "./content-documents";
+import { ChevronDownIcon } from "./icons";
 
 function useAutoDismiss(value: boolean, setter: (v: boolean) => void, ms = 3000) {
   React.useEffect(() => {
@@ -222,6 +223,8 @@ function ProfileTab({ user, onSaved, lang }: { user: UserProfile; onSaved: () =>
           <div className="flex items-center gap-4">
             <div className="relative h-16 w-16 shrink-0 overflow-hidden rounded-full bg-muted">
               {avatarUrl ? (
+                // User-owned signed media URLs are already sized by the profile API.
+                // eslint-disable-next-line @next/next/no-img-element
                 <img src={avatarUrl} alt={t("settings.profile.avatar", lang)} className="h-full w-full object-cover" />
               ) : (
                 <span className="flex h-full w-full items-center justify-center text-lg font-semibold text-muted-foreground">{initials}</span>
@@ -395,6 +398,8 @@ function SellerTab({ user, onSaved, lang }: { user: UserProfile; onSaved: () => 
           <div className="relative">
             <div className="h-28 w-full overflow-hidden rounded-lg bg-muted sm:h-36">
               {p?.cover_image_url ? (
+                // User-owned signed media URLs are not compatible with a fixed Next image host.
+                // eslint-disable-next-line @next/next/no-img-element
                 <img src={p.cover_image_url} alt={t("settings.seller.coverImage", lang)} className="h-full w-full object-cover" />
               ) : (
                 <div className="flex h-full w-full items-center justify-center text-sm text-muted-foreground">{t("settings.seller.coverImage", lang)}</div>
@@ -1200,7 +1205,7 @@ function SettingsField({ label, children, hint }: { label: string; children: Rea
   );
 }
 
-function LocalizationTab({ user, onSaved, lang }: { user: UserProfile; onSaved: () => void; lang: string }) {
+function LocalizationTab({ user, lang }: { user: UserProfile; lang: string }) {
   const loc = user.localization;
   const [language, setLanguage] = React.useState(loc?.language ?? "en");
   const [currency, setCurrency] = React.useState(loc?.currency ?? "EUR");
@@ -2028,7 +2033,7 @@ export function SettingsForm({ user, onSaved }: { user: UserProfile; onSaved: ()
     };
   }, []);
   const triggerClassName =
-    "shrink-0 justify-start rounded-none border-b-2 border-transparent px-1.5 pb-3 pt-0 text-[13px] shadow-none data-[state=active]:border-foreground data-[state=active]:bg-transparent data-[state=active]:shadow-none";
+    "shrink-0 justify-start rounded-none border-b-2 border-transparent px-1.5 pb-3 pt-0 text-[13px] shadow-none data-[state=active]:border-foreground data-[state=active]:bg-transparent data-[state=active]:shadow-none md:h-9 md:w-full md:rounded-lg md:border-0 md:px-3 md:py-0 md:text-left md:data-[state=active]:bg-foreground/[0.065]";
 
   return (
     <Tabs
@@ -2037,18 +2042,41 @@ export function SettingsForm({ user, onSaved }: { user: UserProfile; onSaved: ()
         setActiveTab(value);
         window.history.replaceState(null, "", `#${value}`);
       }}
-      className="w-full"
+      className="w-full md:grid md:grid-cols-[190px_minmax(0,1fr)] md:items-start md:gap-9"
     >
-      <TabsList className="mb-7 flex min-h-0 w-full gap-4 overflow-x-auto scroll-smooth rounded-none border-b border-border/70 bg-transparent p-0 text-muted-foreground [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden">
-        <TabsTrigger value="profile" className={triggerClassName}>{t("settings.tab.profile", lang)}</TabsTrigger>
-        <TabsTrigger value="seller" className={triggerClassName}>{t("settings.tab.seller", lang)}</TabsTrigger>
-        <TabsTrigger value="privacy" className={triggerClassName}>{t("settings.tab.privacy", lang)}</TabsTrigger>
-        <TabsTrigger value="reai" className={triggerClassName}>{t("settings.tab.reai", lang)}</TabsTrigger>
-        <TabsTrigger value="localization" className={triggerClassName}>{t("settings.tab.localization", lang)}</TabsTrigger>
-        <TabsTrigger value="notifications" className={triggerClassName}>{t("settings.tab.notifications", lang)}</TabsTrigger>
-        <TabsTrigger value="billing" className={triggerClassName}>{t("settings.tab.billing", lang)}</TabsTrigger>
-        <TabsTrigger value="security" className={triggerClassName}>{t("settings.tab.security", lang)}</TabsTrigger>
-      </TabsList>
+      <div className="mb-7 md:sticky md:top-20 md:mb-0">
+        <div className="relative md:hidden">
+          <select
+            value={activeTab}
+            onChange={(event) => {
+              setActiveTab(event.target.value);
+              window.history.replaceState(null, "", `#${event.target.value}`);
+            }}
+            aria-label={t("settings.title", lang)}
+            className="h-11 w-full appearance-none rounded-xl border border-border/65 bg-surface px-3 pr-10 text-[13px] font-medium outline-none focus:border-foreground/30 focus:ring-2 focus:ring-foreground/[0.06]"
+          >
+            <option value="profile">{t("settings.tab.profile", lang)}</option>
+            <option value="seller">{t("settings.tab.seller", lang)}</option>
+            <option value="privacy">{t("settings.tab.privacy", lang)}</option>
+            <option value="reai">{t("settings.tab.reai", lang)}</option>
+            <option value="localization">{t("settings.tab.localization", lang)}</option>
+            <option value="notifications">{t("settings.tab.notifications", lang)}</option>
+            <option value="billing">{t("settings.tab.billing", lang)}</option>
+            <option value="security">{t("settings.tab.security", lang)}</option>
+          </select>
+          <ChevronDownIcon size={15} className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-foreground/40" />
+        </div>
+        <TabsList className="hidden min-h-0 w-full flex-col items-stretch gap-1 rounded-2xl border border-border/55 bg-surface p-2 text-muted-foreground md:flex">
+          <TabsTrigger value="profile" className={triggerClassName}>{t("settings.tab.profile", lang)}</TabsTrigger>
+          <TabsTrigger value="seller" className={triggerClassName}>{t("settings.tab.seller", lang)}</TabsTrigger>
+          <TabsTrigger value="privacy" className={triggerClassName}>{t("settings.tab.privacy", lang)}</TabsTrigger>
+          <TabsTrigger value="reai" className={triggerClassName}>{t("settings.tab.reai", lang)}</TabsTrigger>
+          <TabsTrigger value="localization" className={triggerClassName}>{t("settings.tab.localization", lang)}</TabsTrigger>
+          <TabsTrigger value="notifications" className={triggerClassName}>{t("settings.tab.notifications", lang)}</TabsTrigger>
+          <TabsTrigger value="billing" className={triggerClassName}>{t("settings.tab.billing", lang)}</TabsTrigger>
+          <TabsTrigger value="security" className={triggerClassName}>{t("settings.tab.security", lang)}</TabsTrigger>
+        </TabsList>
+      </div>
       <div className="min-w-0">
         <TabsContent value="profile" className="mt-0">
           <ProfileTab user={user} onSaved={onSaved} lang={lang} />
@@ -2063,7 +2091,7 @@ export function SettingsForm({ user, onSaved }: { user: UserProfile; onSaved: ()
           <ReaiTab lang={lang} />
         </TabsContent>
         <TabsContent value="localization" className="mt-0">
-          <LocalizationTab user={user} onSaved={onSaved} lang={lang} />
+          <LocalizationTab user={user} lang={lang} />
         </TabsContent>
         <TabsContent value="notifications" className="mt-0">
           <NotificationsTab user={user} onSaved={onSaved} lang={lang} />

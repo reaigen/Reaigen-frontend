@@ -181,7 +181,7 @@ function useDocuments(params: {
     setFailed(false);
 
     listAppContentDocuments({
-      keys: params.keys,
+      keys: keysKey ? keysKey.split(",") : undefined,
       document_type: params.documentType,
       language: params.language,
       country_code: countryCode,

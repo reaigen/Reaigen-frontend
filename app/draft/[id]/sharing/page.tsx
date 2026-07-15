@@ -82,9 +82,11 @@ export default function SharingPage({ params }: { params: Promise<{ id: string }
   const primarySplat = splatData?.parent_splat_id
     ? splatData.splats.find((s) => (s.splat_id ?? s.id) === splatData.parent_splat_id) ?? splatData.splats[0]
     : splatData?.splats[0];
-  const hasTour = !!primarySplat;
+  const hasTour = !!primarySplat && primarySplat.status === "completed" && Boolean(
+    primarySplat.has_sog || primarySplat.has_splat || primarySplat.has_ply || primarySplat.url || primarySplat.format || primarySplat.available_formats?.length || Object.keys(primarySplat.signed_outputs ?? {}).length,
+  );
   const primarySplatId = primarySplat ? (primarySplat.splat_id ?? primarySplat.id) : undefined;
-  const thumbUrl = primarySplat?.signed_outputs?.thumbnail ?? null;
+  const thumbUrl = primarySplat?.signed_outputs?.thumbnail ?? primarySplat?.thumbnail_url ?? null;
   const fpUrl = floorplan?.composite_url ?? null;
   const hasPhotos = (draft?.raw_uploads ?? []).some(
     (u) => u.mime_type?.startsWith("image") || u.asset_type === "photo"

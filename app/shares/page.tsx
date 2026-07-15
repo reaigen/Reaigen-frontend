@@ -9,14 +9,19 @@ import { Button } from "../lib/ui/button";
 import { t, getUserLanguage, formatDateShort, type LocaleKey } from "../lib/i18n";
 import {
   listShares,
-  listSplats,
+  listAllDrafts,
+  listAllSplats,
   pauseShare,
   resumeShare,
   revokeShare,
   getShareAnalytics,
 } from "../lib/api/client";
-import { SHARE_BUNDLES, type ShareData, type ShareBundleName } from "../lib/tour-types";
+import { SHARE_BUNDLES, type DraftListingItem, type ShareData, type ShareBundleName } from "../lib/tour-types";
 import { PageLoading } from "../components/page-loading";
+import { PageHeader } from "../components/page-header";
+import { SidePanel } from "../components/side-panel";
+import { LinkIcon, SearchIcon } from "../components/icons";
+import { Thumbnail } from "../components/thumbnail";
 
 function detectBundleFromVisible(visible: string[]): ShareBundleName | null {
   const set = new Set(visible);
@@ -42,7 +47,14 @@ async function copyToClipboard(text: string): Promise<boolean> {
 }
 
 function shareUrl(token: string) {
-  return `${window.location.origin}/shared/${token}`;
+  const origin = typeof window === "undefined" ? "" : window.location.origin;
+  return `${origin}/shared/${token}`;
+}
+
+function draftThumbnail(draft: DraftListingItem): string | null {
+  return (draft.raw_uploads ?? [])
+    .filter((upload) => upload.mime_type?.startsWith("image") || upload.asset_type === "photo")
+    .sort((a, b) => a.sort_order - b.sort_order)[0]?.file_url ?? null;
 }
 
 function expiryLabel(dateStr: string | null, lang: string): string | null {
@@ -87,6 +99,7 @@ function ShareRow({
   const [expanded, setExpanded] = React.useState(false);
   const [stats, setStats] = React.useState<ShareStats | null>(null);
   const [statsLoading, setStatsLoading] = React.useState(false);
+  const [actionError, setActionError] = React.useState(false);
 
   const isActive = share.status === "active";
   const isPaused = share.status === "paused";
@@ -107,68 +120,70 @@ function ShareRow({
     setExpanded(next);
     if (next && !stats && !statsLoading) {
       setStatsLoading(true);
-      getShareAnalytics(share.id).then((a) => setStats(a.stats)).catch(() => {}).finally(() => setStatsLoading(false));
+      getShareAnalytics(share.id).then((a) => setStats(a.stats)).catch(() => setActionError(true)).finally(() => setStatsLoading(false));
     }
   };
 
   const handlePause = async (e: React.MouseEvent) => {
     e.stopPropagation();
+    setActionError(false);
     setActionLoading(true);
-    try { const r = await pauseShare(share.id); onUpdate(r.share); } catch {}
+    try { const r = await pauseShare(share.id); onUpdate(r.share); } catch { setActionError(true); }
     setActionLoading(false);
   };
 
   const handleResume = async (e: React.MouseEvent) => {
     e.stopPropagation();
+    setActionError(false);
     setActionLoading(true);
-    try { const r = await resumeShare(share.id); onUpdate(r.share); } catch {}
+    try { const r = await resumeShare(share.id); onUpdate(r.share); } catch { setActionError(true); }
     setActionLoading(false);
   };
 
   const handleRevoke = async (e: React.MouseEvent) => {
     e.stopPropagation();
+    setActionError(false);
     setActionLoading(true);
-    try { await revokeShare(share.id); onUpdate(null); } catch {}
+    try { await revokeShare(share.id); onUpdate(null); } catch { setActionError(true); }
     setActionLoading(false);
   };
 
   return (
     <div className={`rounded-xl border transition-colors ${isLive ? "border-border/70 bg-background hover:border-border" : "border-border/40 bg-muted/20"}`}>
       {/* Main row — always visible */}
-      <div role="button" tabIndex={0} onClick={handleToggleExpand} onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); handleToggleExpand(); } }} className="w-full text-left px-4 py-3.5 flex items-center gap-3 cursor-pointer">
-        {/* Status dot */}
-        <span className={`w-2 h-2 rounded-full shrink-0 ${cfg.dot}`} />
+      <div className="w-full px-4 py-3.5 flex items-center gap-3">
+        <button type="button" onClick={handleToggleExpand} aria-expanded={expanded} className="flex min-w-0 flex-1 items-center gap-3 text-left">
+          {/* Status dot */}
+          <span className={`w-2 h-2 rounded-full shrink-0 ${cfg.dot}`} />
 
-        {/* Title + meta */}
-        <div className="min-w-0 flex-1">
-          <div className="flex items-center gap-2">
-            <span className={`text-[13px] font-semibold truncate ${isLive ? "" : "text-foreground/50"}`}>{tourName}</span>
-            {/* Inline badges */}
-            {share.requires_pin && (
-              <span className="shrink-0 inline-flex items-center gap-0.5 rounded bg-foreground/[0.07] px-1.5 py-px text-[9px] font-medium text-foreground/60 uppercase tracking-wider">
-                <svg width="8" height="8" viewBox="0 0 16 16" fill="none"><rect x="3" y="7" width="10" height="7" rx="2" stroke="currentColor" strokeWidth="1.5" /><path d="M5 7V5a3 3 0 016 0v2" stroke="currentColor" strokeWidth="1.5" /></svg>
-                PIN
-              </span>
-            )}
-            {expiry && (
-              <span className="shrink-0 rounded bg-foreground/[0.07] px-1.5 py-px text-[9px] font-medium text-foreground/50">
-                {expiry}
-              </span>
-            )}
-          </div>
-          <div className="mt-0.5 flex items-center gap-2 text-[11px] text-foreground/60">
-            <span className="tabular-nums">{share.access_count} {share.access_count === 1 ? t("shares.viewSingular", lang) : t("shares.viewPlural", lang)}</span>
-            <span className="text-foreground/35">·</span>
-            <span>{fieldSummaryLabel(share, lang)}</span>
-            <span className="text-foreground/35">·</span>
-            <span>{formatDateShort(share.created_at, lang)}</span>
-          </div>
-        </div>
+          {/* Title + meta */}
+          <span className="min-w-0 flex-1">
+            <span className="flex items-center gap-2">
+              <span className={`text-[13px] font-semibold truncate ${isLive ? "" : "text-foreground/50"}`}>{tourName}</span>
+              {share.requires_pin && (
+                <span className="shrink-0 inline-flex items-center gap-0.5 rounded bg-foreground/[0.07] px-1.5 py-px text-[9px] font-medium text-foreground/60 uppercase tracking-wider">
+                  <svg width="8" height="8" viewBox="0 0 16 16" fill="none"><rect x="3" y="7" width="10" height="7" rx="2" stroke="currentColor" strokeWidth="1.5" /><path d="M5 7V5a3 3 0 016 0v2" stroke="currentColor" strokeWidth="1.5" /></svg>
+                  PIN
+                </span>
+              )}
+              {expiry && <span className="shrink-0 rounded bg-foreground/[0.07] px-1.5 py-px text-[9px] font-medium text-foreground/50">{expiry}</span>}
+            </span>
+            <span className="mt-0.5 flex items-center gap-2 text-[11px] text-foreground/60">
+              <span className="tabular-nums">{share.access_count} {share.access_count === 1 ? t("shares.viewSingular", lang) : t("shares.viewPlural", lang)}</span>
+              <span className="text-foreground/35">·</span>
+              <span>{fieldSummaryLabel(share, lang)}</span>
+              <span className="text-foreground/35">·</span>
+              <span>{formatDateShort(share.created_at, lang)}</span>
+            </span>
+          </span>
 
-        {/* Status badge */}
-        <span className={`shrink-0 inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-[10px] font-semibold ${cfg.bg} ${cfg.text}`}>
-          {t(cfg.labelKey, lang)}
-        </span>
+          <span className={`hidden shrink-0 items-center gap-1 rounded-full px-2.5 py-0.5 text-[10px] font-semibold sm:inline-flex ${cfg.bg} ${cfg.text}`}>
+            {t(cfg.labelKey, lang)}
+          </span>
+          <svg width="14" height="14" viewBox="0 0 16 16" fill="none" className={`shrink-0 text-foreground/35 transition-transform ${expanded ? "rotate-180" : ""}`}>
+            <path d="M4 6l4 4 4-4" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+          </svg>
+        </button>
 
         {/* Copy button (live only) */}
         {isLive && (
@@ -189,10 +204,6 @@ function ShareRow({
           </button>
         )}
 
-        {/* Expand chevron */}
-        <svg width="14" height="14" viewBox="0 0 16 16" fill="none" className={`shrink-0 text-foreground/35 transition-transform ${expanded ? "rotate-180" : ""}`}>
-          <path d="M4 6l4 4 4-4" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
-        </svg>
       </div>
 
       {/* Expanded detail panel */}
@@ -261,6 +272,7 @@ function ShareRow({
           </div>
 
           {/* Actions bar */}
+          {actionError && <p role="alert" className="text-[11px] text-destructive">{t("common.requestFailed", lang)}</p>}
           {isLive && (
             <div className="flex items-center gap-2 pt-2 border-t border-border/40">
               <button onClick={(e) => { e.stopPropagation(); onEdit(); }}
@@ -313,29 +325,47 @@ export default function SharesPage() {
   const { isAuthenticated, isLoading, user, logout } = useAuth();
   const router = useRouter();
   const [shares, setShares] = React.useState<ShareData[]>([]);
-  const [splatsByDraft, setSplatsByDraft] = React.useState<Record<number, { title: string; splatId: number }>>({});
+  const [drafts, setDrafts] = React.useState<DraftListingItem[]>([]);
+  const [splatsByDraft, setSplatsByDraft] = React.useState<Record<number, { title: string; splatId: number; thumbnail: string | null }>>({});
   const [loading, setLoading] = React.useState(true);
+  const [loadError, setLoadError] = React.useState(false);
   const [filter, setFilter] = React.useState<"all" | "active" | "inactive">("active");
-
+  const [query, setQuery] = React.useState("");
+  const [createOpen, setCreateOpen] = React.useState(false);
+  const [draftQuery, setDraftQuery] = React.useState("");
 
   React.useEffect(() => {
     if (!isLoading && !isAuthenticated) router.replace("/");
   }, [isLoading, isAuthenticated, router]);
 
-  React.useEffect(() => {
-    if (!isAuthenticated) return;
-    // Show shares immediately, load splat names in background
-    listShares()
-      .then(setShares)
-      .catch(() => setShares([]))
-      .finally(() => setLoading(false));
-    // Background: fetch splat titles for fallback names
-    listSplats(1, 50).then((res) => {
-      const map: Record<number, { title: string; splatId: number }> = {};
-      for (const s of (res.results ?? [])) { if (s.source_draft) map[s.source_draft] = { title: s.title, splatId: s.id }; }
+  const load = React.useCallback(async () => {
+    setLoading(true);
+    setLoadError(false);
+    const [shareResult, draftResult, splatResult] = await Promise.allSettled([
+      listShares({ fresh: true }),
+      listAllDrafts(),
+      listAllSplats(),
+    ]);
+    if (shareResult.status === "fulfilled") setShares(shareResult.value);
+    else {
+      setShares([]);
+      setLoadError(true);
+    }
+    if (draftResult.status === "fulfilled") setDrafts(draftResult.value);
+    if (splatResult.status === "fulfilled") {
+      const map: Record<number, { title: string; splatId: number; thumbnail: string | null }> = {};
+      for (const splat of splatResult.value) {
+        if (!splat.source_draft || map[splat.source_draft]) continue;
+        map[splat.source_draft] = { title: splat.title, splatId: splat.id, thumbnail: splat.thumbnail_url ?? null };
+      }
       setSplatsByDraft(map);
-    }).catch(() => {});
-  }, [isAuthenticated]);
+    }
+    setLoading(false);
+  }, []);
+
+  React.useEffect(() => {
+    if (isAuthenticated) void load();
+  }, [isAuthenticated, load]);
 
   React.useEffect(() => {
     if (!isAuthenticated) return;
@@ -354,65 +384,87 @@ export default function SharesPage() {
     }
   }, []);
 
-
   if (isLoading || !user) {
     return <PageLoading />;
   }
 
   const lang = getUserLanguage(user.localization);
-  const filtered = filter === "active"
+  const draftById = new Map(drafts.map((draft) => [draft.id, draft]));
+  const statusFiltered = filter === "active"
     ? shares.filter((s) => s.status === "active" || s.status === "paused")
     : filter === "inactive"
       ? shares.filter((s) => s.status === "expired" || s.status === "revoked")
       : shares;
+  const normalizedQuery = query.trim().toLowerCase();
+  const filtered = statusFiltered.filter((share) => {
+    if (!normalizedQuery) return true;
+    const title = share.title || draftById.get(share.draft)?.title || splatsByDraft[share.draft]?.title || "";
+    return `${title} ${share.status}`.toLowerCase().includes(normalizedQuery);
+  });
   const activeCount = shares.filter((s) => s.status === "active").length;
   const pausedCount = shares.filter((s) => s.status === "paused").length;
+  const totalViews = shares.reduce((total, share) => total + (share.access_count || 0), 0);
+  const normalizedDraftQuery = draftQuery.trim().toLowerCase();
+  const selectableDrafts = drafts.filter((draft) => {
+    if (!normalizedDraftQuery) return true;
+    return `${draft.title} ${draft.display_address ?? ""} ${draft.city}`.toLowerCase().includes(normalizedDraftQuery);
+  });
 
   return (
     <AppShell user={user} onLogout={logout}>
-      <div className="mx-auto w-full max-w-3xl space-y-4 animate-fade-in">
-        {/* Header */}
-        <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
-          <div>
-            <h1 className="text-[20px] font-semibold tracking-tight">{t("shares.title", lang)}</h1>
-            {shares.length > 0 && (
-              <div className="flex items-center gap-3 mt-1">
-                <div className="flex items-center gap-1.5">
-                  <span className="w-1.5 h-1.5 rounded-full bg-foreground/70" />
-                  <span className="text-[11px] text-muted-foreground">{activeCount} {t("shares.statusActive", lang).toLowerCase()}</span>
-                </div>
-                {pausedCount > 0 && (
-                  <div className="flex items-center gap-1.5">
-                    <span className="w-1.5 h-1.5 rounded-full bg-foreground/40" />
-                    <span className="text-[11px] text-muted-foreground">{pausedCount} {t("shares.statusPaused", lang).toLowerCase()}</span>
-                  </div>
-                )}
-                <span className="text-[11px] text-foreground/45">{shares.length} {t("shares.allShares", lang).toLowerCase()}</span>
-              </div>
-            )}
+      <div className="mx-auto w-full max-w-4xl space-y-6 animate-fade-in pb-10">
+        <PageHeader
+          title={t("shares.title", lang)}
+          description={t("shares.subtitle", lang)}
+          actions={(
+            <Button type="button" size="sm" onClick={() => setCreateOpen(true)}>
+              <LinkIcon size={15} /> {t("shares.createLink", lang)}
+            </Button>
+          )}
+        />
+
+        {!loading && !loadError && shares.length > 0 && (
+          <div className="grid grid-cols-3 divide-x divide-border/45 overflow-hidden rounded-2xl border border-border/55 bg-surface">
+            <div className="px-4 py-3 sm:px-5">
+              <p className="text-[10px] font-semibold uppercase tracking-[0.1em] text-muted-foreground">{t("shares.statusActive", lang)}</p>
+              <p className="mt-1 text-[20px] font-semibold tabular-nums">{activeCount}</p>
+            </div>
+            <div className="px-4 py-3 sm:px-5">
+              <p className="text-[10px] font-semibold uppercase tracking-[0.1em] text-muted-foreground">{t("shares.statusPaused", lang)}</p>
+              <p className="mt-1 text-[20px] font-semibold tabular-nums">{pausedCount}</p>
+            </div>
+            <div className="px-4 py-3 sm:px-5">
+              <p className="text-[10px] font-semibold uppercase tracking-[0.1em] text-muted-foreground">{t("shares.totalViews", lang)}</p>
+              <p className="mt-1 text-[20px] font-semibold tabular-nums">{totalViews}</p>
+            </div>
           </div>
-          {shares.length > 0 && (
-            <div className="flex items-center gap-0.5 rounded-lg bg-muted/50 p-0.5">
+        )}
+
+        {shares.length > 0 && (
+          <div className="flex flex-col gap-3 border-b border-border/45 pb-4 sm:flex-row sm:items-center sm:justify-between">
+            <label className="relative block min-w-0 flex-1 sm:max-w-[300px]">
+              <span className="sr-only">{t("shares.search", lang)}</span>
+              <SearchIcon size={15} className="pointer-events-none absolute left-0 top-1/2 -translate-y-1/2 text-foreground/35" />
+              <input type="search" value={query} onChange={(event) => setQuery(event.target.value)} placeholder={t("shares.search", lang)} className="h-9 w-full border-0 bg-transparent pl-6 pr-2 text-[12px] outline-none placeholder:text-foreground/35" />
+            </label>
+            <div className="flex items-center gap-0.5 rounded-lg bg-muted/55 p-0.5">
               {(["all", "active", "inactive"] as const).map((f) => (
                 <button
+                  type="button"
                   key={f}
                   onClick={() => setFilter(f)}
-                  className={`px-3 py-1 rounded-md text-[11px] font-medium transition-all ${
-                    filter === f
-                      ? "bg-background text-foreground shadow-sm"
-                      : "text-muted-foreground hover:text-foreground"
-                  }`}
+                  className={`px-3 py-1.5 rounded-md text-[11px] font-medium transition-all ${filter === f ? "bg-background text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground"}`}
                 >
                   {f === "all" ? t("shares.allShares", lang) : f === "active" ? t("shares.activeOnly", lang) : t("shares.inactiveOnly", lang)}
                 </button>
               ))}
             </div>
-          )}
-        </div>
+          </div>
+        )}
 
         {/* Column headers */}
         {!loading && filtered.length > 0 && (
-          <div className="flex items-center gap-3 px-4 text-[10px] font-medium text-foreground/50 uppercase tracking-wider">
+          <div className="hidden items-center gap-3 px-4 text-[10px] font-medium text-foreground/50 uppercase tracking-wider sm:flex">
             <span className="w-2" />
             <span className="flex-1">{t("shares.tableTour", lang)}</span>
             <span className="w-16 text-center">{t("shares.tableStatus", lang)}</span>
@@ -437,27 +489,26 @@ export default function SharesPage() {
               </div>
             ))}
           </div>
+        ) : loadError ? (
+          <div className="rounded-2xl border border-border/55 bg-surface px-6 py-16 text-center">
+            <p className="text-[14px] font-semibold">{t("shares.loadFailed", lang)}</p>
+            <button type="button" onClick={() => void load()} className="mt-3 text-[12px] font-semibold underline underline-offset-4">{t("common.tryAgain", lang)}</button>
+          </div>
         ) : filtered.length === 0 ? (
           <div className="flex flex-col items-center justify-center py-20 text-center">
             <div className="w-12 h-12 rounded-full bg-foreground/[0.04] flex items-center justify-center mb-4">
-              <svg width="22" height="22" viewBox="0 0 24 24" fill="none" className="text-foreground/25">
-                <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
-                <path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
-              </svg>
+              <LinkIcon size={22} className="text-foreground/25" />
             </div>
-            <p className="text-[14px] font-medium text-foreground/60">{t("shares.noShares", lang)}</p>
-            <p className="text-[12px] text-muted-foreground mt-1 max-w-[260px]">{t("shares.noSharesHint", lang)}</p>
-            <Link href="/dashboard">
-              <Button variant="ghost" size="sm" className="mt-4 text-[12px]">
-                {t("shares.goToDashboard", lang)}
-              </Button>
-            </Link>
+            <p className="text-[14px] font-medium text-foreground/60">{shares.length ? t("shares.noResults", lang) : t("shares.noShares", lang)}</p>
+            <p className="text-[12px] text-muted-foreground mt-1 max-w-[280px]">{shares.length ? t("shares.noResultsHint", lang) : t("shares.noSharesHint", lang)}</p>
+            {!shares.length && <Button type="button" variant="outline" size="sm" className="mt-4 text-[12px]" onClick={() => setCreateOpen(true)}>{t("shares.createLink", lang)}</Button>}
           </div>
         ) : (
           <div className="space-y-1.5">
             {filtered.map((share) => {
+              const draft = draftById.get(share.draft);
               const draftTour = splatsByDraft[share.draft];
-              const tourName = share.title || draftTour?.title || t("shares.untitledTour", lang);
+              const tourName = share.title || draft?.title || draftTour?.title || t("shares.untitledTour", lang);
               const tourLink = share.draft ? `/draft/${share.draft}` : null;
 
               return (
@@ -477,6 +528,54 @@ export default function SharesPage() {
           </div>
         )}
       </div>
+
+      <SidePanel
+        open={createOpen}
+        onOpenChange={setCreateOpen}
+        title={t("shares.createLink", lang)}
+        description={t("shares.selectCreationHint", lang)}
+      >
+        <label className="relative block">
+          <span className="sr-only">{t("shares.searchCreations", lang)}</span>
+          <SearchIcon size={15} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-foreground/35" />
+          <input
+            type="search"
+            value={draftQuery}
+            onChange={(event) => setDraftQuery(event.target.value)}
+            placeholder={t("shares.searchCreations", lang)}
+            className="h-10 w-full rounded-xl border border-border/55 bg-surface pl-9 pr-3 text-[12px] outline-none transition focus:border-foreground/25 focus:ring-2 focus:ring-foreground/[0.055]"
+          />
+        </label>
+        <div className="mt-5 space-y-2">
+          {selectableDrafts.length === 0 ? (
+            <div className="rounded-xl border border-dashed border-border/65 px-5 py-12 text-center">
+              <p className="text-[13px] font-medium">{t("shares.noCreations", lang)}</p>
+              <p className="mt-1 text-[11px] leading-relaxed text-muted-foreground">{t("shares.noCreationsHint", lang)}</p>
+            </div>
+          ) : selectableDrafts.map((draft) => {
+            const cover = draftThumbnail(draft) ?? splatsByDraft[draft.id]?.thumbnail ?? null;
+            const activeLinks = shares.filter((share) => share.draft === draft.id && (share.status === "active" || share.status === "paused")).length;
+            return (
+              <button
+                type="button"
+                key={draft.id}
+                onClick={() => router.push(`/draft/${draft.id}/sharing`)}
+                className="group flex w-full items-center gap-3 rounded-xl border border-transparent p-2 text-left transition hover:border-border/55 hover:bg-surface"
+              >
+                <span className="relative h-14 w-20 shrink-0 overflow-hidden rounded-lg bg-foreground/[0.045]">
+                  {cover ? <Thumbnail src={cover} alt="" className="h-full w-full object-cover" /> : <LinkIcon size={18} className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 text-foreground/20" />}
+                </span>
+                <span className="min-w-0 flex-1">
+                  <span className="block truncate text-[13px] font-semibold">{draft.title || t("dashboard.untitled", lang)}</span>
+                  <span className="mt-0.5 block truncate text-[11px] text-muted-foreground">{draft.display_address || [draft.city, draft.country].filter(Boolean).join(", ") || t("shares.configureAccess", lang)}</span>
+                  {activeLinks > 0 ? <span className="mt-1 block text-[10px] font-medium text-foreground/45">{activeLinks} {t("shares.existingLinks", lang)}</span> : null}
+                </span>
+                <span className="pr-2 text-foreground/25 transition group-hover:translate-x-0.5 group-hover:text-foreground/60">→</span>
+              </button>
+            );
+          })}
+        </div>
+      </SidePanel>
 
     </AppShell>
   );
