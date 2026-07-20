@@ -65,10 +65,11 @@ function useAutoDismiss(value: boolean, setter: (v: boolean) => void, ms = 3000)
   }, [value, setter, ms]);
 }
 
+// Grouped card, mirroring the iOS app's Settings LiquidCard sections.
 function Card({ className, ...props }: React.HTMLAttributes<HTMLElement>) {
   return (
     <section
-      className={cn("border-t border-border/60 pt-6 first:border-t-0 first:pt-0", className)}
+      className={cn("mt-4 rounded-xl border border-border/60 bg-surface p-5 shadow-card first:mt-0", className)}
       {...props}
     />
   );
