@@ -158,7 +158,7 @@ export function AppShell({
           })}
         </nav>
 
-        {/* Bottom: settings + user */}
+        {/* Bottom: settings (account lives in the top bar) */}
         <div className="px-3 pb-5 space-y-1">
           <Link
             href="/settings"
@@ -173,28 +173,6 @@ export function AppShell({
             <SettingsIcon size={19} className={cn(settingsActive ? "text-foreground" : "text-foreground/45")} />
             {t("nav.settings", lang)}
           </Link>
-          {/* User pill */}
-          <div className="flex items-center gap-2 rounded-full px-2 py-2">
-            <Link href="/settings" className="flex items-center gap-2.5 flex-1 min-w-0 hover:opacity-80 transition-opacity">
-              <Avatar size="sm">
-                {avatarUrl && <AvatarImage src={avatarUrl as string} />}
-                <AvatarFallback>{getInitials(user)}</AvatarFallback>
-              </Avatar>
-              <div className="flex-1 min-w-0">
-                <p className="text-[13px] font-semibold truncate leading-tight">{displayName}</p>
-                <p className="text-[11px] text-foreground/35 truncate leading-tight">{user.email}</p>
-              </div>
-            </Link>
-            <button
-              type="button"
-              onClick={onLogout}
-              title={t("nav.signout", lang)}
-              aria-label={t("nav.signout", lang)}
-              className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-foreground/20 hover:text-foreground/60 hover:bg-foreground/[0.05] transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
-            >
-              <ExitIcon className="h-3.5 w-3.5" />
-            </button>
-          </div>
         </div>
       </aside>
 
@@ -228,10 +206,30 @@ export function AppShell({
 
       {/* ── Desktop workspace header ────────────────────────────── */}
       <header
-        className="fixed top-0 z-40 hidden h-14 items-center justify-end border-b border-border/40 bg-background/90 px-7 backdrop-blur-xl transition-[right] duration-200 md:flex"
+        className="fixed top-0 z-40 hidden h-14 items-center justify-end gap-3 border-b border-border/40 bg-background/90 px-7 backdrop-blur-xl transition-[right] duration-200 md:flex"
         style={{ left: SIDEBAR_W, right: reaiOpen ? "var(--reai-panel-width)" : 0 }}
       >
         {reaiLauncher}
+        <div className="h-5 w-px bg-border/60" />
+        <Link
+          href="/settings"
+          className="flex items-center gap-2.5 rounded-full py-1 pl-1 pr-3 transition-colors hover:bg-foreground/[0.04]"
+        >
+          <Avatar size="sm">
+            {avatarUrl && <AvatarImage src={avatarUrl as string} />}
+            <AvatarFallback>{getInitials(user)}</AvatarFallback>
+          </Avatar>
+          <span className="max-w-[180px] truncate text-[13px] font-semibold leading-tight">{displayName}</span>
+        </Link>
+        <button
+          type="button"
+          onClick={onLogout}
+          title={t("nav.signout", lang)}
+          aria-label={t("nav.signout", lang)}
+          className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-foreground/30 transition-colors hover:bg-foreground/[0.05] hover:text-foreground/70 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+        >
+          <ExitIcon className="h-4 w-4" />
+        </button>
       </header>
 
       {/* ── Content ──────────────────────────────────────────────── */}
