@@ -22,10 +22,7 @@ import { ShareCreateForm, defaultContentScope, type ShareFormData } from "../../
 import { ShareLinkCard } from "../../../components/sharing/share-link-card";
 import type { ContentScope } from "../../../components/sharing/content-scope-selector";
 import { PageLoading } from "../../../components/page-loading";
-
-async function copyToClipboard(text: string): Promise<boolean> {
-  try { await navigator.clipboard.writeText(text); return true; } catch { return false; }
-}
+import { copyToClipboard, shareUrl } from "../../../lib/share-ui";
 
 export default function SharingPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params);
@@ -45,6 +42,7 @@ export default function SharingPage({ params }: { params: Promise<{ id: string }
   const [formError, setFormError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [justCopied, setJustCopied] = useState(false);
+  const [copyFailedUrl, setCopyFailedUrl] = useState<string | null>(null);
 
   useEffect(() => {
     if (!isLoading && !isAuthenticated) router.replace("/");
@@ -103,10 +101,14 @@ export default function SharingPage({ params }: { params: Promise<{ id: string }
         ? await createSplatShare(primarySplatId, formData)
         : await createDraftShare(draftId, formData);
       setShares((prev) => [s, ...prev]);
-      const url = `${window.location.origin}/shared/${s.token}`;
+      const url = shareUrl(s.token);
+      setCopyFailedUrl(null);
       if (await copyToClipboard(url)) {
         setJustCopied(true);
-        setTimeout(() => setJustCopied(false), 3000);
+        setTimeout(() => setJustCopied(false), 2000);
+      } else {
+        // Clipboard blocked — still surface the link with a manual copy action.
+        setCopyFailedUrl(url);
       }
     } catch (err) {
       setFormError(getSafeApiErrorMessage(err, lang) || t("shareDialog.errorCreate", lang));
@@ -150,31 +152,50 @@ export default function SharingPage({ params }: { params: Promise<{ id: string }
         </button>
 
         {/* Title */}
-        <h1 className="mb-5 text-[16px] font-semibold">
+        <h1 className="mb-5 text-[24px] font-semibold tracking-tight">
           {t("sharing.pageTitle", lang)}
-          <span className="text-foreground/25 ml-2 font-normal text-[13px]">{title}</span>
+          <span className="text-foreground/50 ml-2 font-normal text-[13px]">{title}</span>
         </h1>
 
-        {/* Success banner — toast-style */}
-        {justCopied && (
-          <div className="mb-5 flex items-center gap-2 rounded-xl border border-foreground/15 bg-foreground/[0.05] px-4 py-2.5 animate-fade-in">
-            <svg width="14" height="14" viewBox="0 0 16 16" fill="none"><path d="M3 8.5L6.5 12L13 4" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" /></svg>
-            <span className="text-[12px] font-medium">{t("sharing.linkCopied", lang)}</span>
-          </div>
-        )}
-
         {/* Two-panel layout */}
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-5 lg:gap-8">
+        <div className="relative grid grid-cols-1 lg:grid-cols-2 gap-5 lg:gap-8">
+          {/* Copy banner — absolutely positioned so it never shifts the layout */}
+          {justCopied && (
+            <div className="absolute inset-x-0 top-0 z-10 flex items-center gap-2 rounded-xl border border-foreground/15 bg-background px-4 py-2.5 shadow-sm animate-fade-in">
+              <svg aria-hidden="true" width="14" height="14" viewBox="0 0 16 16" fill="none"><path d="M3 8.5L6.5 12L13 4" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" /></svg>
+              <span className="text-[12px] font-medium">{t("sharing.linkCopied", lang)}</span>
+            </div>
+          )}
+          {copyFailedUrl && (
+            <div className="absolute inset-x-0 top-0 z-10 flex items-center gap-2 rounded-xl border border-border/60 bg-background px-4 py-2.5 shadow-sm animate-fade-in">
+              <p className="min-w-0 flex-1 truncate select-all font-mono text-[12px] text-foreground/70">{copyFailedUrl}</p>
+              <Button
+                type="button"
+                variant="outline"
+                size="xs"
+                className="shrink-0 text-[11px]"
+                onClick={async () => {
+                  if (await copyToClipboard(copyFailedUrl)) {
+                    setCopyFailedUrl(null);
+                    setJustCopied(true);
+                    setTimeout(() => setJustCopied(false), 2000);
+                  }
+                }}
+              >
+                {t("shares.copyLink", lang)}
+              </Button>
+            </div>
+          )}
           {/* Right panel — Controls (shown first on mobile) */}
           <div className="lg:order-2 space-y-3">
             {/* Active links */}
             {shares.length > 0 && (
               <div className="space-y-1.5">
                 <div className="flex items-center gap-2 px-1">
-                  <h2 className="text-[12px] font-medium text-foreground/45">
+                  <h2 className="text-[13px] font-semibold text-foreground/70">
                     {t("sharing.activeLinks", lang)}
                   </h2>
-                  <span className="inline-flex items-center justify-center h-[18px] min-w-[18px] rounded-full bg-foreground/[0.07] px-1.5 text-[10px] font-semibold text-foreground/45 tabular-nums">
+                  <span className="inline-flex items-center justify-center h-[18px] min-w-[18px] rounded-full bg-foreground/[0.07] px-1.5 text-[11px] font-semibold text-foreground/50 tabular-nums">
                     {shares.length}
                   </span>
                 </div>
@@ -183,6 +204,7 @@ export default function SharingPage({ params }: { params: Promise<{ id: string }
                     key={share.id}
                     share={share}
                     lang={lang}
+                    dateFormat={user.localization?.date_format}
                     onUpdate={(updated) => handleShareUpdate(share.id, updated)}
                     onEdit={() => {}}
                   />

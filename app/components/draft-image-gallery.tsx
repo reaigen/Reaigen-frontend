@@ -4,6 +4,7 @@ import * as React from "react";
 import { createPortal } from "react-dom";
 import { t } from "../lib/i18n";
 import { cn } from "../lib/utils";
+import { ArrowLeftIcon, ArrowRightIcon, CloseIcon } from "./icons";
 import { Thumbnail } from "./thumbnail";
 
 export interface GalleryImage {
@@ -26,32 +27,10 @@ function counterLabel(index: number, count: number, lang: string) {
   return `${index + 1} ${t("draft.imageOf", lang)} ${count}`;
 }
 
-function Chevron({ direction }: { direction: "left" | "right" }) {
-  return (
-    <svg width="18" height="18" viewBox="0 0 16 16" fill="none" aria-hidden="true">
-      <path
-        d={direction === "left" ? "m10 12-4-4 4-4" : "m6 4 4 4-4 4"}
-        stroke="currentColor"
-        strokeWidth="1.5"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-      />
-    </svg>
-  );
-}
-
 function ExpandIcon() {
   return (
     <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true">
       <path d="M6 2.5H2.5V6M10 2.5h3.5V6M13.5 10v3.5H10M6 13.5H2.5V10" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" />
-    </svg>
-  );
-}
-
-function CloseIcon() {
-  return (
-    <svg width="17" height="17" viewBox="0 0 16 16" fill="none" aria-hidden="true">
-      <path d="m4 4 8 8M12 4l-8 8" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" />
     </svg>
   );
 }
@@ -168,7 +147,7 @@ function GalleryLightbox({
       role="dialog"
       aria-modal="true"
       aria-label={alt}
-      className="fixed inset-0 z-[120] flex overscroll-contain bg-white text-black"
+      className="fixed inset-0 z-[9999] flex overscroll-contain bg-white text-black"
     >
       <div className="pointer-events-none absolute inset-x-0 top-0 z-40 flex h-[72px] items-center justify-between px-3 pt-safe sm:px-5">
         <span aria-live="polite" aria-atomic="true" className="rounded-full border border-black/[0.07] bg-white/95 px-3 py-1.5 text-[11px] font-semibold tabular-nums text-black/60 shadow-sm backdrop-blur-xl">
@@ -181,7 +160,7 @@ function GalleryLightbox({
           className="pointer-events-auto flex h-11 items-center gap-2 rounded-full border border-black/[0.08] bg-white/95 px-4 text-[12px] font-semibold text-black/70 shadow-sm backdrop-blur-xl transition hover:bg-black hover:text-white hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-black/25"
           aria-label={t("common.close", lang)}
         >
-          <CloseIcon />
+          <CloseIcon size={17} />
           <span>{t("common.close", lang)}</span>
         </button>
       </div>
@@ -192,19 +171,19 @@ function GalleryLightbox({
             type="button"
             onClick={() => goTo(index - 1)}
             disabled={index === 0}
-            className="absolute left-2 top-1/2 z-30 flex h-11 w-11 -translate-y-1/2 items-center justify-center rounded-full border border-black/[0.08] bg-white/95 text-black/65 shadow-sm backdrop-blur-xl transition hover:bg-black hover:text-white hover:shadow-md disabled:pointer-events-none disabled:scale-90 disabled:opacity-0 sm:left-5"
+            className="absolute left-2 top-1/2 z-30 flex h-11 w-11 -translate-y-1/2 items-center justify-center rounded-full border border-black/[0.08] bg-white/95 text-black/65 shadow-sm backdrop-blur-xl transition hover:bg-black hover:text-white hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-black/25 disabled:pointer-events-none disabled:opacity-40 sm:left-5"
             aria-label={t("draft.gallery.previous", lang)}
           >
-            <Chevron direction="left" />
+            <ArrowLeftIcon size={18} />
           </button>
           <button
             type="button"
             onClick={() => goTo(index + 1)}
             disabled={index === count - 1}
-            className="absolute right-2 top-1/2 z-30 flex h-11 w-11 -translate-y-1/2 items-center justify-center rounded-full border border-black/[0.08] bg-white/95 text-black/65 shadow-sm backdrop-blur-xl transition hover:bg-black hover:text-white hover:shadow-md disabled:pointer-events-none disabled:scale-90 disabled:opacity-0 sm:right-5"
+            className="absolute right-2 top-1/2 z-30 flex h-11 w-11 -translate-y-1/2 items-center justify-center rounded-full border border-black/[0.08] bg-white/95 text-black/65 shadow-sm backdrop-blur-xl transition hover:bg-black hover:text-white hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-black/25 disabled:pointer-events-none disabled:opacity-40 sm:right-5"
             aria-label={t("draft.gallery.next", lang)}
           >
-            <Chevron direction="right" />
+            <ArrowRightIcon size={18} />
           </button>
         </>
       ) : null}
@@ -241,7 +220,7 @@ function GalleryLightbox({
                 type="button"
                 onClick={() => goTo(imageIndex)}
                 className={cn(
-                  "relative h-12 w-16 shrink-0 overflow-hidden rounded-xl border bg-black/[0.03] transition",
+                  "relative h-10 w-16 shrink-0 overflow-hidden rounded-xl border bg-black/[0.03] transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-black/25",
                   imageIndex === index ? "border-black/70 ring-1 ring-black/15" : "border-black/[0.07] opacity-55 hover:opacity-100",
                 )}
                 aria-label={counterLabel(imageIndex, count, lang)}
@@ -303,9 +282,9 @@ export function DraftImageGallery({ images, alt, fallbackUrl, lang = "en", onAct
 
   if (count === 0) {
     return (
-      <div className="relative aspect-[16/10] w-full overflow-hidden bg-muted/30 md:rounded-2xl">
+      <div className="relative aspect-[16/10] w-full overflow-hidden bg-white ring-1 ring-inset ring-black/[0.045] md:rounded-2xl">
         <div className="flex h-full w-full items-center justify-center">
-          <svg width="48" height="48" viewBox="0 0 24 24" fill="none" className="text-foreground/10" aria-hidden="true">
+          <svg width="48" height="48" viewBox="0 0 24 24" fill="none" className="text-black/10" aria-hidden="true">
             <rect x="3" y="3" width="18" height="18" rx="2" stroke="currentColor" strokeWidth="1.5" />
             <circle cx="8.5" cy="8.5" r="1.5" fill="currentColor" />
             <path d="m21 15-5-5L5 21" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
@@ -337,7 +316,7 @@ export function DraftImageGallery({ images, alt, fallbackUrl, lang = "en", onAct
         <button
           type="button"
           onClick={() => setLightboxIndex(activeIndex)}
-          className="absolute right-3 top-3 flex h-9 w-9 items-center justify-center rounded-full border border-black/10 bg-white/90 text-black/70 shadow-sm backdrop-blur-xl transition hover:bg-white hover:text-black hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-black/25"
+          className="absolute right-3 top-3 flex h-9 w-9 items-center justify-center rounded-full border border-black/10 bg-white/90 text-black/70 shadow-sm backdrop-blur-xl transition hover:bg-black hover:text-white hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-black/25"
           aria-label={t("draft.gallery.fullscreen", lang)}
         >
           <ExpandIcon />
@@ -349,19 +328,19 @@ export function DraftImageGallery({ images, alt, fallbackUrl, lang = "en", onAct
               type="button"
               onClick={() => goTo(activeIndex - 1)}
               disabled={activeIndex === 0}
-              className="absolute left-3 top-1/2 flex h-10 w-10 -translate-y-1/2 items-center justify-center rounded-full border border-black/10 bg-white/90 text-black/70 shadow-sm backdrop-blur-xl transition hover:bg-white hover:text-black hover:shadow-md disabled:pointer-events-none disabled:scale-90 disabled:opacity-0"
+              className="absolute left-3 top-1/2 flex h-10 w-10 -translate-y-1/2 items-center justify-center rounded-full border border-black/10 bg-white/90 text-black/70 shadow-sm backdrop-blur-xl transition hover:bg-black hover:text-white hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-black/25 disabled:pointer-events-none disabled:opacity-40"
               aria-label={t("draft.gallery.previous", lang)}
             >
-              <Chevron direction="left" />
+              <ArrowLeftIcon size={18} />
             </button>
             <button
               type="button"
               onClick={() => goTo(activeIndex + 1)}
               disabled={activeIndex === count - 1}
-              className="absolute right-3 top-1/2 flex h-10 w-10 -translate-y-1/2 items-center justify-center rounded-full border border-black/10 bg-white/90 text-black/70 shadow-sm backdrop-blur-xl transition hover:bg-white hover:text-black hover:shadow-md disabled:pointer-events-none disabled:scale-90 disabled:opacity-0"
+              className="absolute right-3 top-1/2 flex h-10 w-10 -translate-y-1/2 items-center justify-center rounded-full border border-black/10 bg-white/90 text-black/70 shadow-sm backdrop-blur-xl transition hover:bg-black hover:text-white hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-black/25 disabled:pointer-events-none disabled:opacity-40"
               aria-label={t("draft.gallery.next", lang)}
             >
-              <Chevron direction="right" />
+              <ArrowRightIcon size={18} />
             </button>
           </>
         ) : null}
@@ -369,23 +348,27 @@ export function DraftImageGallery({ images, alt, fallbackUrl, lang = "en", onAct
         {count > 1 ? (
           <div className="pointer-events-none absolute inset-x-0 bottom-3 flex justify-center">
             {count <= 10 ? (
-              <div className="pointer-events-auto flex items-center gap-1.5 rounded-full border border-black/[0.07] bg-white/90 px-2.5 py-2 shadow-sm backdrop-blur-xl">
+              <div className="pointer-events-auto flex items-center rounded-full border border-black/[0.07] bg-white/90 px-1 py-0.5 shadow-sm backdrop-blur-xl">
                 {displayImages.map((image, imageIndex) => (
                   <button
                     key={`${image.id ?? image.url}-indicator`}
                     type="button"
                     onClick={() => goTo(imageIndex)}
-                    className={cn(
-                      "h-1.5 rounded-full transition-all duration-200",
-                      imageIndex === activeIndex ? "w-4 bg-black/75" : "w-1.5 bg-black/25 hover:bg-black/45",
-                    )}
+                    className="group/dot rounded-full p-1.5 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-black/25"
                     aria-label={counterLabel(imageIndex, count, lang)}
                     aria-current={imageIndex === activeIndex ? "true" : undefined}
-                  />
+                  >
+                    <span
+                      className={cn(
+                        "block h-1.5 rounded-full transition-all duration-200",
+                        imageIndex === activeIndex ? "w-4 bg-black/75" : "w-1.5 bg-black/25 group-hover/dot:bg-black/45",
+                      )}
+                    />
+                  </button>
                 ))}
               </div>
             ) : (
-              <span className="rounded-full border border-black/[0.07] bg-white/90 px-2.5 py-1 text-[10px] font-semibold tabular-nums text-black/65 shadow-sm backdrop-blur-xl">
+              <span className="rounded-full border border-black/[0.07] bg-white/90 px-2.5 py-1 text-[11px] font-semibold tabular-nums text-black/65 shadow-sm backdrop-blur-xl">
                 {counterLabel(activeIndex, count, lang)}
               </span>
             )}

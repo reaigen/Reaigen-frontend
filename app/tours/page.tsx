@@ -128,7 +128,7 @@ export default function ToursPage() {
             clearLabel={t("dashboard.clearSearch", lang)}
             className="flex-1"
           />
-          <GridLayoutToggle value={gridCols} onChange={handleGridCols} />
+          <GridLayoutToggle value={gridCols} onChange={handleGridCols} lang={lang} />
         </div>
 
         <div className="mb-6 flex min-w-0 items-center gap-1 overflow-x-auto scrollbar-hide">
@@ -141,7 +141,7 @@ export default function ToursPage() {
                 "inline-flex h-8 shrink-0 items-center gap-2 rounded-full px-3 text-[12px] font-medium transition-colors",
                 filter === item.key
                   ? "bg-foreground text-background"
-                  : "text-foreground/60 hover:bg-foreground/[0.045] hover:text-foreground",
+                  : "text-foreground/60 hover:bg-foreground/[0.04] hover:text-foreground",
               )}
               aria-pressed={filter === item.key}
             >
@@ -164,7 +164,7 @@ export default function ToursPage() {
             ))}
           </div>
         ) : error ? (
-          <div className="rounded-2xl border border-border/55 bg-surface px-6 py-14 text-center">
+          <div className="rounded-2xl border border-border/60 bg-surface px-6 py-14 text-center">
             <p className="text-[14px] font-semibold">{t("tours.error", lang)}</p>
             <button type="button" onClick={() => void load()} className="mt-3 text-[12px] font-semibold underline underline-offset-4">
               {t("common.tryAgain", lang)}
@@ -186,7 +186,7 @@ export default function ToursPage() {
                   key={item.id}
                   href={href}
                   prefetch={ready}
-                  className="group block opacity-0 animate-fade-in-up [animation-fill-mode:forwards]"
+                  className="group block rounded-xl opacity-0 animate-fade-in-up [animation-fill-mode:forwards] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
                   style={{ animationDelay: `${index * 50}ms` }}
                 >
                   <div className="relative aspect-[16/10] overflow-hidden rounded-xl bg-muted/20 transition-shadow group-hover:shadow-lg">

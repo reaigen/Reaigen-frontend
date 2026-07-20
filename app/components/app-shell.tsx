@@ -57,6 +57,7 @@ export function AppShell({
     { href: "/shares", label: t("nav.shares", lang), icon: LinkIcon },
   ];
   const reaiContext = pathname.startsWith("/settings") ? "settings" : (reaiDraftId ? "draft" : "creator");
+  const settingsActive = pathname === "/settings" || pathname.startsWith("/settings/");
 
   React.useEffect(() => {
     let active = true;
@@ -104,9 +105,9 @@ export function AppShell({
       title={t("reai.openAgent", lang)}
       aria-label={t("reai.openAgent", lang)}
       aria-expanded={reaiOpen}
-      className="inline-flex h-8 items-center rounded-lg border border-black/[0.09] bg-white/80 px-2.5 text-[11px] font-semibold text-black/70 shadow-[0_1px_2px_rgba(0,0,0,0.04)] backdrop-blur-xl transition-colors hover:border-black hover:bg-black hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-black/15"
+      className="inline-flex h-8 items-center rounded-lg border border-border/60 bg-background/80 px-2.5 text-[11px] font-semibold text-foreground/70 shadow-[0_1px_2px_rgba(0,0,0,0.04)] backdrop-blur-xl transition-colors hover:border-foreground hover:bg-foreground hover:text-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
     >
-      Agent
+      {t("reai.title", lang)}
     </button>
   ) : null;
 
@@ -117,7 +118,7 @@ export function AppShell({
     >
       {/* ── Desktop sidebar ──────────────────────────────────────── */}
       <aside
-        className="fixed inset-y-0 left-0 z-40 hidden border-r border-border/35 bg-surface md:flex md:flex-col pl-safe"
+        className="fixed inset-y-0 left-0 z-40 hidden border-r border-border/40 bg-surface md:flex md:flex-col pl-safe"
         style={{ width: SIDEBAR_W }}
       >
         {/* Brand */}
@@ -141,11 +142,12 @@ export function AppShell({
               <Link
                 key={item.href}
                 href={item.href}
+                aria-current={active ? "page" : undefined}
                 className={cn(
-                  "flex items-center gap-3 rounded-xl px-3 py-2.5 text-[14px] transition-colors",
+                  "flex items-center gap-3 rounded-xl px-3 py-2.5 text-[13px] transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2",
                   active
-                    ? "bg-foreground/[0.055] font-semibold text-foreground"
-                    : "font-medium text-foreground/50 hover:bg-foreground/[0.035] hover:text-foreground"
+                    ? "bg-foreground/[0.06] font-semibold text-foreground"
+                    : "font-medium text-foreground/50 hover:bg-foreground/[0.04] hover:text-foreground"
                 )}
               >
                 <Icon size={19} className={cn(active ? "text-foreground" : "text-foreground/45")} />
@@ -159,14 +161,15 @@ export function AppShell({
         <div className="px-3 pb-5 space-y-1">
           <Link
             href="/settings"
+            aria-current={settingsActive ? "page" : undefined}
             className={cn(
-              "flex items-center gap-3 rounded-xl px-3 py-2.5 text-[14px] transition-colors",
-              pathname === "/settings"
-                ? "bg-foreground/[0.055] font-semibold text-foreground"
-                : "font-medium text-foreground/50 hover:bg-foreground/[0.035] hover:text-foreground"
+              "flex items-center gap-3 rounded-xl px-3 py-2.5 text-[13px] transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2",
+              settingsActive
+                ? "bg-foreground/[0.06] font-semibold text-foreground"
+                : "font-medium text-foreground/50 hover:bg-foreground/[0.04] hover:text-foreground"
             )}
           >
-            <SettingsIcon size={19} />
+            <SettingsIcon size={19} className={cn(settingsActive ? "text-foreground" : "text-foreground/45")} />
             {t("nav.settings", lang)}
           </Link>
           {/* User pill */}
@@ -185,7 +188,8 @@ export function AppShell({
               type="button"
               onClick={onLogout}
               title={t("nav.signout", lang)}
-              className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-foreground/20 hover:text-foreground/60 hover:bg-foreground/[0.05] transition-colors"
+              aria-label={t("nav.signout", lang)}
+              className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-foreground/20 hover:text-foreground/60 hover:bg-foreground/[0.05] transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
             >
               <ExitIcon className="h-3.5 w-3.5" />
             </button>
@@ -195,9 +199,9 @@ export function AppShell({
 
       {/* ── Top header (mobile only) ─────────────────────────────── */}
       <header
-        className="sticky top-0 z-50 border-b border-border/10 bg-background/95 pt-safe backdrop-blur-xl md:hidden supports-[backdrop-filter]:bg-background/75"
+        className="sticky top-0 z-50 border-b border-border/40 bg-background/95 pt-safe backdrop-blur-xl md:hidden supports-[backdrop-filter]:bg-background/75"
       >
-        <div className="flex h-12 items-center justify-between px-4 sm:px-5 pl-safe pr-safe">
+        <div className="flex h-12 items-center justify-between pl-[max(1rem,env(safe-area-inset-left))] pr-[max(1rem,env(safe-area-inset-right))]">
           <Link href="/dashboard" className="flex items-center">
             <span
               className="text-[20px]"
@@ -223,7 +227,7 @@ export function AppShell({
 
       {/* ── Desktop workspace header ────────────────────────────── */}
       <header
-        className="fixed top-0 z-40 hidden h-14 items-center justify-end border-b border-border/35 bg-background/90 px-7 backdrop-blur-xl transition-[right] duration-200 md:flex"
+        className="fixed top-0 z-40 hidden h-14 items-center justify-end border-b border-border/40 bg-background/90 px-7 backdrop-blur-xl transition-[right] duration-200 md:flex"
         style={{ left: SIDEBAR_W, right: reaiOpen ? "var(--reai-panel-width)" : 0 }}
       >
         {reaiLauncher}
@@ -232,7 +236,7 @@ export function AppShell({
       {/* ── Content ──────────────────────────────────────────────── */}
       <main
         className={cn(
-          "min-h-[calc(100dvh-3rem)] px-4 py-5 pb-24 md:min-h-dvh md:px-8 md:pb-8 pl-safe pr-safe",
+          "min-h-[calc(100dvh-3rem)] py-5 pb-24 md:min-h-dvh md:pb-8 pl-[max(1rem,env(safe-area-inset-left))] pr-[max(1rem,env(safe-area-inset-right))] md:px-8",
           "md:pt-16",
         )}
         style={{ marginLeft: `var(--sidebar-offset, 0px)` }}
@@ -245,8 +249,8 @@ export function AppShell({
 
       {/* ── Mobile bottom tab bar ────────────────────────────────── */}
       {!hideMobileNav && (
-      <nav className="fixed inset-x-0 bottom-0 z-40 border-t border-border/45 bg-background pb-safe md:hidden">
-        <div className="grid grid-cols-3 gap-1 px-3 pb-2 pt-2 pl-safe pr-safe">
+      <nav className="fixed inset-x-0 bottom-0 z-40 border-t border-border/40 bg-background pb-safe md:hidden">
+        <div className="grid grid-cols-3 gap-1 pb-2 pt-2 pl-[max(0.75rem,env(safe-area-inset-left))] pr-[max(0.75rem,env(safe-area-inset-right))]">
           {NAV_ITEMS.map((item) => {
             const active = pathname === item.href;
             const Icon = item.icon;
@@ -254,8 +258,9 @@ export function AppShell({
               <Link
                 key={item.href}
                 href={item.href}
+                aria-current={active ? "page" : undefined}
                 className={cn(
-                  "flex flex-col items-center justify-center gap-1 rounded-xl px-2 py-2 text-[11px] font-medium transition-colors",
+                  "flex flex-col items-center justify-center gap-1 rounded-xl px-2 py-2 text-[11px] font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2",
                   active
                     ? "text-foreground"
                     : "text-foreground/45"
@@ -274,12 +279,12 @@ export function AppShell({
           <aside
             role="complementary"
             aria-labelledby="reai-panel-title"
-            className="fixed inset-y-0 right-0 z-[70] flex w-full flex-col border-l border-border/50 bg-background md:w-[var(--reai-panel-width)]"
+            className="fixed inset-y-0 right-0 z-[70] flex w-full flex-col border-l border-border/60 bg-background animate-[panelIn_0.22s_ease-out] md:w-[var(--reai-panel-width)]"
           >
             <div className="flex h-14 shrink-0 items-center justify-between border-b border-border/40 px-4 pt-safe">
               <div className="flex items-center gap-2.5">
                 <div>
-                  <h2 id="reai-panel-title" className="text-[14px] font-semibold">Agent</h2>
+                  <h2 id="reai-panel-title" className="text-[14px] font-semibold">{t("reai.title", lang)}</h2>
                   <p className="max-w-[260px] truncate text-[11px] text-muted-foreground">
                     {reaiContext === "settings"
                       ? t("reai.settingsContext", lang)
@@ -293,7 +298,7 @@ export function AppShell({
                 type="button"
                 onClick={() => setReaiOpen(false)}
                 aria-label={t("reai.closeAgent", lang)}
-                className="flex h-9 w-9 items-center justify-center rounded-full text-foreground/45 transition hover:bg-foreground/[0.05] hover:text-foreground"
+                className="flex h-9 w-9 items-center justify-center rounded-full text-foreground/45 transition-colors hover:bg-foreground/[0.05] hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
               >
                 <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round"><path d="m6 6 12 12M18 6 6 18" /></svg>
               </button>

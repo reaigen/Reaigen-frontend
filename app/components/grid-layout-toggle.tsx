@@ -1,18 +1,22 @@
 "use client";
 
+import { t } from "../lib/i18n";
+import type { LocaleKey } from "../lib/locales";
+
 interface GridLayoutToggleProps {
   value: 1 | 2;
   onChange: (value: 1 | 2) => void;
+  lang?: string;
 }
 
-export function GridLayoutToggle({ value, onChange }: GridLayoutToggleProps) {
+export function GridLayoutToggle({ value, onChange, lang = "en" }: GridLayoutToggleProps) {
   return (
     <div className="hidden items-center gap-0.5 rounded-full bg-foreground/[0.045] p-0.5 md:flex">
       <button
         type="button"
         onClick={() => onChange(1)}
-        className={`flex h-7 w-7 items-center justify-center rounded-full transition-colors ${value === 1 ? "bg-background text-foreground shadow-sm" : "text-foreground/35 hover:text-foreground/60"}`}
-        aria-label="Single column"
+        className={`flex h-7 w-7 items-center justify-center rounded-full transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 ${value === 1 ? "bg-background text-foreground shadow-sm" : "text-foreground/35 hover:text-foreground/60"}`}
+        aria-label={t("dashboard.gridSingle", lang)}
         aria-pressed={value === 1}
       >
         <svg width="14" height="14" viewBox="0 0 16 16" fill="none" aria-hidden="true">
@@ -23,8 +27,8 @@ export function GridLayoutToggle({ value, onChange }: GridLayoutToggleProps) {
       <button
         type="button"
         onClick={() => onChange(2)}
-        className={`flex h-7 w-7 items-center justify-center rounded-full transition-colors ${value === 2 ? "bg-background text-foreground shadow-sm" : "text-foreground/35 hover:text-foreground/60"}`}
-        aria-label="Two columns"
+        className={`flex h-7 w-7 items-center justify-center rounded-full transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 ${value === 2 ? "bg-background text-foreground shadow-sm" : "text-foreground/35 hover:text-foreground/60"}`}
+        aria-label={t("dashboard.gridDouble", lang)}
         aria-pressed={value === 2}
       >
         <svg width="14" height="14" viewBox="0 0 16 16" fill="none" aria-hidden="true">

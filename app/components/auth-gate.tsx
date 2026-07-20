@@ -31,7 +31,7 @@ type AuthGateProps = {
 /* ── Shared input style ───────────────────────────────────────────────── */
 
 const INPUT_CLASS =
-  "border-black/[0.1] bg-white text-foreground placeholder:text-foreground/35 h-[46px] text-[14px] rounded-[12px] shadow-[0_1px_2px_rgba(0,0,0,0.04)] focus-visible:ring-0 focus-visible:border-foreground/30 focus-visible:shadow-[0_0_0_3px_rgba(0,0,0,0.04),0_1px_2px_rgba(0,0,0,0.04)] transition-all duration-150";
+  "border-border/60 bg-background text-foreground placeholder:text-foreground/40 h-11 text-[14px] rounded-md shadow-none focus-visible:ring-0 focus-visible:border-foreground/40 focus-visible:shadow-[0_0_0_3px_rgba(0,0,0,0.05)] transition-colors duration-150";
 
 /* ── Helpers ──────────────────────────────────────────────────────────── */
 
@@ -44,8 +44,8 @@ function useBrowserLang(): string {
 function ReaigenLogo() {
   return (
     <span
-      className="text-[28px] text-foreground"
-      style={{ fontFamily: "var(--font-brand), ui-serif, Georgia, serif", fontWeight: 400, letterSpacing: "0.01em" }}
+      className="text-[19px] text-foreground/90"
+      style={{ fontFamily: "var(--font-brand), ui-serif, Georgia, serif", fontWeight: 500, letterSpacing: "0.01em" }}
     >
       Reaigen
     </span>
@@ -90,7 +90,7 @@ function LoginCard({
   return (
     <form className="space-y-5" onSubmit={handleSubmit}>
       <div className="space-y-1.5">
-        <Label htmlFor="login-email" className="text-[12px] font-medium text-foreground/70">
+        <Label htmlFor="login-email" className="text-[13px] font-medium text-foreground">
           {t("auth.login.emailLabel", lang)}
         </Label>
         <Input
@@ -106,12 +106,11 @@ function LoginCard({
 
       <div className="space-y-1.5">
         <div className="flex items-center justify-between">
-          <Label htmlFor="login-password" className="text-[12px] font-medium text-foreground/70">
+          <Label htmlFor="login-password" className="text-[13px] font-medium text-foreground">
             {t("auth.login.passwordLabel", lang)}
           </Label>
           <button
             type="button"
-            tabIndex={-1}
             disabled={resetLoading || !emailIsValid}
             onClick={async () => {
               if (!emailIsValid) return;
@@ -120,7 +119,7 @@ function LoginCard({
               catch (err) { setError(getSafeApiErrorMessage(err, lang)); }
               setResetLoading(false);
             }}
-            className="text-[11px] text-foreground/45 hover:text-foreground transition-colors disabled:opacity-40"
+            className="rounded-md text-[12px] text-foreground/55 hover:text-foreground transition-colors disabled:opacity-40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
           >
             {resetSent ? t("auth.login.forgotSent", lang) : resetLoading ? t("auth.login.forgotSending", lang) : t("auth.login.forgot", lang)}
           </button>
@@ -137,9 +136,8 @@ function LoginCard({
           />
           <button
             type="button"
-            tabIndex={-1}
             onClick={() => setShowPassword((v) => !v)}
-            className="absolute right-3.5 top-1/2 -translate-y-1/2 text-[11px] font-medium text-foreground/45 hover:text-foreground transition-colors"
+            className="absolute right-3.5 top-1/2 -translate-y-1/2 rounded-md text-[12px] font-medium text-foreground/55 hover:text-foreground transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
           >
             {showPassword ? t("common.hide", lang) : t("common.show", lang)}
           </button>
@@ -147,14 +145,14 @@ function LoginCard({
       </div>
 
       {error && (
-        <p className="rounded-[10px] border border-destructive/25 bg-destructive/[0.04] px-3.5 py-2.5 text-[12px] text-destructive leading-relaxed">
+        <p className="rounded-md border border-destructive/25 bg-destructive/[0.04] px-3.5 py-2.5 text-[12px] text-destructive leading-relaxed">
           {error}
         </p>
       )}
 
       <Button
         type="submit"
-        className="w-full h-[46px] text-[14px] font-semibold rounded-[12px] shadow-[0_1px_3px_rgba(0,0,0,0.1),0_1px_2px_rgba(0,0,0,0.06)] active:scale-[0.99] transition-transform"
+        className={`w-full h-11 text-[14px] font-semibold rounded-md shadow-none transition-colors disabled:opacity-100 ${loading ? "disabled:bg-foreground disabled:text-background" : "disabled:bg-foreground/[0.07] disabled:text-foreground/35"}`}
         loading={loading}
         disabled={!canSubmit || loading}
       >
@@ -162,7 +160,7 @@ function LoginCard({
       </Button>
 
       <div className="pt-3 text-center">
-        <button type="button" onClick={onSwitchToRegister} className="text-[12px] text-foreground/50 hover:text-foreground transition-colors">
+        <button type="button" onClick={onSwitchToRegister} className="text-[13px] font-medium text-foreground/70 hover:text-foreground transition-colors">
           {t("auth.login.switchToRegister", lang)}
         </button>
       </div>
@@ -223,14 +221,14 @@ function RegistrationCard({
     <form className="space-y-4" onSubmit={handleSubmit}>
       <div className="grid grid-cols-2 gap-3">
         <div className="space-y-1.5">
-          <Label htmlFor="register-first-name" className="text-[12px] font-medium text-foreground/70">
+          <Label htmlFor="register-first-name" className="text-[13px] font-medium text-foreground">
             {t("auth.register.firstNameLabel", lang)}
           </Label>
           <Input id="register-first-name" type="text" placeholder={t("auth.register.firstNamePlaceholder", lang)}
             value={firstName} onChange={(e) => setFirstName(e.target.value)} autoComplete="given-name" className={INPUT_CLASS} />
         </div>
         <div className="space-y-1.5">
-          <Label htmlFor="register-last-name" className="text-[12px] font-medium text-foreground/70">
+          <Label htmlFor="register-last-name" className="text-[13px] font-medium text-foreground">
             {t("auth.register.lastNameLabel", lang)}
           </Label>
           <Input id="register-last-name" type="text" placeholder={t("auth.register.lastNamePlaceholder", lang)}
@@ -239,7 +237,7 @@ function RegistrationCard({
       </div>
 
       <div className="space-y-1.5">
-        <Label htmlFor="register-email" className="text-[12px] font-medium text-foreground/70">
+        <Label htmlFor="register-email" className="text-[13px] font-medium text-foreground">
           {t("auth.register.emailLabel", lang)}
         </Label>
         <Input id="register-email" type="email" placeholder={t("auth.register.emailPlaceholder", lang)}
@@ -248,20 +246,20 @@ function RegistrationCard({
 
       <div className="grid grid-cols-2 gap-3">
         <div className="space-y-1.5">
-          <Label htmlFor="register-password" className="text-[12px] font-medium text-foreground/70">
+          <Label htmlFor="register-password" className="text-[13px] font-medium text-foreground">
             {t("auth.register.passwordLabel", lang)}
           </Label>
           <div className="relative">
             <Input id="register-password" type={showPassword ? "text" : "password"} placeholder={t("auth.register.passwordPlaceholder", lang)}
               value={password} onChange={(e) => setPassword(e.target.value)} autoComplete="new-password" className={`${INPUT_CLASS} pr-14`} />
             <button type="button" onClick={() => setShowPassword((v) => !v)}
-              className="absolute right-3.5 top-1/2 -translate-y-1/2 text-[11px] font-medium text-foreground/45 hover:text-foreground transition-colors">
+              className="absolute right-3.5 top-1/2 -translate-y-1/2 text-[12px] font-medium text-foreground/55 hover:text-foreground transition-colors">
               {showPassword ? t("common.hide", lang) : t("common.show", lang)}
             </button>
           </div>
         </div>
         <div className="space-y-1.5">
-          <Label htmlFor="register-confirm" className="text-[12px] font-medium text-foreground/70">
+          <Label htmlFor="register-confirm" className="text-[13px] font-medium text-foreground">
             {t("auth.register.confirmLabel", lang)}
           </Label>
           <Input id="register-confirm" type="password" placeholder={t("auth.register.confirmPlaceholder", lang)}
@@ -285,14 +283,14 @@ function RegistrationCard({
       </div>
 
       {error && (
-        <p className="rounded-[10px] border border-destructive/25 bg-destructive/[0.04] px-3.5 py-2.5 text-[12px] text-destructive leading-relaxed">
+        <p className="rounded-md border border-destructive/25 bg-destructive/[0.04] px-3.5 py-2.5 text-[12px] text-destructive leading-relaxed">
           {error}
         </p>
       )}
 
       <Button
         type="submit"
-        className="w-full h-[46px] text-[14px] font-semibold rounded-[12px] shadow-[0_1px_3px_rgba(0,0,0,0.1),0_1px_2px_rgba(0,0,0,0.06)] active:scale-[0.99] transition-transform"
+        className={`w-full h-11 text-[14px] font-semibold rounded-md shadow-none transition-colors disabled:opacity-100 ${loading ? "disabled:bg-foreground disabled:text-background" : "disabled:bg-foreground/[0.07] disabled:text-foreground/35"}`}
         loading={loading}
         disabled={!canSubmit || loading}
       >
@@ -300,7 +298,7 @@ function RegistrationCard({
       </Button>
 
       <div className="pt-3 text-center">
-        <button type="button" onClick={onSwitchToLogin} className="text-[12px] text-foreground/50 hover:text-foreground transition-colors">
+        <button type="button" onClick={onSwitchToLogin} className="text-[13px] font-medium text-foreground/70 hover:text-foreground transition-colors">
           {t("auth.register.switchToLogin", lang)}
         </button>
       </div>
@@ -317,25 +315,27 @@ export function AuthGate({ open, onLogin, onRegister }: AuthGateProps) {
   if (!open) return null;
 
   return (
-    <div className="w-full sm:max-w-[26rem] sm:mx-auto">
-      <div className="bg-white min-h-[100dvh] px-6 py-10 sm:min-h-0 sm:border sm:border-black/[0.06] sm:rounded-[20px] sm:shadow-[0_30px_100px_-12px_rgba(0,0,0,0.14),0_4px_12px_-2px_rgba(0,0,0,0.05),0_0_0_1px_rgba(0,0,0,0.02)] sm:px-9 sm:py-10">
+    <div className="w-full md:max-w-[26rem] md:mx-auto">
+      <div className="bg-background min-h-[100dvh] px-6 py-10 md:min-h-0 md:border md:border-border/60 md:rounded-xl md:shadow-[0_8px_30px_rgba(0,0,0,0.06)] md:px-9 md:py-10">
         {/* Header */}
         <div className="mb-8">
           <ReaigenLogo />
-          <h1 className="text-[22px] font-semibold tracking-[-0.01em] mt-5 text-foreground">
+          <h1 className="text-[22px] font-semibold tracking-tight mt-7 text-foreground">
             {mode === "login" ? t("auth.login.title", lang) : t("auth.register.title", lang)}
           </h1>
-          <p className="text-[13px] text-foreground/45 mt-1.5 leading-relaxed">
+          <p className="text-[13px] text-foreground/55 mt-1 leading-relaxed">
             {mode === "login" ? t("auth.login.subtitle", lang) : t("auth.register.subtitle", lang)}
           </p>
         </div>
 
         {/* Form */}
-        {mode === "login" ? (
-          <LoginCard lang={lang} onSubmit={onLogin} onSwitchToRegister={() => setMode("register")} />
-        ) : (
-          <RegistrationCard lang={lang} onSubmit={onRegister} onSwitchToLogin={() => setMode("login")} />
-        )}
+        <div key={mode} className="animate-fade-in">
+          {mode === "login" ? (
+            <LoginCard lang={lang} onSubmit={onLogin} onSwitchToRegister={() => setMode("register")} />
+          ) : (
+            <RegistrationCard lang={lang} onSubmit={onRegister} onSwitchToLogin={() => setMode("login")} />
+          )}
+        </div>
       </div>
     </div>
   );

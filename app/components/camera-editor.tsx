@@ -1,7 +1,8 @@
 "use client";
 
 import { useState, useCallback, useEffect, useRef, type RefObject } from "react";
-import { ArrowDownIcon, ArrowUpIcon, CheckIcon, ChevronDownIcon, EyeOpenIcon, PlusIcon, PlayIcon, TrashIcon, UpdateIcon } from "@radix-ui/react-icons";
+import { ArrowDownIcon, ArrowUpIcon, EyeOpenIcon, PlusIcon, TrashIcon, UpdateIcon } from "@radix-ui/react-icons";
+import { CheckIcon, ChevronDownIcon, PlayIcon } from "./icons";
 import { Button } from "@/app/lib/ui/button";
 import { saveCameras, getCameras } from "@/app/lib/api/client";
 import { getSafeApiErrorMessage } from "@/app/lib/api/error-message";
@@ -35,6 +36,7 @@ export default function CameraEditor({ splatId, viewerRef, activeShotIdx, defaul
   const [looping, setLooping] = useState(false);
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
+  const [isError, setIsError] = useState(false);
   const [loaded, setLoaded] = useState(false);
   const [sceneFov, setSceneFov] = useState<number>(65);
   const [isCollapsed, setIsCollapsed] = useState(false);
@@ -89,6 +91,7 @@ export default function CameraEditor({ splatId, viewerRef, activeShotIdx, defaul
 
   const setTransientMessage = useCallback((next: string | null, ms = 2200) => {
     if (clearMessageTimerRef.current) clearTimeout(clearMessageTimerRef.current);
+    setIsError(false);
     setMessage(next);
     if (next) {
       clearMessageTimerRef.current = setTimeout(() => setMessage(null), ms);
@@ -191,10 +194,12 @@ export default function CameraEditor({ splatId, viewerRef, activeShotIdx, defaul
 
   const handleSave = useCallback(async () => {
     if (!shots.length) {
+      setIsError(false);
       setMessage(t("cameraEditor.messageAddShotFirst", lang));
       return;
     }
     setSaving(true);
+    setIsError(false);
     setMessage(null);
     try {
       await saveCameras(splatId, {
@@ -210,6 +215,7 @@ export default function CameraEditor({ splatId, viewerRef, activeShotIdx, defaul
       setTransientMessage(t("cameraEditor.messageSaved", lang));
       onSaved?.();
     } catch (err) {
+      setIsError(true);
       setMessage(`${t("cameraEditor.messageSaveFailed", lang)} ${getSafeApiErrorMessage(err, lang)}`);
     } finally {
       setSaving(false);
@@ -287,10 +293,12 @@ export default function CameraEditor({ splatId, viewerRef, activeShotIdx, defaul
         <div className="flex max-w-full items-center gap-1 rounded-full border border-white/[0.08] bg-black/70 px-1.5 py-1 text-white shadow-2xl backdrop-blur-2xl">
           {/* Play / Pause */}
           <button
+            type="button"
             onClick={() => setLooping((v) => !v)}
-            className={`rounded-full p-1.5 transition-colors ${
+            className={`rounded-full p-1.5 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/40 ${
               looping ? "bg-white/15 text-white" : "text-white/60 hover:bg-white/10 hover:text-white"
             }`}
+            aria-label={looping ? t("cameraEditor.pauseAutoplay", lang) : t("cameraEditor.autoplay", lang)}
             title={looping ? t("cameraEditor.pauseAutoplay", lang) : t("cameraEditor.autoplay", lang)}
           >
             <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
@@ -308,8 +316,9 @@ export default function CameraEditor({ splatId, viewerRef, activeShotIdx, defaul
           {/* Prev arrow */}
           {shots.length > 1 && (
             <button
+              type="button"
               onClick={prevShot}
-              className="rounded-full p-1 text-white/55 transition-colors hover:bg-white/10 hover:text-white"
+              className="rounded-full p-1 text-white/55 transition-colors hover:bg-white/10 hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/40"
               aria-label={t("cameraEditor.prev", lang)}
             >
               {ArrowLeft}
@@ -318,16 +327,22 @@ export default function CameraEditor({ splatId, viewerRef, activeShotIdx, defaul
 
           {/* Camera dots */}
           {shots.length > 1 && (
-            <div className="flex items-center gap-1 px-0.5">
+            <div className="flex items-center">
               {shots.map((_, i) => (
                 <button
                   key={i}
+                  type="button"
                   onClick={() => previewGoTo(i)}
-                  className={`h-1.5 rounded-full transition-all duration-300 ${
-                    i === previewIdx ? "w-4 bg-white" : "w-1.5 bg-white/30 hover:bg-white/55"
-                  }`}
+                  className="group/dot rounded-full p-1.5 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/40"
                   aria-label={`${t("cameraEditor.camera", lang)} ${i + 1}`}
-                />
+                  aria-current={i === previewIdx ? "true" : undefined}
+                >
+                  <span
+                    className={`block h-1.5 rounded-full transition-all duration-300 ${
+                      i === previewIdx ? "w-4 bg-white" : "w-1.5 bg-white/30 group-hover/dot:bg-white/55"
+                    }`}
+                  />
+                </button>
               ))}
             </div>
           )}
@@ -335,8 +350,9 @@ export default function CameraEditor({ splatId, viewerRef, activeShotIdx, defaul
           {/* Next arrow */}
           {shots.length > 1 && (
             <button
+              type="button"
               onClick={nextShot}
-              className="rounded-full p-1 text-white/55 transition-colors hover:bg-white/10 hover:text-white"
+              className="rounded-full p-1 text-white/55 transition-colors hover:bg-white/10 hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/40"
               aria-label={t("cameraEditor.next", lang)}
             >
               {ArrowRight}
@@ -348,8 +364,9 @@ export default function CameraEditor({ splatId, viewerRef, activeShotIdx, defaul
 
           {/* Edit button */}
           <button
+            type="button"
             onClick={stopPreview}
-            className="rounded-full px-2.5 py-1 text-[11px] font-medium text-white/60 transition-colors hover:bg-white/10 hover:text-white"
+            className="rounded-full px-2.5 py-1 text-[11px] font-medium text-white/60 transition-colors hover:bg-white/10 hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/40"
           >
             {t("cameraEditor.edit", lang)}
           </button>
@@ -370,8 +387,9 @@ export default function CameraEditor({ splatId, viewerRef, activeShotIdx, defaul
           {/* Prev arrow */}
           {shots.length > 1 && (
             <button
+              type="button"
               onClick={prevShot}
-              className="rounded-full p-1 text-white/55 transition-colors hover:bg-white/10 hover:text-white"
+              className="rounded-full p-1 text-white/55 transition-colors hover:bg-white/10 hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/40"
               aria-label={t("cameraEditor.prev", lang)}
             >
               {ArrowLeft}
@@ -380,16 +398,22 @@ export default function CameraEditor({ splatId, viewerRef, activeShotIdx, defaul
 
           {/* Camera dots */}
           {shots.length > 1 && (
-            <div className="flex items-center gap-1 px-0.5">
+            <div className="flex items-center">
               {shots.map((_, i) => (
                 <button
                   key={i}
+                  type="button"
                   onClick={() => goToLocalShot(i)}
-                  className={`h-1.5 rounded-full transition-all duration-300 ${
-                    i === selectedIdx ? "w-4 bg-white" : "w-1.5 bg-white/30 hover:bg-white/55"
-                  }`}
+                  className="group/dot rounded-full p-1.5 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/40"
                   aria-label={`${t("cameraEditor.camera", lang)} ${i + 1}`}
-                />
+                  aria-current={i === selectedIdx ? "true" : undefined}
+                >
+                  <span
+                    className={`block h-1.5 rounded-full transition-all duration-300 ${
+                      i === selectedIdx ? "w-4 bg-white" : "w-1.5 bg-white/30 group-hover/dot:bg-white/55"
+                    }`}
+                  />
+                </button>
               ))}
             </div>
           )}
@@ -397,8 +421,9 @@ export default function CameraEditor({ splatId, viewerRef, activeShotIdx, defaul
           {/* Next arrow */}
           {shots.length > 1 && (
             <button
+              type="button"
               onClick={nextShot}
-              className="rounded-full p-1 text-white/55 transition-colors hover:bg-white/10 hover:text-white"
+              className="rounded-full p-1 text-white/55 transition-colors hover:bg-white/10 hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/40"
               aria-label={t("cameraEditor.next", lang)}
             >
               {ArrowRight}
@@ -411,8 +436,10 @@ export default function CameraEditor({ splatId, viewerRef, activeShotIdx, defaul
           {/* Preview */}
           {shots.length > 0 && (
             <button
+              type="button"
               onClick={startPreview}
-              className="rounded-full p-1.5 text-white/55 transition-colors hover:bg-white/10 hover:text-white"
+              className="rounded-full p-1.5 text-white/55 transition-colors hover:bg-white/10 hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/40"
+              aria-label={t("cameraEditor.preview", lang)}
               title={t("cameraEditor.preview", lang)}
             >
               <PlayIcon className="h-3.5 w-3.5" />
@@ -421,8 +448,9 @@ export default function CameraEditor({ splatId, viewerRef, activeShotIdx, defaul
 
           {/* Expand */}
           <button
+            type="button"
             onClick={() => setIsCollapsed(false)}
-            className="rounded-full p-1.5 text-white/50 transition-colors hover:bg-white/10 hover:text-white"
+            className="rounded-full p-1.5 text-white/50 transition-colors hover:bg-white/10 hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/40"
             aria-label={t("cameraEditor.expand", lang)}
           >
             <ChevronDownIcon className="h-3.5 w-3.5 rotate-180" />
@@ -444,7 +472,7 @@ export default function CameraEditor({ splatId, viewerRef, activeShotIdx, defaul
           <div className="flex items-center justify-between">
             <div className="flex min-w-0 items-center gap-2">
               <h3 className="truncate text-[13px] font-semibold">{t("cameraEditor.title", lang)}</h3>
-              <span className="rounded-full bg-white/10 px-2 py-0.5 text-[10px] font-medium text-white/50 tabular-nums">
+              <span className="rounded-full bg-white/10 px-2 py-0.5 text-[11px] font-medium text-white/50 tabular-nums">
                 {shots.length}
               </span>
             </div>
@@ -453,7 +481,7 @@ export default function CameraEditor({ splatId, viewerRef, activeShotIdx, defaul
                 <button
                   type="button"
                   onClick={startPreview}
-                  className="inline-flex h-7 items-center gap-1 rounded-full px-2 text-[11px] font-medium text-white/55 transition-colors hover:bg-white/10 hover:text-white"
+                  className="inline-flex h-7 items-center gap-1 rounded-full px-2 text-[11px] font-medium text-white/55 transition-colors hover:bg-white/10 hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/40"
                 >
                   <PlayIcon className="h-3 w-3" />
                   {t("cameraEditor.preview", lang)}
@@ -462,7 +490,7 @@ export default function CameraEditor({ splatId, viewerRef, activeShotIdx, defaul
               <button
                 type="button"
                 onClick={() => setIsCollapsed(true)}
-                className="inline-flex h-7 w-7 items-center justify-center rounded-full text-white/50 transition-colors hover:bg-white/10 hover:text-white"
+                className="inline-flex h-7 w-7 items-center justify-center rounded-full text-white/50 transition-colors hover:bg-white/10 hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/40"
                 aria-label={t("cameraEditor.collapse", lang)}
               >
                 <ChevronDownIcon className="h-4 w-4 transition-transform duration-200" />
@@ -517,7 +545,7 @@ export default function CameraEditor({ splatId, viewerRef, activeShotIdx, defaul
                     className="flex min-w-0 items-center gap-2 rounded-lg py-1 text-left font-medium text-white/75 outline-none transition-colors hover:text-white focus-visible:ring-2 focus-visible:ring-white/30 focus-visible:ring-offset-2 focus-visible:ring-offset-black/70"
                     title={t("cameraEditor.jumpToShot", lang)}
                   >
-                    <span className="inline-flex h-5 min-w-5 items-center justify-center rounded-full bg-white/10 px-1.5 text-[10px] font-semibold text-white/55">
+                    <span className="inline-flex h-5 min-w-5 items-center justify-center rounded-full bg-white/10 px-1.5 text-[11px] font-semibold text-white/55">
                       {i + 1}
                     </span>
                     <span className="truncate text-[12px]">{shot.label}</span>
@@ -530,7 +558,7 @@ export default function CameraEditor({ splatId, viewerRef, activeShotIdx, defaul
                     <button
                       type="button"
                       onClick={() => goToLocalShot(i)}
-                      className="inline-flex h-7 w-7 items-center justify-center rounded-full text-white/40 transition-colors hover:bg-white/10 hover:text-white"
+                      className="inline-flex h-7 w-7 items-center justify-center rounded-full text-white/40 transition-colors hover:bg-white/10 hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/40"
                       aria-label={t("cameraEditor.jumpToShot", lang)}
                       title={t("cameraEditor.jumpToShot", lang)}
                     >
@@ -539,7 +567,7 @@ export default function CameraEditor({ splatId, viewerRef, activeShotIdx, defaul
                     <button
                       type="button"
                       onClick={() => updateShot(i)}
-                      className={`inline-flex h-7 w-7 items-center justify-center rounded-full transition-colors ${
+                      className={`inline-flex h-7 w-7 items-center justify-center rounded-full transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/40 ${
                         updatedIdx === i
                           ? "bg-white/15 text-white"
                           : selectedIdx === i
@@ -559,7 +587,7 @@ export default function CameraEditor({ splatId, viewerRef, activeShotIdx, defaul
                       type="button"
                       onClick={() => moveShot(i, -1)}
                       disabled={i === 0}
-                      className="inline-flex h-7 w-7 items-center justify-center rounded-full text-white/35 transition-colors hover:bg-white/10 hover:text-white disabled:opacity-25"
+                      className="inline-flex h-7 w-7 items-center justify-center rounded-full text-white/35 transition-colors hover:bg-white/10 hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/40 disabled:opacity-25"
                       aria-label={`${t("cameraEditor.moveUp", lang)} ${i + 1}`}
                       title={t("cameraEditor.moveUp", lang)}
                     >
@@ -569,7 +597,7 @@ export default function CameraEditor({ splatId, viewerRef, activeShotIdx, defaul
                       type="button"
                       onClick={() => moveShot(i, 1)}
                       disabled={i === shots.length - 1}
-                      className="inline-flex h-7 w-7 items-center justify-center rounded-full text-white/35 transition-colors hover:bg-white/10 hover:text-white disabled:opacity-25"
+                      className="inline-flex h-7 w-7 items-center justify-center rounded-full text-white/35 transition-colors hover:bg-white/10 hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/40 disabled:opacity-25"
                       aria-label={`${t("cameraEditor.moveDown", lang)} ${i + 1}`}
                       title={t("cameraEditor.moveDown", lang)}
                     >
@@ -578,7 +606,7 @@ export default function CameraEditor({ splatId, viewerRef, activeShotIdx, defaul
                     <button
                       type="button"
                       onClick={() => removeShot(i)}
-                      className="inline-flex h-7 w-7 items-center justify-center rounded-full text-white/30 transition-colors hover:bg-red-500/15 hover:text-red-400"
+                      className="inline-flex h-7 w-7 items-center justify-center rounded-full text-white/30 transition-colors hover:bg-red-500/15 hover:text-red-400 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/40"
                       aria-label={`${t("cameraEditor.delete", lang)} ${i + 1}`}
                       title={t("cameraEditor.delete", lang)}
                     >
@@ -591,7 +619,7 @@ export default function CameraEditor({ splatId, viewerRef, activeShotIdx, defaul
           )}
 
           {message && (
-            <p className={`px-1 text-[11px] ${message.startsWith(t("cameraEditor.messageSaveFailed", lang)) ? "text-red-400" : "text-white/55"}`}>
+            <p role="status" aria-live="polite" className={`px-1 text-[11px] ${isError ? "text-red-400" : "text-white/55"}`}>
               {message}
             </p>
           )}

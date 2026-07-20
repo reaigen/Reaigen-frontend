@@ -20,20 +20,25 @@ function getImages(uploads: DraftUpload[]) {
     .map((u) => ({ url: u.file_url }));
 }
 
-function formatPreviewPrice(value: string | number | null | undefined, currency: string | null | undefined): string | null {
+function formatPreviewPrice(value: string | number | null | undefined, currency: string | null | undefined, lang: string): string | null {
   if (value == null || value === "") return null;
   const n = typeof value === "number" ? value : Number(value);
   if (!Number.isFinite(n) || n === 0) return null;
   try {
-    return new Intl.NumberFormat(undefined, { style: "currency", currency: currency || "EUR", maximumFractionDigits: 0 }).format(n);
+    return new Intl.NumberFormat(lang, { style: "currency", currency: currency || "EUR", maximumFractionDigits: 0 }).format(n);
   } catch {
-    return `${n.toLocaleString()}${currency ? ` ${currency}` : ""}`;
+    return `${n.toLocaleString(lang)}${currency ? ` ${currency}` : ""}`;
   }
 }
 
 export function SharePreview({ draft, scope, hasTour, thumbUrl, fpUrl, lang }: SharePreviewProps) {
   const images = getImages(draft.raw_uploads);
-  const price = formatPreviewPrice(draft.price_preferred ?? draft.price, draft.price_preferred_currency ?? draft.currency);
+  // Preferred (converted) price prominently, original smaller if different currency —
+  // same pattern as the draft detail page.
+  const prefPrice = formatPreviewPrice(draft.price_preferred, draft.price_preferred_currency, lang);
+  const origPrice = formatPreviewPrice(draft.price, draft.currency, lang);
+  const price = prefPrice || origPrice;
+  const showOrigPrice = prefPrice && origPrice && draft.price_preferred_currency !== draft.currency;
   const address = draft.display_address || [draft.city, draft.state, draft.country].filter(Boolean).join(", ");
 
   const fields = scope.selectedFields;
@@ -68,14 +73,14 @@ export function SharePreview({ draft, scope, hasTour, thumbUrl, fpUrl, lang }: S
       <div className="rounded-2xl border border-border/60 bg-background shadow-sm overflow-hidden">
         {/* Card header */}
         <div className="px-4 py-3 border-b border-border/30">
-          <p className="text-[12px] font-medium text-foreground/45">
+          <p className="text-[12px] font-medium text-foreground/50">
             {t("sharing.previewTitle", lang)}
           </p>
         </div>
 
         {/* Hero */}
         {hasHero && (
-          <div className="relative aspect-[16/9] bg-muted/30">
+          <div className="relative aspect-[16/10] bg-muted/30">
             {/* eslint-disable-next-line @next/next/no-img-element */}
             <img src={heroUrl} alt="" className="w-full h-full object-cover" />
             {tourIncluded && (
@@ -86,7 +91,7 @@ export function SharePreview({ draft, scope, hasTour, thumbUrl, fpUrl, lang }: S
               </div>
             )}
             {tourIncluded && (
-              <div className="absolute top-2.5 left-2.5 flex items-center gap-1 rounded-full bg-black/50 backdrop-blur-sm px-2 py-0.5 text-[9px] font-medium text-white/80">
+              <div className="absolute top-2.5 left-2.5 flex items-center gap-1 rounded-full bg-black/50 backdrop-blur-sm px-2 py-0.5 text-[11px] font-medium text-white/80">
                 <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/></svg>
                 3D
               </div>
@@ -109,7 +114,12 @@ export function SharePreview({ draft, scope, hasTour, thumbUrl, fpUrl, lang }: S
           )}
 
           {detailsIncluded && showPrice && (
-            <p className="text-[14px] font-semibold">{price}</p>
+            <p className="text-[14px] font-semibold tabular-nums">
+              {price}
+              {showOrigPrice && (
+                <span className="ml-2 text-[11px] font-normal text-muted-foreground tabular-nums">{origPrice}</span>
+              )}
+            </p>
           )}
 
           {detailsIncluded && showSpecs && (
@@ -143,7 +153,7 @@ export function SharePreview({ draft, scope, hasTour, thumbUrl, fpUrl, lang }: S
               ))}
               {images.length > 5 && (
                 <div className="flex-1 aspect-square rounded-md bg-foreground/[0.03] flex items-center justify-center">
-                  <span className="text-[10px] text-foreground/30 font-medium">+{images.length - 5}</span>
+                  <span className="text-[11px] text-foreground/50 font-medium">+{images.length - 5}</span>
                 </div>
               )}
             </div>
@@ -151,8 +161,8 @@ export function SharePreview({ draft, scope, hasTour, thumbUrl, fpUrl, lang }: S
 
           {/* Floorplan indicator */}
           {floorplanIncluded && (
-            <div className="flex items-center gap-1.5 text-[11px] text-foreground/40">
-              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" className="text-foreground/25"><rect x="2" y="2" width="20" height="20" rx="2"/><path d="M2 8h20M8 2v20M14 8v14"/></svg>
+            <div className="flex items-center gap-1.5 text-[11px] text-foreground/50">
+              <svg aria-hidden="true" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" className="text-foreground/25"><rect x="2" y="2" width="20" height="20" rx="2"/><path d="M2 8h20M8 2v20M14 8v14"/></svg>
               {t("sharing.scopeFloorplan", lang)}
             </div>
           )}
@@ -160,7 +170,7 @@ export function SharePreview({ draft, scope, hasTour, thumbUrl, fpUrl, lang }: S
 
         {/* Checklist — inside card with divider */}
         <div className="border-t border-border/40 px-4 py-3">
-          <p className="text-[9px] font-medium text-foreground/25 uppercase tracking-wider mb-1.5">
+          <p className="text-[11px] font-medium text-foreground/50 uppercase tracking-wider mb-1.5">
             {t("sharing.previewChecklist", lang)}
           </p>
           <div className="grid grid-cols-2 gap-x-3 gap-y-0.5">

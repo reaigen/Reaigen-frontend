@@ -3,7 +3,7 @@ export function PageLoading({ className }: { className?: string }) {
     <div className={className ?? "fixed inset-0 flex items-center justify-center bg-background"}>
       <div className="flex flex-col items-center gap-4">
         <span
-          className="text-[30px] text-foreground/80"
+          className="text-[29px] text-foreground/80"
           style={{ fontFamily: "var(--font-brand), ui-serif, Georgia, serif", fontWeight: 400, letterSpacing: "0.01em" }}
         >
           Reaigen

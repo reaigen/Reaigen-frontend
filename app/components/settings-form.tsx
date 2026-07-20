@@ -8,6 +8,9 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "../lib/ui/tabs";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "../lib/ui/select";
 import { Separator } from "../lib/ui/separator";
 import { Switch } from "../lib/ui/switch";
+import { Checkbox } from "../lib/ui/checkbox";
+import { Textarea } from "../lib/ui/textarea";
+import { Avatar, AvatarFallback, AvatarImage } from "../lib/ui/avatar";
 import {
   updateProfile,
   updateSellerProfile,
@@ -49,6 +52,7 @@ import {
   type ReaiImprovementConsent,
 } from "../lib/api/client";
 import { getSafeApiErrorMessage } from "../lib/api/error-message";
+import type { LocaleKey } from "../lib/locales";
 import { t, getUserLanguage, formatDate as fmtDate } from "../lib/i18n";
 import { cn } from "../lib/utils";
 import { ManagedLegalDocuments } from "./content-documents";
@@ -65,7 +69,7 @@ function useAutoDismiss(value: boolean, setter: (v: boolean) => void, ms = 3000)
 function Card({ className, ...props }: React.HTMLAttributes<HTMLElement>) {
   return (
     <section
-      className={cn("border-t border-border/70 pt-6 first:border-t-0 first:pt-0", className)}
+      className={cn("border-t border-border/60 pt-6 first:border-t-0 first:pt-0", className)}
       {...props}
     />
   );
@@ -114,7 +118,7 @@ function CollapsibleSection({ title, defaultOpen, children }: {
     <div>
       <button
         type="button"
-        className="flex w-full items-center justify-between py-2 text-sm font-medium text-foreground/80 hover:text-foreground"
+        className="flex w-full items-center justify-between py-2 text-[14px] font-semibold text-foreground/80 hover:text-foreground"
         onClick={() => setOpen(!open)}
       >
         {title}
@@ -221,15 +225,10 @@ function ProfileTab({ user, onSaved, lang }: { user: UserProfile; onSaved: () =>
         <form className="space-y-4" onSubmit={handleSubmit}>
           {/* Avatar */}
           <div className="flex items-center gap-4">
-            <div className="relative h-16 w-16 shrink-0 overflow-hidden rounded-full bg-muted">
-              {avatarUrl ? (
-                // User-owned signed media URLs are already sized by the profile API.
-                // eslint-disable-next-line @next/next/no-img-element
-                <img src={avatarUrl} alt={t("settings.profile.avatar", lang)} className="h-full w-full object-cover" />
-              ) : (
-                <span className="flex h-full w-full items-center justify-center text-lg font-semibold text-muted-foreground">{initials}</span>
-              )}
-            </div>
+            <Avatar size="xl">
+              {avatarUrl && <AvatarImage src={avatarUrl} alt={t("settings.profile.avatar", lang)} />}
+              <AvatarFallback>{initials}</AvatarFallback>
+            </Avatar>
             <div>
               <input ref={avatarInputRef} type="file" accept="image/*" className="hidden" onChange={handleAvatarChange} />
               <Button
@@ -261,14 +260,14 @@ function ProfileTab({ user, onSaved, lang }: { user: UserProfile; onSaved: () =>
           <div className="space-y-1.5">
             <Label htmlFor="email">{t("settings.profile.email", lang)}</Label>
             <div className="flex items-center gap-2">
-              <Input id="email" value={user.email} disabled className="opacity-50 cursor-not-allowed" />
+              <Input id="email" value={user.email} disabled />
               {user.email_verified ? (
-                <span className="shrink-0 text-[12px] font-medium text-emerald-600">{t("settings.profile.emailVerified", lang)}</span>
+                <span className="shrink-0 text-[12px] font-medium text-success">{t("settings.profile.emailVerified", lang)}</span>
               ) : (
                 <span className="flex shrink-0 items-center gap-1.5">
                   <span className="text-[12px] font-medium text-amber-600">{t("settings.profile.emailUnverified", lang)}</span>
                   {emailResent ? (
-                    <span className="text-[11px] text-emerald-600">{t("settings.profile.emailResent", lang)}</span>
+                    <span className="text-[11px] text-success">{t("settings.profile.emailResent", lang)}</span>
                   ) : (
                     <button
                       type="button"
@@ -282,10 +281,10 @@ function ProfileTab({ user, onSaved, lang }: { user: UserProfile; onSaved: () =>
                 </span>
               )}
             </div>
-            <p className="text-[11px] text-muted-foreground">{t("settings.profile.emailHint", lang)}</p>
+            <p className="text-[12px] text-muted-foreground">{t("settings.profile.emailHint", lang)}</p>
           </div>
           {error && <p className="text-[12px] text-destructive">{error}</p>}
-          {success && <p className="text-[12px] text-emerald-600">{t("settings.profile.saved", lang)}</p>}
+          {success && <p className="text-[12px] text-success">{t("settings.profile.saved", lang)}</p>}
           <div className="pt-2">
             <Button type="submit" size="sm" loading={loading}>{t("settings.profile.save", lang)}</Button>
           </div>
@@ -393,7 +392,7 @@ function SellerTab({ user, onSaved, lang }: { user: UserProfile; onSaved: () => 
         <CardDescription>{t("settings.seller.subtitle", lang)}</CardDescription>
       </CardHeader>
       <CardContent>
-        <form className="space-y-5" onSubmit={handleSubmit}>
+        <form className="space-y-4" onSubmit={handleSubmit}>
           {/* Cover Image */}
           <div className="relative">
             <div className="h-28 w-full overflow-hidden rounded-lg bg-muted sm:h-36">
@@ -443,12 +442,11 @@ function SellerTab({ user, onSaved, lang }: { user: UserProfile; onSaved: () => 
 
           <div className="space-y-1.5">
             <Label>{t("settings.seller.bio", lang)}</Label>
-            <textarea
+            <Textarea
               value={bio}
               onChange={(e) => setBio(e.target.value)}
               rows={3}
               placeholder={t("settings.seller.bio", lang) + "…"}
-              className="flex w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
             />
           </div>
 
@@ -537,8 +535,8 @@ function SellerTab({ user, onSaved, lang }: { user: UserProfile; onSaved: () => 
               </div>
               <div className="space-y-1.5">
                 <Label>{t("settings.seller.portfolioSlug", lang)}</Label>
-                <div className="flex items-center gap-0">
-                  <span className="shrink-0 rounded-l-md border border-r-0 border-input bg-muted px-2.5 py-2 text-xs text-muted-foreground">
+                <div className="flex items-stretch">
+                  <span className="flex shrink-0 items-center rounded-l-xl border border-r-0 border-input bg-muted px-2.5 text-xs text-muted-foreground">
                     {t("settings.seller.portfolioSlugPrefix", lang)}
                   </span>
                   <Input
@@ -576,7 +574,7 @@ function SellerTab({ user, onSaved, lang }: { user: UserProfile; onSaved: () => 
           </CollapsibleSection>
 
           {error && <p className="text-[12px] text-destructive">{error}</p>}
-          {success && <p className="text-[12px] text-emerald-600">{t("settings.seller.saved", lang)}</p>}
+          {success && <p className="text-[12px] text-success">{t("settings.seller.saved", lang)}</p>}
           <div className="pt-2">
             <Button type="submit" size="sm" loading={loading}>{t("settings.seller.save", lang)}</Button>
           </div>
@@ -593,6 +591,7 @@ function ReaiTab({ lang }: { lang: string }) {
   const [toolPermissions, setToolPermissions] = React.useState<ReaiToolPermissions | null>(null);
   const [improvementConsent, setImprovementConsent] = React.useState<ReaiImprovementConsent | null>(null);
   const [acknowledged, setAcknowledged] = React.useState(false);
+  const [confirmingDisable, setConfirmingDisable] = React.useState(false);
   const [loading, setLoading] = React.useState(true);
   const [saving, setSaving] = React.useState(false);
   const [error, setError] = React.useState<string | null>(null);
@@ -641,6 +640,7 @@ function ReaiTab({ lang }: { lang: string }) {
     setSuccess(null);
     try {
       setConsent(await revokeReaiAgentConsent());
+      setConfirmingDisable(false);
       setSuccess(t("settings.reai.disabled", lang));
       window.dispatchEvent(new CustomEvent("reai-consent-changed", { detail: { enabled: false } }));
     } catch (err) {
@@ -715,7 +715,7 @@ function ReaiTab({ lang }: { lang: string }) {
             <p className="text-[13px] text-muted-foreground">{t("reai.working", lang)}</p>
           ) : consent ? (
             <div className="space-y-4">
-              <div className="flex flex-col gap-3 rounded-lg border border-border/70 px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
+              <div className="flex flex-col gap-3 rounded-lg border border-border/60 px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
                 <div>
                   <p className="text-[13px] font-medium">{t("settings.reai.access", lang)}</p>
                   <p className="mt-1 text-[12px] text-muted-foreground">
@@ -723,8 +723,8 @@ function ReaiTab({ lang }: { lang: string }) {
                   </p>
                 </div>
                 <span className={cn(
-                  "w-fit rounded-full px-2.5 py-1 text-[11px] font-medium",
-                  consent.consented ? "bg-emerald-500/10 text-emerald-700" : "bg-foreground/10 text-foreground/60",
+                  "w-fit rounded-full px-2.5 py-0.5 text-[11px] font-medium",
+                  consent.consented ? "bg-success/10 text-success" : "bg-foreground/10 text-foreground/60",
                 )}>
                   {consent.consented ? t("common.allowed", lang) : t("common.notAllowed", lang)}
                 </span>
@@ -738,16 +738,29 @@ function ReaiTab({ lang }: { lang: string }) {
               </div>
 
               {consent.consented ? (
-                <Button type="button" size="sm" variant="outline" loading={saving} onClick={disableReai}>
-                  {t("settings.reai.disable", lang)}
-                </Button>
+                confirmingDisable ? (
+                  <div className="space-y-3">
+                    <p className="text-[12px] text-muted-foreground">{t("settings.reai.disableConfirmHint", lang)}</p>
+                    <div className="flex items-center gap-2">
+                      <Button type="button" size="sm" variant="destructive" loading={saving} onClick={disableReai}>
+                        {t("settings.reai.disable", lang)}
+                      </Button>
+                      <Button type="button" size="sm" variant="outline" onClick={() => setConfirmingDisable(false)}>
+                        {t("common.cancel", lang)}
+                      </Button>
+                    </div>
+                  </div>
+                ) : (
+                  <Button type="button" size="sm" variant="outline" onClick={() => setConfirmingDisable(true)}>
+                    {t("settings.reai.disable", lang)}
+                  </Button>
+                )
               ) : (
                 <div className="space-y-3">
-                  <label className="flex cursor-pointer items-start gap-2 text-[12px] leading-relaxed text-foreground/75">
-                    <input
-                      type="checkbox"
+                  <label className="flex cursor-pointer items-start gap-2.5 text-[12px] leading-relaxed text-foreground/75">
+                    <Checkbox
                       checked={acknowledged}
-                      onChange={(event) => setAcknowledged(event.target.checked)}
+                      onCheckedChange={(checked) => setAcknowledged(checked === true)}
                       className="mt-0.5"
                     />
                     <span>{t("reai.consentLabel", lang)} · v{consent.policy_version}</span>
@@ -770,7 +783,7 @@ function ReaiTab({ lang }: { lang: string }) {
           </CardHeader>
           <CardContent>
             <div className="space-y-3">
-              <div className="flex items-start justify-between gap-4 rounded-lg border border-border/70 px-4 py-3">
+              <div className="flex items-start justify-between gap-4 rounded-lg border border-border/60 px-4 py-3">
                 <div className="min-w-0">
                   <p className="text-[13px] font-medium">{t("settings.reai.allTools", lang)}</p>
                   <p className="mt-1 text-[12px] leading-relaxed text-muted-foreground">{t("settings.reai.allToolsHelp", lang)}</p>
@@ -784,12 +797,12 @@ function ReaiTab({ lang }: { lang: string }) {
               </div>
 
               {!toolPermissions.allow_all_tools && (
-                <div className="divide-y divide-border/50 rounded-lg border border-border/70 px-4">
+                <div className="divide-y divide-border/60 rounded-lg border border-border/60 px-4">
                   {toolPermissions.available_tools.map((code) => (
                     <div key={code} className="flex items-center justify-between gap-4 py-3">
                       <div className="min-w-0">
                         <p className="text-[13px] font-medium">{t(`settings.reai.tool.${code}`, lang)}</p>
-                        <p className="mt-0.5 text-[11px] leading-relaxed text-muted-foreground">
+                        <p className="mt-0.5 text-[12px] leading-relaxed text-muted-foreground">
                           {t(`settings.reai.tool.${code}.help`, lang)}
                         </p>
                       </div>
@@ -804,7 +817,7 @@ function ReaiTab({ lang }: { lang: string }) {
                 </div>
               )}
 
-              <p className="text-[11px] leading-relaxed text-muted-foreground">{t("settings.reai.toolsConfirmation", lang)}</p>
+              <p className="text-[12px] leading-relaxed text-muted-foreground">{t("settings.reai.toolsConfirmation", lang)}</p>
             </div>
           </CardContent>
         </Card>
@@ -817,7 +830,7 @@ function ReaiTab({ lang }: { lang: string }) {
         </CardHeader>
         <CardContent>
           {improvementConsent && (
-            <div className="flex items-start justify-between gap-4 rounded-lg border border-border/70 px-4 py-3">
+            <div className="flex items-start justify-between gap-4 rounded-lg border border-border/60 px-4 py-3">
               <div className="min-w-0">
                 <p className="text-[13px] font-medium">{t("settings.reai.improvementPermission", lang)}</p>
                 <p className="mt-1 text-[12px] leading-relaxed text-muted-foreground">
@@ -836,7 +849,7 @@ function ReaiTab({ lang }: { lang: string }) {
       </Card>
 
       {error && <p className="text-[12px] text-destructive" role="alert">{error}</p>}
-      {success && <p className="text-[12px] text-emerald-600" role="status">{success}</p>}
+      {success && <p className="text-[12px] text-success" role="status">{success}</p>}
     </div>
   );
 }
@@ -852,6 +865,7 @@ function PrivacyTab({ user, onSaved, lang }: { user: UserProfile; onSaved: () =>
   const [loading, setLoading] = React.useState(false);
   const [error, setError] = React.useState<string | null>(null);
   const [success, setSuccess] = React.useState(false);
+  useAutoDismiss(success, setSuccess);
 
   React.useEffect(() => {
     if (!isPublic) {
@@ -913,20 +927,20 @@ function PrivacyTab({ user, onSaved, lang }: { user: UserProfile; onSaved: () =>
             id="privacy-status-summary"
             role="status"
             aria-live="polite"
-            className="rounded-lg border border-border bg-muted/25 px-4 py-3"
+            className="rounded-lg border border-border/60 bg-muted/25 px-4 py-3"
           >
             <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
               <div className="min-w-0">
                 <p className="text-sm font-medium">{statusLabel}</p>
                 <p className="text-[12px] text-muted-foreground mt-1 leading-relaxed">{statusHint}</p>
               </div>
-              <span className="shrink-0 rounded-full bg-foreground/10 px-2.5 py-1 text-[11px] font-medium text-foreground/70">
+              <span className="shrink-0 rounded-full bg-foreground/10 px-2.5 py-0.5 text-[11px] font-medium text-foreground/70">
                 {isPublic ? t("settings.privacy.badgePublic", lang) : t("settings.privacy.badgePrivate", lang)}
               </span>
             </div>
           </div>
 
-          <fieldset className="divide-y divide-border">
+          <fieldset className="divide-y divide-border/60">
             <legend className="sr-only">{t("settings.privacy.title", lang)}</legend>
             <ToggleRow
               label={t("settings.privacy.publicProfile", lang)}
@@ -957,12 +971,12 @@ function PrivacyTab({ user, onSaved, lang }: { user: UserProfile; onSaved: () =>
             />
           </fieldset>
           {hasPublicContactDetails && (
-            <div className="rounded-lg border border-border bg-muted/25 px-3 py-2" role="note">
+            <div className="rounded-lg border border-border/60 bg-muted/25 px-3 py-2" role="note">
               <p className="text-[12px] text-muted-foreground">{t("settings.privacy.publicContactWarning", lang)}</p>
             </div>
           )}
           {error && <p className="text-[12px] text-destructive pt-3" role="alert">{error}</p>}
-          {success && <p className="text-[12px] text-emerald-600 pt-3" role="status">{t("settings.privacy.saved", lang)}</p>}
+          {success && <p className="text-[12px] text-success pt-3" role="status">{t("settings.privacy.saved", lang)}</p>}
             <div className="pt-1">
               <Button type="submit" size="sm" loading={loading}>{t("settings.privacy.save", lang)}</Button>
             </div>
@@ -978,7 +992,7 @@ function PrivacyTab({ user, onSaved, lang }: { user: UserProfile; onSaved: () =>
           </CardDescription>
         </CardHeader>
         <CardContent>
-          <dl className="rounded-lg border border-border/70 px-4">
+          <dl className="rounded-lg border border-border/60 px-4">
             <DataRow
               label={t("settings.privacy.legal.dataProcessing", lang)}
               value={gdpr?.data_processing_consent ? t("common.allowed", lang) : t("common.notAllowed", lang)}
@@ -1032,7 +1046,6 @@ function NotificationsTab({ user, onSaved, lang }: { user: UserProfile; onSaved:
   const [newFeatures, setNewFeatures] = React.useState(pd?.notify_new_features ?? true);
   const [systemUpdates, setSystemUpdates] = React.useState(pd?.notify_system_updates ?? true);
   const [billing, setBilling] = React.useState(pd?.notify_billing ?? true);
-  const [theme, setTheme] = React.useState(pd?.theme ?? "auto");
   const [saving, setSaving] = React.useState(false);
   const [error, setError] = React.useState<string | null>(null);
   const [success, setSuccess] = React.useState(false);
@@ -1056,7 +1069,6 @@ function NotificationsTab({ user, onSaved, lang }: { user: UserProfile; onSaved:
         notify_new_features: newFeatures,
         notify_system_updates: systemUpdates,
         notify_billing: billing,
-        theme,
       })
         .then(() => { setSuccess(true); onSaved(); })
         .catch((err) => setError(getSafeApiErrorMessage(err, lang)))
@@ -1064,7 +1076,7 @@ function NotificationsTab({ user, onSaved, lang }: { user: UserProfile; onSaved:
     }, 400);
     return () => clearTimeout(timeout);
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [enabled, email, processing, processingFailed, newFeatures, systemUpdates, billing, theme]);
+  }, [enabled, email, processing, processingFailed, newFeatures, systemUpdates, billing]);
 
   return (
     <Card>
@@ -1074,7 +1086,7 @@ function NotificationsTab({ user, onSaved, lang }: { user: UserProfile; onSaved:
       </CardHeader>
       <CardContent>
         <div className="space-y-1">
-          <div className="divide-y divide-border">
+          <div className="divide-y divide-border/60">
             <ToggleRow
               label={t("settings.notifications.master", lang)}
               checked={enabled}
@@ -1116,29 +1128,11 @@ function NotificationsTab({ user, onSaved, lang }: { user: UserProfile; onSaved:
             )}
           </div>
 
-          <Separator className="!my-4" />
-
-          {/* Appearance / Theme */}
-          <div className="space-y-2">
-            <p className="text-sm font-medium">{t("settings.notifications.appearance", lang)}</p>
-            <div className="space-y-1.5">
-              <Label>{t("settings.notifications.theme", lang)}</Label>
-              <Select value={theme} onValueChange={setTheme}>
-                <SelectTrigger className="w-48"><SelectValue /></SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="light">{t("settings.notifications.themeLight", lang)}</SelectItem>
-                  <SelectItem value="dark">{t("settings.notifications.themeDark", lang)}</SelectItem>
-                  <SelectItem value="auto">{t("settings.notifications.themeSystem", lang)}</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-          </div>
-
           {/* Status feedback */}
           <div className="h-6 pt-3">
-            {saving && <p className="text-[12px] text-muted-foreground">{t("common.saved", lang)}…</p>}
+            {saving && <p className="text-[12px] text-muted-foreground">{t("common.saving", lang)}</p>}
             {error && <p className="text-[12px] text-destructive">{error}</p>}
-            {success && !saving && <p className="text-[12px] text-emerald-600">{t("settings.notifications.saved", lang)}</p>}
+            {success && !saving && <p className="text-[12px] text-success">{t("settings.notifications.saved", lang)}</p>}
           </div>
         </div>
       </CardContent>
@@ -1163,7 +1157,7 @@ function ToggleRow({ label, hint, checked, onChange, disabled = false }: {
     <div className={`flex items-start justify-between gap-4 py-3.5 ${disabled ? "opacity-60" : ""}`}>
       <div className="min-w-0 pr-2">
         <p id={labelId} className="text-sm font-medium">{label}</p>
-        {hint && <p id={hintId} className="text-[11px] text-muted-foreground mt-0.5">{hint}</p>}
+        {hint && <p id={hintId} className="text-[12px] text-muted-foreground mt-0.5">{hint}</p>}
       </div>
       <Switch
         checked={checked}
@@ -1200,7 +1194,7 @@ function SettingsField({ label, children, hint }: { label: string; children: Rea
     <div className="space-y-1.5">
       <Label>{label}</Label>
       {children}
-      {hint && <p className="text-[11px] leading-4 text-muted-foreground">{hint}</p>}
+      {hint && <p className="text-[12px] leading-4 text-muted-foreground">{hint}</p>}
     </div>
   );
 }
@@ -1216,7 +1210,6 @@ function LocalizationTab({ user, lang }: { user: UserProfile; lang: string }) {
   const [dateFormat, setDateFormat] = React.useState(loc?.date_format ?? "EU");
   const [loading, setLoading] = React.useState(false);
   const [error, setError] = React.useState<string | null>(null);
-  const [success, setSuccess] = React.useState(false);
   const [prefs, setPrefs] = React.useState<AvailablePreferences | null>(null);
   const [prefsLoading, setPrefsLoading] = React.useState(true);
   const [prefsError, setPrefsError] = React.useState(false);
@@ -1235,7 +1228,6 @@ function LocalizationTab({ user, lang }: { user: UserProfile; lang: string }) {
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     setError(null);
-    setSuccess(false);
     try {
       setLoading(true);
       await updateLocalization({
@@ -1281,8 +1273,8 @@ function LocalizationTab({ user, lang }: { user: UserProfile; lang: string }) {
             <Button type="button" variant="outline" size="sm" onClick={loadPrefs}>{t("settings.localization.retry", lang)}</Button>
           </div>
         ) : (
-        <form className="space-y-5" onSubmit={handleSubmit}>
-          <div className="rounded-lg border border-border bg-muted/20 px-4 py-3">
+        <form className="space-y-4" onSubmit={handleSubmit}>
+          <div className="rounded-lg border border-border/60 bg-muted/20 px-4 py-3">
             <p className="text-[13px] font-medium">{t("settings.localization.preview", lang)}</p>
             <div className="mt-2 grid grid-cols-1 gap-x-4 gap-y-1 text-[12px] sm:grid-cols-2">
               <p className="text-muted-foreground">{t("settings.localization.previewDate", lang)} <span className="font-medium text-foreground">{formattedDateSample}</span></p>
@@ -1292,10 +1284,10 @@ function LocalizationTab({ user, lang }: { user: UserProfile; lang: string }) {
             </div>
           </div>
 
-          <div className="grid grid-cols-1 gap-x-4 gap-y-3 md:grid-cols-2">
+          <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
             <SettingsField label={t("settings.localization.language", lang)} hint={optionName(languages, language)}>
               <Select value={language} onValueChange={setLanguage}>
-                <SelectTrigger className="h-11 rounded-md shadow-none"><SelectValue /></SelectTrigger>
+                <SelectTrigger><SelectValue /></SelectTrigger>
                 <SelectContent>
                   {languages.map((l) => (
                     <SelectItem key={l.code} value={l.code}>{stableOptionLabel(l)}</SelectItem>
@@ -1305,7 +1297,7 @@ function LocalizationTab({ user, lang }: { user: UserProfile; lang: string }) {
             </SettingsField>
             <SettingsField label={t("settings.localization.timezone", lang)} hint={timezone}>
               <Select value={timezone} onValueChange={setTimezone}>
-                <SelectTrigger className="h-11 rounded-md shadow-none"><SelectValue placeholder={timezone || "—"} /></SelectTrigger>
+                <SelectTrigger><SelectValue placeholder={timezone || "—"} /></SelectTrigger>
                 <SelectContent>
                   {timezones.map((tz) => (
                     <SelectItem key={tz.code} value={tz.code}>{tz.name}</SelectItem>
@@ -1317,10 +1309,10 @@ function LocalizationTab({ user, lang }: { user: UserProfile; lang: string }) {
 
           <Separator />
 
-          <div className="grid grid-cols-1 gap-x-4 gap-y-3 md:grid-cols-2">
+          <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
             <SettingsField label={t("settings.localization.currency", lang)} hint={optionName(currencies, currency)}>
               <Select value={currency} onValueChange={setCurrency}>
-                <SelectTrigger className="h-11 rounded-md shadow-none"><SelectValue /></SelectTrigger>
+                <SelectTrigger><SelectValue /></SelectTrigger>
                 <SelectContent>
                   {currencies.map((c) => (
                     <SelectItem key={c.code} value={c.code}>
@@ -1332,7 +1324,7 @@ function LocalizationTab({ user, lang }: { user: UserProfile; lang: string }) {
             </SettingsField>
             <SettingsField label={t("settings.localization.dateFormat", lang)} hint={formattedDateSample}>
               <Select value={dateFormat} onValueChange={setDateFormat}>
-                <SelectTrigger className="h-11 rounded-md shadow-none"><SelectValue /></SelectTrigger>
+                <SelectTrigger><SelectValue /></SelectTrigger>
                 <SelectContent>
                   {dateFormats.map((d) => (
                     <SelectItem key={d.code} value={d.code}>{d.code} · {d.name}</SelectItem>
@@ -1342,10 +1334,10 @@ function LocalizationTab({ user, lang }: { user: UserProfile; lang: string }) {
             </SettingsField>
           </div>
 
-          <div className="grid grid-cols-1 gap-x-4 gap-y-3 md:grid-cols-2">
+          <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
             <SettingsField label={t("settings.localization.areaUnit", lang)} hint={formattedAreaSample}>
               <Select value={areaUnit} onValueChange={setAreaUnit}>
-                <SelectTrigger className="h-11 rounded-md shadow-none"><SelectValue /></SelectTrigger>
+                <SelectTrigger><SelectValue /></SelectTrigger>
                 <SelectContent>
                   {areaUnits.map((u) => (
                     <SelectItem key={u.code} value={u.code}>
@@ -1357,7 +1349,7 @@ function LocalizationTab({ user, lang }: { user: UserProfile; lang: string }) {
             </SettingsField>
             <SettingsField label={t("settings.localization.distanceUnit", lang)} hint={formattedDistanceSample}>
               <Select value={distanceUnit} onValueChange={setDistanceUnit}>
-                <SelectTrigger className="h-11 rounded-md shadow-none"><SelectValue /></SelectTrigger>
+                <SelectTrigger><SelectValue /></SelectTrigger>
                 <SelectContent>
                   {distanceUnits.map((u) => (
                     <SelectItem key={u.code} value={u.code}>
@@ -1370,7 +1362,6 @@ function LocalizationTab({ user, lang }: { user: UserProfile; lang: string }) {
           </div>
 
           {error && <p className="text-[12px] text-destructive">{error}</p>}
-          {success && <p className="text-[12px] text-emerald-600">{t("settings.localization.saved", lang)}</p>}
           <div className="pt-2">
             <Button type="submit" size="sm" loading={loading}>{t("settings.localization.save", lang)}</Button>
           </div>
@@ -1386,7 +1377,7 @@ function LocalizationTab({ user, lang }: { user: UserProfile; lang: string }) {
 function UsageBar({ current, max, label, unit }: { current: number; max: number; label: string; unit?: string }) {
   const unlimited = max === 0;
   const pct = unlimited ? 0 : Math.min((current / max) * 100, 100);
-  const color = pct >= 100 ? "bg-destructive" : pct >= 75 ? "bg-amber-500" : "bg-emerald-500";
+  const color = pct >= 100 ? "bg-destructive" : pct >= 75 ? "bg-amber-500" : "bg-success";
   return (
     <div className="space-y-1.5">
       <div className="flex items-baseline justify-between text-[12px]">
@@ -1404,10 +1395,10 @@ function UsageBar({ current, max, label, unit }: { current: number; max: number;
 
 const tierBadgeColors: Record<string, string> = {
   FREE: "bg-muted text-muted-foreground",
-  TRIAL: "bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-300",
-  LITE: "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300",
-  PRO: "bg-purple-100 text-purple-700 dark:bg-purple-900/40 dark:text-purple-300",
-  ENTERPRISE: "bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300",
+  TRIAL: "bg-blue-100 text-blue-700",
+  LITE: "bg-success/10 text-success",
+  PRO: "bg-purple-100 text-purple-700",
+  ENTERPRISE: "bg-amber-100 text-amber-700",
 };
 
 function tierBadgeKey(code: string, lang: string): string {
@@ -1485,13 +1476,13 @@ function BillingTab({ user, onSaved, lang }: { user: UserProfile; onSaved: () =>
           <CardDescription>{t("settings.billing.subtitle", lang)}</CardDescription>
         </CardHeader>
         <CardContent>
-          <dl className="rounded-lg border border-border/70 px-4">
+          <dl className="rounded-lg border border-border/60 px-4">
             <DataRow
               label={t("settings.billing.plan", lang)}
               value={
                 <span className="flex items-center gap-2">
                   {tier?.name ?? "—"}
-                  <span className={cn("rounded-full px-2 py-0.5 text-[10px] font-semibold", tierBadgeColors[tierCode] ?? tierBadgeColors.FREE)}>
+                  <span className={cn("rounded-full px-2.5 py-0.5 text-[11px] font-semibold", tierBadgeColors[tierCode] ?? tierBadgeColors.FREE)}>
                     {tierBadgeKey(tierCode, lang)}
                   </span>
                 </span>
@@ -1513,7 +1504,7 @@ function BillingTab({ user, onSaved, lang }: { user: UserProfile; onSaved: () =>
           <CardTitle>{t("settings.billing.usageTitle", lang)}</CardTitle>
         </CardHeader>
         <CardContent>
-          <div className="space-y-4 rounded-lg border border-border/70 p-4">
+          <div className="space-y-4 rounded-lg border border-border/60 p-4">
             <UsageBar current={currentPosts} max={maxPosts} label={t("settings.billing.posts", lang)} />
             <UsageBar current={currentStorage} max={maxStorage} label={t("settings.billing.storage", lang)} unit="GB" />
           </div>
@@ -1562,7 +1553,7 @@ function BillingTab({ user, onSaved, lang }: { user: UserProfile; onSaved: () =>
                 </div>
               </div>
               {error && <p className="text-[12px] text-destructive">{error}</p>}
-              {success && <p className="text-[12px] text-emerald-600">{t("settings.billing.saved", lang)}</p>}
+              {success && <p className="text-[12px] text-success">{t("settings.billing.saved", lang)}</p>}
               <div className="pt-2">
                 <Button type="submit" size="sm" loading={loading}>{t("settings.billing.save", lang)}</Button>
               </div>
@@ -1579,12 +1570,6 @@ function BillingTab({ user, onSaved, lang }: { user: UserProfile; onSaved: () =>
 function SecurityTab({ user, onSaved, lang }: { user: UserProfile; onSaved: () => void; lang: string }) {
   return (
     <div className="space-y-6">
-      <Card>
-        <CardHeader>
-          <CardTitle>{t("settings.security.title", lang)}</CardTitle>
-          <CardDescription>{t("settings.security.subtitle", lang)}</CardDescription>
-        </CardHeader>
-      </Card>
       <PasswordSection lang={lang} />
       <TwoFactorSection lang={lang} />
       <LinkedAccountsSection lang={lang} />
@@ -1600,6 +1585,7 @@ function PasswordSection({ lang }: { lang: string }) {
   const [loading, setLoading] = React.useState(false);
   const [error, setError] = React.useState<string | null>(null);
   const [success, setSuccess] = React.useState(false);
+  useAutoDismiss(success, setSuccess);
   const canSubmit = currentPassword.length > 0 && newPassword.length >= 8 && newPassword === confirmPassword;
 
   async function handleSubmit(e: React.FormEvent) {
@@ -1624,7 +1610,7 @@ function PasswordSection({ lang }: { lang: string }) {
   return (
     <Card>
       <CardHeader>
-        <CardTitle>{t("settings.security.passwordTitle", lang)}</CardTitle>
+        <CardTitle>{t("settings.security.title", lang)}</CardTitle>
         <CardDescription>{t("settings.security.passwordSubtitle", lang)}</CardDescription>
       </CardHeader>
       <CardContent>
@@ -1646,10 +1632,10 @@ function PasswordSection({ lang }: { lang: string }) {
               onChange={(e) => setConfirmPassword(e.target.value)} autoComplete="new-password" />
           </div>
           {!canSubmit && confirmPassword.length > 0 && newPassword !== confirmPassword && (
-            <p className="text-[11px] text-destructive">{t("settings.security.mismatch", lang)}</p>
+            <p className="text-[12px] text-destructive">{t("settings.security.mismatch", lang)}</p>
           )}
           {error && <p className="text-[12px] text-destructive">{error}</p>}
-          {success && <p className="text-[12px] text-emerald-600">{t("settings.security.saved", lang)}</p>}
+          {success && <p className="text-[12px] text-success">{t("settings.security.saved", lang)}</p>}
           <div className="pt-2">
             <Button type="submit" size="sm" loading={loading} disabled={!canSubmit || loading}>{t("settings.security.save", lang)}</Button>
           </div>
@@ -1811,9 +1797,9 @@ function TwoFactorSection({ lang }: { lang: string }) {
         {/* Idle state */}
         {!setup && !disabling && !backupCodes && (
           <div className="flex items-center justify-between">
-            <span className={cn("rounded-full px-2.5 py-1 text-[11px] font-semibold",
+            <span className={cn("rounded-full px-2.5 py-0.5 text-[11px] font-semibold",
               status?.enabled
-                ? "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300"
+                ? "bg-success/10 text-success"
                 : "bg-muted text-muted-foreground"
             )}>
               {status?.enabled ? t("settings.security.twoFaEnabled", lang) : t("settings.security.twoFaDisabled", lang)}
@@ -1881,7 +1867,7 @@ function LinkedAccountsSection({ lang }: { lang: string }) {
         {accounts.length === 0 ? (
           <p className="text-[13px] text-muted-foreground">{t("settings.security.linkedNone", lang)}</p>
         ) : (
-          <div className="divide-y divide-border">
+          <div className="divide-y divide-border/60">
             {accounts.map((acc) => (
               <div key={acc.id} className="flex items-center justify-between py-3">
                 <div className="min-w-0">
@@ -1964,10 +1950,10 @@ function PhoneSection({ user, onSaved, lang }: { user: UserProfile; onSaved: () 
           <div className="space-y-3">
             <div className="flex items-center gap-3">
               <span className="text-sm font-medium">{phone}</span>
-              <span className={cn("rounded-full px-2.5 py-0.5 text-[10px] font-semibold",
+              <span className={cn("rounded-full px-2.5 py-0.5 text-[11px] font-semibold",
                 verified
-                  ? "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300"
-                  : "bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300"
+                  ? "bg-success/10 text-success"
+                  : "bg-amber-100 text-amber-700"
               )}>
                 {verified ? t("settings.security.phoneVerified", lang) : t("settings.security.phoneUnverified", lang)}
               </span>
@@ -2053,7 +2039,7 @@ export function SettingsForm({ user, onSaved }: { user: UserProfile; onSaved: ()
               window.history.replaceState(null, "", `#${event.target.value}`);
             }}
             aria-label={t("settings.title", lang)}
-            className="h-11 w-full appearance-none rounded-xl border border-border/65 bg-surface px-3 pr-10 text-[13px] font-medium outline-none focus:border-foreground/30 focus:ring-2 focus:ring-foreground/[0.06]"
+            className="h-11 w-full appearance-none whitespace-nowrap rounded-xl border border-input bg-background px-4 py-2 pr-10 text-sm ring-offset-background transition-colors duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-0 disabled:cursor-not-allowed disabled:opacity-50"
           >
             <option value="profile">{t("settings.tab.profile", lang)}</option>
             <option value="seller">{t("settings.tab.seller", lang)}</option>
@@ -2064,7 +2050,7 @@ export function SettingsForm({ user, onSaved }: { user: UserProfile; onSaved: ()
             <option value="billing">{t("settings.tab.billing", lang)}</option>
             <option value="security">{t("settings.tab.security", lang)}</option>
           </select>
-          <ChevronDownIcon size={15} className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-foreground/40" />
+          <ChevronDownIcon size={15} className="pointer-events-none absolute right-4 top-1/2 -translate-y-1/2 opacity-50" />
         </div>
         <TabsList className="hidden min-h-0 w-full flex-col items-stretch gap-1 rounded-2xl border border-border/55 bg-surface p-2 text-muted-foreground md:flex">
           <TabsTrigger value="profile" className={triggerClassName}>{t("settings.tab.profile", lang)}</TabsTrigger>

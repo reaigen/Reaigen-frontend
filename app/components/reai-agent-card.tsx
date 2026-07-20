@@ -23,11 +23,25 @@ import {
   type ReaiAgentResponse,
   type ReaiImprovementConsent,
 } from "../lib/api/client";
-import { t } from "../lib/i18n";
+import { formatDate, t } from "../lib/i18n";
 import type { LocaleKey } from "../lib/locales";
 import type { DraftDetailItem } from "../lib/tour-types";
 import { Button } from "../lib/ui/button";
 import { cn } from "../lib/utils";
+import { useAuth } from "./hooks/use-auth";
+import { StatusPill } from "./status-pill";
+
+function Working({ lang, className }: { lang: string; className?: string }) {
+  return (
+    <p role="status" aria-live="polite" className={cn("flex items-center gap-2 py-3 text-[11px] text-muted-foreground", className)}>
+      <svg className="h-3.5 w-3.5 animate-spin" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" aria-hidden="true">
+        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+      </svg>
+      {t("reai.working", lang)}
+    </p>
+  );
+}
 
 type ChatTurn = {
   id: number;
@@ -203,6 +217,8 @@ export function ReaiAgentCard({
   onDraftUpdated?: (draft: DraftDetailItem) => void;
   panel?: boolean;
 }) {
+  const { user } = useAuth();
+  const dateFormat = user?.localization?.date_format;
   const [consent, setConsent] = useState<ReaiAgentConsent | null>(null);
   const [improvementConsent, setImprovementConsent] = useState<ReaiImprovementConsent | null>(null);
   const [improvementConversationId, setImprovementConversationId] = useState<string | null>(null);
@@ -513,9 +529,7 @@ export function ReaiAgentCard({
           <h2 id="reai-title" className="text-[14px] font-semibold">{t("reai.title", lang)}</h2>
           <p className="mt-1 text-[12px] leading-relaxed text-muted-foreground">{t("reai.subtitle", lang)}</p>
         </div>
-        <span className="rounded-full bg-emerald-500/10 px-2 py-1 text-[10px] font-medium text-emerald-700">
-          {t("reai.private", lang)}
-        </span>
+        <StatusPill tone="success" dot>{t("reai.private", lang)}</StatusPill>
       </div>
 
       {!consent.consented ? (
@@ -531,7 +545,7 @@ export function ReaiAgentCard({
             <div className="flex items-center justify-end gap-4 border-b border-border/35 pb-2">
               <button
                 type="button"
-                className={cn("text-[11px] font-medium transition hover:text-foreground", showMediaHistory ? "text-foreground" : "text-muted-foreground")}
+                className={cn("rounded-md text-[11px] font-medium transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2", showMediaHistory ? "text-foreground" : "text-muted-foreground")}
                 onClick={() => {
                   const next = !showMediaHistory;
                   setShowMediaHistory(next);
@@ -543,7 +557,7 @@ export function ReaiAgentCard({
               </button>
               <button
                 type="button"
-                className={cn("text-[11px] font-medium transition hover:text-foreground", showHistory ? "text-foreground" : "text-muted-foreground")}
+                className={cn("rounded-md text-[11px] font-medium transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2", showHistory ? "text-foreground" : "text-muted-foreground")}
                 onClick={() => {
                   const next = !showHistory;
                   setShowHistory(next);
@@ -566,7 +580,7 @@ export function ReaiAgentCard({
                   {historyNotice}
                 </div>
               )}
-              {historyBusy && <p className="py-3 text-[11px] text-muted-foreground">{t("reai.working", lang)}</p>}
+              {historyBusy && <Working lang={lang} />}
               {!historyBusy && history.length === 0 && (
                 <p className="rounded-xl border border-border/40 p-3 text-[11px] leading-relaxed text-muted-foreground">{t("reai.historyEmpty", lang)}</p>
               )}
@@ -589,27 +603,29 @@ export function ReaiAgentCard({
                                 {t(`reai.history.${revision.source}`, lang)}
                               </h4>
                               {index === 0 && (
-                                <span className="rounded-full bg-foreground px-2 py-0.5 text-[9px] font-medium text-background">
+                                <span className="rounded-full bg-foreground px-2 py-0.5 text-[11px] font-medium text-background">
                                   {t("reai.currentVersion", lang)}
                                 </span>
                               )}
                             </div>
-                            <time className="mt-0.5 block text-[10px] text-muted-foreground">
-                              {new Intl.DateTimeFormat(lang || "en", { dateStyle: "medium", timeStyle: "short" }).format(new Date(revision.created_at))}
+                            <time className="mt-0.5 block text-[11px] text-muted-foreground">
+                              {formatDate(revision.created_at, dateFormat, lang)}
                             </time>
                           </div>
                           {index > 0 && (
-                            <button
+                            <Button
                               type="button"
+                              variant="outline"
+                              size="xs"
+                              className="shrink-0"
                               disabled={busy}
                               onClick={() => {
                                 setHistoryNotice(null);
                                 setRestoreCandidateId(revision.id);
                               }}
-                              className="shrink-0 text-[10px] font-semibold text-muted-foreground underline-offset-4 transition hover:text-foreground hover:underline disabled:opacity-40"
                             >
                               {t("reai.restore", lang)}
-                            </button>
+                            </Button>
                           )}
                         </div>
                         <div className="mt-3 space-y-3 border-t border-border/40 pt-3">
@@ -622,7 +638,7 @@ export function ReaiAgentCard({
                             if (!hasDiff) {
                               return (
                                 <div key={field}>
-                                  <p className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
+                                  <p className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
                                     {agentFieldLabel(field, lang)}
                                   </p>
                                   <p className="mt-1 break-words text-[12px] leading-5 text-foreground/85">
@@ -633,12 +649,12 @@ export function ReaiAgentCard({
                             }
                             return (
                               <div key={field}>
-                                <p className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
+                                <p className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
                                   {agentFieldLabel(field, lang)}
                                 </p>
                                 <div className={cn("mt-1.5 gap-2", longForm ? "space-y-2" : "grid grid-cols-2")}>
                                   <div className="min-w-0 rounded-lg bg-background/70 px-2.5 py-2">
-                                    <p className="text-[9px] font-medium uppercase tracking-wide text-muted-foreground/80">
+                                    <p className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground/80">
                                       {t("reai.historyBefore", lang)}
                                     </p>
                                     <p className="mt-1 break-words text-[11px] leading-[1.55] text-muted-foreground">
@@ -646,7 +662,7 @@ export function ReaiAgentCard({
                                     </p>
                                   </div>
                                   <div className="min-w-0 rounded-lg border-l-2 border-foreground/60 bg-background px-2.5 py-2">
-                                    <p className="text-[9px] font-medium uppercase tracking-wide text-muted-foreground/80">
+                                    <p className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground/80">
                                       {t("reai.historyAfter", lang)}
                                     </p>
                                     <p className="mt-1 break-words text-[11px] font-medium leading-[1.55] text-foreground/90">
@@ -662,22 +678,12 @@ export function ReaiAgentCard({
                           <div className="mt-3 border-t border-border/40 pt-3">
                             <p className="text-[11px] leading-relaxed text-foreground/70">{t("reai.restoreConfirm", lang)}</p>
                             <div className="mt-2.5 flex items-center gap-2">
-                              <button
-                                type="button"
-                                disabled={busy}
-                                onClick={() => void restoreRevision(revision)}
-                                className="rounded-lg bg-foreground px-3 py-1.5 text-[11px] font-semibold text-background transition hover:bg-foreground/85 disabled:opacity-40"
-                              >
+                              <Button type="button" size="xs" loading={busy} onClick={() => void restoreRevision(revision)}>
                                 {t("reai.restore", lang)}
-                              </button>
-                              <button
-                                type="button"
-                                disabled={busy}
-                                onClick={() => setRestoreCandidateId(null)}
-                                className="rounded-lg px-3 py-1.5 text-[11px] font-medium text-muted-foreground transition hover:text-foreground disabled:opacity-40"
-                              >
+                              </Button>
+                              <Button type="button" variant="ghost" size="xs" disabled={busy} onClick={() => setRestoreCandidateId(null)}>
                                 {t("reai.restoreCancel", lang)}
-                              </button>
+                              </Button>
                             </div>
                           </div>
                         )}
@@ -694,13 +700,13 @@ export function ReaiAgentCard({
                 <h3 className="text-[13px] font-semibold">{t("reai.mediaVersions", lang)}</h3>
                 <p className="mt-1 text-[11px] leading-relaxed text-muted-foreground">{t("reai.mediaVersionsSafety", lang)}</p>
               </div>
-              {mediaBusy && mediaGroups.length === 0 && <p className="py-3 text-[11px] text-muted-foreground">{t("reai.working", lang)}</p>}
+              {mediaBusy && mediaGroups.length === 0 && <Working lang={lang} />}
               {!mediaBusy && mediaGroups.length === 0 && (
                 <p className="rounded-xl border border-border/45 p-3 text-[11px] text-muted-foreground">{t("reai.mediaVersionsEmpty", lang)}</p>
               )}
               {mediaGroups.map((group, groupIndex) => (
                 <section key={group.logical_asset_id} className="overflow-hidden rounded-xl border border-border/55 bg-background">
-                  <div className="border-b border-border/40 px-3 py-2 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
+                  <div className="border-b border-border/40 px-3 py-2 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
                     {t("reai.mediaAsset", lang).replace("{number}", String(groupIndex + 1))}
                   </div>
                   <div className="divide-y divide-border/40">
@@ -717,40 +723,40 @@ export function ReaiAgentCard({
                           <div className="min-w-0 flex-1">
                             <div className="flex flex-wrap items-center gap-1.5">
                               <span className="text-[12px] font-semibold">v{version.version}</span>
-                              {version.is_master && <span className="rounded-full bg-foreground px-1.5 py-0.5 text-[8px] font-medium text-background">{t("reai.mediaCurrent", lang)}</span>}
-                              {version.is_deleted && <span className="rounded-full bg-foreground/[0.08] px-1.5 py-0.5 text-[8px] font-medium">{t("reai.mediaHidden", lang)}</span>}
+                              {version.is_master && <span className="rounded-full bg-foreground px-1.5 py-0.5 text-[11px] font-medium text-background">{t("reai.mediaCurrent", lang)}</span>}
+                              {version.is_deleted && <span className="rounded-full bg-foreground/[0.08] px-1.5 py-0.5 text-[11px] font-medium">{t("reai.mediaHidden", lang)}</span>}
                             </div>
-                            <p className="mt-1 truncate text-[10px] text-muted-foreground">{version.processor === "original" ? t("reai.mediaOriginal", lang) : version.processor}</p>
-                            <time className="mt-0.5 block text-[9px] text-muted-foreground/80">
-                              {new Intl.DateTimeFormat(lang || "en", { dateStyle: "medium", timeStyle: "short" }).format(new Date(version.uploaded_at))}
+                            <p className="mt-1 truncate text-[11px] text-muted-foreground">{version.processor === "original" ? t("reai.mediaOriginal", lang) : version.processor}</p>
+                            <time className="mt-0.5 block text-[11px] text-muted-foreground/80">
+                              {formatDate(version.uploaded_at, dateFormat, lang)}
                             </time>
                           </div>
                         </div>
-                        <div className="mt-2.5 flex flex-wrap items-center gap-3">
+                        <div className="mt-2.5 flex flex-wrap items-center gap-2">
                           {!version.is_deleted && !version.is_master && (
-                            <button type="button" disabled={mediaBusy} onClick={() => setMediaCandidate({ id: version.id, action: "promote" })} className="text-[10px] font-semibold hover:underline disabled:opacity-40">
+                            <Button type="button" variant="outline" size="xs" disabled={mediaBusy} onClick={() => setMediaCandidate({ id: version.id, action: "promote" })}>
                               {t("reai.mediaUseVersion", lang)}
-                            </button>
+                            </Button>
                           )}
                           {!version.is_deleted && (
-                            <button type="button" disabled={mediaBusy} onClick={() => setMediaCandidate({ id: version.id, action: "hide" })} className="text-[10px] font-medium text-muted-foreground hover:text-foreground disabled:opacity-40">
+                            <Button type="button" variant="ghost" size="xs" disabled={mediaBusy} onClick={() => setMediaCandidate({ id: version.id, action: "hide" })}>
                               {t("reai.mediaHide", lang)}
-                            </button>
+                            </Button>
                           )}
                           {version.is_deleted && (
-                            <button type="button" disabled={mediaBusy} onClick={() => setMediaCandidate({ id: version.id, action: "restore" })} className="text-[10px] font-semibold hover:underline disabled:opacity-40">
+                            <Button type="button" variant="outline" size="xs" disabled={mediaBusy} onClick={() => setMediaCandidate({ id: version.id, action: "restore" })}>
                               {t("reai.mediaRestore", lang)}
-                            </button>
+                            </Button>
                           )}
                         </div>
                         {mediaCandidate?.id === version.id && (
                           <div className="mt-3 rounded-lg bg-foreground/[0.04] p-2.5">
-                            <p className="text-[10px] leading-relaxed text-foreground/70">
+                            <p className="text-[11px] leading-relaxed text-foreground/70">
                               {t(mediaCandidate.action === "hide" ? "reai.mediaHideConfirm" : "reai.mediaActionConfirm", lang)}
                             </p>
                             <div className="mt-2 flex gap-2">
-                              <button type="button" disabled={mediaBusy} onClick={() => void manageMediaVersion()} className="rounded-md bg-foreground px-2.5 py-1.5 text-[10px] font-semibold text-background disabled:opacity-40">{t("reai.confirm", lang)}</button>
-                              <button type="button" disabled={mediaBusy} onClick={() => setMediaCandidate(null)} className="px-2 py-1.5 text-[10px] text-muted-foreground">{t("reai.restoreCancel", lang)}</button>
+                              <Button type="button" size="xs" loading={mediaBusy} onClick={() => void manageMediaVersion()}>{t("reai.confirm", lang)}</Button>
+                              <Button type="button" variant="ghost" size="xs" disabled={mediaBusy} onClick={() => setMediaCandidate(null)}>{t("reai.restoreCancel", lang)}</Button>
                             </div>
                           </div>
                         )}
@@ -802,7 +808,7 @@ export function ReaiAgentCard({
                     )}
                     {answer && !!answer.knowledge_sources?.length && (
                       <div className="mt-3 border-t border-border/30 pt-2">
-                        <p className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground">{t("reai.sources", lang)}</p>
+                        <p className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">{t("reai.sources", lang)}</p>
                         <ul className="mt-1 space-y-0.5 text-[11px] text-muted-foreground">
                           {answer.knowledge_sources.map((source) => (
                             <li key={`${source.sha256}-${source.version}`}>{source.title} · {source.source} · v{source.version}</li>
@@ -859,22 +865,12 @@ export function ReaiAgentCard({
                         </ul>
                         {answer.proposal_token && (
                           <div className="flex items-center gap-2 border-t border-border/45 px-3.5 py-3">
-                            <button
-                              type="button"
-                              className="rounded-lg bg-foreground px-3 py-2 text-xs font-medium text-background transition hover:bg-foreground/85 disabled:opacity-40"
-                              disabled={busy}
-                              onClick={() => apply(turn.id, answer)}
-                            >
+                            <Button type="button" size="xs" loading={busy} onClick={() => apply(turn.id, answer)}>
                               {t("reai.apply", lang)}
-                            </button>
-                            <button
-                              type="button"
-                              className="px-2 py-2 text-xs font-medium text-muted-foreground transition hover:text-foreground disabled:opacity-40"
-                              disabled={busy}
-                              onClick={() => dismissProposal(turn.id)}
-                            >
+                            </Button>
+                            <Button type="button" variant="ghost" size="xs" disabled={busy} onClick={() => dismissProposal(turn.id)}>
                               {t("reai.dismissProposal", lang)}
-                            </button>
+                            </Button>
                           </div>
                         )}
                         {!answer.proposal_token && turn.proposalStatus && (
@@ -916,7 +912,7 @@ export function ReaiAgentCard({
                                 {t("reai.mediaSelection", lang).replace("{count}", String(answer.action_count || 0))}
                               </p>
                             </div>
-                            <span className="rounded-full bg-foreground/[0.06] px-2 py-1 text-[10px] font-medium text-foreground/65">
+                            <span className="rounded-full bg-foreground/[0.06] px-2 py-1 text-[11px] font-medium text-foreground/65">
                               {answer.media_action?.cloud_image_processor
                                 ? t("reai.mediaCloud", lang)
                                 : t("reai.mediaLocal", lang)}
@@ -935,14 +931,14 @@ export function ReaiAgentCard({
                             )}
                           </p>
                           {answer.media_action?.authenticity_boundary && (
-                            <p className="mt-2 rounded-lg bg-amber-500/10 px-2.5 py-2 text-[10px] leading-relaxed text-amber-900 dark:text-amber-100">
+                            <p className="mt-2 rounded-lg bg-amber-500/10 px-2.5 py-2 text-[11px] leading-relaxed text-amber-900 dark:text-amber-100">
                               {t("reai.mediaHdrBoundary", lang)}
                             </p>
                           )}
                           {!!answer.media_action?.operations && Object.keys(answer.media_action.operations).length > 0 && (
                             <div className="mt-2 flex flex-wrap gap-1.5">
                               {Object.entries(answer.media_action.operations).map(([key, value]) => (
-                                <span key={key} className="rounded-md border border-border/50 bg-background px-2 py-1 text-[10px] text-foreground/70">
+                                <span key={key} className="rounded-md border border-border/50 bg-background px-2 py-1 text-[11px] text-foreground/70">
                                   {t(`reai.mediaOperation.${key}` as LocaleKey, lang)}{typeof value === "number" ? ` · ${value}` : ""}
                                 </span>
                               ))}
@@ -951,22 +947,12 @@ export function ReaiAgentCard({
                         </div>
                         {answer.action_token && (
                           <div className="flex items-center gap-2 border-t border-border/45 px-3.5 py-3">
-                            <button
-                              type="button"
-                              className="rounded-lg bg-foreground px-3 py-2 text-xs font-medium text-background transition hover:bg-foreground/85 disabled:opacity-40"
-                              disabled={busy}
-                              onClick={() => void applyAction(turn.id, answer)}
-                            >
+                            <Button type="button" size="xs" loading={busy} onClick={() => void applyAction(turn.id, answer)}>
                               {t("reai.mediaConfirm", lang)}
-                            </button>
-                            <button
-                              type="button"
-                              className="px-2 py-2 text-xs font-medium text-muted-foreground transition hover:text-foreground disabled:opacity-40"
-                              disabled={busy}
-                              onClick={() => dismissAction(turn.id)}
-                            >
+                            </Button>
+                            <Button type="button" variant="ghost" size="xs" disabled={busy} onClick={() => dismissAction(turn.id)}>
                               {t("reai.dismissProposal", lang)}
-                            </button>
+                            </Button>
                           </div>
                         )}
                         {!answer.action_token && turn.actionStatus && (
@@ -997,22 +983,12 @@ export function ReaiAgentCard({
                         </div>
                         {answer.action_token && (
                           <div className="flex items-center gap-2 border-t border-border/45 px-3.5 py-3">
-                            <button
-                              type="button"
-                              className="rounded-lg bg-foreground px-3 py-2 text-xs font-medium text-background transition hover:bg-foreground/85 disabled:opacity-40"
-                              disabled={busy}
-                              onClick={() => void applyAction(turn.id, answer)}
-                            >
+                            <Button type="button" size="xs" loading={busy} onClick={() => void applyAction(turn.id, answer)}>
                               {t(`reai.shareManagerConfirm.${answer.share_action || "revoke"}` as LocaleKey, lang)}
-                            </button>
-                            <button
-                              type="button"
-                              className="px-2 py-2 text-xs font-medium text-muted-foreground transition hover:text-foreground disabled:opacity-40"
-                              disabled={busy}
-                              onClick={() => dismissAction(turn.id)}
-                            >
+                            </Button>
+                            <Button type="button" variant="ghost" size="xs" disabled={busy} onClick={() => dismissAction(turn.id)}>
                               {t("reai.dismissProposal", lang)}
-                            </button>
+                            </Button>
                           </div>
                         )}
                         {!answer.action_token && turn.actionStatus && (
@@ -1027,10 +1003,10 @@ export function ReaiAgentCard({
                         {answer.share_results.map((share) => (
                           <div key={share.id} className="flex items-center gap-2 px-3 py-2">
                             <span className="min-w-0 flex-1 truncate text-[11px] font-medium">{share.title}</span>
-                            <span className="text-[10px] text-muted-foreground">
+                            <span className="text-[11px] text-muted-foreground">
                               {t("reai.shareManagerViews", lang).replace("{count}", String(share.access_count))}
                             </span>
-                            <span className="rounded-full bg-foreground/[0.06] px-1.5 py-0.5 text-[9px] text-foreground/65">
+                            <span className="rounded-full bg-foreground/[0.06] px-1.5 py-0.5 text-[11px] text-foreground/65">
                               {t(`reai.shareStatus.${share.status}` as LocaleKey, lang)}
                             </span>
                           </div>
@@ -1051,18 +1027,14 @@ export function ReaiAgentCard({
                           </div>
                           {shareUrl && (
                             <div className="flex shrink-0 items-center gap-1">
-                              <button
-                                type="button"
-                                className="rounded-md border border-border/60 px-2 py-1 text-[10px] font-medium"
-                                onClick={() => void copyShareUrl(shareUrl)}
-                              >
+                              <Button type="button" variant="outline" size="xs" onClick={() => void copyShareUrl(shareUrl)}>
                                 {t(copiedShareUrl === shareUrl ? "reai.shareCopied" : "reai.shareCopy", lang)}
-                              </button>
+                              </Button>
                               <a
                                 href={shareUrl}
                                 target="_blank"
                                 rel="noreferrer"
-                                className="px-1 py-1 text-[10px] font-medium text-muted-foreground hover:text-foreground"
+                                className="rounded-md px-1 py-1 text-[11px] font-medium text-muted-foreground transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
                               >
                                 {t("reai.shareOpen", lang)}
                               </a>
@@ -1080,7 +1052,7 @@ export function ReaiAgentCard({
                               {shareUrl ? t("reai.shareCreateReady", lang) : t("reai.shareCreateBody", lang)}
                             </p>
                             {!!answer.selected_share_fields?.length && (
-                              <p className="mt-1 truncate text-[10px] text-foreground/55">
+                              <p className="mt-1 truncate text-[11px] text-foreground/55">
                                 {answer.selected_share_fields
                                   .map((field) => t(`shareDialog.field.${field}` as LocaleKey, lang))
                                   .join(" · ")}
@@ -1089,40 +1061,26 @@ export function ReaiAgentCard({
                           </div>
                           {answer.action_token && (
                             <div className="flex shrink-0 items-center gap-1.5">
-                              <button
-                                type="button"
-                                className="rounded-md bg-foreground px-2.5 py-1.5 text-[11px] font-medium text-background disabled:opacity-40"
-                                disabled={busy}
-                                onClick={() => void applyAction(turn.id, answer)}
-                              >
+                              <Button type="button" size="xs" loading={busy} onClick={() => void applyAction(turn.id, answer)}>
                                 {t("reai.shareCreateConfirm", lang)}
-                              </button>
-                              <button
-                                type="button"
-                                className="px-1.5 py-1.5 text-[11px] text-muted-foreground hover:text-foreground"
-                                disabled={busy}
-                                onClick={() => dismissAction(turn.id)}
-                              >
+                              </Button>
+                              <Button type="button" variant="ghost" size="xs" disabled={busy} onClick={() => dismissAction(turn.id)}>
                                 {t("reai.dismissProposal", lang)}
-                              </button>
+                              </Button>
                             </div>
                           )}
                         </div>
                         {shareUrl && (
                           <div className="mt-2 flex min-w-0 items-center gap-1.5 border-t border-border/40 pt-2">
                             <span className="min-w-0 flex-1 truncate text-[11px] text-foreground/65">{shareUrl}</span>
-                            <button
-                              type="button"
-                              className="shrink-0 rounded-md border border-border/60 px-2 py-1 text-[10px] font-medium"
-                              onClick={() => void copyShareUrl(shareUrl)}
-                            >
+                            <Button type="button" variant="outline" size="xs" className="shrink-0" onClick={() => void copyShareUrl(shareUrl)}>
                               {t(copiedShareUrl === shareUrl ? "reai.shareCopied" : "reai.shareCopy", lang)}
-                            </button>
+                            </Button>
                             <a
                               href={shareUrl}
                               target="_blank"
                               rel="noreferrer"
-                              className="shrink-0 px-1 py-1 text-[10px] font-medium text-muted-foreground hover:text-foreground"
+                              className="shrink-0 rounded-md px-1 py-1 text-[11px] font-medium text-muted-foreground transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
                             >
                               {t("reai.shareOpen", lang)}
                             </a>
@@ -1131,10 +1089,32 @@ export function ReaiAgentCard({
                       </div>
                     )}
                     {answer && improvementConsent?.consented && answer.improvement_conversation_id && (
-                      <div className="mt-2 flex items-center gap-2 text-[11px] text-muted-foreground">
-                        <span>{t("reai.feedbackPrompt", lang)}</span>
-                        <button disabled={busy || turn.feedback !== undefined} onClick={() => void sendFeedback(turn.id, true, answer.improvement_conversation_id)}>✓</button>
-                        <button disabled={busy || turn.feedback !== undefined} onClick={() => void sendFeedback(turn.id, false, answer.improvement_conversation_id)}>✕</button>
+                      <div className="mt-2 flex items-center gap-1 text-[11px] text-muted-foreground">
+                        <span className="mr-1">{t("reai.feedbackPrompt", lang)}</span>
+                        <button
+                          type="button"
+                          aria-label={t("reai.feedbackGood", lang)}
+                          disabled={busy || turn.feedback !== undefined}
+                          onClick={() => void sendFeedback(turn.id, true, answer.improvement_conversation_id)}
+                          className={cn(
+                            "flex h-7 w-7 items-center justify-center rounded-lg transition-colors hover:bg-foreground/[0.04] hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none",
+                            turn.feedback === true ? "text-foreground" : "disabled:opacity-40",
+                          )}
+                        >
+                          ✓
+                        </button>
+                        <button
+                          type="button"
+                          aria-label={t("reai.feedbackBad", lang)}
+                          disabled={busy || turn.feedback !== undefined}
+                          onClick={() => void sendFeedback(turn.id, false, answer.improvement_conversation_id)}
+                          className={cn(
+                            "flex h-7 w-7 items-center justify-center rounded-lg transition-colors hover:bg-foreground/[0.04] hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none",
+                            turn.feedback === false ? "text-foreground" : "disabled:opacity-40",
+                          )}
+                        >
+                          ✕
+                        </button>
                       </div>
                     )}
                   </div>
@@ -1143,8 +1123,8 @@ export function ReaiAgentCard({
               {busy && <div className="border-l border-foreground/15 py-1 pl-3 text-[12px] text-muted-foreground">{t("reai.working", lang)}</div>}
             </div>
           )}
-          {!showHistory && !showMediaHistory && panel && turns.length === 0 && (
-            <div className="flex min-h-0 flex-1 flex-col items-center justify-center px-4 text-center">
+          {!showHistory && !showMediaHistory && turns.length === 0 && (
+            <div className={cn("flex flex-col items-center justify-center px-4 text-center", panel ? "min-h-0 flex-1" : "py-6")}>
               <p className="max-w-xs text-[13px] leading-relaxed text-muted-foreground">
                 {t(workspaceContext === "settings" ? "reai.startSettingsConversation" : (draftId ? "reai.startDraftConversation" : "reai.startConversation"), lang)}
               </p>
@@ -1155,7 +1135,7 @@ export function ReaiAgentCard({
                     type="button"
                     disabled={busy}
                     onClick={() => void ask(t(key, lang))}
-                    className="rounded-full border border-border/60 px-3 py-1.5 text-[11px] text-foreground/65 transition hover:border-foreground/25 hover:text-foreground"
+                    className="rounded-full border border-border/60 px-3 py-1.5 text-[11px] text-foreground/65 transition-colors hover:border-foreground/25 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
                   >
                     {t(key, lang)}
                   </button>
@@ -1183,14 +1163,14 @@ export function ReaiAgentCard({
               disabled={!message.trim() || busy}
               onClick={() => void ask()}
               aria-label={t("reai.ask", lang)}
-              className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-foreground text-background transition hover:bg-foreground/85 disabled:cursor-not-allowed disabled:opacity-25"
+              className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-foreground text-background transition-colors hover:bg-foreground/85 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-25"
             >
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="m5 12 14-7-4.5 14-2.5-6.5L5 12Z" /></svg>
             </button>
           </div>}
         </div>
       )}
-      {error && <p className="mt-3 text-[12px] text-red-600" role="alert">{error}</p>}
+      {error && <p role="alert" className="mt-3 rounded-xl border border-destructive/20 bg-destructive/[0.045] px-3 py-2.5 text-[12px] text-destructive">{error}</p>}
     </section>
   );
 }

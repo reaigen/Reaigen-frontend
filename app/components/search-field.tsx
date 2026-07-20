@@ -31,7 +31,7 @@ export function SearchField({
         value={value}
         onChange={(event) => onChange(event.target.value)}
         placeholder={placeholder}
-        className="h-9 w-full border-0 bg-transparent pl-6 pr-8 text-[13px] text-foreground outline-none transition-colors placeholder:text-muted-foreground/60"
+        className="h-9 w-full rounded-lg border-0 bg-transparent pl-6 pr-8 text-[13px] text-foreground outline-none transition-colors placeholder:text-muted-foreground/60 focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-0 [&::-webkit-search-cancel-button]:appearance-none"
       />
       {value ? (
         <button
@@ -41,7 +41,7 @@ export function SearchField({
             onChange("");
             onClear?.();
           }}
-          className="absolute right-0 top-1/2 -translate-y-1/2 rounded-lg p-1 text-muted-foreground transition-colors hover:text-foreground"
+          className="absolute right-0 top-1/2 -translate-y-1/2 rounded-lg p-1 text-muted-foreground transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
           aria-label={clearLabel}
         >
           <svg width="13" height="13" viewBox="0 0 16 16" fill="none" aria-hidden="true">

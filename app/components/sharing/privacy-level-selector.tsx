@@ -2,7 +2,7 @@
 
 import * as React from "react";
 import { Input } from "../../lib/ui/input";
-import { t } from "../../lib/i18n";
+import { t, type LocaleKey } from "../../lib/i18n";
 
 export type PrivacyLevel = "open" | "pin";
 
@@ -30,26 +30,28 @@ export function PrivacyLevelSelector({ level, pin, onLevelChange, onPinChange, l
 
   return (
     <div className="space-y-3">
-      <h3 className="text-[12px] font-medium text-foreground/50">
+      <h3 className="text-[13px] font-semibold text-foreground/70">
         {t("sharing.protection", lang)}
       </h3>
 
       {/* Segmented control */}
-      <div className="flex rounded-xl bg-foreground/[0.05] p-1">
+      <div role="radiogroup" aria-label={t("sharing.protection", lang)} className="flex rounded-xl bg-foreground/[0.05] p-1">
         {options.map((opt) => {
           const selected = level === opt.value;
           return (
             <button
               key={opt.value}
               type="button"
+              role="radio"
+              aria-checked={selected}
               onClick={() => {
                 onLevelChange(opt.value);
                 if (opt.value !== "pin") onPinChange("");
               }}
-              className={`flex-1 flex items-center justify-center gap-1.5 rounded-lg px-3 py-2 text-[12px] font-medium transition-all ${
+              className={`flex-1 flex items-center justify-center gap-1.5 rounded-lg px-3 py-2 text-[12px] font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ${
                 selected
                   ? "bg-background text-foreground shadow-sm"
-                  : "text-foreground/45 hover:text-foreground/65"
+                  : "text-foreground/50 hover:text-foreground/70"
               }`}
             >
               {opt.icon}
@@ -60,16 +62,19 @@ export function PrivacyLevelSelector({ level, pin, onLevelChange, onPinChange, l
       </div>
 
       {level === "pin" && (
-        <Input
-          type="text"
-          inputMode="numeric"
-          pattern="[0-9]*"
-          placeholder={t("shareDialog.pinPlaceholder", lang)}
-          value={pin}
-          onChange={(e) => onPinChange(e.target.value.replace(/\D/g, "").slice(0, 10))}
-          className="h-9 text-[12px]"
-          autoFocus
-        />
+        <div className="space-y-1.5 animate-fade-in">
+          <Input
+            type="text"
+            inputMode="numeric"
+            pattern="[0-9]*"
+            placeholder={t("shareDialog.pinPlaceholder", lang)}
+            value={pin}
+            onChange={(e) => onPinChange(e.target.value.replace(/\D/g, "").slice(0, 10))}
+            className="h-9 text-[12px]"
+            autoFocus
+          />
+          <p className="text-[11px] text-foreground/50">{t("shared.pin.minLength", lang)}</p>
+        </div>
       )}
     </div>
   );

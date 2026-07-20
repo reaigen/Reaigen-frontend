@@ -3,6 +3,7 @@
 import { useState } from "react";
 import type { RoomData } from "@/app/lib/tour-types";
 import { t } from "@/app/lib/i18n";
+import { cn } from "@/app/lib/utils";
 
 interface Props {
   floorplanUrl: string;
@@ -43,7 +44,10 @@ export default function FloorplanNav({ floorplanUrl, rooms, onRoomClick, activeR
     <div className="absolute bottom-20 left-3 z-20 animate-fade-in sm:left-4">
       <button
         onClick={() => setExpanded(!expanded)}
-        className={`mb-2 flex items-center gap-1.5 rounded-full border border-white/10 bg-black/75 px-3 py-2 text-xs font-medium text-white/80 shadow-lg transition-all hover:bg-black/85 hover:text-white ${expanded ? "bg-black/85" : ""}`}
+        className={cn(
+          "mb-2 flex items-center gap-1.5 rounded-full border border-white/10 px-3 py-2 text-xs font-medium text-white/80 shadow-lg transition-colors hover:bg-black/85 hover:text-white",
+          expanded ? "bg-black/85" : "bg-black/75",
+        )}
       >
         <svg width="12" height="12" viewBox="0 0 16 16" fill="none" className={`transition-transform duration-200 ${expanded ? "rotate-45" : ""}`}>
           <rect x="2" y="2" width="5" height="5" rx="1" stroke="currentColor" strokeWidth="1.5" />

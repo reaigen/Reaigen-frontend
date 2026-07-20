@@ -120,7 +120,7 @@ export default function TourPage({ params }: { params: Promise<{ id: string }> }
   if (error) {
     const isNotFound = error === t("tour.error.notFound", lang);
     return (
-      <div className="min-h-screen flex items-center justify-center bg-[hsl(var(--muted))]/35 px-4">
+      <div className="min-h-screen flex items-center justify-center bg-muted/30 px-4">
         <div className="text-center space-y-4 px-6 max-w-xs">
           <span
             className="text-[22px] text-foreground/80"
@@ -143,10 +143,10 @@ export default function TourPage({ params }: { params: Promise<{ id: string }> }
                 </svg>
               )}
             </div>
-            <p className="text-[14px] font-medium text-foreground/70 mb-1">
+            <p className="text-[14px] font-semibold text-foreground/70 mb-1">
               {isNotFound ? t("tour.error.notFoundTitle", lang) : t("tour.error.failedTitle", lang)}
             </p>
-            <p className="text-[13px] text-foreground/40 leading-relaxed">{error}</p>
+            <p className="text-[13px] text-foreground/50 leading-relaxed">{error}</p>
           </div>
           <div className="flex items-center justify-center gap-2 pt-1">
             {!isNotFound && (
@@ -166,7 +166,7 @@ export default function TourPage({ params }: { params: Promise<{ id: string }> }
   if (!viewer) return null;
 
   return (
-    <div className="relative h-[100dvh] w-screen overflow-hidden bg-black">
+    <div className="relative h-[100dvh] w-screen overflow-hidden bg-white">
       <SplatViewer
         key={editorVersion}
         ref={splatRef}
@@ -189,11 +189,11 @@ export default function TourPage({ params }: { params: Promise<{ id: string }> }
       />
 
       {/* Top bar */}
-      <div className="absolute left-3 top-3 z-20 flex items-center gap-2 sm:left-4 sm:top-4 animate-fade-in">
+      <div className="absolute left-3 top-[calc(0.75rem+env(safe-area-inset-top,0px))] z-20 flex items-center gap-2 sm:left-4 sm:top-[calc(1rem+env(safe-area-inset-top,0px))] animate-fade-in">
         <button
           onClick={() => router.back()}
           aria-label={t("common.back", lang)}
-          className="flex items-center justify-center w-9 h-9 rounded-full bg-black/40 backdrop-blur-xl border border-white/10 text-white/90 shadow-lg transition-all hover:bg-black/50 active:scale-95"
+          className="flex items-center justify-center w-9 h-9 rounded-full bg-black/40 backdrop-blur-xl border border-white/10 text-white/90 shadow-lg transition-colors hover:bg-black/50 active:scale-95"
         >
           <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
             <path d="M10 12L6 8L10 4" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />

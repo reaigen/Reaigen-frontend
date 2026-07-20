@@ -73,6 +73,10 @@ const PADDING = 32;
 const MESH_INK = "#141417"; // iOS FloorplanCanvas canvasInkColor
 const AREA_FILL = "#6b7280";
 
+// NOTE: "m²" is hardcoded in the legend, total-area chip, and room labels —
+// backend contract gap: floorplan payloads don't yet carry areas pre-converted
+// to the user's preferred area unit (unlike drafts' `area_preferred`).
+
 const midOf = (p1: V2, p2: V2): V2 => [(p1[0] + p2[0]) / 2, (p1[1] + p2[1]) / 2];
 
 /** Quarter-circle SVG arc centred on `c` from `p0` to `p1` (minor arc whose
@@ -152,14 +156,14 @@ export default function FloorplanViewer({ draftData, floorplanId, lang, publicFl
   }
 
   return (
-    <div className="rounded-2xl border border-black/[0.06] bg-white overflow-hidden">
+    <div className="rounded-2xl border border-border/40 bg-white overflow-hidden">
       {plan}
       {legendEntries.length > 0 && (
-        <div className="px-4 py-2.5 border-t border-black/[0.05]">
+        <div className="px-4 py-2.5 border-t border-border/40">
           <div className={`grid gap-x-6 gap-y-1.5 ${legendEntries.length > 4 ? "grid-cols-2 max-sm:grid-cols-1" : "grid-cols-1"}`}>
             {legendEntries.map((e) => (
               <div key={e.n} className="flex items-center gap-2 min-w-0">
-                <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-black/[0.06] text-[12px] font-bold text-foreground">
+                <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-black/[0.06] text-[12px] font-semibold text-foreground">
                   {e.n}
                 </span>
                 <span className="truncate text-[13px] font-medium text-foreground/75">{e.label}</span>

@@ -86,27 +86,30 @@ export function ContentScopeSelector({ scope, onChange, hasTour, hasPhotos, hasF
     { key: "floorplan", icon: icons.layout, labelKey: "sharing.scopeFloorplan", available: hasFloorplan },
   ];
 
-  const visibleCards = cards.filter((c) => c.available);
-
   return (
     <div className="space-y-3">
-      <h3 className="text-[12px] font-medium text-foreground/50">
+      <h3 className="text-[13px] font-semibold text-foreground/70">
         {t("sharing.whatToShare", lang)}
       </h3>
 
-      {/* Toggle chips — pill-shaped */}
+      {/* Toggle chips — pill-shaped; unavailable content types stay visible but disabled */}
       <div className="flex flex-wrap gap-2">
-        {visibleCards.map((card) => {
-          const active = scope[card.key];
+        {cards.map((card) => {
+          const active = card.available && scope[card.key];
           return (
             <button
               key={card.key}
               type="button"
+              disabled={!card.available}
+              aria-disabled={!card.available}
+              aria-pressed={active}
               onClick={() => toggleCard(card.key)}
-              className={`inline-flex items-center gap-1.5 rounded-full px-3.5 py-1.5 text-left transition-all ${
-                active
-                  ? "border border-foreground bg-foreground text-background"
-                  : "border border-transparent bg-foreground/[0.04] text-foreground/50 hover:bg-foreground/[0.07] hover:text-foreground/70"
+              className={`inline-flex items-center gap-1.5 rounded-full px-3.5 py-1.5 text-left transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ${
+                !card.available
+                  ? "border border-border/40 bg-transparent text-foreground/50 opacity-40 cursor-not-allowed"
+                  : active
+                    ? "border border-foreground bg-foreground text-background"
+                    : "border border-border/40 bg-transparent text-foreground/50 hover:bg-foreground/[0.04] hover:text-foreground/70"
               }`}
             >
               <span>{card.icon}</span>
@@ -126,11 +129,12 @@ export function ContentScopeSelector({ scope, onChange, hasTour, hasPhotos, hasF
               <button
                 key={name}
                 type="button"
+                aria-pressed={activeBundle === name}
                 onClick={() => handleBundleClick(name)}
-                className={`px-2.5 py-1 rounded-full text-[11px] font-medium transition-all ${
+                className={`px-2.5 py-1 rounded-full text-[11px] font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ${
                   activeBundle === name
                     ? "bg-foreground text-background border border-foreground"
-                    : "bg-foreground/[0.04] text-foreground/50 border border-transparent hover:bg-foreground/[0.07] hover:text-foreground/70"
+                    : "bg-transparent text-foreground/50 border border-border/40 hover:bg-foreground/[0.04] hover:text-foreground/70"
                 }`}
               >
                 {t(labelKey, lang)}
@@ -139,8 +143,9 @@ export function ContentScopeSelector({ scope, onChange, hasTour, hasPhotos, hasF
             <div className="flex-1" />
             <button
               type="button"
+              aria-expanded={detailsExpanded}
               onClick={() => setDetailsExpanded((v) => !v)}
-              className="text-[11px] font-medium text-foreground/40 hover:text-foreground transition-colors"
+              className="rounded text-[11px] font-medium text-foreground/50 hover:text-foreground transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
             >
               {t("shareDialog.customizeFields", lang)}
               <svg width="8" height="8" viewBox="0 0 16 16" fill="none" className={`inline ml-0.5 transition-transform ${detailsExpanded ? "rotate-180" : ""}`}>
@@ -150,10 +155,10 @@ export function ContentScopeSelector({ scope, onChange, hasTour, hasPhotos, hasF
           </div>
 
           {detailsExpanded && (
-            <div className="rounded-xl bg-foreground/[0.02] p-3.5 space-y-3">
+            <div className="rounded-xl bg-foreground/[0.02] p-3.5 space-y-3 animate-fade-in">
               {SHARE_FIELD_GROUPS.map((group) => (
                 <div key={group.key} className="space-y-1.5">
-                  <p className="text-[10px] font-medium text-foreground/45 uppercase tracking-wide">
+                  <p className="text-[11px] font-medium text-foreground/50 uppercase tracking-wide">
                     {t(`shareDialog.fieldGroup.${group.key}` as LocaleKey, lang)}
                   </p>
                   <div className="flex flex-wrap gap-1.5">
@@ -165,11 +170,12 @@ export function ContentScopeSelector({ scope, onChange, hasTour, hasPhotos, hasF
                           key={field}
                           type="button"
                           disabled={isTitle}
+                          aria-pressed={checked}
                           onClick={() => handleFieldToggle(field, !checked)}
-                          className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-[12px] font-medium transition-all ${
+                          className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-[12px] font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ${
                             checked
                               ? "bg-foreground text-background border border-foreground"
-                              : "bg-background text-foreground/70 border border-black/[0.08] hover:border-black/[0.16] hover:text-foreground"
+                              : "bg-transparent text-foreground/70 border border-border/40 hover:border-border hover:bg-foreground/[0.04] hover:text-foreground"
                           } ${isTitle ? "cursor-default opacity-60" : ""}`}
                         >
                           {checked && !isTitle && icons.check}

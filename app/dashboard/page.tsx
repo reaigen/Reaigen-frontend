@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { useAuth } from "../components/hooks/use-auth";
 import { AppShell } from "../components/app-shell";
 import { t, getUserLanguage } from "../lib/i18n";
+import type { LocaleKey } from "../lib/locales";
 import { listAllSplats, listDrafts } from "../lib/api/client";
 import type { DraftListingItem } from "../lib/tour-types";
 import Link from "next/link";
@@ -76,11 +77,12 @@ export default function DashboardPage() {
   const [splatIds, setSplatIds] = React.useState<Record<number, number>>({});
   const [searchInput, setSearchInput] = React.useState("");
   const [searchQuery, setSearchQuery] = React.useState("");
-  const [gridCols, setGridCols] = React.useState<1 | 2>(() => {
-    if (typeof window === "undefined") return 2;
+  const [gridCols, setGridCols] = React.useState<1 | 2>(2);
+  // Read persisted layout after mount to avoid a hydration mismatch
+  React.useEffect(() => {
     const cached = localStorage.getItem("reaigen:gridCols");
-    return cached === "1" ? 1 : 2;
-  });
+    if (cached === "1") setGridCols(1);
+  }, []);
   const handleGridCols = React.useCallback((cols: 1 | 2) => {
     setGridCols(cols);
     localStorage.setItem("reaigen:gridCols", String(cols));
@@ -212,7 +214,7 @@ export default function DashboardPage() {
 
   return (
     <AppShell user={user} onLogout={logout}>
-      <div className="mx-auto w-full max-w-[1180px] animate-fade-in">
+      <div className="mx-auto w-full max-w-[1180px]">
         <PageHeader
           title={t("dashboard.creationsTitle", lang)}
           description={t("dashboard.creationsSubtitle", lang)}
@@ -229,7 +231,7 @@ export default function DashboardPage() {
             clearLabel={t("dashboard.clearSearch", lang)}
             className="flex-1"
           />
-          <GridLayoutToggle value={gridCols} onChange={handleGridCols} />
+          <GridLayoutToggle value={gridCols} onChange={handleGridCols} lang={lang} />
         </div>
 
         {/* Cards */}
@@ -238,17 +240,26 @@ export default function DashboardPage() {
             {Array.from({ length: gridCols === 2 ? 4 : 3 }).map((_, i) => (
               <div key={i} className="animate-pulse">
                 <div className="aspect-[16/10] rounded-xl bg-muted/30" />
-                <div className="mt-3 space-y-2 px-1">
-                  <div className="h-4 w-2/3 rounded bg-muted/40" />
-                  <div className="h-3 w-1/2 rounded bg-muted/30" />
+                <div className="mt-2.5 px-0.5">
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="min-w-0 flex-1 space-y-2">
+                      <div className="h-4 w-2/3 rounded bg-muted/40" />
+                      <div className="h-3 w-1/2 rounded bg-muted/30" />
+                    </div>
+                    <div className="h-4 w-16 shrink-0 rounded bg-muted/40" />
+                  </div>
                 </div>
               </div>
             ))}
           </div>
         ) : draftsError ? (
-          <div className="flex flex-col items-center justify-center rounded-2xl border border-border/55 bg-surface px-6 py-20 text-center">
-            <p className="text-[14px] font-semibold">{t("dashboard.loadFailed", lang)}</p>
-            <button type="button" onClick={() => setReloadNonce((value) => value + 1)} className="mt-3 text-[12px] font-semibold underline underline-offset-4">
+          <div role="alert" className="flex flex-col items-center justify-center py-20 text-center">
+            <p className="text-[14px] font-medium text-foreground/60">{t("dashboard.loadFailed", lang)}</p>
+            <button
+              type="button"
+              onClick={() => setReloadNonce((value) => value + 1)}
+              className="mt-4 inline-flex h-8 items-center rounded-full border border-border/70 bg-surface px-3.5 text-[13px] font-medium transition-colors hover:bg-accent hover:text-accent-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+            >
               {t("common.tryAgain", lang)}
             </button>
           </div>
@@ -280,7 +291,7 @@ export default function DashboardPage() {
                 <Link
                   key={draft.id}
                   href={`/draft/${draft.id}`}
-                  className="group block opacity-0 animate-fade-in-up [animation-fill-mode:forwards]"
+                  className="group block rounded-xl opacity-0 animate-fade-in-up [animation-fill-mode:forwards] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
                   style={{ animationDelay: `${idx * 50}ms` }}
                   onMouseEnter={() => router.prefetch(`/draft/${draft.id}`)}
                 >
@@ -305,14 +316,15 @@ export default function DashboardPage() {
                       </div>
                     )}
                     {!draftSplatId && !draft.is_complete && (
-                      <div className="absolute left-3 top-3 rounded-full bg-white/90 px-2.5 py-1 text-[10px] font-semibold text-black/65 shadow-sm backdrop-blur-sm">
+                      <div className="absolute left-3 top-3 rounded-full bg-black/50 px-2.5 py-1 text-[11px] font-medium text-white backdrop-blur-sm">
                         {t("dashboard.listingDraft", lang)}
                       </div>
                     )}
                     {/* Share button */}
                     <button
+                      type="button"
                       onClick={(e) => { e.preventDefault(); e.stopPropagation(); router.push(`/draft/${draft.id}/sharing`); }}
-                      className="absolute right-3 top-3 flex h-8 w-8 items-center justify-center rounded-full bg-black/50 text-white/75 opacity-100 backdrop-blur-sm transition-all hover:bg-black/65 hover:text-white sm:opacity-0 sm:group-hover:opacity-100 sm:group-focus-within:opacity-100"
+                      className="absolute right-3 top-3 flex h-8 w-8 items-center justify-center rounded-full bg-black/50 text-white/75 opacity-100 backdrop-blur-sm transition-all hover:bg-black/65 hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 md:opacity-0 md:group-hover:opacity-100 md:group-focus-within:opacity-100"
                       aria-label={t("draft.share", lang)}
                     >
                       <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><path d="M8.59 13.51l6.83 3.98M15.41 6.51l-6.82 3.98"/></svg>
@@ -352,9 +364,14 @@ export default function DashboardPage() {
               {Array.from({ length: gridCols === 2 ? 2 : 1 }).map((_, i) => (
                 <div key={i} className="animate-pulse">
                   <div className="aspect-[16/10] rounded-xl bg-muted/30" />
-                  <div className="mt-3 space-y-2 px-1">
-                    <div className="h-4 w-2/3 rounded bg-muted/40" />
-                    <div className="h-3 w-1/2 rounded bg-muted/30" />
+                  <div className="mt-2.5 px-0.5">
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="min-w-0 flex-1 space-y-2">
+                        <div className="h-4 w-2/3 rounded bg-muted/40" />
+                        <div className="h-3 w-1/2 rounded bg-muted/30" />
+                      </div>
+                      <div className="h-4 w-16 shrink-0 rounded bg-muted/40" />
+                    </div>
                   </div>
                 </div>
               ))}
@@ -365,18 +382,18 @@ export default function DashboardPage() {
       </div>
 
       {/* Back to top */}
-      {showBackToTop && (
-        <button
-          type="button"
-          onClick={() => window.scrollTo({ top: 0, behavior: "smooth" })}
-          className="fixed bottom-6 right-6 z-50 flex h-10 w-10 items-center justify-center rounded-full bg-foreground/80 text-background shadow-lg backdrop-blur-sm transition-all hover:bg-foreground active:scale-95 animate-fade-in"
-          aria-label="Back to top"
-        >
-          <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true">
-            <path d="M8 13V3M4 7l4-4 4 4" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
-          </svg>
-        </button>
-      )}
+      <button
+        type="button"
+        onClick={() => window.scrollTo({ top: 0, behavior: "smooth" })}
+        className={`fixed bottom-6 right-6 z-50 flex h-10 w-10 items-center justify-center rounded-full bg-foreground/80 text-background shadow-lg backdrop-blur-sm transition-opacity hover:bg-foreground active:scale-95 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 ${showBackToTop ? "opacity-100" : "pointer-events-none opacity-0"}`}
+        aria-label={t("dashboard.backToTop", lang)}
+        aria-hidden={!showBackToTop}
+        tabIndex={showBackToTop ? 0 : -1}
+      >
+        <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+          <path d="M8 13V3M4 7l4-4 4 4" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+        </svg>
+      </button>
     </AppShell>
   );
 }

@@ -19,7 +19,7 @@ interface LifetimeSelectorProps {
 export function LifetimeSelector({ hours, onHoursChange, lang }: LifetimeSelectorProps) {
   return (
     <div className="space-y-3">
-      <h3 className="text-[12px] font-medium text-foreground/50">
+      <h3 className="text-[13px] font-semibold text-foreground/70">
         {t("sharing.lifetime", lang)}
       </h3>
 
@@ -28,11 +28,12 @@ export function LifetimeSelector({ hours, onHoursChange, lang }: LifetimeSelecto
           <button
             key={p.hours}
             type="button"
+            aria-pressed={hours === p.hours}
             onClick={() => onHoursChange(p.hours)}
-            className={`px-3 py-1.5 rounded-full text-[11px] font-medium transition-all ${
+            className={`px-3 py-1.5 rounded-full text-[11px] font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ${
               hours === p.hours
                 ? "bg-foreground text-background border border-foreground"
-                : "bg-foreground/[0.04] text-foreground/50 border border-transparent hover:bg-foreground/[0.07] hover:text-foreground/70"
+                : "bg-transparent text-foreground/50 border border-border/40 hover:bg-foreground/[0.04] hover:text-foreground/70"
             }`}
           >
             {t(p.labelKey, lang)}

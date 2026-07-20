@@ -26,7 +26,7 @@ import { SharedPropertyPanel } from "../../components/shared-property-panel";
 import { SharedDraftView } from "../../components/shared-draft-view";
 import { Button } from "../../lib/ui/button";
 import { Input } from "../../lib/ui/input";
-import { getBrowserLanguage, t } from "../../lib/i18n";
+import { getBrowserLanguage, t, type LocaleKey } from "../../lib/i18n";
 import { PageLoading } from "../../components/page-loading";
 import type { SplatViewerHandle } from "../../components/splat-viewer";
 
@@ -257,14 +257,18 @@ export default function SharedPage({ params }: { params: Promise<{ token: string
               <div className="mx-auto w-12 h-12 rounded-full bg-muted flex items-center justify-center mb-3">
                 <svg width="20" height="20" viewBox="0 0 24 24" fill="none" className="text-muted-foreground"><rect x="3" y="11" width="18" height="11" rx="2" stroke="currentColor" strokeWidth="2" /><path d="M7 11V7a5 5 0 0110 0v4" stroke="currentColor" strokeWidth="2" strokeLinecap="round" /></svg>
               </div>
-              <h2 className="text-base font-semibold">{t("shared.pin.title", lang)}</h2>
-              <p className="text-sm text-muted-foreground mt-1">{t("shared.pin.subtitle", lang)}</p>
+              <h2 className="text-[15px] font-semibold">{t("shared.pin.title", lang)}</h2>
+              <p className="text-[13px] text-muted-foreground mt-1">{t("shared.pin.subtitle", lang)}</p>
             </div>
           </div>
           <form onSubmit={handlePinSubmit} className="space-y-3">
-            <Input type="text" inputMode="numeric" pattern="[0-9]*" placeholder={t("shared.pin.placeholder", lang)} value={pin} onChange={(e) => setPin(e.target.value.replace(/\D/g, "").slice(0, 10))} disabled={pinLoading} autoFocus autoComplete="off" className="h-10 text-center text-sm tracking-[0.2em] tabular-nums" />
-            {pinError && <div className="rounded-lg bg-foreground/[0.04] border border-foreground/[0.08] px-3 py-2"><p className="text-xs text-foreground/60 text-center">{pinError}</p></div>}
-            <Button className="w-full h-10" loading={pinLoading} disabled={pinLoading || pin.length < 4}>{t("shared.pin.viewTour", lang)}</Button>
+            <div className="space-y-1.5">
+              <Input type="text" inputMode="numeric" pattern="[0-9]*" placeholder={t("shared.pin.placeholder", lang)} value={pin} onChange={(e) => setPin(e.target.value.replace(/\D/g, "").slice(0, 10))} disabled={pinLoading} autoFocus autoComplete="off" className="h-10 text-center text-[13px] tracking-[0.2em] tabular-nums" />
+              <p className="text-[11px] text-foreground/50 text-center">{t("shared.pin.minLength", lang)}</p>
+            </div>
+            {pinError && <div role="alert" className="rounded-lg bg-foreground/[0.04] border border-foreground/[0.08] px-3 py-2"><p className="text-xs text-foreground/60 text-center">{pinError}</p></div>}
+            {/* Neutral CTA — at gate time we don't yet know whether the share includes a tour */}
+            <Button className="w-full h-10" loading={pinLoading} disabled={pinLoading || pin.length < 4}>{t("shared.pin.continue", lang)}</Button>
           </form>
         </div>
       </div>
@@ -313,11 +317,20 @@ export default function SharedPage({ params }: { params: Promise<{ token: string
     return <PageLoading />;
   }
 
-  // ── Full-screen tour overlay ──────────────────────────────────────
+  // ── Render ────────────────────────────────────────────────────────
+  // The property card stays mounted underneath; the tour renders as a
+  // fixed overlay on top so scroll position and gallery state survive
+  // opening/closing the tour.
 
-  if (tourOpen && tourViewerData) {
-    return (
-      <div className="relative h-[100dvh] w-screen overflow-hidden bg-black">
+  return (
+    <>
+      {draftData && (
+        <SharedDraftView draftData={draftData} lang={lang} hasTour={hasTour} onOpenTour={() => setTourOpen(true)} floorplanUrl={tourViewerData?.floorplan_url} rooms={tourViewerData?.rooms} />
+      )}
+
+      {tourOpen && tourViewerData && (
+        <div className="fixed inset-0 z-[9999] bg-white">
+          <div className="relative h-full w-full overflow-hidden bg-black">
         <SplatViewer
           ref={splatRef}
           splatUrl={activeRenderUrl ?? pickRenderableUrl(tourViewerData)}
@@ -341,14 +354,14 @@ export default function SharedPage({ params }: { params: Promise<{ token: string
         {/* Close button — back to property card */}
         <button
           onClick={() => setTourOpen(false)}
-          className="absolute left-3 top-3 z-20 flex items-center gap-1.5 bg-black/40 backdrop-blur-xl text-white/70 rounded-full px-3 py-1.5 text-[11px] font-medium border border-white/10 hover:bg-black/50 transition-colors sm:left-4 sm:top-4"
+          className="absolute left-3 top-[calc(0.75rem+env(safe-area-inset-top,0px))] z-20 flex items-center gap-1.5 bg-black/40 backdrop-blur-xl text-white/70 rounded-full px-3 py-1.5 text-[11px] font-medium border border-white/10 hover:bg-black/50 transition-colors sm:left-4 sm:top-[calc(1rem+env(safe-area-inset-top,0px))]"
         >
           <svg width="12" height="12" viewBox="0 0 16 16" fill="none"><path d="M10 12L6 8l4-4" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/></svg>
           {t("common.back", lang)}
         </button>
 
         {/* Branding */}
-        <div className="absolute right-3 top-3 z-20 animate-fade-in sm:right-4 sm:top-4">
+        <div className="absolute right-3 top-[calc(0.75rem+env(safe-area-inset-top,0px))] z-20 animate-fade-in sm:right-4 sm:top-[calc(1rem+env(safe-area-inset-top,0px))]">
           <span className="text-[13px] text-white/50 bg-black/20 backdrop-blur-sm px-2.5 py-1 rounded-full" style={{ fontFamily: "var(--font-brand), ui-serif, Georgia, serif", fontWeight: 400 }}>Reaigen</span>
         </div>
 
@@ -361,15 +374,9 @@ export default function SharedPage({ params }: { params: Promise<{ token: string
         )}
 
         {draftData && <SharedPropertyPanel draftData={draftData} lang={lang} />}
-      </div>
-    );
-  }
-
-  // ── Property card (primary view) ──────────────────────────────────
-
-  if (draftData) {
-    return <SharedDraftView draftData={draftData} lang={lang} hasTour={hasTour} onOpenTour={() => setTourOpen(true)} floorplanUrl={tourViewerData?.floorplan_url} rooms={tourViewerData?.rooms} />;
-  }
-
-  return null;
+          </div>
+        </div>
+      )}
+    </>
+  );
 }

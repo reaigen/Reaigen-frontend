@@ -6,7 +6,7 @@
  * photos with lightbox, specs, and description in a clean branded layout.
  */
 
-import { t } from "../lib/i18n";
+import { t, type LocaleKey } from "../lib/i18n";
 import FloorplanViewer from "./floorplan-viewer";
 import { DraftImageGallery } from "./draft-image-gallery";
 import type { SharedDraftData, RoomData } from "../lib/tour-types";
@@ -43,7 +43,7 @@ function SharedFloorplan({ floorplanUrl, rooms, lang }: { floorplanUrl: string; 
 
   if (!hasRooms) {
     return (
-      <div className="rounded-2xl overflow-hidden border border-black/[0.06] bg-white">
+      <div className="rounded-2xl overflow-hidden border border-border/40 bg-background">
         {/* eslint-disable-next-line @next/next/no-img-element */}
         <img src={floorplanUrl} alt={t("tour.floorplan.alt", lang)} className="w-full" loading="lazy" />
       </div>
@@ -67,7 +67,7 @@ function SharedFloorplan({ floorplanUrl, rooms, lang }: { floorplanUrl: string; 
   ];
 
   return (
-    <div className="relative rounded-2xl overflow-hidden border border-black/[0.06] bg-white">
+    <div className="relative rounded-2xl overflow-hidden border border-border/40 bg-background">
       {/* eslint-disable-next-line @next/next/no-img-element */}
       <img src={floorplanUrl} alt={t("tour.floorplan.alt", lang)} className="w-full block" loading="lazy" />
       <svg viewBox={`0 0 ${svgW} ${svgH}`} className="absolute inset-0 w-full h-full" style={{ pointerEvents: "none" }}>
@@ -235,11 +235,19 @@ export function SharedDraftView({ draftData, lang, hasTour, onOpenTour, floorpla
         )}
       </main>
 
-      {/* Footer */}
+      {/* Footer — localized "Shared via {name}" with the brand span injected at the placeholder */}
       <footer className="border-t border-border/30 mt-8 px-5 py-4 sm:px-8 text-center">
         <span className="text-[11px] text-muted-foreground">
-          {"Shared via "}
-          <span className="text-foreground/60" style={{ fontFamily: "var(--font-brand), ui-serif, Georgia, serif" }}>Reaigen</span>
+          {(() => {
+            const [before, after = ""] = t("shared.footerSharedVia", lang).split("{name}");
+            return (
+              <>
+                {before}
+                <span className="text-foreground/60" style={{ fontFamily: "var(--font-brand), ui-serif, Georgia, serif" }}>Reaigen</span>
+                {after}
+              </>
+            );
+          })()}
         </span>
       </footer>
 

@@ -72,7 +72,7 @@ export function ShareCreateForm({
 
   return (
     <div className="space-y-5">
-      {error && <p className="text-[12px] text-destructive">{error}</p>}
+      {error && <p role="alert" className="text-[12px] text-destructive">{error}</p>}
 
       <ContentScopeSelector
         scope={scope}

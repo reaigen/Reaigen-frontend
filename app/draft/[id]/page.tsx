@@ -452,8 +452,8 @@ export default function DraftPreviewPage({ params }: { params: Promise<{ id: str
 
   if (error) {
     const nf = error === "notFound";
-    return (
-      <div className="min-h-screen flex items-center justify-center px-4">
+    const errorContent = (
+      <div className="flex min-h-[60vh] items-center justify-center px-4">
         <div className="text-center space-y-4 max-w-xs">
           <div className="mx-auto w-12 h-12 rounded-full bg-foreground/[0.04] flex items-center justify-center">
             {nf
@@ -469,6 +469,12 @@ export default function DraftPreviewPage({ params }: { params: Promise<{ id: str
           </div>
         </div>
       </div>
+    );
+    if (!user) return errorContent;
+    return (
+      <AppShell user={user} onLogout={logout} hideMobileNav>
+        <div className="mx-auto w-full max-w-4xl pb-16 md:pb-10">{errorContent}</div>
+      </AppShell>
     );
   }
 
@@ -521,14 +527,14 @@ export default function DraftPreviewPage({ params }: { params: Promise<{ id: str
             <Button type="button" variant="ghost" size="icon-sm" onClick={() => setVersionsOpen(true)} aria-label={t("draft.versions.title", lang)} title={t("draft.versions.title", lang)}>
               <VersionsIcon size={16} />
             </Button>
-            <Button type="button" variant="outline" size="sm" onClick={() => setEditorOpen(true)} className="h-8 rounded-lg px-2.5 text-[11px] sm:px-3">
+            <Button type="button" variant="outline" size="xs" onClick={() => setEditorOpen(true)}>
               <EditIcon size={14} /> <span className="hidden sm:inline">{t("shareDialog.edit", lang)}</span>
             </Button>
-            <Button type="button" variant="outline" size="sm" onClick={() => router.push(`/draft/${draftId}/sharing`)} className="hidden h-8 rounded-lg px-3 text-[11px] sm:inline-flex">
+            <Button type="button" variant="outline" size="xs" onClick={() => router.push(`/draft/${draftId}/sharing`)} className="hidden sm:inline-flex">
               <ShareIcon size={14} /> {t("draft.share", lang)}
             </Button>
             {hasTour && (
-              <Button asChild size="sm" className="hidden h-8 rounded-lg px-3 text-[11px] sm:inline-flex">
+              <Button asChild size="xs" className="hidden sm:inline-flex">
                 <Link href={`/tour/${primarySplatId}`}><TourIcon size={14} /> {t("draft.viewTour", lang)}</Link>
               </Button>
             )}
@@ -539,7 +545,7 @@ export default function DraftPreviewPage({ params }: { params: Promise<{ id: str
         {hasMedia && (
           <div className="-mx-4 md:mx-0">
             {(images.length > 0 || thumbUrl) && (
-              <div className="md:rounded-xl overflow-hidden">
+              <div className="md:rounded-2xl overflow-hidden">
                 <DraftImageGallery images={images} alt={draft.title} fallbackUrl={thumbUrl} lang={lang} onActiveImageChange={setActiveImageId} />
               </div>
             )}
@@ -551,7 +557,7 @@ export default function DraftPreviewPage({ params }: { params: Promise<{ id: str
                     controls
                     playsInline
                     preload="metadata"
-                    className="aspect-video w-full bg-black md:rounded-xl"
+                    className="aspect-[16/10] w-full bg-black object-cover md:rounded-2xl"
                     aria-label={video.name}
                   >
                     <source src={video.url} />
@@ -575,12 +581,12 @@ export default function DraftPreviewPage({ params }: { params: Promise<{ id: str
             </StatusPill>
             {hasTour ? <StatusPill tone="strong">{t("dashboard.tourReady", lang)}</StatusPill> : null}
           </div>
-          <h1 className="text-[22px] font-semibold tracking-tight leading-tight">{draft.title || t("dashboard.untitled", lang)}</h1>
+          <h1 className="text-[24px] font-semibold tracking-tight leading-tight">{draft.title || t("dashboard.untitled", lang)}</h1>
           {address && (
             <p className="mt-1 text-[13px] text-muted-foreground">{address}</p>
           )}
           {price && (
-            <p className="mt-2 text-[22px] font-semibold tabular-nums">
+            <p className="mt-2 text-[24px] font-semibold tracking-tight tabular-nums">
               {price}
               {showOrigPrice && (
                 <span className="ml-2 text-[13px] font-normal text-muted-foreground tabular-nums">{origPrice}</span>
@@ -613,8 +619,11 @@ export default function DraftPreviewPage({ params }: { params: Promise<{ id: str
             <h2 className="text-[14px] font-semibold mb-2">{t("draft.details", lang)}</h2>
             <div className="rounded-2xl bg-foreground/[0.03] overflow-hidden">
               {rows.map((r, i) => (
-                <div key={i} className={`flex items-baseline justify-between gap-4 px-4 py-2.5 ${i < rows.length - 1 ? "border-b border-black/[0.05]" : ""}`}>
-                  <span className="text-[13px] text-muted-foreground">{r.label}</span>
+                <div key={i} className={`flex items-center justify-between gap-4 px-4 py-2.5 ${i < rows.length - 1 ? "border-b border-border/40" : ""}`}>
+                  <span className="flex min-w-0 items-center gap-2.5">
+                    <span className="[&_svg]:text-foreground/40">{r.icon}</span>
+                    <span className="text-[13px] text-muted-foreground">{r.label}</span>
+                  </span>
                   <span className="text-right text-[13px] font-medium text-foreground tabular-nums">{r.value}</span>
                 </div>
               ))}
@@ -627,7 +636,7 @@ export default function DraftPreviewPage({ params }: { params: Promise<{ id: str
           <div className="mt-5 animate-fade-in-up" style={{ animationDelay: "180ms" }}>
             <h2 className="text-[14px] font-semibold mb-2">{t("draft.description", lang)}</h2>
             {translationPending && !hasTranslation && (
-              <p className="text-[12px] text-foreground/40 italic mb-2">{t("draft.descriptionPending", lang)}</p>
+              <p className="text-[12px] text-foreground/50 mb-2">{t("draft.descriptionPending", lang)}</p>
             )}
             {description && (
               <div className="rounded-2xl bg-foreground/[0.03] px-4 py-3.5">
@@ -637,7 +646,7 @@ export default function DraftPreviewPage({ params }: { params: Promise<{ id: str
                   </p>
                 </div>
                 {descLong && (
-                  <button onClick={() => setDescExpanded(!descExpanded)} className="mt-2 text-[12px] font-medium text-foreground/45 hover:text-foreground transition-colors">
+                  <button onClick={() => setDescExpanded(!descExpanded)} className="mt-2 text-[12px] font-medium text-foreground/50 hover:text-foreground transition-colors">
                     {descExpanded ? t("draft.showLess", lang) : t("draft.showMore", lang)}
                   </button>
                 )}
@@ -652,7 +661,7 @@ export default function DraftPreviewPage({ params }: { params: Promise<{ id: str
             <h2 className="text-[14px] font-semibold mb-2">{t("draft.features", lang)}</h2>
             <div className="flex flex-wrap gap-1.5">
               {features.map((f) => (
-                <span key={f} className="inline-flex items-center gap-1 rounded-full bg-foreground/[0.04] px-2.5 py-1 text-[12px] text-foreground/70">
+                <span key={f} className="inline-flex items-center gap-1 rounded-full bg-foreground/[0.04] px-2.5 py-1 text-[12px] text-foreground/50">
                   {I.check} {f}
                 </span>
               ))}
@@ -666,8 +675,11 @@ export default function DraftPreviewPage({ params }: { params: Promise<{ id: str
             <h2 className="text-[14px] font-semibold mb-2">{t("draft.monthlyCosts", lang)}</h2>
             <div className="rounded-2xl bg-foreground/[0.03] overflow-hidden">
               {monthlyCosts.map((r, i) => (
-                <div key={i} className={`flex items-baseline justify-between gap-4 px-4 py-2.5 ${i < monthlyCosts.length - 1 ? "border-b border-black/[0.05]" : ""}`}>
-                  <span className="text-[13px] text-muted-foreground">{r.label}</span>
+                <div key={i} className={`flex items-center justify-between gap-4 px-4 py-2.5 ${i < monthlyCosts.length - 1 ? "border-b border-border/40" : ""}`}>
+                  <span className="flex min-w-0 items-center gap-2.5">
+                    <span className="[&_svg]:text-foreground/40">{r.icon}</span>
+                    <span className="text-[13px] text-muted-foreground">{r.label}</span>
+                  </span>
                   <span className="text-right text-[13px] font-medium text-foreground tabular-nums">{r.value}</span>
                 </div>
               ))}
@@ -697,7 +709,7 @@ export default function DraftPreviewPage({ params }: { params: Promise<{ id: str
       />
 
       {/* Sticky mobile action bar */}
-      <div className="fixed inset-x-0 bottom-0 z-40 flex gap-2 border-t border-border/45 bg-background px-4 py-2.5 pb-safe md:hidden">
+      <div className="fixed inset-x-0 bottom-0 z-40 flex gap-2 border-t border-border/40 bg-background px-4 py-2.5 pb-safe md:hidden">
         <Button variant="outline" size="sm" className="flex-1" onClick={() => setEditorOpen(true)}>
           <EditIcon size={15} /> {t("shareDialog.edit", lang)}
         </Button>
@@ -705,12 +717,12 @@ export default function DraftPreviewPage({ params }: { params: Promise<{ id: str
           <ShareIcon size={15} />
         </Button>
         {hasTour && (
-          <Link href={`/tour/${primarySplatId}`} className="flex-1">
-            <Button variant="default" size="sm" className="w-full">
+          <Button asChild variant="default" size="sm" className="flex-1">
+            <Link href={`/tour/${primarySplatId}`}>
               <TourIcon size={15} />
               {t("draft.viewTour", lang)}
-            </Button>
-          </Link>
+            </Link>
+          </Button>
         )}
       </div>
     </AppShell>

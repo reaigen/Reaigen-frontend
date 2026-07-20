@@ -6,7 +6,7 @@ import Link from "next/link";
 import { useAuth } from "../components/hooks/use-auth";
 import { AppShell } from "../components/app-shell";
 import { Button } from "../lib/ui/button";
-import { t, getUserLanguage, formatDateShort, type LocaleKey } from "../lib/i18n";
+import { t, getUserLanguage, formatDate } from "../lib/i18n";
 import {
   listShares,
   listAllDrafts,
@@ -16,65 +16,27 @@ import {
   revokeShare,
   getShareAnalytics,
 } from "../lib/api/client";
-import { SHARE_BUNDLES, type DraftListingItem, type ShareData, type ShareBundleName } from "../lib/tour-types";
+import type { DraftListingItem, ShareData } from "../lib/tour-types";
+import {
+  copyToClipboard,
+  shareUrl,
+  fieldSummaryLabel,
+  expiryLabel,
+  STATUS_CONFIG,
+  type ShareStats,
+} from "../lib/share-ui";
 import { PageLoading } from "../components/page-loading";
 import { PageHeader } from "../components/page-header";
 import { SidePanel } from "../components/side-panel";
+import { SearchField } from "../components/search-field";
 import { LinkIcon, SearchIcon } from "../components/icons";
 import { Thumbnail } from "../components/thumbnail";
-
-function detectBundleFromVisible(visible: string[]): ShareBundleName | null {
-  const set = new Set(visible);
-  for (const name of ["minimal", "less", "all"] as const) {
-    const bundle = SHARE_BUNDLES[name];
-    if (bundle.length === set.size && bundle.every((f) => set.has(f))) return name;
-  }
-  return null;
-}
-
-function fieldSummaryLabel(share: ShareData, lang: string): string {
-  if (share.fields?.length) {
-    const visible = share.fields.filter((f) => f.is_visible).map((f) => f.field_name);
-    const bundleName = detectBundleFromVisible(visible);
-    if (bundleName) return t(`shareDialog.bundle.${bundleName}` as LocaleKey, lang);
-    return `${visible.length} ${t("shareDialog.fieldSummary", lang)}`;
-  }
-  return t("shareDialog.bundle.less", lang);
-}
-
-async function copyToClipboard(text: string): Promise<boolean> {
-  try { await navigator.clipboard.writeText(text); return true; } catch { return false; }
-}
-
-function shareUrl(token: string) {
-  const origin = typeof window === "undefined" ? "" : window.location.origin;
-  return `${origin}/shared/${token}`;
-}
 
 function draftThumbnail(draft: DraftListingItem): string | null {
   return (draft.raw_uploads ?? [])
     .filter((upload) => upload.mime_type?.startsWith("image") || upload.asset_type === "photo")
     .sort((a, b) => a.sort_order - b.sort_order)[0]?.file_url ?? null;
 }
-
-function expiryLabel(dateStr: string | null, lang: string): string | null {
-  if (!dateStr) return null;
-  const diff = new Date(dateStr).getTime() - Date.now();
-  const days = Math.round(diff / 86400000);
-  if (days < 0) return t("shares.expired", lang);
-  if (days === 0) return t("shares.expirestoday", lang);
-  if (days === 1) return t("shares.expirestomorrow", lang);
-  return `${days}d`;
-}
-
-type ShareStats = { total_accesses: number; unique_ips: number; authenticated_accesses: number; failed_pin_attempts: number };
-
-const STATUS_CONFIG: Record<string, { dot: string; bg: string; text: string; labelKey: LocaleKey }> = {
-  active:  { dot: "bg-background",    bg: "bg-foreground", text: "text-background", labelKey: "shares.statusActive" },
-  paused:  { dot: "bg-foreground/40", bg: "bg-foreground/[0.05]", text: "text-foreground/55", labelKey: "shares.statusPaused" },
-  expired: { dot: "bg-foreground/20", bg: "bg-foreground/[0.04]", text: "text-foreground/40", labelKey: "shares.statusExpired" },
-  revoked: { dot: "bg-foreground/20", bg: "bg-foreground/[0.04]", text: "text-foreground/40", labelKey: "shares.statusRevoked" },
-};
 
 /* ── Share Row ────────────────────────────────────────────────────────── */
 
@@ -83,6 +45,7 @@ function ShareRow({
   tourName,
   tourLink,
   lang,
+  dateFormat,
   onUpdate,
   onEdit,
 }: {
@@ -90,6 +53,7 @@ function ShareRow({
   tourName: string;
   tourLink: string | null;
   lang: string;
+  dateFormat?: string | null;
   onUpdate: (updated: ShareData | null) => void;
   onEdit: () => void;
 }) {
@@ -149,10 +113,10 @@ function ShareRow({
   };
 
   return (
-    <div className={`rounded-xl border transition-colors ${isLive ? "border-border/70 bg-background hover:border-border" : "border-border/40 bg-muted/20"}`}>
+    <div className={`rounded-xl border transition-colors ${isLive ? "border-border/60 bg-background hover:border-border" : "border-border/40 bg-muted/20"}`}>
       {/* Main row — always visible */}
       <div className="w-full px-4 py-3.5 flex items-center gap-3">
-        <button type="button" onClick={handleToggleExpand} aria-expanded={expanded} className="flex min-w-0 flex-1 items-center gap-3 text-left">
+        <button type="button" onClick={handleToggleExpand} aria-expanded={expanded} className="flex min-w-0 flex-1 items-center gap-3 rounded-lg text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2">
           {/* Status dot */}
           <span className={`w-2 h-2 rounded-full shrink-0 ${cfg.dot}`} />
 
@@ -161,47 +125,46 @@ function ShareRow({
             <span className="flex items-center gap-2">
               <span className={`text-[13px] font-semibold truncate ${isLive ? "" : "text-foreground/50"}`}>{tourName}</span>
               {share.requires_pin && (
-                <span className="shrink-0 inline-flex items-center gap-0.5 rounded bg-foreground/[0.07] px-1.5 py-px text-[9px] font-medium text-foreground/60 uppercase tracking-wider">
-                  <svg width="8" height="8" viewBox="0 0 16 16" fill="none"><rect x="3" y="7" width="10" height="7" rx="2" stroke="currentColor" strokeWidth="1.5" /><path d="M5 7V5a3 3 0 016 0v2" stroke="currentColor" strokeWidth="1.5" /></svg>
+                <span className="shrink-0 inline-flex items-center gap-0.5 rounded bg-foreground/[0.07] px-1.5 py-px text-[11px] font-medium text-foreground/60 uppercase tracking-wider">
+                  <svg aria-hidden="true" width="8" height="8" viewBox="0 0 16 16" fill="none"><rect x="3" y="7" width="10" height="7" rx="2" stroke="currentColor" strokeWidth="1.5" /><path d="M5 7V5a3 3 0 016 0v2" stroke="currentColor" strokeWidth="1.5" /></svg>
                   PIN
                 </span>
               )}
-              {expiry && <span className="shrink-0 rounded bg-foreground/[0.07] px-1.5 py-px text-[9px] font-medium text-foreground/50">{expiry}</span>}
+              {expiry && <span className="shrink-0 rounded bg-foreground/[0.07] px-1.5 py-px text-[11px] font-medium text-foreground/50">{expiry}</span>}
             </span>
             <span className="mt-0.5 flex items-center gap-2 text-[11px] text-foreground/60">
               <span className="tabular-nums">{share.access_count} {share.access_count === 1 ? t("shares.viewSingular", lang) : t("shares.viewPlural", lang)}</span>
               <span className="text-foreground/35">·</span>
               <span>{fieldSummaryLabel(share, lang)}</span>
               <span className="text-foreground/35">·</span>
-              <span>{formatDateShort(share.created_at, lang)}</span>
+              <span>{formatDate(share.created_at, dateFormat, lang)}</span>
             </span>
           </span>
 
-          <span className={`hidden shrink-0 items-center gap-1 rounded-full px-2.5 py-0.5 text-[10px] font-semibold sm:inline-flex ${cfg.bg} ${cfg.text}`}>
+          <span className={`inline-flex shrink-0 items-center gap-1 rounded-full px-2.5 py-0.5 text-[11px] font-semibold ${cfg.bg} ${cfg.text}`}>
             {t(cfg.labelKey, lang)}
           </span>
-          <svg width="14" height="14" viewBox="0 0 16 16" fill="none" className={`shrink-0 text-foreground/35 transition-transform ${expanded ? "rotate-180" : ""}`}>
+          <svg aria-hidden="true" width="14" height="14" viewBox="0 0 16 16" fill="none" className={`shrink-0 text-foreground/35 transition-transform ${expanded ? "rotate-180" : ""}`}>
             <path d="M4 6l4 4 4-4" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
           </svg>
         </button>
 
         {/* Copy button (live only) */}
         {isLive && (
-          <button
+          <Button
+            type="button"
+            variant="outline"
+            size="xs"
             onClick={handleCopy}
-            className={`shrink-0 inline-flex h-7 items-center gap-1 px-2.5 rounded-lg text-[11px] font-medium transition-all ${
-              copied
-                ? "bg-foreground text-background"
-                : "border border-border/50 text-foreground/70 hover:border-border hover:text-foreground"
-            }`}
+            className={`shrink-0 gap-1 text-[11px] [&_svg]:size-3 ${copied ? "border-foreground bg-foreground text-background hover:bg-foreground hover:text-background" : "text-foreground/70 hover:text-foreground"}`}
           >
             {copied ? (
-              <svg width="12" height="12" viewBox="0 0 16 16" fill="none"><path d="M3 8.5L6.5 12L13 4" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" /></svg>
+              <svg aria-hidden="true" width="12" height="12" viewBox="0 0 16 16" fill="none"><path d="M3 8.5L6.5 12L13 4" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" /></svg>
             ) : (
-              <svg width="12" height="12" viewBox="0 0 16 16" fill="none"><rect x="5.5" y="5.5" width="8" height="8" rx="1.5" stroke="currentColor" strokeWidth="1.5" /><path d="M10.5 5.5V3.5C10.5 2.67 9.83 2 9 2H3.5C2.67 2 2 2.67 2 3.5V9C2 9.83 2.67 10.5 3.5 10.5H5.5" stroke="currentColor" strokeWidth="1.5" /></svg>
+              <svg aria-hidden="true" width="12" height="12" viewBox="0 0 16 16" fill="none"><rect x="5.5" y="5.5" width="8" height="8" rx="1.5" stroke="currentColor" strokeWidth="1.5" /><path d="M10.5 5.5V3.5C10.5 2.67 9.83 2 9 2H3.5C2.67 2 2 2.67 2 3.5V9C2 9.83 2.67 10.5 3.5 10.5H5.5" stroke="currentColor" strokeWidth="1.5" /></svg>
             )}
             {copied ? t("shares.copied", lang) : t("shares.copyLink", lang)}
-          </button>
+          </Button>
         )}
 
       </div>
@@ -212,7 +175,7 @@ function ShareRow({
           <div className={`border-t border-border/40 px-4 py-3.5 space-y-3 ${expanded ? "" : "invisible"}`}>
           {/* URL row */}
           {isLive && (
-            <div className="flex items-center gap-2 rounded-lg border border-border/40 bg-foreground/[0.02] px-3 py-2">
+            <div className="flex items-center gap-2 rounded-xl bg-foreground/[0.03] px-3 py-2">
               <p className="flex-1 text-[11px] font-mono text-foreground/70 truncate select-all">{shareUrl(share.token)}</p>
             </div>
           )}
@@ -225,30 +188,30 @@ function ShareRow({
               </div>
             ) : stats ? (
               <>
-                <div className="rounded-lg border border-border/40 px-3 py-2.5 text-center">
-                  <p className="text-[18px] font-semibold tabular-nums">{stats.total_accesses}</p>
-                  <p className="text-[10px] text-foreground/60 uppercase tracking-wider mt-0.5">{t("shareDialog.analytics.totalViews", lang)}</p>
+                <div className="rounded-xl bg-foreground/[0.03] px-3 py-2.5 text-center">
+                  <p className="text-[17px] font-semibold tabular-nums leading-tight">{stats.total_accesses}</p>
+                  <p className="text-[11px] text-foreground/50 mt-0.5">{t("shareDialog.analytics.totalViews", lang)}</p>
                 </div>
-                <div className="rounded-lg border border-border/40 px-3 py-2.5 text-center">
-                  <p className="text-[18px] font-semibold tabular-nums">{stats.unique_ips}</p>
-                  <p className="text-[10px] text-foreground/60 uppercase tracking-wider mt-0.5">{t("shareDialog.analytics.uniqueVisitors", lang)}</p>
+                <div className="rounded-xl bg-foreground/[0.03] px-3 py-2.5 text-center">
+                  <p className="text-[17px] font-semibold tabular-nums leading-tight">{stats.unique_ips}</p>
+                  <p className="text-[11px] text-foreground/50 mt-0.5">{t("shareDialog.analytics.uniqueVisitors", lang)}</p>
                 </div>
-                <div className="rounded-lg border border-border/40 px-3 py-2.5 text-center">
-                  <p className="text-[18px] font-semibold tabular-nums">{stats.authenticated_accesses}</p>
-                  <p className="text-[10px] text-foreground/60 uppercase tracking-wider mt-0.5">{t("shareDialog.analytics.authenticated", lang)}</p>
+                <div className="rounded-xl bg-foreground/[0.03] px-3 py-2.5 text-center">
+                  <p className="text-[17px] font-semibold tabular-nums leading-tight">{stats.authenticated_accesses}</p>
+                  <p className="text-[11px] text-foreground/50 mt-0.5">{t("shareDialog.analytics.authenticated", lang)}</p>
                 </div>
                 {share.requires_pin && (
-                  <div className="rounded-lg border border-border/40 px-3 py-2.5 text-center">
-                    <p className="text-[18px] font-semibold tabular-nums">{stats.failed_pin_attempts}</p>
-                    <p className="text-[10px] text-foreground/60 uppercase tracking-wider mt-0.5">{t("shareDialog.analytics.failedPins", lang)}</p>
+                  <div className="rounded-xl bg-foreground/[0.03] px-3 py-2.5 text-center">
+                    <p className="text-[17px] font-semibold tabular-nums leading-tight">{stats.failed_pin_attempts}</p>
+                    <p className="text-[11px] text-foreground/50 mt-0.5">{t("shareDialog.analytics.failedPins", lang)}</p>
                   </div>
                 )}
               </>
             ) : (
               <>
-                <div className="rounded-lg border border-border/40 px-3 py-2.5 text-center">
-                  <p className="text-[18px] font-semibold tabular-nums">{share.access_count}</p>
-                  <p className="text-[10px] text-foreground/60 uppercase tracking-wider mt-0.5">{t("shareDialog.analytics.totalViews", lang)}</p>
+                <div className="rounded-xl bg-foreground/[0.03] px-3 py-2.5 text-center">
+                  <p className="text-[17px] font-semibold tabular-nums leading-tight">{share.access_count}</p>
+                  <p className="text-[11px] text-foreground/50 mt-0.5">{t("shareDialog.analytics.totalViews", lang)}</p>
                 </div>
               </>
             )}
@@ -260,8 +223,8 @@ function ShareRow({
             {share.max_access_count && <span>{t("shares.viewLimit", lang)}: {share.max_access_count}</span>}
             {share.expires_at && (
               <span>
-                <svg width="10" height="10" viewBox="0 0 16 16" fill="none" className="inline mr-0.5 -mt-px"><circle cx="8" cy="8" r="5.5" stroke="currentColor" strokeWidth="1.5" /><path d="M8 5v3.5l2.5 1" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" /></svg>
-                {formatDateShort(share.expires_at, lang)}
+                <svg aria-hidden="true" width="10" height="10" viewBox="0 0 16 16" fill="none" className="inline mr-0.5 -mt-px"><circle cx="8" cy="8" r="5.5" stroke="currentColor" strokeWidth="1.5" /><path d="M8 5v3.5l2.5 1" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" /></svg>
+                {formatDate(share.expires_at, dateFormat, lang)}
               </span>
             )}
             {tourLink && (
@@ -275,39 +238,39 @@ function ShareRow({
           {actionError && <p role="alert" className="text-[11px] text-destructive">{t("common.requestFailed", lang)}</p>}
           {isLive && (
             <div className="flex items-center gap-2 pt-2 border-t border-border/40">
-              <button onClick={(e) => { e.stopPropagation(); onEdit(); }}
-                className="h-8 px-3.5 rounded-lg border border-border/50 text-[12px] font-medium text-foreground/80 hover:border-border hover:text-foreground transition-colors">
+              <Button type="button" variant="outline" size="sm" onClick={(e) => { e.stopPropagation(); onEdit(); }}
+                className="h-8 rounded-lg px-3.5 text-[12px] text-foreground/80 hover:text-foreground">
                 {t("shares.editSettings", lang)}
-              </button>
+              </Button>
               {isActive && (
-                <button onClick={handlePause} disabled={actionLoading}
-                  className="h-8 px-3.5 rounded-lg border border-border/50 text-[12px] text-foreground/60 hover:border-border hover:text-foreground transition-colors disabled:opacity-40">
+                <Button type="button" variant="outline" size="sm" onClick={handlePause} disabled={actionLoading}
+                  className="h-8 rounded-lg px-3.5 text-[12px] text-foreground/60 hover:text-foreground">
                   {t("shares.pause", lang)}
-                </button>
+                </Button>
               )}
               {isPaused && (
-                <button onClick={handleResume} disabled={actionLoading}
-                  className="h-8 px-3.5 rounded-lg border border-border/50 text-[12px] font-medium text-foreground/70 hover:border-border hover:text-foreground transition-colors disabled:opacity-40">
+                <Button type="button" variant="outline" size="sm" onClick={handleResume} disabled={actionLoading}
+                  className="h-8 rounded-lg px-3.5 text-[12px] text-foreground/70 hover:text-foreground">
                   {t("shares.resume", lang)}
-                </button>
+                </Button>
               )}
               <div className="flex-1" />
               {!confirmRevoke ? (
-                <button onClick={(e) => { e.stopPropagation(); setConfirmRevoke(true); }}
-                  className="h-8 px-3.5 rounded-lg border border-border/40 text-[12px] text-foreground/50 hover:text-destructive hover:border-destructive/30 hover:bg-destructive/[0.04] transition-colors">
+                <Button type="button" variant="outline" size="sm" onClick={(e) => { e.stopPropagation(); setConfirmRevoke(true); }}
+                  className="h-8 rounded-lg px-3.5 text-[12px] text-foreground/50 hover:border-destructive/30 hover:bg-destructive/[0.04] hover:text-destructive">
                   {t("shares.revoke", lang)}
-                </button>
+                </Button>
               ) : (
                 <div className="flex items-center gap-2">
                   <span className="text-[11px] text-destructive/70">{t("shares.revokeConfirm", lang)}</span>
-                  <button onClick={handleRevoke} disabled={actionLoading}
-                    className="h-8 px-3.5 rounded-lg text-[12px] font-medium text-destructive bg-destructive/[0.08] hover:bg-destructive/[0.12] transition-colors disabled:opacity-40">
-                    {t("shares.revoke", lang)}
-                  </button>
-                  <button onClick={(e) => { e.stopPropagation(); setConfirmRevoke(false); }}
-                    className="h-8 px-3 rounded-lg text-[12px] text-foreground/50 hover:text-foreground transition-colors">
+                  <Button type="button" variant="ghost" size="sm" onClick={(e) => { e.stopPropagation(); setConfirmRevoke(false); }}
+                    className="h-8 rounded-lg px-3 text-[12px] text-foreground/50 hover:text-foreground">
                     {t("shares.cancel", lang)}
-                  </button>
+                  </Button>
+                  <Button type="button" variant="destructive" size="sm" onClick={handleRevoke} disabled={actionLoading}
+                    className="h-8 rounded-lg px-3.5 text-[12px]">
+                    {t("shares.revoke", lang)}
+                  </Button>
                 </div>
               )}
             </div>
@@ -518,6 +481,7 @@ export default function SharesPage() {
                   tourName={tourName}
                   tourLink={tourLink}
                   lang={lang}
+                  dateFormat={user?.localization?.date_format}
                   onUpdate={(updated) => handleShareUpdate(share.id, updated)}
                   onEdit={() => {
                     if (share.draft) router.push(`/draft/${share.draft}/sharing`);

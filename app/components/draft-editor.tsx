@@ -103,14 +103,14 @@ function optionalNumber(value: string): number | null {
   return Number.isFinite(parsed) ? parsed : null;
 }
 
-const fieldClass = "h-10 rounded-xl border-border/65 bg-surface px-3 text-[13px] focus-visible:ring-2 focus-visible:ring-foreground/[0.08]";
+const fieldClass = "h-10 rounded-xl border-border/60 bg-surface px-3 text-[13px] focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-0";
 
 function Field({ id, label, children }: { id: string; label: React.ReactNode; children: React.ReactNode }) {
-  return <div className="space-y-1.5"><Label htmlFor={id} className="text-[11px] font-semibold text-foreground/60">{label}</Label>{children}</div>;
+  return <div className="space-y-1.5"><Label htmlFor={id} className="text-[13px] font-medium text-foreground/70">{label}</Label>{children}</div>;
 }
 
 function Section({ title, children }: { title: React.ReactNode; children: React.ReactNode }) {
-  return <section className="space-y-4 border-b border-border/40 pb-6 last:border-0 last:pb-0"><h3 className="text-[12px] font-semibold text-foreground">{title}</h3>{children}</section>;
+  return <section className="space-y-4 border-b border-border/40 pb-6 last:border-0 last:pb-0"><h3 className="text-[14px] font-semibold text-foreground">{title}</h3>{children}</section>;
 }
 
 function AdvancedField({
@@ -134,8 +134,8 @@ function AdvancedField({
 
   if (field.kind === "boolean") {
     return (
-      <div className="flex min-h-10 items-center justify-between gap-4 rounded-xl border border-border/50 bg-surface px-3 py-2.5">
-        <Label htmlFor={id} className="text-[12px] font-medium text-foreground/75">{label}</Label>
+      <div className="flex min-h-10 items-center justify-between gap-4 rounded-xl border border-border/60 bg-surface px-3 py-2.5">
+        <Label htmlFor={id} className="text-[13px] font-medium text-foreground/70">{label}</Label>
         <Switch id={id} checked={value === true} onCheckedChange={(checked) => onChange(section, field.key, checked)} />
       </div>
     );
@@ -147,7 +147,7 @@ function AdvancedField({
       : typeof value === "string" ? value.split(",").map((item) => item.trim()).filter(Boolean) : [];
     return (
       <div className="space-y-2">
-        <Label className="text-[11px] font-semibold text-foreground/60">{label}</Label>
+        <Label className="text-[13px] font-medium text-foreground/70">{label}</Label>
         <div className="flex flex-wrap gap-1.5">
           {options.map((item) => {
             const active = selected.includes(item.value);
@@ -348,6 +348,7 @@ export function DraftEditor({
       onOpenChange={requestOpenChange}
       title={t("draft.editor.title", lang)}
       description={draft.title}
+      lang={lang}
       footer={confirmDiscard ? (
         <div className="flex items-center gap-3">
           <p className="min-w-0 flex-1 text-[11px] leading-relaxed text-foreground/60">{t("draft.editor.discardPrompt", lang)}</p>
@@ -387,7 +388,7 @@ export function DraftEditor({
                 <Input id="draft-title" autoFocus value={values.title} onChange={set("title")} maxLength={255} className={fieldClass} />
               </Field>
               <Field id="draft-description" label={t("shareDialog.field.description", lang)}>
-                <textarea id="draft-description" value={values.description} onChange={set("description")} rows={7} className="w-full resize-y rounded-xl border border-border/65 bg-surface px-3 py-2.5 text-[13px] leading-relaxed outline-none transition focus:border-foreground/30 focus:ring-2 focus:ring-foreground/[0.08]" />
+                <textarea id="draft-description" value={values.description} onChange={set("description")} rows={7} className="w-full resize-y rounded-xl border border-border/60 bg-surface px-3 py-2.5 text-[13px] leading-relaxed outline-none transition focus:border-foreground/30 focus:ring-2 focus:ring-ring" />
               </Field>
             </Section>
 
@@ -417,7 +418,7 @@ export function DraftEditor({
         ) : (
           <div className="space-y-4">
             <p className="text-[11px] leading-relaxed text-muted-foreground">{t("draft.editor.advancedHint", lang)}</p>
-            <div className="border-b border-border/50 pb-2">
+            <div className="border-b border-border/40 pb-2">
               <SearchField
                 value={advancedQuery}
                 onChange={setAdvancedQuery}
@@ -442,8 +443,8 @@ export function DraftEditor({
                     className="flex w-full items-center justify-between gap-4 px-4 py-3 text-left"
                     aria-expanded={expanded}
                   >
-                    <span className="text-[12px] font-semibold">{t(section.labelKey, lang)}</span>
-                    <span className="flex items-center gap-2 text-[10px] font-medium tabular-nums text-muted-foreground">
+                    <span className="text-[14px] font-semibold">{t(section.labelKey, lang)}</span>
+                    <span className="flex items-center gap-2 text-[11px] font-medium tabular-nums text-muted-foreground">
                       {recorded} / {section.fields.length}
                       <svg width="14" height="14" viewBox="0 0 16 16" fill="none" className={cn("transition-transform", expanded && "rotate-180")} aria-hidden="true">
                         <path d="m4 6 4 4 4-4" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" />
@@ -451,7 +452,7 @@ export function DraftEditor({
                     </span>
                   </button>
                   {expanded ? (
-                    <div className="space-y-4 border-t border-border/45 px-4 py-4">
+                    <div className="space-y-4 border-t border-border/40 px-4 py-4">
                       {section.fields.map((field) => (
                         <AdvancedField
                           key={field.key}
@@ -468,7 +469,7 @@ export function DraftEditor({
                 </section>
               );
             }) : (
-              <p className="rounded-2xl border border-dashed border-border/70 px-4 py-10 text-center text-[12px] text-muted-foreground">{t("draft.editor.emptyAdvanced", lang)}</p>
+              <p className="rounded-2xl border border-dashed border-border/60 px-4 py-10 text-center text-[12px] text-muted-foreground">{t("draft.editor.emptyAdvanced", lang)}</p>
             )}
           </div>
         )}

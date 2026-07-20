@@ -1299,7 +1299,7 @@ const SplatViewer = forwardRef<SplatViewerHandle, Props>(function SplatViewer(
 
       } catch (err: any) {
         if (!disposed) {
-          setStatus(`${t("viewer.status.error", lang)} ${err?.message || String(err)}`);
+          setStatus(t("viewer.status.error", lang));
           console.error("[REAI]", err);
           onError?.(err?.message);
         }
@@ -1327,7 +1327,9 @@ const SplatViewer = forwardRef<SplatViewerHandle, Props>(function SplatViewer(
       {/* Loading overlay */}
       {!ready && (
         <div className="absolute inset-0 z-10 flex flex-col items-center justify-center bg-white">
-          <div className="w-8 h-8 border-2 border-foreground/20 border-t-foreground rounded-full animate-spin mb-3" />
+          <div className="mb-3 h-[3px] w-16 overflow-hidden rounded-full bg-foreground/10">
+            <div className="h-full w-1/2 rounded-full bg-foreground/40 animate-[shimmer-bar_1.2s_ease-in-out_infinite]" />
+          </div>
           <span className="text-sm text-muted-foreground">{status}</span>
           {downloadPct > 0 && downloadPct < 100 && (
             <div className="mt-2 w-48 h-1.5 rounded-full bg-muted overflow-hidden">
