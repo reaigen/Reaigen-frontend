@@ -11,7 +11,7 @@ import { cn } from "../lib/utils";
 import { t, getUserLanguage } from "../lib/i18n";
 import { AppContentMessages } from "./content-documents";
 import { ReaiAgentCard } from "./reai-agent-card";
-import { HomeIcon, LinkIcon, SettingsIcon, TourIcon } from "./icons";
+import { HomeIcon, LinkIcon, SettingsIcon, TourIcon, SparklesIcon } from "./icons";
 
 function getInitials(user: UserProfile): string {
   const f = user.first_name?.[0] ?? "";
@@ -105,8 +105,9 @@ export function AppShell({
       title={t("reai.openAgent", lang)}
       aria-label={t("reai.openAgent", lang)}
       aria-expanded={reaiOpen}
-      className="inline-flex h-8 items-center rounded-lg border border-border/60 bg-background/80 px-2.5 text-[11px] font-semibold text-foreground/70 shadow-[0_1px_2px_rgba(0,0,0,0.04)] backdrop-blur-xl transition-colors hover:border-foreground hover:bg-foreground hover:text-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+      className="group inline-flex h-9 items-center gap-1.5 rounded-full border border-border/60 bg-background pl-2.5 pr-3.5 text-[12px] font-semibold text-foreground/80 transition-colors hover:border-foreground hover:bg-foreground hover:text-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
     >
+      <SparklesIcon size={15} className="text-foreground/55 transition-colors group-hover:text-background" />
       {t("reai.title", lang)}
     </button>
   ) : null;

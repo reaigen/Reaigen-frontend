@@ -45,6 +45,53 @@ export function SearchIcon(props: IconProps) {
   return <IconBase {...props}><circle cx="11" cy="11" r="7" /><path d="m20 20-4-4" /></IconBase>;
 }
 
+/* ── Property-section icons (mirror the iOS app's SF Symbols) ─────────── */
+
+// iOS: square.split.2x2 — layout / rooms
+export function LayoutIcon(props: IconProps) {
+  return <IconBase {...props}><rect x="3" y="3" width="18" height="18" rx="2.5" /><path d="M12 3v18M3 12h18" /></IconBase>;
+}
+
+// iOS: ruler — areas
+export function RulerIcon(props: IconProps) {
+  return <IconBase {...props}><path d="M15.3 2.7 21.3 8.7a1 1 0 0 1 0 1.4L9.4 22a1 1 0 0 1-1.4 0L2 16a1 1 0 0 1 0-1.4L13.9 2.7a1 1 0 0 1 1.4 0Z" /><path d="m7 12 2 2M11 8l2 2M15 4l2 2" /></IconBase>;
+}
+
+// iOS: banknote — pricing
+export function PriceIcon(props: IconProps) {
+  return <IconBase {...props}><rect x="2" y="6" width="20" height="12" rx="2.5" /><circle cx="12" cy="12" r="2.5" /><path d="M6 9v6M18 9v6" /></IconBase>;
+}
+
+// iOS: doc.text — legal
+export function DocumentIcon(props: IconProps) {
+  return <IconBase {...props}><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8Z" /><path d="M14 3v5h5M8.5 13h7M8.5 17h7" /></IconBase>;
+}
+
+// iOS: gearshape.2 — technical
+export function TechnicalIcon(props: IconProps) {
+  return <IconBase {...props}><circle cx="12" cy="12" r="3" /><path d="M12 5V3M12 21v-2M19 12h2M3 12h2M17 7l1.4-1.4M5.6 18.4 7 17M17 17l1.4 1.4M5.6 5.6 7 7" /></IconBase>;
+}
+
+// iOS: bolt.circle — utilities
+export function UtilitiesIcon(props: IconProps) {
+  return <IconBase {...props}><circle cx="12" cy="12" r="9" /><path d="M13 7l-4 6h3l-1 4 4-6h-3l1-4Z" /></IconBase>;
+}
+
+// iOS: star — features
+export function StarIcon(props: IconProps) {
+  return <IconBase {...props}><path d="M12 3.5l2.6 5.3 5.9.9-4.3 4.1 1 5.8-5.2-2.7-5.2 2.7 1-5.8L3.5 9.7l5.9-.9Z" /></IconBase>;
+}
+
+// basics
+export function InfoIcon(props: IconProps) {
+  return <IconBase {...props}><circle cx="12" cy="12" r="9" /><path d="M12 11v5M12 8h.01" /></IconBase>;
+}
+
+// location
+export function MapPinIcon(props: IconProps) {
+  return <IconBase {...props}><path d="M20 10c0 5.5-8 12-8 12s-8-6.5-8-12a8 8 0 0 1 16 0Z" /><circle cx="12" cy="10" r="2.5" /></IconBase>;
+}
+
 export function EditIcon(props: IconProps) {
   return <IconBase {...props}><path d="M12 20h9" /><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L8 18l-4 1 1-4Z" /></IconBase>;
 }

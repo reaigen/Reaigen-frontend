@@ -140,9 +140,11 @@ export default function FloorplanViewer({ draftData, floorplanId, lang, publicFl
     (l) => l?.available && l.meshes?.length > 0
   );
 
+  const totalArea = model.local?.totalArea ?? 0;
+
   let plan: React.ReactNode = null;
   if (model.local) {
-    plan = <LocalPlan model={model.local} legendEntries={legendEntries} lang={lang} />;
+    plan = <LocalPlan model={model.local} legendEntries={legendEntries} />;
   } else if (hasMesh) {
     plan = <MeshPlan data={rendering!} legendEntries={legendEntries} lang={lang} />;
   } else if (publicFloorplan?.composite_url || rendering?.composite?.url) {
@@ -175,6 +177,12 @@ export default function FloorplanViewer({ draftData, floorplanId, lang, publicFl
               </div>
             ))}
           </div>
+        </div>
+      )}
+      {totalArea > 0 && (
+        <div className="flex items-center justify-between border-t border-border/40 px-4 py-3">
+          <span className="text-[13px] font-semibold text-foreground">{t("floorplan.total", lang)}</span>
+          <span className="text-[13px] font-semibold text-foreground tabular-nums">{totalArea.toFixed(1)} m²</span>
         </div>
       )}
     </div>
@@ -332,11 +340,9 @@ function buildLocalModel(draftData: DraftDataEntry[]): { textData: Record<string
 function LocalPlan({
   model,
   legendEntries,
-  lang,
 }: {
   model: LocalModel;
   legendEntries: LegendEntry[];
-  lang: string;
 }) {
   const maskId = useId();
   const { proj, svgH } = model;
@@ -463,13 +469,6 @@ function LocalPlan({
         </text>
       </g>
     </svg>
-
-    {/* Total floor area — anchored to the card's bottom-left */}
-    {model.totalArea > 0 && (
-      <p className="pointer-events-none absolute bottom-3 left-4 text-[14px] font-semibold" style={{ color: STROKE_COLOR }}>
-        {t("floorplan.total", lang)} {model.totalArea.toFixed(1)} m²
-      </p>
-    )}
     </div>
   );
 }

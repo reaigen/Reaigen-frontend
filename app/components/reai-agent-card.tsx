@@ -30,6 +30,7 @@ import { Button } from "../lib/ui/button";
 import { cn } from "../lib/utils";
 import { useAuth } from "./hooks/use-auth";
 import { StatusPill } from "./status-pill";
+import { SparklesIcon, ArrowRightIcon } from "./icons";
 
 function Working({ lang, className }: { lang: string; className?: string }) {
   return (
@@ -542,10 +543,10 @@ export function ReaiAgentCard({
       ) : (
         <div className={cn("mt-4", panel ? "flex min-h-0 flex-1 flex-col gap-3" : "space-y-3")}>
           {draftId && (
-            <div className="flex items-center justify-end gap-4 border-b border-border/35 pb-2">
+            <div className="flex items-center gap-1.5 pb-1">
               <button
                 type="button"
-                className={cn("rounded-md text-[11px] font-medium transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2", showMediaHistory ? "text-foreground" : "text-muted-foreground")}
+                className={cn("rounded-full px-3 py-1.5 text-[12px] font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2", showMediaHistory ? "bg-foreground text-background" : "text-foreground/60 hover:bg-foreground/[0.05] hover:text-foreground")}
                 onClick={() => {
                   const next = !showMediaHistory;
                   setShowMediaHistory(next);
@@ -557,7 +558,7 @@ export function ReaiAgentCard({
               </button>
               <button
                 type="button"
-                className={cn("rounded-md text-[11px] font-medium transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2", showHistory ? "text-foreground" : "text-muted-foreground")}
+                className={cn("rounded-full px-3 py-1.5 text-[12px] font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2", showHistory ? "bg-foreground text-background" : "text-foreground/60 hover:bg-foreground/[0.05] hover:text-foreground")}
                 onClick={() => {
                   const next = !showHistory;
                   setShowHistory(next);
@@ -1124,20 +1125,24 @@ export function ReaiAgentCard({
             </div>
           )}
           {!showHistory && !showMediaHistory && turns.length === 0 && (
-            <div className={cn("flex flex-col items-center justify-center px-4 text-center", panel ? "min-h-0 flex-1" : "py-6")}>
-              <p className="max-w-xs text-[13px] leading-relaxed text-muted-foreground">
+            <div className={cn("flex flex-col items-center px-2 text-center", panel ? "min-h-0 flex-1 justify-center" : "py-8")}>
+              <span className="flex h-12 w-12 items-center justify-center rounded-2xl bg-foreground/[0.05] text-foreground/70">
+                <SparklesIcon size={22} />
+              </span>
+              <p className="mt-4 max-w-[17rem] text-[13px] leading-relaxed text-muted-foreground">
                 {t(workspaceContext === "settings" ? "reai.startSettingsConversation" : (draftId ? "reai.startDraftConversation" : "reai.startConversation"), lang)}
               </p>
-              <div className="mt-5 flex max-w-xs flex-wrap justify-center gap-2">
+              <div className="mt-6 w-full max-w-sm space-y-2">
                 {quickActions.map((key) => (
                   <button
                     key={key}
                     type="button"
                     disabled={busy}
                     onClick={() => void ask(t(key, lang))}
-                    className="rounded-full border border-border/60 px-3 py-1.5 text-[11px] text-foreground/65 transition-colors hover:border-foreground/25 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+                    className="group flex w-full items-center justify-between gap-3 rounded-xl border border-border/60 bg-surface px-4 py-3 text-left text-[13px] font-medium text-foreground/80 transition-colors hover:border-foreground/25 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50"
                   >
-                    {t(key, lang)}
+                    <span className="min-w-0">{t(key, lang)}</span>
+                    <ArrowRightIcon size={15} className="shrink-0 text-foreground/30 transition-colors group-hover:text-foreground/60" />
                   </button>
                 ))}
               </div>

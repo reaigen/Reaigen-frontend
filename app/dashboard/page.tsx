@@ -219,10 +219,10 @@ export default function DashboardPage() {
           title={t("dashboard.creationsTitle", lang)}
           description={t("dashboard.creationsSubtitle", lang)}
           actions={totalCount > 0 ? <StatusPill>{totalCount} {t("dashboard.items", lang)}</StatusPill> : undefined}
-          className="mb-7"
+          className="mb-4 sm:mb-7"
         />
         {/* Search bar */}
-        <div className="mb-6 flex items-center gap-3 border-b border-border/40 pb-3">
+        <div className="mb-4 flex items-center gap-3 border-b border-border/40 pb-3 sm:mb-6">
           <SearchField
             value={searchInput}
             onChange={setSearchInput}
