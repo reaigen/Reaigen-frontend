@@ -280,7 +280,7 @@ export function AppShell({
           <aside
             role="complementary"
             aria-labelledby="reai-panel-title"
-            className="fixed inset-y-0 right-0 z-[70] flex w-full flex-col border-l border-border/60 bg-background animate-[panelIn_0.22s_ease-out] md:w-[var(--reai-panel-width)]"
+            className="fixed inset-y-0 right-0 z-[70] flex w-full flex-col border-l border-border/60 bg-background shadow-[-24px_0_80px_-32px_rgba(0,0,0,0.28)] animate-[panelIn_0.22s_ease-out] sm:w-[400px] sm:max-w-[90vw] xl:shadow-none"
           >
             <div className="flex h-14 shrink-0 items-center justify-between border-b border-border/40 px-4 pt-safe">
               <div className="flex items-center gap-2.5">
@@ -314,7 +314,12 @@ export function AppShell({
       <style>{`
         :root { --reai-panel-width: 0px; }
         @media (min-width: 768px) {
-          :root { --sidebar-offset: ${SIDEBAR_W}px; --reai-panel-width: clamp(360px, 30vw, 420px); }
+          :root { --sidebar-offset: ${SIDEBAR_W}px; }
+        }
+        /* Agent panel only pushes content side-by-side on wide desktop;
+           on tablet it overlays as a drawer so the property isn't squeezed. */
+        @media (min-width: 1280px) {
+          :root { --reai-panel-width: 400px; }
         }
       `}</style>
     </div>

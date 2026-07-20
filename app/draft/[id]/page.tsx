@@ -569,7 +569,7 @@ export default function DraftPreviewPage({ params }: { params: Promise<{ id: str
         )}
 
         {/* Header */}
-        <div className="mt-5 animate-fade-in-up">
+        <div className="mt-5">
           <div className="mb-1.5 flex flex-wrap items-center gap-2">
             {offerType ? (
               <p className="text-[11px] font-medium uppercase tracking-wider text-muted-foreground">
@@ -597,7 +597,7 @@ export default function DraftPreviewPage({ params }: { params: Promise<{ id: str
 
         {/* Key facts */}
         {facts.length > 0 && (
-          <div className="mt-5 flex flex-wrap gap-2 animate-fade-in-up" style={{ animationDelay: "60ms" }}>
+          <div className="mt-5 flex flex-wrap gap-2">
             {facts.map((f, i) => (
               <div key={i} className="flex items-center gap-2.5 rounded-xl bg-foreground/[0.04] px-3 py-2">
                 {f.icon}
@@ -615,7 +615,7 @@ export default function DraftPreviewPage({ params }: { params: Promise<{ id: str
 
         {/* Detail attributes */}
         {rows.length > 0 && (
-          <div className="mt-5 animate-fade-in-up" style={{ animationDelay: "120ms" }}>
+          <div className="mt-5">
             <h2 className="text-[14px] font-semibold mb-2">{t("draft.details", lang)}</h2>
             <div className="rounded-2xl bg-foreground/[0.03] overflow-hidden">
               {rows.map((r, i) => (
@@ -633,7 +633,7 @@ export default function DraftPreviewPage({ params }: { params: Promise<{ id: str
 
         {/* Description */}
         {(description || translationPending) && (
-          <div className="mt-5 animate-fade-in-up" style={{ animationDelay: "180ms" }}>
+          <div className="mt-5">
             <h2 className="text-[14px] font-semibold mb-2">{t("draft.description", lang)}</h2>
             {translationPending && !hasTranslation && (
               <p className="text-[12px] text-foreground/50 mb-2">{t("draft.descriptionPending", lang)}</p>
@@ -657,7 +657,7 @@ export default function DraftPreviewPage({ params }: { params: Promise<{ id: str
 
         {/* Features */}
         {features.length > 0 && (
-          <div className="mt-5 animate-fade-in-up" style={{ animationDelay: "240ms" }}>
+          <div className="mt-5">
             <h2 className="text-[14px] font-semibold mb-2">{t("draft.features", lang)}</h2>
             <div className="flex flex-wrap gap-1.5">
               {features.map((f) => (
@@ -671,7 +671,7 @@ export default function DraftPreviewPage({ params }: { params: Promise<{ id: str
 
         {/* Monthly costs */}
         {monthlyCosts.length > 0 && (
-          <div className="mt-5 animate-fade-in-up" style={{ animationDelay: "300ms" }}>
+          <div className="mt-5">
             <h2 className="text-[14px] font-semibold mb-2">{t("draft.monthlyCosts", lang)}</h2>
             <div className="rounded-2xl bg-foreground/[0.03] overflow-hidden">
               {monthlyCosts.map((r, i) => (
@@ -689,7 +689,7 @@ export default function DraftPreviewPage({ params }: { params: Promise<{ id: str
 
         {/* Floorplan */}
         {hasFloorplan && (
-          <div className="mt-5 animate-fade-in-up" style={{ animationDelay: "360ms" }}>
+          <div className="mt-5">
             <h2 className="text-[14px] font-semibold mb-2">{t("draft.floorplan", lang)}</h2>
             <FloorplanViewer draftData={draft.draft_data ?? []} floorplanId={draft.floorplan_id} lang={lang} />
           </div>

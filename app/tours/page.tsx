@@ -186,8 +186,7 @@ export default function ToursPage() {
                   key={item.id}
                   href={href}
                   prefetch={ready}
-                  className="group block rounded-xl opacity-0 animate-fade-in-up [animation-fill-mode:forwards] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
-                  style={{ animationDelay: `${index * 50}ms` }}
+                  className="group block rounded-xl focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
                 >
                   <div className="relative aspect-[16/10] overflow-hidden rounded-xl bg-muted/20 transition-shadow group-hover:shadow-lg">
                     {item.thumbnail_url ? (

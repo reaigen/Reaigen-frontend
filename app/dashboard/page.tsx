@@ -291,8 +291,7 @@ export default function DashboardPage() {
                 <Link
                   key={draft.id}
                   href={`/draft/${draft.id}`}
-                  className="group block rounded-xl opacity-0 animate-fade-in-up [animation-fill-mode:forwards] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
-                  style={{ animationDelay: `${idx * 50}ms` }}
+                  className="group block rounded-xl focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
                   onMouseEnter={() => router.prefetch(`/draft/${draft.id}`)}
                 >
                   {/* Image */}
