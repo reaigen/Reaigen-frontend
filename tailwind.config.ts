@@ -47,7 +47,7 @@ const config: Config = {
       },
       boxShadow: {
         soft: "0 18px 40px rgba(0, 0, 0, 0.08)",
-        card: "0 2px 12px rgba(0, 0, 0, 0.06)",
+        card: "0 4px 16px -4px rgba(0, 0, 0, 0.06), 0 1px 3px rgba(0, 0, 0, 0.04)",
         elevated: "0 8px 32px rgba(0, 0, 0, 0.12)",
         button: "0 14px 30px rgba(0, 0, 0, 0.14)",
       },
