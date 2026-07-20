@@ -30,7 +30,7 @@ import { Button } from "../lib/ui/button";
 import { cn } from "../lib/utils";
 import { useAuth } from "./hooks/use-auth";
 import { StatusPill } from "./status-pill";
-import { SparklesIcon, ArrowRightIcon } from "./icons";
+import { ArrowRightIcon } from "./icons";
 
 function Working({ lang, className }: { lang: string; className?: string }) {
   return (
@@ -948,10 +948,10 @@ export function ReaiAgentCard({
                         </div>
                         {answer.action_token && (
                           <div className="flex items-center gap-2 border-t border-border/45 px-3.5 py-3">
-                            <Button type="button" size="xs" loading={busy} onClick={() => void applyAction(turn.id, answer)}>
+                            <Button type="button" size="sm" className="flex-1 sm:flex-none" loading={busy} onClick={() => void applyAction(turn.id, answer)}>
                               {t("reai.mediaConfirm", lang)}
                             </Button>
-                            <Button type="button" variant="ghost" size="xs" disabled={busy} onClick={() => dismissAction(turn.id)}>
+                            <Button type="button" variant="ghost" size="sm" disabled={busy} onClick={() => dismissAction(turn.id)}>
                               {t("reai.dismissProposal", lang)}
                             </Button>
                           </div>
@@ -984,10 +984,10 @@ export function ReaiAgentCard({
                         </div>
                         {answer.action_token && (
                           <div className="flex items-center gap-2 border-t border-border/45 px-3.5 py-3">
-                            <Button type="button" size="xs" loading={busy} onClick={() => void applyAction(turn.id, answer)}>
+                            <Button type="button" size="sm" className="flex-1 sm:flex-none" loading={busy} onClick={() => void applyAction(turn.id, answer)}>
                               {t(`reai.shareManagerConfirm.${answer.share_action || "revoke"}` as LocaleKey, lang)}
                             </Button>
-                            <Button type="button" variant="ghost" size="xs" disabled={busy} onClick={() => dismissAction(turn.id)}>
+                            <Button type="button" variant="ghost" size="sm" disabled={busy} onClick={() => dismissAction(turn.id)}>
                               {t("reai.dismissProposal", lang)}
                             </Button>
                           </div>
@@ -1046,31 +1046,29 @@ export function ReaiAgentCard({
                     )}
                     {answer?.action_code === "create_draft_share" && (answer.action_token || shareUrl || turn.actionStatus) && (
                       <div className="mt-3 rounded-lg border border-border/55 bg-foreground/[0.018] px-3 py-2.5">
-                        <div className="flex items-center justify-between gap-3">
-                          <div className="min-w-0">
-                            <p className="text-xs font-semibold text-foreground">{t("reai.shareCreateTitle", lang)}</p>
-                            <p className="mt-0.5 text-[11px] leading-4 text-muted-foreground">
-                              {shareUrl ? t("reai.shareCreateReady", lang) : t("reai.shareCreateBody", lang)}
+                        <div className="min-w-0">
+                          <p className="text-xs font-semibold text-foreground">{t("reai.shareCreateTitle", lang)}</p>
+                          <p className="mt-0.5 text-[11px] leading-4 text-muted-foreground">
+                            {shareUrl ? t("reai.shareCreateReady", lang) : t("reai.shareCreateBody", lang)}
+                          </p>
+                          {!!answer.selected_share_fields?.length && (
+                            <p className="mt-1 truncate text-[11px] text-foreground/55">
+                              {answer.selected_share_fields
+                                .map((field) => t(`shareDialog.field.${field}` as LocaleKey, lang))
+                                .join(" · ")}
                             </p>
-                            {!!answer.selected_share_fields?.length && (
-                              <p className="mt-1 truncate text-[11px] text-foreground/55">
-                                {answer.selected_share_fields
-                                  .map((field) => t(`shareDialog.field.${field}` as LocaleKey, lang))
-                                  .join(" · ")}
-                              </p>
-                            )}
-                          </div>
-                          {answer.action_token && (
-                            <div className="flex shrink-0 items-center gap-1.5">
-                              <Button type="button" size="xs" loading={busy} onClick={() => void applyAction(turn.id, answer)}>
-                                {t("reai.shareCreateConfirm", lang)}
-                              </Button>
-                              <Button type="button" variant="ghost" size="xs" disabled={busy} onClick={() => dismissAction(turn.id)}>
-                                {t("reai.dismissProposal", lang)}
-                              </Button>
-                            </div>
                           )}
                         </div>
+                        {answer.action_token && (
+                          <div className="mt-3 flex items-center gap-2">
+                            <Button type="button" size="sm" className="flex-1 sm:flex-none" loading={busy} onClick={() => void applyAction(turn.id, answer)}>
+                              {t("reai.shareCreateConfirm", lang)}
+                            </Button>
+                            <Button type="button" variant="ghost" size="sm" disabled={busy} onClick={() => dismissAction(turn.id)}>
+                              {t("reai.dismissProposal", lang)}
+                            </Button>
+                          </div>
+                        )}
                         {shareUrl && (
                           <div className="mt-2 flex min-w-0 items-center gap-1.5 border-t border-border/40 pt-2">
                             <span className="min-w-0 flex-1 truncate text-[11px] text-foreground/65">{shareUrl}</span>
@@ -1125,14 +1123,11 @@ export function ReaiAgentCard({
             </div>
           )}
           {!showHistory && !showMediaHistory && turns.length === 0 && (
-            <div className={cn("flex flex-col items-center px-2 text-center", panel ? "min-h-0 flex-1 justify-center" : "py-8")}>
-              <span className="flex h-12 w-12 items-center justify-center rounded-2xl bg-foreground/[0.05] text-foreground/70">
-                <SparklesIcon size={22} />
-              </span>
-              <p className="mt-4 max-w-[17rem] text-[13px] leading-relaxed text-muted-foreground">
+            <div className={cn("flex flex-col", panel ? "min-h-0 flex-1 justify-end" : "py-6")}>
+              <p className="text-[13px] leading-relaxed text-muted-foreground">
                 {t(workspaceContext === "settings" ? "reai.startSettingsConversation" : (draftId ? "reai.startDraftConversation" : "reai.startConversation"), lang)}
               </p>
-              <div className="mt-6 w-full max-w-sm space-y-2">
+              <div className="mt-4 space-y-2">
                 {quickActions.map((key) => (
                   <button
                     key={key}

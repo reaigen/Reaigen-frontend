@@ -132,11 +132,11 @@ function ShareRow({
               )}
               {expiry && <span className="shrink-0 rounded bg-foreground/[0.07] px-1.5 py-px text-[11px] font-medium text-foreground/50">{expiry}</span>}
             </span>
-            <span className="mt-0.5 flex items-center gap-2 text-[11px] text-foreground/60">
+            <span className="mt-0.5 block truncate text-[11px] text-foreground/60">
               <span className="tabular-nums">{share.access_count} {share.access_count === 1 ? t("shares.viewSingular", lang) : t("shares.viewPlural", lang)}</span>
-              <span className="text-foreground/35">·</span>
+              <span className="text-foreground/35"> · </span>
               <span>{fieldSummaryLabel(share, lang)}</span>
-              <span className="text-foreground/35">·</span>
+              <span className="text-foreground/35"> · </span>
               <span>{formatDate(share.created_at, dateFormat, lang)}</span>
             </span>
           </span>
@@ -388,17 +388,17 @@ export default function SharesPage() {
 
         {!loading && !loadError && shares.length > 0 && (
           <div className="grid grid-cols-3 divide-x divide-border/45 overflow-hidden rounded-2xl border border-border/55 bg-surface">
-            <div className="px-4 py-3 sm:px-5">
+            <div className="flex flex-col px-4 py-3 sm:px-5">
               <p className="text-[10px] font-semibold uppercase tracking-[0.1em] text-muted-foreground">{t("shares.statusActive", lang)}</p>
-              <p className="mt-1 text-[20px] font-semibold tabular-nums">{activeCount}</p>
+              <p className="mt-auto pt-1 text-[20px] font-semibold tabular-nums">{activeCount}</p>
             </div>
-            <div className="px-4 py-3 sm:px-5">
+            <div className="flex flex-col px-4 py-3 sm:px-5">
               <p className="text-[10px] font-semibold uppercase tracking-[0.1em] text-muted-foreground">{t("shares.statusPaused", lang)}</p>
-              <p className="mt-1 text-[20px] font-semibold tabular-nums">{pausedCount}</p>
+              <p className="mt-auto pt-1 text-[20px] font-semibold tabular-nums">{pausedCount}</p>
             </div>
-            <div className="px-4 py-3 sm:px-5">
+            <div className="flex flex-col px-4 py-3 sm:px-5">
               <p className="text-[10px] font-semibold uppercase tracking-[0.1em] text-muted-foreground">{t("shares.totalViews", lang)}</p>
-              <p className="mt-1 text-[20px] font-semibold tabular-nums">{totalViews}</p>
+              <p className="mt-auto pt-1 text-[20px] font-semibold tabular-nums">{totalViews}</p>
             </div>
           </div>
         )}
