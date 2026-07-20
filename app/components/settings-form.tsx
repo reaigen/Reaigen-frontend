@@ -56,7 +56,6 @@ import type { LocaleKey } from "../lib/locales";
 import { t, getUserLanguage, formatDate as fmtDate } from "../lib/i18n";
 import { cn } from "../lib/utils";
 import { ManagedLegalDocuments } from "./content-documents";
-import { ChevronDownIcon } from "./icons";
 
 function useAutoDismiss(value: boolean, setter: (v: boolean) => void, ms = 3000) {
   React.useEffect(() => {
@@ -2020,6 +2019,16 @@ export function SettingsForm({ user, onSaved }: { user: UserProfile; onSaved: ()
   }, []);
   const triggerClassName =
     "shrink-0 justify-start rounded-none border-b-2 border-transparent px-1.5 pb-3 pt-0 text-[13px] shadow-none data-[state=active]:border-foreground data-[state=active]:bg-transparent data-[state=active]:shadow-none md:h-9 md:w-full md:rounded-lg md:border-0 md:px-3 md:py-0 md:text-left md:data-[state=active]:bg-foreground/[0.065]";
+  const settingsTabs = [
+    { value: "profile", label: "settings.tab.profile" },
+    { value: "seller", label: "settings.tab.seller" },
+    { value: "privacy", label: "settings.tab.privacy" },
+    { value: "reai", label: "settings.tab.reai" },
+    { value: "localization", label: "settings.tab.localization" },
+    { value: "notifications", label: "settings.tab.notifications" },
+    { value: "billing", label: "settings.tab.billing" },
+    { value: "security", label: "settings.tab.security" },
+  ] as const;
 
   return (
     <Tabs
@@ -2031,36 +2040,25 @@ export function SettingsForm({ user, onSaved }: { user: UserProfile; onSaved: ()
       className="w-full md:grid md:grid-cols-[190px_minmax(0,1fr)] md:items-start md:gap-9"
     >
       <div className="mb-7 md:sticky md:top-20 md:mb-0">
-        <div className="relative md:hidden">
-          <select
-            value={activeTab}
-            onChange={(event) => {
-              setActiveTab(event.target.value);
-              window.history.replaceState(null, "", `#${event.target.value}`);
-            }}
-            aria-label={t("settings.title", lang)}
-            className="h-11 w-full appearance-none whitespace-nowrap rounded-xl border border-input bg-background px-4 py-2 pr-10 text-sm ring-offset-background transition-colors duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-0 disabled:cursor-not-allowed disabled:opacity-50"
-          >
-            <option value="profile">{t("settings.tab.profile", lang)}</option>
-            <option value="seller">{t("settings.tab.seller", lang)}</option>
-            <option value="privacy">{t("settings.tab.privacy", lang)}</option>
-            <option value="reai">{t("settings.tab.reai", lang)}</option>
-            <option value="localization">{t("settings.tab.localization", lang)}</option>
-            <option value="notifications">{t("settings.tab.notifications", lang)}</option>
-            <option value="billing">{t("settings.tab.billing", lang)}</option>
-            <option value="security">{t("settings.tab.security", lang)}</option>
-          </select>
-          <ChevronDownIcon size={15} className="pointer-events-none absolute right-4 top-1/2 -translate-y-1/2 opacity-50" />
+        {/* Mobile: horizontal scrollable pills — all sections visible, one tap to switch */}
+        <div className="-mx-4 mb-1 overflow-x-auto scrollbar-none px-4 md:hidden">
+          <TabsList className="flex w-max gap-1.5 bg-transparent p-0">
+            {settingsTabs.map((tab) => (
+              <TabsTrigger
+                key={tab.value}
+                value={tab.value}
+                className="shrink-0 rounded-lg border border-border/55 bg-surface px-3.5 py-2 text-[13px] font-medium text-foreground/60 shadow-none transition-colors data-[state=active]:border-foreground data-[state=active]:bg-foreground data-[state=active]:text-background"
+              >
+                {t(tab.label, lang)}
+              </TabsTrigger>
+            ))}
+          </TabsList>
         </div>
-        <TabsList className="hidden min-h-0 w-full flex-col items-stretch gap-1 rounded-2xl border border-border/55 bg-surface p-2 text-muted-foreground md:flex">
-          <TabsTrigger value="profile" className={triggerClassName}>{t("settings.tab.profile", lang)}</TabsTrigger>
-          <TabsTrigger value="seller" className={triggerClassName}>{t("settings.tab.seller", lang)}</TabsTrigger>
-          <TabsTrigger value="privacy" className={triggerClassName}>{t("settings.tab.privacy", lang)}</TabsTrigger>
-          <TabsTrigger value="reai" className={triggerClassName}>{t("settings.tab.reai", lang)}</TabsTrigger>
-          <TabsTrigger value="localization" className={triggerClassName}>{t("settings.tab.localization", lang)}</TabsTrigger>
-          <TabsTrigger value="notifications" className={triggerClassName}>{t("settings.tab.notifications", lang)}</TabsTrigger>
-          <TabsTrigger value="billing" className={triggerClassName}>{t("settings.tab.billing", lang)}</TabsTrigger>
-          <TabsTrigger value="security" className={triggerClassName}>{t("settings.tab.security", lang)}</TabsTrigger>
+        {/* Desktop: vertical list */}
+        <TabsList className="hidden min-h-0 w-full flex-col items-stretch gap-1 rounded-xl border border-border/55 bg-surface p-2 text-muted-foreground md:flex">
+          {settingsTabs.map((tab) => (
+            <TabsTrigger key={tab.value} value={tab.value} className={triggerClassName}>{t(tab.label, lang)}</TabsTrigger>
+          ))}
         </TabsList>
       </div>
       <div className="min-w-0">
