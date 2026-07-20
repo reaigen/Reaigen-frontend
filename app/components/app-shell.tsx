@@ -180,11 +180,11 @@ export function AppShell({
       <header
         className="sticky top-0 z-50 border-b border-border/40 bg-background/95 pt-safe backdrop-blur-xl md:hidden supports-[backdrop-filter]:bg-background/75"
       >
-        <div className="flex h-12 items-center justify-between pl-[max(1rem,env(safe-area-inset-left))] pr-[max(1rem,env(safe-area-inset-right))]">
+        <div className="flex h-14 items-center justify-between pl-[max(1rem,env(safe-area-inset-left))] pr-[max(1rem,env(safe-area-inset-right))]">
           <Link href="/dashboard" className="flex items-center">
             <span
-              className="text-[20px]"
-              style={{ fontFamily: 'var(--font-brand), ui-serif, Georgia, serif', fontWeight: 400, letterSpacing: '0.01em' }}
+              className="text-[22px]"
+              style={{ fontFamily: 'var(--font-brand), ui-serif, Georgia, serif', fontWeight: 500, letterSpacing: '0.01em' }}
             >
               Reaigen
             </span>
@@ -235,7 +235,7 @@ export function AppShell({
       {/* ── Content ──────────────────────────────────────────────── */}
       <main
         className={cn(
-          "min-h-[calc(100dvh-3rem)] py-5 pb-24 md:min-h-dvh md:pb-8 pl-[max(1rem,env(safe-area-inset-left))] pr-[max(1rem,env(safe-area-inset-right))] md:px-8",
+          "min-h-[calc(100dvh-3.5rem)] py-5 pb-24 md:min-h-dvh md:pb-8 pl-[max(1rem,env(safe-area-inset-left))] pr-[max(1rem,env(safe-area-inset-right))] md:px-8",
           "md:pt-16",
         )}
         style={{ marginLeft: `var(--sidebar-offset, 0px)` }}
