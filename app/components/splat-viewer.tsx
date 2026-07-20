@@ -1327,18 +1327,19 @@ const SplatViewer = forwardRef<SplatViewerHandle, Props>(function SplatViewer(
       {/* Loading overlay */}
       {!ready && (
         <div className="absolute inset-0 z-10 flex flex-col items-center justify-center bg-white">
-          <div className="mb-3 h-[3px] w-16 overflow-hidden rounded-full bg-foreground/10">
-            <div className="h-full w-1/2 rounded-full bg-foreground/40 animate-[shimmer-bar_1.2s_ease-in-out_infinite]" />
-          </div>
-          <span className="text-sm text-muted-foreground">{status}</span>
-          {downloadPct > 0 && downloadPct < 100 && (
-            <div className="mt-2 w-48 h-1.5 rounded-full bg-muted overflow-hidden">
+          {/* Single indicator: real download fill when we have a percentage,
+              otherwise an indeterminate shimmer. Never both. */}
+          <div className="mb-3 h-[3px] w-44 overflow-hidden rounded-full bg-foreground/10">
+            {downloadPct > 0 && downloadPct < 100 ? (
               <div
-                className="h-full bg-foreground/60 rounded-full transition-all duration-200"
+                className="h-full rounded-full bg-foreground/50 transition-all duration-200"
                 style={{ width: `${downloadPct}%` }}
               />
-            </div>
-          )}
+            ) : (
+              <div className="h-full w-1/2 rounded-full bg-foreground/40 animate-[shimmer-bar_1.2s_ease-in-out_infinite]" />
+            )}
+          </div>
+          <span className="text-[13px] text-muted-foreground">{status}</span>
         </div>
       )}
     </div>
