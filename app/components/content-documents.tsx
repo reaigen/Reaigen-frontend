@@ -516,7 +516,7 @@ export function AppContentMessages({
                 <button
                   type="button"
                   onClick={() => dismiss(document.id)}
-                  className="shrink-0 rounded-md px-2 py-1 text-[12px] text-muted-foreground transition-colors hover:bg-foreground/[0.05] hover:text-foreground"
+                  className="shrink-0 rounded-lg px-2 py-1 text-[12px] text-muted-foreground transition-colors hover:bg-foreground/[0.05] hover:text-foreground"
                 >
                   {t("common.dismiss", lang)}
                 </button>

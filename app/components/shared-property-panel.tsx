@@ -69,10 +69,10 @@ export function SharedPropertyPanel({ draftData, lang }: { draftData: SharedDraf
 
           {hasFacts && (
             <div className="flex flex-wrap gap-1.5">
-              {draftData.bedrooms != null && <span className="bg-white/[0.08] text-white/70 rounded-md px-2 py-0.5 text-[11px]">{draftData.bedrooms} {t("shared.bed", lang)}</span>}
-              {draftData.bathrooms != null && <span className="bg-white/[0.08] text-white/70 rounded-md px-2 py-0.5 text-[11px]">{draftData.bathrooms} {t("shared.bath", lang)}</span>}
-              {draftData.area != null && draftData.area !== "" && <span className="bg-white/[0.08] text-white/70 rounded-md px-2 py-0.5 text-[11px]">{draftData.area} {draftData.area_unit || "m²"}</span>}
-              {draftData.year_built != null && <span className="bg-white/[0.08] text-white/70 rounded-md px-2 py-0.5 text-[11px]">{draftData.year_built}</span>}
+              {draftData.bedrooms != null && <span className="bg-white/[0.08] text-white/70 rounded-full px-2.5 py-0.5 text-[11px]">{draftData.bedrooms} {t("shared.bed", lang)}</span>}
+              {draftData.bathrooms != null && <span className="bg-white/[0.08] text-white/70 rounded-full px-2.5 py-0.5 text-[11px]">{draftData.bathrooms} {t("shared.bath", lang)}</span>}
+              {draftData.area != null && draftData.area !== "" && <span className="bg-white/[0.08] text-white/70 rounded-full px-2.5 py-0.5 text-[11px]">{draftData.area} {draftData.area_unit || "m²"}</span>}
+              {draftData.year_built != null && <span className="bg-white/[0.08] text-white/70 rounded-full px-2.5 py-0.5 text-[11px]">{draftData.year_built}</span>}
             </div>
           )}
 

@@ -267,7 +267,7 @@ export function AppShell({
                     : "text-foreground/45"
                 )}
               >
-                <Icon className="h-[18px] w-[18px]" />
+                <Icon size={22} strokeWidth={active ? 2.2 : 2} />
                 <span>{item.label}</span>
               </Link>
             );

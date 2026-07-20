@@ -282,7 +282,7 @@ export function DraftVersionManager({
                         {index === 0 ? <StatusPill>{t("reai.currentVersion", lang)}</StatusPill> : null}
                       </div>
                       <p className="mt-1 text-[11px] text-muted-foreground">{formatDate(revision.created_at, dateFormat, lang)}</p>
-                      {revision.changed_fields.length ? <div className="mt-2 flex flex-wrap gap-1">{revision.changed_fields.map((field) => <span key={field} className="rounded-md bg-foreground/[0.045] px-1.5 py-0.5 text-[11px] text-foreground/55">{field.replaceAll("_", " ")}</span>)}</div> : null}
+                      {revision.changed_fields.length ? <div className="mt-2 flex flex-wrap gap-1">{revision.changed_fields.map((field) => <span key={field} className="rounded-full bg-foreground/[0.045] px-2 py-0.5 text-[11px] text-foreground/55">{field.replaceAll("_", " ")}</span>)}</div> : null}
                     </div>
                     {index > 0 ? <Button type="button" variant="outline" size="xs" onClick={() => setRestoreCandidate(revision.id)}>{t("reai.restore", lang)}</Button> : null}
                   </div>

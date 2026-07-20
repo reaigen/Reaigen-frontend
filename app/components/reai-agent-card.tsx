@@ -779,10 +779,10 @@ export function ReaiAgentCard({
                   <div
                     key={turn.id}
                     className={turn.role === "user"
-                      ? "ml-10 rounded-2xl rounded-br-md bg-foreground/[0.06] px-3.5 py-2.5 text-sm leading-relaxed text-foreground"
+                      ? "ml-auto w-fit max-w-[85%] rounded-2xl rounded-br-md bg-foreground px-3.5 py-2.5"
                       : "py-1"}
                   >
-                    <p className="whitespace-pre-line text-sm leading-6 text-foreground/85">{turn.content}</p>
+                    <p className={cn("whitespace-pre-line text-[14px] leading-6", turn.role === "user" ? "text-background" : "text-foreground")}>{turn.content}</p>
                     {answer && visibleDraftResults.length > 0 && (
                       <div className="mt-3 space-y-1.5">
                         {visibleDraftResults.map((draft) => (
@@ -799,7 +799,7 @@ export function ReaiAgentCard({
                               ].filter(Boolean).join(" · ") || t("nav.creation", lang)}
                             </span>
                             {(draft.semantic_summary || draft.creation_data.description) && (
-                              <span className="mt-1.5 line-clamp-2 block text-xs leading-relaxed text-muted-foreground">
+                              <span className="mt-1.5 line-clamp-2 text-xs leading-relaxed text-muted-foreground">
                                 {draft.semantic_summary || draft.creation_data.description}
                               </span>
                             )}
@@ -939,7 +939,7 @@ export function ReaiAgentCard({
                           {!!answer.media_action?.operations && Object.keys(answer.media_action.operations).length > 0 && (
                             <div className="mt-2 flex flex-wrap gap-1.5">
                               {Object.entries(answer.media_action.operations).map(([key, value]) => (
-                                <span key={key} className="rounded-md border border-border/50 bg-background px-2 py-1 text-[11px] text-foreground/70">
+                                <span key={key} className="rounded-full border border-border/50 bg-background px-2.5 py-1 text-[11px] text-foreground/70">
                                   {t(`reai.mediaOperation.${key}` as LocaleKey, lang)}{typeof value === "number" ? ` · ${value}` : ""}
                                 </span>
                               ))}
@@ -1123,8 +1123,8 @@ export function ReaiAgentCard({
             </div>
           )}
           {!showHistory && !showMediaHistory && turns.length === 0 && (
-            <div className={cn("flex flex-col", panel ? "min-h-0 flex-1 justify-end" : "py-6")}>
-              <p className="text-[13px] leading-relaxed text-muted-foreground">
+            <div className={cn("flex flex-col", panel ? "min-h-0 flex-1" : "py-2")}>
+              <p className="text-[14px] leading-relaxed text-foreground/75">
                 {t(workspaceContext === "settings" ? "reai.startSettingsConversation" : (draftId ? "reai.startDraftConversation" : "reai.startConversation"), lang)}
               </p>
               <div className="mt-4 space-y-2">
@@ -1134,10 +1134,10 @@ export function ReaiAgentCard({
                     type="button"
                     disabled={busy}
                     onClick={() => void ask(t(key, lang))}
-                    className="group flex w-full items-center justify-between gap-3 rounded-xl border border-border/60 bg-surface px-4 py-3 text-left text-[13px] font-medium text-foreground/80 transition-colors hover:border-foreground/25 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50"
+                    className="group flex w-full items-center justify-between gap-3 rounded-xl border border-border/60 bg-surface px-4 py-3.5 text-left text-[14px] font-medium text-foreground transition-colors hover:border-foreground/30 hover:bg-foreground/[0.02] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50"
                   >
                     <span className="min-w-0">{t(key, lang)}</span>
-                    <ArrowRightIcon size={15} className="shrink-0 text-foreground/30 transition-colors group-hover:text-foreground/60" />
+                    <ArrowRightIcon size={16} className="shrink-0 text-foreground/40 transition-colors group-hover:text-foreground/70" />
                   </button>
                 ))}
               </div>
