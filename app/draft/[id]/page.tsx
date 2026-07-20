@@ -473,7 +473,7 @@ export default function DraftPreviewPage({ params }: { params: Promise<{ id: str
     if (!user) return errorContent;
     return (
       <AppShell user={user} onLogout={logout} hideMobileNav>
-        <div className="mx-auto w-full max-w-4xl pb-16 md:pb-10">{errorContent}</div>
+        <div className="mx-auto w-full max-w-3xl pb-16 md:pb-10">{errorContent}</div>
       </AppShell>
     );
   }
@@ -516,7 +516,7 @@ export default function DraftPreviewPage({ params }: { params: Promise<{ id: str
 
   return (
     <AppShell user={user} onLogout={logout} hideMobileNav reaiDraftId={draftId} reaiDraftTitle={draft?.title} reaiUploadId={activeImageId ?? undefined} onReaiDraftUpdated={setDraft}>
-      <div className="mx-auto w-full max-w-4xl pb-16 md:pb-10">
+      <div className="mx-auto w-full max-w-3xl pb-16 md:pb-10">
         {/* Creation toolbar */}
         <div className="mb-4 flex items-center justify-between gap-3">
           <button onClick={() => { if (window.history.length > 1) router.back(); else router.push("/dashboard"); }} className="inline-flex items-center gap-1.5 rounded-xl px-2 py-1.5 -ml-2 text-[13px] text-muted-foreground hover:text-foreground hover:bg-foreground/[0.04] transition-colors">

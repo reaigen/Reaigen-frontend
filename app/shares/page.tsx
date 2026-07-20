@@ -389,15 +389,15 @@ export default function SharesPage() {
         {!loading && !loadError && shares.length > 0 && (
           <div className="grid grid-cols-3 divide-x divide-border/45 overflow-hidden rounded-2xl border border-border/55 bg-surface">
             <div className="flex flex-col px-4 py-3 sm:px-5">
-              <p className="text-[10px] font-semibold uppercase tracking-[0.1em] text-muted-foreground">{t("shares.statusActive", lang)}</p>
+              <p className="text-[11px] font-semibold uppercase tracking-[0.1em] text-muted-foreground">{t("shares.statusActive", lang)}</p>
               <p className="mt-auto pt-1 text-[20px] font-semibold tabular-nums">{activeCount}</p>
             </div>
             <div className="flex flex-col px-4 py-3 sm:px-5">
-              <p className="text-[10px] font-semibold uppercase tracking-[0.1em] text-muted-foreground">{t("shares.statusPaused", lang)}</p>
+              <p className="text-[11px] font-semibold uppercase tracking-[0.1em] text-muted-foreground">{t("shares.statusPaused", lang)}</p>
               <p className="mt-auto pt-1 text-[20px] font-semibold tabular-nums">{pausedCount}</p>
             </div>
             <div className="flex flex-col px-4 py-3 sm:px-5">
-              <p className="text-[10px] font-semibold uppercase tracking-[0.1em] text-muted-foreground">{t("shares.totalViews", lang)}</p>
+              <p className="text-[11px] font-semibold uppercase tracking-[0.1em] text-muted-foreground">{t("shares.totalViews", lang)}</p>
               <p className="mt-auto pt-1 text-[20px] font-semibold tabular-nums">{totalViews}</p>
             </div>
           </div>
@@ -427,7 +427,7 @@ export default function SharesPage() {
 
         {/* Column headers */}
         {!loading && filtered.length > 0 && (
-          <div className="hidden items-center gap-3 px-4 text-[10px] font-medium text-foreground/50 uppercase tracking-wider sm:flex">
+          <div className="hidden items-center gap-3 px-4 text-[11px] font-medium text-foreground/50 uppercase tracking-wider sm:flex">
             <span className="w-2" />
             <span className="flex-1">{t("shares.tableTour", lang)}</span>
             <span className="w-16 text-center">{t("shares.tableStatus", lang)}</span>
@@ -532,7 +532,7 @@ export default function SharesPage() {
                 <span className="min-w-0 flex-1">
                   <span className="block truncate text-[13px] font-semibold">{draft.title || t("dashboard.untitled", lang)}</span>
                   <span className="mt-0.5 block truncate text-[11px] text-muted-foreground">{draft.display_address || [draft.city, draft.country].filter(Boolean).join(", ") || t("shares.configureAccess", lang)}</span>
-                  {activeLinks > 0 ? <span className="mt-1 block text-[10px] font-medium text-foreground/45">{activeLinks} {t("shares.existingLinks", lang)}</span> : null}
+                  {activeLinks > 0 ? <span className="mt-1 block text-[11px] font-medium text-foreground/45">{activeLinks} {t("shares.existingLinks", lang)}</span> : null}
                 </span>
                 <span className="pr-2 text-foreground/25 transition group-hover:translate-x-0.5 group-hover:text-foreground/60">→</span>
               </button>

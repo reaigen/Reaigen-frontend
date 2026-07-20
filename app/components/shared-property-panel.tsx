@@ -80,7 +80,7 @@ export function SharedPropertyPanel({ draftData, lang }: { draftData: SharedDraf
 
           {hasPhotos && (
             <div>
-              <p className="text-[10px] text-white/40 font-medium mb-1.5">{t("shared.photos", lang)}</p>
+              <p className="text-[11px] text-white/40 font-medium mb-1.5">{t("shared.photos", lang)}</p>
               <div className="flex gap-1.5 overflow-x-auto pb-1">
                 {/* eslint-disable-next-line @next/next/no-img-element */}
                 {photos.map((p, i) => <img key={i} src={p.url} alt={p.name || ""} className="w-16 h-16 rounded-lg object-cover shrink-0 border border-white/10" />)}
@@ -91,7 +91,7 @@ export function SharedPropertyPanel({ draftData, lang }: { draftData: SharedDraf
           {hasFeatures && (
             <div className="flex flex-wrap gap-1">
               {draftData.data!.map((d, i) => (
-                <span key={i} className="bg-white/[0.06] text-white/50 rounded px-1.5 py-0.5 text-[10px]">{d.key}: {d.value}</span>
+                <span key={i} className="bg-white/[0.06] text-white/50 rounded px-1.5 py-0.5 text-[11px]">{d.key}: {d.value}</span>
               ))}
             </div>
           )}
