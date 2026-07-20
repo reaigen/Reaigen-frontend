@@ -29,7 +29,7 @@ import { PageLoading } from "../components/page-loading";
 import { PageHeader } from "../components/page-header";
 import { SidePanel } from "../components/side-panel";
 import { SearchField } from "../components/search-field";
-import { LinkIcon, SearchIcon } from "../components/icons";
+import { LinkIcon } from "../components/icons";
 import { Thumbnail } from "../components/thumbnail";
 
 function draftThumbnail(draft: DraftListingItem): string | null {
@@ -405,11 +405,13 @@ export default function SharesPage() {
 
         {shares.length > 0 && (
           <div className="flex flex-col gap-3 border-b border-border/45 pb-4 sm:flex-row sm:items-center sm:justify-between">
-            <label className="relative block min-w-0 flex-1 sm:max-w-[300px]">
-              <span className="sr-only">{t("shares.search", lang)}</span>
-              <SearchIcon size={15} className="pointer-events-none absolute left-0 top-1/2 -translate-y-1/2 text-foreground/35" />
-              <input type="search" value={query} onChange={(event) => setQuery(event.target.value)} placeholder={t("shares.search", lang)} className="h-9 w-full border-0 bg-transparent pl-6 pr-2 text-[12px] outline-none placeholder:text-foreground/35" />
-            </label>
+            <SearchField
+              value={query}
+              onChange={setQuery}
+              placeholder={t("shares.search", lang)}
+              clearLabel={t("dashboard.clearSearch", lang)}
+              className="min-w-0 flex-1 sm:max-w-[300px]"
+            />
             <div className="flex items-center gap-0.5 rounded-lg bg-muted/55 p-0.5">
               {(["all", "active", "inactive"] as const).map((f) => (
                 <button
@@ -499,17 +501,14 @@ export default function SharesPage() {
         title={t("shares.createLink", lang)}
         description={t("shares.selectCreationHint", lang)}
       >
-        <label className="relative block">
-          <span className="sr-only">{t("shares.searchCreations", lang)}</span>
-          <SearchIcon size={15} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-foreground/35" />
-          <input
-            type="search"
+        <div className="border-b border-border/40 pb-3">
+          <SearchField
             value={draftQuery}
-            onChange={(event) => setDraftQuery(event.target.value)}
+            onChange={setDraftQuery}
             placeholder={t("shares.searchCreations", lang)}
-            className="h-10 w-full rounded-xl border border-border/55 bg-surface pl-9 pr-3 text-[12px] outline-none transition focus:border-foreground/25 focus:ring-2 focus:ring-foreground/[0.055]"
+            clearLabel={t("dashboard.clearSearch", lang)}
           />
-        </label>
+        </div>
         <div className="mt-5 space-y-2">
           {selectableDrafts.length === 0 ? (
             <div className="rounded-xl border border-dashed border-border/65 px-5 py-12 text-center">
