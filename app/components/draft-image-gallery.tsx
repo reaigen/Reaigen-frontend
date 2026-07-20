@@ -282,7 +282,7 @@ export function DraftImageGallery({ images, alt, fallbackUrl, lang = "en", onAct
 
   if (count === 0) {
     return (
-      <div className="relative aspect-[16/10] w-full overflow-hidden bg-white ring-1 ring-inset ring-black/[0.045] md:rounded-2xl">
+      <div className="relative aspect-[16/10] w-full overflow-hidden bg-white ring-1 ring-inset ring-black/[0.045] md:rounded-xl">
         <div className="flex h-full w-full items-center justify-center">
           <svg width="48" height="48" viewBox="0 0 24 24" fill="none" className="text-black/10" aria-hidden="true">
             <rect x="3" y="3" width="18" height="18" rx="2" stroke="currentColor" strokeWidth="1.5" />
@@ -296,7 +296,7 @@ export function DraftImageGallery({ images, alt, fallbackUrl, lang = "en", onAct
 
   return (
     <>
-      <div className="group relative aspect-[16/10] overflow-hidden bg-white ring-1 ring-inset ring-black/[0.045] md:rounded-2xl">
+      <div className="group relative aspect-[16/10] overflow-hidden bg-white ring-1 ring-inset ring-black/[0.045] md:rounded-xl">
         <div ref={scrollRef} className="flex h-full w-full snap-x snap-mandatory overflow-x-auto scrollbar-none">
           {displayImages.map((image, imageIndex) => (
             <div

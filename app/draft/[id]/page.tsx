@@ -545,7 +545,7 @@ export default function DraftPreviewPage({ params }: { params: Promise<{ id: str
         {hasMedia && (
           <div className="-mx-4 md:mx-0">
             {(images.length > 0 || thumbUrl) && (
-              <div className="md:rounded-2xl overflow-hidden">
+              <div className="md:rounded-xl overflow-hidden">
                 <DraftImageGallery images={images} alt={draft.title} fallbackUrl={thumbUrl} lang={lang} onActiveImageChange={setActiveImageId} />
               </div>
             )}
@@ -557,7 +557,7 @@ export default function DraftPreviewPage({ params }: { params: Promise<{ id: str
                     controls
                     playsInline
                     preload="metadata"
-                    className="aspect-[16/10] w-full bg-black object-cover md:rounded-2xl"
+                    className="aspect-[16/10] w-full bg-black object-cover md:rounded-xl"
                     aria-label={video.name}
                   >
                     <source src={video.url} />
@@ -586,7 +586,7 @@ export default function DraftPreviewPage({ params }: { params: Promise<{ id: str
             <p className="mt-1 text-[13px] text-muted-foreground">{address}</p>
           )}
           {price && (
-            <p className="mt-2 text-[24px] font-semibold tracking-tight tabular-nums">
+            <p className="mt-2 text-[20px] font-semibold tracking-tight tabular-nums">
               {price}
               {showOrigPrice && (
                 <span className="ml-2 text-[13px] font-normal text-muted-foreground tabular-nums">{origPrice}</span>
@@ -599,7 +599,7 @@ export default function DraftPreviewPage({ params }: { params: Promise<{ id: str
         {facts.length > 0 && (
           <div className="mt-5 flex flex-wrap gap-2">
             {facts.map((f, i) => (
-              <div key={i} className="flex items-center gap-2.5 rounded-xl border border-border/50 bg-surface px-3 py-2 shadow-card">
+              <div key={i} className="flex items-center gap-2.5 rounded-lg border border-border/50 bg-surface px-3 py-2 shadow-card">
                 {f.icon}
                 <div className="leading-tight">
                   <p className="text-[14px] font-semibold tabular-nums">{f.value}</p>
@@ -617,7 +617,7 @@ export default function DraftPreviewPage({ params }: { params: Promise<{ id: str
         {rows.length > 0 && (
           <div className="mt-5">
             <h2 className="text-[14px] font-semibold mb-2">{t("draft.details", lang)}</h2>
-            <div className="rounded-2xl border border-border/50 bg-surface overflow-hidden shadow-card">
+            <div className="rounded-xl border border-border/50 bg-surface overflow-hidden shadow-card">
               {rows.map((r, i) => (
                 <div key={i} className={`flex items-center justify-between gap-4 px-4 py-2.5 ${i < rows.length - 1 ? "border-b border-border/40" : ""}`}>
                   <span className="flex min-w-0 items-center gap-2.5">
@@ -639,7 +639,7 @@ export default function DraftPreviewPage({ params }: { params: Promise<{ id: str
               <p className="text-[12px] text-foreground/50 mb-2">{t("draft.descriptionPending", lang)}</p>
             )}
             {description && (
-              <div className="rounded-2xl border border-border/50 bg-surface px-4 py-3.5 shadow-card">
+              <div className="rounded-xl border border-border/50 bg-surface px-4 py-3.5 shadow-card">
                 <div className={`overflow-hidden transition-all duration-300 ${!descExpanded && descLong ? "max-h-[7.5em]" : "max-h-[200em]"}`}>
                   <p className="text-[13px] leading-[1.75] text-foreground/80 whitespace-pre-line">
                     {description}
@@ -661,7 +661,7 @@ export default function DraftPreviewPage({ params }: { params: Promise<{ id: str
             <h2 className="text-[14px] font-semibold mb-2">{t("draft.features", lang)}</h2>
             <div className="flex flex-wrap gap-1.5">
               {features.map((f) => (
-                <span key={f} className="inline-flex items-center gap-1.5 rounded-full border border-border/50 bg-surface px-3 py-1.5 text-[12px] font-medium text-foreground/75">
+                <span key={f} className="inline-flex items-center gap-1.5 rounded-md border border-border/50 bg-surface px-2.5 py-1 text-[12px] font-medium text-foreground/75">
                   <span className="text-foreground/40">{I.check}</span> {f}
                 </span>
               ))}
@@ -673,7 +673,7 @@ export default function DraftPreviewPage({ params }: { params: Promise<{ id: str
         {monthlyCosts.length > 0 && (
           <div className="mt-5">
             <h2 className="text-[14px] font-semibold mb-2">{t("draft.monthlyCosts", lang)}</h2>
-            <div className="rounded-2xl border border-border/50 bg-surface overflow-hidden shadow-card">
+            <div className="rounded-xl border border-border/50 bg-surface overflow-hidden shadow-card">
               {monthlyCosts.map((r, i) => (
                 <div key={i} className={`flex items-center justify-between gap-4 px-4 py-2.5 ${i < monthlyCosts.length - 1 ? "border-b border-border/40" : ""}`}>
                   <span className="flex min-w-0 items-center gap-2.5">
