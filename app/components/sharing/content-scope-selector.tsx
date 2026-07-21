@@ -92,8 +92,8 @@ export function ContentScopeSelector({ scope, onChange, hasTour, hasPhotos, hasF
         {t("sharing.whatToShare", lang)}
       </h3>
 
-      {/* Toggle chips — pill-shaped; unavailable content types stay visible but disabled */}
-      <div className="flex flex-wrap gap-2">
+      {/* Toggle chips — uniform 2-column grid so every option is the same size */}
+      <div className="grid grid-cols-2 gap-2">
         {cards.map((card) => {
           const active = card.available && scope[card.key];
           return (
@@ -104,16 +104,16 @@ export function ContentScopeSelector({ scope, onChange, hasTour, hasPhotos, hasF
               aria-disabled={!card.available}
               aria-pressed={active}
               onClick={() => toggleCard(card.key)}
-              className={`inline-flex items-center gap-1.5 rounded-full px-3.5 py-1.5 text-left transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ${
+              className={`flex h-11 w-full items-center justify-center gap-1.5 rounded-full px-3 text-center transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ${
                 !card.available
                   ? "border border-border/40 bg-transparent text-foreground/50 opacity-40 cursor-not-allowed"
                   : active
                     ? "border border-foreground bg-foreground text-background"
-                    : "border border-border/40 bg-transparent text-foreground/50 hover:bg-foreground/[0.04] hover:text-foreground/70"
+                    : "border border-border/40 bg-transparent text-foreground/60 hover:bg-foreground/[0.04] hover:text-foreground/80"
               }`}
             >
-              <span>{card.icon}</span>
-              <span className="text-[12px] font-medium">
+              <span className="shrink-0">{card.icon}</span>
+              <span className="truncate text-[12px] font-medium">
                 {t(card.labelKey, lang)}
               </span>
             </button>

@@ -23,14 +23,14 @@ export function LifetimeSelector({ hours, onHoursChange, lang }: LifetimeSelecto
         {t("sharing.lifetime", lang)}
       </h3>
 
-      <div className="flex items-center gap-1.5 flex-wrap">
+      <div className="flex flex-wrap gap-2">
         {LIFETIME_PRESETS.map((p) => (
           <button
             key={p.hours}
             type="button"
             aria-pressed={hours === p.hours}
             onClick={() => onHoursChange(p.hours)}
-            className={`px-3 py-1.5 rounded-full text-[11px] font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ${
+            className={`inline-flex min-w-[4.75rem] items-center justify-center rounded-full px-3.5 py-2 text-[12px] font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ${
               hours === p.hours
                 ? "bg-foreground text-background border border-foreground"
                 : "bg-transparent text-foreground/50 border border-border/40 hover:bg-foreground/[0.04] hover:text-foreground/70"
