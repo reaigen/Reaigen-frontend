@@ -29,7 +29,7 @@ import { Button } from "../lib/ui/button";
 import { cn } from "../lib/utils";
 import { useAuth } from "./hooks/use-auth";
 import { StatusPill } from "./status-pill";
-import { ArrowRightIcon, SearchIcon, VersionsIcon, LayoutIcon, SparklesIcon, CheckIcon, EditIcon, LockIcon, InfoIcon } from "./icons";
+import { SearchIcon, VersionsIcon, LayoutIcon, SparklesIcon, CheckIcon, EditIcon, LockIcon, InfoIcon } from "./icons";
 
 // Maps a quick-action key to its icon, so the agent suggestions read as
 // distinct, recognisable actions rather than flat text rows.
@@ -1132,32 +1132,31 @@ export function ReaiAgentCard({
           )}
           {!showHistory && !showMediaHistory && turns.length === 0 && (
             <div className={cn("flex flex-col", panel ? "min-h-0 flex-1" : "py-2")}>
-              <p className="text-[14px] leading-relaxed text-foreground/75">
+              <p className="text-[14px] leading-relaxed text-foreground/70">
                 {t(workspaceContext === "settings" ? "reai.startSettingsConversation" : (draftId ? "reai.startDraftConversation" : "reai.startConversation"), lang)}
               </p>
-              <div className="mt-4 space-y-2.5">
-                {quickActions.map((key) => {
-                  const Icon = ACTION_ICON[key] ?? SparklesIcon;
-                  return (
-                    <button
-                      key={key}
-                      type="button"
-                      disabled={busy}
-                      onClick={() => void ask(t(key, lang))}
-                      className="group flex w-full items-center gap-3 rounded-xl border border-border/60 bg-surface px-3.5 py-3 text-left shadow-card transition-colors hover:border-foreground/25 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50"
-                    >
-                      <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-foreground/[0.05] text-foreground/70">
-                        <Icon size={17} />
-                      </span>
-                      <span className="min-w-0 flex-1 text-[14px] font-medium text-foreground">{t(key, lang)}</span>
-                      <ArrowRightIcon size={16} className="shrink-0 text-foreground/30 transition-colors group-hover:text-foreground/60" />
-                    </button>
-                  );
-                })}
-              </div>
             </div>
           )}
           {error && <p role="alert" className="rounded-xl border border-destructive/20 bg-destructive/[0.045] px-3 py-2.5 text-[12px] text-destructive">{error}</p>}
+          {!showHistory && !showMediaHistory && turns.length === 0 && (
+            <div className="flex flex-wrap gap-2">
+              {quickActions.map((key) => {
+                const Icon = ACTION_ICON[key] ?? SparklesIcon;
+                return (
+                  <button
+                    key={key}
+                    type="button"
+                    disabled={busy}
+                    onClick={() => void ask(t(key, lang))}
+                    className="group inline-flex items-center gap-1.5 rounded-full border border-border/60 bg-surface px-3 py-1.5 text-[12px] font-medium text-foreground/80 shadow-card transition-colors hover:border-foreground/25 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50"
+                  >
+                    <Icon size={14} className="text-foreground/45 transition-colors group-hover:text-foreground/70" />
+                    {t(key, lang)}
+                  </button>
+                );
+              })}
+            </div>
+          )}
           {!showHistory && !showMediaHistory && <div className="flex items-end gap-2 rounded-2xl border border-border/60 bg-surface p-2 shadow-card transition-colors focus-within:border-foreground/30">
             <textarea
               value={message}
