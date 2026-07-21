@@ -31,7 +31,7 @@ type AuthGateProps = {
 /* ── Shared input style ───────────────────────────────────────────────── */
 
 const INPUT_CLASS =
-  "border-border/60 bg-background text-foreground placeholder:text-foreground/40 h-11 text-[14px] rounded-md shadow-none focus-visible:ring-0 focus-visible:border-foreground/40 focus-visible:shadow-[0_0_0_3px_rgba(0,0,0,0.05)] transition-colors duration-150";
+  "border-border/60 bg-background text-foreground placeholder:text-foreground/40 h-11 text-[14px] rounded-lg shadow-none focus-visible:ring-0 focus-visible:border-foreground/40 focus-visible:shadow-[0_0_0_3px_rgba(0,0,0,0.05)] transition-colors duration-150";
 
 /* ── Helpers ──────────────────────────────────────────────────────────── */
 
@@ -145,14 +145,14 @@ function LoginCard({
       </div>
 
       {error && (
-        <p className="rounded-md border border-destructive/25 bg-destructive/[0.04] px-3.5 py-2.5 text-[12px] text-destructive leading-relaxed">
+        <p className="rounded-lg border border-destructive/25 bg-destructive/[0.04] px-3.5 py-2.5 text-[12px] text-destructive leading-relaxed">
           {error}
         </p>
       )}
 
       <Button
         type="submit"
-        className={`w-full h-11 text-[14px] font-semibold rounded-md shadow-none transition-colors disabled:opacity-100 ${loading ? "disabled:bg-foreground disabled:text-background" : "disabled:bg-foreground/[0.07] disabled:text-foreground/35"}`}
+        className={`w-full h-11 text-[14px] font-semibold rounded-full shadow-none transition-colors disabled:opacity-100 ${loading ? "disabled:bg-foreground disabled:text-background" : "disabled:bg-foreground/[0.07] disabled:text-foreground/35"}`}
         loading={loading}
         disabled={!canSubmit || loading}
       >
@@ -283,14 +283,14 @@ function RegistrationCard({
       </div>
 
       {error && (
-        <p className="rounded-md border border-destructive/25 bg-destructive/[0.04] px-3.5 py-2.5 text-[12px] text-destructive leading-relaxed">
+        <p className="rounded-lg border border-destructive/25 bg-destructive/[0.04] px-3.5 py-2.5 text-[12px] text-destructive leading-relaxed">
           {error}
         </p>
       )}
 
       <Button
         type="submit"
-        className={`w-full h-11 text-[14px] font-semibold rounded-md shadow-none transition-colors disabled:opacity-100 ${loading ? "disabled:bg-foreground disabled:text-background" : "disabled:bg-foreground/[0.07] disabled:text-foreground/35"}`}
+        className={`w-full h-11 text-[14px] font-semibold rounded-full shadow-none transition-colors disabled:opacity-100 ${loading ? "disabled:bg-foreground disabled:text-background" : "disabled:bg-foreground/[0.07] disabled:text-foreground/35"}`}
         loading={loading}
         disabled={!canSubmit || loading}
       >
@@ -316,7 +316,7 @@ export function AuthGate({ open, onLogin, onRegister }: AuthGateProps) {
 
   return (
     <div className="w-full md:max-w-[26rem] md:mx-auto">
-      <div className="bg-background min-h-[100dvh] px-6 py-10 md:min-h-0 md:border md:border-border/60 md:rounded-xl md:shadow-[0_8px_30px_rgba(0,0,0,0.06)] md:px-9 md:py-10">
+      <div className="rounded-2xl border border-border/60 bg-surface px-6 py-8 shadow-card md:rounded-2xl md:px-9 md:py-10">
         {/* Header */}
         <div className="mb-8">
           <ReaigenLogo />
