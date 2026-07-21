@@ -783,7 +783,7 @@ export function ReaiAgentCard({
             </div>
           )}
           {!showHistory && !showMediaHistory && turns.length > 0 && (
-            <div className={cn("space-y-2 overflow-y-auto pr-1", panel ? "min-h-0 flex-1" : "max-h-[420px]")} aria-live="polite">
+            <div className={cn("space-y-4 overflow-y-auto pr-1", panel ? "min-h-0 flex-1" : "max-h-[420px]")} aria-live="polite">
               {turns.map((turn) => {
                 const answer = turn.response;
                 const shareUrl = answer ? contextualShareUrl(answer) : null;
@@ -1163,7 +1163,7 @@ export function ReaiAgentCard({
               </div>
             </div>
           )}
-          {!showHistory && !showMediaHistory && <div className="flex items-end gap-2 rounded-2xl border border-border/60 bg-background p-2 transition focus-within:border-foreground/30">
+          {!showHistory && !showMediaHistory && <div className="flex items-end gap-2 rounded-2xl border border-border/60 bg-surface p-2 shadow-card transition-colors focus-within:border-foreground/30">
             <textarea
               value={message}
               onChange={(event) => setMessage(event.target.value)}
@@ -1176,14 +1176,14 @@ export function ReaiAgentCard({
                   void ask();
                 }
               }}
-              className="min-h-10 flex-1 resize-none bg-transparent px-2 py-1.5 text-[13px] leading-relaxed outline-none"
+              className="min-h-10 flex-1 resize-none bg-transparent px-2.5 py-2 text-[14px] leading-relaxed outline-none placeholder:text-foreground/40"
             />
             <button
               type="button"
               disabled={!message.trim() || busy}
               onClick={() => void ask()}
               aria-label={t("reai.ask", lang)}
-              className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-foreground text-background transition-colors hover:bg-foreground/85 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-25"
+              className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-foreground text-background transition-colors hover:bg-foreground/85 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-25"
             >
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="m5 12 14-7-4.5 14-2.5-6.5L5 12Z" /></svg>
             </button>
