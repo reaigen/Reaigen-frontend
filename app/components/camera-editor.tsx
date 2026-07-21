@@ -289,7 +289,7 @@ export default function CameraEditor({ splatId, viewerRef, activeShotIdx, defaul
   // ── Preview mode: floating pill with arrows ─────────────────────────────
   if (mode === "preview") {
     return (
-      <div className="absolute inset-x-2 top-4 z-30 flex justify-end animate-fade-in sm:inset-x-auto sm:right-4">
+      <div className="absolute inset-x-2 bottom-[calc(1rem+env(safe-area-inset-bottom,0px))] z-30 flex justify-center animate-fade-in sm:inset-x-auto sm:bottom-auto sm:top-4 sm:right-4 sm:justify-end">
         <div className="flex max-w-full items-center gap-1 rounded-full border border-white/[0.08] bg-black/70 px-1.5 py-1 text-white shadow-2xl backdrop-blur-2xl">
           {/* Play / Pause */}
           <button
@@ -382,7 +382,7 @@ export default function CameraEditor({ splatId, viewerRef, activeShotIdx, defaul
   // ── Edit collapsed: compact pill ────────────────────────────────────────
   if (isCollapsed) {
     return (
-      <div className="absolute inset-x-2 top-4 z-30 flex justify-end animate-fade-in sm:inset-x-auto sm:right-4">
+      <div className="absolute inset-x-2 bottom-[calc(1rem+env(safe-area-inset-bottom,0px))] z-30 flex justify-center animate-fade-in sm:inset-x-auto sm:bottom-auto sm:top-4 sm:right-4 sm:justify-end">
         <div className="flex max-w-full items-center gap-1 rounded-full border border-white/[0.08] bg-black/70 px-1.5 py-1 text-white shadow-2xl backdrop-blur-2xl">
           {/* Prev arrow */}
           {shots.length > 1 && (
@@ -466,8 +466,8 @@ export default function CameraEditor({ splatId, viewerRef, activeShotIdx, defaul
 
   // ── Edit mode expanded: full camera panel ───────────────────────────────
   return (
-    <div className="absolute inset-x-2 top-14 z-30 animate-fade-in sm:inset-x-auto sm:right-4 sm:top-4 sm:w-[19.5rem]">
-      <div className="max-h-[calc(100dvh-4.5rem)] overflow-hidden rounded-xl border border-white/[0.08] bg-black/70 text-white shadow-2xl backdrop-blur-2xl">
+    <div className="absolute inset-x-0 bottom-0 z-30 animate-fade-in sm:inset-x-auto sm:bottom-auto sm:right-4 sm:top-4 sm:w-[19.5rem]">
+      <div className="max-h-[68dvh] overflow-hidden rounded-t-2xl border border-white/[0.08] bg-black/80 pb-[env(safe-area-inset-bottom,0px)] text-white shadow-2xl backdrop-blur-2xl sm:max-h-[calc(100dvh-4.5rem)] sm:rounded-xl sm:border sm:pb-0">
         <div className="border-b border-white/[0.08] p-2.5">
           <div className="flex items-center justify-between">
             <div className="flex min-w-0 items-center gap-2">
