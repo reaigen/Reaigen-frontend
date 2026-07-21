@@ -619,12 +619,12 @@ export default function DraftPreviewPage({ params }: { params: Promise<{ id: str
             <h2 className="text-[14px] font-semibold mb-2">{t("draft.details", lang)}</h2>
             <div className="rounded-xl border border-border/50 bg-surface overflow-hidden shadow-card">
               {rows.map((r, i) => (
-                <div key={i} className={`flex items-center justify-between gap-4 px-4 py-2.5 ${i < rows.length - 1 ? "border-b border-border/40" : ""}`}>
+                <div key={i} className={`flex items-center justify-between gap-4 px-4 py-3 ${i < rows.length - 1 ? "border-b border-border/40" : ""}`}>
                   <span className="flex min-w-0 items-center gap-2.5">
-                    <span className="[&_svg]:text-foreground/40">{r.icon}</span>
+                    <span className="[&_svg]:text-foreground/35">{r.icon}</span>
                     <span className="text-[13px] text-muted-foreground">{r.label}</span>
                   </span>
-                  <span className="text-right text-[13px] font-medium text-foreground tabular-nums">{r.value}</span>
+                  <span className="text-right text-[13px] font-semibold text-foreground tabular-nums">{r.value}</span>
                 </div>
               ))}
             </div>
@@ -680,7 +680,7 @@ export default function DraftPreviewPage({ params }: { params: Promise<{ id: str
                     <span className="[&_svg]:text-foreground/40">{r.icon}</span>
                     <span className="text-[13px] text-muted-foreground">{r.label}</span>
                   </span>
-                  <span className="text-right text-[13px] font-medium text-foreground tabular-nums">{r.value}</span>
+                  <span className="text-right text-[13px] font-semibold text-foreground tabular-nums">{r.value}</span>
                 </div>
               ))}
             </div>

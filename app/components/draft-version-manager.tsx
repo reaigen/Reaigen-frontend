@@ -193,7 +193,7 @@ export function DraftVersionManager({
 
         <TabsContent value="tour" className="mt-5 space-y-3">
           {versions.length === 0 ? (
-            <div className="rounded-2xl border border-dashed border-border/60 px-5 py-12 text-center">
+            <div className="rounded-xl border border-dashed border-border/60 px-5 py-12 text-center">
               <TourIcon size={22} className="mx-auto text-foreground/25" />
               <p className="mt-3 text-[13px] font-semibold">{t("draft.versions.noTours", lang)}</p>
               <p className="mt-1 text-[11px] leading-relaxed text-muted-foreground">{t("tours.emptyHint", lang)}</p>
@@ -208,7 +208,7 @@ export function DraftVersionManager({
                   </Button>
                 ) : null}
               </div>
-              <div className="overflow-hidden rounded-2xl border border-border/60 bg-surface">
+              <div className="overflow-hidden rounded-xl border border-border/60 bg-surface">
                 {versions.map((version, index) => {
                   const id = version.splat_id ?? version.id;
                   const active = id === activeTourId;
@@ -265,7 +265,7 @@ export function DraftVersionManager({
           {loadingAgentData ? <Working lang={lang} /> : agentUnavailable ? (
             <AgentRequired lang={lang} />
           ) : history.length === 0 ? (
-            <div className="rounded-2xl border border-dashed border-border/60 px-5 py-12 text-center">
+            <div className="rounded-xl border border-dashed border-border/60 px-5 py-12 text-center">
               <VersionsIcon size={22} className="mx-auto text-foreground/25" />
               <p className="mt-3 text-[13px] font-semibold">{t("draft.versions.noListingHistory", lang)}</p>
               <p className="mt-1 text-[11px] leading-relaxed text-muted-foreground">{t("reai.historyEmpty", lang)}</p>
@@ -305,7 +305,7 @@ export function DraftVersionManager({
           {loadingAgentData ? <Working lang={lang} /> : agentUnavailable ? (
             <AgentRequired lang={lang} />
           ) : media.length === 0 ? (
-            <div className="rounded-2xl border border-dashed border-border/60 px-5 py-12 text-center">
+            <div className="rounded-xl border border-dashed border-border/60 px-5 py-12 text-center">
               <ImageIcon size={22} className="mx-auto text-foreground/25" />
               <p className="mt-3 text-[13px] font-semibold">{t("draft.versions.noMediaVersions", lang)}</p>
               <p className="mt-1 text-[11px] leading-relaxed text-muted-foreground">{t("reai.mediaVersionsEmpty", lang)}</p>
@@ -313,7 +313,7 @@ export function DraftVersionManager({
           ) : (
             <div className="space-y-4">
               {media.map((group, groupIndex) => (
-                <section key={group.logical_asset_id} className="overflow-hidden rounded-2xl border border-border/60 bg-surface">
+                <section key={group.logical_asset_id} className="overflow-hidden rounded-xl border border-border/60 bg-surface">
                   <div className="border-b border-border/40 px-4 py-2.5 text-[11px] font-semibold text-foreground/55">{t("reai.mediaAsset", lang).replace("{number}", String(groupIndex + 1))}</div>
                   <div className="divide-y divide-border/40">
                     {group.versions.map((version) => (
@@ -332,7 +332,7 @@ export function DraftVersionManager({
                             <p className="mt-1 truncate text-[11px] text-muted-foreground">{version.processor === "original" ? t("reai.mediaOriginal", lang) : version.processor}</p>
                             <div className="mt-2 flex flex-wrap gap-2">
                               {!version.is_deleted && !version.is_master ? <Button type="button" variant="outline" size="xs" onClick={() => setMediaCandidate({ uploadId: version.id, action: "promote" })}>{t("reai.mediaUseVersion", lang)}</Button> : null}
-                              {!version.is_deleted ? <Button type="button" variant="ghost" size="xs" onClick={() => setMediaCandidate({ uploadId: version.id, action: "hide" })}>{t("reai.mediaHide", lang)}</Button> : null}
+                              {!version.is_deleted ? <Button type="button" variant="outline" size="xs" onClick={() => setMediaCandidate({ uploadId: version.id, action: "hide" })}>{t("reai.mediaHide", lang)}</Button> : null}
                               {version.is_deleted ? <Button type="button" variant="outline" size="xs" onClick={() => setMediaCandidate({ uploadId: version.id, action: "restore" })}>{t("reai.mediaRestore", lang)}</Button> : null}
                             </div>
                           </div>
@@ -361,7 +361,7 @@ export function DraftVersionManager({
 
 function AgentRequired({ lang }: { lang: string }) {
   return (
-    <div className="rounded-2xl border border-dashed border-border/60 px-5 py-10 text-center">
+    <div className="rounded-xl border border-dashed border-border/60 px-5 py-10 text-center">
       <VersionsIcon size={21} className="mx-auto text-foreground/25" />
       <p className="mt-3 text-[12px] font-semibold">{t("draft.versions.agentRequired", lang)}</p>
       <Link href="/settings#reai" className="mt-3 inline-flex text-[11px] font-semibold underline underline-offset-4">{t("settings.tab.reai", lang)}</Link>

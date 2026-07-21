@@ -467,7 +467,7 @@ export default function CameraEditor({ splatId, viewerRef, activeShotIdx, defaul
   // ── Edit mode expanded: full camera panel ───────────────────────────────
   return (
     <div className="absolute inset-x-2 top-14 z-30 animate-fade-in sm:inset-x-auto sm:right-4 sm:top-4 sm:w-[19.5rem]">
-      <div className="max-h-[calc(100dvh-4.5rem)] overflow-hidden rounded-2xl border border-white/[0.08] bg-black/70 text-white shadow-2xl backdrop-blur-2xl">
+      <div className="max-h-[calc(100dvh-4.5rem)] overflow-hidden rounded-xl border border-white/[0.08] bg-black/70 text-white shadow-2xl backdrop-blur-2xl">
         <div className="border-b border-white/[0.08] p-2.5">
           <div className="flex items-center justify-between">
             <div className="flex min-w-0 items-center gap-2">
@@ -503,7 +503,7 @@ export default function CameraEditor({ splatId, viewerRef, activeShotIdx, defaul
             <Button
               variant="outline"
               size="sm"
-              className="h-8 rounded-full border-white/[0.08] bg-white/10 px-3 text-[12px] text-white shadow-none hover:translate-y-0 hover:bg-white/15 hover:shadow-none"
+              className="h-8 rounded-lg border-white/[0.08] bg-white/10 px-3 text-[12px] text-white shadow-none hover:bg-white/15 hover:shadow-none"
               onClick={addShot}
             >
               <PlusIcon className="h-3.5 w-3.5" />
@@ -512,7 +512,7 @@ export default function CameraEditor({ splatId, viewerRef, activeShotIdx, defaul
             <Button
               variant="outline"
               size="sm"
-              className="h-8 rounded-full border-white/[0.08] bg-white/10 px-3 text-[12px] text-white/65 shadow-none hover:bg-white/15 hover:text-white"
+              className="h-8 rounded-lg border-white/[0.08] bg-white/10 px-3 text-[12px] text-white/65 shadow-none hover:bg-white/15 hover:text-white"
               onClick={handleSave}
               loading={saving}
               disabled={!shots.length}
@@ -522,7 +522,7 @@ export default function CameraEditor({ splatId, viewerRef, activeShotIdx, defaul
           </div>
 
           {shots.length === 0 ? (
-            <div className="rounded-xl border border-white/[0.06] bg-white/[0.04] px-3 py-3">
+            <div className="rounded-lg border border-white/[0.06] bg-white/[0.04] px-3 py-3">
               <p className="text-[12px] font-medium text-white/65">{t("cameraEditor.emptyTitle", lang)}</p>
               <p className="mt-0.5 text-[11px] leading-relaxed text-white/40">{t("cameraEditor.emptyHint", lang)}</p>
             </div>
@@ -531,7 +531,7 @@ export default function CameraEditor({ splatId, viewerRef, activeShotIdx, defaul
               {shots.map((shot, i) => (
                 <div
                   key={i}
-                  className={`grid grid-cols-[1fr_auto] items-center gap-1.5 rounded-xl border px-2 py-1.5 text-xs transition-colors duration-200 ${
+                  className={`grid grid-cols-[1fr_auto] items-center gap-1.5 rounded-lg border px-2 py-1.5 text-xs transition-colors duration-200 ${
                     updatedIdx === i
                       ? "border-white/15 bg-white/10"
                       : selectedIdx === i

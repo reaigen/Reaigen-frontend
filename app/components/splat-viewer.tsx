@@ -1327,6 +1327,12 @@ const SplatViewer = forwardRef<SplatViewerHandle, Props>(function SplatViewer(
       {/* Loading overlay */}
       {!ready && (
         <div className="absolute inset-0 z-10 flex flex-col items-center justify-center bg-white">
+          <span
+            className="mb-7 text-[26px] text-foreground/90"
+            style={{ fontFamily: "var(--font-brand), ui-serif, Georgia, serif", fontWeight: 500, letterSpacing: "0.01em" }}
+          >
+            Reaigen
+          </span>
           {/* Single indicator: real download fill when we have a percentage,
               otherwise an indeterminate shimmer. Never both. */}
           <div className="mb-3 h-[3px] w-44 overflow-hidden rounded-full bg-foreground/10">
