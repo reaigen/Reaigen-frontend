@@ -4,7 +4,6 @@ import Link from "next/link";
 import { useEffect, useState } from "react";
 
 import {
-  ApiError,
   applyReaiMediaAction,
   applyReaiWorkspaceAction,
   applyReaiWorkspaceProposal,
@@ -189,15 +188,10 @@ function historyValue(
   return String(value);
 }
 
-function errorText(error: unknown, lang: string): string {
-  if (error instanceof ApiError) {
-    try {
-      const parsed = JSON.parse(error.body) as { detail?: string };
-      // Provider and validation internals are intentionally not rendered as
-      // raw English strings in a localized creator workspace.
-      if (parsed.detail && error.status < 500) return parsed.detail;
-    } catch { /* use localized fallback */ }
-  }
+function errorText(_error: unknown, lang: string): string {
+  // Backend `detail` strings are raw English internals (e.g. "The Agent tool
+  // 'settings_navigation' is disabled in user settings") — never surface them
+  // in a localized creator workspace. Always show a clean localized message.
   return t("reai.error", lang);
 }
 
@@ -1163,6 +1157,7 @@ export function ReaiAgentCard({
               </div>
             </div>
           )}
+          {error && <p role="alert" className="rounded-xl border border-destructive/20 bg-destructive/[0.045] px-3 py-2.5 text-[12px] text-destructive">{error}</p>}
           {!showHistory && !showMediaHistory && <div className="flex items-end gap-2 rounded-2xl border border-border/60 bg-surface p-2 shadow-card transition-colors focus-within:border-foreground/30">
             <textarea
               value={message}
@@ -1190,7 +1185,6 @@ export function ReaiAgentCard({
           </div>}
         </div>
       )}
-      {error && <p role="alert" className="mt-3 rounded-xl border border-destructive/20 bg-destructive/[0.045] px-3 py-2.5 text-[12px] text-destructive">{error}</p>}
     </section>
   );
 }
