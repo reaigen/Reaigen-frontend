@@ -281,10 +281,13 @@ export function AppShell({
             className="fixed inset-y-0 right-0 z-[70] flex w-full flex-col border-l border-border/60 bg-background shadow-[-24px_0_80px_-32px_rgba(0,0,0,0.28)] animate-[panelIn_0.22s_ease-out] sm:w-[400px] sm:max-w-[90vw] xl:shadow-none"
           >
             <div className="flex h-14 shrink-0 items-center justify-between border-b border-border/40 px-4 pt-safe">
-              <div className="flex items-center gap-2.5">
-                <div>
-                  <h2 id="reai-panel-title" className="text-[14px] font-semibold">{t("reai.title", lang)}</h2>
-                  <p className="max-w-[260px] truncate text-[11px] text-muted-foreground">
+              <div className="flex min-w-0 items-center gap-2.5">
+                <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-foreground text-background">
+                  <SparklesIcon size={16} />
+                </span>
+                <div className="min-w-0">
+                  <h2 id="reai-panel-title" className="text-[15px] font-semibold leading-tight">{t("reai.title", lang)}</h2>
+                  <p className="max-w-[240px] truncate text-[11px] text-muted-foreground">
                     {reaiContext === "settings"
                       ? t("reai.settingsContext", lang)
                       : reaiDraftId
