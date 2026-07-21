@@ -13,6 +13,17 @@ export class ApiError extends Error {
 const inFlight = new Map<string, Promise<unknown>>();
 const cache = new Map<string, { data: unknown; ts: number }>();
 
+/** Session expired (401): flush all cached data and signal the app to
+ * re-authenticate. A single global event lets AuthProvider force a clean
+ * logout + redirect to login, instead of leaving the user stranded on a
+ * dead authenticated session (which is unsafe — stale data, failing actions). */
+function notifyUnauthorized() {
+  cache.clear();
+  if (typeof window !== "undefined") {
+    window.dispatchEvent(new Event("reai:unauthorized"));
+  }
+}
+
 const CACHE_TTL = 30_000; // 30s default
 const LONG_TTL = 300_000; // 5 min — profile / localization / preferences
 const CONTENT_TTL = 600_000; // 10 min — legal / content documents
@@ -54,8 +65,7 @@ async function request(path: string, options: RequestInit = {}) {
       });
       if (!res.ok) {
         const body = await res.text();
-        // 401 = session expired — flush entire cache so re-auth gets fresh data
-        if (res.status === 401) cache.clear();
+        if (res.status === 401) notifyUnauthorized();
         throw new ApiError(res.status, body);
       }
       const text = await res.text();
@@ -84,6 +94,7 @@ async function request(path: string, options: RequestInit = {}) {
 
   if (!res.ok) {
     const body = await res.text();
+    if (res.status === 401) notifyUnauthorized();
     throw new ApiError(res.status, body);
   }
 
@@ -101,6 +112,7 @@ async function abortableRequest(path: string, signal?: AbortSignal) {
   });
   if (!res.ok) {
     const body = await res.text();
+    if (res.status === 401) notifyUnauthorized();
     throw new ApiError(res.status, body);
   }
   const text = await res.text();
@@ -119,7 +131,7 @@ async function freshRequest(path: string) {
   });
   if (!res.ok) {
     const body = await res.text();
-    if (res.status === 401) cache.clear();
+    if (res.status === 401) notifyUnauthorized();
     throw new ApiError(res.status, body);
   }
   const text = await res.text();

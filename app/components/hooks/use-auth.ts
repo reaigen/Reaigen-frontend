@@ -61,6 +61,21 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     refreshProfile().finally(() => setIsLoading(false));
   }, [refreshProfile]);
 
+  // Global session-expiry handler: any 401 from any request means the session
+  // is dead. If we were authenticated, clear state and send the user to a
+  // clean login instead of leaving them on a stale authenticated page.
+  React.useEffect(() => {
+    const handleUnauthorized = () => {
+      if (userRef.current === null) return; // not logged in / already on auth
+      setUser(null);
+      if (typeof window !== "undefined" && window.location.pathname !== "/") {
+        window.location.href = "/";
+      }
+    };
+    window.addEventListener("reai:unauthorized", handleUnauthorized);
+    return () => window.removeEventListener("reai:unauthorized", handleUnauthorized);
+  }, []);
+
   // Silent refresh
   React.useEffect(() => {
     if (!user) return;
