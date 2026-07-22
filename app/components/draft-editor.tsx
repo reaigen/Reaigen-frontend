@@ -4,6 +4,7 @@ import * as React from "react";
 import { Button } from "../lib/ui/button";
 import { Input } from "../lib/ui/input";
 import { Label } from "../lib/ui/label";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "../lib/ui/select";
 import { Switch } from "../lib/ui/switch";
 import { getSafeApiErrorMessage } from "../lib/api/error-message";
 import { updateDraft } from "../lib/api/client";
@@ -29,9 +30,11 @@ import {
   StarIcon,
   InfoIcon,
   MapPinIcon,
+  ChevronDownIcon,
   type IconProps,
 } from "./icons";
 import { SearchField } from "./search-field";
+import { SegmentedControl } from "./segmented-control";
 import { SidePanel } from "./side-panel";
 
 type EditorValues = {
@@ -115,7 +118,7 @@ function optionalNumber(value: string): number | null {
   return Number.isFinite(parsed) ? parsed : null;
 }
 
-const fieldClass = "h-11 rounded-xl border-border/60 bg-background px-4 text-[13px] focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-0";
+const fieldClass = "h-11 rounded-xl border-border/60 bg-surface px-4 text-[13px] shadow-control focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-0";
 
 function Field({ id, label, children }: { id: string; label: React.ReactNode; children: React.ReactNode }) {
   return <div className="space-y-1.5"><Label htmlFor={id} className="text-[13px] font-medium text-foreground/70">{label}</Label>{children}</div>;
@@ -145,7 +148,7 @@ function sectionIcon(key: string): React.ComponentType<IconProps> {
 // Grouped card, mirroring the iOS app's inset-grouped edit sections.
 function Section({ title, icon: Icon, children }: { title: React.ReactNode; icon?: React.ComponentType<IconProps>; children: React.ReactNode }) {
   return (
-    <section className="space-y-4 rounded-2xl border border-border/50 bg-surface p-4">
+    <section className="space-y-4 rounded-xl border border-border/50 bg-surface p-4 shadow-card">
       <div className="flex items-center gap-3">
         {Icon ? <IconTile icon={Icon} /> : null}
         <h3 className="text-[15px] font-semibold text-foreground">{title}</h3>
@@ -176,7 +179,7 @@ function AdvancedField({
 
   if (field.kind === "boolean") {
     return (
-      <div className="flex min-h-11 items-center justify-between gap-4 rounded-xl border border-border/60 bg-background px-4 py-2.5">
+      <div className="flex min-h-11 items-center justify-between gap-4 rounded-xl border border-border/60 bg-surface px-4 py-2.5 shadow-control">
         <Label htmlFor={id} className="text-[13px] font-medium text-foreground/70">{label}</Label>
         <Switch id={id} checked={value === true} onCheckedChange={(checked) => onChange(section, field.key, checked)} />
       </div>
@@ -203,7 +206,7 @@ function AdvancedField({
                 }}
                 className={cn(
                   "rounded-full border px-3.5 py-2 text-[12px] font-medium transition-colors",
-                  active ? "border-foreground bg-foreground text-background" : "border-border/70 bg-background text-foreground/65 hover:border-foreground/25 hover:text-foreground",
+                  active ? "border-foreground bg-foreground text-background" : "border-border/70 bg-surface text-foreground/65 hover:border-foreground/25 hover:text-foreground",
                 )}
                 aria-pressed={active}
               >
@@ -221,16 +224,19 @@ function AdvancedField({
     const hasLegacyValue = Boolean(currentValue) && !options.some((item) => item.value === currentValue);
     return (
       <Field id={id} label={label}>
-        <select
-          id={id}
-          value={currentValue}
-          onChange={(event) => onChange(section, field.key, event.target.value || undefined)}
-          className={`${fieldClass} w-full cursor-pointer pr-8 outline-none`}
+        <Select
+          value={currentValue || "__not_recorded__"}
+          onValueChange={(nextValue) => onChange(section, field.key, nextValue === "__not_recorded__" ? undefined : nextValue)}
         >
-          <option value="">{t("common.notRecorded", lang)}</option>
-          {hasLegacyValue ? <option value={currentValue}>{currentValue.replace(/_/g, " ")}</option> : null}
-          {options.map((item) => <option key={item.value} value={item.value}>{t(item.labelKey, lang)}</option>)}
-        </select>
+          <SelectTrigger id={id} className={`${fieldClass} w-full`}>
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="__not_recorded__">{t("common.notRecorded", lang)}</SelectItem>
+            {hasLegacyValue ? <SelectItem value={currentValue}>{currentValue.replace(/_/g, " ")}</SelectItem> : null}
+            {options.map((item) => <SelectItem key={item.value} value={item.value}>{t(item.labelKey, lang)}</SelectItem>)}
+          </SelectContent>
+        </Select>
       </Field>
     );
   }
@@ -405,23 +411,17 @@ export function DraftEditor({
       )}
     >
       <form id="draft-editor-form" onSubmit={save} className="space-y-6">
-        <div className="grid grid-cols-2 rounded-full bg-foreground/[0.055] p-1" role="tablist" aria-label={t("draft.editor.title", lang)}>
-          {(["basic", "advanced"] as const).map((item) => (
-            <button
-              key={item}
-              type="button"
-              role="tab"
-              aria-selected={mode === item}
-              onClick={() => setMode(item)}
-              className={cn(
-                "h-9 rounded-full text-[12px] font-semibold transition-colors",
-                mode === item ? "bg-surface text-foreground shadow-sm" : "text-foreground/50 hover:text-foreground",
-              )}
-            >
-              {t(item === "basic" ? "draft.editor.modeBasic" : "draft.editor.modeAdvanced", lang)}
-            </button>
-          ))}
-        </div>
+        <SegmentedControl
+          value={mode}
+          onChange={setMode}
+          ariaLabel={t("draft.editor.title", lang)}
+          className="grid w-full grid-cols-2"
+          itemClassName="w-full font-semibold"
+          options={[
+            { value: "basic", label: t("draft.editor.modeBasic", lang) },
+            { value: "advanced", label: t("draft.editor.modeAdvanced", lang) },
+          ]}
+        />
 
         {mode === "basic" ? (
           <>
@@ -430,12 +430,12 @@ export function DraftEditor({
                 <Input id="draft-title" autoFocus value={values.title} onChange={set("title")} maxLength={255} className={fieldClass} />
               </Field>
               <Field id="draft-description" label={t("shareDialog.field.description", lang)}>
-                <textarea id="draft-description" value={values.description} onChange={set("description")} rows={7} className="w-full resize-y rounded-xl border border-border/60 bg-background px-4 py-2.5 text-[13px] leading-relaxed outline-none transition-colors focus:border-foreground/30 focus:ring-2 focus:ring-ring" />
+                <textarea id="draft-description" value={values.description} onChange={set("description")} rows={7} className="w-full resize-y rounded-xl border border-border/60 bg-surface px-4 py-2.5 text-[13px] leading-relaxed shadow-control outline-none transition-colors focus:border-foreground/30 focus:ring-2 focus:ring-ring" />
               </Field>
             </Section>
 
             <Section title={t("draft.editor.property", lang)} icon={LayoutIcon}>
-              <div className="grid grid-cols-2 gap-3">
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                 <Field id="draft-price" label={t("shareDialog.field.price", lang)}><Input id="draft-price" inputMode="decimal" value={values.price} onChange={set("price")} className={fieldClass} /></Field>
                 <Field id="draft-currency" label={t("shareDialog.field.currency", lang)}><Input id="draft-currency" value={values.currency} onChange={set("currency")} maxLength={3} className={`${fieldClass} uppercase`} /></Field>
                 <Field id="draft-area" label={t("draft.area", lang)}><Input id="draft-area" inputMode="decimal" value={values.area} onChange={set("area")} className={fieldClass} /></Field>
@@ -449,7 +449,7 @@ export function DraftEditor({
               <Field id="draft-address" label={<span className="inline-flex items-center gap-1.5">{t("settings.seller.address", lang)} <LockIcon size={12} /> <span className="font-normal text-muted-foreground">{t("draft.editor.private", lang)}</span></span>}>
                 <Input id="draft-address" autoComplete="street-address" value={values.address} onChange={set("address")} className={fieldClass} />
               </Field>
-              <div className="grid grid-cols-2 gap-3">
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                 <Field id="draft-city" label={t("settings.seller.city", lang)}><Input id="draft-city" value={values.city} onChange={set("city")} className={fieldClass} /></Field>
                 <Field id="draft-state" label={t("settings.seller.state", lang)}><Input id="draft-state" value={values.state} onChange={set("state")} className={fieldClass} /></Field>
                 <Field id="draft-country" label={t("settings.seller.country", lang)}><Input id="draft-country" value={values.country} onChange={set("country")} className={fieldClass} /></Field>
@@ -473,7 +473,7 @@ export function DraftEditor({
               const expanded = Boolean(query) || expandedSections.has(section.key);
               const recorded = section.fields.filter((field) => hasRecordedValue(specs[section.key]?.[field.key])).length;
               return (
-                <section key={section.key} className="overflow-hidden rounded-2xl border border-border/60 bg-surface">
+                <section key={section.key} className="overflow-hidden rounded-xl border border-border/60 bg-surface shadow-card">
                   <button
                     type="button"
                     onClick={() => setExpandedSections((current) => {
@@ -491,9 +491,7 @@ export function DraftEditor({
                     </span>
                     <span className="flex shrink-0 items-center gap-2 text-[11px] font-medium tabular-nums text-muted-foreground">
                       {recorded} / {section.fields.length}
-                      <svg width="14" height="14" viewBox="0 0 16 16" fill="none" className={cn("transition-transform", expanded && "rotate-180")} aria-hidden="true">
-                        <path d="m4 6 4 4 4-4" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" />
-                      </svg>
+                      <ChevronDownIcon size={14} className={cn("transition-transform", expanded && "rotate-180")} />
                     </span>
                   </button>
                   {expanded ? (
@@ -514,7 +512,7 @@ export function DraftEditor({
                 </section>
               );
             }) : (
-              <p className="rounded-2xl border border-dashed border-border/60 px-4 py-10 text-center text-[12px] text-muted-foreground">{t("draft.editor.emptyAdvanced", lang)}</p>
+              <p className="rounded-xl border border-dashed border-border/60 px-4 py-10 text-center text-[12px] text-muted-foreground">{t("draft.editor.emptyAdvanced", lang)}</p>
             )}
           </div>
         )}

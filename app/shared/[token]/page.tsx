@@ -26,7 +26,7 @@ import { SharedPropertyPanel } from "../../components/shared-property-panel";
 import { SharedDraftView } from "../../components/shared-draft-view";
 import { Button } from "../../lib/ui/button";
 import { Input } from "../../lib/ui/input";
-import { getBrowserLanguage, t, type LocaleKey } from "../../lib/i18n";
+import { getBrowserLanguage, t } from "../../lib/i18n";
 import { PageLoading } from "../../components/page-loading";
 import type { SplatViewerHandle } from "../../components/splat-viewer";
 
@@ -353,10 +353,11 @@ export default function SharedPage({ params }: { params: Promise<{ token: string
 
         {/* Close button — back to property card */}
         <button
+          type="button"
           onClick={() => setTourOpen(false)}
-          className="absolute left-3 top-[calc(0.75rem+env(safe-area-inset-top,0px))] z-20 flex items-center gap-1.5 bg-black/40 backdrop-blur-xl text-white/70 rounded-full px-3 py-1.5 text-[11px] font-medium border border-white/10 hover:bg-black/50 transition-colors sm:left-4 sm:top-[calc(1rem+env(safe-area-inset-top,0px))]"
+          className="absolute left-3 top-[calc(0.75rem+env(safe-area-inset-top,0px))] z-20 flex h-11 items-center gap-1.5 rounded-full border border-white/10 bg-black/40 px-3 text-[11px] font-medium text-white/70 backdrop-blur-xl transition-colors hover:bg-black/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/70 sm:left-4 sm:top-[calc(1rem+env(safe-area-inset-top,0px))] sm:h-8"
         >
-          <svg width="12" height="12" viewBox="0 0 16 16" fill="none"><path d="M10 12L6 8l4-4" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/></svg>
+          <svg aria-hidden="true" width="12" height="12" viewBox="0 0 16 16" fill="none"><path d="M10 12L6 8l4-4" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/></svg>
           {t("common.back", lang)}
         </button>
 

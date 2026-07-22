@@ -48,9 +48,11 @@ export function expiryLabel(dateStr: string | null | undefined, lang: string): s
   return t("shares.daysShort", lang).replace("{n}", String(days));
 }
 
-export const STATUS_CONFIG: Record<string, { dot: string; bg: string; text: string; labelKey: LocaleKey }> = {
-  active:  { dot: "bg-foreground",    bg: "bg-foreground", text: "text-background", labelKey: "shares.statusActive" },
-  paused:  { dot: "bg-foreground/40", bg: "bg-foreground/[0.05]", text: "text-foreground/55", labelKey: "shares.statusPaused" },
-  expired: { dot: "bg-foreground/20", bg: "bg-foreground/[0.04]", text: "text-foreground/40", labelKey: "shares.statusExpired" },
-  revoked: { dot: "bg-foreground/20", bg: "bg-foreground/[0.04]", text: "text-foreground/40", labelKey: "shares.statusRevoked" },
+export type ShareStatusTone = "neutral" | "success" | "warning" | "danger";
+
+export const STATUS_CONFIG: Record<string, { tone: ShareStatusTone; labelKey: LocaleKey }> = {
+  active:  { tone: "success", labelKey: "shares.statusActive" },
+  paused:  { tone: "warning", labelKey: "shares.statusPaused" },
+  expired: { tone: "neutral", labelKey: "shares.statusExpired" },
+  revoked: { tone: "danger", labelKey: "shares.statusRevoked" },
 };

@@ -3,6 +3,8 @@
 import * as React from "react";
 import { Input } from "../../lib/ui/input";
 import { t, type LocaleKey } from "../../lib/i18n";
+import { LinkIcon, LockIcon } from "../icons";
+import { SegmentedControl } from "../segmented-control";
 
 export type PrivacyLevel = "open" | "pin";
 
@@ -18,12 +20,12 @@ export function PrivacyLevelSelector({ level, pin, onLevelChange, onPinChange, l
   const options: { value: PrivacyLevel; icon: React.ReactNode; labelKey: string }[] = [
     {
       value: "open",
-      icon: <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg>,
+      icon: <LinkIcon size={13} />,
       labelKey: "sharing.privacyOpen",
     },
     {
       value: "pin",
-      icon: <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>,
+      icon: <LockIcon size={13} />,
       labelKey: "sharing.privacyPin",
     },
   ];
@@ -34,32 +36,21 @@ export function PrivacyLevelSelector({ level, pin, onLevelChange, onPinChange, l
         {t("sharing.protection", lang)}
       </h3>
 
-      {/* Segmented control */}
-      <div role="radiogroup" aria-label={t("sharing.protection", lang)} className="flex rounded-xl bg-foreground/[0.05] p-1">
-        {options.map((opt) => {
-          const selected = level === opt.value;
-          return (
-            <button
-              key={opt.value}
-              type="button"
-              role="radio"
-              aria-checked={selected}
-              onClick={() => {
-                onLevelChange(opt.value);
-                if (opt.value !== "pin") onPinChange("");
-              }}
-              className={`flex-1 flex items-center justify-center gap-1.5 rounded-lg px-3 py-2 text-[12px] font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ${
-                selected
-                  ? "bg-background text-foreground shadow-sm"
-                  : "text-foreground/50 hover:text-foreground/70"
-              }`}
-            >
-              {opt.icon}
-              {t(opt.labelKey as never, lang)}
-            </button>
-          );
-        })}
-      </div>
+      <SegmentedControl
+        value={level}
+        onChange={(nextLevel) => {
+          onLevelChange(nextLevel);
+          if (nextLevel !== "pin") onPinChange("");
+        }}
+        ariaLabel={t("sharing.protection", lang)}
+        className="w-full"
+        itemClassName="min-w-0 flex-1"
+        options={options.map((option) => ({
+          value: option.value,
+          icon: option.icon,
+          label: t(option.labelKey as LocaleKey, lang),
+        }))}
+      />
 
       {level === "pin" && (
         <div className="space-y-1.5 animate-fade-in">

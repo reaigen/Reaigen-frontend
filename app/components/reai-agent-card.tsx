@@ -5,6 +5,7 @@ import { useEffect, useState } from "react";
 
 import {
   applyReaiMediaAction,
+  applyReaiTranslationAction,
   applyReaiWorkspaceAction,
   applyReaiWorkspaceProposal,
   askReaiWorkspace,
@@ -24,12 +25,13 @@ import {
 } from "../lib/api/client";
 import { formatDate, t } from "../lib/i18n";
 import type { LocaleKey } from "../lib/locales";
+import { PROPERTY_FIELD_SECTIONS, subtypeOptions, type PropertyFieldDefinition, type PropertyType } from "../lib/property-field-registry";
 import type { DraftDetailItem } from "../lib/tour-types";
 import { Button } from "../lib/ui/button";
 import { cn } from "../lib/utils";
 import { useAuth } from "./hooks/use-auth";
 import { StatusPill } from "./status-pill";
-import { SearchIcon, VersionsIcon, LayoutIcon, SparklesIcon, CheckIcon, EditIcon, LockIcon, InfoIcon } from "./icons";
+import { SearchIcon, VersionsIcon, LayoutIcon, SparklesIcon, CheckIcon, CloseIcon, EditIcon, LockIcon, InfoIcon } from "./icons";
 
 // Maps a quick-action key to its icon, so the agent suggestions read as
 // distinct, recognisable actions rather than flat text rows.
@@ -38,6 +40,7 @@ const ACTION_ICON: Record<string, typeof SearchIcon> = {
   "reai.quickCompare": VersionsIcon,
   "reai.quickBulk": LayoutIcon,
   "reai.quickImproveDescription": SparklesIcon,
+  "reai.quickTranslateDescription": SparklesIcon,
   "reai.quickCheckFields": CheckIcon,
   "reai.quickEditCurrent": EditIcon,
   "reai.quickSettingsAgent": SparklesIcon,
@@ -124,27 +127,22 @@ function localizedMetric(value: unknown, lang: string): string | null {
     : String(value);
 }
 
-const specLabelKeys: Record<string, LocaleKey> = {
-  property_type: "reai.attribute.propertyType",
-  property_subtype: "reai.attribute.propertySubtype",
-  rooms: "reai.attribute.rooms",
-  bedrooms: "reai.attribute.bedrooms",
-  bathrooms: "reai.attribute.bathrooms",
-  toilets: "reai.attribute.toilets",
-  cooling_types: "reai.attribute.coolingTypes",
-};
+const specFieldDefinitions: Map<string, PropertyFieldDefinition> = new Map(
+  PROPERTY_FIELD_SECTIONS.flatMap((section) => (
+    section.fields.map((field) => [`${section.key}.${field.key}`, field] as const)
+  )),
+);
+const propertyTypes: PropertyType[] = ["apartment", "house", "land", "commercial", "other"];
+const propertySubtypeOptions = propertyTypes.flatMap((propertyType) => subtypeOptions(propertyType));
 
-const specValueKeys: Record<string, LocaleKey> = {
-  commercial: "reai.value.commercial",
-  office: "reai.value.office",
-  air_conditioning: "reai.value.airConditioning",
-};
-
-function localizedSpecValue(value: unknown, lang: string): string {
-  if (Array.isArray(value)) return value.map((item) => localizedSpecValue(item, lang)).join(", ");
+function localizedSpecValue(value: unknown, lang: string, section: string, key: string): string {
+  if (Array.isArray(value)) return value.map((item) => localizedSpecValue(item, lang, section, key)).join(", ");
   if (typeof value === "boolean") return value ? t("common.yes", lang) : t("common.no", lang);
   const raw = String(value ?? "");
-  return specValueKeys[raw] ? t(specValueKeys[raw], lang) : raw.replaceAll("_", " ");
+  const definition = specFieldDefinitions.get(`${section}.${key}`);
+  const options = key === "property_subtype" ? propertySubtypeOptions : definition?.options;
+  const option = options?.find((item) => item.value === raw);
+  return option ? t(option.labelKey, lang) : raw.replaceAll("_", " ");
 }
 
 function proposalSpecEntries(value: unknown, lang: string): Array<{ key: string; label: string; value: string }> {
@@ -153,14 +151,47 @@ function proposalSpecEntries(value: unknown, lang: string): Array<{ key: string;
   Object.entries(value as Record<string, unknown>).forEach(([section, sectionValue]) => {
     if (!sectionValue || typeof sectionValue !== "object" || Array.isArray(sectionValue)) return;
     Object.entries(sectionValue as Record<string, unknown>).forEach(([key, item]) => {
+      const definition = specFieldDefinitions.get(`${section}.${key}`);
       entries.push({
         key: `${section}.${key}`,
-        label: specLabelKeys[key] ? t(specLabelKeys[key], lang) : key.replaceAll("_", " "),
-        value: localizedSpecValue(item, lang),
+        label: definition ? t(definition.labelKey, lang) : key.replaceAll("_", " "),
+        value: localizedSpecValue(item, lang, section, key),
       });
     });
   });
   return entries;
+}
+
+function localizedLanguageName(code: string, lang: string): string {
+  if (code === "auto") return t("reai.translationAuto", lang);
+  try {
+    return new Intl.DisplayNames([lang || "en"], { type: "language" }).of(code) || code.toUpperCase();
+  } catch {
+    return code.toUpperCase();
+  }
+}
+
+function mediaProcessorLabel(processor: string, lang: string): string {
+  const keys: Record<string, LocaleKey> = {
+    original: "reai.mediaOriginal",
+    "reai-local-image-editor-v1": "reai.mediaProcessor.localEdit",
+    cleanplate: "reai.mediaProcessor.cleanplate",
+    "vfx-retouch": "reai.mediaProcessor.retouch",
+    "openrouter-hdr": "reai.mediaProcessor.hdr",
+  };
+  return keys[processor] ? t(keys[processor], lang) : t("reai.mediaProcessor.processed", lang);
+}
+
+function mediaOperationSuffix(key: string, value: string | number | boolean, lang: string): string {
+  if (typeof value === "boolean") return "";
+  if (key === "motion") {
+    return ` · ${t(`reai.mediaMotion.${value}` as LocaleKey, lang)}`;
+  }
+  if (key === "duration") return ` · ${value} ${t("reai.secondsShort", lang)}`;
+  if (typeof value === "number") {
+    return ` · ${new Intl.NumberFormat(lang || "en", { maximumFractionDigits: 2 }).format(value)}`;
+  }
+  return ` · ${value}`;
 }
 
 function historyValue(
@@ -248,7 +279,7 @@ export function ReaiAgentCard({
   const quickActions = workspaceContext === "settings"
     ? (["reai.quickSettingsAgent", "reai.quickSettingsLanguage", "reai.quickSettingsSecurity"] as const)
     : draftId
-    ? (["reai.quickImproveDescription", "reai.quickCheckFields", "reai.quickEditCurrent"] as const)
+    ? (["reai.quickImproveDescription", "reai.quickTranslateDescription", "reai.quickCheckFields", "reai.quickEditCurrent"] as const)
     : (["reai.quickFind", "reai.quickCompare", "reai.quickBulk"] as const);
 
   useEffect(() => {
@@ -350,7 +381,6 @@ export function ReaiAgentCard({
         draftId,
         conversation,
         improvementConversationId,
-        lang,
         undefined,
         pendingActionCode,
         workspaceContext,
@@ -447,6 +477,29 @@ export function ReaiAgentCard({
     setBusy(true);
     setError(null);
     try {
+      if (answer.action_code === "translate_description") {
+        const result = await applyReaiTranslationAction(answer.action_token, improvementConversationId);
+        window.dispatchEvent(new CustomEvent("reai-creations-updated", {
+          detail: { draftIds: [result.draft_id], translationStatus: result.status },
+        }));
+        setTurns((current) => current.map((turn) => turn.id === turnId ? {
+          ...turn,
+          actionStatus: "applied",
+          response: {
+            ...answer,
+            action_token: null,
+            translation_action: {
+              field: "description",
+              source_language: "auto",
+              target_language: result.target_language,
+              status: result.status,
+              cached: result.cached,
+              translated_text: result.translated_text,
+            },
+          },
+        } : turn));
+        return;
+      }
       if (["grade_draft_images", "retouch_draft_image", "cleanplate_draft_images", "generative_hdr_draft_image", "organize_draft_images", "generate_draft_video"].includes(answer.action_code || "")) {
         const result = await applyReaiMediaAction(answer.action_token, improvementConversationId);
         window.dispatchEvent(new CustomEvent("reai-media-updated", {
@@ -531,7 +584,7 @@ export function ReaiAgentCard({
   return (
     <section className={cn(
       "rounded-2xl bg-foreground/[0.025] p-4",
-      panel ? "flex h-full min-h-0 flex-col rounded-none border-0 bg-transparent" : "mt-5 border border-border/40",
+      panel ? "flex h-full min-h-0 flex-col rounded-none border-0 bg-transparent pb-[max(1rem,env(safe-area-inset-bottom))]" : "mt-5 border border-border/40",
     )} aria-labelledby="reai-title">
       <div className={cn("items-start justify-between gap-3", panel ? "hidden" : "flex")}>
         <div>
@@ -735,7 +788,7 @@ export function ReaiAgentCard({
                               {version.is_master && <span className="rounded-full bg-foreground px-1.5 py-0.5 text-[11px] font-medium text-background">{t("reai.mediaCurrent", lang)}</span>}
                               {version.is_deleted && <span className="rounded-full bg-foreground/[0.08] px-1.5 py-0.5 text-[11px] font-medium">{t("reai.mediaHidden", lang)}</span>}
                             </div>
-                            <p className="mt-1 truncate text-[11px] text-muted-foreground">{version.processor === "original" ? t("reai.mediaOriginal", lang) : version.processor}</p>
+                            <p className="mt-1 truncate text-[11px] text-muted-foreground">{mediaProcessorLabel(version.processor, lang)}</p>
                             <time className="mt-0.5 block text-[11px] text-muted-foreground/80">
                               {formatDate(version.uploaded_at, dateFormat, lang)}
                             </time>
@@ -896,6 +949,68 @@ export function ReaiAgentCard({
                         )}
                       </div>
                     )}
+                    {answer?.action_code === "translate_description" && answer.translation_action && (
+                      <div className="mt-4 overflow-hidden rounded-xl border border-border/60 bg-foreground/[0.018]">
+                        <div className="px-3.5 py-3">
+                          <div className="flex items-start justify-between gap-3">
+                            <div>
+                              <p className="text-xs font-semibold text-foreground">{t("reai.translationTitle", lang)}</p>
+                              <p className="mt-1 text-xs leading-relaxed text-muted-foreground">{t("reai.translationDescription", lang)}</p>
+                            </div>
+                            <span className="rounded-full bg-foreground/[0.06] px-2 py-1 text-[11px] font-medium text-foreground/65">
+                              {t("reai.translationService", lang)}
+                            </span>
+                          </div>
+                          <dl className="mt-3 divide-y divide-border/35 rounded-lg bg-background/70 px-3">
+                            <div className="flex items-baseline justify-between gap-4 py-2.5">
+                              <dt className="text-xs text-muted-foreground">{t("reai.translationField", lang)}</dt>
+                              <dd className="text-right text-xs font-medium text-foreground">{t("reai.field.description", lang)}</dd>
+                            </div>
+                            <div className="flex items-baseline justify-between gap-4 py-2.5">
+                              <dt className="text-xs text-muted-foreground">{t("reai.translationSource", lang)}</dt>
+                              <dd className="text-right text-xs font-medium text-foreground">
+                                {localizedLanguageName(answer.translation_action.source_language, lang)}
+                              </dd>
+                            </div>
+                            <div className="flex items-baseline justify-between gap-4 py-2.5">
+                              <dt className="text-xs text-muted-foreground">{t("reai.translationTarget", lang)}</dt>
+                              <dd className="text-right text-xs font-medium text-foreground">
+                                {localizedLanguageName(answer.translation_action.target_language, lang)}
+                              </dd>
+                            </div>
+                          </dl>
+                          {answer.translation_action.translated_text && (
+                            <div className="mt-3 rounded-lg border border-border/40 bg-background px-3 py-2.5">
+                              <p className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">{t("reai.translationPreview", lang)}</p>
+                              <p className="mt-1.5 whitespace-pre-wrap text-xs leading-5 text-foreground/85">
+                                {answer.translation_action.translated_text}
+                              </p>
+                            </div>
+                          )}
+                        </div>
+                        {answer.action_token && (
+                          <div className="flex items-center gap-2 border-t border-border/45 px-3.5 py-3">
+                            <Button type="button" size="sm" className="flex-1 sm:flex-none" loading={busy} onClick={() => void applyAction(turn.id, answer)}>
+                              {t("reai.translationConfirm", lang)}
+                            </Button>
+                            <Button type="button" variant="ghost" size="sm" disabled={busy} onClick={() => dismissAction(turn.id)}>
+                              {t("reai.dismissProposal", lang)}
+                            </Button>
+                          </div>
+                        )}
+                        {!answer.action_token && (turn.actionStatus || answer.translation_action.status !== "awaiting_confirmation") && (
+                          <div className="border-t border-border/45 px-3.5 py-3 text-xs font-medium text-foreground/75">
+                            {turn.actionStatus === "dismissed"
+                              ? t("reai.proposalDismissed", lang)
+                              : answer.translation_action.status === "ready"
+                                ? t("reai.translationReady", lang)
+                                : answer.translation_action.status === "unavailable"
+                                  ? t("reai.translationUnavailable", lang)
+                                  : t("reai.translationQueued", lang)}
+                          </div>
+                        )}
+                      </div>
+                    )}
                     {answer && (["grade_draft_images", "retouch_draft_image", "cleanplate_draft_images", "generative_hdr_draft_image", "organize_draft_images", "generate_draft_video"].includes(answer.action_code || "")) && (answer.action_token || turn.actionStatus) && (
                       <div className="mt-4 overflow-hidden rounded-xl border border-border/60 bg-foreground/[0.018]">
                         <div className="px-3.5 py-3">
@@ -948,7 +1063,7 @@ export function ReaiAgentCard({
                             <div className="mt-2 flex flex-wrap gap-1.5">
                               {Object.entries(answer.media_action.operations).map(([key, value]) => (
                                 <span key={key} className="rounded-full border border-border/50 bg-background px-2.5 py-1 text-[11px] text-foreground/70">
-                                  {t(`reai.mediaOperation.${key}` as LocaleKey, lang)}{typeof value === "number" ? ` · ${value}` : ""}
+                                  {t(`reai.mediaOperation.${key}` as LocaleKey, lang)}{mediaOperationSuffix(key, value, lang)}
                                 </span>
                               ))}
                             </div>
@@ -1104,11 +1219,11 @@ export function ReaiAgentCard({
                           disabled={busy || turn.feedback !== undefined}
                           onClick={() => void sendFeedback(turn.id, true, answer.improvement_conversation_id)}
                           className={cn(
-                            "flex h-7 w-7 items-center justify-center rounded-lg transition-colors hover:bg-foreground/[0.04] hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none",
+                            "flex h-7 w-7 items-center justify-center rounded-full transition-colors hover:bg-foreground/[0.04] hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none",
                             turn.feedback === true ? "text-foreground" : "disabled:opacity-40",
                           )}
                         >
-                          ✓
+                          <CheckIcon size={12} />
                         </button>
                         <button
                           type="button"
@@ -1116,11 +1231,11 @@ export function ReaiAgentCard({
                           disabled={busy || turn.feedback !== undefined}
                           onClick={() => void sendFeedback(turn.id, false, answer.improvement_conversation_id)}
                           className={cn(
-                            "flex h-7 w-7 items-center justify-center rounded-lg transition-colors hover:bg-foreground/[0.04] hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none",
+                            "flex h-7 w-7 items-center justify-center rounded-full transition-colors hover:bg-foreground/[0.04] hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none",
                             turn.feedback === false ? "text-foreground" : "disabled:opacity-40",
                           )}
                         >
-                          ✕
+                          <CloseIcon size={12} />
                         </button>
                       </div>
                     )}
@@ -1131,8 +1246,8 @@ export function ReaiAgentCard({
             </div>
           )}
           {!showHistory && !showMediaHistory && turns.length === 0 && (
-            <div className={cn("flex flex-col", panel ? "min-h-0 flex-1" : "py-2")}>
-              <p className="text-[14px] leading-relaxed text-foreground/70">
+            <div className={cn("flex flex-col", panel ? "min-h-0 flex-1 items-center justify-center px-5 text-center" : "py-2")}>
+              <p className={cn("text-[14px] leading-relaxed text-foreground/70", panel && "max-w-[280px] text-[13px]")}>
                 {t(workspaceContext === "settings" ? "reai.startSettingsConversation" : (draftId ? "reai.startDraftConversation" : "reai.startConversation"), lang)}
               </p>
             </div>
@@ -1148,7 +1263,7 @@ export function ReaiAgentCard({
                     type="button"
                     disabled={busy}
                     onClick={() => void ask(t(key, lang))}
-                    className="group inline-flex items-center gap-1.5 rounded-full border border-border/60 bg-surface px-3 py-1.5 text-[12px] font-medium text-foreground/80 shadow-card transition-colors hover:border-foreground/25 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50"
+                    className="group inline-flex h-10 items-center gap-1.5 rounded-full border border-transparent bg-foreground/[0.045] px-3 text-[12px] font-medium text-foreground/75 transition-colors hover:bg-foreground/[0.075] hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50 sm:h-8"
                   >
                     <Icon size={14} className="text-foreground/45 transition-colors group-hover:text-foreground/70" />
                     {t(key, lang)}
@@ -1157,7 +1272,7 @@ export function ReaiAgentCard({
               })}
             </div>
           )}
-          {!showHistory && !showMediaHistory && <div className="flex items-end gap-2 rounded-2xl border border-border/60 bg-surface p-2 shadow-card transition-colors focus-within:border-foreground/30">
+          {!showHistory && !showMediaHistory && <div className="rounded-2xl border border-border bg-white p-2 transition-colors focus-within:border-foreground/25">
             <textarea
               value={message}
               onChange={(event) => setMessage(event.target.value)}
@@ -1170,17 +1285,20 @@ export function ReaiAgentCard({
                   void ask();
                 }
               }}
-              className="min-h-10 flex-1 resize-none bg-transparent px-2.5 py-2 text-[14px] leading-relaxed outline-none placeholder:text-foreground/40"
+              className="min-h-14 w-full resize-none bg-transparent px-2.5 py-2 text-[14px] leading-relaxed outline-none placeholder:text-foreground/40"
             />
-            <button
-              type="button"
-              disabled={!message.trim() || busy}
-              onClick={() => void ask()}
-              aria-label={t("reai.ask", lang)}
-              className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-foreground text-background transition-colors hover:bg-foreground/85 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-25"
-            >
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="m5 12 14-7-4.5 14-2.5-6.5L5 12Z" /></svg>
-            </button>
+            <div className="flex items-center justify-end px-1 pb-0.5">
+              <button
+                type="button"
+                disabled={!message.trim() || busy}
+                onClick={() => void ask()}
+                aria-label={t("reai.ask", lang)}
+                className="inline-flex h-11 shrink-0 items-center justify-center gap-1.5 rounded-full bg-creative px-3.5 text-[12px] font-semibold text-creative-foreground transition-colors hover:bg-creative/90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-creative focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-25 sm:h-10"
+              >
+                <SparklesIcon size={15} />
+                <span className="hidden min-[360px]:inline">{t("reai.ask", lang)}</span>
+              </button>
+            </div>
           </div>}
         </div>
       )}

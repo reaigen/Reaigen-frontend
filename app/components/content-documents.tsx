@@ -10,7 +10,7 @@ import {
   type AppContentDocumentType,
   type AppContentScope,
 } from "../lib/api/client";
-import { formatDate, t, type LocaleKey } from "../lib/i18n";
+import { formatDate, t } from "../lib/i18n";
 import { Button } from "../lib/ui/button";
 import { cn } from "../lib/utils";
 import { useAuth } from "./hooks/use-auth";
@@ -276,7 +276,7 @@ export function ContentDocumentDialog({
           <button
             type="button"
             onClick={onClose}
-            className="shrink-0 rounded-lg px-2 py-1 text-[13px] font-medium text-foreground/55 transition-colors hover:bg-foreground/[0.04] hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+            className="shrink-0 rounded-full px-3 py-1 text-[13px] font-medium text-foreground/55 transition-colors hover:bg-foreground/[0.04] hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
           >
             {t("common.close", lang)}
           </button>
@@ -516,7 +516,7 @@ export function AppContentMessages({
                 <button
                   type="button"
                   onClick={() => dismiss(document.id)}
-                  className="shrink-0 rounded-lg px-2 py-1 text-[12px] text-muted-foreground transition-colors hover:bg-foreground/[0.05] hover:text-foreground"
+                  className="shrink-0 rounded-full px-3 py-1 text-[12px] text-muted-foreground transition-colors hover:bg-foreground/[0.05] hover:text-foreground"
                 >
                   {t("common.dismiss", lang)}
                 </button>

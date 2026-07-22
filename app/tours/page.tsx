@@ -4,18 +4,20 @@ import * as React from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { AppShell } from "../components/app-shell";
-import { GridLayoutToggle } from "../components/grid-layout-toggle";
+import { CollectionCard } from "../components/collection-card";
+import { CollectionState } from "../components/collection-state";
 import { useAuth } from "../components/hooks/use-auth";
-import { TourIcon } from "../components/icons";
+import { ArrowRightIcon, InfoIcon, PlayIcon, TourIcon } from "../components/icons";
 import { PageHeader } from "../components/page-header";
 import { PageLoading } from "../components/page-loading";
 import { StatusPill } from "../components/status-pill";
 import { SearchField } from "../components/search-field";
+import { SegmentedControl } from "../components/segmented-control";
 import { Thumbnail } from "../components/thumbnail";
 import { listAllSplats } from "../lib/api/client";
 import { getUserLanguage, t } from "../lib/i18n";
 import type { SplatListItem } from "../lib/tour-types";
-import { cn } from "../lib/utils";
+import { Button } from "../lib/ui/button";
 
 type TourFilter = "all" | "ready" | "processing" | "issues";
 
@@ -56,15 +58,6 @@ export default function ToursPage() {
   const [error, setError] = React.useState(false);
   const [query, setQuery] = React.useState("");
   const [filter, setFilter] = React.useState<TourFilter>("all");
-  const [gridCols, setGridCols] = React.useState<1 | 2>(() => {
-    if (typeof window === "undefined") return 2;
-    return localStorage.getItem("reaigen:gridCols") === "1" ? 1 : 2;
-  });
-
-  const handleGridCols = React.useCallback((cols: 1 | 2) => {
-    setGridCols(cols);
-    localStorage.setItem("reaigen:gridCols", String(cols));
-  }, []);
 
   const load = React.useCallback(async () => {
     setLoading(true);
@@ -102,120 +95,157 @@ export default function ToursPage() {
     return `${item.title} ${item.scan_type}`.toLowerCase().includes(normalizedQuery);
   });
 
-  const filters: Array<{ key: TourFilter; label: string }> = [
-    { key: "all", label: t("tours.filter.all", lang) },
-    { key: "ready", label: t("tours.filter.ready", lang) },
-    { key: "processing", label: t("tours.filter.processing", lang) },
-    { key: "issues", label: t("tours.filter.issues", lang) },
+  const filters: Array<{ value: TourFilter; label: string; count: number }> = [
+    { value: "all", label: t("tours.filter.all", lang), count: counts.all },
+    { value: "ready", label: t("tours.filter.ready", lang), count: counts.ready },
+    { value: "processing", label: t("tours.filter.processing", lang), count: counts.processing },
+    { value: "issues", label: t("tours.filter.issues", lang), count: counts.issues },
   ];
 
   return (
     <AppShell user={user} onLogout={logout}>
-      <div className="mx-auto w-full max-w-[1180px] animate-fade-in pb-10">
+      <div className="mx-auto w-full max-w-[1320px] pb-10">
         <PageHeader
           title={t("tours.title", lang)}
           description={t("tours.subtitle", lang)}
           actions={counts.all > 0 ? <StatusPill>{counts.all} {t("dashboard.items", lang)}</StatusPill> : undefined}
-          className="mb-7"
+          className="mb-6 md:mb-8 xl:mb-10"
         />
 
-        <div className="mb-4 flex items-center gap-3 border-b border-border/40 pb-3">
-          <SearchField
-            value={query}
-            onChange={setQuery}
-            onClear={() => setQuery("")}
-            placeholder={t("tours.search", lang)}
-            clearLabel={t("dashboard.clearSearch", lang)}
-            className="flex-1"
-          />
-          <GridLayoutToggle value={gridCols} onChange={handleGridCols} lang={lang} />
-        </div>
+        <div className="xl:grid xl:grid-cols-[220px_minmax(0,1fr)] xl:items-start xl:gap-8">
+          {/* Desktop: a stable workspace rail keeps the gallery itself quiet. */}
+          <aside className="sticky top-7 hidden space-y-4 xl:block" aria-label={t("tours.title", lang)}>
+            <SearchField
+              value={query}
+              onChange={setQuery}
+              onClear={() => setQuery("")}
+              placeholder={t("tours.search", lang)}
+              clearLabel={t("dashboard.clearSearch", lang)}
+            />
+            <div className="space-y-1 rounded-2xl border border-border/75 bg-card p-2 shadow-card" role="group" aria-label={t("tours.title", lang)}>
+              {filters.map((option) => {
+                const active = filter === option.value;
+                const dotClass = option.value === "ready"
+                  ? "bg-emerald-600"
+                  : option.value === "processing"
+                    ? "bg-amber-500"
+                    : option.value === "issues"
+                      ? "bg-red-600"
+                      : "bg-foreground/35";
+                return (
+                  <button
+                    key={option.value}
+                    type="button"
+                    onClick={() => setFilter(option.value)}
+                    aria-pressed={active}
+                    className={`flex h-10 w-full items-center gap-2.5 rounded-full px-3.5 text-left text-[13px] font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ${active ? "bg-foreground text-background" : "text-foreground/60 hover:bg-foreground/[0.045] hover:text-foreground"}`}
+                  >
+                    <span className={`h-1.5 w-1.5 shrink-0 rounded-full ${active ? "bg-background/80" : dotClass}`} aria-hidden="true" />
+                    <span className="min-w-0 flex-1 truncate">{option.label}</span>
+                    <span className={`text-[11px] tabular-nums ${active ? "text-background/60" : "text-foreground/35"}`}>{option.count}</span>
+                  </button>
+                );
+              })}
+            </div>
+          </aside>
 
-        <div className="mb-6 flex min-w-0 items-center gap-1 overflow-x-auto scrollbar-hide">
-          {filters.map((item) => (
-            <button
-              key={item.key}
-              type="button"
-              onClick={() => setFilter(item.key)}
-              className={cn(
-                "inline-flex h-8 shrink-0 items-center gap-2 rounded-full px-3 text-[12px] font-medium transition-colors",
-                filter === item.key
-                  ? "bg-foreground text-background"
-                  : "text-foreground/60 hover:bg-foreground/[0.04] hover:text-foreground",
-              )}
-              aria-pressed={filter === item.key}
-            >
-              {item.label}
-              <span className={cn("tabular-nums", filter === item.key ? "text-background/65" : "text-foreground/45")}>{counts[item.key]}</span>
-            </button>
-          ))}
-        </div>
+          <div className="min-w-0">
+            {/* Mobile and tablet: controls stay above the image-first gallery. */}
+            <div className="mb-6 space-y-3 xl:hidden">
+              <SearchField
+                value={query}
+                onChange={setQuery}
+                onClear={() => setQuery("")}
+                placeholder={t("tours.search", lang)}
+                clearLabel={t("dashboard.clearSearch", lang)}
+              />
+              <SegmentedControl
+                value={filter}
+                onChange={setFilter}
+                options={filters}
+                className="w-full"
+                ariaLabel={t("tours.title", lang)}
+              />
+            </div>
 
-        {loading ? (
-          <div className={`grid grid-cols-1 gap-6 ${gridCols === 2 ? "md:grid-cols-2" : "mx-auto max-w-2xl"}`}>
-            {Array.from({ length: gridCols === 2 ? 4 : 3 }).map((_, index) => (
-              <div key={index} className="animate-pulse">
-                <div className="aspect-[16/10] rounded-xl bg-muted/30" />
-                <div className="mt-3 space-y-2 px-1">
-                  <div className="h-4 w-2/3 rounded bg-muted/40" />
-                  <div className="h-3 w-1/2 rounded bg-muted/30" />
+            {loading ? (
+          <div className="grid grid-cols-1 gap-5 md:grid-cols-2 md:gap-6 xl:gap-5 2xl:grid-cols-3">
+            {Array.from({ length: 6 }).map((_, index) => (
+              <CollectionCard key={index} loading>
+                <div className="aspect-[16/10] bg-muted/45" />
+                <div className="flex h-14 items-center justify-between px-4">
+                  <div className="h-3 w-1/2 rounded bg-muted/55" />
+                  <div className="h-3 w-14 rounded bg-muted/40" />
                 </div>
-              </div>
+              </CollectionCard>
             ))}
           </div>
-        ) : error ? (
-          <div className="rounded-2xl border border-border/60 bg-surface px-6 py-14 text-center">
-            <p className="text-[14px] font-semibold">{t("tours.error", lang)}</p>
-            <button type="button" onClick={() => void load()} className="mt-3 text-[12px] font-semibold underline underline-offset-4">
-              {t("common.tryAgain", lang)}
-            </button>
-          </div>
-        ) : visible.length === 0 ? (
-          <div className="flex flex-col items-center justify-center px-6 py-20 text-center">
-            <div className="mb-4 flex h-12 w-12 items-center justify-center rounded-full bg-foreground/[0.04] text-foreground/35"><TourIcon size={22} /></div>
-            <p className="text-[14px] font-semibold">{query || filter !== "all" ? t("tours.emptyFiltered", lang) : t("tours.empty", lang)}</p>
-            <p className="mt-1 max-w-sm text-[12px] leading-relaxed text-muted-foreground">{t("tours.emptyHint", lang)}</p>
-          </div>
-        ) : (
-          <div className={`grid grid-cols-1 gap-6 ${gridCols === 2 ? "md:grid-cols-2" : "mx-auto max-w-2xl"}`}>
+            ) : error ? (
+          <CollectionState
+            kind="error"
+            icon={<InfoIcon size={20} />}
+            title={t("tours.error", lang)}
+            action={<Button type="button" variant="outline" size="sm" onClick={() => void load()}>{t("common.tryAgain", lang)}</Button>}
+          />
+            ) : visible.length === 0 ? (
+          <CollectionState
+            icon={<TourIcon size={20} />}
+            title={query || filter !== "all" ? t("tours.emptyFiltered", lang) : t("tours.empty", lang)}
+            description={t("tours.emptyHint", lang)}
+            action={query || filter !== "all" ? <Button type="button" variant="outline" size="sm" onClick={() => { setQuery(""); setFilter("all"); }}>{t("tours.filter.all", lang)}</Button> : undefined}
+          />
+            ) : (
+          <div className="grid grid-cols-1 gap-5 md:grid-cols-2 md:gap-6 xl:gap-5 2xl:grid-cols-3">
             {visible.map((item, index) => {
               const ready = tourState(item) === "ready";
               const href = ready ? `/tour/${item.id}` : `/draft/${item.source_draft}`;
               return (
-                <Link
+                <CollectionCard
                   key={item.id}
-                  href={href}
-                  prefetch={ready}
-                  className="group block rounded-xl focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+                  revealIndex={index}
                 >
-                  <div className="relative aspect-[16/10] overflow-hidden rounded-xl bg-muted/20 transition-shadow group-hover:shadow-lg">
+                  <Link href={href} prefetch={ready} className="block focus-visible:outline-none">
+                  <div className="relative aspect-[16/10] overflow-hidden bg-[#d8d2c8]">
                     {item.thumbnail_url ? (
-                      <Thumbnail src={item.thumbnail_url} alt={item.title} className="absolute inset-0 h-full w-full object-cover transition-transform duration-300 group-hover:scale-[1.02]" priority={index < 4} />
+                      <Thumbnail src={item.thumbnail_url} alt={item.title} className="absolute inset-0 h-full w-full object-cover transition-transform duration-500 ease-out group-hover:scale-[1.03]" priority={index < 4} />
                     ) : (
-                      <div className="absolute inset-0 flex items-center justify-center text-foreground/12"><TourIcon size={36} /></div>
+                      <div className="absolute inset-0 flex items-center justify-center bg-gradient-to-br from-[#ded8ce] to-[#aaa194] text-black/15"><TourIcon size={40} /></div>
                     )}
-                    <StatusPill tone={statusTone(item)} dot className="absolute left-3 top-3 shadow-sm">
+                    <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/5 to-black/15" aria-hidden="true" />
+                    <StatusPill tone={statusTone(item)} dot className="absolute left-3 top-3 border-white/25 bg-white/90 text-black shadow-[0_4px_16px_rgba(0,0,0,0.14)]">
                       {statusLabel(item, lang)}
                     </StatusPill>
-                  </div>
-                  <div className="mt-2.5 px-0.5">
-                    <div className="flex items-start justify-between gap-3">
-                      <h2 className="min-w-0 truncate text-[15px] font-semibold leading-snug">{item.title}</h2>
-                      {item.delivery_versions_count && item.delivery_versions_count > 1 ? (
-                        <span className="shrink-0 text-[12px] text-muted-foreground">
-                          {item.delivery_versions_count} {t("tours.versions", lang)}
-                        </span>
-                      ) : null}
+                    {ready ? (
+                      <span className="absolute right-3 top-3 inline-flex h-8 w-8 items-center justify-center rounded-full border border-white/15 bg-black/65 px-0 text-[11px] font-semibold text-white shadow-sm backdrop-blur-md transition-colors group-hover:bg-black/80 sm:w-auto sm:gap-1.5 sm:px-3">
+                        <PlayIcon size={14} /> <span className="hidden sm:inline">{t("tours.open", lang)}</span>
+                      </span>
+                    ) : null}
+                    <div className="absolute inset-x-0 bottom-0 p-4 sm:p-5">
+                      <h2 className="truncate text-[17px] font-semibold leading-snug tracking-[-0.02em] text-white">{item.title}</h2>
+                      <p className="mt-1 text-[12px] text-white/70">
+                        {t("tours.updated", lang)} {formatUpdated(item.updated_at, lang)}
+                      </p>
                     </div>
-                    <p className="mt-0.5 text-[13px] text-muted-foreground">
-                      {t("tours.updated", lang)} {formatUpdated(item.updated_at, lang)}
-                    </p>
                   </div>
-                </Link>
+                  <div className="flex h-12 items-center justify-between gap-4 border-t border-border/70 bg-card px-4">
+                    <p className="min-w-0 truncate text-[12px] font-medium text-foreground/60">
+                      {item.delivery_versions_count && item.delivery_versions_count > 1
+                        ? `${item.delivery_versions_count} ${t("tours.versions", lang)}`
+                        : statusLabel(item, lang)}
+                    </p>
+                    <span className="inline-flex shrink-0 items-center gap-1.5 text-[12px] font-semibold text-foreground/70 transition-colors group-hover:text-foreground">
+                      {ready ? t("tours.open", lang) : t("tours.openCreation", lang)}
+                      <ArrowRightIcon size={14} className="transition-transform duration-200 group-hover:translate-x-0.5" />
+                    </span>
+                  </div>
+                  </Link>
+                </CollectionCard>
               );
             })}
           </div>
-        )}
+            )}
+          </div>
+        </div>
       </div>
     </AppShell>
   );

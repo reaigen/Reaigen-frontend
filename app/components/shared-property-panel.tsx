@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { t } from "../lib/i18n";
 import type { SharedDraftData } from "../lib/tour-types";
+import { ChevronDownIcon, DocumentIcon, MapPinIcon } from "./icons";
 
 function formatPrice(price: string | number | null | undefined, currency?: string): string {
   if (price == null || price === "") return "";
@@ -37,18 +38,16 @@ export function SharedPropertyPanel({ draftData, lang }: { draftData: SharedDraf
   const photos = (draftData.uploads ?? []).slice(0, 6);
 
   return (
-    <div className="absolute left-3 bottom-3 z-20 sm:left-4 sm:bottom-4 animate-fade-in" style={{ width: "min(calc(100% - 1.5rem), 360px)" }}>
+    <div className="absolute left-3 top-[calc(3.75rem+env(safe-area-inset-top,0px))] z-20 animate-fade-in sm:bottom-4 sm:left-4 sm:top-auto" style={{ width: "min(calc(100% - 1.5rem), 360px)" }}>
       <button
         type="button"
         aria-expanded={open}
         onClick={() => setOpen((v) => !v)}
-        className="flex items-center gap-1.5 bg-black/40 backdrop-blur-xl text-white/70 rounded-full px-3 py-1.5 text-[11px] font-medium border border-white/10 hover:bg-black/50 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+        className="flex min-h-11 items-center gap-1.5 rounded-full border border-white/10 bg-black/40 px-3 py-2.5 text-[11px] font-medium text-white/70 backdrop-blur-xl transition-colors hover:bg-black/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/70 sm:min-h-0 sm:py-1.5"
       >
-        <svg aria-hidden="true" width="12" height="12" viewBox="0 0 16 16" fill="none"><path d="M2 4h12M2 8h12M2 12h8" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" /></svg>
+        <DocumentIcon size={12} />
         {t("shared.propertyInfo", lang)}
-        <svg aria-hidden="true" width="10" height="10" viewBox="0 0 16 16" fill="none" className={`transition-transform ${open ? "rotate-180" : ""}`}>
-          <path d="M4 6l4 4 4-4" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
-        </svg>
+        <ChevronDownIcon size={10} className={`transition-transform ${open ? "rotate-180" : ""}`} />
       </button>
 
       {open && (
@@ -59,10 +58,7 @@ export function SharedPropertyPanel({ draftData, lang }: { draftData: SharedDraf
 
           {hasAddress && addressText && (
             <div className="flex items-start gap-1.5">
-              <svg width="12" height="12" viewBox="0 0 16 16" fill="none" className="text-white/50 mt-0.5 shrink-0">
-                <path d="M8 1C5.24 1 3 3.24 3 6c0 3.75 5 9 5 9s5-5.25 5-9c0-2.76-2.24-5-5-5z" stroke="currentColor" strokeWidth="1.5" />
-                <circle cx="8" cy="6" r="1.5" stroke="currentColor" strokeWidth="1.5" />
-              </svg>
+              <MapPinIcon size={12} className="mt-0.5 shrink-0 text-white/50" />
               <p className="text-[12px] text-white/60 leading-snug">{addressText}</p>
             </div>
           )}

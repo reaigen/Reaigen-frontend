@@ -183,10 +183,10 @@ export function DraftVersionManager({
       lang={lang}
     >
       <Tabs value={activeTab} onValueChange={setActiveTab}>
-        <TabsList className="grid w-full grid-cols-3 rounded-xl bg-foreground/[0.045] p-1">
-          <TabsTrigger value="tour" className="gap-1.5 text-[11px]"><TourIcon size={14} />{t("draft.versions.tour", lang)}</TabsTrigger>
-          <TabsTrigger value="listing" className="gap-1.5 text-[11px]"><VersionsIcon size={14} />{t("draft.versions.listing", lang)}</TabsTrigger>
-          <TabsTrigger value="media" className="gap-1.5 text-[11px]"><ImageIcon size={14} />{t("draft.versions.media", lang)}</TabsTrigger>
+        <TabsList className="grid h-11 w-full grid-cols-3 rounded-xl border border-border/55 bg-surface p-1 shadow-control">
+          <TabsTrigger value="tour" className="h-8 gap-1.5 text-[11px] data-[state=active]:bg-foreground data-[state=active]:text-background data-[state=active]:shadow-sm"><TourIcon size={14} />{t("draft.versions.tour", lang)}</TabsTrigger>
+          <TabsTrigger value="listing" className="h-8 gap-1.5 text-[11px] data-[state=active]:bg-foreground data-[state=active]:text-background data-[state=active]:shadow-sm"><VersionsIcon size={14} />{t("draft.versions.listing", lang)}</TabsTrigger>
+          <TabsTrigger value="media" className="h-8 gap-1.5 text-[11px] data-[state=active]:bg-foreground data-[state=active]:text-background data-[state=active]:shadow-sm"><ImageIcon size={14} />{t("draft.versions.media", lang)}</TabsTrigger>
         </TabsList>
 
         {error ? <p role="alert" className="mt-4 rounded-xl border border-destructive/20 bg-destructive/[0.04] px-3 py-2.5 text-[11px] text-destructive">{error}</p> : null}
@@ -230,7 +230,7 @@ export function DraftVersionManager({
                         </div>
                         <div className="flex shrink-0 items-center gap-1">
                           {ready ? (
-                            <Link href={`/tour/${id}`} aria-label={t("tours.open", lang)} className="flex h-8 w-8 items-center justify-center rounded-lg text-foreground/45 transition-colors hover:bg-foreground/[0.04] hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"><ExternalLinkIcon size={14} /></Link>
+                            <Link href={`/tour/${id}`} aria-label={t("tours.open", lang)} className="flex h-8 w-8 items-center justify-center rounded-full text-foreground/45 transition-colors hover:bg-foreground/[0.04] hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"><ExternalLinkIcon size={14} /></Link>
                           ) : null}
                           {!active && ready ? <Button type="button" variant="outline" size="xs" onClick={() => setTourCandidate(id)}>{t("draft.versions.makeLive", lang)}</Button> : null}
                         </div>

@@ -11,6 +11,13 @@ configured, and consented for the user.
 - On a creation route, Agent is focused on that creation and does not show global quick actions.
 - User-visible copy uses the account `preferred_language`; message spelling never overrides it.
 - Internal JSON keys such as `property_type` are never displayed directly.
+- Reply language and content target language are separate. Agent replies stay in the account
+  language, while an explicitly requested title/description translation uses its chosen target.
+- Description translation review shows localized `Content`, `From`, and `To` rows. The source is
+  auto-detected; raw API parameters such as `target_lang` are never shown to the creator.
+- A request that changes several creation fields produces one review card containing every
+  requested field. Confirmation applies the complete signed proposal in one transaction; Agent
+  must not describe a change that is absent from the card.
 
 ## Fact-first proposal hierarchy
 

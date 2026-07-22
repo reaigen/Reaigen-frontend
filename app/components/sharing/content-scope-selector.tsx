@@ -1,12 +1,14 @@
 "use client";
 
 import * as React from "react";
+import { ListBulletIcon } from "@radix-ui/react-icons";
 import { t, type LocaleKey } from "../../lib/i18n";
 import {
   SHARE_BUNDLES,
   SHARE_FIELD_GROUPS,
   type ShareBundleName,
 } from "../../lib/tour-types";
+import { CheckIcon, ChevronDownIcon, FloorplanIcon, ImageIcon, LockIcon, TourIcon } from "../icons";
 
 // ── Content scope types ────────────────────────────────────────────────
 
@@ -45,17 +47,6 @@ const BUNDLE_OPTIONS: { name: ShareBundleName; labelKey: LocaleKey }[] = [
   { name: "all", labelKey: "shareDialog.bundle.all" },
 ];
 
-// ── Icons (16px) ───────────────────────────────────────────────────────
-
-const icons = {
-  cube: <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/><path d="M3.27 6.96L12 12.01l8.73-5.05M12 22.08V12"/></svg>,
-  image: <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><path d="M21 15l-5-5L5 21"/></svg>,
-  list: <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/></svg>,
-  layout: <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><rect x="2" y="2" width="20" height="20" rx="2"/><path d="M2 8h20M8 2v20M14 8v14"/></svg>,
-  check: <svg width="10" height="10" viewBox="0 0 16 16" fill="none"><path d="M3 8l4 4 6-6" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"/></svg>,
-  lock: <svg width="10" height="10" viewBox="0 0 16 16" fill="none"><rect x="3" y="7" width="10" height="7" rx="2" stroke="currentColor" strokeWidth="1.5" /><path d="M5 7V5a3 3 0 016 0v2" stroke="currentColor" strokeWidth="1.5" /></svg>,
-};
-
 // ── Component ──────────────────────────────────────────────────────────
 
 export function ContentScopeSelector({ scope, onChange, hasTour, hasPhotos, hasFloorplan, lang }: ContentScopeSelectorProps) {
@@ -80,10 +71,10 @@ export function ContentScopeSelector({ scope, onChange, hasTour, hasPhotos, hasF
   };
 
   const cards: { key: "tour" | "photos" | "details" | "floorplan"; icon: React.ReactNode; labelKey: LocaleKey; available: boolean }[] = [
-    { key: "tour", icon: icons.cube, labelKey: "sharing.scopeTour", available: hasTour },
-    { key: "photos", icon: icons.image, labelKey: "sharing.scopePhotos", available: hasPhotos },
-    { key: "details", icon: icons.list, labelKey: "sharing.scopeDetails", available: true },
-    { key: "floorplan", icon: icons.layout, labelKey: "sharing.scopeFloorplan", available: hasFloorplan },
+    { key: "tour", icon: <TourIcon size={16} />, labelKey: "sharing.scopeTour", available: hasTour },
+    { key: "photos", icon: <ImageIcon size={16} />, labelKey: "sharing.scopePhotos", available: hasPhotos },
+    { key: "details", icon: <ListBulletIcon width={16} height={16} aria-hidden="true" />, labelKey: "sharing.scopeDetails", available: true },
+    { key: "floorplan", icon: <FloorplanIcon size={16} />, labelKey: "sharing.scopeFloorplan", available: hasFloorplan },
   ];
 
   return (
@@ -104,12 +95,12 @@ export function ContentScopeSelector({ scope, onChange, hasTour, hasPhotos, hasF
               aria-disabled={!card.available}
               aria-pressed={active}
               onClick={() => toggleCard(card.key)}
-              className={`flex h-11 w-full items-center justify-center gap-1.5 rounded-full px-3 text-center transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ${
+              className={`flex h-11 w-full items-center justify-center gap-1.5 rounded-full px-3 text-center shadow-control transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ${
                 !card.available
-                  ? "border border-border/40 bg-transparent text-foreground/50 opacity-40 cursor-not-allowed"
+                  ? "cursor-not-allowed border border-border/40 bg-surface text-foreground/50 opacity-40"
                   : active
                     ? "border border-foreground bg-foreground text-background"
-                    : "border border-border/40 bg-transparent text-foreground/60 hover:bg-foreground/[0.04] hover:text-foreground/80"
+                    : "border border-border/55 bg-surface text-foreground/60 hover:border-border hover:bg-foreground/[0.04] hover:text-foreground/80"
               }`}
             >
               <span className="shrink-0">{card.icon}</span>
@@ -124,14 +115,14 @@ export function ContentScopeSelector({ scope, onChange, hasTour, hasPhotos, hasF
       {/* Details sub-section — bundle pills inline + optional custom toggles */}
       {scope.details && (
         <div className="space-y-2.5">
-          <div className="flex items-center gap-1.5">
+          <div className="flex flex-wrap items-center gap-1.5">
             {BUNDLE_OPTIONS.map(({ name, labelKey }) => (
               <button
                 key={name}
                 type="button"
                 aria-pressed={activeBundle === name}
                 onClick={() => handleBundleClick(name)}
-                className={`px-2.5 py-1 rounded-full text-[11px] font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ${
+                className={`rounded-full px-2.5 py-1 text-[11px] font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ${
                   activeBundle === name
                     ? "bg-foreground text-background border border-foreground"
                     : "bg-transparent text-foreground/50 border border-border/40 hover:bg-foreground/[0.04] hover:text-foreground/70"
@@ -140,17 +131,14 @@ export function ContentScopeSelector({ scope, onChange, hasTour, hasPhotos, hasF
                 {t(labelKey, lang)}
               </button>
             ))}
-            <div className="flex-1" />
             <button
               type="button"
               aria-expanded={detailsExpanded}
               onClick={() => setDetailsExpanded((v) => !v)}
-              className="rounded text-[11px] font-medium text-foreground/50 hover:text-foreground transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              className="ml-auto rounded px-1 py-1 text-[11px] font-medium text-foreground/50 transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
             >
               {t("shareDialog.customizeFields", lang)}
-              <svg width="8" height="8" viewBox="0 0 16 16" fill="none" className={`inline ml-0.5 transition-transform ${detailsExpanded ? "rotate-180" : ""}`}>
-                <path d="M4 6l4 4 4-4" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
-              </svg>
+              <ChevronDownIcon size={10} className={`ml-0.5 inline transition-transform ${detailsExpanded ? "rotate-180" : ""}`} />
             </button>
           </div>
 
@@ -178,9 +166,9 @@ export function ContentScopeSelector({ scope, onChange, hasTour, hasPhotos, hasF
                               : "bg-transparent text-foreground/70 border border-border/40 hover:border-border hover:bg-foreground/[0.04] hover:text-foreground"
                           } ${isTitle ? "cursor-default opacity-60" : ""}`}
                         >
-                          {checked && !isTitle && icons.check}
+                          {checked && !isTitle && <CheckIcon size={10} />}
                           {t(`shareDialog.field.${field}` as LocaleKey, lang)}
-                          {isTitle && icons.lock}
+                          {isTitle && <LockIcon size={10} />}
                         </button>
                       );
                     })}

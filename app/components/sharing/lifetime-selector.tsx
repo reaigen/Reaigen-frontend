@@ -1,6 +1,7 @@
 "use client";
 
 import { t, type LocaleKey } from "../../lib/i18n";
+import { SegmentedControl } from "../segmented-control";
 
 const LIFETIME_PRESETS = [
   { labelKey: "shareDialog.expiry.oneHour" as LocaleKey, hours: 1 },
@@ -23,23 +24,17 @@ export function LifetimeSelector({ hours, onHoursChange, lang }: LifetimeSelecto
         {t("sharing.lifetime", lang)}
       </h3>
 
-      <div className="flex flex-wrap gap-2">
-        {LIFETIME_PRESETS.map((p) => (
-          <button
-            key={p.hours}
-            type="button"
-            aria-pressed={hours === p.hours}
-            onClick={() => onHoursChange(p.hours)}
-            className={`inline-flex min-w-[4.75rem] items-center justify-center rounded-full px-3.5 py-2 text-[12px] font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ${
-              hours === p.hours
-                ? "bg-foreground text-background border border-foreground"
-                : "bg-transparent text-foreground/50 border border-border/40 hover:bg-foreground/[0.04] hover:text-foreground/70"
-            }`}
-          >
-            {t(p.labelKey, lang)}
-          </button>
-        ))}
-      </div>
+      <SegmentedControl
+        value={hours}
+        onChange={onHoursChange}
+        ariaLabel={t("sharing.lifetime", lang)}
+        className="w-full"
+        itemClassName="min-w-[4.75rem] flex-1 text-[12px]"
+        options={LIFETIME_PRESETS.map((preset) => ({
+          value: preset.hours,
+          label: t(preset.labelKey, lang),
+        }))}
+      />
     </div>
   );
 }

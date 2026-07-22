@@ -6,7 +6,7 @@
  * photos with lightbox, specs, and description in a clean branded layout.
  */
 
-import { t, type LocaleKey } from "../lib/i18n";
+import { t } from "../lib/i18n";
 import FloorplanViewer from "./floorplan-viewer";
 import { DraftImageGallery } from "./draft-image-gallery";
 import type { SharedDraftData, RoomData } from "../lib/tour-types";
@@ -163,7 +163,7 @@ export function SharedDraftView({ draftData, lang, hasTour, onOpenTour, floorpla
             {hasTour && onOpenTour && (
               <button
                 onClick={onOpenTour}
-                className="flex w-full items-center justify-center gap-2.5 rounded-2xl bg-foreground py-3 text-background transition-colors hover:bg-foreground/90"
+                className="flex w-full items-center justify-center gap-2.5 rounded-full bg-foreground py-3 text-background transition-colors hover:bg-foreground/90"
               >
                 <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/><path d="M3.27 6.96 12 12.01l8.73-5.05M12 22.08V12"/></svg>
                 <span className="text-[14px] font-semibold">{t("draft.viewTour", lang)}</span>

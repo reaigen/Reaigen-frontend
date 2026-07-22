@@ -12,6 +12,7 @@ import CameraEditor from "../../components/camera-editor";
 import { Button } from "../../lib/ui/button";
 import { getUserLanguage, t } from "../../lib/i18n";
 import { PageLoading } from "../../components/page-loading";
+import { ArrowLeftIcon, InfoIcon, SearchIcon } from "../../components/icons";
 
 const SplatViewer = dynamic(() => import("../../components/splat-viewer"), { ssr: false });
 const SOG_READY_TIMEOUT_MS = 15000;
@@ -131,16 +132,9 @@ export default function TourPage({ params }: { params: Promise<{ id: string }> }
           <div className="pt-2">
             <div className="mx-auto w-12 h-12 rounded-full bg-foreground/[0.04] flex items-center justify-center mb-3">
               {isNotFound ? (
-                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" className="text-foreground/30">
-                  <circle cx="11" cy="11" r="8" stroke="currentColor" strokeWidth="1.5" />
-                  <path d="M21 21l-4.35-4.35" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
-                  <path d="M8 11h6" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
-                </svg>
+                <SearchIcon size={20} className="text-foreground/30" />
               ) : (
-                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" className="text-foreground/30">
-                  <circle cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="1.5" />
-                  <path d="M12 8v4M12 16h.01" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
-                </svg>
+                <InfoIcon size={20} className="text-foreground/30" />
               )}
             </div>
             <p className="text-[14px] font-semibold text-foreground/70 mb-1">
@@ -189,15 +183,14 @@ export default function TourPage({ params }: { params: Promise<{ id: string }> }
       />
 
       {/* Top bar */}
-      <div className="absolute left-3 top-[calc(0.75rem+env(safe-area-inset-top,0px))] z-20 flex items-center gap-2 sm:left-4 sm:top-[calc(1rem+env(safe-area-inset-top,0px))] animate-fade-in">
+      <div className="absolute left-3 top-[calc(0.75rem+env(safe-area-inset-top,0px))] z-20 flex items-center gap-2 animate-fade-in sm:left-4 sm:top-[calc(1rem+env(safe-area-inset-top,0px))] xl:left-6 xl:top-[calc(1.5rem+env(safe-area-inset-top,0px))]">
         <button
           onClick={() => router.back()}
           aria-label={t("common.back", lang)}
-          className="flex items-center justify-center w-9 h-9 rounded-full bg-black/40 backdrop-blur-xl border border-white/10 text-white/90 shadow-lg transition-colors hover:bg-black/50 active:scale-95"
+          className="flex h-9 w-9 items-center justify-center rounded-full border border-white/10 bg-black/40 text-white/90 shadow-lg backdrop-blur-xl transition-colors hover:bg-black/50 active:scale-95 xl:w-auto xl:gap-2 xl:px-3"
         >
-          <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
-            <path d="M10 12L6 8L10 4" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
-          </svg>
+          <ArrowLeftIcon size={16} />
+          <span className="hidden text-[12px] font-medium xl:inline">{t("common.back", lang)}</span>
         </button>
       </div>
 

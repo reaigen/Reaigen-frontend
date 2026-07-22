@@ -5,6 +5,8 @@ import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { useAuth } from "../components/hooks/use-auth";
 import { AppShell } from "../components/app-shell";
+import { AnalyticsGrid, type AnalyticsGridItem } from "../components/analytics-grid";
+import { CollectionState } from "../components/collection-state";
 import { Button } from "../lib/ui/button";
 import { t, getUserLanguage, formatDate } from "../lib/i18n";
 import {
@@ -29,8 +31,10 @@ import { PageLoading } from "../components/page-loading";
 import { PageHeader } from "../components/page-header";
 import { SidePanel } from "../components/side-panel";
 import { SearchField } from "../components/search-field";
-import { LinkIcon } from "../components/icons";
+import { ArrowRightIcon, CheckIcon, ChevronDownIcon, ClockIcon, CopyIcon, InfoIcon, LinkIcon, LockIcon } from "../components/icons";
 import { Thumbnail } from "../components/thumbnail";
+import { SegmentedControl } from "../components/segmented-control";
+import { StatusPill } from "../components/status-pill";
 
 function draftThumbnail(draft: DraftListingItem): string | null {
   return (draft.raw_uploads ?? [])
@@ -70,6 +74,14 @@ function ShareRow({
   const isLive = isActive || isPaused;
   const cfg = STATUS_CONFIG[share.status] ?? STATUS_CONFIG.revoked;
   const expiry = expiryLabel(share.expires_at, lang);
+  const analyticsItems: AnalyticsGridItem[] = stats
+    ? [
+        { label: t("shareDialog.analytics.totalViews", lang), value: stats.total_accesses },
+        { label: t("shareDialog.analytics.uniqueVisitors", lang), value: stats.unique_ips },
+        { label: t("shareDialog.analytics.authenticated", lang), value: stats.authenticated_accesses },
+        ...(share.requires_pin ? [{ label: t("shareDialog.analytics.failedPins", lang), value: stats.failed_pin_attempts }] : []),
+      ]
+    : [{ label: t("shareDialog.analytics.totalViews", lang), value: share.access_count }];
 
   const handleCopy = async (e: React.MouseEvent) => {
     e.stopPropagation();
@@ -113,20 +125,17 @@ function ShareRow({
   };
 
   return (
-    <div className={`rounded-xl border transition-colors ${isLive ? "border-border/60 bg-background hover:border-border" : "border-border/40 bg-muted/20"}`}>
+    <div className={`overflow-hidden rounded-xl border transition-colors ${isLive ? "border-border bg-card" : "border-border/70 bg-surface-subtle"}`}>
       {/* Main row — always visible */}
-      <div className="w-full px-4 py-3.5 flex items-center gap-3">
-        <button type="button" onClick={handleToggleExpand} aria-expanded={expanded} className="flex min-w-0 flex-1 items-center gap-3 rounded-lg text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2">
-          {/* Status dot */}
-          <span className={`w-2 h-2 rounded-full shrink-0 ${cfg.dot}`} />
-
+      <div className="flex w-full flex-col gap-2.5 px-4 py-3.5 sm:flex-row sm:items-center sm:gap-3">
+        <button type="button" onClick={handleToggleExpand} aria-expanded={expanded} className="flex w-full min-w-0 flex-1 items-center gap-3 rounded-lg text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2">
           {/* Title + meta */}
           <span className="min-w-0 flex-1">
             <span className="flex items-center gap-2">
               <span className={`text-[13px] font-semibold truncate ${isLive ? "" : "text-foreground/50"}`}>{tourName}</span>
               {share.requires_pin && (
                 <span className="shrink-0 inline-flex items-center gap-0.5 rounded bg-foreground/[0.07] px-1.5 py-px text-[11px] font-medium text-foreground/60 uppercase tracking-wider">
-                  <svg aria-hidden="true" width="8" height="8" viewBox="0 0 16 16" fill="none"><rect x="3" y="7" width="10" height="7" rx="2" stroke="currentColor" strokeWidth="1.5" /><path d="M5 7V5a3 3 0 016 0v2" stroke="currentColor" strokeWidth="1.5" /></svg>
+                  <LockIcon size={9} />
                   PIN
                 </span>
               )}
@@ -141,12 +150,10 @@ function ShareRow({
             </span>
           </span>
 
-          <span className={`inline-flex shrink-0 items-center gap-1 rounded-full px-2.5 py-0.5 text-[11px] font-semibold ${cfg.bg} ${cfg.text}`}>
+          <StatusPill tone={cfg.tone} dot className="shrink-0">
             {t(cfg.labelKey, lang)}
-          </span>
-          <svg aria-hidden="true" width="14" height="14" viewBox="0 0 16 16" fill="none" className={`shrink-0 text-foreground/35 transition-transform ${expanded ? "rotate-180" : ""}`}>
-            <path d="M4 6l4 4 4-4" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
-          </svg>
+          </StatusPill>
+          <ChevronDownIcon size={14} className={`shrink-0 text-foreground/35 transition-transform ${expanded ? "rotate-180" : ""}`} />
         </button>
 
         {/* Copy button (live only) */}
@@ -156,12 +163,12 @@ function ShareRow({
             variant="outline"
             size="xs"
             onClick={handleCopy}
-            className={`shrink-0 gap-1 text-[11px] [&_svg]:size-3 ${copied ? "border-foreground bg-foreground text-background hover:bg-foreground hover:text-background" : "text-foreground/70 hover:text-foreground"}`}
+            className={`shrink-0 self-end gap-1 text-[11px] sm:self-auto [&_svg]:size-3 ${copied ? "border-foreground bg-foreground text-background hover:bg-foreground hover:text-background" : "text-foreground/70 hover:text-foreground"}`}
           >
             {copied ? (
-              <svg aria-hidden="true" width="12" height="12" viewBox="0 0 16 16" fill="none"><path d="M3 8.5L6.5 12L13 4" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" /></svg>
+              <CheckIcon size={12} />
             ) : (
-              <svg aria-hidden="true" width="12" height="12" viewBox="0 0 16 16" fill="none"><rect x="5.5" y="5.5" width="8" height="8" rx="1.5" stroke="currentColor" strokeWidth="1.5" /><path d="M10.5 5.5V3.5C10.5 2.67 9.83 2 9 2H3.5C2.67 2 2 2.67 2 3.5V9C2 9.83 2.67 10.5 3.5 10.5H5.5" stroke="currentColor" strokeWidth="1.5" /></svg>
+              <CopyIcon size={12} />
             )}
             {copied ? t("shares.copied", lang) : t("shares.copyLink", lang)}
           </Button>
@@ -175,61 +182,26 @@ function ShareRow({
           <div className={`border-t border-border/40 px-4 py-3.5 space-y-3 ${expanded ? "" : "invisible"}`}>
           {/* URL row */}
           {isLive && (
-            <div className="flex items-center gap-2 rounded-xl bg-foreground/[0.03] px-3 py-2">
+            <div className="flex items-center gap-2 rounded-xl bg-surface-subtle px-3 py-2">
               <p className="flex-1 text-[11px] font-mono text-foreground/70 truncate select-all">{shareUrl(share.token)}</p>
             </div>
           )}
 
-          {/* Analytics grid */}
-          <div className={`grid gap-2 ${share.requires_pin ? "grid-cols-4" : "grid-cols-3"}`}>
-            {statsLoading ? (
-              <div className="col-span-full flex items-center justify-center py-3">
-                <div className="animate-spin h-4 w-4 border-2 border-foreground/10 border-t-foreground/50 rounded-full" />
-              </div>
-            ) : stats ? (
-              <>
-                <div className="rounded-xl bg-foreground/[0.03] px-3 py-2.5 text-center">
-                  <p className="text-[17px] font-semibold tabular-nums leading-tight">{stats.total_accesses}</p>
-                  <p className="text-[11px] text-foreground/50 mt-0.5">{t("shareDialog.analytics.totalViews", lang)}</p>
-                </div>
-                <div className="rounded-xl bg-foreground/[0.03] px-3 py-2.5 text-center">
-                  <p className="text-[17px] font-semibold tabular-nums leading-tight">{stats.unique_ips}</p>
-                  <p className="text-[11px] text-foreground/50 mt-0.5">{t("shareDialog.analytics.uniqueVisitors", lang)}</p>
-                </div>
-                <div className="rounded-xl bg-foreground/[0.03] px-3 py-2.5 text-center">
-                  <p className="text-[17px] font-semibold tabular-nums leading-tight">{stats.authenticated_accesses}</p>
-                  <p className="text-[11px] text-foreground/50 mt-0.5">{t("shareDialog.analytics.authenticated", lang)}</p>
-                </div>
-                {share.requires_pin && (
-                  <div className="rounded-xl bg-foreground/[0.03] px-3 py-2.5 text-center">
-                    <p className="text-[17px] font-semibold tabular-nums leading-tight">{stats.failed_pin_attempts}</p>
-                    <p className="text-[11px] text-foreground/50 mt-0.5">{t("shareDialog.analytics.failedPins", lang)}</p>
-                  </div>
-                )}
-              </>
-            ) : (
-              <>
-                <div className="rounded-xl bg-foreground/[0.03] px-3 py-2.5 text-center">
-                  <p className="text-[17px] font-semibold tabular-nums leading-tight">{share.access_count}</p>
-                  <p className="text-[11px] text-foreground/50 mt-0.5">{t("shareDialog.analytics.totalViews", lang)}</p>
-                </div>
-              </>
-            )}
-          </div>
+          <AnalyticsGrid items={analyticsItems} loading={statsLoading} />
 
           {/* Detail row: field permissions, limits, link to draft */}
           <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-[11px] text-foreground/60">
             <span>{fieldSummaryLabel(share, lang)}</span>
             {share.max_access_count && <span>{t("shares.viewLimit", lang)}: {share.max_access_count}</span>}
             {share.expires_at && (
-              <span>
-                <svg aria-hidden="true" width="10" height="10" viewBox="0 0 16 16" fill="none" className="inline mr-0.5 -mt-px"><circle cx="8" cy="8" r="5.5" stroke="currentColor" strokeWidth="1.5" /><path d="M8 5v3.5l2.5 1" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" /></svg>
+              <span className="inline-flex items-center gap-1">
+                <ClockIcon size={10} />
                 {formatDate(share.expires_at, dateFormat, lang)}
               </span>
             )}
             {tourLink && (
-              <Link href={tourLink} className="text-foreground/60 hover:text-foreground hover:underline" onClick={(e) => e.stopPropagation()}>
-                {t("shares.view", lang)} →
+              <Link href={tourLink} className="inline-flex items-center gap-1 text-foreground/60 hover:text-foreground hover:underline" onClick={(e) => e.stopPropagation()}>
+                {t("shares.view", lang)} <ArrowRightIcon size={11} />
               </Link>
             )}
           </div>
@@ -237,38 +209,38 @@ function ShareRow({
           {/* Actions bar */}
           {actionError && <p role="alert" className="text-[11px] text-destructive">{t("common.requestFailed", lang)}</p>}
           {isLive && (
-            <div className="flex items-center gap-2 pt-2 border-t border-border/40">
+            <div className="flex flex-wrap items-center gap-2 border-t border-border/40 pt-2">
               <Button type="button" variant="outline" size="sm" onClick={(e) => { e.stopPropagation(); onEdit(); }}
-                className="h-8 rounded-lg px-3.5 text-[12px] text-foreground/80 hover:text-foreground">
+                className="h-8 px-3.5 text-[12px] text-foreground/80 hover:text-foreground">
                 {t("shares.editSettings", lang)}
               </Button>
               {isActive && (
                 <Button type="button" variant="outline" size="sm" onClick={handlePause} disabled={actionLoading}
-                  className="h-8 rounded-lg px-3.5 text-[12px] text-foreground/60 hover:text-foreground">
+                  className="h-8 px-3.5 text-[12px] text-foreground/60 hover:text-foreground">
                   {t("shares.pause", lang)}
                 </Button>
               )}
               {isPaused && (
                 <Button type="button" variant="outline" size="sm" onClick={handleResume} disabled={actionLoading}
-                  className="h-8 rounded-lg px-3.5 text-[12px] text-foreground/70 hover:text-foreground">
+                  className="h-8 px-3.5 text-[12px] text-foreground/70 hover:text-foreground">
                   {t("shares.resume", lang)}
                 </Button>
               )}
-              <div className="flex-1" />
+              <div className="hidden flex-1 sm:block" />
               {!confirmRevoke ? (
                 <Button type="button" variant="outline" size="sm" onClick={(e) => { e.stopPropagation(); setConfirmRevoke(true); }}
-                  className="h-8 rounded-lg px-3.5 text-[12px] text-foreground/50 hover:border-destructive/30 hover:bg-destructive/[0.04] hover:text-destructive">
+                  className="h-8 rounded-full px-3.5 text-[12px] text-foreground/50 hover:border-destructive/30 hover:bg-destructive/[0.04] hover:text-destructive">
                   {t("shares.revoke", lang)}
                 </Button>
               ) : (
-                <div className="flex items-center gap-2">
-                  <span className="text-[11px] text-destructive/70">{t("shares.revokeConfirm", lang)}</span>
+                <div className="flex w-full flex-wrap items-center gap-2 sm:w-auto">
+                  <span className="mr-auto text-[11px] text-destructive/70">{t("shares.revokeConfirm", lang)}</span>
                   <Button type="button" variant="ghost" size="sm" onClick={(e) => { e.stopPropagation(); setConfirmRevoke(false); }}
-                    className="h-8 rounded-lg px-3 text-[12px] text-foreground/50 hover:text-foreground">
+                    className="h-8 rounded-full px-3 text-[12px] text-foreground/50 hover:text-foreground">
                     {t("shares.cancel", lang)}
                   </Button>
                   <Button type="button" variant="destructive" size="sm" onClick={handleRevoke} disabled={actionLoading}
-                    className="h-8 rounded-lg px-3.5 text-[12px]">
+                    className="h-8 rounded-full px-3.5 text-[12px]">
                     {t("shares.revoke", lang)}
                   </Button>
                 </div>
@@ -366,7 +338,7 @@ export default function SharesPage() {
   });
   const activeCount = shares.filter((s) => s.status === "active").length;
   const pausedCount = shares.filter((s) => s.status === "paused").length;
-  const totalViews = shares.reduce((total, share) => total + (share.access_count || 0), 0);
+  const inactiveCount = shares.filter((s) => s.status === "expired" || s.status === "revoked").length;
   const normalizedDraftQuery = draftQuery.trim().toLowerCase();
   const selectableDrafts = drafts.filter((draft) => {
     if (!normalizedDraftQuery) return true;
@@ -375,10 +347,11 @@ export default function SharesPage() {
 
   return (
     <AppShell user={user} onLogout={logout}>
-      <div className="mx-auto w-full max-w-4xl space-y-6 animate-fade-in pb-10">
+      <div className="mx-auto w-full max-w-4xl space-y-6 pb-10">
         <PageHeader
           title={t("shares.title", lang)}
           description={t("shares.subtitle", lang)}
+          actionPlacement="start"
           actions={(
             <Button type="button" size="sm" onClick={() => setCreateOpen(true)}>
               <LinkIcon size={15} /> {t("shares.createLink", lang)}
@@ -386,25 +359,8 @@ export default function SharesPage() {
           )}
         />
 
-        {!loading && !loadError && shares.length > 0 && (
-          <div className="grid grid-cols-3 divide-x divide-border/45 overflow-hidden rounded-2xl border border-border/55 bg-surface">
-            <div className="flex flex-col px-4 py-3 sm:px-5">
-              <p className="text-[11px] font-semibold uppercase tracking-[0.1em] text-muted-foreground">{t("shares.statusActive", lang)}</p>
-              <p className="mt-auto pt-1 text-[20px] font-semibold tabular-nums">{activeCount}</p>
-            </div>
-            <div className="flex flex-col px-4 py-3 sm:px-5">
-              <p className="text-[11px] font-semibold uppercase tracking-[0.1em] text-muted-foreground">{t("shares.statusPaused", lang)}</p>
-              <p className="mt-auto pt-1 text-[20px] font-semibold tabular-nums">{pausedCount}</p>
-            </div>
-            <div className="flex flex-col px-4 py-3 sm:px-5">
-              <p className="text-[11px] font-semibold uppercase tracking-[0.1em] text-muted-foreground">{t("shares.totalViews", lang)}</p>
-              <p className="mt-auto pt-1 text-[20px] font-semibold tabular-nums">{totalViews}</p>
-            </div>
-          </div>
-        )}
-
         {shares.length > 0 && (
-          <div className="flex flex-col gap-3 border-b border-border/45 pb-4 sm:flex-row sm:items-center sm:justify-between">
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
             <SearchField
               value={query}
               onChange={setQuery}
@@ -412,29 +368,18 @@ export default function SharesPage() {
               clearLabel={t("dashboard.clearSearch", lang)}
               className="min-w-0 flex-1 sm:max-w-[300px]"
             />
-            <div className="flex items-center gap-0.5 rounded-lg bg-muted/55 p-0.5">
-              {(["all", "active", "inactive"] as const).map((f) => (
-                <button
-                  type="button"
-                  key={f}
-                  onClick={() => setFilter(f)}
-                  className={`px-3 py-1.5 rounded-md text-[11px] font-medium transition-all ${filter === f ? "bg-background text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground"}`}
-                >
-                  {f === "all" ? t("shares.allShares", lang) : f === "active" ? t("shares.activeOnly", lang) : t("shares.inactiveOnly", lang)}
-                </button>
-              ))}
-            </div>
-          </div>
-        )}
-
-        {/* Column headers */}
-        {!loading && filtered.length > 0 && (
-          <div className="hidden items-center gap-3 px-4 text-[11px] font-medium text-foreground/50 uppercase tracking-wider sm:flex">
-            <span className="w-2" />
-            <span className="flex-1">{t("shares.tableTour", lang)}</span>
-            <span className="w-16 text-center">{t("shares.tableStatus", lang)}</span>
-            <span className="w-20" />
-            <span className="w-3.5" />
+            <SegmentedControl
+              value={filter}
+              onChange={setFilter}
+              ariaLabel={t("shares.title", lang)}
+              className="w-full sm:w-auto"
+              itemClassName="text-[11px]"
+              options={[
+                { value: "all", label: t("shares.allShares", lang), count: shares.length },
+                { value: "active", label: t("shares.activeOnly", lang), count: activeCount + pausedCount },
+                { value: "inactive", label: t("shares.inactiveOnly", lang), count: inactiveCount },
+              ]}
+            />
           </div>
         )}
 
@@ -442,9 +387,8 @@ export default function SharesPage() {
         {loading ? (
           <div className="space-y-2">
             {Array.from({ length: 4 }).map((_, i) => (
-              <div key={i} className="rounded-xl border border-border/50 px-4 py-3.5 animate-pulse">
+              <div key={i} className="animate-pulse rounded-xl border border-border/50 bg-surface px-4 py-3.5 shadow-card">
                 <div className="flex items-center gap-3">
-                  <div className="w-2 h-2 rounded-full bg-muted/50" />
                   <div className="flex-1 space-y-1.5">
                     <div className="h-3.5 w-1/3 rounded bg-muted/40" />
                     <div className="h-2.5 w-2/5 rounded bg-muted/25" />
@@ -455,21 +399,23 @@ export default function SharesPage() {
             ))}
           </div>
         ) : loadError ? (
-          <div className="rounded-2xl border border-border/55 bg-surface px-6 py-16 text-center">
-            <p className="text-[14px] font-semibold">{t("shares.loadFailed", lang)}</p>
-            <button type="button" onClick={() => void load()} className="mt-3 text-[12px] font-semibold underline underline-offset-4">{t("common.tryAgain", lang)}</button>
-          </div>
+          <CollectionState
+            kind="error"
+            icon={<InfoIcon size={20} />}
+            title={t("shares.loadFailed", lang)}
+            action={<Button type="button" variant="outline" size="sm" onClick={() => void load()}>{t("common.tryAgain", lang)}</Button>}
+          />
         ) : filtered.length === 0 ? (
-          <div className="flex flex-col items-center justify-center py-20 text-center">
-            <div className="w-12 h-12 rounded-full bg-foreground/[0.04] flex items-center justify-center mb-4">
-              <LinkIcon size={22} className="text-foreground/25" />
-            </div>
-            <p className="text-[14px] font-medium text-foreground/60">{shares.length ? t("shares.noResults", lang) : t("shares.noShares", lang)}</p>
-            <p className="text-[12px] text-muted-foreground mt-1 max-w-[280px]">{shares.length ? t("shares.noResultsHint", lang) : t("shares.noSharesHint", lang)}</p>
-            {!shares.length && <Button type="button" variant="outline" size="sm" className="mt-4 text-[12px]" onClick={() => setCreateOpen(true)}>{t("shares.createLink", lang)}</Button>}
-          </div>
+          <CollectionState
+            icon={<LinkIcon size={20} />}
+            title={shares.length ? t("shares.noResults", lang) : t("shares.noShares", lang)}
+            description={shares.length ? t("shares.noResultsHint", lang) : t("shares.noSharesHint", lang)}
+            action={shares.length
+              ? <Button type="button" variant="outline" size="sm" onClick={() => { setQuery(""); setFilter("all"); }}>{t("shares.allShares", lang)}</Button>
+              : <Button type="button" size="sm" onClick={() => setCreateOpen(true)}>{t("shares.createLink", lang)}</Button>}
+          />
         ) : (
-          <div className="space-y-1.5">
+          <div className="space-y-2.5">
             {filtered.map((share) => {
               const draft = draftById.get(share.draft);
               const draftTour = splatsByDraft[share.draft];

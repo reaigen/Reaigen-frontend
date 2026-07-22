@@ -16,7 +16,7 @@ import { PageLoading } from "../../components/page-loading";
 import { cn } from "../../lib/utils";
 import { DraftEditor } from "../../components/draft-editor";
 import { DraftVersionManager } from "../../components/draft-version-manager";
-import { EditIcon, ShareIcon, TourIcon, VersionsIcon } from "../../components/icons";
+import { ArrowLeftIcon, EditIcon, InfoIcon, SearchIcon, ShareIcon, TourIcon, VersionsIcon } from "../../components/icons";
 import { StatusPill } from "../../components/status-pill";
 
 // ── Formatting ────────────────────────────────────────────────────────────
@@ -457,8 +457,8 @@ export default function DraftPreviewPage({ params }: { params: Promise<{ id: str
         <div className="text-center space-y-4 max-w-xs">
           <div className="mx-auto w-12 h-12 rounded-full bg-foreground/[0.04] flex items-center justify-center">
             {nf
-              ? <svg width="20" height="20" viewBox="0 0 24 24" fill="none" className="text-foreground/30"><circle cx="11" cy="11" r="8" stroke="currentColor" strokeWidth="1.5"/><path d="M21 21l-4.35-4.35" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/><path d="M8 11h6" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/></svg>
-              : <svg width="20" height="20" viewBox="0 0 24 24" fill="none" className="text-foreground/30"><circle cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="1.5"/><path d="M12 8v4M12 16h.01" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/></svg>
+              ? <SearchIcon size={20} className="text-foreground/30" />
+              : <InfoIcon size={20} className="text-foreground/30" />
             }
           </div>
           <p className="text-[14px] font-medium text-foreground/70">{nf ? t("draft.error.notFoundTitle", lang) : t("draft.error.failedTitle", lang)}</p>
@@ -473,7 +473,7 @@ export default function DraftPreviewPage({ params }: { params: Promise<{ id: str
     if (!user) return errorContent;
     return (
       <AppShell user={user} onLogout={logout} hideMobileNav>
-        <div className="mx-auto w-full max-w-3xl pb-16 md:pb-10">{errorContent}</div>
+        <div className="mx-auto w-full max-w-3xl pb-24 md:pb-10">{errorContent}</div>
       </AppShell>
     );
   }
@@ -516,18 +516,18 @@ export default function DraftPreviewPage({ params }: { params: Promise<{ id: str
 
   return (
     <AppShell user={user} onLogout={logout} hideMobileNav reaiDraftId={draftId} reaiDraftTitle={draft?.title} reaiUploadId={activeImageId ?? undefined} onReaiDraftUpdated={setDraft}>
-      <div className="mx-auto w-full max-w-3xl pb-16 md:pb-10">
+      <div className="mx-auto w-full max-w-3xl pb-24 md:pb-10">
         {/* Creation toolbar */}
         <div className="mb-4 flex items-center justify-between gap-3">
-          <button onClick={() => { if (window.history.length > 1) router.back(); else router.push("/dashboard"); }} className="inline-flex items-center gap-1.5 rounded-xl px-2 py-1.5 -ml-2 text-[13px] text-muted-foreground hover:text-foreground hover:bg-foreground/[0.04] transition-colors">
-            <svg width="15" height="15" viewBox="0 0 16 16" fill="none"><path d="M10 12L6 8L10 4" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/></svg>
+          <button type="button" onClick={() => { if (window.history.length > 1) router.back(); else router.push("/dashboard"); }} className="-ml-2 inline-flex min-h-11 items-center gap-1.5 rounded-full px-3 py-1.5 text-[13px] text-muted-foreground transition-colors hover:bg-foreground/[0.04] hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 sm:min-h-0">
+            <ArrowLeftIcon size={15} />
             {t("common.back", lang)}
           </button>
           <div className="flex items-center gap-1.5">
-            <Button type="button" variant="ghost" size="icon-sm" onClick={() => setVersionsOpen(true)} aria-label={t("draft.versions.title", lang)} title={t("draft.versions.title", lang)}>
+            <Button type="button" variant="ghost" size="icon-sm" className="h-11 w-11 sm:h-8 sm:w-8" onClick={() => setVersionsOpen(true)} aria-label={t("draft.versions.title", lang)} title={t("draft.versions.title", lang)}>
               <VersionsIcon size={16} />
             </Button>
-            <Button type="button" variant="outline" size="xs" onClick={() => setEditorOpen(true)}>
+            <Button type="button" variant="outline" size="xs" className="h-11 w-11 px-0 sm:h-7 sm:w-auto sm:px-2.5" onClick={() => setEditorOpen(true)} aria-label={t("shareDialog.edit", lang)}>
               <EditIcon size={14} /> <span className="hidden sm:inline">{t("shareDialog.edit", lang)}</span>
             </Button>
             <Button type="button" variant="outline" size="xs" onClick={() => router.push(`/draft/${draftId}/sharing`)} className="hidden sm:inline-flex">
@@ -597,17 +597,14 @@ export default function DraftPreviewPage({ params }: { params: Promise<{ id: str
 
         {/* Key facts */}
         {facts.length > 0 && (
-          <div className="mt-5 flex flex-wrap gap-2">
+          <div className="mt-5 flex flex-wrap gap-x-7 gap-y-3 border-y border-border py-4">
             {facts.map((f, i) => (
-              <div key={i} className="flex items-center gap-2.5 rounded-lg border border-border/50 bg-surface px-3 py-2 shadow-card">
-                {f.icon}
-                <div className="leading-tight">
-                  <p className="text-[14px] font-semibold tabular-nums">{f.value}</p>
-                  <p className="text-[11px] text-muted-foreground">
-                    {f.label}
-                    {f.sub && <span className="text-muted-foreground/70"> · {f.sub}</span>}
-                  </p>
-                </div>
+              <div key={i} className="min-w-[5.5rem] leading-tight">
+                <p className="text-[15px] font-semibold tabular-nums">{f.value}</p>
+                <p className="mt-1 text-[11px] text-muted-foreground">
+                  {f.label}
+                  {f.sub && <span className="text-muted-foreground/70"> · {f.sub}</span>}
+                </p>
               </div>
             ))}
           </div>
@@ -620,11 +617,8 @@ export default function DraftPreviewPage({ params }: { params: Promise<{ id: str
             <div className="rounded-xl border border-border/50 bg-surface overflow-hidden shadow-card">
               {rows.map((r, i) => (
                 <div key={i} className={`flex items-center justify-between gap-4 px-4 py-3 ${i < rows.length - 1 ? "border-b border-border/40" : ""}`}>
-                  <span className="flex min-w-0 items-center gap-2.5">
-                    <span className="[&_svg]:text-foreground/35">{r.icon}</span>
-                    <span className="text-[13px] text-muted-foreground">{r.label}</span>
-                  </span>
-                  <span className="text-right text-[13px] font-semibold text-foreground tabular-nums">{r.value}</span>
+                  <span className="min-w-0 break-words text-[13px] text-muted-foreground">{r.label}</span>
+                  <span className="min-w-0 max-w-[55%] break-words text-right text-[13px] font-semibold text-foreground tabular-nums">{r.value}</span>
                 </div>
               ))}
             </div>
@@ -661,8 +655,8 @@ export default function DraftPreviewPage({ params }: { params: Promise<{ id: str
             <h2 className="text-[14px] font-semibold mb-2">{t("draft.features", lang)}</h2>
             <div className="flex flex-wrap gap-1.5">
               {features.map((f) => (
-                <span key={f} className="inline-flex items-center gap-1.5 rounded-md border border-border/50 bg-surface px-2.5 py-1 text-[12px] font-medium text-foreground/75">
-                  <span className="text-foreground/40">{I.check}</span> {f}
+                <span key={f} className="inline-flex items-center rounded-md border border-border/50 bg-surface px-2.5 py-1 text-[12px] font-medium text-foreground/75">
+                  {f}
                 </span>
               ))}
             </div>
@@ -676,11 +670,8 @@ export default function DraftPreviewPage({ params }: { params: Promise<{ id: str
             <div className="rounded-xl border border-border/50 bg-surface overflow-hidden shadow-card">
               {monthlyCosts.map((r, i) => (
                 <div key={i} className={`flex items-center justify-between gap-4 px-4 py-2.5 ${i < monthlyCosts.length - 1 ? "border-b border-border/40" : ""}`}>
-                  <span className="flex min-w-0 items-center gap-2.5">
-                    <span className="[&_svg]:text-foreground/40">{r.icon}</span>
-                    <span className="text-[13px] text-muted-foreground">{r.label}</span>
-                  </span>
-                  <span className="text-right text-[13px] font-semibold text-foreground tabular-nums">{r.value}</span>
+                  <span className="min-w-0 break-words text-[13px] text-muted-foreground">{r.label}</span>
+                  <span className="min-w-0 max-w-[55%] break-words text-right text-[13px] font-semibold text-foreground tabular-nums">{r.value}</span>
                 </div>
               ))}
             </div>
@@ -709,15 +700,15 @@ export default function DraftPreviewPage({ params }: { params: Promise<{ id: str
       />
 
       {/* Sticky mobile action bar */}
-      <div className="fixed inset-x-0 bottom-0 z-40 flex gap-2 border-t border-border/40 bg-background px-4 py-2.5 pb-safe md:hidden">
-        <Button variant="outline" size="sm" className="flex-1" onClick={() => setEditorOpen(true)}>
+      <div className="fixed inset-x-0 bottom-0 z-40 flex gap-2 border-t border-border bg-white px-3 pb-[max(0.625rem,env(safe-area-inset-bottom))] pt-2.5 md:hidden">
+        <Button type="button" variant="outline" size="sm" className="h-11 flex-1" onClick={() => setEditorOpen(true)}>
           <EditIcon size={15} /> {t("shareDialog.edit", lang)}
         </Button>
-        <Button variant="outline" size="icon-sm" className="h-9 w-9 shrink-0" onClick={() => router.push(`/draft/${draftId}/sharing`)} aria-label={t("draft.share", lang)}>
+        <Button type="button" variant="outline" size="icon-sm" className="h-11 w-11 shrink-0" onClick={() => router.push(`/draft/${draftId}/sharing`)} aria-label={t("draft.share", lang)}>
           <ShareIcon size={15} />
         </Button>
         {hasTour && (
-          <Button asChild variant="default" size="sm" className="flex-1">
+          <Button asChild variant="default" size="sm" className="h-11 flex-1">
             <Link href={`/tour/${primarySplatId}`}>
               <TourIcon size={15} />
               {t("draft.viewTour", lang)}

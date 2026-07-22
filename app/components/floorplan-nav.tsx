@@ -4,6 +4,7 @@ import { useState } from "react";
 import type { RoomData } from "@/app/lib/tour-types";
 import { t } from "@/app/lib/i18n";
 import { cn } from "@/app/lib/utils";
+import { FloorplanIcon } from "@/app/components/icons";
 
 interface Props {
   floorplanUrl: string;
@@ -29,7 +30,9 @@ export default function FloorplanNav({ floorplanUrl, rooms, onRoomClick, activeR
   const rangeX = maxX - minX || 1;
   const rangeZ = maxZ - minZ || 1;
 
-  const svgW = typeof window !== "undefined" && window.innerWidth < 640 ? Math.min(240, window.innerWidth - 40) : 300;
+  // Render against one stable coordinate system and let CSS scale it on phones.
+  // This keeps server and client markup identical while preserving room hit areas.
+  const svgW = 300;
   const svgH = svgW * (rangeZ / rangeX);
   const pad = 10;
 
@@ -41,27 +44,24 @@ export default function FloorplanNav({ floorplanUrl, rooms, onRoomClick, activeR
   }
 
   return (
-    <div className="absolute bottom-20 left-3 z-20 animate-fade-in sm:left-4">
+    <div className="absolute bottom-20 left-3 z-20 animate-fade-in sm:left-auto sm:right-4">
       <button
+        type="button"
         onClick={() => setExpanded(!expanded)}
+        aria-expanded={expanded}
         className={cn(
-          "mb-2 flex items-center gap-1.5 rounded-full border border-white/10 px-3 py-2 text-xs font-medium text-white/80 shadow-lg transition-colors hover:bg-black/85 hover:text-white",
+          "mb-2 flex min-h-11 items-center gap-1.5 rounded-full border border-white/10 px-3 py-2 text-xs font-medium text-white/80 shadow-lg transition-colors hover:bg-black/85 hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/70",
           expanded ? "bg-black/85" : "bg-black/75",
         )}
       >
-        <svg width="12" height="12" viewBox="0 0 16 16" fill="none" className={`transition-transform duration-200 ${expanded ? "rotate-45" : ""}`}>
-          <rect x="2" y="2" width="5" height="5" rx="1" stroke="currentColor" strokeWidth="1.5" />
-          <rect x="9" y="2" width="5" height="5" rx="1" stroke="currentColor" strokeWidth="1.5" />
-          <rect x="2" y="9" width="5" height="5" rx="1" stroke="currentColor" strokeWidth="1.5" />
-          <rect x="9" y="9" width="5" height="5" rx="1" stroke="currentColor" strokeWidth="1.5" />
-        </svg>
+        <FloorplanIcon size={12} />
         {expanded ? t("tour.floorplan.close", lang) : t("tour.floorplan.open", lang)}
       </button>
 
       {expanded && (
         <div className="max-w-[calc(100vw-1.5rem)] animate-fade-in-up rounded-2xl border border-white/10 bg-black/80 p-3 shadow-2xl sm:max-w-none">
           {/* Floorplan image as background */}
-          <div className="relative" style={{ width: svgW, height: svgH }}>
+          <div className="relative w-[min(300px,calc(100vw-3rem))]" style={{ aspectRatio: `${svgW} / ${svgH}` }}>
             {/* eslint-disable-next-line @next/next/no-img-element */}
             <img
               src={floorplanUrl}
@@ -71,9 +71,9 @@ export default function FloorplanNav({ floorplanUrl, rooms, onRoomClick, activeR
               className="absolute inset-0 w-full h-full object-contain rounded-xl opacity-20 invert"
             />
             <svg
-              width={svgW}
-              height={svgH}
-              className="absolute inset-0"
+              width="100%"
+              height="100%"
+              className="absolute inset-0 h-full w-full"
               viewBox={`0 0 ${svgW} ${svgH}`}
             >
               {rooms.map((room) => {

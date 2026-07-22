@@ -4,10 +4,11 @@ import * as React from "react";
 import { useRouter } from "next/navigation";
 import { useAuth } from "../components/hooks/use-auth";
 import { AppShell } from "../components/app-shell";
+import { CollectionCard } from "../components/collection-card";
+import { CollectionState } from "../components/collection-state";
 import { t, getUserLanguage } from "../lib/i18n";
-import type { LocaleKey } from "../lib/locales";
 import { listAllSplats, listDrafts } from "../lib/api/client";
-import type { DraftListingItem } from "../lib/tour-types";
+import type { DraftListingItem, SplatListItem } from "../lib/tour-types";
 import Link from "next/link";
 import { Thumbnail } from "../components/thumbnail";
 import { PageLoading } from "../components/page-loading";
@@ -15,6 +16,8 @@ import { PageHeader } from "../components/page-header";
 import { StatusPill } from "../components/status-pill";
 import { SearchField } from "../components/search-field";
 import { GridLayoutToggle } from "../components/grid-layout-toggle";
+import { ArrowRightIcon, ImageIcon, InfoIcon, ShareIcon } from "../components/icons";
+import { Button } from "../lib/ui/button";
 
 function compactNumber(value: string | number | null | undefined, lang?: string) {
   if (value == null || value === "") return null;
@@ -42,23 +45,13 @@ function getDraftThumbnail(draft: DraftListingItem): string | null {
   return img?.file_url ?? null;
 }
 
-/** Build a "3 Bed · 2 Bath · 120 m²" string */
-function factsLine(draft: DraftListingItem, lang: string): string {
-  const layout = draft.specs?.layout ?? {};
-  const parts: string[] = [];
-  if (layout.bedrooms != null && layout.bedrooms !== "") parts.push(`${layout.bedrooms} ${t("dashboard.bedroomsShort", lang)}`);
-  if (layout.bathrooms != null && layout.bathrooms !== "") parts.push(`${layout.bathrooms} ${t("dashboard.bathroomsShort", lang)}`);
-  const area = draft.area_preferred ?? draft.area;
-  const areaUnit = draft.area_preferred_unit ?? draft.area_unit_display;
-  if (area != null && area !== "") {
-    let areaStr = `${compactNumber(area, lang)}${areaUnit ? ` ${areaUnit}` : ""}`;
-    // Show original in parentheses if different unit
-    if (draft.area_preferred && draft.area && draft.area_preferred_unit !== draft.area_unit_display && draft.area_unit_display) {
-      areaStr += ` (${compactNumber(draft.area, lang)} ${draft.area_unit_display})`;
-    }
-    parts.push(areaStr);
-  }
-  return parts.join(" · ");
+type DashboardTourState = "ready" | "processing" | "issues";
+
+function getTourState(item: SplatListItem): DashboardTourState {
+  const status = item.status.toLowerCase();
+  if (status === "failed" || status === "cancelled") return "issues";
+  if (status === "completed" && (item.has_sog || item.has_splat || item.has_ply)) return "ready";
+  return "processing";
 }
 
 export default function DashboardPage() {
@@ -74,7 +67,7 @@ export default function DashboardPage() {
   const [totalCount, setTotalCount] = React.useState(0);
   const pageRef = React.useRef(1);
 
-  const [splatIds, setSplatIds] = React.useState<Record<number, number>>({});
+  const [tourStates, setTourStates] = React.useState<Record<number, DashboardTourState>>({});
   const [searchInput, setSearchInput] = React.useState("");
   const [searchQuery, setSearchQuery] = React.useState("");
   const [gridCols, setGridCols] = React.useState<1 | 2>(2);
@@ -118,11 +111,14 @@ export default function DashboardPage() {
     let active = true;
     void listAllSplats().then((splats) => {
       if (!active) return;
-      const map: Record<number, number> = {};
+      const map: Record<number, DashboardTourState> = {};
       for (const splat of splats) {
-        if (!map[splat.source_draft]) map[splat.source_draft] = splat.id;
+        const state = getTourState(splat);
+        if (!map[splat.source_draft] || (state === "ready" && map[splat.source_draft] !== "ready")) {
+          map[splat.source_draft] = state;
+        }
       }
-      setSplatIds(map);
+      setTourStates(map);
     }).catch(() => undefined);
     return () => { active = false; };
   }, [isAuthenticated]);
@@ -198,14 +194,6 @@ export default function DashboardPage() {
     return () => { clearInterval(id); document.removeEventListener("visibilitychange", onVisible); };
   }, [isAuthenticated, searchQuery, drafts]);
 
-  // Show back-to-top button after scrolling down
-  const [showBackToTop, setShowBackToTop] = React.useState(false);
-  React.useEffect(() => {
-    const onScroll = () => setShowBackToTop(window.scrollY > 400);
-    window.addEventListener("scroll", onScroll, { passive: true });
-    return () => window.removeEventListener("scroll", onScroll);
-  }, []);
-
   if (isLoading || !user) {
     return <PageLoading />;
   }
@@ -216,13 +204,14 @@ export default function DashboardPage() {
     <AppShell user={user} onLogout={logout}>
       <div className="mx-auto w-full max-w-[1180px]">
         <PageHeader
+          eyebrow={user.first_name ? `${t("dashboard.welcome", lang)}, ${user.first_name}` : t("dashboard.welcome", lang)}
           title={t("dashboard.creationsTitle", lang)}
           description={t("dashboard.creationsSubtitle", lang)}
           actions={totalCount > 0 ? <StatusPill>{totalCount} {t("dashboard.items", lang)}</StatusPill> : undefined}
-          className="mb-4 sm:mb-7"
+          className="mb-5 sm:mb-8"
         />
         {/* Search bar */}
-        <div className="mb-4 flex items-center gap-3 border-b border-border/40 pb-3 sm:mb-6">
+        <div className="mb-5 flex items-center gap-3 rounded-full border border-border/80 bg-card px-4 py-0.5 shadow-control sm:mb-7 md:rounded-none md:border-x-0 md:border-t-0 md:bg-transparent md:px-0 md:pb-2 md:pt-0 md:shadow-none">
           <SearchField
             value={searchInput}
             onChange={setSearchInput}
@@ -230,149 +219,139 @@ export default function DashboardPage() {
             placeholder={t("dashboard.searchPlaceholder", lang)}
             clearLabel={t("dashboard.clearSearch", lang)}
             className="flex-1"
+            appearance="toolbar"
           />
           <GridLayoutToggle value={gridCols} onChange={handleGridCols} lang={lang} />
         </div>
 
         {/* Cards */}
         {draftsLoading ? (
-          <div className={`grid grid-cols-1 gap-6 ${gridCols === 2 ? "md:grid-cols-2" : "mx-auto max-w-2xl"}`}>
+          <div className={`grid grid-cols-1 gap-7 ${gridCols === 2 ? "md:grid-cols-2" : "mx-auto max-w-2xl"}`}>
             {Array.from({ length: gridCols === 2 ? 4 : 3 }).map((_, i) => (
-              <div key={i} className="animate-pulse">
-                <div className="aspect-[16/10] rounded-xl bg-muted/30" />
-                <div className="mt-2.5 px-0.5">
-                  <div className="flex items-start justify-between gap-3">
-                    <div className="min-w-0 flex-1 space-y-2">
-                      <div className="h-4 w-2/3 rounded bg-muted/40" />
-                      <div className="h-3 w-1/2 rounded bg-muted/30" />
-                    </div>
-                    <div className="h-4 w-16 shrink-0 rounded bg-muted/40" />
-                  </div>
+              <CollectionCard key={i} loading>
+                <div className="aspect-[16/10] bg-muted/45" />
+                <div className="flex h-12 items-center justify-between px-4">
+                  <div className="h-3 w-1/3 rounded bg-muted/55" />
+                  <div className="h-3 w-14 rounded bg-muted/40" />
                 </div>
-              </div>
+              </CollectionCard>
             ))}
           </div>
         ) : draftsError ? (
-          <div role="alert" className="flex flex-col items-center justify-center py-20 text-center">
-            <p className="text-[14px] font-medium text-foreground/60">{t("dashboard.loadFailed", lang)}</p>
-            <button
-              type="button"
-              onClick={() => setReloadNonce((value) => value + 1)}
-              className="mt-4 inline-flex h-8 items-center rounded-full border border-border/70 bg-surface px-3.5 text-[13px] font-medium transition-colors hover:bg-accent hover:text-accent-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
-            >
-              {t("common.tryAgain", lang)}
-            </button>
-          </div>
+          <CollectionState
+            kind="error"
+            icon={<InfoIcon size={20} />}
+            title={t("dashboard.loadFailed", lang)}
+            action={<Button type="button" variant="outline" size="sm" onClick={() => setReloadNonce((value) => value + 1)}>{t("common.tryAgain", lang)}</Button>}
+          />
         ) : drafts.length === 0 ? (
-          <div className="flex flex-col items-center justify-center py-20 text-center">
-            <div className="mb-4 flex h-12 w-12 items-center justify-center rounded-full bg-foreground/[0.04]">
-              <svg width="22" height="22" viewBox="0 0 24 24" fill="none" className="text-foreground/25" aria-hidden="true">
-                <path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
-                <path d="M3.27 6.96L12 12.01l8.73-5.05M12 22.08V12" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
-              </svg>
-            </div>
-            <p className="text-[14px] font-medium text-foreground/60">{t("dashboard.noSplatsTitle", lang)}</p>
-            <p className="mt-1 max-w-[260px] text-[12px] leading-relaxed text-muted-foreground">{t("dashboard.noSplats", lang)}</p>
-          </div>
+          <CollectionState
+            icon={<ImageIcon size={20} />}
+            title={t(searchQuery ? "dashboard.noResults" : "dashboard.noSplatsTitle", lang)}
+            description={t(searchQuery ? "dashboard.noResultsHint" : "dashboard.noSplats", lang)}
+            action={searchQuery ? <Button type="button" variant="outline" size="sm" onClick={() => { setSearchInput(""); setSearchQuery(""); }}>{t("dashboard.clearSearch", lang)}</Button> : undefined}
+          />
         ) : (
           <>
-          <div className={`grid grid-cols-1 gap-6 ${gridCols === 2 ? "md:grid-cols-2" : "mx-auto max-w-2xl"}`}>
+          <div className={`grid grid-cols-1 gap-7 ${gridCols === 2 ? "md:grid-cols-2" : "mx-auto max-w-2xl"}`}>
             {drafts.map((draft, idx) => {
               const prefPrice = formatMoney(draft.price_preferred, draft.price_preferred_currency, lang);
               const origPrice = formatMoney(draft.price, draft.currency, lang);
               const price = prefPrice || origPrice;
               const showOrigPrice = prefPrice && origPrice && draft.price_preferred_currency !== draft.currency;
-              const facts = factsLine(draft, lang);
               const address = draft.display_address || [draft.city, draft.state, draft.country].filter(Boolean).join(", ");
               const thumbUrl = getDraftThumbnail(draft);
-              const draftSplatId = splatIds[draft.id];
+              const draftTour = tourStates[draft.id];
+              const tourStatusLabel = draftTour === "ready"
+                ? t("dashboard.tourReady", lang)
+                : draftTour === "issues"
+                  ? t("dashboard.status.failed", lang)
+                  : draftTour === "processing"
+                    ? t("dashboard.status.processing", lang)
+                    : null;
 
               return (
-                <Link
+                <CollectionCard
                   key={draft.id}
-                  href={`/draft/${draft.id}`}
-                  className="group block rounded-xl focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
-                  onMouseEnter={() => router.prefetch(`/draft/${draft.id}`)}
+                  revealIndex={idx}
                 >
-                  {/* Image */}
-                  <div className="relative aspect-[16/10] overflow-hidden rounded-xl bg-muted/20 transition-shadow group-hover:shadow-lg">
-                    {thumbUrl ? (
-                      <Thumbnail src={thumbUrl} alt={draft.title} className="absolute inset-0 w-full h-full object-cover transition-transform duration-300 group-hover:scale-[1.02]" priority={idx < 4} />
-                    ) : (
-                      <div className="absolute inset-0 flex items-center justify-center">
-                        <svg width="40" height="40" viewBox="0 0 24 24" fill="none" className="text-foreground/8">
-                          <rect x="3" y="3" width="18" height="18" rx="2" stroke="currentColor" strokeWidth="1.5" />
-                          <circle cx="8.5" cy="8.5" r="1.5" fill="currentColor" />
-                          <path d="M21 15l-5-5L5 21" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
-                        </svg>
-                      </div>
-                    )}
-                    {/* 3D Tour badge */}
-                    {draftSplatId && (
-                      <div className="absolute top-3 left-3 flex items-center gap-1.5 rounded-full bg-black/50 backdrop-blur-sm px-2.5 py-1 text-[11px] font-medium text-white">
-                        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/></svg>
-                        {t("dashboard.tourReady", lang)}
-                      </div>
-                    )}
-                    {!draftSplatId && !draft.is_complete && (
-                      <div className="absolute left-3 top-3 rounded-full bg-black/50 px-2.5 py-1 text-[11px] font-medium text-white backdrop-blur-sm">
-                        {t("dashboard.listingDraft", lang)}
-                      </div>
-                    )}
-                    {/* Share button */}
-                    <button
-                      type="button"
-                      onClick={(e) => { e.preventDefault(); e.stopPropagation(); router.push(`/draft/${draft.id}/sharing`); }}
-                      className="absolute right-3 top-3 flex h-8 w-8 items-center justify-center rounded-full bg-black/50 text-white/75 opacity-100 backdrop-blur-sm transition-all hover:bg-black/65 hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 md:opacity-0 md:group-hover:opacity-100 md:group-focus-within:opacity-100"
-                      aria-label={t("draft.share", lang)}
-                    >
-                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><path d="M8.59 13.51l6.83 3.98M15.41 6.51l-6.82 3.98"/></svg>
-                    </button>
-                  </div>
-
-                  {/* Property info */}
-                  <div className="mt-2.5 px-0.5">
-                    <div className="flex items-start justify-between gap-3">
-                      <div className="min-w-0 flex-1">
-                        <h2 className="text-[15px] font-semibold leading-snug truncate">{draft.title || t("dashboard.untitled", lang)}</h2>
-                        {address && (
-                          <p className="mt-0.5 text-[13px] text-muted-foreground truncate">{address}</p>
-                        )}
-                      </div>
-                      {price && (
-                        <div className="text-right shrink-0">
-                          <span className="text-[15px] font-semibold tabular-nums">{price}</span>
-                          {showOrigPrice && (
-                            <p className="text-[11px] text-muted-foreground tabular-nums">{origPrice}</p>
-                          )}
+                  <Link
+                    href={`/draft/${draft.id}`}
+                    className="block focus-visible:outline-none"
+                    onMouseEnter={() => router.prefetch(`/draft/${draft.id}`)}
+                  >
+                    <div className="relative aspect-[16/10] overflow-hidden bg-[#d8d2c8]">
+                      {thumbUrl ? (
+                        <Thumbnail src={thumbUrl} alt={draft.title} className="absolute inset-0 h-full w-full object-cover transition-transform duration-500 ease-out group-hover:scale-[1.03]" priority={idx < 4} />
+                      ) : (
+                        <div className="absolute inset-0 flex items-center justify-center bg-gradient-to-br from-[#ded8ce] to-[#bbb3a7]">
+                          <ImageIcon size={42} className="text-black/15" />
                         </div>
                       )}
+                      <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/5 to-black/15" aria-hidden="true" />
+                      <StatusPill
+                        tone={draftTour === "ready" ? "success" : draftTour === "issues" ? "danger" : draftTour === "processing" ? "warning" : draft.is_complete ? "neutral" : "warning"}
+                        dot
+                        className="absolute left-3 top-3 border-white/25 bg-white/90 text-black shadow-[0_4px_16px_rgba(0,0,0,0.14)]"
+                      >
+                        {tourStatusLabel
+                          ?? (draft.is_complete
+                            ? t("dashboard.listingComplete", lang)
+                            : t("dashboard.listingDraft", lang))}
+                      </StatusPill>
+                      <div className="absolute inset-x-0 bottom-0 flex items-end justify-between gap-4 p-4 sm:p-5">
+                        <div className="min-w-0 flex-1">
+                          <h2 className="truncate text-[17px] font-semibold leading-snug tracking-[-0.02em] text-white">{draft.title || t("dashboard.untitled", lang)}</h2>
+                          {address && (
+                            <p className="mt-1 truncate text-[12px] text-white/70">{address}</p>
+                          )}
+                        </div>
+                        {price && (
+                          <div className="shrink-0 rounded-full border border-white/45 bg-white/90 px-3 py-1.5 text-right text-black shadow-sm backdrop-blur-md">
+                            <span className="block text-[13px] font-semibold tabular-nums">{price}</span>
+                            {showOrigPrice && (
+                              <span className="block text-[11px] text-black/55 tabular-nums">{origPrice}</span>
+                            )}
+                          </div>
+                        )}
+                      </div>
                     </div>
-                    {facts && (
-                      <p className="mt-1 text-[13px] text-foreground/50">{facts}</p>
-                    )}
-                  </div>
-                </Link>
+
+                    <div className="flex h-12 items-center justify-between gap-4 border-t border-border/70 bg-card px-4">
+                      <p className="flex min-w-0 items-center gap-2 truncate text-[11px] font-medium text-foreground/65">
+                        <span className={`h-1.5 w-1.5 shrink-0 rounded-full ${draft.is_portfolio_visible ? "bg-emerald-600" : "bg-foreground/20"}`} aria-hidden="true" />
+                        <span className="truncate">{draft.is_portfolio_visible ? t("dashboard.portfolioVisible", lang) : t("dashboard.notInPortfolio", lang)}</span>
+                      </p>
+                      <span className="inline-flex shrink-0 items-center gap-1.5 text-[12px] font-semibold text-foreground/70 transition-colors group-hover:text-foreground">
+                        {t("common.open", lang)} <ArrowRightIcon size={14} className="transition-transform duration-200 group-hover:translate-x-0.5" />
+                      </span>
+                    </div>
+                  </Link>
+
+                  <button
+                    type="button"
+                    onClick={() => router.push(`/draft/${draft.id}/sharing`)}
+                    className="absolute right-3 top-3 z-10 flex h-8 w-8 items-center justify-center rounded-full border border-white/15 bg-black/45 text-white/80 shadow-sm backdrop-blur-md transition-[background-color,color,opacity,transform] hover:scale-105 hover:bg-black/70 hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white focus-visible:ring-offset-2 focus-visible:ring-offset-black md:opacity-0 md:group-hover:opacity-100 md:group-focus-within:opacity-100"
+                    aria-label={t("draft.share", lang)}
+                  >
+                    <ShareIcon size={14} />
+                  </button>
+                </CollectionCard>
               );
             })}
 
           </div>
           {hasMore && <div ref={sentinelRef} className="h-px" />}
           {loadingMore && (
-            <div className={`grid grid-cols-1 gap-6 pt-6 ${gridCols === 2 ? "md:grid-cols-2" : "mx-auto max-w-2xl"}`}>
+            <div className={`grid grid-cols-1 gap-7 pt-7 ${gridCols === 2 ? "md:grid-cols-2" : "mx-auto max-w-2xl"}`}>
               {Array.from({ length: gridCols === 2 ? 2 : 1 }).map((_, i) => (
-                <div key={i} className="animate-pulse">
-                  <div className="aspect-[16/10] rounded-xl bg-muted/30" />
-                  <div className="mt-2.5 px-0.5">
-                    <div className="flex items-start justify-between gap-3">
-                      <div className="min-w-0 flex-1 space-y-2">
-                        <div className="h-4 w-2/3 rounded bg-muted/40" />
-                        <div className="h-3 w-1/2 rounded bg-muted/30" />
-                      </div>
-                      <div className="h-4 w-16 shrink-0 rounded bg-muted/40" />
-                    </div>
+                <CollectionCard key={i} loading>
+                  <div className="aspect-[16/10] bg-muted/45" />
+                  <div className="flex h-12 items-center justify-between px-4">
+                    <div className="h-3 w-1/3 rounded bg-muted/55" />
+                    <div className="h-3 w-14 rounded bg-muted/40" />
                   </div>
-                </div>
+                </CollectionCard>
               ))}
             </div>
           )}
@@ -380,19 +359,6 @@ export default function DashboardPage() {
         )}
       </div>
 
-      {/* Back to top */}
-      <button
-        type="button"
-        onClick={() => window.scrollTo({ top: 0, behavior: "smooth" })}
-        className={`fixed bottom-6 right-6 z-50 flex h-10 w-10 items-center justify-center rounded-full bg-foreground/80 text-background shadow-lg backdrop-blur-sm transition-opacity hover:bg-foreground active:scale-95 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 ${showBackToTop ? "opacity-100" : "pointer-events-none opacity-0"}`}
-        aria-label={t("dashboard.backToTop", lang)}
-        aria-hidden={!showBackToTop}
-        tabIndex={showBackToTop ? 0 : -1}
-      >
-        <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true">
-          <path d="M8 13V3M4 7l4-4 4 4" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
-        </svg>
-      </button>
     </AppShell>
   );
 }

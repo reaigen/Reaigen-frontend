@@ -316,7 +316,7 @@ export function DraftImageGallery({ images, alt, fallbackUrl, lang = "en", onAct
         <button
           type="button"
           onClick={() => setLightboxIndex(activeIndex)}
-          className="absolute right-3 top-3 flex h-9 w-9 items-center justify-center rounded-full border border-black/10 bg-white/90 text-black/70 shadow-sm backdrop-blur-xl transition hover:bg-black hover:text-white hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-black/25"
+          className="absolute right-3 top-3 flex h-11 w-11 items-center justify-center rounded-full border border-black/10 bg-white/90 text-black/70 shadow-sm backdrop-blur-xl transition hover:bg-black hover:text-white hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-black/25 sm:h-9 sm:w-9"
           aria-label={t("draft.gallery.fullscreen", lang)}
         >
           <ExpandIcon />

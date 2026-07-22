@@ -28,6 +28,40 @@ The portal uses two deliberate visual modes:
 Do not mix these modes inside one control surface. In particular, camera preview and edit controls
 must never alternate between an opaque black pill and a light panel.
 
+### Reference hierarchy
+
+- **X supplies the management architecture:** a light labeled navigation rail, content-first
+  streams, hairline dividers, whole-item click targets, strong black/white hierarchy, and secondary
+  actions that stay visually quiet.
+- **ReaUI supplies the component grammar:** an 88px compact rail that expands to 294px labeled navigation,
+  labeled compact navigation targets, 44–56px controls, rounded-xl fields and buttons, rounded-2xl
+  collection cards, restrained surface shadows, Radix icons, and one shared proportion system across
+  desktop and mobile.
+- **Instagram supplies the media and portfolio rhythm:** centered content columns, photography-led
+  presentation, gap-tight thumbnail grids, count-first profile statistics, bold active navigation
+  without decorative containers, and complex publishing flows broken into a clear sequence.
+- **Runway supplies the creative workspace:** media and canvas supremacy, compact tool rails,
+  contextual side panels that preserve the active work, visible output history, and neutral dark
+  layers in studio mode. It does not determine the management shell or its colour system.
+- **Krea supplies the creative entry point:** a persistent floating prompt surface, optional tool
+  modifiers expressed as light chips, minimal barriers before the first action, and controls that
+  float over a canvas rather than compete with it in another permanent column.
+- **Reaigen's early component studies supply the domain layer:** editorial property imagery,
+  compact listing facts, portfolio visibility, and glass controls only when they sit directly over
+  media. Their strongest patterns are promoted into ReaUI instead of becoming one-off page styles.
+
+Runway's studio treatment does not make the management portal dark. Creations, Tours, Shares, and
+Settings stay in the light X + ReaUI shell; the 3D viewer and media tools carry the darker studio
+mode. Krea's floating chrome is likewise reserved for Agent and studio controls. Instagram informs
+presentation structure, not social mechanics: Reaigen does not invent likes, followers, stories,
+or decorative brand gradients. Runway and Krea are design references.
+
+Reaigen has four explicit exceptions to the upstream ReaUI showcase. The product uses the complete
+`Reaigen` wordmark instead of the boxed single-letter mark; Agent uses an unboxed monochrome wand;
+the management rail stays light to preserve X's content hierarchy; and full pills are kept only for
+authentication, status, or controls floating directly over media. These are product decisions, not
+page-level variations.
+
 ## Information architecture
 
 | Surface | Route | Primary job | Primary action |
@@ -162,8 +196,43 @@ The detailed Agent interaction contract lives in `docs/agent-workspace-ui.md`.
 - Desktop Settings uses a stable vertical section rail. Mobile Settings uses one explicit section
   selector rather than a clipped eight-tab strip.
 - Mobile bottom navigation is opaque over imagery so labels and touch targets never lose contrast.
+- Global navigation, headers, and mobile action bars use an opaque surface plus one hairline. They do
+  not float inside decorative glass capsules or add shadows where a border already establishes depth.
 - Respect `prefers-reduced-motion`; animation is short, interruptible, and never required to
   understand state.
+
+### Management element contract
+
+- Standard fields are 44px high and inventory search is 48px high. Both use ReaUI's `rounded-xl`
+  geometry and quiet neutral border; search may use the shared control shadow. Segmented-control
+  containers are 44–48px high and their 32–40px segments use `rounded-lg`.
+- Standard text buttons use ReaUI's `rounded-xl` shape, 200ms motion, and visible keyboard focus.
+  Full pills are reserved for authentication, status, small metadata tags, and controls placed
+  directly over imagery; familiar icon-only controls may remain circular.
+- Touch layouts keep interactive targets at least 44px high even when the visible control becomes
+  more compact at desktop breakpoints.
+- Collection cards, form sections, previews, and operational rows use the `rounded-2xl` ReaUI card
+  surface. `CollectionCard` owns the shared inventory-card border, shadow, focus, hover, and reveal
+  behavior. Its image-first composition and the shared search field are protected patterns and must
+  not be replaced by generic form cards during a system cleanup.
+- Filters and mode switches use `SegmentedControl`; they do not recreate local active-state or
+  spacing rules. Radix tabs mirror the same outer and inner geometry when tab semantics are needed.
+- Lifecycle state is rendered through `StatusPill`, with a text label and semantic dot. Pages do not
+  build one-off status badges or duplicate a separate status dot beside the same label.
+- Property facts use `PropertyFactTile` in both owner inventory cards and recipient previews so
+  typography, density, units, and missing-value behavior remain aligned.
+- Empty, filtered, and failed collection results use `CollectionState`; each state keeps the same
+  spatial footprint and offers the narrowest useful recovery action.
+- Operational analytics use `AnalyticsGrid`. Dense four-column summaries collapse to readable
+  two-column rows on phones instead of shrinking labels below a useful size.
+- Do not repeat summary cards when the same counts already appear in filters, statuses, or the
+  collection itself. One clear filter row is preferable to a second dashboard above the content.
+- Route changes animate once at the shell. Pages and cards do not stack duplicate entrance effects,
+  and hover motion stays subtle enough that property imagery remains stable.
+- Drawers lock the obscured page where appropriate, respect device safe areas, and keep actions
+  wrapping rather than clipping on narrow screens.
+- Studio controls remain a deliberate exception: camera and tour navigation use the unified dark
+  translucent material defined by the camera UX contract.
 
 ## Camera and coordinate contract
 

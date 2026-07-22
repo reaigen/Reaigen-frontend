@@ -4,6 +4,7 @@ import {
   clearAuthCookies,
   setAuthCookies,
 } from "../../../lib/server/auth-cookies";
+import { fetchBackend } from "../../../lib/server/backend-fetch";
 
 const BACKEND_URL =
   process.env.REAIGEN_BACKEND_URL ?? "http://localhost:8000";
@@ -67,7 +68,7 @@ async function proxy(
   for (const baseUrl of backendCandidates()) {
     const target = `${baseUrl}/api/v1/core/auth/${joined}${slash}`;
     try {
-      const res = await fetch(target, { ...init, cache: "no-store" });
+      const res = await fetchBackend(target, { ...init, cache: "no-store" }, 5_000);
       const data = await res.text();
       const contentType = res.headers.get("Content-Type") ?? "application/json";
       const response = new NextResponse(data, {

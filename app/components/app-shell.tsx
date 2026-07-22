@@ -11,7 +11,7 @@ import { cn } from "../lib/utils";
 import { t, getUserLanguage } from "../lib/i18n";
 import { AppContentMessages } from "./content-documents";
 import { ReaiAgentCard } from "./reai-agent-card";
-import { HomeIcon, LinkIcon, SettingsIcon, TourIcon, SparklesIcon } from "./icons";
+import { CloseIcon, HomeIcon, LinkIcon, SettingsIcon, TourIcon, SparklesIcon } from "./icons";
 
 function getInitials(user: UserProfile): string {
   const f = user.first_name?.[0] ?? "";
@@ -19,7 +19,8 @@ function getInitials(user: UserProfile): string {
   return (f + l).toUpperCase() || (user.email?.[0] ?? "?").toUpperCase();
 }
 
-const SIDEBAR_W = 224; // px
+const SIDEBAR_COLLAPSED_W = 88;
+const SIDEBAR_EXPANDED_W = 294;
 
 export function AppShell({
   user,
@@ -98,6 +99,21 @@ export function AppShell({
     return () => window.removeEventListener("keydown", closeOnEscape);
   }, [reaiOpen]);
 
+  React.useEffect(() => {
+    if (!reaiOpen) return;
+    const wideWorkspace = window.matchMedia("(min-width: 1536px)");
+    const previousOverflow = document.body.style.overflow;
+    const syncBodyLock = () => {
+      document.body.style.overflow = wideWorkspace.matches ? previousOverflow : "hidden";
+    };
+    syncBodyLock();
+    wideWorkspace.addEventListener("change", syncBodyLock);
+    return () => {
+      wideWorkspace.removeEventListener("change", syncBodyLock);
+      document.body.style.overflow = previousOverflow;
+    };
+  }, [reaiOpen]);
+
   const reaiLauncher = reaiEnabled ? (
     <button
       type="button"
@@ -105,29 +121,40 @@ export function AppShell({
       title={t("reai.openAgent", lang)}
       aria-label={t("reai.openAgent", lang)}
       aria-expanded={reaiOpen}
-      className="group inline-flex h-9 items-center gap-1.5 rounded-full border border-border/60 bg-background pl-2.5 pr-3.5 text-[12px] font-semibold text-foreground/80 transition-colors hover:border-foreground hover:bg-foreground hover:text-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+      className="group inline-flex h-11 items-center justify-center gap-2 rounded-full border border-border bg-card px-3.5 text-[12px] font-semibold text-foreground/80 transition-colors hover:bg-accent hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 md:h-[58px] md:w-16 md:flex-col md:gap-1 md:border-transparent md:bg-transparent md:px-0 xl:h-12 xl:w-full xl:flex-row xl:justify-start xl:gap-3 xl:border-border xl:bg-card xl:px-3.5"
     >
-      <SparklesIcon size={15} className="text-foreground/55 transition-colors group-hover:text-background" />
-      {t("reai.title", lang)}
+      <SparklesIcon size={19} className="text-foreground/75 transition-colors group-hover:text-foreground" />
+      <span className="md:text-[10px] md:leading-none xl:text-[13px] xl:leading-normal">{t("reai.title", lang)}</span>
     </button>
   ) : null;
 
   return (
     <div
-      className="min-h-screen bg-background transition-[padding] duration-200"
+      className="app-canvas min-h-screen transition-[padding] duration-200"
       style={{ paddingRight: reaiOpen ? "var(--reai-panel-width, 0px)" : 0 }}
     >
       {/* ── Desktop sidebar ──────────────────────────────────────── */}
       <aside
-        className="fixed inset-y-0 left-0 z-40 hidden border-r border-border/40 bg-surface md:flex md:flex-col pl-safe"
-        style={{ width: SIDEBAR_W }}
+        className="fixed inset-y-0 left-0 z-40 hidden w-[88px] border-r border-border bg-card pl-safe text-foreground transition-[width] duration-200 md:flex md:flex-col xl:w-[294px]"
       >
         {/* Brand */}
-        <div className="px-5 pb-7 pt-5">
-          <Link href="/dashboard" className="inline-block">
+        <div className="px-3 pb-6 pt-4">
+          <Link
+            href="/dashboard"
+            aria-label="Reaigen"
+            className="mx-auto flex h-12 w-16 items-center justify-center rounded-xl transition-colors hover:bg-foreground/[0.04] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 xl:w-full xl:justify-start xl:px-2"
+          >
             <span
-              className="text-[29px]"
-              style={{ fontFamily: 'var(--font-brand), ui-serif, Georgia, serif', fontWeight: 400, letterSpacing: '0.01em' }}
+              aria-hidden="true"
+              className="text-[20px] leading-none text-foreground xl:hidden"
+              style={{ fontFamily: 'var(--font-brand), ui-serif, Georgia, serif', fontWeight: 500, letterSpacing: '0.005em' }}
+            >
+              Re
+            </span>
+            <span
+              aria-hidden="true"
+              className="hidden text-[25px] leading-none text-foreground xl:inline"
+              style={{ fontFamily: 'var(--font-brand), ui-serif, Georgia, serif', fontWeight: 500, letterSpacing: '0.005em' }}
             >
               Reaigen
             </span>
@@ -137,53 +164,83 @@ export function AppShell({
         {/* Nav links */}
         <nav className="flex-1 space-y-1 px-3">
           {NAV_ITEMS.map((item) => {
-            const active = pathname === item.href || pathname.startsWith(item.href + "/");
+            const active = pathname === item.href || pathname.startsWith(item.href + "/") || (item.href === "/dashboard" && pathname.startsWith("/draft/"));
             const Icon = item.icon;
             return (
               <Link
                 key={item.href}
                 href={item.href}
+                title={item.label}
                 aria-current={active ? "page" : undefined}
                 className={cn(
-                  "flex items-center gap-3 rounded-xl px-3 py-2.5 text-[13px] transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2",
+                  "mx-auto flex min-h-[58px] w-16 flex-col items-center justify-center gap-1 rounded-xl text-[10px] leading-none transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 xl:h-12 xl:min-h-0 xl:w-full xl:flex-row xl:justify-start xl:gap-3.5 xl:px-3 xl:text-[14px] xl:leading-normal",
                   active
-                    ? "bg-foreground/[0.06] font-semibold text-foreground"
-                    : "font-medium text-foreground/50 hover:bg-foreground/[0.04] hover:text-foreground"
+                    ? "bg-accent font-semibold text-foreground"
+                    : "font-medium text-muted-foreground hover:bg-accent/80 hover:text-foreground"
                 )}
               >
-                <Icon size={19} className={cn(active ? "text-foreground" : "text-foreground/45")} />
-                {item.label}
+                <Icon size={22} strokeWidth={active ? 2.2 : 1.7} className={cn("shrink-0", active ? "text-foreground" : "text-foreground/55")} />
+                <span className="max-w-full truncate xl:block">{item.label}</span>
               </Link>
             );
           })}
         </nav>
 
-        {/* Bottom: settings (account lives in the top bar) */}
-        <div className="px-3 pb-5 space-y-1">
+        {/* ReaUI utility stack with an X-like account position at the bottom. */}
+        <div className="space-y-1 px-3 pb-4">
+          {reaiLauncher && <div className="flex justify-center xl:block">{reaiLauncher}</div>}
           <Link
             href="/settings"
+            title={t("nav.settings", lang)}
             aria-current={settingsActive ? "page" : undefined}
             className={cn(
-              "flex items-center gap-3 rounded-xl px-3 py-2.5 text-[13px] transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2",
+              "mx-auto flex min-h-[58px] w-16 flex-col items-center justify-center gap-1 rounded-xl text-[10px] leading-none transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 xl:h-12 xl:min-h-0 xl:w-full xl:flex-row xl:justify-start xl:gap-3.5 xl:px-3 xl:text-[14px] xl:leading-normal",
               settingsActive
-                ? "bg-foreground/[0.06] font-semibold text-foreground"
-                : "font-medium text-foreground/50 hover:bg-foreground/[0.04] hover:text-foreground"
+                ? "bg-accent font-semibold text-foreground"
+                : "font-medium text-muted-foreground hover:bg-accent/80 hover:text-foreground"
             )}
           >
-            <SettingsIcon size={19} className={cn(settingsActive ? "text-foreground" : "text-foreground/45")} />
-            {t("nav.settings", lang)}
+            <SettingsIcon size={22} strokeWidth={settingsActive ? 2.2 : 1.7} className={cn("shrink-0", settingsActive ? "text-foreground" : "text-foreground/55")} />
+            <span className="max-w-full truncate xl:block">{t("nav.settings", lang)}</span>
           </Link>
+
+          <Link
+            href="/settings"
+            title={displayName}
+            aria-label={displayName}
+            className="mx-auto flex h-12 w-12 items-center justify-center rounded-xl transition-colors hover:bg-foreground/[0.04] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 xl:w-full xl:justify-start xl:gap-3 xl:px-2"
+          >
+            <Avatar size="sm" className="shrink-0">
+              {avatarUrl && <AvatarImage src={avatarUrl as string} />}
+              <AvatarFallback>{getInitials(user)}</AvatarFallback>
+            </Avatar>
+            <span className="hidden min-w-0 xl:block">
+              <span className="block truncate text-[13px] font-semibold leading-tight">{displayName}</span>
+              <span className="mt-0.5 block truncate text-[11px] text-muted-foreground">{user.email}</span>
+            </span>
+          </Link>
+
+          <button
+            type="button"
+            onClick={onLogout}
+            title={t("nav.signout", lang)}
+            aria-label={t("nav.signout", lang)}
+            className="mx-auto flex h-12 w-12 items-center justify-center rounded-full text-foreground/55 transition-colors hover:bg-accent/80 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 xl:w-full xl:justify-start xl:gap-3.5 xl:px-3 xl:text-[13px] xl:font-medium"
+          >
+            <ExitIcon className="h-[21px] w-[21px] shrink-0" />
+            <span className="hidden xl:block">{t("nav.signout", lang)}</span>
+          </button>
         </div>
       </aside>
 
       {/* ── Top header (mobile only) ─────────────────────────────── */}
       <header
-        className="sticky top-0 z-50 border-b border-border/40 bg-background/95 pt-safe backdrop-blur-xl md:hidden supports-[backdrop-filter]:bg-background/75"
+        className="sticky top-0 z-50 border-b border-border bg-card/95 pt-safe text-foreground backdrop-blur-xl md:hidden"
       >
         <div className="flex h-14 items-center justify-between pl-[max(1rem,env(safe-area-inset-left))] pr-[max(1rem,env(safe-area-inset-right))]">
           <Link href="/dashboard" className="flex items-center">
             <span
-              className="text-[22px]"
+              className="text-[22px] text-foreground"
               style={{ fontFamily: 'var(--font-brand), ui-serif, Georgia, serif', fontWeight: 500, letterSpacing: '0.01em' }}
             >
               Reaigen
@@ -193,7 +250,8 @@ export function AppShell({
             {reaiLauncher}
             <Link
               href="/settings"
-              className="flex items-center rounded-full p-1 hover:bg-foreground/[0.04] transition-colors"
+              aria-label={t("nav.settings", lang)}
+              className="flex h-11 w-11 items-center justify-center rounded-full p-1 transition-colors hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
             >
               <Avatar size="sm">
                 {avatarUrl && <AvatarImage src={avatarUrl as string} />}
@@ -204,39 +262,11 @@ export function AppShell({
         </div>
       </header>
 
-      {/* ── Desktop workspace header ────────────────────────────── */}
-      <header
-        className="fixed top-0 z-40 hidden h-14 items-center justify-end gap-3 border-b border-border/40 bg-background/90 px-7 backdrop-blur-xl transition-[right] duration-200 md:flex"
-        style={{ left: SIDEBAR_W, right: reaiOpen ? "var(--reai-panel-width)" : 0 }}
-      >
-        {reaiLauncher}
-        <div className="h-5 w-px bg-border/60" />
-        <Link
-          href="/settings"
-          className="flex items-center gap-2.5 rounded-full py-1 pl-1 pr-3 transition-colors hover:bg-foreground/[0.04]"
-        >
-          <Avatar size="sm">
-            {avatarUrl && <AvatarImage src={avatarUrl as string} />}
-            <AvatarFallback>{getInitials(user)}</AvatarFallback>
-          </Avatar>
-          <span className="max-w-[180px] truncate text-[13px] font-semibold leading-tight">{displayName}</span>
-        </Link>
-        <button
-          type="button"
-          onClick={onLogout}
-          title={t("nav.signout", lang)}
-          aria-label={t("nav.signout", lang)}
-          className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-foreground/30 transition-colors hover:bg-foreground/[0.05] hover:text-foreground/70 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
-        >
-          <ExitIcon className="h-4 w-4" />
-        </button>
-      </header>
-
       {/* ── Content ──────────────────────────────────────────────── */}
       <main
         className={cn(
-          "min-h-[calc(100dvh-3.5rem)] py-5 pb-24 md:min-h-dvh md:pb-8 pl-[max(1rem,env(safe-area-inset-left))] pr-[max(1rem,env(safe-area-inset-right))] md:px-8",
-          "md:pt-16",
+          "min-h-[calc(100dvh-3.5rem)] pb-24 pt-6 pl-[max(1rem,env(safe-area-inset-left))] pr-[max(1rem,env(safe-area-inset-right))]",
+          "md:min-h-dvh md:px-8 md:py-7 xl:px-10 2xl:px-12",
         )}
         style={{ marginLeft: `var(--sidebar-offset, 0px)` }}
       >
@@ -248,10 +278,10 @@ export function AppShell({
 
       {/* ── Mobile bottom tab bar ────────────────────────────────── */}
       {!hideMobileNav && (
-      <nav className="fixed inset-x-0 bottom-0 z-40 border-t border-border/40 bg-background pb-safe md:hidden">
-        <div className="grid grid-cols-3 gap-1 pb-2 pt-2 pl-[max(0.75rem,env(safe-area-inset-left))] pr-[max(0.75rem,env(safe-area-inset-right))]">
+      <nav className="fixed inset-x-0 bottom-0 z-40 border-t border-border bg-card/95 pb-safe text-foreground backdrop-blur-xl md:hidden">
+        <div className="grid h-16 grid-cols-3 px-4">
           {NAV_ITEMS.map((item) => {
-            const active = pathname === item.href;
+            const active = pathname === item.href || pathname.startsWith(item.href + "/") || (item.href === "/dashboard" && pathname.startsWith("/draft/"));
             const Icon = item.icon;
             return (
               <Link
@@ -259,14 +289,14 @@ export function AppShell({
                 href={item.href}
                 aria-current={active ? "page" : undefined}
                 className={cn(
-                  "flex flex-col items-center justify-center gap-1 rounded-xl px-2 py-2 text-[11px] font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2",
+                  "flex items-center justify-center rounded-lg text-[11px] font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2",
                   active
-                    ? "text-foreground"
-                    : "text-foreground/45"
+                    ? "font-semibold text-foreground"
+                    : "text-foreground/55 hover:text-foreground"
                 )}
               >
-                <Icon size={22} strokeWidth={active ? 2.2 : 2} />
-                <span>{item.label}</span>
+                <Icon size={23} strokeWidth={active ? 2.25 : 1.75} />
+                <span className="sr-only">{item.label}</span>
               </Link>
             );
           })}
@@ -275,15 +305,23 @@ export function AppShell({
       )}
 
       {reaiEnabled && reaiOpen && (
+        <>
+          <button
+            type="button"
+            tabIndex={-1}
+            onClick={() => setReaiOpen(false)}
+            aria-label={t("reai.closeAgent", lang)}
+            className="fixed inset-0 z-[65] bg-black/25 backdrop-blur-[1px] 2xl:hidden"
+          />
           <aside
             role="complementary"
             aria-labelledby="reai-panel-title"
-            className="fixed inset-y-0 right-0 z-[70] flex w-full flex-col border-l border-border/60 bg-background shadow-[-24px_0_80px_-32px_rgba(0,0,0,0.28)] animate-[panelIn_0.22s_ease-out] sm:w-[400px] sm:max-w-[90vw] xl:shadow-none"
+            className="agent-canvas fixed inset-y-0 right-0 z-[70] flex w-full flex-col border-l border-border shadow-[-18px_0_48px_-30px_rgba(0,0,0,0.28)] animate-[panelIn_0.22s_ease-out] sm:w-[400px] sm:max-w-[90vw] 2xl:shadow-none"
           >
-            <div className="flex h-14 shrink-0 items-center justify-between border-b border-border/40 px-4 pt-safe">
+            <div className="flex h-14 shrink-0 items-center justify-between border-b border-border bg-card px-4 pt-safe">
               <div className="flex min-w-0 items-center gap-2.5">
-                <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-foreground text-background">
-                  <SparklesIcon size={16} />
+                <span className="flex h-8 w-8 shrink-0 items-center justify-center text-foreground">
+                  <SparklesIcon size={19} />
                 </span>
                 <div className="min-w-0">
                   <h2 id="reai-panel-title" className="text-[15px] font-semibold leading-tight">{t("reai.title", lang)}</h2>
@@ -300,27 +338,35 @@ export function AppShell({
                 type="button"
                 onClick={() => setReaiOpen(false)}
                 aria-label={t("reai.closeAgent", lang)}
-                className="flex h-9 w-9 items-center justify-center rounded-full text-foreground/45 transition-colors hover:bg-foreground/[0.05] hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+                className="flex h-11 w-11 items-center justify-center rounded-full text-foreground/45 transition-colors hover:bg-foreground/[0.05] hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 sm:h-9 sm:w-9"
               >
-                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round"><path d="m6 6 12 12M18 6 6 18" /></svg>
+                <CloseIcon size={18} />
               </button>
             </div>
             <div className="min-h-0 flex-1">
               <ReaiAgentCard draftId={reaiDraftId} currentUploadId={reaiUploadId} workspaceContext={reaiContext} lang={lang} onDraftUpdated={onReaiDraftUpdated} panel />
             </div>
           </aside>
+        </>
       )}
 
-      {/* CSS variable for sidebar offset (desktop only) */}
+      {/* CSS variables keep the ReaUI rail and X-style wide navigation aligned. */}
       <style>{`
         :root { --reai-panel-width: 0px; }
         @media (min-width: 768px) {
-          :root { --sidebar-offset: ${SIDEBAR_W}px; }
+          :root { --sidebar-offset: ${SIDEBAR_COLLAPSED_W}px; }
         }
         /* Agent panel only pushes content side-by-side on wide desktop;
            on tablet it overlays as a drawer so the property isn't squeezed. */
         @media (min-width: 1280px) {
-          :root { --reai-panel-width: 400px; }
+          :root {
+            --sidebar-offset: ${SIDEBAR_EXPANDED_W}px;
+          }
+        }
+        @media (min-width: 1536px) {
+          :root {
+            --reai-panel-width: 400px;
+          }
         }
       `}</style>
     </div>

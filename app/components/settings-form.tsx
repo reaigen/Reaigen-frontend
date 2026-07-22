@@ -52,10 +52,10 @@ import {
   type ReaiImprovementConsent,
 } from "../lib/api/client";
 import { getSafeApiErrorMessage } from "../lib/api/error-message";
-import type { LocaleKey } from "../lib/locales";
 import { t, getUserLanguage, formatDate as fmtDate } from "../lib/i18n";
 import { cn } from "../lib/utils";
 import { ManagedLegalDocuments } from "./content-documents";
+import { ChevronDownIcon } from "./icons";
 
 function useAutoDismiss(value: boolean, setter: (v: boolean) => void, ms = 3000) {
   React.useEffect(() => {
@@ -122,12 +122,7 @@ function CollapsibleSection({ title, defaultOpen, children }: {
         onClick={() => setOpen(!open)}
       >
         {title}
-        <svg
-          className={cn("h-4 w-4 shrink-0 text-muted-foreground transition-transform", open && "rotate-180")}
-          fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}
-        >
-          <path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" />
-        </svg>
+        <ChevronDownIcon size={16} className={cn("shrink-0 text-muted-foreground transition-transform", open && "rotate-180")} />
       </button>
       {open && <div className="pt-2 space-y-4">{children}</div>}
     </div>

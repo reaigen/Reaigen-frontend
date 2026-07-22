@@ -1,153 +1,98 @@
 import * as React from "react";
+import {
+  ArrowLeftIcon as RadixArrowLeftIcon,
+  ArrowRightIcon as RadixArrowRightIcon,
+  ArrowUpIcon as RadixArrowUpIcon,
+  CheckIcon as RadixCheckIcon,
+  ChevronDownIcon as RadixChevronDownIcon,
+  ClockIcon as RadixClockIcon,
+  CopyIcon as RadixCopyIcon,
+  CounterClockwiseClockIcon,
+  Cross2Icon,
+  DashboardIcon,
+  DotsHorizontalIcon,
+  FileTextIcon,
+  GearIcon,
+  HomeIcon as RadixHomeIcon,
+  ImageIcon as RadixImageIcon,
+  InfoCircledIcon,
+  LayersIcon,
+  LayoutIcon as RadixLayoutIcon,
+  LightningBoltIcon,
+  Link2Icon,
+  LockClosedIcon,
+  MagicWandIcon,
+  MagnifyingGlassIcon,
+  MixerHorizontalIcon,
+  OpenInNewWindowIcon,
+  Pencil2Icon,
+  PlayIcon as RadixPlayIcon,
+  RulerSquareIcon,
+  SewingPinIcon,
+  Share2Icon,
+  StarIcon as RadixStarIcon,
+  TokensIcon,
+} from "@radix-ui/react-icons";
 
-export type IconProps = React.SVGProps<SVGSVGElement> & { size?: number };
+/**
+ * Reaigen uses the same Radix-based icon vocabulary as ReaUI.
+ * `size` keeps the existing product API while every glyph shares one optical grid.
+ */
+export type IconProps = Omit<React.SVGProps<SVGSVGElement>, "children"> & { size?: number };
 
-function IconBase({ size = 18, children, ...props }: IconProps & { children: React.ReactNode }) {
-  return (
-    <svg
-      width={size}
-      height={size}
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="1.7"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      aria-hidden="true"
-      {...props}
-    >
-      {children}
-    </svg>
-  );
+type RadixIconComponent = typeof RadixHomeIcon;
+
+function fromRadix(Icon: RadixIconComponent, name: string) {
+  function ReaigenIcon({ size = 18, width, height, ...props }: IconProps) {
+    return (
+      <Icon
+        width={width ?? size}
+        height={height ?? size}
+        aria-hidden={props["aria-hidden"] ?? true}
+        {...props}
+      />
+    );
+  }
+  ReaigenIcon.displayName = name;
+  return ReaigenIcon;
 }
 
-export function HomeIcon(props: IconProps) {
-  return <IconBase {...props}><path d="m3 10 9-7 9 7" /><path d="M5 9v11h14V9" /><path d="M9 20v-6h6v6" /></IconBase>;
-}
+// Primary navigation and product actions.
+export const HomeIcon = fromRadix(RadixHomeIcon, "HomeIcon");
+export const TourIcon = fromRadix(LayersIcon, "TourIcon");
+export const ShareIcon = fromRadix(Share2Icon, "ShareIcon");
+export const LinkIcon = fromRadix(Link2Icon, "LinkIcon");
+export const SettingsIcon = fromRadix(GearIcon, "SettingsIcon");
+export const SearchIcon = fromRadix(MagnifyingGlassIcon, "SearchIcon");
 
-export function TourIcon(props: IconProps) {
-  return <IconBase {...props}><path d="m12 2 9 5-9 5-9-5 9-5Z" /><path d="m3 7 9 5 9-5" /><path d="M3 12l9 5 9-5" /><path d="M3 17l9 5 9-5" /></IconBase>;
-}
+// Property and editor semantics.
+export const LayoutIcon = fromRadix(DashboardIcon, "LayoutIcon");
+export const RulerIcon = fromRadix(RulerSquareIcon, "RulerIcon");
+export const PriceIcon = fromRadix(TokensIcon, "PriceIcon");
+export const DocumentIcon = fromRadix(FileTextIcon, "DocumentIcon");
+export const TechnicalIcon = fromRadix(MixerHorizontalIcon, "TechnicalIcon");
+export const UtilitiesIcon = fromRadix(LightningBoltIcon, "UtilitiesIcon");
+export const StarIcon = fromRadix(RadixStarIcon, "StarIcon");
+export const InfoIcon = fromRadix(InfoCircledIcon, "InfoIcon");
+export const MapPinIcon = fromRadix(SewingPinIcon, "MapPinIcon");
+export const EditIcon = fromRadix(Pencil2Icon, "EditIcon");
+export const VersionsIcon = fromRadix(CounterClockwiseClockIcon, "VersionsIcon");
+export const ImageIcon = fromRadix(RadixImageIcon, "ImageIcon");
+export const FloorplanIcon = fromRadix(RadixLayoutIcon, "FloorplanIcon");
+export const LockIcon = fromRadix(LockClosedIcon, "LockIcon");
 
-export function ShareIcon(props: IconProps) {
-  return <IconBase {...props}><circle cx="18" cy="5" r="3" /><circle cx="6" cy="12" r="3" /><circle cx="18" cy="19" r="3" /><path d="m8.6 13.5 6.8 4M15.4 6.5l-6.8 4" /></IconBase>;
-}
+// Direction, state, and utility actions.
+export const PlayIcon = fromRadix(RadixPlayIcon, "PlayIcon");
+export const ArrowLeftIcon = fromRadix(RadixArrowLeftIcon, "ArrowLeftIcon");
+export const ArrowRightIcon = fromRadix(RadixArrowRightIcon, "ArrowRightIcon");
+export const ArrowUpIcon = fromRadix(RadixArrowUpIcon, "ArrowUpIcon");
+export const ChevronDownIcon = fromRadix(RadixChevronDownIcon, "ChevronDownIcon");
+export const CloseIcon = fromRadix(Cross2Icon, "CloseIcon");
+export const CheckIcon = fromRadix(RadixCheckIcon, "CheckIcon");
+export const CopyIcon = fromRadix(RadixCopyIcon, "CopyIcon");
+export const ClockIcon = fromRadix(RadixClockIcon, "ClockIcon");
+export const ExternalLinkIcon = fromRadix(OpenInNewWindowIcon, "ExternalLinkIcon");
+export const MoreIcon = fromRadix(DotsHorizontalIcon, "MoreIcon");
 
-export function LinkIcon(props: IconProps) {
-  return <IconBase {...props}><path d="M10 13a5 5 0 0 0 7.5.5l3-3a5 5 0 0 0-7-7l-1.7 1.7" /><path d="M14 11a5 5 0 0 0-7.5-.5l-3 3a5 5 0 0 0 7 7l1.7-1.7" /></IconBase>;
-}
-
-export function SettingsIcon(props: IconProps) {
-  return <IconBase {...props}><circle cx="12" cy="12" r="3" /><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.9l.1.1-2.8 2.8-.1-.1a1.7 1.7 0 0 0-1.9-.3 1.7 1.7 0 0 0-1 1.6v.2h-4V21a1.7 1.7 0 0 0-1-1.6 1.7 1.7 0 0 0-1.9.3l-.1.1L4.2 17l.1-.1a1.7 1.7 0 0 0 .3-1.9A1.7 1.7 0 0 0 3 14H2.8v-4H3a1.7 1.7 0 0 0 1.6-1 1.7 1.7 0 0 0-.3-1.9L4.2 7 7 4.2l.1.1A1.7 1.7 0 0 0 9 4.6a1.7 1.7 0 0 0 1-1.6v-.2h4V3a1.7 1.7 0 0 0 1 1.6 1.7 1.7 0 0 0 1.9-.3l.1-.1L19.8 7l-.1.1a1.7 1.7 0 0 0-.3 1.9 1.7 1.7 0 0 0 1.6 1h.2v4H21a1.7 1.7 0 0 0-1.6 1Z" /></IconBase>;
-}
-
-export function SearchIcon(props: IconProps) {
-  return <IconBase {...props}><circle cx="11" cy="11" r="7" /><path d="m20 20-4-4" /></IconBase>;
-}
-
-/* ── Property-section icons (mirror the iOS app's SF Symbols) ─────────── */
-
-// iOS: square.split.2x2 — layout / rooms
-export function LayoutIcon(props: IconProps) {
-  return <IconBase {...props}><rect x="3" y="3" width="18" height="18" rx="2.5" /><path d="M12 3v18M3 12h18" /></IconBase>;
-}
-
-// iOS: ruler — areas
-export function RulerIcon(props: IconProps) {
-  return <IconBase {...props}><path d="M15.3 2.7 21.3 8.7a1 1 0 0 1 0 1.4L9.4 22a1 1 0 0 1-1.4 0L2 16a1 1 0 0 1 0-1.4L13.9 2.7a1 1 0 0 1 1.4 0Z" /><path d="m7 12 2 2M11 8l2 2M15 4l2 2" /></IconBase>;
-}
-
-// iOS: banknote — pricing
-export function PriceIcon(props: IconProps) {
-  return <IconBase {...props}><rect x="2" y="6" width="20" height="12" rx="2.5" /><circle cx="12" cy="12" r="2.5" /><path d="M6 9v6M18 9v6" /></IconBase>;
-}
-
-// iOS: doc.text — legal
-export function DocumentIcon(props: IconProps) {
-  return <IconBase {...props}><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8Z" /><path d="M14 3v5h5M8.5 13h7M8.5 17h7" /></IconBase>;
-}
-
-// iOS: gearshape.2 — technical
-export function TechnicalIcon(props: IconProps) {
-  return <IconBase {...props}><circle cx="12" cy="12" r="3" /><path d="M12 5V3M12 21v-2M19 12h2M3 12h2M17 7l1.4-1.4M5.6 18.4 7 17M17 17l1.4 1.4M5.6 5.6 7 7" /></IconBase>;
-}
-
-// iOS: bolt.circle — utilities
-export function UtilitiesIcon(props: IconProps) {
-  return <IconBase {...props}><circle cx="12" cy="12" r="9" /><path d="M13 7l-4 6h3l-1 4 4-6h-3l1-4Z" /></IconBase>;
-}
-
-// iOS: star — features
-export function StarIcon(props: IconProps) {
-  return <IconBase {...props}><path d="M12 3.5l2.6 5.3 5.9.9-4.3 4.1 1 5.8-5.2-2.7-5.2 2.7 1-5.8L3.5 9.7l5.9-.9Z" /></IconBase>;
-}
-
-// basics
-export function InfoIcon(props: IconProps) {
-  return <IconBase {...props}><circle cx="12" cy="12" r="9" /><path d="M12 11v5M12 8h.01" /></IconBase>;
-}
-
-// location
-export function MapPinIcon(props: IconProps) {
-  return <IconBase {...props}><path d="M20 10c0 5.5-8 12-8 12s-8-6.5-8-12a8 8 0 0 1 16 0Z" /><circle cx="12" cy="10" r="2.5" /></IconBase>;
-}
-
-export function EditIcon(props: IconProps) {
-  return <IconBase {...props}><path d="M12 20h9" /><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L8 18l-4 1 1-4Z" /></IconBase>;
-}
-
-export function VersionsIcon(props: IconProps) {
-  return <IconBase {...props}><path d="M12 8v4l2.7 1.7" /><path d="M3.1 12a9 9 0 1 0 2.6-6.4L3 8" /><path d="M3 3v5h5" /></IconBase>;
-}
-
-export function ImageIcon(props: IconProps) {
-  return <IconBase {...props}><rect x="3" y="3" width="18" height="18" rx="3" /><circle cx="8.5" cy="8.5" r="1.5" /><path d="m21 15-5-5L5 21" /></IconBase>;
-}
-
-export function FloorplanIcon(props: IconProps) {
-  return <IconBase {...props}><path d="M3 3h8v8H3zM13 3h8v5h-8zM13 10h8v11h-8zM3 13h8v8H3z" /></IconBase>;
-}
-
-export function LockIcon(props: IconProps) {
-  return <IconBase {...props}><rect x="4" y="10" width="16" height="11" rx="3" /><path d="M8 10V7a4 4 0 0 1 8 0v3" /></IconBase>;
-}
-
-export function PlayIcon(props: IconProps) {
-  return <IconBase {...props}><circle cx="12" cy="12" r="9" /><path d="m10 8 6 4-6 4Z" /></IconBase>;
-}
-
-export function ArrowLeftIcon(props: IconProps) {
-  return <IconBase {...props}><path d="m15 18-6-6 6-6" /></IconBase>;
-}
-
-export function ArrowRightIcon(props: IconProps) {
-  return <IconBase {...props}><path d="m9 18 6-6-6-6" /></IconBase>;
-}
-
-export function ChevronDownIcon(props: IconProps) {
-  return <IconBase {...props}><path d="m6 9 6 6 6-6" /></IconBase>;
-}
-
-export function CloseIcon(props: IconProps) {
-  return <IconBase {...props}><path d="m6 6 12 12M18 6 6 18" /></IconBase>;
-}
-
-export function CheckIcon(props: IconProps) {
-  return <IconBase {...props}><path d="m5 12 4 4L19 6" /></IconBase>;
-}
-
-export function CopyIcon(props: IconProps) {
-  return <IconBase {...props}><rect x="8" y="8" width="12" height="12" rx="2" /><path d="M16 8V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h2" /></IconBase>;
-}
-
-export function ExternalLinkIcon(props: IconProps) {
-  return <IconBase {...props}><path d="M15 3h6v6M10 14 21 3" /><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6" /></IconBase>;
-}
-
-export function MoreIcon(props: IconProps) {
-  return <IconBase {...props}><circle cx="5" cy="12" r="1" fill="currentColor" stroke="none" /><circle cx="12" cy="12" r="1" fill="currentColor" stroke="none" /><circle cx="19" cy="12" r="1" fill="currentColor" stroke="none" /></IconBase>;
-}
-
-export function SparklesIcon(props: IconProps) {
-  return <IconBase {...props}><path d="m12 3 1.2 3.8L17 8l-3.8 1.2L12 13l-1.2-3.8L7 8l3.8-1.2L12 3Z" /><path d="m18 14 .8 2.2L21 17l-2.2.8L18 20l-.8-2.2L15 17l2.2-.8L18 14Z" /></IconBase>;
-}
+// The Agent uses a neutral wand glyph—never a colored app tile.
+export const SparklesIcon = fromRadix(MagicWandIcon, "SparklesIcon");

@@ -27,6 +27,7 @@ function notifyUnauthorized() {
 const CACHE_TTL = 30_000; // 30s default
 const LONG_TTL = 300_000; // 5 min — profile / localization / preferences
 const CONTENT_TTL = 600_000; // 10 min — legal / content documents
+const PROFILE_REQUEST_TIMEOUT_MS = 8_000;
 
 function ttlForPath(path: string): number {
   if (path.startsWith("/api/reaigen/users/") || path.startsWith("/api/reaigen/profiles/") || path.startsWith("/api/reaigen/personalized-data/") || path.startsWith("/api/reaigen/billing/")) return LONG_TTL;
@@ -118,6 +119,16 @@ async function abortableRequest(path: string, signal?: AbortSignal) {
   const text = await res.text();
   if (!text) return null;
   return JSON.parse(text);
+}
+
+async function requestWithTimeout(path: string, timeoutMs: number) {
+  const controller = new AbortController();
+  const timeout = window.setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    return await abortableRequest(path, controller.signal);
+  } finally {
+    window.clearTimeout(timeout);
+  }
 }
 
 /** Force a network GET and replace the matching in-memory cache entry. */
@@ -302,7 +313,7 @@ export interface UserProfile {
 // ─── API calls ────────────────────────────────────────────────────────────
 
 export async function getProfile(): Promise<UserProfile> {
-  return request("/api/reaigen/users/me/");
+  return requestWithTimeout("/api/reaigen/users/me/", PROFILE_REQUEST_TIMEOUT_MS);
 }
 
 export async function updateProfile(data: Partial<{
@@ -753,7 +764,7 @@ export interface ReaiAgentResponse {
   proposed_changes: Record<string, unknown>;
   suggested_actions: string[];
   proposal_token: string | null;
-  action_code?: "revoke_all_shares" | "manage_shares" | "share_inventory" | "share_status" | "settings_navigation" | "settings_update" | "select_share_fields" | "create_draft_share" | "grade_draft_images" | "retouch_draft_image" | "cleanplate_draft_images" | "generative_hdr_draft_image" | "organize_draft_images" | "generate_draft_video";
+  action_code?: "revoke_all_shares" | "manage_shares" | "share_inventory" | "share_status" | "settings_navigation" | "settings_update" | "select_share_fields" | "create_draft_share" | "translate_description" | "grade_draft_images" | "retouch_draft_image" | "cleanplate_draft_images" | "generative_hdr_draft_image" | "organize_draft_images" | "generate_draft_video";
   action_token?: string | null;
   action_count?: number;
   share_action?: "list" | "pause" | "resume" | "revoke";
@@ -777,11 +788,19 @@ export interface ReaiAgentResponse {
   settings_changes?: {
     preferred_language?: "en" | "sk" | "cs" | "de";
   };
+  translation_action?: {
+    field: "description";
+    source_language: "auto";
+    target_language: string;
+    status: "awaiting_confirmation" | "pending" | "ready" | "unavailable";
+    cached: boolean;
+    translated_text?: string | null;
+  };
   media_action?: {
     mode: "grade" | "cleanplate" | "generative_hdr" | "organize" | "video";
     scope: "selected" | "room" | "draft";
     upload_ids: number[];
-    operations: Record<string, number | boolean>;
+    operations: Record<string, string | number | boolean>;
     originals_preserved: true;
     requires_version_review: boolean;
     cloud_image_processor: boolean;
@@ -830,6 +849,7 @@ export type ReaiToolCode =
   | "creation_edit"
   | "bulk_edit"
   | "floorplan"
+  | "translation"
   | "image"
   | "cleanplate"
   | "retouch"
@@ -922,11 +942,10 @@ export async function askReaiAgent(
   message: string,
   conversation: Array<{ role: "user" | "assistant"; content: string }> = [],
   improvementConversationId: string | null = null,
-  language?: string,
 ): Promise<ReaiAgentResponse> {
   return request(`/api/reaigen/reai-agent/drafts/${draftId}/assist/`, {
     method: "POST",
-    body: JSON.stringify({ message, conversation: conversation.slice(-4), improvement_conversation_id: improvementConversationId, language }),
+    body: JSON.stringify({ message, conversation: conversation.slice(-4), improvement_conversation_id: improvementConversationId }),
   });
 }
 
@@ -946,7 +965,6 @@ export async function askReaiWorkspace(
   currentDraftId?: number,
   conversation: Array<{ role: "user" | "assistant"; content: string }> = [],
   improvementConversationId: string | null = null,
-  language?: string,
   shareFieldNames?: string[],
   pendingActionCode?: ReaiAgentResponse["action_code"],
   workspaceContext?: "creator" | "draft" | "settings",
@@ -959,7 +977,6 @@ export async function askReaiWorkspace(
       current_draft_id: currentDraftId,
       conversation: conversation.slice(-4),
       improvement_conversation_id: improvementConversationId,
-      language,
       share_field_names: shareFieldNames,
       pending_action_code: pendingActionCode,
       workspace_context: workspaceContext,
@@ -978,6 +995,30 @@ export async function applyReaiWorkspaceProposal(
     body: JSON.stringify({
       proposal_token: proposalToken,
       current_draft_id: currentDraftId,
+      confirmed: true,
+      improvement_conversation_id: improvementConversationId,
+    }),
+  });
+}
+
+export async function applyReaiTranslationAction(
+  actionToken: string,
+  improvementConversationId: string | null = null,
+): Promise<{
+  action: "translate_description";
+  draft_id: number;
+  field: "description";
+  source_language: "auto";
+  target_language: string;
+  status: "pending" | "ready";
+  cached: boolean;
+  translated_text: string | null;
+  execution_mode: "translation_service";
+}> {
+  return request("/api/reaigen/reai-agent/workspace/translations/apply/", {
+    method: "POST",
+    body: JSON.stringify({
+      action_token: actionToken,
       confirmed: true,
       improvement_conversation_id: improvementConversationId,
     }),
@@ -1036,7 +1077,8 @@ export async function applyReaiMediaAction(
   status?: string;
   service_id?: number;
   requires_version_review: boolean;
-  execution_mode: "deterministic" | "cloud_image_edit" | "runpod_async";
+  /** Backend-reported media execution mode; provider details stay outside the frontend contract. */
+  execution_mode: string;
 }> {
   const result = await request("/api/reaigen/reai-agent/workspace/media-actions/apply/", {
     method: "POST",
