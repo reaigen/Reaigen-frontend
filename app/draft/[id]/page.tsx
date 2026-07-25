@@ -896,7 +896,6 @@ export default function DraftPreviewPage({ params }: { params: Promise<{ id: str
         draft={draft}
         lang={lang}
         onChanged={() => refreshDraft(draftId).then(setDraft)}
-        onOpenVersions={() => setVersionsOpen(true)}
       />
       <DraftVersionManager
         open={versionsOpen}

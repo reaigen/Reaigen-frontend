@@ -21,6 +21,7 @@ export function SidePanel({
   contentRef,
   initialFocusRef,
   closeIcon = "close",
+  onBack,
   lang = "en",
 }: {
   open: boolean;
@@ -37,6 +38,7 @@ export function SidePanel({
   contentRef?: React.RefObject<HTMLDivElement | null>;
   initialFocusRef?: React.RefObject<HTMLElement | null>;
   closeIcon?: "close" | "back";
+  onBack?: () => void;
   lang?: string;
 }) {
   const [phoneViewport, setPhoneViewport] = React.useState<{ height: number; offsetTop: number } | null>(null);
@@ -91,26 +93,34 @@ export function SidePanel({
             initialFocusRef.current.focus({ preventScroll: true });
           }}
           className={cn(
-            "fixed inset-y-0 right-0 z-[90] flex w-full flex-col border-l border-border/60 bg-background shadow-[-24px_0_80px_-32px_rgba(0,0,0,0.28)] outline-none",
+            "fixed inset-y-0 right-0 z-[90] flex w-full flex-col border-l border-border/60 shadow-[-24px_0_80px_-32px_rgba(0,0,0,0.28)] outline-none",
             "data-[state=closed]:animate-[panelOut_180ms_ease-in] data-[state=open]:animate-[panelIn_220ms_var(--motion-ease-smooth)]",
             "sm:max-w-[520px]",
-            headerMode === "editor" && "sm:inset-y-3 sm:right-3 sm:overflow-hidden sm:rounded-[2rem] sm:border",
+            headerMode === "editor"
+              ? "bg-background/90 backdrop-blur-2xl sm:inset-y-3 sm:right-3 sm:overflow-hidden sm:rounded-[2rem] sm:border"
+              : "bg-background",
             className,
           )}
         >
           {headerMode === "editor" ? (
             <header className={cn(
-              "grid min-h-[4.25rem] shrink-0 items-center gap-2 border-b border-border/50 bg-card px-3 pb-2 pt-[max(0.5rem,env(safe-area-inset-top))] sm:grid-cols-[5.5rem_minmax(0,1fr)_5.5rem] sm:px-4 sm:pt-2",
+              "grid min-h-[4.25rem] shrink-0 items-center gap-2 border-b border-border/50 bg-card/85 px-3 pb-2 pt-[max(0.5rem,env(safe-area-inset-top))] backdrop-blur-xl sm:grid-cols-[5.5rem_minmax(0,1fr)_5.5rem] sm:px-4 sm:pt-2",
               headerAction
                 ? "grid-cols-[3rem_minmax(0,1fr)_auto]"
                 : "grid-cols-[3rem_minmax(0,1fr)_3rem]",
             )}>
               <div className="flex justify-start">
-                <Dialog.Close asChild>
-                  <button type="button" aria-label={t(closeIcon === "back" ? "common.back" : "common.close", lang)} className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full text-foreground/50 transition-colors hover:bg-foreground/[0.055] hover:text-foreground focus-visible:bg-foreground/[0.045] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40 sm:h-9 sm:w-9">
-                    {closeIcon === "back" ? <ArrowLeftIcon size={18} /> : <CloseIcon size={17} />}
+                {closeIcon === "back" && onBack ? (
+                  <button type="button" onClick={onBack} aria-label={t("common.back", lang)} className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full text-foreground/50 transition-colors hover:bg-foreground/[0.055] hover:text-foreground focus-visible:bg-foreground/[0.045] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40 sm:h-9 sm:w-9">
+                    <ArrowLeftIcon size={18} />
                   </button>
-                </Dialog.Close>
+                ) : (
+                  <Dialog.Close asChild>
+                    <button type="button" aria-label={t(closeIcon === "back" ? "common.back" : "common.close", lang)} className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full text-foreground/50 transition-colors hover:bg-foreground/[0.055] hover:text-foreground focus-visible:bg-foreground/[0.045] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40 sm:h-9 sm:w-9">
+                      {closeIcon === "back" ? <ArrowLeftIcon size={18} /> : <CloseIcon size={17} />}
+                    </button>
+                  </Dialog.Close>
+                )}
               </div>
               <div className="min-w-0 text-center">
                 <Dialog.Title className="truncate text-[15px] font-semibold tracking-[-0.01em]">{title}</Dialog.Title>

@@ -11,6 +11,7 @@ import {
   Cross2Icon,
   DashboardIcon,
   DotsHorizontalIcon,
+  DragHandleDots2Icon,
   FileTextIcon,
   EyeClosedIcon as RadixEyeClosedIcon,
   EyeOpenIcon as RadixEyeOpenIcon,
@@ -103,6 +104,7 @@ export const CopyIcon = fromRadix(RadixCopyIcon, "CopyIcon");
 export const ClockIcon = fromRadix(RadixClockIcon, "ClockIcon");
 export const ExternalLinkIcon = fromRadix(OpenInNewWindowIcon, "ExternalLinkIcon");
 export const MoreIcon = fromRadix(DotsHorizontalIcon, "MoreIcon");
+export const DragHandleIcon = fromRadix(DragHandleDots2Icon, "DragHandleIcon");
 export const MinusIcon = fromRadix(RadixMinusIcon, "MinusIcon");
 export const PlusIcon = fromRadix(RadixPlusIcon, "PlusIcon");
 

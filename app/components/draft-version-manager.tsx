@@ -6,6 +6,9 @@ import Link from "next/link";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "../lib/ui/tabs";
 import { Button } from "../lib/ui/button";
 import {
+  cleanplateReaiDraftImages,
+  editReaiDraftImage,
+  generateReaiDraftImageHdr,
   getAgentCreationHistory,
   getAgentMediaVersions,
   getReaiAgentConsent,
@@ -23,12 +26,14 @@ import { baseUnitForCategory, resolveUnit, unitLabel, type UnitLookup } from "..
 import { cn } from "../lib/utils";
 import { useAuth } from "./hooks/use-auth";
 import {
+  ArrowLeftIcon,
   ArrowRightIcon,
   CheckIcon,
   ChevronDownIcon,
   ClockIcon,
   ExternalLinkIcon,
   ImageIcon,
+  PlusIcon,
   TourIcon,
   VersionsIcon,
 } from "./icons";
@@ -36,7 +41,8 @@ import { SidePanel } from "./side-panel";
 import { StatusPill } from "./status-pill";
 
 type VersionTab = "tour" | "listing" | "media";
-type MediaAction = { uploadId: number; action: "promote" | "hide" | "restore" } | null;
+export type MediaAction = { uploadId: number; action: "promote" | "hide" | "restore" } | null;
+export type MediaVersionCreateKind = "enhance" | "cleanplate" | "hdr";
 type RevisionChange = { key: string; before: unknown; after: unknown };
 
 const REVISION_FIELD_KEYS: Record<string, LocaleKey> = {
@@ -255,6 +261,8 @@ export function DraftVersionManager({
   const [restoreBusy, setRestoreBusy] = React.useState(false);
   const [mediaCandidate, setMediaCandidate] = React.useState<MediaAction>(null);
   const [mediaBusy, setMediaBusy] = React.useState(false);
+  const [mediaNotice, setMediaNotice] = React.useState<string | null>(null);
+  const mediaRefreshTimers = React.useRef<number[]>([]);
 
   const versions = parentTourVersions(splats);
   const activeTourId = splats?.parent_splat_id ?? null;
@@ -307,10 +315,22 @@ export function DraftVersionManager({
     setTourCandidate(null);
     setRestoreCandidate(null);
     setMediaCandidate(null);
+    setMediaNotice(null);
     setExpandedRevision(null);
     setActionError(null);
     void loadAgentData();
   }, [open, loadAgentData]);
+
+  React.useEffect(() => {
+    if (open) return;
+    mediaRefreshTimers.current.forEach((timer) => window.clearTimeout(timer));
+    mediaRefreshTimers.current = [];
+  }, [open]);
+
+  React.useEffect(() => () => {
+    mediaRefreshTimers.current.forEach((timer) => window.clearTimeout(timer));
+    mediaRefreshTimers.current = [];
+  }, []);
 
   const activateTour = async () => {
     if (tourCandidate == null) return;
@@ -352,6 +372,57 @@ export function DraftVersionManager({
       applyMediaGroups(result.groups);
       setMediaCandidate(null);
     } catch (reason) {
+      setActionError(getSafeApiErrorMessage(reason, lang));
+    } finally {
+      setMediaBusy(false);
+    }
+  };
+
+  const createMediaVersion = async (
+    logicalAssetId: string,
+    uploadId: number,
+    kind: MediaVersionCreateKind,
+  ) => {
+    setMediaBusy(true);
+    setMediaCandidate(null);
+    setMediaNotice(t("reai.mediaCreating", lang));
+    setActionError(null);
+    mediaRefreshTimers.current.forEach((timer) => window.clearTimeout(timer));
+    mediaRefreshTimers.current = [];
+    try {
+      let createdUploadId: number | null = null;
+      if (kind === "enhance") {
+        await editReaiDraftImage(draft.id, uploadId, {
+          auto_enhance: true,
+          auto_white_balance: true,
+          normalize_color_profile: true,
+        });
+      } else if (kind === "cleanplate") {
+        const result = await cleanplateReaiDraftImages(draft.id, {
+          scope: "selected",
+          upload_ids: [uploadId],
+        });
+        const created = result.results.find((item) => item.status === "completed");
+        createdUploadId = created?.generated_upload_id ?? created?.cleaned_upload_id ?? null;
+      } else {
+        const result = await generateReaiDraftImageHdr(draft.id, uploadId);
+        createdUploadId = result.result.generated_upload_id ?? result.result.cleaned_upload_id ?? null;
+      }
+
+      const refresh = async () => {
+        const result = await getAgentMediaVersions(draft.id);
+        applyMediaGroups(result.groups);
+      };
+      await refresh();
+      if (createdUploadId) {
+        setSelectedMedia((current) => ({ ...current, [logicalAssetId]: createdUploadId as number }));
+      }
+      mediaRefreshTimers.current = [1800, 5000, 12000].map((delay, index, delays) => window.setTimeout(() => {
+        void refresh().catch(() => undefined);
+        if (index === delays.length - 1) setMediaNotice(null);
+      }, delay));
+    } catch (reason) {
+      setMediaNotice(null);
       setActionError(getSafeApiErrorMessage(reason, lang));
     } finally {
       setMediaBusy(false);
@@ -599,6 +670,12 @@ export function DraftVersionManager({
                 <CheckIcon size={14} className="mt-0.5 shrink-0" />
                 {t("reai.mediaVersionsSafety", lang)}
               </p>
+              {mediaNotice ? (
+                <div className="editor-glass-control mb-4 flex items-center gap-3 rounded-full border px-3.5 py-2.5 text-[11px] text-foreground/70" role="status" aria-live="polite">
+                  <span className="h-4 w-4 shrink-0 animate-spin rounded-full border-2 border-foreground/15 border-t-foreground/65" aria-hidden="true" />
+                  <span>{mediaNotice}</span>
+                </div>
+              ) : null}
               <div className="grid gap-4 lg:grid-cols-2">
                 {media.map((group, groupIndex) => (
                   <MediaVersionCard
@@ -617,6 +694,7 @@ export function DraftVersionManager({
                     onCandidate={setMediaCandidate}
                     onCancel={() => setMediaCandidate(null)}
                     onConfirm={() => void applyMediaAction()}
+                    onCreate={(uploadId, kind) => void createMediaVersion(group.logical_asset_id, uploadId, kind)}
                   />
                 ))}
               </div>
@@ -666,7 +744,10 @@ function ConfirmationCard({
   compact?: boolean;
 }) {
   return (
-    <div className={cn("rounded-2xl border border-border/60 bg-card", compact ? "p-3" : "p-4 shadow-control")}>
+    <div className={cn(
+      "rounded-[1.5rem] border border-border/65 bg-card sm:rounded-2xl",
+      compact ? "p-3" : "p-4 shadow-card",
+    )}>
       <p className="text-[11px] leading-relaxed text-foreground/65">{message}</p>
       <div className="mt-3 flex flex-wrap justify-end gap-2">
         <Button type="button" variant="ghost" size="xs" disabled={busy} onClick={onCancel}>{cancelLabel}</Button>
@@ -676,7 +757,7 @@ function ConfirmationCard({
   );
 }
 
-function MediaVersionCard({
+export function MediaVersionCard({
   group,
   groupIndex,
   selectedId,
@@ -688,6 +769,7 @@ function MediaVersionCard({
   onCandidate,
   onCancel,
   onConfirm,
+  onCreate,
 }: {
   group: AgentMediaVersionGroup;
   groupIndex: number;
@@ -700,38 +782,67 @@ function MediaVersionCard({
   onCandidate: (candidate: Exclude<MediaAction, null>) => void;
   onCancel: () => void;
   onConfirm: () => void;
+  onCreate?: (uploadId: number, kind: MediaVersionCreateKind) => void;
 }) {
-  const versions = [...group.versions].sort((a, b) => b.version - a.version);
+  const [createOpen, setCreateOpen] = React.useState(false);
+  const [createKind, setCreateKind] = React.useState<MediaVersionCreateKind>("enhance");
+  const versions = [...group.versions].sort((a, b) => a.version - b.version);
   const selected = versions.find((version) => version.id === selectedId)
     ?? versions.find((version) => version.is_master)
     ?? versions.find((version) => !version.is_deleted)
     ?? versions[0];
   if (!selected) return null;
+  const selectedIndex = versions.findIndex((version) => version.id === selected.id);
+  const older = selectedIndex > 0 ? versions[selectedIndex - 1] : null;
+  const newer = selectedIndex < versions.length - 1 ? versions[selectedIndex + 1] : null;
   const operations = mediaOperationLabels(selected, lang);
   const selectedCandidate = candidate?.uploadId === selected.id ? candidate : null;
 
   return (
-    <section className="overflow-hidden rounded-[1.5rem] border border-border/60 bg-card shadow-card sm:rounded-2xl">
-      <div className="relative aspect-[16/10] overflow-hidden bg-surface-subtle">
+    <section className="editor-glass-surface overflow-hidden rounded-[1.5rem] border sm:rounded-2xl">
+      <div className="relative aspect-[16/9] overflow-hidden bg-surface-subtle">
         {selected.file_url ? (
           <img src={selected.file_url} alt="" loading="lazy" className={cn("h-full w-full object-cover transition-opacity", selected.is_deleted && "opacity-65")} />
         ) : (
           <ImageIcon size={25} className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 text-foreground/20" />
         )}
         <div className="pointer-events-none absolute inset-0 bg-gradient-to-t from-black/65 via-black/0 to-black/25" />
-        <div className="absolute left-3 top-3 rounded-full border border-white/15 bg-black/45 px-3 py-1.5 text-[10px] font-semibold text-white backdrop-blur-md">
-          {t("reai.mediaAsset", lang).replace("{number}", String(groupIndex + 1))}
-        </div>
+        <StatusPill className="absolute left-3 top-3 border-white/20 bg-black/45 text-[9px] text-white backdrop-blur-md">
+          {t("reai.mediaVersionPosition", lang)
+            .replace("{current}", String(selectedIndex + 1))
+            .replace("{total}", String(versions.length))}
+        </StatusPill>
         <div className="absolute right-3 top-3 flex flex-wrap justify-end gap-1.5">
-          {selected.is_master ? <span className="rounded-full border border-white/20 bg-white/90 px-2.5 py-1.5 text-[9px] font-semibold text-black">{t("reai.mediaCurrent", lang)}</span> : null}
-          {selected.is_deleted ? <span className="rounded-full border border-white/15 bg-black/55 px-2.5 py-1.5 text-[9px] font-semibold text-white">{t("reai.mediaHidden", lang)}</span> : null}
+          {selected.is_master ? <StatusPill className="glass-chip text-[9px]">{t("reai.mediaCurrent", lang)}</StatusPill> : null}
+          {selected.is_deleted ? <StatusPill tone="strong" className="border-white/15 bg-black/60 text-[9px] text-white">{t("reai.mediaHidden", lang)}</StatusPill> : null}
         </div>
         <div className="absolute inset-x-3 bottom-3 flex items-end justify-between gap-3 text-white">
           <div className="min-w-0">
             <p className="text-[13px] font-semibold">v{selected.version}</p>
-            <p className="mt-0.5 truncate text-[10px] text-white/75">{mediaProcessorLabel(selected, lang)}</p>
+            <p className="mt-0.5 truncate text-[10px] text-white/75">{selected.file_name || t("reai.mediaAsset", lang).replace("{number}", String(groupIndex + 1))}</p>
+            <p className="mt-0.5 text-[9px] text-white/55">{formatDate(selected.uploaded_at, dateFormat, lang)}</p>
           </div>
-          <p className="shrink-0 text-[9px] text-white/65">{formatDate(selected.uploaded_at, dateFormat, lang)}</p>
+          <div className="editor-control-capsule pointer-events-auto flex shrink-0 overflow-hidden rounded-full border">
+            <button
+              type="button"
+              className="flex h-8 w-9 items-center justify-center text-muted-foreground transition-colors hover:bg-accent hover:text-accent-foreground disabled:opacity-30"
+              disabled={busy || !older}
+              onClick={() => older && onSelect(older.id)}
+              aria-label={t("reai.mediaPreviousVersion", lang)}
+            >
+              <ArrowLeftIcon size={14} />
+            </button>
+            <span className="h-5 w-px self-center bg-border/70" aria-hidden="true" />
+            <button
+              type="button"
+              className="flex h-8 w-9 items-center justify-center text-muted-foreground transition-colors hover:bg-accent hover:text-accent-foreground disabled:opacity-30"
+              disabled={busy || !newer}
+              onClick={() => newer && onSelect(newer.id)}
+              aria-label={t("reai.mediaNextVersion", lang)}
+            >
+              <ArrowRightIcon size={14} />
+            </button>
+          </div>
         </div>
       </div>
 
@@ -746,7 +857,7 @@ function MediaVersionCard({
                 disabled={busy}
                 onClick={() => onSelect(version.id)}
                 className={cn(
-                  "relative h-14 w-20 shrink-0 overflow-hidden rounded-xl border-2 bg-surface-subtle transition-[border-color,opacity,transform] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2",
+                  "relative h-14 w-20 shrink-0 overflow-hidden rounded-md border-2 bg-surface-subtle transition-[border-color,opacity,transform] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2",
                   active ? "border-foreground" : "border-transparent opacity-65 hover:opacity-100",
                   version.is_deleted && "opacity-45",
                 )}
@@ -754,7 +865,7 @@ function MediaVersionCard({
                 aria-pressed={active}
               >
                 {version.file_url ? <img src={version.file_url} alt="" loading="lazy" className="h-full w-full object-cover" /> : <ImageIcon size={14} className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 text-foreground/20" />}
-                <span className="absolute bottom-1 left-1 rounded-full bg-black/65 px-1.5 py-0.5 text-[8px] font-semibold text-white">v{version.version}</span>
+                <span className="absolute bottom-1 left-1 rounded-sm bg-black/70 px-1.5 py-0.5 text-[8px] font-semibold text-white">v{version.version}</span>
                 {version.is_master ? <span className="absolute right-1 top-1 h-2 w-2 rounded-full bg-white ring-2 ring-black/40" /> : null}
               </button>
             );
@@ -762,13 +873,28 @@ function MediaVersionCard({
         </div>
       ) : null}
 
-      <div className="p-4">
-        {operations.length ? (
-          <div className="mb-3 flex flex-wrap gap-1.5">
-            {operations.map((operation) => <span key={operation} className="rounded-full bg-surface-subtle px-2.5 py-1 text-[9px] font-medium text-foreground/55">{operation}</span>)}
-          </div>
-        ) : null}
+      <div className="p-3.5">
+        <p className="mb-3 truncate text-[10px] text-muted-foreground" title={[mediaProcessorLabel(selected, lang), ...operations].join(" · ")}>
+          {[mediaProcessorLabel(selected, lang), ...operations].join(" · ")}
+        </p>
         <div className="flex flex-wrap items-center gap-2">
+          {onCreate && !selected.is_deleted ? (
+            <Button
+              type="button"
+              variant="outline"
+              size="xs"
+              className="editor-glass-control"
+              disabled={busy}
+              aria-expanded={createOpen}
+              onClick={() => {
+                setCreateOpen((current) => !current);
+                onCancel();
+              }}
+            >
+              <PlusIcon size={13} />
+              {t("reai.mediaNewVersion", lang)}
+            </Button>
+          ) : null}
           {!selected.is_deleted && !selected.is_master ? (
             <Button type="button" size="xs" disabled={busy} onClick={() => onCandidate({ uploadId: selected.id, action: "promote" })}>{t("reai.mediaUseVersion", lang)}</Button>
           ) : null}
@@ -778,6 +904,73 @@ function MediaVersionCard({
             <Button type="button" size="xs" disabled={busy} onClick={() => onCandidate({ uploadId: selected.id, action: "restore" })}>{t("reai.mediaRestore", lang)}</Button>
           )}
         </div>
+
+        {createOpen && onCreate ? (
+          <div className="mt-3 overflow-hidden rounded-2xl border border-border/55 bg-background/45">
+            <div className="border-b border-border/45 px-3.5 py-3">
+              <p className="text-[12px] font-semibold">{t("reai.mediaCreateQuestion", lang)}</p>
+              <p className="mt-1 text-[10px] leading-relaxed text-muted-foreground">
+                {t("reai.mediaCreateFrom", lang).replace("{version}", String(selected.version))}
+              </p>
+            </div>
+            <div role="radiogroup" aria-label={t("reai.mediaCreateQuestion", lang)}>
+              {([
+                ["enhance", "reai.mediaCreateEnhance", "reai.mediaCreateEnhanceHint"],
+                ["cleanplate", "reai.mediaCreateCleanplate", "reai.mediaCreateCleanplateHint"],
+                ["hdr", "reai.mediaCreateHdr", "reai.mediaCreateHdrHint"],
+              ] as const).map(([kind, labelKey, hintKey], index) => {
+                const active = createKind === kind;
+                return (
+              <button
+                key={kind}
+                type="button"
+                role="radio"
+                aria-checked={active}
+                disabled={busy}
+                className={cn(
+                  "group flex w-full items-start gap-3 px-3.5 py-3 text-left transition-colors hover:bg-foreground/[0.045] disabled:opacity-50",
+                  index > 0 && "border-t border-border/40",
+                  active && "bg-foreground/[0.045]",
+                )}
+                onClick={() => setCreateKind(kind)}
+              >
+                <span className={cn(
+                  "mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full border transition-colors",
+                  active
+                    ? "border-foreground bg-foreground text-background"
+                    : "border-border/80 bg-card text-transparent group-hover:border-foreground/45",
+                )}>
+                  <CheckIcon size={11} />
+                </span>
+                <span className="min-w-0">
+                  <span className="block text-[11px] font-semibold">{t(labelKey, lang)}</span>
+                  <span className="mt-1 block text-[10px] leading-relaxed text-muted-foreground">{t(hintKey, lang)}</span>
+                </span>
+              </button>
+                );
+              })}
+            </div>
+            <div className="border-t border-border/45 bg-card/45 p-3">
+              <p className="mb-2.5 flex items-start gap-2 text-[9px] leading-relaxed text-muted-foreground">
+                <CheckIcon size={12} className="mt-0.5 shrink-0 text-foreground/60" />
+                {t("reai.mediaCreateHint", lang)}
+              </p>
+              <Button
+                type="button"
+                size="sm"
+                className="w-full"
+                loading={busy}
+                onClick={() => {
+                  setCreateOpen(false);
+                  onCreate(selected.id, createKind);
+                }}
+              >
+                {t("reai.mediaCreateAction", lang)}
+                <ArrowRightIcon size={14} />
+              </Button>
+            </div>
+          </div>
+        ) : null}
 
         {selectedCandidate ? (
           <div className="mt-3 border-t border-border/45 pt-3">
