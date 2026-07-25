@@ -16,7 +16,7 @@
  */
 
 import { useEffect, useState, useRef, useCallback, use } from "react";
-import { getSharedTourViewer, verifySharePin, getSharedDraftData } from "../../lib/api/client";
+import { getSharedTourViewer, verifySharePin, getSharedDraftData, listUnits } from "../../lib/api/client";
 import { getApiErrorJson, getSafeApiErrorMessage } from "../../lib/api/error-message";
 import type { TourViewerData, TourData, RoomData, CameraData, SharedDraftData } from "../../lib/tour-types";
 import dynamic from "next/dynamic";
@@ -29,6 +29,7 @@ import { Input } from "../../lib/ui/input";
 import { getBrowserLanguage, t } from "../../lib/i18n";
 import { PageLoading } from "../../components/page-loading";
 import type { SplatViewerHandle } from "../../components/splat-viewer";
+import type { UnitLookup } from "../../lib/unit-catalog";
 
 const SplatViewer = dynamic(() => import("../../components/splat-viewer"), { ssr: false });
 
@@ -97,6 +98,15 @@ export default function SharedPage({ params }: { params: Promise<{ token: string
   const [draftData, setDraftData] = useState<SharedDraftData | null>(null);
   const [loading, setLoading] = useState(true);
   const [hasTour, setHasTour] = useState(false);
+  const [unitCatalog, setUnitCatalog] = useState<UnitLookup[]>([]);
+
+  useEffect(() => {
+    let active = true;
+    void listUnits()
+      .then((units) => { if (active) setUnitCatalog(units); })
+      .catch(() => { if (active) setUnitCatalog([]); });
+    return () => { active = false; };
+  }, []);
 
   // Error / PIN
   const [error, setError] = useState<string | null>(null);
@@ -113,6 +123,7 @@ export default function SharedPage({ params }: { params: Promise<{ token: string
   const [activeRoomId, setActiveRoomId] = useState<number | null>(null);
   const [activeRenderUrl, setActiveRenderUrl] = useState<string | null>(null);
   const [viewerReady, setViewerReady] = useState(false);
+  const [tourPanel, setTourPanel] = useState<"property" | "floorplan" | null>(null);
   const splatRef = useRef<SplatViewerHandle | null>(null);
 
   // ── Load both draft data and tour data in parallel ────────────────
@@ -277,18 +288,19 @@ export default function SharedPage({ params }: { params: Promise<{ token: string
 
   // Error
   if (error) {
-    const isExpired = errorKind === "expired" || errorKind === "notAvailable";
+    const isUnavailable = errorKind === "notAvailable";
+    const isExpired = errorKind === "expired";
     const isPaused = errorKind === "paused";
     const isLimitReached = errorKind === "limit";
     const isAuthRequired = errorKind === "auth";
-    const showRetry = !isExpired && !isPaused && !isLimitReached && !isAuthRequired;
+    const showRetry = !isUnavailable && !isExpired && !isPaused && !isLimitReached && !isAuthRequired;
     return (
       <div className="min-h-screen flex items-center justify-center bg-[hsl(var(--muted))]/35 px-4">
         <div className="text-center space-y-4 px-6 max-w-xs">
           <Brand />
           <div className="pt-2">
             <div className="mx-auto w-12 h-12 rounded-full bg-foreground/[0.04] flex items-center justify-center mb-3">
-              {isExpired ? (
+              {isExpired || isUnavailable ? (
                 <svg width="20" height="20" viewBox="0 0 24 24" fill="none" className="text-foreground/30"><circle cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="1.5" /><path d="M12 6v6l4 2" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" /></svg>
               ) : isPaused ? (
                 <svg width="20" height="20" viewBox="0 0 24 24" fill="none" className="text-foreground/30"><circle cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="1.5" /><path d="M10 15V9M14 15V9" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" /></svg>
@@ -297,7 +309,7 @@ export default function SharedPage({ params }: { params: Promise<{ token: string
               )}
             </div>
             <p className="text-[14px] font-medium text-foreground/70 mb-1">
-              {isExpired ? t("shared.error.titleExpired", lang) : isPaused ? t("shared.error.titlePaused", lang) : isLimitReached ? t("shared.error.titleLimit", lang) : isAuthRequired ? t("shared.error.titleSignIn", lang) : t("shared.error.titleGeneric", lang)}
+              {isUnavailable ? t("shared.error.titleUnavailable", lang) : isExpired ? t("shared.error.titleExpired", lang) : isPaused ? t("shared.error.titlePaused", lang) : isLimitReached ? t("shared.error.titleLimit", lang) : isAuthRequired ? t("shared.error.titleSignIn", lang) : t("shared.error.titleGeneric", lang)}
             </p>
             <p className="text-[13px] text-foreground/40 leading-relaxed">{error}</p>
           </div>
@@ -325,7 +337,7 @@ export default function SharedPage({ params }: { params: Promise<{ token: string
   return (
     <>
       {draftData && (
-        <SharedDraftView draftData={draftData} lang={lang} hasTour={hasTour} onOpenTour={() => setTourOpen(true)} floorplanUrl={tourViewerData?.floorplan_url} rooms={tourViewerData?.rooms} />
+        <SharedDraftView draftData={draftData} lang={lang} hasTour={hasTour} onOpenTour={() => setTourOpen(true)} floorplanUrl={tourViewerData?.floorplan_url} rooms={tourViewerData?.rooms} units={unitCatalog} />
       )}
 
       {tourOpen && tourViewerData && (
@@ -351,10 +363,13 @@ export default function SharedPage({ params }: { params: Promise<{ token: string
           lang={lang}
         />
 
+        <div className="pointer-events-none absolute inset-x-0 top-0 z-10 h-28 bg-gradient-to-b from-black/50 to-transparent" aria-hidden="true" />
+        <div className="pointer-events-none absolute inset-x-0 bottom-0 z-10 h-36 bg-gradient-to-t from-black/55 to-transparent" aria-hidden="true" />
+
         {/* Close button — back to property card */}
         <button
           type="button"
-          onClick={() => setTourOpen(false)}
+        onClick={() => { setTourPanel(null); setTourOpen(false); }}
           className="absolute left-3 top-[calc(0.75rem+env(safe-area-inset-top,0px))] z-20 flex h-11 items-center gap-1.5 rounded-full border border-white/10 bg-black/40 px-3 text-[11px] font-medium text-white/70 backdrop-blur-xl transition-colors hover:bg-black/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/70 sm:left-4 sm:top-[calc(1rem+env(safe-area-inset-top,0px))] sm:h-8"
         >
           <svg aria-hidden="true" width="12" height="12" viewBox="0 0 16 16" fill="none"><path d="M10 12L6 8l4-4" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/></svg>
@@ -371,10 +386,26 @@ export default function SharedPage({ params }: { params: Promise<{ token: string
         )}
 
         {tourViewerData.floorplan_url && tourViewerData.rooms.length > 0 && (
-          <FloorplanNav floorplanUrl={tourViewerData.floorplan_url} rooms={tourViewerData.rooms} onRoomClick={handleRoomClick} activeRoomId={activeRoomId} lang={lang} />
+          <FloorplanNav
+            floorplanUrl={tourViewerData.floorplan_url}
+            rooms={tourViewerData.rooms}
+            onRoomClick={handleRoomClick}
+            activeRoomId={activeRoomId}
+            lang={lang}
+            open={tourPanel === "floorplan"}
+            onOpenChange={(open) => setTourPanel(open ? "floorplan" : null)}
+          />
         )}
 
-        {draftData && <SharedPropertyPanel draftData={draftData} lang={lang} />}
+        {draftData && (
+          <SharedPropertyPanel
+            draftData={draftData}
+            lang={lang}
+            units={unitCatalog}
+            open={tourPanel === "property"}
+            onOpenChange={(open) => setTourPanel(open ? "property" : null)}
+          />
+        )}
           </div>
         </div>
       )}

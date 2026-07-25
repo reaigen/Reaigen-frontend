@@ -4,6 +4,10 @@ This document is the working contract for the production Reaigen web portal. It 
 each surface owns, how creation, tour, version, and share states connect, and what the UI must never
 imply unless Django can enforce it.
 
+The canonical visual rules live in [`docs/design-language.md`](design-language.md). This document
+owns product behavior and information architecture; the design-language document owns color, shape,
+typography, imagery, responsive composition, and component appearance.
+
 ## Product model
 
 Reaigen starts in the capture app. The web portal is the review, refinement, presentation, and
@@ -33,10 +37,11 @@ must never alternate between an opaque black pill and a light panel.
 - **X supplies the management architecture:** a light labeled navigation rail, content-first
   streams, hairline dividers, whole-item click targets, strong black/white hierarchy, and secondary
   actions that stay visually quiet.
-- **ReaUI supplies the component grammar:** an 88px compact rail that expands to 294px labeled navigation,
-  labeled compact navigation targets, 44–56px controls, rounded-xl fields and buttons, rounded-2xl
-  collection cards, restrained surface shadows, Radix icons, and one shared proportion system across
-  desktop and mobile.
+- **ReaUI supplies the component grammar:** an 88px compact rail that expands to 260px labeled navigation
+  only at 1728px and above,
+  labeled compact navigation targets, 44–56px controls, capsule actions, rounded-xl fields,
+  image-first collection cards, restrained surface shadows, Radix icons, and one shared proportion
+  system across desktop and mobile.
 - **Instagram supplies the media and portfolio rhythm:** centered content columns, photography-led
   presentation, gap-tight thumbnail grids, count-first profile statistics, bold active navigation
   without decorative containers, and complex publishing flows broken into a clear sequence.
@@ -56,11 +61,11 @@ mode. Krea's floating chrome is likewise reserved for Agent and studio controls.
 presentation structure, not social mechanics: Reaigen does not invent likes, followers, stories,
 or decorative brand gradients. Runway and Krea are design references.
 
-Reaigen has four explicit exceptions to the upstream ReaUI showcase. The product uses the complete
-`Reaigen` wordmark instead of the boxed single-letter mark; Agent uses an unboxed monochrome wand;
-the management rail stays light to preserve X's content hierarchy; and full pills are kept only for
-authentication, status, or controls floating directly over media. These are product decisions, not
-page-level variations.
+Reaigen has explicit exceptions to the upstream ReaUI showcase. The product uses the complete
+`Reaigen` wordmark or the compact unboxed `Re` mark instead of a boxed single letter; Agent uses an
+unboxed monochrome wand; the management rail stays light to preserve X's content hierarchy; and
+capsules are the default action language. These are product decisions, not page-level variations.
+RunPod is not a frontend design reference.
 
 ## Information architecture
 
@@ -91,6 +96,28 @@ The creation page is the source of truth for the owner-facing listing preview.
 - Manual editing has Basic and Advanced modes. Basic owns the few high-frequency facts; Advanced is
   a data-driven mirror of the iOS `PropertyFieldRegistry`, filtered by property and offer type and
   persisted through canonical `specs` sections. Core facts are never repeated in both modes.
+- On phones, Basic editing is divided into three explicit panels—Content, Facts, and Location—
+  rather than one long form. The panel switcher remains visible, changing panels returns the
+  editor scroll position to the top, and wider layouts show the same sections together. While a
+  text field and software keyboard are active, the switchers collapse so they cannot cover the
+  focused field; Save remains available in the panel header.
+- Full-height phone editors track the visual viewport while the software keyboard is open. Their
+  header, focused field, and applicable footer tools must remain inside the visible area.
+- Description editing is a dedicated full-screen writing panel. The header action applies the
+  draft, the back action protects unsaved text, and the keyboard toolbar uses a distinct keyboard
+  dismissal control instead of a second ambiguous Done action.
+- Text values are edited directly. Numeric fields accept direct replacement and arithmetic;
+  count-like facts also provide stepper controls without hiding the editable value.
+- Measurement fields display their storage unit and accept mixed compatible units in expressions.
+  Results are previewed and normalized to the field's stored area or distance unit before saving.
+  Options and conversion factors are read from every page of the backend unit lookup catalogue;
+  the web client has no hardcoded unit conversion table. Cross-currency conversion is never
+  inferred without a real exchange-rate source.
+- The expression parser accepts unit suffixes only when they resolve through that catalogue. It
+  provides no client-defined magnitude aliases, percentage multiplier, or regional fallback.
+- Changing area or lot units converts the visible value and related canonical spec values before
+  persisting the selected backend unit ID. If lookup data is unavailable, existing units remain
+  untouched and conversion controls pause instead of falling back to a guessed regional unit.
 - Owner-only street address is marked private. Public screens use `display_address`, never the
   private `address` value.
 - Leaving an editor with unsaved changes requires an explicit discard decision.
@@ -108,6 +135,9 @@ reports Agent consent and returns those version records.
 - Creation and public-share pages use a stable 16:10 editorial crop on a white gallery surface so
   the surrounding page stays calm and predictable. Fullscreen preserves every source aspect ratio;
   portrait, landscape, square, and panoramic media must be visible there without cropping.
+- On 768–1439px landscape layouts, the owner detail hero keeps that 16:10 crop but is bounded to
+  roughly 52% of the usable viewport height, so listing identity and status remain visible. Only the
+  explicit fullscreen viewer may consume the complete viewport.
 - Owner and recipient views use the same gallery implementation: one page carousel and one
   fullscreen viewer. The thumbnail rail belongs to fullscreen, where it supports navigation; a
   second page grid or permanent dark filmstrip must not repeat the same photos.
@@ -130,21 +160,50 @@ the owner page, mobile app, and existing public links. “Use newest” returns 
 policy; choosing a specific scan pins that scan.
 
 Only completed, renderable outputs can become live. Processing and failed scans remain visible with
-honest status, but never expose a non-working View Tour action.
+honest status, but never expose a non-working View Tour action. Each tour row shows its available
+thumbnail, scan provenance, completion date, and live state before presenting an activation action.
 
 ### Listing history
 
 Listing revisions are loaded from the Agent history endpoint after Agent consent. The UI presents a
 newest-first timeline, marks the current version, and confirms restore. Restoring must keep the
-replaced state recoverable on the backend.
+replaced state recoverable on the backend. Timeline entries stay compact until selected; expansion
+shows field-level before/after values so restoration is an informed decision rather than a blind
+rollback.
 
 ### Media history
 
 Media versions are grouped by logical asset. The UI distinguishes original/current/hidden versions
-and confirms promote, hide, and restore operations. Media history is also Agent-consent dependent.
+and confirms promote, hide, and restore operations. Media is preview-first: the selected version
+owns the card, sibling versions form a compact thumbnail rail, and processing operations remain
+visible as provenance. Mobile uses one media card per row; wide panels may use a two-column review
+grid. Media history is also Agent-consent dependent.
 
 If Agent is unavailable, the listing and media tabs explain the requirement and link directly to
 the Agent settings section. Tour versioning remains usable.
+
+## Media manager contract
+
+The owner media manager and media history are related but separate surfaces. The manager owns the
+current gallery story: upload, selection, cover, visibility, and order. Media history owns physical
+versions and provenance. Opening history from the manager must preserve this distinction rather than
+nesting a second version browser inside every grid tile.
+
+The web upload path is the production Django contract used by iOS: resolve the canonical raw-image
+asset type, request a presigned upload, PUT the bytes directly to object storage, and confirm the
+upload with its draft, role, and sort order. The UI reflects the actual state of those calls. Browser
+photo uploads are capped below the backend multipart threshold; oversized files receive an honest
+error rather than entering an unsupported pseudo-upload.
+
+Physical uploads are grouped by `logical_asset_id`. The current non-deleted master supplies the
+thumbnail and preview, while the version count indicates preserved siblings. Only current logical
+assets appear on the creation detail gallery. Reordering persists 0-based `sort_order` values.
+Choosing a cover moves that image to the first visible photo position.
+
+Hiding a logical photograph is recoverable and must never call the physical-delete endpoint. The
+existing confirmed media-version actions hide its retained versions; showing it restores and
+promotes the selected version. If Agent image access is unavailable, upload and ordering remain
+usable while hide/restore controls explain their dependency instead of pretending to succeed.
 
 ## Share manager contract
 
@@ -203,15 +262,16 @@ The detailed Agent interaction contract lives in `docs/agent-workspace-ui.md`.
 
 ### Management element contract
 
-- Standard fields are 44px high and inventory search is 48px high. Both use ReaUI's `rounded-xl`
-  geometry and quiet neutral border; search may use the shared control shadow. Segmented-control
-  containers are 44–48px high and their 32–40px segments use `rounded-lg`.
-- Standard text buttons use ReaUI's `rounded-xl` shape, 200ms motion, and visible keyboard focus.
-  Full pills are reserved for authentication, status, small metadata tags, and controls placed
-  directly over imagery; familiar icon-only controls may remain circular.
+- Standard fields are 44px high and use `rounded-xl` geometry. Inventory search is 48px high and uses
+  a full capsule on mobile; on wider management screens it may become a quiet divider-based toolbar.
+  Segmented-control containers and their segments use the shared capsule geometry.
+- Standard text buttons use full capsules, 200ms motion, and visible keyboard focus. Familiar
+  icon-only controls are true circles. Cards, fields, navigation tiles, rows, and thumbnails retain
+  their structural shapes rather than becoming pills.
 - Touch layouts keep interactive targets at least 44px high even when the visible control becomes
   more compact at desktop breakpoints.
-- Collection cards, form sections, previews, and operational rows use the `rounded-2xl` ReaUI card
+- Collection cards use a deliberately rounder 24px mobile radius and a tighter 20px radius on wider
+  screens. Form sections, previews, and operational rows use the appropriate 16–20px structural
   surface. `CollectionCard` owns the shared inventory-card border, shadow, focus, hover, and reveal
   behavior. Its image-first composition and the shared search field are protected patterns and must
   not be replaced by generic form cards during a system cleanup.

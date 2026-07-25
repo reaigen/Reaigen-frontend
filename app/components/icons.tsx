@@ -12,6 +12,8 @@ import {
   DashboardIcon,
   DotsHorizontalIcon,
   FileTextIcon,
+  EyeClosedIcon as RadixEyeClosedIcon,
+  EyeOpenIcon as RadixEyeOpenIcon,
   GearIcon,
   HomeIcon as RadixHomeIcon,
   ImageIcon as RadixImageIcon,
@@ -27,11 +29,15 @@ import {
   OpenInNewWindowIcon,
   Pencil2Icon,
   PlayIcon as RadixPlayIcon,
+  MinusIcon as RadixMinusIcon,
+  PlusIcon as RadixPlusIcon,
   RulerSquareIcon,
   SewingPinIcon,
   Share2Icon,
   StarIcon as RadixStarIcon,
   TokensIcon,
+  UploadIcon as RadixUploadIcon,
+  VideoIcon as RadixVideoIcon,
 } from "@radix-ui/react-icons";
 
 /**
@@ -78,6 +84,10 @@ export const MapPinIcon = fromRadix(SewingPinIcon, "MapPinIcon");
 export const EditIcon = fromRadix(Pencil2Icon, "EditIcon");
 export const VersionsIcon = fromRadix(CounterClockwiseClockIcon, "VersionsIcon");
 export const ImageIcon = fromRadix(RadixImageIcon, "ImageIcon");
+export const VideoIcon = fromRadix(RadixVideoIcon, "VideoIcon");
+export const UploadIcon = fromRadix(RadixUploadIcon, "UploadIcon");
+export const EyeOpenIcon = fromRadix(RadixEyeOpenIcon, "EyeOpenIcon");
+export const EyeClosedIcon = fromRadix(RadixEyeClosedIcon, "EyeClosedIcon");
 export const FloorplanIcon = fromRadix(RadixLayoutIcon, "FloorplanIcon");
 export const LockIcon = fromRadix(LockClosedIcon, "LockIcon");
 
@@ -93,6 +103,8 @@ export const CopyIcon = fromRadix(RadixCopyIcon, "CopyIcon");
 export const ClockIcon = fromRadix(RadixClockIcon, "ClockIcon");
 export const ExternalLinkIcon = fromRadix(OpenInNewWindowIcon, "ExternalLinkIcon");
 export const MoreIcon = fromRadix(DotsHorizontalIcon, "MoreIcon");
+export const MinusIcon = fromRadix(RadixMinusIcon, "MinusIcon");
+export const PlusIcon = fromRadix(RadixPlusIcon, "PlusIcon");
 
 // The Agent uses a neutral wand glyph—never a colored app tile.
 export const SparklesIcon = fromRadix(MagicWandIcon, "SparklesIcon");

@@ -28,6 +28,41 @@ const CACHE_TTL = 30_000; // 30s default
 const LONG_TTL = 300_000; // 5 min — profile / localization / preferences
 const CONTENT_TTL = 600_000; // 10 min — legal / content documents
 const PROFILE_REQUEST_TIMEOUT_MS = 8_000;
+const GET_RETRY_DELAYS_MS = [350, 900] as const;
+
+function isTransientGetError(error: unknown): boolean {
+  if (error instanceof ApiError) return [408, 425, 429, 502, 503, 504].includes(error.status);
+  return error instanceof TypeError;
+}
+
+function pause(ms: number) {
+  return new Promise<void>((resolve) => setTimeout(resolve, ms));
+}
+
+async function fetchGetData(path: string, options: RequestInit): Promise<unknown> {
+  let lastError: unknown;
+  for (let attempt = 0; attempt <= GET_RETRY_DELAYS_MS.length; attempt += 1) {
+    try {
+      const res = await fetch(path, {
+        ...options,
+        credentials: "include",
+        headers: { "Content-Type": "application/json", ...options.headers },
+      });
+      if (!res.ok) {
+        const body = await res.text();
+        if (res.status === 401) notifyUnauthorized();
+        throw new ApiError(res.status, body);
+      }
+      const text = await res.text();
+      return text ? JSON.parse(text) : null;
+    } catch (error) {
+      lastError = error;
+      if (!isTransientGetError(error) || attempt >= GET_RETRY_DELAYS_MS.length) throw error;
+      await pause(GET_RETRY_DELAYS_MS[attempt]);
+    }
+  }
+  throw lastError;
+}
 
 function ttlForPath(path: string): number {
   if (path.startsWith("/api/reaigen/users/") || path.startsWith("/api/reaigen/profiles/") || path.startsWith("/api/reaigen/personalized-data/") || path.startsWith("/api/reaigen/billing/")) return LONG_TTL;
@@ -58,22 +93,10 @@ async function request(path: string, options: RequestInit = {}) {
     const existing = inFlight.get(path);
     if (existing) return existing;
 
-    const promise = (async () => {
-      const res = await fetch(path, {
-        ...options,
-        credentials: "include",
-        headers: { "Content-Type": "application/json", ...options.headers },
-      });
-      if (!res.ok) {
-        const body = await res.text();
-        if (res.status === 401) notifyUnauthorized();
-        throw new ApiError(res.status, body);
-      }
-      const text = await res.text();
-      const data = text ? JSON.parse(text) : null;
+    const promise = fetchGetData(path, options).then((data) => {
       cache.set(path, { data, ts: Date.now() });
       return data;
-    })();
+    });
 
     inFlight.set(path, promise);
     promise.catch(() => {}).finally(() => inFlight.delete(path));
@@ -441,6 +464,45 @@ export async function getAvailablePreferences(): Promise<AvailablePreferences> {
   return request("/api/reaigen/users/available_preferences/");
 }
 
+export type { UnitLookup } from "../unit-catalog";
+import type { UnitLookup } from "../unit-catalog";
+
+interface UnitLookupPage {
+  count?: number;
+  next?: string | null;
+  previous?: string | null;
+  results?: UnitLookup[];
+}
+
+/**
+ * Read every page of the canonical backend unit catalogue. The endpoint owns
+ * codes, symbols, categories, display metadata, and conversion factors.
+ */
+export async function listUnits(category?: string): Promise<UnitLookup[]> {
+  const requestPage = async (page: number) => {
+    const query = new URLSearchParams({ page: String(page), page_size: "500" });
+    if (category) query.set("category", category.trim().toUpperCase());
+    return request(`/api/reaigen/lookups/units/?${query.toString()}`) as Promise<UnitLookupPage | UnitLookup[]>;
+  };
+
+  const first = await requestPage(1);
+  if (Array.isArray(first)) return first.filter((unit) => unit.is_active !== false);
+
+  const firstPage = first.results ?? [];
+  const pageCount = first.next && firstPage.length > 0
+    ? Math.min(50, Math.ceil((first.count ?? firstPage.length) / firstPage.length))
+    : 1;
+  const remainingPages = pageCount > 1
+    ? await Promise.all(Array.from({ length: pageCount - 1 }, (_, index) => requestPage(index + 2)))
+    : [];
+  const allUnits = [
+    ...firstPage,
+    ...remainingPages.flatMap((page) => Array.isArray(page) ? page : page.results ?? []),
+  ];
+  return [...new Map(allUnits.map((unit) => [unit.id, unit])).values()]
+    .filter((unit) => unit.is_active !== false);
+}
+
 export async function changePassword(data: {
   current_password: string;
   new_password: string;
@@ -696,7 +758,7 @@ export async function acceptAppContentDocument(data: {
 
 // ─── Splat Viewer & Tour ──────────────────────────────────────────────────
 
-import type { SplatViewerPayload, CameraData, TourViewerData, SplatListItem, ShareData, SharedDraftData, SplatsByDraftPayload, DraftListingItem, DraftDetailItem } from "../tour-types";
+import type { SplatViewerPayload, CameraData, TourViewerData, SplatListItem, ShareData, SharedDraftData, SplatsByDraftPayload, DraftListingItem, DraftDetailItem, DraftUpload } from "../tour-types";
 
 export async function listSplats(page = 1, pageSize = 20, search = ""): Promise<{ results: SplatListItem[]; count: number; next: string | null }> {
   const q = search ? `&search=${encodeURIComponent(search)}` : "";
@@ -712,6 +774,165 @@ export async function getDraft(draftId: number): Promise<DraftDetailItem> {
   return request(`/api/reaigen/drafts/${draftId}/`);
 }
 
+/** Bypass the short detail cache after an editor or media mutation. */
+export async function refreshDraft(draftId: number): Promise<DraftDetailItem> {
+  return freshRequest(`/api/reaigen/drafts/${draftId}/`);
+}
+
+interface DraftUploadPage {
+  count?: number;
+  next?: string | null;
+  previous?: string | null;
+  results?: DraftUpload[];
+}
+
+export async function listDraftUploads(
+  draftId: number,
+  options: { includeDeleted?: boolean; fresh?: boolean } = {},
+): Promise<DraftUpload[]> {
+  const query = new URLSearchParams({
+    draft_post: String(draftId),
+    page_size: "500",
+    ordering: "sort_order,uploaded_at",
+  });
+  if (options.includeDeleted) query.set("include_deleted", "true");
+  const path = `/api/reaigen/uploads/?${query.toString()}`;
+  const payload = options.fresh ? await freshRequest(path) : await request(path);
+  return (payload as DraftUploadPage)?.results ?? (Array.isArray(payload) ? payload : []);
+}
+
+export async function updateDraftUpload(
+  uploadId: number,
+  data: Partial<Pick<DraftUpload, "sort_order" | "role" | "asset_type">>,
+): Promise<DraftUpload> {
+  return request(`/api/reaigen/uploads/${uploadId}/`, {
+    method: "PATCH",
+    body: JSON.stringify(data),
+  });
+}
+
+/** Persist the gallery order using the same 0-based sort_order contract as iOS. */
+export async function reorderDraftUploads(uploadIds: number[]): Promise<DraftUpload[]> {
+  return Promise.all(uploadIds.map((uploadId, sortOrder) => updateDraftUpload(uploadId, { sort_order: sortOrder })));
+}
+
+interface AssetTypeLookup {
+  id: number;
+  code: string;
+  name: string;
+}
+
+async function getAssetTypeByCode(code: string): Promise<AssetTypeLookup> {
+  return request(`/api/reaigen/lookups/asset-types/by_code/?code=${encodeURIComponent(code)}`);
+}
+
+interface DraftMediaPresignResponse {
+  upload_mode: "single" | "multipart";
+  upload_key: string;
+  presigned_url?: string;
+}
+
+interface DraftPhotoUploadSession {
+  assetType: AssetTypeLookup;
+  presign: DraftMediaPresignResponse & { presigned_url: string };
+  contentType: string;
+  sortOrder: number;
+  putComplete: boolean;
+  createdAt: number;
+}
+
+const draftPhotoUploadSessions = new Map<string, DraftPhotoUploadSession>();
+
+/**
+ * Upload one owner-selected photo through Django's production direct-upload flow.
+ * The caller intentionally owns retry UI: creating a new presign on an opaque
+ * network timeout could duplicate the file, while confirm itself is idempotent.
+ */
+export async function uploadDraftPhoto(
+  draftId: number,
+  file: File,
+  sortOrder: number,
+): Promise<DraftUpload> {
+  const extension = file.name.split(".").pop()?.toLowerCase() ?? "";
+  const inferredTypes: Record<string, string> = {
+    jpg: "image/jpeg",
+    jpeg: "image/jpeg",
+    png: "image/png",
+    webp: "image/webp",
+    heic: "image/heic",
+    heif: "image/heif",
+    tif: "image/tiff",
+    tiff: "image/tiff",
+    bmp: "image/bmp",
+  };
+  const contentType = file.type || inferredTypes[extension] || "application/octet-stream";
+  const sessionKey = `${draftId}:${file.name}:${file.size}:${file.lastModified}`;
+  let uploadSession = draftPhotoUploadSessions.get(sessionKey);
+  if (uploadSession && Date.now() - uploadSession.createdAt > 5 * 60 * 60 * 1000) {
+    draftPhotoUploadSessions.delete(sessionKey);
+    uploadSession = undefined;
+  }
+
+  if (!uploadSession) {
+    const [assetType, presign] = await Promise.all([
+      getAssetTypeByCode("RAW_IMAGE"),
+      request("/api/reaigen/uploads/presign/", {
+        method: "POST",
+        body: JSON.stringify({
+          draft_post: draftId,
+          filename: file.name,
+          content_type: contentType,
+          file_size: file.size,
+        }),
+      }) as Promise<DraftMediaPresignResponse>,
+    ]);
+
+    if (presign.upload_mode !== "single" || !presign.presigned_url) {
+      throw new Error("This photo is too large for the browser uploader.");
+    }
+    uploadSession = {
+      assetType,
+      presign: { ...presign, presigned_url: presign.presigned_url },
+      contentType,
+      sortOrder,
+      putComplete: false,
+      createdAt: Date.now(),
+    };
+    draftPhotoUploadSessions.set(sessionKey, uploadSession);
+  }
+
+  if (!uploadSession.putComplete) {
+    const storageResponse = await fetch(uploadSession.presign.presigned_url, {
+      method: "PUT",
+      headers: { "Content-Type": uploadSession.contentType },
+      body: file,
+      credentials: "omit",
+    });
+    if (!storageResponse.ok) {
+      throw new ApiError(storageResponse.status, await storageResponse.text());
+    }
+    uploadSession.putComplete = true;
+  }
+
+  const confirmed = await request("/api/reaigen/uploads/confirm/", {
+    method: "POST",
+    body: JSON.stringify({
+      upload_key: uploadSession.presign.upload_key,
+      draft_post: draftId,
+      asset_type: uploadSession.assetType.id,
+      file_name: file.name,
+      file_size: file.size,
+      content_type: uploadSession.contentType,
+      sort_order: uploadSession.sortOrder,
+      role: "photo",
+    }),
+  });
+  draftPhotoUploadSessions.delete(sessionKey);
+  cache.delete(`/api/reaigen/drafts/${draftId}/`);
+  inFlight.delete(`/api/reaigen/drafts/${draftId}/`);
+  return confirmed as DraftUpload;
+}
+
 export type DraftUpdatePayload = Partial<{
   title: string;
   description: string;
@@ -723,7 +944,9 @@ export type DraftUpdatePayload = Partial<{
   price: string | number | null;
   currency: string;
   area: string | number | null;
+  area_unit: number | null;
   lot_size: string | number | null;
+  lot_size_unit: number | null;
   year_built: number | null;
   bedrooms: number | null;
   bathrooms: number | null;
@@ -756,13 +979,71 @@ export interface ReaiAgentConsent {
   };
 }
 
+export interface ReaiAgentDraftResult {
+  id: number;
+  is_complete: boolean;
+  updated_at: string | null;
+  semantic_summary?: string;
+  creation_data: {
+    title?: string | null;
+    description?: string | null;
+    price?: string | number | null;
+    currency?: string | number | null;
+    area?: string | number | null;
+    area_unit?: string | number | null;
+    [key: string]: unknown;
+  };
+}
+
+export type ReaiAgentUiBlock =
+  | {
+      kind: "summary";
+      title: string;
+      description?: string;
+      items: Array<{
+        label: string;
+        value: string;
+        hint?: string;
+        tone?: "neutral" | "success" | "warning";
+      }>;
+    }
+  | {
+      kind: "actions";
+      title?: string;
+      actions: Array<{
+        label: string;
+        prompt: string;
+        description?: string;
+      }>;
+    }
+  | {
+      kind: "progress";
+      title: string;
+      label: string;
+      value?: number;
+      detail?: string;
+      tone?: "neutral" | "success" | "warning";
+    };
+
 export interface ReaiAgentResponse {
   reply: string;
-  execution_mode?: "deterministic" | "fast" | "standard" | "reasoning";
+  execution_mode?: "deterministic" | "fast" | "standard" | "reasoning" | "safe_fallback";
   reasoning_effort?: "none" | "minimal" | "low" | "high";
   latency_ms?: number;
+  settings_revision?: number;
+  release_bundle?: {
+    id: number;
+    name: string;
+    execution_lane: "fast" | "standard" | "reasoning";
+    status: "active" | "canary_5" | "canary_25";
+    content_hash: string;
+    generation_profile: string;
+    generation_profile_version: number;
+  } | null;
   proposed_changes: Record<string, unknown>;
   suggested_actions: string[];
+  /** Optional bounded generative-UI blocks. Text is rendered as content and actions only re-prompt Agent. */
+  ui_blocks?: ReaiAgentUiBlock[];
   proposal_token: string | null;
   action_code?: "revoke_all_shares" | "manage_shares" | "share_inventory" | "share_status" | "settings_navigation" | "settings_update" | "select_share_fields" | "create_draft_share" | "translate_description" | "grade_draft_images" | "retouch_draft_image" | "cleanplate_draft_images" | "generative_hdr_draft_image" | "organize_draft_images" | "generate_draft_video";
   action_token?: string | null;
@@ -810,21 +1091,7 @@ export interface ReaiAgentResponse {
   search_query?: string | null;
   matched_creation_count?: number;
   selected_creation_ids?: number[];
-  draft_results?: Array<{
-    id: number;
-    is_complete: boolean;
-    updated_at: string | null;
-    semantic_summary?: string;
-    creation_data: {
-      title?: string;
-      description?: string;
-      price?: string | number;
-      currency?: string;
-      area?: string | number;
-      area_unit?: string;
-      [key: string]: unknown;
-    };
-  }>;
+  draft_results?: ReaiAgentDraftResult[];
   improvement_conversation_id?: string | null;
   knowledge_sources?: Array<{
     title: string;
@@ -1340,7 +1607,7 @@ export async function getCameras(splatId: number): Promise<CameraData> {
 
 export async function saveCameras(
   splatId: number,
-  data: { cameras: { position: number[]; forward: number[]; up: number[]; fov?: number }[]; fovY?: number; sceneFov?: number },
+  data: { cameras: { position: number[]; forward: number[]; up?: number[]; fov?: number; coordinate_space?: string }[]; fovY?: number; sceneFov?: number },
 ): Promise<CameraData> {
   return request(`/api/reaigen/splats/${splatId}/cameras/`, {
     method: "PATCH",
@@ -1359,8 +1626,18 @@ export async function getSharedDraftData(token: string): Promise<SharedDraftData
   if (!raw) return null;
   // Map backend response to frontend SharedDraftData format
   // Backend uses: raw_uploads[].file_url, draft_data[].data_key/data_value, area_unit_display
-  const uploads = (raw.raw_uploads ?? raw.uploads ?? [])
-    .map((u: Record<string, unknown>) => ({
+  const sharedUploadGroups = new Map<string, Record<string, unknown>[]>();
+  for (const upload of (raw.raw_uploads ?? raw.uploads ?? []) as Record<string, unknown>[]) {
+    const key = String(upload.logical_asset_id ?? upload.id ?? upload.file_url ?? upload.url ?? "");
+    sharedUploadGroups.set(key, [...(sharedUploadGroups.get(key) ?? []), upload]);
+  }
+  const currentSharedUploads = [...sharedUploadGroups.values()].flatMap((versions) => {
+    const current = versions.find((upload) => upload.is_master !== false && upload.is_deleted !== true);
+    return current ? [current] : [];
+  });
+  const uploads = currentSharedUploads
+    .sort((left, right) => Number(left.sort_order ?? 0) - Number(right.sort_order ?? 0))
+    .map((u) => ({
       url: (u.file_url ?? u.url ?? "") as string,
       name: (u.file_name ?? u.name ?? "") as string,
       mime_type: (u.mime_type ?? "") as string,
@@ -1414,10 +1691,19 @@ export async function createDraftShare(
   draftId: number,
   opts?: { share_type?: string; pin?: string; expires_in_hours?: number; max_access_count?: number; field_names?: string[]; data_features?: string[] | null },
 ): Promise<ShareData> {
-  return request("/api/reaigen/shares/", {
+  const created = await request("/api/reaigen/shares/", {
     method: "POST",
     body: JSON.stringify({ draft: draftId, ...opts }),
-  });
+  }) as ShareData;
+
+  // The generic Django create serializer stores an expiry only for a
+  // temporary share. PIN shares support an expiry too, but need the same
+  // positive-hour value applied once more through PATCH (the splat endpoint
+  // already performs this compatibility step server-side).
+  if (opts?.share_type === "pin" && (opts.expires_in_hours ?? 0) > 0) {
+    return updateShare(created.id, { expires_in_hours: opts.expires_in_hours });
+  }
+  return created;
 }
 
 export async function getDraftShare(draftId: number): Promise<ShareData | null> {
@@ -1442,7 +1728,9 @@ export async function createSplatShare(
 export async function updateShare(shareId: number, data: Partial<{
   title: string;
   share_type: string;
+  status: string;
   pin: string;
+  expires_at: string | null;
   expires_in_hours: number;
   max_access_count: number | null;
   field_names: string[];
@@ -1459,7 +1747,24 @@ export async function pauseShare(shareId: number): Promise<{ message: string; sh
 }
 
 export async function resumeShare(shareId: number): Promise<{ message: string; share: ShareData }> {
-  return request(`/api/reaigen/shares/${shareId}/resume/`, { method: "POST" });
+  try {
+    return await request(`/api/reaigen/shares/${shareId}/resume/`, { method: "POST" });
+  } catch (error) {
+    if (!(error instanceof ApiError) || error.status !== 400) throw error;
+
+    // Compatibility for backend versions whose resume action calls
+    // is_accessible() while status is still "paused" (and therefore rejects
+    // every valid paused link). Preserve its intended expiry/view-limit guard
+    // before using the ordinary owner-authorized PATCH path.
+    const current = (await listShares({ fresh: true })).find((share) => share.id === shareId);
+    const expired = Boolean(current?.expires_at && new Date(current.expires_at).getTime() <= Date.now());
+    const limit = current?.max_access_count ?? current?.max_accesses ?? null;
+    const limitReached = limit != null && current != null && current.access_count >= limit;
+    if (!current || current.status !== "paused" || expired || limitReached) throw error;
+
+    const share = await updateShare(shareId, { status: "active" });
+    return { message: "Share resumed successfully", share };
+  }
 }
 
 export async function revokeShare(shareId: number): Promise<{ message: string }> {

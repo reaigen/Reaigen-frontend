@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { t } from "../lib/i18n";
 import type { SharedDraftData } from "../lib/tour-types";
+import { resolveUnit, unitLabel, type UnitLookup } from "../lib/unit-catalog";
 import { ChevronDownIcon, DocumentIcon, MapPinIcon } from "./icons";
 
 function formatPrice(price: string | number | null | undefined, currency?: string): string {
@@ -21,8 +22,28 @@ function formatPrice(price: string | number | null | undefined, currency?: strin
 }
 
 /** Floating overlay panel for the 3D tour viewer — shows property info on top of the splat. */
-export function SharedPropertyPanel({ draftData, lang }: { draftData: SharedDraftData; lang: string }) {
-  const [open, setOpen] = useState(false);
+export function SharedPropertyPanel({
+  draftData,
+  lang,
+  units,
+  open: controlledOpen,
+  onOpenChange,
+}: {
+  draftData: SharedDraftData;
+  lang: string;
+  units: readonly UnitLookup[];
+  open?: boolean;
+  onOpenChange?: (open: boolean) => void;
+}) {
+  const [internalOpen, setInternalOpen] = useState(false);
+  const open = controlledOpen ?? internalOpen;
+  const setOpen = (next: boolean) => {
+    if (controlledOpen == null) setInternalOpen(next);
+    onOpenChange?.(next);
+  };
+  const currency = resolveUnit(units, draftData.currency, "CURRENCY");
+  const areaUnit = resolveUnit(units, draftData.area_unit, "AREA");
+  const areaLabel = unitLabel(areaUnit);
 
   const hasPrice = draftData.price != null && draftData.price !== "";
   const hasAddress = !!draftData.display_address || !!draftData.city;
@@ -42,7 +63,7 @@ export function SharedPropertyPanel({ draftData, lang }: { draftData: SharedDraf
       <button
         type="button"
         aria-expanded={open}
-        onClick={() => setOpen((v) => !v)}
+        onClick={() => setOpen(!open)}
         className="flex min-h-11 items-center gap-1.5 rounded-full border border-white/10 bg-black/40 px-3 py-2.5 text-[11px] font-medium text-white/70 backdrop-blur-xl transition-colors hover:bg-black/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/70 sm:min-h-0 sm:py-1.5"
       >
         <DocumentIcon size={12} />
@@ -53,7 +74,7 @@ export function SharedPropertyPanel({ draftData, lang }: { draftData: SharedDraf
       {open && (
         <div className="mt-1.5 bg-black/50 backdrop-blur-xl border border-white/10 rounded-xl max-h-[50dvh] overflow-y-auto p-3.5 space-y-3">
           {hasPrice && (
-            <p className="text-[16px] font-semibold text-white">{formatPrice(draftData.price, draftData.currency)}</p>
+            <p className="text-[16px] font-semibold text-white">{formatPrice(draftData.price, currency?.code)}</p>
           )}
 
           {hasAddress && addressText && (
@@ -67,7 +88,7 @@ export function SharedPropertyPanel({ draftData, lang }: { draftData: SharedDraf
             <div className="flex flex-wrap gap-1.5">
               {draftData.bedrooms != null && <span className="bg-white/[0.08] text-white/70 rounded-full px-2.5 py-0.5 text-[11px]">{draftData.bedrooms} {t("shared.bed", lang)}</span>}
               {draftData.bathrooms != null && <span className="bg-white/[0.08] text-white/70 rounded-full px-2.5 py-0.5 text-[11px]">{draftData.bathrooms} {t("shared.bath", lang)}</span>}
-              {draftData.area != null && draftData.area !== "" && <span className="bg-white/[0.08] text-white/70 rounded-full px-2.5 py-0.5 text-[11px]">{draftData.area} {draftData.area_unit || "m²"}</span>}
+              {draftData.area != null && draftData.area !== "" && <span className="bg-white/[0.08] text-white/70 rounded-full px-2.5 py-0.5 text-[11px]">{draftData.area}{areaLabel ? ` ${areaLabel}` : ""}</span>}
               {draftData.year_built != null && <span className="bg-white/[0.08] text-white/70 rounded-full px-2.5 py-0.5 text-[11px]">{draftData.year_built}</span>}
             </div>
           )}

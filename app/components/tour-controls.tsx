@@ -14,16 +14,24 @@ interface Props {
 }
 
 export default function TourControls({ shots, currentIdx, onGoToShot, onPrev, onNext, lang = "en" }: Props) {
-  if (!shots.length) return null;
+  // Match the native viewer: a single camera needs no persistent navigation.
+  if (shots.length <= 1) return null;
 
   return (
-    <div className="absolute bottom-[calc(1rem+env(safe-area-inset-bottom,0px))] left-1/2 z-20 w-[calc(100%-1rem)] max-w-[calc(100%-1rem)] -translate-x-1/2 animate-fade-in-up sm:bottom-[calc(1.5rem+env(safe-area-inset-bottom,0px))] sm:w-auto sm:max-w-[calc(100%-2rem)]">
-      <div className="flex items-center justify-center gap-1 rounded-full border border-white/10 bg-black/75 px-1.5 py-1.5 shadow-2xl sm:gap-1.5 sm:px-2">
+    <div className="absolute bottom-[calc(0.75rem+env(safe-area-inset-bottom,0px))] left-1/2 z-20 max-w-[calc(100%-1rem)] -translate-x-1/2 animate-fade-in-up sm:bottom-[calc(1.5rem+env(safe-area-inset-bottom,0px))] sm:max-w-[calc(100%-2rem)]">
+      <div className="flex w-fit max-w-full items-center justify-center gap-0.5 rounded-2xl border border-white/10 bg-black/70 p-1 shadow-2xl backdrop-blur-2xl sm:gap-1 sm:rounded-full">
         <button type="button" onClick={onPrev} className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full text-white/70 transition-colors hover:bg-white/10 hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/70 sm:h-8 sm:w-8" aria-label={t("tour.controls.previousShot", lang)}>
           <ArrowLeftIcon size={14} />
         </button>
 
-        <div className="flex max-w-[calc(100vw-8rem)] items-center overflow-x-auto scrollbar-hide sm:max-w-[42vw] lg:max-w-[50vw]">
+        <div className="min-w-0 px-2 text-center sm:hidden">
+          <span className="block max-w-[9rem] truncate text-[11px] font-medium text-white/80">
+            {shots[currentIdx]?.label || `${t("tour.controls.shot", lang)} ${currentIdx + 1}`}
+          </span>
+          <span className="block text-[10px] tabular-nums text-white/45">{currentIdx + 1} / {shots.length}</span>
+        </div>
+
+        <div className="hidden max-w-[42vw] items-center overflow-x-auto scrollbar-hide sm:flex lg:max-w-[50vw]">
           {shots.map((_, i) => (
             <button
               key={i}
@@ -43,7 +51,7 @@ export default function TourControls({ shots, currentIdx, onGoToShot, onPrev, on
         </button>
 
         {/* Shot label */}
-        <div className="pl-1.5 pr-2.5 border-l border-white/15 hidden sm:block">
+        <div className="hidden border-l border-white/15 pl-1.5 pr-2.5 sm:block">
           <span className="text-[11px] text-white/70 font-medium whitespace-nowrap">
             {shots[currentIdx]?.label || `${t("tour.controls.shot", lang)} ${currentIdx + 1}`}
           </span>

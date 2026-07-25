@@ -20,7 +20,7 @@ import {
   type ShareStats,
 } from "../../lib/share-ui";
 import { StatusPill } from "../status-pill";
-import { CheckIcon, ChevronDownIcon, ClockIcon, CopyIcon, LockIcon } from "../icons";
+import { CheckIcon, ChevronDownIcon, ClockIcon, CopyIcon, ExternalLinkIcon, LockIcon } from "../icons";
 
 // ── Component ──────────────────────────────────────────────────────────
 
@@ -97,7 +97,7 @@ export function ShareLinkCard({ share, lang, dateFormat, onUpdate, onEdit }: Sha
   };
 
   return (
-    <div className={`overflow-hidden rounded-xl border transition-colors ${isLive ? "border-border/55 bg-surface shadow-card hover:border-foreground/20" : "border-border/35 bg-surface-subtle"}`}>
+    <div className={`overflow-hidden rounded-[1.35rem] border transition-colors sm:rounded-xl ${isLive ? "border-border/55 bg-card shadow-card hover:border-foreground/20" : "border-border/35 bg-surface-subtle"}`}>
       {/* Collapsed row */}
       <div className="flex w-full flex-col gap-2.5 px-3.5 py-2.5 sm:flex-row sm:items-center">
         <button type="button" onClick={handleToggleExpand} aria-expanded={expanded} className="flex w-full min-w-0 flex-1 items-center gap-2.5 rounded-lg text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2">
@@ -107,22 +107,22 @@ export function ShareLinkCard({ share, lang, dateFormat, onUpdate, onEdit }: Sha
                 {t("sharing.linkLabel", lang)}
               </span>
               {share.requires_pin && (
-                <span className="shrink-0 inline-flex items-center gap-0.5 rounded bg-foreground/[0.07] px-1.5 py-px text-[11px] font-medium text-foreground/60 uppercase tracking-wider">
+                <span className="inline-flex shrink-0 items-center gap-0.5 rounded-full bg-foreground/[0.07] px-1.5 py-px text-[10px] font-semibold text-foreground/60 uppercase tracking-wider">
                   <LockIcon size={9} />
                   PIN
                 </span>
               )}
               {expiry && (
-                <span className="shrink-0 rounded bg-foreground/[0.07] px-1.5 py-px text-[11px] font-medium text-foreground/50">
+                <span className="shrink-0 rounded-full bg-foreground/[0.07] px-1.5 py-px text-[10px] font-semibold text-foreground/50">
                   {expiry}
                 </span>
               )}
             </span>
-            <span className="mt-0.5 flex items-center gap-2 text-[11px] text-foreground/60">
+            <span className="mt-1 flex flex-wrap items-center gap-x-1.5 gap-y-0.5 text-[10px] leading-relaxed text-foreground/55 sm:text-[11px]">
               <span className="tabular-nums">{share.access_count} {share.access_count === 1 ? t("shares.viewSingular", lang) : t("shares.viewPlural", lang)}</span>
-              <span className="text-foreground/35">·</span>
+              <span aria-hidden="true" className="text-foreground/25">·</span>
               <span>{fieldSummaryLabel(share, lang)}</span>
-              <span className="text-foreground/35">·</span>
+              <span aria-hidden="true" className="text-foreground/25">·</span>
               <span>{formatDate(share.created_at, dateFormat, lang)}</span>
             </span>
           </span>
@@ -135,20 +135,30 @@ export function ShareLinkCard({ share, lang, dateFormat, onUpdate, onEdit }: Sha
         </button>
 
         {isLive && (
-          <Button
-            type="button"
-            variant="outline"
-            size="xs"
-            onClick={handleCopy}
-            className={`shrink-0 self-end gap-1 text-[11px] sm:self-auto [&_svg]:size-3 ${copied ? "border-foreground bg-foreground text-background hover:bg-foreground hover:text-background" : "text-foreground/70 hover:text-foreground"}`}
-          >
-            {copied ? (
-              <CheckIcon size={12} />
-            ) : (
-              <CopyIcon size={12} />
-            )}
-            {copied ? t("shares.copied", lang) : t("shares.copyLink", lang)}
-          </Button>
+          <div className="flex shrink-0 items-center gap-1.5 self-end sm:self-auto">
+            {isActive ? (
+              <Button asChild variant="outline" size="xs" className="gap-1 text-[11px] text-foreground/70 hover:text-foreground [&_svg]:size-3">
+                <a href={shareUrl(share.token)} target="_blank" rel="noreferrer" onClick={(e) => e.stopPropagation()}>
+                  <ExternalLinkIcon size={12} />
+                  {t("common.open", lang)}
+                </a>
+              </Button>
+            ) : null}
+            <Button
+              type="button"
+              variant="outline"
+              size="xs"
+              onClick={handleCopy}
+              className={`gap-1 text-[11px] [&_svg]:size-3 ${copied ? "border-foreground bg-foreground text-background hover:bg-foreground hover:text-background" : "text-foreground/70 hover:text-foreground"}`}
+            >
+              {copied ? (
+                <CheckIcon size={12} />
+              ) : (
+                <CopyIcon size={12} />
+              )}
+              {copied ? t("shares.copied", lang) : t("shares.copyLink", lang)}
+            </Button>
+          </div>
         )}
       </div>
 

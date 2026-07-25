@@ -6,17 +6,36 @@ import Link from "next/link";
 import { useAuth } from "../../components/hooks/use-auth";
 import { AppShell } from "../../components/app-shell";
 import { Button } from "../../lib/ui/button";
-import { getDraft, getSplatsByDraft, translateDraftDescription } from "../../lib/api/client";
+import { getDraft, getSplatsByDraft, listUnits, refreshDraft, translateDraftDescription } from "../../lib/api/client";
 import { isApiNotFound } from "../../lib/api/error-message";
 import { getUserLanguage, t } from "../../lib/i18n";
+import { currentGalleryUploads } from "../../lib/media";
+import { readDraftDetailCache, writeDraftDetailCache } from "../../lib/resilient-draft-cache";
 import { DraftImageGallery } from "../../components/draft-image-gallery";
+import { DraftCacheNotice } from "../../components/draft-cache-notice";
 import FloorplanViewer from "../../components/floorplan-viewer";
 import type { DraftDetailItem, DraftUpload, SplatsByDraftPayload } from "../../lib/tour-types";
+import { baseUnitForCategory, resolveUnit, unitLabel, type UnitLookup } from "../../lib/unit-catalog";
 import { PageLoading } from "../../components/page-loading";
 import { cn } from "../../lib/utils";
 import { DraftEditor } from "../../components/draft-editor";
 import { DraftVersionManager } from "../../components/draft-version-manager";
-import { ArrowLeftIcon, EditIcon, InfoIcon, SearchIcon, ShareIcon, TourIcon, VersionsIcon } from "../../components/icons";
+import { DraftMediaManager } from "../../components/draft-media-manager";
+import {
+  ArrowLeftIcon,
+  DocumentIcon,
+  EditIcon,
+  FloorplanIcon,
+  InfoIcon,
+  ImageIcon,
+  MapPinIcon,
+  PriceIcon,
+  SearchIcon,
+  ShareIcon,
+  StarIcon,
+  TourIcon,
+  VersionsIcon,
+} from "../../components/icons";
 import { StatusPill } from "../../components/status-pill";
 
 // ── Formatting ────────────────────────────────────────────────────────────
@@ -32,11 +51,19 @@ function fmtMoney(value: string | number | null | undefined, currency: string | 
   if (value == null || value === "") return null;
   const n = typeof value === "number" ? value : Number(value);
   if (!Number.isFinite(n) || n === 0) return null;
+  if (!currency) return fmt(n, lang);
   try {
-    return new Intl.NumberFormat(lang, { style: "currency", currency: currency || "EUR", maximumFractionDigits: 0 }).format(n);
+    return new Intl.NumberFormat(lang, { style: "currency", currency, maximumFractionDigits: 0 }).format(n);
   } catch {
-    return `${fmt(n, lang)}${currency ? ` ${currency}` : ""}`;
+    return fmt(n, lang);
   }
+}
+
+function fmtWithUnit(value: unknown, unit: UnitLookup | null, lang: string) {
+  const formatted = fmt(value as string | number | null | undefined, lang);
+  if (!formatted) return null;
+  const label = unitLabel(unit);
+  return `${formatted}${label ? ` ${label}` : ""}`;
 }
 
 function humanize(s: string) {
@@ -75,17 +102,13 @@ function stripFormatting(text: string): string {
 // ── Data extraction ───────────────────────────────────────────────────────
 
 function getImages(uploads: DraftUpload[]) {
-  return (uploads ?? [])
-    .filter((u) => u.mime_type?.startsWith("image") || u.asset_type === "photo")
-    .sort((a, b) => a.sort_order - b.sort_order)
-    .map((u) => ({ id: u.id, url: u.file_url }));
+  return currentGalleryUploads(uploads, "image")
+    .map((upload) => ({ id: upload.id, url: upload.file_url, name: upload.file_name }));
 }
 
 function getVideos(uploads: DraftUpload[]) {
-  return (uploads ?? [])
-    .filter((u) => u.mime_type?.startsWith("video/") && u.is_master !== false)
-    .sort((a, b) => a.sort_order - b.sort_order)
-    .map((u) => ({ id: u.id, url: u.file_url, name: u.file_name }));
+  return currentGalleryUploads(uploads, "video")
+    .map((upload) => ({ id: upload.id, url: upload.file_url, name: upload.file_name }));
 }
 
 /** Read from a specific spec section, e.g. sec("technical", "condition") */
@@ -125,7 +148,7 @@ const I = {
 
 interface Fact { icon: ReactNode; value: string; label: string; sub?: string }
 
-function buildFacts(d: DraftDetailItem, lang: string): Fact[] {
+function buildFacts(d: DraftDetailItem, lang: string, units: readonly UnitLookup[]): Fact[] {
   const facts: Fact[] = [];
   const addFact = (icon: ReactNode, value: unknown, label: string, sub?: string | null) => {
     if (value != null && value !== "" && value !== 0) facts.push({ icon, value: String(value), label, sub: sub || undefined });
@@ -134,12 +157,17 @@ function buildFacts(d: DraftDetailItem, lang: string): Fact[] {
   addFact(I.bath, sec(d, "layout", "bathrooms"), t("draft.bathrooms", lang));
 
   // Area: show preferred, with original as sub if different unit
-  const area = d.area_preferred ?? d.area;
-  const areaUnit = d.area_preferred_unit ?? d.area_unit_display ?? "";
-  const origAreaStr = d.area && d.area_unit_display && d.area_preferred_unit !== d.area_unit_display
-    ? `${fmt(d.area, lang)} ${d.area_unit_display}`
+  const storedAreaUnit = resolveUnit(units, d.area_unit, "AREA")
+    ?? resolveUnit(units, d.area_unit_code, "AREA")
+    ?? resolveUnit(units, d.area_unit_display, "AREA");
+  const preferredAreaUnit = resolveUnit(units, d.area_preferred_unit, "AREA");
+  const usingPreferredArea = d.area_preferred != null;
+  const area = usingPreferredArea ? d.area_preferred : d.area;
+  const areaUnit = usingPreferredArea ? preferredAreaUnit : storedAreaUnit;
+  const origAreaStr = d.area && usingPreferredArea && storedAreaUnit && preferredAreaUnit?.id !== storedAreaUnit.id
+    ? fmtWithUnit(d.area, storedAreaUnit, lang)
     : null;
-  if (area) addFact(I.area, `${fmt(area, lang)} ${areaUnit}`.trim(), t("draft.area", lang), origAreaStr);
+  if (area) addFact(I.area, fmtWithUnit(area, areaUnit, lang), t("draft.area", lang), origAreaStr);
 
   addFact(I.floor, sec(d, "layout", "floors") ?? sec(d, "technical", "total_floors"), t("draft.totalFloors", lang));
   addFact(I.parking, sec(d, "layout", "parking_spaces"), t("draft.parkingSpaces", lang));
@@ -151,15 +179,28 @@ function buildFacts(d: DraftDetailItem, lang: string): Fact[] {
 
 interface Row { icon: ReactNode; label: string; value: string }
 
-function buildRows(d: DraftDetailItem, lang: string): Row[] {
+function buildRows(d: DraftDetailItem, lang: string, units: readonly UnitLookup[]): Row[] {
   const rows: Row[] = [];
   const push = (icon: ReactNode, label: string, value: unknown) => {
     if (value == null || value === "" || value === false) return;
     rows.push({ icon, label, value: value === true ? t("common.yes", lang) : String(value) });
   };
   type LK = import("../../lib/locales/en").LocaleKey;
-  const areaUnit = d.area_preferred_unit ?? d.area_unit_display ?? "";
-  const fmtArea = (v: unknown) => v && Number(v) > 0 ? `${fmt(v as number, lang)} ${areaUnit}`.trim() : null;
+  const storedAreaUnit = resolveUnit(units, d.area_unit, "AREA")
+    ?? resolveUnit(units, d.area_unit_code, "AREA")
+    ?? resolveUnit(units, d.area_unit_display, "AREA");
+  const areaUnit = d.area_preferred != null
+    ? resolveUnit(units, d.area_preferred_unit, "AREA")
+    : storedAreaUnit;
+  const storedLotUnit = resolveUnit(units, d.lot_size_unit, "AREA");
+  const lotUnit = d.lot_size_preferred != null
+    ? resolveUnit(units, d.lot_size_preferred_unit, "AREA")
+    : storedLotUnit;
+  const distanceUnit = baseUnitForCategory(units, "DISTANCE");
+  const currencyUnit = resolveUnit(units, d.currency, "CURRENCY");
+  const fmtArea = (v: unknown) => v && Number(v) > 0 ? fmtWithUnit(v, areaUnit, lang) : null;
+  const fmtLotArea = (v: unknown) => v && Number(v) > 0 ? fmtWithUnit(v, lotUnit, lang) : null;
+  const fmtStoredMoney = (v: unknown) => fmtMoney(v as string | number | null | undefined, currencyUnit?.code, lang);
 
   // ── Layout parameters (rooms beyond facts grid) ──
   push(I.rooms, t("draft.rooms", lang), sec(d, "layout", "rooms"));
@@ -178,8 +219,7 @@ function buildRows(d: DraftDetailItem, lang: string): Row[] {
 
   // ── Areas ──
   const lot = d.lot_size_preferred ?? d.lot_size;
-  const lotUnit = d.lot_size_unit ?? areaUnit;
-  if (lot && Number(lot) > 0) push(I.lot, t("draft.lotSize", lang), `${fmt(lot, lang)} ${lotUnit}`.trim());
+  if (lot && Number(lot) > 0) push(I.lot, t("draft.lotSize", lang), fmtWithUnit(lot, lotUnit, lang));
 
   const areaFields: [string, LK][] = [
     ["floor_area", "draft.floorArea"], ["land_area", "draft.landArea"],
@@ -191,13 +231,14 @@ function buildRows(d: DraftDetailItem, lang: string): Row[] {
   ];
   for (const [k, tKey] of areaFields) {
     const v = sec(d, "areas", k);
-    if (fmtArea(v)) push(I.area, t(tKey, lang), fmtArea(v));
+    const formatted = k === "land_area" ? fmtLotArea(v) : fmtArea(v);
+    if (formatted) push(I.area, t(tKey, lang), formatted);
   }
   // Plot dimensions (not area-formatted)
   const plotW = sec(d, "areas", "plot_width");
-  if (plotW && Number(plotW) > 0) push(I.lot, t("draft.plotWidth", lang), `${fmt(plotW as number, lang)} m`);
+  if (plotW && Number(plotW) > 0) push(I.lot, t("draft.plotWidth", lang), fmtWithUnit(plotW, distanceUnit, lang));
   const plotL = sec(d, "areas", "plot_length");
-  if (plotL && Number(plotL) > 0) push(I.lot, t("draft.plotLength", lang), `${fmt(plotL as number, lang)} m`);
+  if (plotL && Number(plotL) > 0) push(I.lot, t("draft.plotLength", lang), fmtWithUnit(plotL, distanceUnit, lang));
 
   // ── Taxonomy ──
   const propTypeVal = enumT("property", sec(d, "taxonomy", "property_type"), lang);
@@ -223,7 +264,7 @@ function buildRows(d: DraftDetailItem, lang: string): Row[] {
   const view = sec(d, "technical", "view");
   if (view) push(I.compass, t("draft.view", lang), humanize(String(view)));
   const ceilingH = sec(d, "technical", "ceiling_height");
-  if (ceilingH && Number(ceilingH) > 0) push(I.floor, t("draft.ceilingHeight", lang), `${fmt(ceilingH as number, lang)} m`);
+  if (ceilingH && Number(ceilingH) > 0) push(I.floor, t("draft.ceilingHeight", lang), fmtWithUnit(ceilingH, distanceUnit, lang));
 
   // ── Utilities ──
   push(I.heating, t("draft.heating", lang), enumT("heating", sec(d, "utilities", "heating_source"), lang));
@@ -264,34 +305,35 @@ function buildRows(d: DraftDetailItem, lang: string): Row[] {
 
   // ── Pricing extras ──
   const deposit = sec(d, "pricing_extra", "deposit");
-  if (deposit && Number(deposit) > 0) push(I.money, t("draft.deposit", lang), fmt(deposit as number, lang));
+  if (deposit && Number(deposit) > 0) push(I.money, t("draft.deposit", lang), fmtStoredMoney(deposit));
   const agencyFee = sec(d, "pricing_extra", "agency_fee");
-  if (agencyFee && Number(agencyFee) > 0) push(I.money, t("draft.agencyFee", lang), fmt(agencyFee as number, lang));
+  if (agencyFee && Number(agencyFee) > 0) push(I.money, t("draft.agencyFee", lang), fmtStoredMoney(agencyFee));
   const utilitiesAdv = sec(d, "pricing_extra", "utilities_advance");
-  if (utilitiesAdv && Number(utilitiesAdv) > 0) push(I.money, t("draft.utilitiesAdvance", lang), fmt(utilitiesAdv as number, lang));
+  if (utilitiesAdv && Number(utilitiesAdv) > 0) push(I.money, t("draft.utilitiesAdvance", lang), fmtStoredMoney(utilitiesAdv));
   const furnSepPrice = sec(d, "pricing_extra", "furnishing_separate_price");
-  if (furnSepPrice && Number(furnSepPrice) > 0) push(I.money, t("draft.furnishingSeparatePrice", lang), fmt(furnSepPrice as number, lang));
+  if (furnSepPrice && Number(furnSepPrice) > 0) push(I.money, t("draft.furnishingSeparatePrice", lang), fmtStoredMoney(furnSepPrice));
   const parkPrice = sec(d, "pricing_extra", "parking_standalone_price");
-  if (parkPrice && Number(parkPrice) > 0) push(I.money, t("draft.parkingStandalonePrice", lang), fmt(parkPrice as number, lang));
+  if (parkPrice && Number(parkPrice) > 0) push(I.money, t("draft.parkingStandalonePrice", lang), fmtStoredMoney(parkPrice));
   const storPrice = sec(d, "pricing_extra", "storage_price");
-  if (storPrice && Number(storPrice) > 0) push(I.money, t("draft.storagePrice", lang), fmt(storPrice as number, lang));
+  if (storPrice && Number(storPrice) > 0) push(I.money, t("draft.storagePrice", lang), fmtStoredMoney(storPrice));
   const vatMode = sec(d, "pricing_extra", "vat_mode");
   if (vatMode) push(I.money, t("draft.vatMode", lang), enumT("vat", vatMode, lang));
   const vatRate = sec(d, "pricing_extra", "vat_rate");
-  if (vatRate && Number(vatRate) > 0) push(I.money, t("draft.vatRate", lang), `${vatRate}%`);
+  if (vatRate && Number(vatRate) > 0) push(I.money, t("draft.vatRate", lang), fmt(vatRate as number, lang));
 
   return rows;
 }
 
 // ── Monthly costs builder ────────────────────────────────────────────────
 
-function buildMonthlyCosts(d: DraftDetailItem, lang: string): Row[] {
+function buildMonthlyCosts(d: DraftDetailItem, lang: string, units: readonly UnitLookup[]): Row[] {
   const rows: Row[] = [];
+  const currencyUnit = resolveUnit(units, d.currency, "CURRENCY");
   const push = (label: string, value: unknown) => {
     if (value == null || value === "") return;
     const n = Number(value);
     if (!Number.isFinite(n) || n <= 0) return;
-    rows.push({ icon: I.money, label, value: fmt(n, lang)! });
+    rows.push({ icon: I.money, label, value: fmtMoney(n, currencyUnit?.code, lang)! });
   };
   type LK = import("../../lib/locales/en").LocaleKey;
   const monthlyFields: [string, LK][] = [
@@ -380,13 +422,24 @@ export default function DraftPreviewPage({ params }: { params: Promise<{ id: str
 
   const [draft, setDraft] = useState<DraftDetailItem | null>(null);
   const [splatData, setSplatData] = useState<SplatsByDraftPayload | null>(null);
+  const [unitCatalog, setUnitCatalog] = useState<UnitLookup[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [descExpanded, setDescExpanded] = useState(false);
+  const [detailsExpanded, setDetailsExpanded] = useState(false);
   const [translationPending, setTranslationPending] = useState(false);
   const [activeImageId, setActiveImageId] = useState<number | null>(null);
   const [editorOpen, setEditorOpen] = useState(false);
   const [versionsOpen, setVersionsOpen] = useState(false);
+  const [mediaOpen, setMediaOpen] = useState(false);
+  const [usingCachedDraft, setUsingCachedDraft] = useState(false);
+  const [retryAttempt, setRetryAttempt] = useState(0);
   const [reloadNonce, setReloadNonce] = useState(0);
+  const [manualRefreshPending, setManualRefreshPending] = useState(false);
+
+  const refreshListing = () => {
+    setManualRefreshPending(true);
+    setReloadNonce((value) => value + 1);
+  };
 
   useEffect(() => {
     if (!isLoading && !isAuthenticated) router.replace("/");
@@ -394,13 +447,26 @@ export default function DraftPreviewPage({ params }: { params: Promise<{ id: str
 
   useEffect(() => {
     if (!isAuthenticated || isNaN(draftId)) return;
+    let active = true;
     setError(null);
+    const cachedDraft = user?.id ? readDraftDetailCache(user.id, draftId) : null;
+    if (cachedDraft) {
+      setDraft(cachedDraft);
+      setUsingCachedDraft(true);
+    }
     Promise.all([
       getDraft(draftId),
       getSplatsByDraft(draftId).catch(() => null),
-    ]).then(([d, s]) => {
+      listUnits().catch(() => []),
+    ]).then(([d, s, fetchedUnits]) => {
+      if (!active) return;
       setDraft(d);
       setSplatData(s);
+      setUnitCatalog(fetchedUnits);
+      setUsingCachedDraft(false);
+      setRetryAttempt(0);
+      setManualRefreshPending(false);
+      if (user?.id) writeDraftDetailCache(user.id, draftId, d);
       // Trigger description translation if not yet available and user's lang ≠ en
       if (d.description && lang !== "en" && d.translation_status !== "completed") {
         setTranslationPending(true);
@@ -424,9 +490,46 @@ export default function DraftPreviewPage({ params }: { params: Promise<{ id: str
           .catch(() => setTranslationPending(false));
       }
     }).catch((err) => {
-      setError(isApiNotFound(err) ? "notFound" : "loadFailed");
+      if (!active) return;
+      setManualRefreshPending(false);
+      if (isApiNotFound(err)) {
+        setUsingCachedDraft(false);
+        setError("notFound");
+      } else if (cachedDraft) {
+        setDraft(cachedDraft);
+        setUsingCachedDraft(true);
+        setError(null);
+      } else {
+        setError("loadFailed");
+      }
+      setRetryAttempt((attempt) => attempt + 1);
     });
-  }, [isAuthenticated, draftId, lang, reloadNonce]);
+    return () => { active = false; };
+  }, [isAuthenticated, draftId, lang, reloadNonce, user?.id]);
+
+  useEffect(() => {
+    if (!isAuthenticated || (error !== "loadFailed" && !usingCachedDraft)) return;
+    const delay = Math.min(30_000, 3_000 * (2 ** Math.min(retryAttempt, 3)));
+    let requested = false;
+    const retryWhenAvailable = () => {
+      if (requested || document.hidden || !navigator.onLine) return;
+      requested = true;
+      setReloadNonce((value) => value + 1);
+    };
+    const retryWhenVisible = () => {
+      if (document.visibilityState === "visible") retryWhenAvailable();
+    };
+    const timer = window.setTimeout(retryWhenAvailable, delay);
+    window.addEventListener("online", retryWhenAvailable);
+    window.addEventListener("focus", retryWhenAvailable);
+    document.addEventListener("visibilitychange", retryWhenVisible);
+    return () => {
+      window.clearTimeout(timer);
+      window.removeEventListener("online", retryWhenAvailable);
+      window.removeEventListener("focus", retryWhenAvailable);
+      document.removeEventListener("visibilitychange", retryWhenVisible);
+    };
+  }, [error, isAuthenticated, retryAttempt, usingCachedDraft]);
 
   useEffect(() => {
     const refreshMedia = (event: Event) => {
@@ -462,9 +565,9 @@ export default function DraftPreviewPage({ params }: { params: Promise<{ id: str
             }
           </div>
           <p className="text-[14px] font-medium text-foreground/70">{nf ? t("draft.error.notFoundTitle", lang) : t("draft.error.failedTitle", lang)}</p>
-          <p className="text-[13px] text-foreground/40 leading-relaxed">{nf ? t("draft.error.notFound", lang) : t("draft.error.loadFailed", lang)}</p>
+          <p className="text-[13px] text-foreground/40 leading-relaxed">{nf ? t("draft.error.notFound", lang) : t("draft.error.reconnectHint", lang)}</p>
           <div className="flex items-center justify-center gap-2 pt-1">
-            {!nf && <Button variant="outline" size="sm" onClick={() => setReloadNonce((value) => value + 1)}>{t("common.tryAgain", lang)}</Button>}
+            {!nf && <Button variant="outline" size="sm" onClick={refreshListing} loading={manualRefreshPending}>{t("draft.refreshListing", lang)}</Button>}
             <Button variant="outline" size="sm" onClick={() => router.push("/dashboard")}>{t("nav.dashboard", lang)}</Button>
           </div>
         </div>
@@ -472,8 +575,8 @@ export default function DraftPreviewPage({ params }: { params: Promise<{ id: str
     );
     if (!user) return errorContent;
     return (
-      <AppShell user={user} onLogout={logout} hideMobileNav>
-        <div className="mx-auto w-full max-w-3xl pb-24 md:pb-10">{errorContent}</div>
+      <AppShell user={user} onLogout={logout}>
+        <div className="mx-auto w-full max-w-3xl pb-28 md:pb-10">{errorContent}</div>
       </AppShell>
     );
   }
@@ -481,18 +584,20 @@ export default function DraftPreviewPage({ params }: { params: Promise<{ id: str
   if (!draft || !user) return null;
 
   // Price: show preferred (converted) price prominently, original smaller if different currency
-  const prefPrice = fmtMoney(draft.price_preferred, draft.price_preferred_currency, lang);
-  const origPrice = fmtMoney(draft.price, draft.currency, lang);
+  const preferredCurrency = resolveUnit(unitCatalog, draft.price_preferred_currency, "CURRENCY");
+  const storedCurrency = resolveUnit(unitCatalog, draft.currency, "CURRENCY");
+  const prefPrice = fmtMoney(draft.price_preferred, preferredCurrency?.code, lang);
+  const origPrice = fmtMoney(draft.price, storedCurrency?.code, lang);
   const price = prefPrice || origPrice;
-  const showOrigPrice = prefPrice && origPrice && draft.price_preferred_currency !== draft.currency;
+  const showOrigPrice = prefPrice && origPrice && preferredCurrency?.id !== storedCurrency?.id;
 
   const address = draft.display_address || [draft.city, draft.state, draft.country].filter(Boolean).join(", ");
   const images = getImages(draft.raw_uploads);
   const videos = getVideos(draft.raw_uploads);
-  const facts = buildFacts(draft, lang);
-  const rows = buildRows(draft, lang);
+  const facts = buildFacts(draft, lang, unitCatalog);
+  const rows = buildRows(draft, lang, unitCatalog);
   const features = getFeatureChips(draft, lang);
-  const monthlyCosts = buildMonthlyCosts(draft, lang);
+  const monthlyCosts = buildMonthlyCosts(draft, lang, unitCatalog);
   const hasTranslation = !!(draft.description_translated && draft.translation_status === "completed");
   const rawDesc = hasTranslation ? draft.description_translated! : draft.description;
   const description = rawDesc ? stripFormatting(rawDesc) : null;
@@ -512,195 +617,300 @@ export default function DraftPreviewPage({ params }: { params: Promise<{ id: str
     draft.floorplan_id ||
     draft.draft_data?.some((d) => d.data_key === "captured_room_json" || d.data_key === "wall_graph_json")
   );
+  const detailsLong = rows.length > 8;
+  const visibleRows = detailsExpanded ? rows : rows.slice(0, 8);
+  const hasNarrative = Boolean(description || translationPending || hasFloorplan);
+  const hasSupportingDetails = rows.length > 0 || features.length > 0 || monthlyCosts.length > 0;
 
 
   return (
-    <AppShell user={user} onLogout={logout} hideMobileNav reaiDraftId={draftId} reaiDraftTitle={draft?.title} reaiUploadId={activeImageId ?? undefined} onReaiDraftUpdated={setDraft}>
-      <div className="mx-auto w-full max-w-3xl pb-24 md:pb-10">
+    <AppShell
+      user={user}
+      onLogout={logout}
+      hideMobileNav
+      reaiDraftId={draftId}
+      reaiDraftTitle={draft?.title}
+      reaiUploadId={activeImageId ?? undefined}
+      onReaiDraftUpdated={(updatedDraft) => {
+        setDraft(updatedDraft);
+        writeDraftDetailCache(user.id, draftId, updatedDraft);
+      }}
+    >
+      <div className="mx-auto w-full max-w-[980px] pb-28 md:pb-12">
+        {usingCachedDraft && (
+          <DraftCacheNotice lang={lang} refreshing={manualRefreshPending} onRefresh={refreshListing} />
+        )}
         {/* Creation toolbar */}
-        <div className="mb-4 flex items-center justify-between gap-3">
-          <button type="button" onClick={() => { if (window.history.length > 1) router.back(); else router.push("/dashboard"); }} className="-ml-2 inline-flex min-h-11 items-center gap-1.5 rounded-full px-3 py-1.5 text-[13px] text-muted-foreground transition-colors hover:bg-foreground/[0.04] hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 sm:min-h-0">
+        <div className="mb-5 flex items-center justify-between gap-3 md:mb-6">
+          <button type="button" onClick={() => router.push("/dashboard")} className="-ml-2 inline-flex min-h-11 items-center gap-1.5 rounded-full px-3 py-1.5 text-[13px] font-medium text-muted-foreground transition-colors hover:bg-foreground/[0.04] hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 md:min-h-9">
             <ArrowLeftIcon size={15} />
             {t("common.back", lang)}
           </button>
-          <div className="flex items-center gap-1.5">
-            <Button type="button" variant="ghost" size="icon-sm" className="h-11 w-11 sm:h-8 sm:w-8" onClick={() => setVersionsOpen(true)} aria-label={t("draft.versions.title", lang)} title={t("draft.versions.title", lang)}>
+          <div className="flex items-center gap-2 lg:hidden">
+            <Button type="button" variant="ghost" size="icon-sm" className="h-11 w-11 md:h-9 md:w-auto md:px-3" onClick={() => setMediaOpen(true)} aria-label={t("draft.media.manage", lang)} title={t("draft.media.manage", lang)}>
+              <ImageIcon size={16} />
+              <span className="hidden md:inline">{t("draft.media.manage", lang)}</span>
+            </Button>
+            <Button type="button" variant="ghost" size="icon-sm" className="h-11 w-11 md:h-9 md:w-auto md:px-3" onClick={() => setVersionsOpen(true)} aria-label={t("draft.versions.title", lang)} title={t("draft.versions.title", lang)}>
               <VersionsIcon size={16} />
+              <span className="hidden md:inline">{t("draft.versions.title", lang)}</span>
             </Button>
-            <Button type="button" variant="outline" size="xs" className="h-11 w-11 px-0 sm:h-7 sm:w-auto sm:px-2.5" onClick={() => setEditorOpen(true)} aria-label={t("shareDialog.edit", lang)}>
-              <EditIcon size={14} /> <span className="hidden sm:inline">{t("shareDialog.edit", lang)}</span>
+            <Button type="button" variant="outline" size="sm" className="hidden md:inline-flex" onClick={() => setEditorOpen(true)}>
+              <EditIcon size={14} /> {t("shareDialog.edit", lang)}
             </Button>
-            <Button type="button" variant="outline" size="xs" onClick={() => router.push(`/draft/${draftId}/sharing`)} className="hidden sm:inline-flex">
+            <Button type="button" variant="outline" size="sm" onClick={() => router.push(`/draft/${draftId}/sharing`)} className="hidden md:inline-flex">
               <ShareIcon size={14} /> {t("draft.share", lang)}
             </Button>
             {hasTour && (
-              <Button asChild size="xs" className="hidden sm:inline-flex">
+              <Button asChild size="sm" className="hidden md:inline-flex">
                 <Link href={`/tour/${primarySplatId}`}><TourIcon size={14} /> {t("draft.viewTour", lang)}</Link>
               </Button>
             )}
           </div>
         </div>
 
-        {/* Gallery — only when there are photos or a tour thumbnail */}
-        {hasMedia && (
-          <div className="-mx-4 md:mx-0">
-            {(images.length > 0 || thumbUrl) && (
-              <div className="md:rounded-xl overflow-hidden">
-                <DraftImageGallery images={images} alt={draft.title} fallbackUrl={thumbUrl} lang={lang} onActiveImageChange={setActiveImageId} />
-              </div>
+        {/* Media and property summary — one continuous workspace at every width. */}
+        <div className="space-y-6 lg:space-y-8">
+          {hasMedia && (
+            <div className="min-w-0 space-y-4">
+              {(images.length > 0 || thumbUrl) && (
+                <div className="detail-hero-frame overflow-hidden rounded-[1.5rem] shadow-card ring-1 ring-border/75 sm:rounded-2xl">
+                  <DraftImageGallery
+                    images={images}
+                    alt={draft.title}
+                    fallbackUrl={thumbUrl}
+                    lang={lang}
+                    onActiveImageChange={setActiveImageId}
+                    onManage={() => setMediaOpen(true)}
+                    manageLabel={t("draft.media.manage", lang)}
+                  />
+                </div>
+              )}
+              {videos.length > 0 && (
+                <div className="space-y-4">
+                  {videos.map((video) => (
+                    <video
+                      key={video.id}
+                      controls
+                      playsInline
+                      preload="metadata"
+                      className="aspect-[16/10] w-full rounded-[1.5rem] bg-black object-cover shadow-card ring-1 ring-border/75 sm:rounded-2xl"
+                      aria-label={video.name}
+                    >
+                      <source src={video.url} />
+                    </video>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+
+          <section className={cn("min-w-0", !hasMedia && "max-w-3xl")}>
+            <div className="flex flex-wrap items-center gap-2">
+              {offerType ? (
+                <span className="inline-flex h-6 items-center rounded-full bg-secondary px-2.5 text-[10px] font-semibold uppercase tracking-[0.09em] text-foreground/60">
+                  {enumT("offer", offerType, lang)}
+                </span>
+              ) : null}
+              <StatusPill tone={draft.is_complete ? "success" : "neutral"} dot>
+                {t(draft.is_complete ? "dashboard.listingComplete" : "dashboard.listingDraft", lang)}
+              </StatusPill>
+              {hasTour ? <StatusPill tone="strong">{t("dashboard.tourReady", lang)}</StatusPill> : null}
+            </div>
+
+            <h1 className="mt-3 text-[26px] font-semibold leading-[1.08] tracking-[-0.03em] sm:text-[30px] lg:text-[34px]">
+              {draft.title || t("dashboard.untitled", lang)}
+            </h1>
+            {address && (
+              <p className="mt-2 flex items-start gap-1.5 text-[13px] leading-relaxed text-muted-foreground">
+                <MapPinIcon size={14} className="mt-0.5 shrink-0 text-foreground/40" />
+                <span>{address}</span>
+              </p>
             )}
-            {videos.length > 0 && (
-              <div className={cn("space-y-3", (images.length > 0 || thumbUrl) && "mt-4")}>
-                {videos.map((video) => (
-                  <video
-                    key={video.id}
-                    controls
-                    playsInline
-                    preload="metadata"
-                    className="aspect-[16/10] w-full bg-black object-cover md:rounded-xl"
-                    aria-label={video.name}
-                  >
-                    <source src={video.url} />
-                  </video>
+            {price && (
+              <p className="mt-4 text-[22px] font-semibold tracking-[-0.025em] tabular-nums">
+                {price}
+                {showOrigPrice && (
+                  <span className="ml-2 text-[12px] font-normal tracking-normal text-muted-foreground tabular-nums">{origPrice}</span>
+                )}
+              </p>
+            )}
+
+            {facts.length > 0 && (
+              <div className="mt-5 grid grid-cols-2 gap-2.5 border-t border-border/70 pt-5 sm:grid-cols-3">
+                {facts.map((fact) => (
+                  <div key={fact.label} className="flex min-w-0 items-center gap-2.5 rounded-xl bg-surface-subtle px-3 py-2.5 ring-1 ring-inset ring-border/35">
+                    <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-card text-foreground/60 shadow-control">
+                      {fact.icon}
+                    </span>
+                    <span className="min-w-0 leading-tight">
+                      <span className="block truncate text-[13px] font-semibold tabular-nums">{fact.value}</span>
+                      <span className="mt-1 block truncate text-[10px] font-medium text-muted-foreground">{fact.label}{fact.sub ? ` · ${fact.sub}` : ""}</span>
+                    </span>
+                  </div>
                 ))}
               </div>
             )}
-          </div>
-        )}
 
-        {/* Header */}
-        <div className="mt-5">
-          <div className="mb-1.5 flex flex-wrap items-center gap-2">
-            {offerType ? (
-              <p className="text-[11px] font-medium uppercase tracking-wider text-muted-foreground">
-                {enumT("offer", offerType, lang)}
-              </p>
-            ) : null}
-            <StatusPill tone={draft.is_complete ? "success" : "neutral"} dot>
-              {t(draft.is_complete ? "dashboard.listingComplete" : "dashboard.listingDraft", lang)}
-            </StatusPill>
-            {hasTour ? <StatusPill tone="strong">{t("dashboard.tourReady", lang)}</StatusPill> : null}
-          </div>
-          <h1 className="text-[24px] font-semibold tracking-tight leading-tight">{draft.title || t("dashboard.untitled", lang)}</h1>
-          {address && (
-            <p className="mt-1 text-[13px] text-muted-foreground">{address}</p>
-          )}
-          {price && (
-            <p className="mt-2 text-[20px] font-semibold tracking-tight tabular-nums">
-              {price}
-              {showOrigPrice && (
-                <span className="ml-2 text-[13px] font-normal text-muted-foreground tabular-nums">{origPrice}</span>
+            <div className="mt-6 hidden flex-wrap items-center gap-2 border-t border-border/70 pt-5 lg:flex">
+              {hasTour && (
+                <Button asChild size="sm">
+                  <Link href={`/tour/${primarySplatId}`}><TourIcon size={15} /> {t("draft.viewTour", lang)}</Link>
+                </Button>
               )}
-            </p>
-          )}
+              <Button type="button" variant="outline" size="sm" onClick={() => setMediaOpen(true)}>
+                <ImageIcon size={15} /> {t("draft.media.manage", lang)}
+              </Button>
+              <Button type="button" variant="outline" size="sm" onClick={() => setEditorOpen(true)}>
+                <EditIcon size={14} /> {t("shareDialog.edit", lang)}
+              </Button>
+              <Button type="button" variant="outline" size="sm" onClick={() => router.push(`/draft/${draftId}/sharing`)}>
+                <ShareIcon size={14} /> {t("draft.share", lang)}
+              </Button>
+              <Button type="button" variant="ghost" size="sm" onClick={() => setVersionsOpen(true)}>
+                <VersionsIcon size={15} /> {t("draft.versions.title", lang)}
+              </Button>
+            </div>
+          </section>
         </div>
 
-        {/* Key facts */}
-        {facts.length > 0 && (
-          <div className="mt-5 flex flex-wrap gap-x-7 gap-y-3 border-y border-border py-4">
-            {facts.map((f, i) => (
-              <div key={i} className="min-w-[5.5rem] leading-tight">
-                <p className="text-[15px] font-semibold tabular-nums">{f.value}</p>
-                <p className="mt-1 text-[11px] text-muted-foreground">
-                  {f.label}
-                  {f.sub && <span className="text-muted-foreground/70"> · {f.sub}</span>}
-                </p>
+        {(hasNarrative || hasSupportingDetails) && (
+          <div className="mt-8 space-y-7 lg:mt-10">
+            {hasNarrative && (
+              <div className="min-w-0 space-y-7">
+                {(description || translationPending) && (
+                  <section>
+                    <h2 className="mb-3 flex items-center gap-2 text-[14px] font-semibold">
+                      <DocumentIcon size={16} className="text-foreground/55" />
+                      {t("draft.description", lang)}
+                    </h2>
+                    {translationPending && !hasTranslation && (
+                      <p className="mb-2 text-[12px] text-foreground/50">{t("draft.descriptionPending", lang)}</p>
+                    )}
+                    {description && (
+                      <div className="rounded-[1.5rem] border border-border/70 bg-card px-5 py-5 shadow-card sm:rounded-2xl sm:px-6">
+                        <div className={cn("overflow-hidden transition-all duration-300", !descExpanded && descLong ? "max-h-[8.5em]" : "max-h-[200em]")}>
+                          <p className="whitespace-pre-line text-[14px] leading-[1.75] text-foreground/78">
+                            {description}
+                          </p>
+                        </div>
+                        {descLong && (
+                          <button type="button" aria-expanded={descExpanded} onClick={() => setDescExpanded(!descExpanded)} className="-ml-2 mt-3 rounded-full px-2.5 py-1.5 text-[12px] font-semibold text-foreground/55 transition-colors hover:bg-foreground/[0.045] hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2">
+                            {descExpanded ? t("draft.showLess", lang) : t("draft.showMore", lang)}
+                          </button>
+                        )}
+                      </div>
+                    )}
+                  </section>
+                )}
+
+                {hasFloorplan && (
+                  <section>
+                    <h2 className="mb-3 flex items-center gap-2 text-[14px] font-semibold">
+                      <FloorplanIcon size={16} className="text-foreground/55" />
+                      {t("draft.floorplan", lang)}
+                    </h2>
+                    <div className="overflow-hidden rounded-[1.5rem] sm:rounded-2xl">
+                      <FloorplanViewer
+                        draftData={draft.draft_data ?? []}
+                        floorplanId={draft.floorplan_id}
+                        lang={lang}
+                        units={unitCatalog}
+                        targetAreaUnit={draft.area_preferred_unit ?? draft.area_unit}
+                      />
+                    </div>
+                  </section>
+                )}
               </div>
-            ))}
-          </div>
-        )}
-
-        {/* Detail attributes */}
-        {rows.length > 0 && (
-          <div className="mt-5">
-            <h2 className="text-[14px] font-semibold mb-2">{t("draft.details", lang)}</h2>
-            <div className="rounded-xl border border-border/50 bg-surface overflow-hidden shadow-card">
-              {rows.map((r, i) => (
-                <div key={i} className={`flex items-center justify-between gap-4 px-4 py-3 ${i < rows.length - 1 ? "border-b border-border/40" : ""}`}>
-                  <span className="min-w-0 break-words text-[13px] text-muted-foreground">{r.label}</span>
-                  <span className="min-w-0 max-w-[55%] break-words text-right text-[13px] font-semibold text-foreground tabular-nums">{r.value}</span>
-                </div>
-              ))}
-            </div>
-          </div>
-        )}
-
-        {/* Description */}
-        {(description || translationPending) && (
-          <div className="mt-5">
-            <h2 className="text-[14px] font-semibold mb-2">{t("draft.description", lang)}</h2>
-            {translationPending && !hasTranslation && (
-              <p className="text-[12px] text-foreground/50 mb-2">{t("draft.descriptionPending", lang)}</p>
             )}
-            {description && (
-              <div className="rounded-xl border border-border/50 bg-surface px-4 py-3.5 shadow-card">
-                <div className={`overflow-hidden transition-all duration-300 ${!descExpanded && descLong ? "max-h-[7.5em]" : "max-h-[200em]"}`}>
-                  <p className="text-[13px] leading-[1.75] text-foreground/80 whitespace-pre-line">
-                    {description}
-                  </p>
-                </div>
-                {descLong && (
-                  <button onClick={() => setDescExpanded(!descExpanded)} className="mt-2 text-[12px] font-medium text-foreground/50 hover:text-foreground transition-colors">
-                    {descExpanded ? t("draft.showLess", lang) : t("draft.showMore", lang)}
-                  </button>
+
+            {hasSupportingDetails && (
+              <div className="min-w-0 space-y-7">
+                {rows.length > 0 && (
+                  <section>
+                    <h2 className="mb-3 flex items-center gap-2 text-[14px] font-semibold">
+                      <InfoIcon size={16} className="text-foreground/55" />
+                      {t("draft.details", lang)}
+                    </h2>
+                    <div className="overflow-hidden rounded-[1.5rem] border border-border/70 bg-card shadow-card sm:rounded-2xl">
+                      {visibleRows.map((row, index) => (
+                        <div key={`${row.label}-${index}`} className={cn("flex items-start justify-between gap-4 px-4 py-3", (index < visibleRows.length - 1 || detailsLong) && "border-b border-border/45")}>
+                          <span className="min-w-0 break-words text-[12px] leading-relaxed text-muted-foreground">{row.label}</span>
+                          <span className="min-w-0 max-w-[58%] break-words text-right text-[12px] font-semibold leading-relaxed text-foreground tabular-nums">{row.value}</span>
+                        </div>
+                      ))}
+                      {detailsLong && (
+                        <div className="flex justify-center px-3 py-2.5">
+                          <button type="button" aria-expanded={detailsExpanded} onClick={() => setDetailsExpanded(!detailsExpanded)} className="rounded-full px-3 py-1.5 text-[12px] font-semibold text-foreground/55 transition-colors hover:bg-foreground/[0.045] hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2">
+                            {detailsExpanded ? t("draft.showLess", lang) : t("draft.showMore", lang)}
+                          </button>
+                        </div>
+                      )}
+                    </div>
+                  </section>
+                )}
+
+                {features.length > 0 && (
+                  <section>
+                    <h2 className="mb-3 flex items-center gap-2 text-[14px] font-semibold">
+                      <StarIcon size={16} className="text-foreground/55" />
+                      {t("draft.features", lang)}
+                    </h2>
+                    <div className="flex flex-wrap gap-2 rounded-[1.5rem] border border-border/70 bg-card p-4 shadow-card sm:rounded-2xl">
+                      {features.map((feature) => (
+                        <span key={feature} className="inline-flex min-h-8 items-center rounded-full border border-border/65 bg-surface-subtle px-3 py-1 text-[11px] font-medium text-foreground/75">
+                          {feature}
+                        </span>
+                      ))}
+                    </div>
+                  </section>
+                )}
+
+                {monthlyCosts.length > 0 && (
+                  <section>
+                    <h2 className="mb-3 flex items-center gap-2 text-[14px] font-semibold">
+                      <PriceIcon size={16} className="text-foreground/55" />
+                      {t("draft.monthlyCosts", lang)}
+                    </h2>
+                    <div className="overflow-hidden rounded-[1.5rem] border border-border/70 bg-card shadow-card sm:rounded-2xl">
+                      {monthlyCosts.map((row, index) => (
+                        <div key={`${row.label}-${index}`} className={cn("flex items-center justify-between gap-4 px-4 py-3", index < monthlyCosts.length - 1 && "border-b border-border/45")}>
+                          <span className="min-w-0 break-words text-[12px] text-muted-foreground">{row.label}</span>
+                          <span className="min-w-0 max-w-[58%] break-words text-right text-[12px] font-semibold text-foreground tabular-nums">{row.value}</span>
+                        </div>
+                      ))}
+                    </div>
+                  </section>
                 )}
               </div>
             )}
           </div>
         )}
 
-        {/* Features */}
-        {features.length > 0 && (
-          <div className="mt-5">
-            <h2 className="text-[14px] font-semibold mb-2">{t("draft.features", lang)}</h2>
-            <div className="flex flex-wrap gap-1.5">
-              {features.map((f) => (
-                <span key={f} className="inline-flex items-center rounded-md border border-border/50 bg-surface px-2.5 py-1 text-[12px] font-medium text-foreground/75">
-                  {f}
-                </span>
-              ))}
-            </div>
-          </div>
-        )}
-
-        {/* Monthly costs */}
-        {monthlyCosts.length > 0 && (
-          <div className="mt-5">
-            <h2 className="text-[14px] font-semibold mb-2">{t("draft.monthlyCosts", lang)}</h2>
-            <div className="rounded-xl border border-border/50 bg-surface overflow-hidden shadow-card">
-              {monthlyCosts.map((r, i) => (
-                <div key={i} className={`flex items-center justify-between gap-4 px-4 py-2.5 ${i < monthlyCosts.length - 1 ? "border-b border-border/40" : ""}`}>
-                  <span className="min-w-0 break-words text-[13px] text-muted-foreground">{r.label}</span>
-                  <span className="min-w-0 max-w-[55%] break-words text-right text-[13px] font-semibold text-foreground tabular-nums">{r.value}</span>
-                </div>
-              ))}
-            </div>
-          </div>
-        )}
-
-        {/* Floorplan */}
-        {hasFloorplan && (
-          <div className="mt-5">
-            <h2 className="text-[14px] font-semibold mb-2">{t("draft.floorplan", lang)}</h2>
-            <FloorplanViewer draftData={draft.draft_data ?? []} floorplanId={draft.floorplan_id} lang={lang} />
-          </div>
-        )}
-
       </div>
 
-      <DraftEditor open={editorOpen} onOpenChange={setEditorOpen} draft={draft} lang={lang} onSaved={setDraft} />
+      <DraftEditor open={editorOpen} onOpenChange={setEditorOpen} draft={draft} units={unitCatalog} lang={lang} onSaved={setDraft} />
+      <DraftMediaManager
+        open={mediaOpen}
+        onOpenChange={setMediaOpen}
+        draft={draft}
+        lang={lang}
+        onChanged={() => refreshDraft(draftId).then(setDraft)}
+        onOpenVersions={() => setVersionsOpen(true)}
+      />
       <DraftVersionManager
         open={versionsOpen}
         onOpenChange={setVersionsOpen}
         draft={draft}
         splats={splatData}
+        units={unitCatalog}
         lang={lang}
         onActiveTourChanged={(activeSplatId) => setSplatData((current) => current ? { ...current, parent_splat_id: activeSplatId } : current)}
         onDraftRestored={setDraft}
       />
 
       {/* Sticky mobile action bar */}
-      <div className="fixed inset-x-0 bottom-0 z-40 flex gap-2 border-t border-border bg-white px-3 pb-[max(0.625rem,env(safe-area-inset-bottom))] pt-2.5 md:hidden">
+      <div className="fixed inset-x-0 bottom-0 z-40 flex gap-2 border-t border-border bg-card/95 px-3 pb-[max(0.625rem,env(safe-area-inset-bottom))] pt-2.5 backdrop-blur-xl md:hidden">
         <Button type="button" variant="outline" size="sm" className="h-11 flex-1" onClick={() => setEditorOpen(true)}>
           <EditIcon size={15} /> {t("shareDialog.edit", lang)}
         </Button>

@@ -18,12 +18,20 @@ import { useEffect, useId, useMemo, useState } from "react";
 import type { DraftDataEntry, SharedFloorplanPayload } from "../lib/tour-types";
 import {
   getFloorplanRendering,
+  listUnits,
   type FloorplanRenderingData,
   type FloorplanRoom,
   type GeometryLayer,
 } from "../lib/api/client";
 import { t } from "../lib/i18n";
 import { localizedRoomName } from "../lib/room-names";
+import {
+  baseUnitForCategory,
+  convertUnitValue,
+  resolveUnit,
+  unitLabel,
+  type UnitLookup,
+} from "../lib/unit-catalog";
 import {
   buildTextDataMap,
   parseCapturedRoom,
@@ -61,6 +69,10 @@ interface Props {
   draftData: DraftDataEntry[];
   floorplanId?: number | null;
   lang: string;
+  /** Canonical lookup data. Public views fetch it when the owner page cannot pass it. */
+  units?: readonly UnitLookup[];
+  /** Backend unit id/code/symbol selected for area display. */
+  targetAreaUnit?: number | string | null;
   /** Public share mode: pre-fetched floorplan block from the share payload —
    * used instead of the authenticated rendering endpoint. */
   publicFloorplan?: SharedFloorplanPayload | null;
@@ -72,10 +84,6 @@ const SVG_W = 400;
 const PADDING = 32;
 const MESH_INK = "#141417"; // iOS FloorplanCanvas canvasInkColor
 const AREA_FILL = "#6b7280";
-
-// NOTE: "m²" is hardcoded in the legend, total-area chip, and room labels —
-// backend contract gap: floorplan payloads don't yet carry areas pre-converted
-// to the user's preferred area unit (unlike drafts' `area_preferred`).
 
 const midOf = (p1: V2, p2: V2): V2 => [(p1[0] + p2[0]) / 2, (p1[1] + p2[1]) / 2];
 
@@ -100,8 +108,16 @@ interface LegendEntry {
 
 // ─────────────────────────────────────────────────────────────────────────────
 
-export default function FloorplanViewer({ draftData, floorplanId, lang, publicFloorplan }: Props) {
+export default function FloorplanViewer({
+  draftData,
+  floorplanId,
+  lang,
+  publicFloorplan,
+  units,
+  targetAreaUnit,
+}: Props) {
   const [rendering, setRendering] = useState<FloorplanRenderingData | null>(null);
+  const [publicUnits, setPublicUnits] = useState<UnitLookup[]>([]);
 
   useEffect(() => {
     if (!floorplanId || publicFloorplan) return;
@@ -111,6 +127,28 @@ export default function FloorplanViewer({ draftData, floorplanId, lang, publicFl
       .catch(() => {});
     return () => ctrl.abort();
   }, [floorplanId, publicFloorplan]);
+
+  useEffect(() => {
+    if (units !== undefined) return;
+    let active = true;
+    listUnits("AREA")
+      .then((result) => { if (active) setPublicUnits(result); })
+      .catch(() => { if (active) setPublicUnits([]); });
+    return () => { active = false; };
+  }, [units]);
+
+  const unitCatalog = units ?? publicUnits;
+  const sourceAreaUnit = baseUnitForCategory(unitCatalog, "AREA");
+  const displayAreaUnit = sourceAreaUnit
+    ? resolveUnit(unitCatalog, targetAreaUnit, "AREA") ?? sourceAreaUnit
+    : null;
+  const formatArea = (value: number) => {
+    const converted = sourceAreaUnit && displayAreaUnit
+      ? convertUnitValue(value, sourceAreaUnit, displayAreaUnit) ?? value
+      : value;
+    const label = unitLabel(displayAreaUnit);
+    return `${converted.toFixed(1)}${label ? ` ${label}` : ""}`;
+  };
 
   const model = useMemo(() => buildLocalModel(draftData), [draftData]);
 
@@ -146,7 +184,7 @@ export default function FloorplanViewer({ draftData, floorplanId, lang, publicFl
   if (model.local) {
     plan = <LocalPlan model={model.local} legendEntries={legendEntries} />;
   } else if (hasMesh) {
-    plan = <MeshPlan data={rendering!} legendEntries={legendEntries} lang={lang} />;
+    plan = <MeshPlan data={rendering!} legendEntries={legendEntries} lang={lang} formatArea={formatArea} />;
   } else if (publicFloorplan?.composite_url || rendering?.composite?.url) {
     const url = publicFloorplan?.composite_url ?? rendering!.composite.url;
     plan = (
@@ -171,7 +209,7 @@ export default function FloorplanViewer({ draftData, floorplanId, lang, publicFl
                 <span className="truncate text-[13px] font-medium text-foreground/75">{e.label}</span>
                 {e.area > 0 && (
                   <span className="ml-auto shrink-0 text-[12px] text-muted-foreground tabular-nums">
-                    {e.area.toFixed(1)} m²
+                    {formatArea(e.area)}
                   </span>
                 )}
               </div>
@@ -182,7 +220,7 @@ export default function FloorplanViewer({ draftData, floorplanId, lang, publicFl
       {totalArea > 0 && (
         <div className="flex items-center justify-between border-t border-border/40 px-4 py-3">
           <span className="text-[13px] font-semibold text-foreground">{t("floorplan.total", lang)}</span>
-          <span className="text-[13px] font-semibold text-foreground tabular-nums">{totalArea.toFixed(1)} m²</span>
+          <span className="text-[13px] font-semibold text-foreground tabular-nums">{formatArea(totalArea)}</span>
         </div>
       )}
     </div>
@@ -522,10 +560,12 @@ function MeshPlan({
   data,
   legendEntries,
   lang,
+  formatArea,
 }: {
   data: FloorplanRenderingData;
   legendEntries: LegendEntry[];
   lang: string;
+  formatArea: (value: number) => string;
 }) {
   const layers = data.geometry.layers;
   const pts: V2[] = [];
@@ -619,7 +659,7 @@ function MeshPlan({
             </text>
             {room.floor_area != null && room.floor_area > 0 && (
               <text x={sx} y={sy + fontFor * 1.2} textAnchor="middle" dominantBaseline="central" fill={AREA_FILL} fontSize={fontFor * 0.7}>
-                {room.floor_area.toFixed(1)} m²
+                {formatArea(room.floor_area)}
               </text>
             )}
           </g>

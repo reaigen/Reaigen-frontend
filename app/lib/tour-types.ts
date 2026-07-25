@@ -39,8 +39,17 @@ export interface TourData {
   rooms?: FeaturedRoom[];
 }
 
+export interface SavedCamera {
+  position: Vec3;
+  forward: Vec3;
+  up?: Vec3;
+  fov?: number;
+  /** Coordinate marker added after the web viewer moved to identity scene space. */
+  coordinate_space?: string;
+}
+
 export interface CameraData {
-  cameras: { position: Vec3; forward: Vec3; up?: Vec3; fov?: number }[];
+  cameras: SavedCamera[];
   fovY?: number;
   sceneFov?: number;
   source?: string;
@@ -104,7 +113,7 @@ export interface TourViewerData {
   floorplan_url: string | null;
   rooms: RoomData[];
   room_splats: RoomSplatData[];
-  cameras: { cameras: { position: number[]; forward: number[]; up?: number[] }[]; fovY?: number; sceneFov?: number } | null;
+  cameras: CameraData | null;
   draft_data?: SharedDraftData | null;
 }
 
@@ -218,6 +227,8 @@ export interface DraftListingItem {
   price: string | number | null;
   currency: string | null;
   area: string | number | null;
+  area_unit?: number | null;
+  area_unit_code?: string | null;
   area_unit_display: string | null;
   area_display: string | null;
   area_preferred: string | number | null;
@@ -258,12 +269,24 @@ export interface DraftUpload {
   file_name: string;
   file_size: number;
   mime_type: string;
-  asset_type: string;
-  asset_type_detail: string;
+  asset_type: number | string;
+  asset_type_detail: {
+    id?: number;
+    code?: string;
+    name?: string;
+    category_code?: string;
+    is_raw?: boolean;
+  } | string | null;
   sort_order: number;
   role: string;
   status: string;
   is_master: boolean;
+  is_deleted?: boolean;
+  logical_asset_id?: string | null;
+  version?: number;
+  supersedes?: number | null;
+  source_upload_id?: number | null;
+  versions_count?: number;
   uploaded_at: string;
 }
 
@@ -286,8 +309,10 @@ export interface DraftDetailItem extends DraftListingItem {
   description_translated?: string | null;
   translation_status?: string | null;
   lot_size: string | number | null;
-  lot_size_unit: string | null;
+  /** Backend Unit lookup primary key. Resolve display/code through lookups/units. */
+  lot_size_unit: number | null;
   lot_size_preferred: string | number | null;
+  lot_size_preferred_unit?: string | null;
   latitude: string | number | null;
   longitude: string | number | null;
 }

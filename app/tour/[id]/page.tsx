@@ -182,12 +182,15 @@ export default function TourPage({ params }: { params: Promise<{ id: string }> }
         lang={lang}
       />
 
+      <div className="pointer-events-none absolute inset-x-0 top-0 z-10 h-28 bg-gradient-to-b from-black/50 to-transparent" aria-hidden="true" />
+      <div className="pointer-events-none absolute inset-x-0 bottom-0 z-10 h-36 bg-gradient-to-t from-black/55 to-transparent" aria-hidden="true" />
+
       {/* Top bar */}
       <div className="absolute left-3 top-[calc(0.75rem+env(safe-area-inset-top,0px))] z-20 flex items-center gap-2 animate-fade-in sm:left-4 sm:top-[calc(1rem+env(safe-area-inset-top,0px))] xl:left-6 xl:top-[calc(1.5rem+env(safe-area-inset-top,0px))]">
         <button
-          onClick={() => router.back()}
+          onClick={() => router.push(viewer.draft_id ? `/draft/${viewer.draft_id}` : "/tours")}
           aria-label={t("common.back", lang)}
-          className="flex h-9 w-9 items-center justify-center rounded-full border border-white/10 bg-black/40 text-white/90 shadow-lg backdrop-blur-xl transition-colors hover:bg-black/50 active:scale-95 xl:w-auto xl:gap-2 xl:px-3"
+          className="flex h-11 w-11 items-center justify-center rounded-full border border-white/10 bg-black/45 text-white/90 shadow-lg backdrop-blur-xl transition-colors hover:bg-black/60 active:scale-95 xl:w-auto xl:gap-2 xl:px-3"
         >
           <ArrowLeftIcon size={16} />
           <span className="hidden text-[12px] font-medium xl:inline">{t("common.back", lang)}</span>
@@ -198,6 +201,7 @@ export default function TourPage({ params }: { params: Promise<{ id: string }> }
         splatId={resolvedSplatId}
         viewerRef={splatRef}
         activeShotIdx={shotIdx}
+        initialCameras={viewerCameras}
         defaultMode="edit"
         onSaved={() => setEditorVersion((v) => v + 1)}
         lang={lang}

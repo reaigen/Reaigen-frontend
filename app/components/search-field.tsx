@@ -41,8 +41,8 @@ export function SearchField({
         className={cn(
           "w-full text-foreground outline-none [&::-webkit-search-cancel-button]:appearance-none",
           toolbar
-            ? "h-10 border-0 bg-transparent pl-6 pr-8 text-[13px] placeholder:text-muted-foreground/80 focus-visible:placeholder:text-muted-foreground md:h-9"
-            : "h-12 rounded-full border border-border/85 bg-card pl-11 pr-10 text-[14px] shadow-control transition-[border-color,box-shadow] placeholder:text-muted-foreground/80 hover:border-foreground/25 focus-visible:border-foreground/35 focus-visible:ring-2 focus-visible:ring-ring/12",
+            ? "h-10 border-0 bg-transparent pl-6 pr-8 text-[16px] placeholder:text-muted-foreground/80 focus-visible:placeholder:text-muted-foreground sm:text-[13px] md:h-9"
+            : "h-12 rounded-full border border-border/85 bg-card pl-11 pr-10 text-[16px] shadow-control transition-[border-color,box-shadow] placeholder:text-muted-foreground/80 hover:border-foreground/25 focus-visible:border-foreground/35 focus-visible:ring-2 focus-visible:ring-ring/12 sm:text-[14px]",
         )}
       />
       {value ? (

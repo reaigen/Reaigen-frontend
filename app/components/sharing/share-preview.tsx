@@ -2,6 +2,8 @@
 
 import { t } from "../../lib/i18n";
 import type { DraftDetailItem, DraftUpload } from "../../lib/tour-types";
+import { currentGalleryUploads } from "../../lib/media";
+import { resolveUnit, unitLabel, type UnitLookup } from "../../lib/unit-catalog";
 import { PropertyFactTile } from "../property-fact-tile";
 import type { ContentScope } from "./content-scope-selector";
 
@@ -9,61 +11,69 @@ interface SharePreviewProps {
   draft: DraftDetailItem;
   scope: ContentScope;
   hasTour: boolean;
+  hasFloorplan: boolean;
   thumbUrl: string | null;
-  fpUrl: string | null;
+  units: readonly UnitLookup[];
   lang: string;
 }
 
 function getImages(uploads: DraftUpload[]) {
-  return (uploads ?? [])
-    .filter((u) => u.mime_type?.startsWith("image") || u.asset_type === "photo" || u.asset_type === "processed_image")
-    .sort((a, b) => a.sort_order - b.sort_order)
-    .map((u) => ({ url: u.file_url }));
+  return currentGalleryUploads(uploads, "image").map((upload) => ({ url: upload.file_url }));
 }
 
 function formatPreviewPrice(value: string | number | null | undefined, currency: string | null | undefined, lang: string): string | null {
   if (value == null || value === "") return null;
   const n = typeof value === "number" ? value : Number(value);
   if (!Number.isFinite(n) || n === 0) return null;
+  if (!currency) return n.toLocaleString(lang);
   try {
-    return new Intl.NumberFormat(lang, { style: "currency", currency: currency || "EUR", maximumFractionDigits: 0 }).format(n);
+    return new Intl.NumberFormat(lang, { style: "currency", currency, maximumFractionDigits: 0 }).format(n);
   } catch {
-    return `${n.toLocaleString(lang)}${currency ? ` ${currency}` : ""}`;
+    return n.toLocaleString(lang);
   }
 }
 
-export function SharePreview({ draft, scope, hasTour, thumbUrl, fpUrl, lang }: SharePreviewProps) {
+export function SharePreview({ draft, scope, hasTour, hasFloorplan, thumbUrl, units, lang }: SharePreviewProps) {
   const images = getImages(draft.raw_uploads);
   // Preferred (converted) price prominently, original smaller if different currency —
   // same pattern as the draft detail page.
-  const prefPrice = formatPreviewPrice(draft.price_preferred, draft.price_preferred_currency, lang);
-  const origPrice = formatPreviewPrice(draft.price, draft.currency, lang);
+  const preferredCurrency = resolveUnit(units, draft.price_preferred_currency, "CURRENCY");
+  const storedCurrency = resolveUnit(units, draft.currency, "CURRENCY");
+  const prefPrice = formatPreviewPrice(draft.price_preferred, preferredCurrency?.code, lang);
+  const origPrice = formatPreviewPrice(draft.price, storedCurrency?.code, lang);
   const price = prefPrice || origPrice;
-  const showOrigPrice = prefPrice && origPrice && draft.price_preferred_currency !== draft.currency;
+  const showOrigPrice = prefPrice && origPrice && preferredCurrency?.id !== storedCurrency?.id;
   const address = draft.display_address || [draft.city, draft.state, draft.country].filter(Boolean).join(", ");
 
   const fields = scope.selectedFields;
   const showTitle = fields.has("title");
-  const showAddress = fields.has("display_address") && !!address;
-  const showPrice = fields.has("price") && !!price;
+  const detailsIncluded = scope.details;
+  const showAddress = detailsIncluded && fields.has("display_address") && !!address;
+  const showPrice = detailsIncluded && fields.has("price") && !!price;
   const specItems: Array<{ label: string; value: string }> = [];
-  if (fields.has("bedrooms") && draft.specs?.layout?.bedrooms != null) {
+  if (detailsIncluded && fields.has("bedrooms") && draft.specs?.layout?.bedrooms != null) {
     specItems.push({ label: t("draft.bedrooms", lang), value: String(draft.specs.layout.bedrooms) });
   }
-  if (fields.has("bathrooms") && draft.specs?.layout?.bathrooms != null) {
+  if (detailsIncluded && fields.has("bathrooms") && draft.specs?.layout?.bathrooms != null) {
     specItems.push({ label: t("draft.bathrooms", lang), value: String(draft.specs.layout.bathrooms) });
   }
-  if (fields.has("area") && draft.area != null) {
+  if (detailsIncluded && fields.has("area") && draft.area != null) {
+    const usesPreferredArea = draft.area_preferred != null;
+    const areaUnit = usesPreferredArea
+      ? resolveUnit(units, draft.area_preferred_unit, "AREA")
+      : resolveUnit(units, draft.area_unit, "AREA")
+        ?? resolveUnit(units, draft.area_unit_code, "AREA")
+        ?? resolveUnit(units, draft.area_unit_display, "AREA");
+    const label = unitLabel(areaUnit);
     specItems.push({
       label: t("draft.area", lang),
-      value: `${draft.area_preferred ?? draft.area}${draft.area_preferred_unit ?? draft.area_unit_display ? ` ${draft.area_preferred_unit ?? draft.area_unit_display}` : ""}`,
+      value: `${draft.area_preferred ?? draft.area}${label ? ` ${label}` : ""}`,
     });
   }
 
   const tourIncluded = scope.tour && hasTour;
   const photosIncluded = scope.photos && images.length > 0;
-  const detailsIncluded = scope.details;
-  const floorplanIncluded = scope.floorplan && !!fpUrl;
+  const floorplanIncluded = scope.floorplan && hasFloorplan;
 
   // Hero image: tour thumbnail or first photo
   const heroUrl = tourIncluded && thumbUrl ? thumbUrl : photosIncluded ? images[0]?.url : null;
@@ -71,29 +81,30 @@ export function SharePreview({ draft, scope, hasTour, thumbUrl, fpUrl, lang }: S
 
   // Checklist
   const items: { label: string; on: boolean }[] = [];
-  if (showTitle) items.push({ label: t("shareDialog.field.title", lang), on: detailsIncluded });
-  if (showAddress) items.push({ label: t("shareDialog.field.display_address", lang), on: detailsIncluded });
-  if (showPrice) items.push({ label: t("shareDialog.field.price", lang), on: detailsIncluded });
-  if (specItems.length > 0) items.push({ label: t("sharing.previewSpecs", lang), on: detailsIncluded });
+  if (showTitle) items.push({ label: t("shareDialog.field.title", lang), on: true });
+  if (showAddress) items.push({ label: t("shareDialog.field.display_address", lang), on: true });
+  if (showPrice) items.push({ label: t("shareDialog.field.price", lang), on: true });
+  if (specItems.length > 0) items.push({ label: t("sharing.previewSpecs", lang), on: true });
   if (fields.has("description") && draft.description) items.push({ label: t("shareDialog.field.description", lang), on: detailsIncluded });
   if (images.length > 0) items.push({ label: `${t("shareDialog.field.uploads", lang)} (${images.length})`, on: photosIncluded });
   if (hasTour) items.push({ label: t("sharing.scopeTour", lang), on: tourIncluded });
-  if (fpUrl) items.push({ label: t("sharing.scopeFloorplan", lang), on: floorplanIncluded });
+  if (hasFloorplan) items.push({ label: t("sharing.scopeFloorplan", lang), on: floorplanIncluded });
+  const includedItems = items.filter((item) => item.on);
 
   return (
     <div>
       {/* Preview card */}
-      <div className="overflow-hidden rounded-xl border border-border/55 bg-surface shadow-card">
+      <div className="overflow-hidden rounded-[1.5rem] border border-border/60 bg-card shadow-card sm:rounded-2xl">
         {/* Card header */}
-        <div className="px-4 py-3 border-b border-border/30">
-          <p className="text-[12px] font-medium text-foreground/50">
+        <div className="border-b border-border/35 px-4 py-3">
+          <p className="text-[12px] font-semibold text-foreground/60">
             {t("sharing.previewTitle", lang)}
           </p>
         </div>
 
         {/* Hero */}
         {hasHero && (
-          <div className="relative aspect-[16/10] bg-muted/30">
+          <div className="relative aspect-[2/1] bg-muted/30 sm:aspect-[16/10]">
             {/* eslint-disable-next-line @next/next/no-img-element */}
             <img src={heroUrl} alt="" className="w-full h-full object-cover" />
             <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/5 to-black/15" aria-hidden="true" />
@@ -110,7 +121,7 @@ export function SharePreview({ draft, scope, hasTour, thumbUrl, fpUrl, lang }: S
                 3D
               </div>
             )}
-            {detailsIncluded && (showTitle || showPrice) && (
+            {(showTitle || showPrice) && (
               <div className="absolute inset-x-0 bottom-0 flex items-end justify-between gap-3 p-4">
                 {showTitle ? (
                   <div className="min-w-0 flex-1">
@@ -130,8 +141,8 @@ export function SharePreview({ draft, scope, hasTour, thumbUrl, fpUrl, lang }: S
         )}
 
         {/* Property info */}
-        <div className="px-4 py-3 space-y-2">
-          {detailsIncluded && showTitle && !hasHero && (
+        <div className="space-y-2 px-4 py-3.5 sm:px-5">
+          {showTitle && !hasHero && (
             <div>
               <h3 className="text-[14px] font-semibold leading-tight">{draft.title || t("dashboard.untitled", lang)}</h3>
               {showAddress && (
@@ -162,7 +173,7 @@ export function SharePreview({ draft, scope, hasTour, thumbUrl, fpUrl, lang }: S
 
           {/* Photo row */}
           {photosIncluded && images.length > 1 && (
-            <div className="mt-1 flex gap-px overflow-hidden rounded-lg bg-border/50">
+            <div className="mt-1 hidden gap-px overflow-hidden rounded-lg bg-border/50 sm:flex">
               {images.slice(0, 5).map((img, i) => (
                 <div key={i} className="aspect-square flex-1 overflow-hidden bg-muted/20">
                   {/* eslint-disable-next-line @next/next/no-img-element */}
@@ -186,26 +197,22 @@ export function SharePreview({ draft, scope, hasTour, thumbUrl, fpUrl, lang }: S
           )}
         </div>
 
-        {/* Checklist — inside card with divider */}
-        <div className="border-t border-border/40 px-4 py-3">
-          <p className="text-[11px] font-medium text-foreground/50 uppercase tracking-wider mb-1.5">
-            {t("sharing.previewChecklist", lang)}
-          </p>
-          <div className="grid grid-cols-2 gap-x-3 gap-y-0.5">
-            {items.map((item) => (
-              <div key={item.label} className="flex items-center gap-1.5">
-                {item.on ? (
-                  <svg width="10" height="10" viewBox="0 0 16 16" fill="none" className="text-foreground/50 shrink-0"><path d="M3 8l4 4 6-6" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/></svg>
-                ) : (
-                  <svg width="10" height="10" viewBox="0 0 16 16" fill="none" className="text-foreground/15 shrink-0"><path d="M4 4l8 8M12 4l-8 8" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/></svg>
-                )}
-                <span className={`text-[11px] truncate ${item.on ? "text-foreground/60" : "text-foreground/20 line-through"}`}>
+        {/* Show only what recipients will actually get; crossed-out rows add noise. */}
+        {includedItems.length > 0 ? (
+          <div className="border-t border-border/40 px-4 py-3 sm:px-5">
+            <p className="mb-2 text-[10px] font-semibold uppercase tracking-[0.08em] text-foreground/45">
+              {t("sharing.previewChecklist", lang)}
+            </p>
+            <div className="-mx-1 flex gap-1.5 overflow-x-auto px-1 pb-0.5 scrollbar-hide sm:mx-0 sm:flex-wrap sm:overflow-visible sm:px-0 sm:pb-0">
+              {includedItems.map((item) => (
+                <span key={item.label} className="inline-flex min-h-7 shrink-0 items-center gap-1.5 rounded-full bg-secondary px-2.5 py-1 text-[10px] font-semibold text-foreground/65">
+                  <svg width="10" height="10" viewBox="0 0 16 16" fill="none" className="shrink-0"><path d="M3 8l4 4 6-6" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/></svg>
                   {item.label}
                 </span>
-              </div>
-            ))}
+              ))}
+            </div>
           </div>
-        </div>
+        ) : null}
       </div>
     </div>
   );

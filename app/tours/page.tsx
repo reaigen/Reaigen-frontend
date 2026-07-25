@@ -163,7 +163,8 @@ export default function ToursPage() {
                 value={filter}
                 onChange={setFilter}
                 options={filters}
-                className="w-full"
+                className="grid h-auto w-full grid-cols-2 rounded-2xl sm:flex sm:h-11 sm:rounded-full"
+                itemClassName="w-full min-w-0 px-2 sm:flex-1 sm:px-3"
                 ariaLabel={t("tours.title", lang)}
               />
             </div>

@@ -252,7 +252,7 @@ export function manhattanAdjust(room: ParsedCapturedRoom): AdjustedGeometry {
   }
   const interior: V2 = count > 0 ? [sumX / count, sumY / count] : [0, 0];
 
-  // Floor centres in the post-snap frame (area > 0.1 m² only, same as iOS).
+  // Floor centres in the post-snap frame (same source-coordinate threshold as iOS).
   const centresByID: Record<string, V2> = {};
   const centresByIndex: Record<number, V2> = {};
   let keptIndex = 0;

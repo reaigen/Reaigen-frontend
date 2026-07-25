@@ -31,15 +31,14 @@ import { PageLoading } from "../components/page-loading";
 import { PageHeader } from "../components/page-header";
 import { SidePanel } from "../components/side-panel";
 import { SearchField } from "../components/search-field";
-import { ArrowRightIcon, CheckIcon, ChevronDownIcon, ClockIcon, CopyIcon, InfoIcon, LinkIcon, LockIcon } from "../components/icons";
+import { ArrowRightIcon, CheckIcon, ChevronDownIcon, ClockIcon, CopyIcon, ExternalLinkIcon, InfoIcon, LinkIcon, LockIcon } from "../components/icons";
 import { Thumbnail } from "../components/thumbnail";
 import { SegmentedControl } from "../components/segmented-control";
 import { StatusPill } from "../components/status-pill";
+import { currentGalleryUploads } from "../lib/media";
 
 function draftThumbnail(draft: DraftListingItem): string | null {
-  return (draft.raw_uploads ?? [])
-    .filter((upload) => upload.mime_type?.startsWith("image") || upload.asset_type === "photo")
-    .sort((a, b) => a.sort_order - b.sort_order)[0]?.file_url ?? null;
+  return currentGalleryUploads(draft.raw_uploads, "image")[0]?.file_url ?? null;
 }
 
 /* ── Share Row ────────────────────────────────────────────────────────── */
@@ -156,22 +155,32 @@ function ShareRow({
           <ChevronDownIcon size={14} className={`shrink-0 text-foreground/35 transition-transform ${expanded ? "rotate-180" : ""}`} />
         </button>
 
-        {/* Copy button (live only) */}
+        {/* Recipient actions (live only) */}
         {isLive && (
-          <Button
-            type="button"
-            variant="outline"
-            size="xs"
-            onClick={handleCopy}
-            className={`shrink-0 self-end gap-1 text-[11px] sm:self-auto [&_svg]:size-3 ${copied ? "border-foreground bg-foreground text-background hover:bg-foreground hover:text-background" : "text-foreground/70 hover:text-foreground"}`}
-          >
-            {copied ? (
-              <CheckIcon size={12} />
-            ) : (
-              <CopyIcon size={12} />
-            )}
-            {copied ? t("shares.copied", lang) : t("shares.copyLink", lang)}
-          </Button>
+          <div className="flex shrink-0 items-center gap-1.5 self-end sm:self-auto">
+            {isActive ? (
+              <Button asChild variant="outline" size="xs" className="gap-1 text-[11px] text-foreground/70 hover:text-foreground [&_svg]:size-3">
+                <a href={shareUrl(share.token)} target="_blank" rel="noreferrer" onClick={(e) => e.stopPropagation()}>
+                  <ExternalLinkIcon size={12} />
+                  {t("common.open", lang)}
+                </a>
+              </Button>
+            ) : null}
+            <Button
+              type="button"
+              variant="outline"
+              size="xs"
+              onClick={handleCopy}
+              className={`gap-1 text-[11px] [&_svg]:size-3 ${copied ? "border-foreground bg-foreground text-background hover:bg-foreground hover:text-background" : "text-foreground/70 hover:text-foreground"}`}
+            >
+              {copied ? (
+                <CheckIcon size={12} />
+              ) : (
+                <CopyIcon size={12} />
+              )}
+              {copied ? t("shares.copied", lang) : t("shares.copyLink", lang)}
+            </Button>
+          </div>
         )}
 
       </div>

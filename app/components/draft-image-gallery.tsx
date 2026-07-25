@@ -4,7 +4,7 @@ import * as React from "react";
 import { createPortal } from "react-dom";
 import { t } from "../lib/i18n";
 import { cn } from "../lib/utils";
-import { ArrowLeftIcon, ArrowRightIcon, CloseIcon } from "./icons";
+import { ArrowLeftIcon, ArrowRightIcon, CloseIcon, EditIcon } from "./icons";
 import { Thumbnail } from "./thumbnail";
 
 export interface GalleryImage {
@@ -21,6 +21,8 @@ interface DraftImageGalleryProps {
   fallbackUrl?: string | null;
   lang?: string;
   onActiveImageChange?: (imageId: number | null) => void;
+  onManage?: () => void;
+  manageLabel?: string;
 }
 
 function counterLabel(index: number, count: number, lang: string) {
@@ -238,7 +240,7 @@ function GalleryLightbox({
   );
 }
 
-export function DraftImageGallery({ images, alt, fallbackUrl, lang = "en", onActiveImageChange }: DraftImageGalleryProps) {
+export function DraftImageGallery({ images, alt, fallbackUrl, lang = "en", onActiveImageChange, onManage, manageLabel }: DraftImageGalleryProps) {
   const scrollRef = React.useRef<HTMLDivElement>(null);
   const displayImages = React.useMemo<GalleryImage[]>(
     () => images.length > 0 ? images : fallbackUrl ? [{ url: fallbackUrl, name: alt }] : [],
@@ -282,7 +284,7 @@ export function DraftImageGallery({ images, alt, fallbackUrl, lang = "en", onAct
 
   if (count === 0) {
     return (
-      <div className="relative aspect-[16/10] w-full overflow-hidden bg-white ring-1 ring-inset ring-black/[0.045] md:rounded-xl">
+      <div className="detail-hero-gallery relative aspect-[16/10] w-full overflow-hidden bg-white ring-1 ring-inset ring-black/[0.045] md:aspect-video md:rounded-xl">
         <div className="flex h-full w-full items-center justify-center">
           <svg width="48" height="48" viewBox="0 0 24 24" fill="none" className="text-black/10" aria-hidden="true">
             <rect x="3" y="3" width="18" height="18" rx="2" stroke="currentColor" strokeWidth="1.5" />
@@ -296,7 +298,7 @@ export function DraftImageGallery({ images, alt, fallbackUrl, lang = "en", onAct
 
   return (
     <>
-      <div className="group relative aspect-[16/10] overflow-hidden bg-white ring-1 ring-inset ring-black/[0.045] md:rounded-xl">
+      <div className="detail-hero-gallery group relative aspect-[16/10] overflow-hidden bg-white ring-1 ring-inset ring-black/[0.045] md:aspect-video md:rounded-xl">
         <div ref={scrollRef} className="flex h-full w-full snap-x snap-mandatory overflow-x-auto scrollbar-none">
           {displayImages.map((image, imageIndex) => (
             <div
@@ -312,6 +314,18 @@ export function DraftImageGallery({ images, alt, fallbackUrl, lang = "en", onAct
             </div>
           ))}
         </div>
+
+        {onManage ? (
+          <button
+            type="button"
+            onClick={onManage}
+            className="absolute left-3 top-3 flex h-11 items-center gap-2 rounded-full border border-black/10 bg-white/90 px-3.5 text-[11px] font-semibold text-black/70 shadow-sm backdrop-blur-xl transition hover:bg-black hover:text-white hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-black/25 sm:h-9"
+            aria-label={manageLabel}
+          >
+            <EditIcon size={15} />
+            <span>{manageLabel}</span>
+          </button>
+        ) : null}
 
         <button
           type="button"

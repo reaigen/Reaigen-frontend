@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState, useCallback, forwardRef, useImperativeHandle } from "react";
 import { AllocateShBuffers } from "@babylonjs/core/Meshes/GaussianSplatting/gaussianSplattingMeshBase.js";
+import { cameraFovRadians, normalizeCameraData } from "@/app/lib/camera-coordinates";
 import { getCache, putCache } from "@/app/lib/splat-cache";
 import { t } from "@/app/lib/i18n";
 import type { CameraData, Vec3, TourData, TourShot } from "@/app/lib/tour-types";
@@ -35,6 +36,7 @@ function slerpAngle(a: number, b: number, t: number): number {
 const LOOK = 5;
 const TILT_Y = LOOK * Math.tan(5 * Math.PI / 180);
 const SH_C0 = 0.28209479177387814;
+const DEFAULT_IMMERSIVE_FOV = 85 * Math.PI / 180;
 
 function buildFallbackShots(data: TourData, lang: string): TourShot[] {
   const n = data.positions?.length ?? 0;
@@ -61,46 +63,202 @@ function isSavedCameraTour(data: TourData | null): boolean {
   return data?.sceneType === "saved-cameras";
 }
 
-function computeSceneBoundsFromSplatBuffer(buffer: ArrayBuffer): { center: Vec3; radius: number } | null {
+interface SceneFrame {
+  center: Vec3;
+  radius: number;
+  safePosition: Vec3;
+  safeTarget: Vec3;
+  footprint: { minX: number; maxX: number; minZ: number; maxZ: number };
+}
+
+function percentile(sorted: number[], fraction: number): number {
+  if (sorted.length === 1) return sorted[0];
+  const index = Math.max(0, Math.min(sorted.length - 1, fraction * (sorted.length - 1)));
+  const lower = Math.floor(index);
+  const upper = Math.ceil(index);
+  const amount = index - lower;
+  return sorted[lower] + (sorted[upper] - sorted[lower]) * amount;
+}
+
+/**
+ * Build a robust room-scale frame directly from splat centres.
+ *
+ * Raw Gaussian bounds commonly contain sparse reconstruction outliers, so an
+ * outside orbit around min/max bounds is a poor mobile starting view. Instead,
+ * use clipped bounds and find a central open cell with floor and ceiling cover.
+ * This follows the native viewer principle of starting from a safe interior
+ * anchor when no captured camera is available.
+ */
+function computeSceneFrameFromSplatBuffer(buffer: ArrayBuffer): SceneFrame | null {
   if (buffer.byteLength < 32) return null;
   const floats = new Float32Array(buffer);
   const stride = 8;
   const count = Math.floor(floats.length / stride);
   if (!count) return null;
 
-  let minX = Infinity, minY = Infinity, minZ = Infinity;
-  let maxX = -Infinity, maxY = -Infinity, maxZ = -Infinity;
-
-  for (let i = 0; i < count; i += 1) {
+  // Keep the startup calculation bounded on large phone captures while still
+  // sampling the complete ordered splat buffer.
+  const sampleStep = Math.max(1, Math.ceil(count / 30_000));
+  const xs: number[] = [];
+  const ys: number[] = [];
+  const zs: number[] = [];
+  for (let i = 0; i < count; i += sampleStep) {
     const base = i * stride;
     const x = floats[base];
     const y = floats[base + 1];
     const z = floats[base + 2];
     if (!Number.isFinite(x) || !Number.isFinite(y) || !Number.isFinite(z)) continue;
-    if (x < minX) minX = x;
-    if (y < minY) minY = y;
-    if (z < minZ) minZ = z;
-    if (x > maxX) maxX = x;
-    if (y > maxY) maxY = y;
-    if (z > maxZ) maxZ = z;
+    xs.push(x);
+    ys.push(y);
+    zs.push(z);
   }
 
-  if (!Number.isFinite(minX) || !Number.isFinite(maxX)) return null;
+  if (xs.length < 8) return null;
+  const sortedX = [...xs].sort((a, b) => a - b);
+  const sortedY = [...ys].sort((a, b) => a - b);
+  const sortedZ = [...zs].sort((a, b) => a - b);
+
+  // Match the native renderer: p5/p95 removes flyaway Gaussians without
+  // shaving away the room envelope.
+  const minX = percentile(sortedX, 0.05);
+  const maxX = percentile(sortedX, 0.95);
+  const floorY = percentile(sortedY, 0.05);
+  const ceilingY = percentile(sortedY, 0.95);
+  const minZ = percentile(sortedZ, 0.05);
+  const maxZ = percentile(sortedZ, 0.95);
+  const width = Math.max(0.2, maxX - minX);
+  const height = Math.max(0.2, ceilingY - floorY);
+  const depth = Math.max(0.2, maxZ - minZ);
   const center: Vec3 = [
     (minX + maxX) * 0.5,
-    (minY + maxY) * 0.5,
+    (floorY + ceilingY) * 0.5,
     (minZ + maxZ) * 0.5,
   ];
-  const radius = Math.max(
-    0.75,
-    Math.hypot(maxX - minX, maxY - minY, maxZ - minZ) * 0.5,
+  const distances = xs.map((x, index) => Math.hypot(
+    x - center[0],
+    ys[index] - center[1],
+    zs[index] - center[2],
+  )).sort((a, b) => a - b);
+  const radius = Math.max(1.5, Math.min(5, percentile(distances, 0.75)));
+
+  const eyeY = Math.max(
+    floorY + height * 0.12,
+    Math.min(ceilingY - Math.min(0.3, height * 0.12), floorY + 1.55),
   );
-  return { center, radius };
+  const eyeBand = Math.max(0.25, Math.min(0.5, height * 0.2));
+  const ceilingBandLow = ceilingY - Math.max(0.2, Math.min(0.4, height * 0.2));
+  const floorBandHigh = floorY + Math.max(0.15, Math.min(0.3, height * 0.15));
+
+  const gridSize = 16;
+  const ceilingGrid = new Uint16Array(gridSize * gridSize);
+  const eyeGrid = new Uint16Array(gridSize * gridSize);
+  const toCell = (x: number, z: number): [number, number] | null => {
+    if (x < minX || x > maxX || z < minZ || z > maxZ) return null;
+    const gx = Math.min(gridSize - 1, Math.max(0, Math.floor((x - minX) / width * gridSize)));
+    const gz = Math.min(gridSize - 1, Math.max(0, Math.floor((z - minZ) / depth * gridSize)));
+    return [gx, gz];
+  };
+  const increment = (cells: Uint16Array, gx: number, gz: number) => {
+    const index = gz * gridSize + gx;
+    if (cells[index] < 65_535) cells[index] += 1;
+  };
+
+  // Ceiling coverage is the strongest signal that a footprint cell is indoors.
+  for (let i = 0; i < xs.length; i += 1) {
+    const cell = toCell(xs[i], zs[i]);
+    if (!cell) continue;
+    const [gx, gz] = cell;
+    if (ys[i] >= ceilingBandLow && ys[i] <= ceilingY) increment(ceilingGrid, gx, gz);
+  }
+
+  const ceilingMax = Math.max(...ceilingGrid);
+  const ceilingMinimum = Math.max(2, Math.floor(ceilingMax / 6));
+  let floorXSum = 0;
+  let floorZSum = 0;
+  let floorCount = 0;
+  let eyeXSum = 0;
+  let eyeZSum = 0;
+  let eyeCount = 0;
+  for (let i = 0; i < xs.length; i += 1) {
+    const cell = toCell(xs[i], zs[i]);
+    if (!cell) continue;
+    const [gx, gz] = cell;
+    const index = gz * gridSize + gx;
+    if (ceilingGrid[index] < ceilingMinimum) continue;
+    if (ys[i] >= floorY && ys[i] <= floorBandHigh) {
+      floorXSum += xs[i];
+      floorZSum += zs[i];
+      floorCount += 1;
+    } else if (Math.abs(ys[i] - eyeY) <= eyeBand) {
+      eyeXSum += xs[i];
+      eyeZSum += zs[i];
+      eyeCount += 1;
+      increment(eyeGrid, gx, gz);
+    }
+  }
+
+  let safeX = center[0];
+  let safeZ = center[2];
+  const eyeMaximum = Math.max(...eyeGrid);
+  const openThreshold = Math.max(1, eyeMaximum * 0.2);
+  const gridMiddle = gridSize * 0.5;
+  const maxCentreDistance = Math.hypot(gridMiddle, gridMiddle);
+  let bestCell = -1;
+  let bestScore = Infinity;
+  for (let index = 0; index < gridSize * gridSize; index += 1) {
+    if (ceilingGrid[index] < ceilingMinimum) continue;
+    const gx = index % gridSize + 0.5;
+    const gz = Math.floor(index / gridSize) + 0.5;
+    const distanceFromCentre = Math.hypot(gx - gridMiddle, gz - gridMiddle) / maxCentreDistance;
+    const occupiedPenalty = eyeGrid[index] > openThreshold ? 10 : 0;
+    const score = distanceFromCentre + occupiedPenalty;
+    if (score < bestScore) {
+      bestScore = score;
+      bestCell = index;
+    }
+  }
+  if (bestCell >= 0) {
+    const gx = bestCell % gridSize;
+    const gz = Math.floor(bestCell / gridSize);
+    safeX = minX + ((gx + 0.5) / gridSize) * width;
+    safeZ = minZ + ((gz + 0.5) / gridSize) * depth;
+  } else if (floorCount >= 10) {
+    safeX = floorXSum / floorCount;
+    safeZ = floorZSum / floorCount;
+  } else if (eyeCount >= 5) {
+    safeX = eyeXSum / eyeCount;
+    safeZ = eyeZSum / eyeCount;
+  }
+  const safePosition: Vec3 = [safeX, eyeY, safeZ];
+
+  const denseX = eyeCount >= 5 ? eyeXSum / eyeCount : center[0];
+  const denseZ = eyeCount >= 5 ? eyeZSum / eyeCount : center[2];
+  let lookX = denseX - safeX;
+  let lookZ = denseZ - safeZ;
+  if (Math.hypot(lookX, lookZ) <= 0.2) {
+    lookX = 0;
+    lookZ = 1;
+  }
+  const lookLength = Math.hypot(lookX, lookZ) || 1;
+  const lookDistance = Math.max(2, Math.min(LOOK, radius));
+  const safeTarget: Vec3 = [
+    safeX + lookX / lookLength * lookDistance,
+    eyeY,
+    safeZ + lookZ / lookLength * lookDistance,
+  ];
+
+  return {
+    center,
+    radius,
+    safePosition,
+    safeTarget,
+    footprint: { minX, maxX, minZ, maxZ },
+  };
 }
 
 function shouldUseCameraPose(
   position: Vec3,
-  fallback: { center: Vec3; radius: number } | null,
+  fallback: SceneFrame | null,
 ): boolean {
   if (!position.every((value) => Number.isFinite(value))) return false;
   if (!fallback) return true;
@@ -375,6 +533,30 @@ const defaultAnim = (): Anim => ({
   holdPos: [0, 0, 0], holdAngle: 0, holdPanAmt: 0, holdBaseFov: 0.66,
 });
 
+interface ImmersivePose {
+  enabled: boolean;
+  basePosition: Vec3;
+  baseYaw: number;
+  basePitch: number;
+  yawOffset: number;
+  pitchOffset: number;
+  dolly: number;
+  maxDolly: number;
+  fov: number;
+}
+
+const defaultImmersivePose = (): ImmersivePose => ({
+  enabled: false,
+  basePosition: [0, 0, 0],
+  baseYaw: 0,
+  basePitch: 0,
+  yawOffset: 0,
+  pitchOffset: 0,
+  dolly: 0,
+  maxDolly: 0.75,
+  fov: 0.66,
+});
+
 // ── Props & Handle ───────────────────────────────────────────────────────────
 
 interface Props {
@@ -414,6 +596,7 @@ const SplatViewer = forwardRef<SplatViewerHandle, Props>(function SplatViewer(
   { splatUrl, splatId, tourUrl, camerasUrl, initialCameras, preferSavedCameras, readOnly, outputsVersion, className, onShotChange, onReady, onError, onTourLoaded, lang = "en" },
   ref,
 ) {
+  const rootRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const engineRef = useRef<any>(null);
   const cameraRef = useRef<any>(null);
@@ -432,12 +615,150 @@ const SplatViewer = forwardRef<SplatViewerHandle, Props>(function SplatViewer(
   const pathScrubRef = useRef<{ active: boolean } | null>(null);
   const gravityAppliedRef = useRef<string | null>(null);
   const freeModeRef = useRef(false);
+  const immersivePoseRef = useRef<ImmersivePose>(defaultImmersivePose());
+  const immersiveCoastRef = useRef({ yaw: 0, pitch: 0 });
+  const immersivePointersActiveRef = useRef(false);
+  const immersiveRenderBurstUntilRef = useRef(0);
 
   const [status, setStatus] = useState(() => t("viewer.status.loading", lang));
   const [downloadPct, setDownloadPct] = useState(0);
   const [ready, setReady] = useState(false);
   const [tourData, setTourData] = useState<TourData | null>(null);
-  const fallbackSceneRef = useRef<{ center: Vec3; radius: number } | null>(null);
+  const [immersiveAdjusted, setImmersiveAdjusted] = useState(false);
+  const [showGestureHint, setShowGestureHint] = useState(false);
+  const [canFullscreen, setCanFullscreen] = useState(false);
+  const [isFullscreen, setIsFullscreen] = useState(false);
+  const [compactTouch, setCompactTouch] = useState(() => (
+    typeof window !== "undefined" && window.matchMedia("(max-width: 767px), (pointer: coarse)").matches
+  ));
+  const fallbackSceneRef = useRef<SceneFrame | null>(null);
+  const immersiveControls = Boolean(readOnly || compactTouch);
+
+  useEffect(() => {
+    const query = window.matchMedia("(max-width: 767px), (pointer: coarse)");
+    const sync = () => setCompactTouch(query.matches);
+    sync();
+    query.addEventListener("change", sync);
+    return () => query.removeEventListener("change", sync);
+  }, []);
+
+  const setImmersiveBase = useCallback((pos: Vec3, fwd: Vec3, fov?: number) => {
+    const length = Math.hypot(fwd[0], fwd[1], fwd[2]) || 1;
+    const nx = fwd[0] / length;
+    const ny = fwd[1] / length;
+    const nz = fwd[2] / length;
+    const sceneRadius = fallbackSceneRef.current?.radius ?? 8;
+    immersivePoseRef.current = {
+      enabled: true,
+      basePosition: [pos[0], pos[1], pos[2]],
+      baseYaw: Math.atan2(nz, nx),
+      basePitch: Math.asin(Math.max(-1, Math.min(1, ny))),
+      yawOffset: 0,
+      pitchOffset: 0,
+      dolly: 0,
+      // Until wall collision is shared with the production renderer, keep
+      // translation intentionally conservative while still exposing parallax.
+      maxDolly: Math.min(1.25, Math.max(0.35, sceneRadius * 0.08)),
+      fov: typeof fov === "number" && Number.isFinite(fov) ? fov : 0.66,
+    };
+    immersiveCoastRef.current = { yaw: 0, pitch: 0 };
+    immersiveRenderBurstUntilRef.current = performance.now() + 350;
+    setImmersiveAdjusted(false);
+  }, []);
+
+  const applyImmersivePose = useCallback(() => {
+    const cam = cameraRef.current;
+    const B = babylonRef.current;
+    const pose = immersivePoseRef.current;
+    if (!cam || !B || !pose.enabled) return;
+
+    const yaw = pose.baseYaw + pose.yawOffset;
+    const pitch = Math.max(
+      -85 * Math.PI / 180,
+      Math.min(85 * Math.PI / 180, pose.basePitch + pose.pitchOffset),
+    );
+    const cosPitch = Math.cos(pitch);
+    const forward: Vec3 = [
+      Math.cos(yaw) * cosPitch,
+      Math.sin(pitch),
+      Math.sin(yaw) * cosPitch,
+    ];
+    // Match iOS: pinch moves in the horizontal gaze direction and preserves
+    // standing eye height even while the user is looking up or down.
+    const horizontalLength = Math.hypot(forward[0], forward[2]) || 1;
+    let px = pose.basePosition[0] + (forward[0] / horizontalLength) * pose.dolly;
+    const py = pose.basePosition[1];
+    let pz = pose.basePosition[2] + (forward[2] / horizontalLength) * pose.dolly;
+
+    // Match native wall protection: once the user translates, keep a small
+    // margin inside the percentile-clipped room footprint. An exact saved pose
+    // is never altered at dolly=0.
+    const frame = fallbackSceneRef.current;
+    if (frame && Math.abs(pose.dolly) > 1e-5) {
+      const { minX, maxX, minZ, maxZ } = frame.footprint;
+      const baseInside = pose.basePosition[0] >= minX && pose.basePosition[0] <= maxX &&
+        pose.basePosition[2] >= minZ && pose.basePosition[2] <= maxZ;
+      if (baseInside) {
+        const marginX = Math.min(0.3, Math.max(0, (maxX - minX) * 0.08));
+        const marginZ = Math.min(0.3, Math.max(0, (maxZ - minZ) * 0.08));
+        const lowerX = minX + marginX;
+        const upperX = maxX - marginX;
+        const lowerZ = minZ + marginZ;
+        const upperZ = maxZ - marginZ;
+        px = lowerX <= upperX ? Math.max(lowerX, Math.min(upperX, px)) : (minX + maxX) * 0.5;
+        pz = lowerZ <= upperZ ? Math.max(lowerZ, Math.min(upperZ, pz)) : (minZ + maxZ) * 0.5;
+      }
+    }
+
+    cam.position.set(px, py, pz);
+    cam.setTarget(new B.Vector3(
+      px + forward[0] * LOOK,
+      py + forward[1] * LOOK,
+      pz + forward[2] * LOOK,
+    ));
+    cam.rotation.z = 0;
+    cam.fov = pose.fov;
+  }, []);
+
+  const resetImmersiveView = useCallback(() => {
+    const pose = immersivePoseRef.current;
+    if (!pose.enabled) return;
+    pose.yawOffset = 0;
+    pose.pitchOffset = 0;
+    pose.dolly = 0;
+    immersiveCoastRef.current = { yaw: 0, pitch: 0 };
+    immersiveRenderBurstUntilRef.current = performance.now() + 350;
+    animRef.current.holdActive = false;
+    applyImmersivePose();
+    setImmersiveAdjusted(false);
+  }, [applyImmersivePose]);
+
+  const toggleFullscreen = useCallback(async () => {
+    try {
+      const doc = document as Document & {
+        webkitFullscreenElement?: Element | null;
+        webkitExitFullscreen?: () => Promise<void> | void;
+      };
+      const current = document.fullscreenElement ?? doc.webkitFullscreenElement;
+      if (current) {
+        const exit = document.exitFullscreen?.bind(document) ?? doc.webkitExitFullscreen?.bind(doc);
+        await exit?.();
+        return;
+      }
+
+      // The shared-tour overlays are siblings of SplatViewer. Fullscreen the
+      // parent so navigation, floorplan, property info, and camera controls stay.
+      const target = (rootRef.current?.parentElement ?? rootRef.current) as (HTMLElement & {
+        webkitRequestFullscreen?: () => Promise<void> | void;
+      }) | null;
+      if (!target) return;
+      const request = target.requestFullscreen?.bind(target) ?? target.webkitRequestFullscreen?.bind(target);
+      await request?.();
+    } catch {
+      // Fullscreen can be rejected by embedded browsers or OS policy. The
+      // viewer remains usable in-place, so keep this a non-fatal action.
+    }
+  }, []);
 
   const setCameraFromForward = useCallback((cam: any, B: any, pos: Vec3, fwd: Vec3, exactForward: boolean, fov?: number) => {
     cam.position.set(pos[0], pos[1], pos[2]);
@@ -477,15 +798,22 @@ const SplatViewer = forwardRef<SplatViewerHandle, Props>(function SplatViewer(
     const B = babylonRef.current;
     if (cam && B) {
       setCameraFromForward(cam, B, pos0, fwd0, isSavedCameraTour(data), shot0.fov);
-      if (readOnly) cam.detachControl();
+      if (immersiveControls) {
+        cam.detachControl();
+        setImmersiveBase(pos0, fwd0, shot0.fov);
+      }
     }
     shotIdxRef.current = 0;
     onShotChange?.(0, shot0);
-  }, [onShotChange, onTourLoaded, readOnly, setCameraFromForward]);
+  }, [immersiveControls, onShotChange, onTourLoaded, setCameraFromForward, setImmersiveBase]);
 
   const buildTourFromSavedCameras = useCallback((cameraData: CameraData): TourData | null => {
-    const cams = cameraData.cameras ?? [];
+    const normalizedData = normalizeCameraData(cameraData);
+    const cams = normalizedData.cameras ?? [];
     if (!cams.length) return null;
+    const sceneCameraFov = normalizedData.sceneFov
+      ? cameraFovRadians(normalizedData.sceneFov, 0.66)
+      : null;
 
     const positions: Vec3[] = [];
     const forwards: Vec3[] = [];
@@ -514,7 +842,7 @@ const SplatViewer = forwardRef<SplatViewerHandle, Props>(function SplatViewer(
         storyBeat: "saved-camera",
         label: `${t("tour.controls.shot", lang)} ${i + 1}`,
         startIdx: i,
-        fov: Number(cam.fov ?? cameraData.fovY ?? 0.66),
+        fov: sceneCameraFov ?? cameraFovRadians(cam.fov ?? normalizedData.fovY, 0.66),
         holdAfter: 3.5,
         moveDuration: 1.2,
         compositionScore: 1,
@@ -549,6 +877,7 @@ const SplatViewer = forwardRef<SplatViewerHandle, Props>(function SplatViewer(
     const cam = cameraRef.current;
     freeModeRef.current = false;
     cam.detachControl();
+    if (immersiveControls) setImmersiveBase(tPos, tFwd, shot.fov);
 
     const cur: Vec3 = [cam.position.x, cam.position.y, cam.position.z];
     const target = cam.getTarget();
@@ -585,7 +914,7 @@ const SplatViewer = forwardRef<SplatViewerHandle, Props>(function SplatViewer(
     progressRef.current = pathDataRef.current?.arcLens?.[shot.startIdx] ?? progressRef.current;
     shotIdxRef.current = idx;
     onShotChange?.(idx, shot);
-  }, [tourData, onShotChange]);
+  }, [tourData, onShotChange, immersiveControls, setImmersiveBase]);
 
   const goToPrev = useCallback(() => {
     const n = tourData?.shots.length ?? 0;
@@ -627,6 +956,7 @@ const SplatViewer = forwardRef<SplatViewerHandle, Props>(function SplatViewer(
     scrollVelocityRef.current = 0;
     freeModeRef.current = false;
     cam.detachControl();
+    if (immersiveControls) setImmersiveBase(pos, fwd, targetFov);
 
     const toTarget: Vec3 = [
       pos[0] + fwd[0] * LOOK,
@@ -641,7 +971,7 @@ const SplatViewer = forwardRef<SplatViewerHandle, Props>(function SplatViewer(
       cam.fov = targetFov;
       animRef.current.active = false;
       animRef.current.holdActive = false;
-      if (canvasRef.current) cam.attachControl(canvasRef.current, true);
+      if (!immersiveControls && canvasRef.current) cam.attachControl(canvasRef.current, true);
       return;
     }
 
@@ -672,7 +1002,7 @@ const SplatViewer = forwardRef<SplatViewerHandle, Props>(function SplatViewer(
     anim.active = true;
     anim.holdActive = false;
     anim.holdDuration = 0;
-  }, []);
+  }, [immersiveControls, setImmersiveBase]);
 
   const enableFreeCamera = useCallback(() => {
     const cam = cameraRef.current;
@@ -681,14 +1011,27 @@ const SplatViewer = forwardRef<SplatViewerHandle, Props>(function SplatViewer(
     animRef.current.holdActive = false;
     scrollVelocityRef.current = 0;
     freeModeRef.current = true;
-    cam.attachControl(canvasRef.current, true);
-  }, []);
+    if (immersiveControls) {
+      const target = cam.getTarget();
+      setImmersiveBase(
+        [cam.position.x, cam.position.y, cam.position.z],
+        [target.x - cam.position.x, target.y - cam.position.y, target.z - cam.position.z],
+        cam.fov,
+      );
+      cam.detachControl();
+    } else {
+      cam.attachControl(canvasRef.current, true);
+    }
+  }, [immersiveControls, setImmersiveBase]);
 
   const setFov = useCallback((degrees: number) => {
     const cam = cameraRef.current;
     if (!cam) return;
     // BabylonJS camera.fov is vertical FOV in radians
-    cam.fov = (degrees * Math.PI) / 180;
+    const radians = (degrees * Math.PI) / 180;
+    cam.fov = radians;
+    if (immersivePoseRef.current.enabled) immersivePoseRef.current.fov = radians;
+    immersiveRenderBurstUntilRef.current = performance.now() + 350;
   }, []);
 
   useImperativeHandle(ref, () => ({
@@ -738,7 +1081,8 @@ const SplatViewer = forwardRef<SplatViewerHandle, Props>(function SplatViewer(
 
     const tryLoadSavedCameras = async () => {
       // Use directly-provided camera data first (avoids data: URL / fetch issues)
-      if (initialCameras && initialCameras.cameras?.length) {
+      if (initialCameras) {
+        if (!initialCameras.cameras?.length) return false;
         const savedTour = buildTourFromSavedCameras(initialCameras);
         if (!savedTour || cancelled) return false;
         usedSavedCameras = true;
@@ -885,6 +1229,187 @@ const SplatViewer = forwardRef<SplatViewerHandle, Props>(function SplatViewer(
     return () => canvas.removeEventListener("wheel", handleWheel);
   }, [readOnly]);
 
+  // ── Constrained immersive controls (shared + touch studio) ───────────────
+
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    if (!immersiveControls || !ready || !canvas) return;
+
+    cameraRef.current?.detachControl();
+
+    const pointers = new Map<number, { x: number; y: number }>();
+    let lastPinchDistance: number | null = null;
+    let pointerDownAt = 0;
+    let pointerDownX = 0;
+    let pointerDownY = 0;
+    let gestureMoved = false;
+    let lastTapAt = 0;
+    let lastMoveAt = 0;
+
+    const distanceBetweenPointers = () => {
+      const values = [...pointers.values()];
+      if (values.length < 2) return null;
+      return Math.hypot(values[0].x - values[1].x, values[0].y - values[1].y);
+    };
+
+    const markAdjusted = () => {
+      setImmersiveAdjusted(true);
+      setShowGestureHint(false);
+      animRef.current.holdActive = false;
+      immersiveRenderBurstUntilRef.current = performance.now() + 350;
+    };
+
+    const handlePointerDown = (event: PointerEvent) => {
+      if (event.pointerType === "mouse" && event.button !== 0) return;
+      if (!immersivePoseRef.current.enabled) return;
+      immersiveCoastRef.current = { yaw: 0, pitch: 0 };
+      immersivePointersActiveRef.current = true;
+      if (pointers.size === 0) {
+        pointerDownAt = performance.now();
+        pointerDownX = event.clientX;
+        pointerDownY = event.clientY;
+        gestureMoved = false;
+        lastMoveAt = performance.now();
+      } else {
+        gestureMoved = true;
+      }
+      pointers.set(event.pointerId, { x: event.clientX, y: event.clientY });
+      lastPinchDistance = distanceBetweenPointers();
+      try { canvas.setPointerCapture(event.pointerId); } catch { /* best effort */ }
+      event.preventDefault();
+    };
+
+    const handlePointerMove = (event: PointerEvent) => {
+      const previous = pointers.get(event.pointerId);
+      if (!previous) return;
+      pointers.set(event.pointerId, { x: event.clientX, y: event.clientY });
+      if (animRef.current.active || !immersivePoseRef.current.enabled) return;
+
+      const pose = immersivePoseRef.current;
+      if (pointers.size >= 2) {
+        immersiveCoastRef.current = { yaw: 0, pitch: 0 };
+        const nextDistance = distanceBetweenPointers();
+        if (nextDistance != null && lastPinchDistance != null) {
+          const shortestSide = Math.max(240, Math.min(canvas.clientWidth, canvas.clientHeight));
+          const distanceDelta = nextDistance - lastPinchDistance;
+          pose.dolly = Math.max(
+            -pose.maxDolly * 0.6,
+            Math.min(pose.maxDolly, pose.dolly + distanceDelta * pose.maxDolly * 1.7 / shortestSide),
+          );
+          if (Math.abs(distanceDelta) > 0.25) markAdjusted();
+        }
+        lastPinchDistance = nextDistance;
+      } else {
+        const dx = event.clientX - previous.x;
+        const dy = event.clientY - previous.y;
+        const sensitivity = 0.004; // ≈ 0.23° per CSS pixel, matching iOS.
+        const now = performance.now();
+        const elapsedSeconds = Math.max(1 / 120, Math.min(0.08, (now - lastMoveAt) / 1000));
+        pose.yawOffset -= dx * sensitivity;
+        const pitchLimit = 85 * Math.PI / 180;
+        pose.pitchOffset = Math.max(
+          -pitchLimit - pose.basePitch,
+          Math.min(pitchLimit - pose.basePitch, pose.pitchOffset - dy * sensitivity),
+        );
+        if (Math.hypot(event.clientX - pointerDownX, event.clientY - pointerDownY) > 5) {
+          gestureMoved = true;
+        }
+        if (Math.abs(dx) > 0.1 || Math.abs(dy) > 0.1) markAdjusted();
+        immersiveCoastRef.current = {
+          yaw: (-dx * sensitivity) / elapsedSeconds,
+          pitch: (-dy * sensitivity) / elapsedSeconds,
+        };
+        lastMoveAt = now;
+      }
+
+      applyImmersivePose();
+      event.preventDefault();
+    };
+
+    const finishPointer = (event: PointerEvent, allowTap: boolean) => {
+      const wasOnlyPointer = pointers.size === 1 && pointers.has(event.pointerId);
+      pointers.delete(event.pointerId);
+      immersivePointersActiveRef.current = pointers.size > 0;
+      lastPinchDistance = distanceBetweenPointers();
+      try { canvas.releasePointerCapture(event.pointerId); } catch { /* best effort */ }
+
+      const now = performance.now();
+      const isTap = allowTap && wasOnlyPointer && !gestureMoved && now - pointerDownAt < 280;
+      if (isTap) {
+        if (now - lastTapAt < 360) {
+          resetImmersiveView();
+          setShowGestureHint(false);
+          lastTapAt = 0;
+        } else {
+          lastTapAt = now;
+        }
+      }
+      if (!pointers.size) lastMoveAt = 0;
+      event.preventDefault();
+    };
+
+    const handleWheel = (event: WheelEvent) => {
+      const pose = immersivePoseRef.current;
+      if (!pose.enabled || animRef.current.active) return;
+      immersiveCoastRef.current = { yaw: 0, pitch: 0 };
+      pose.dolly = Math.max(
+        -pose.maxDolly * 0.6,
+        Math.min(pose.maxDolly, pose.dolly - event.deltaY * 0.0015),
+      );
+      markAdjusted();
+      applyImmersivePose();
+      event.preventDefault();
+    };
+
+    const handlePointerUp = (event: PointerEvent) => finishPointer(event, true);
+    const handlePointerCancel = (event: PointerEvent) => finishPointer(event, false);
+
+    canvas.addEventListener("pointerdown", handlePointerDown, { passive: false });
+    canvas.addEventListener("pointermove", handlePointerMove, { passive: false });
+    canvas.addEventListener("pointerup", handlePointerUp, { passive: false });
+    canvas.addEventListener("pointercancel", handlePointerCancel, { passive: false });
+    canvas.addEventListener("wheel", handleWheel, { passive: false });
+
+    return () => {
+      immersivePointersActiveRef.current = false;
+      immersiveCoastRef.current = { yaw: 0, pitch: 0 };
+      canvas.removeEventListener("pointerdown", handlePointerDown);
+      canvas.removeEventListener("pointermove", handlePointerMove);
+      canvas.removeEventListener("pointerup", handlePointerUp);
+      canvas.removeEventListener("pointercancel", handlePointerCancel);
+      canvas.removeEventListener("wheel", handleWheel);
+    };
+  }, [applyImmersivePose, immersiveControls, ready, resetImmersiveView]);
+
+  useEffect(() => {
+    if (!immersiveControls || !ready) {
+      setShowGestureHint(false);
+      return;
+    }
+    setShowGestureHint(true);
+    const timer = window.setTimeout(() => setShowGestureHint(false), 4800);
+    return () => window.clearTimeout(timer);
+  }, [immersiveControls, ready, tourData]);
+
+  useEffect(() => {
+    if (!immersiveControls) return;
+    const doc = document as Document & { webkitFullscreenElement?: Element | null };
+    const target = (rootRef.current?.parentElement ?? rootRef.current) as (HTMLElement & {
+      webkitRequestFullscreen?: () => Promise<void> | void;
+    }) | null;
+    setCanFullscreen(Boolean(target?.requestFullscreen || target?.webkitRequestFullscreen));
+
+    const updateFullscreenState = () => {
+      setIsFullscreen(Boolean(document.fullscreenElement ?? doc.webkitFullscreenElement));
+    };
+    document.addEventListener("fullscreenchange", updateFullscreenState);
+    document.addEventListener("webkitfullscreenchange", updateFullscreenState);
+    return () => {
+      document.removeEventListener("fullscreenchange", updateFullscreenState);
+      document.removeEventListener("webkitfullscreenchange", updateFullscreenState);
+    };
+  }, [immersiveControls]);
+
   // ── BabylonJS init ─────────────────────────────────────────────────────────
 
   useEffect(() => {
@@ -929,7 +1454,7 @@ const SplatViewer = forwardRef<SplatViewerHandle, Props>(function SplatViewer(
         camera.inertia = 0.5;
         camera.speed = 0.3;
         camera.upVector = new BABYLON.Vector3(0, 1, 0);
-        camera.attachControl(canvas, true);
+        if (!immersiveControls) camera.attachControl(canvas, true);
         camera.keysUp = [87];       // W only
         camera.keysDown = [83];      // S only
         camera.keysLeft = [65];      // A only
@@ -961,6 +1486,29 @@ const SplatViewer = forwardRef<SplatViewerHandle, Props>(function SplatViewer(
           const anim = animRef.current;
 
           if (!anim.active) {
+            if (immersiveControls && immersivePoseRef.current.enabled) {
+              const coast = immersiveCoastRef.current;
+              if (!immersivePointersActiveRef.current) {
+                const pose = immersivePoseRef.current;
+                if (Math.abs(coast.yaw) >= 0.04 || Math.abs(coast.pitch) >= 0.04) {
+                  pose.yawOffset += coast.yaw * dt;
+                  const pitchLimit = 85 * Math.PI / 180;
+                  pose.pitchOffset = Math.max(
+                    -pitchLimit - pose.basePitch,
+                    Math.min(pitchLimit - pose.basePitch, pose.pitchOffset + coast.pitch * dt),
+                  );
+                  const damping = Math.exp(-5 * dt);
+                  coast.yaw *= damping;
+                  coast.pitch *= damping;
+                } else {
+                  coast.yaw = 0;
+                  coast.pitch = 0;
+                }
+              }
+              applyImmersivePose();
+              return;
+            }
+
             // Hold phase
             if (anim.holdActive && anim.holdElapsed < anim.holdDuration) {
               anim.holdElapsed = Math.min(anim.holdElapsed + dt, anim.holdDuration);
@@ -1047,8 +1595,8 @@ const SplatViewer = forwardRef<SplatViewerHandle, Props>(function SplatViewer(
             anim.active = false;
             if ((anim as any).editorNav) {
               (anim as any).editorNav = false;
-              if (canvasRef.current) camera.attachControl(canvasRef.current, true);
-            } else if (!(anim as any).exactForward && !anim.holdActive && anim.holdDuration > 0) {
+              if (!immersiveControls && canvasRef.current) camera.attachControl(canvasRef.current, true);
+            } else if (!readOnly && !(anim as any).exactForward && !anim.holdActive && anim.holdDuration > 0) {
               anim.holdActive = true;
               anim.holdElapsed = 0;
               anim.holdPos = [anim.toPos[0], anim.toPos[1], anim.toPos[2]];
@@ -1056,26 +1604,47 @@ const SplatViewer = forwardRef<SplatViewerHandle, Props>(function SplatViewer(
           }
         });
 
-        engine.runRenderLoop(() => scene.render());
-        resizeRef.current = () => engine.resize();
+        // Mobile Gaussian rendering is expensive even when the camera is
+        // perfectly still. Keep full cadence during loading, gestures, coast,
+        // and camera flights; once idle, only refresh occasionally so overlays
+        // stay responsive without holding the GPU at 60 fps.
+        let viewerInitializing = true;
+        let lastIdleRenderAt = 0;
+        engine.runRenderLoop(() => {
+          const coast = immersiveCoastRef.current;
+          const moving = viewerInitializing || !immersiveControls ||
+            animRef.current.active || immersivePointersActiveRef.current ||
+            performance.now() < immersiveRenderBurstUntilRef.current ||
+            Math.abs(coast.yaw) >= 0.04 || Math.abs(coast.pitch) >= 0.04;
+          const now = performance.now();
+          if (!moving && now - lastIdleRenderAt < 500) return;
+          lastIdleRenderAt = now;
+          scene.render();
+        });
+        resizeRef.current = () => {
+          engine.resize();
+          immersiveRenderBurstUntilRef.current = performance.now() + 350;
+        };
         window.addEventListener("resize", resizeRef.current);
 
         // ── Place camera from COLMAP data ──
         async function placeCamera() {
           const fallback = fallbackSceneRef.current;
           try {
-            let d: any = null;
+            let d: CameraData | null = null;
             const assetSplatId = extractSplatIdFromAssetUrl(splatUrl);
             // Use directly-provided camera data first
-            if (initialCameras && initialCameras.cameras?.length) {
+            if (initialCameras) {
               d = initialCameras;
             } else {
               const camUrl = camerasUrl ?? (splatId ? `/api/reaigen/splats/${splatId}/cameras/` : null);
-              if (!camUrl) return;
-              const r = await fetch(camUrl);
-              if (!r.ok) return;
-              d = await r.json();
+              if (camUrl) {
+                const r = await fetch(camUrl);
+                if (r.ok) d = await r.json() as CameraData;
+              }
             }
+            if (!d) throw new Error("No camera data available");
+            d = normalizeCameraData(d);
             const cams = d.cameras ?? [];
             if (cams.length > 0) {
               const c = cams[0];
@@ -1084,20 +1653,22 @@ const SplatViewer = forwardRef<SplatViewerHandle, Props>(function SplatViewer(
               const fz = Number(c.forward?.[2] ?? 1);
               const fl = Math.hypot(fx, fy, fz) || 1;
               const nx = fx / fl, ny = fy / fl, nz = fz / fl;
-              const BACK_OFF = 0.45;
-              const px = c.position[0] - nx * BACK_OFF;
-              const py = c.position[1] - ny * BACK_OFF;
-              const pz = c.position[2] - nz * BACK_OFF;
+              // Captured and edited cameras are authoritative viewpoints. Do
+              // not offset them: look-through must reproduce the stored pose.
+              const px = c.position[0];
+              const py = c.position[1];
+              const pz = c.position[2];
               const candidate: Vec3 = [px, py, pz];
               const allowCameraPose =
                 !assetSplatId || !splatId || assetSplatId === splatId || !!initialCameras?.cameras?.length;
-              if (!allowCameraPose || shouldUseCameraPose(candidate, fallback)) {
+              if (allowCameraPose && shouldUseCameraPose(candidate, fallback)) {
                 camera.position.set(px, py, pz);
                 camera.setTarget(new BABYLON.Vector3(
                   px + nx * LOOK, py + ny * LOOK, pz + nz * LOOK,
                 ));
-                const fovY = Number(d.fovY || 0);
-                if (fovY > 0) camera.fov = fovY;
+                camera.fov = d.sceneFov
+                  ? cameraFovRadians(d.sceneFov, camera.fov)
+                  : cameraFovRadians(c.fov ?? d.fovY, camera.fov);
                 return;
               }
               console.warn("[REAI] Ignoring outlier camera pose; using scene-bounds fallback");
@@ -1105,11 +1676,12 @@ const SplatViewer = forwardRef<SplatViewerHandle, Props>(function SplatViewer(
           } catch { /* best-effort */ }
 
           if (fallback) {
-            const [cx, cy, cz] = fallback.center;
-            const dist = Math.max(2.5, fallback.radius * 1.5);
-            camera.position.set(cx - dist, cy + dist * 0.2, cz - dist);
-            camera.setTarget(new BABYLON.Vector3(cx, cy, cz));
+            const [px, py, pz] = fallback.safePosition;
+            const [tx, ty, tz] = fallback.safeTarget;
+            camera.position.set(px, py, pz);
+            camera.setTarget(new BABYLON.Vector3(tx, ty, tz));
             camera.rotation.z = 0;
+            camera.fov = DEFAULT_IMMERSIVE_FOV;
             camera.minZ = Math.max(0.05, fallback.radius / 250);
             camera.maxZ = Math.max(80, fallback.radius * 30);
           }
@@ -1208,7 +1780,7 @@ const SplatViewer = forwardRef<SplatViewerHandle, Props>(function SplatViewer(
             parsedSOG = await ParseSogMeta(files, "", scene);
           }
           if (disposed) return;
-          fallbackSceneRef.current = computeSceneBoundsFromSplatBuffer(parsedSOG.data);
+          fallbackSceneRef.current = computeSceneFrameFromSplatBuffer(parsedSOG.data);
 
           gs = new GaussianSplattingMesh("splat", null, scene);
           const sogSh = parsedSOG.sh && parsedSOG.sh.length ? parsedSOG.sh : undefined;
@@ -1244,7 +1816,7 @@ const SplatViewer = forwardRef<SplatViewerHandle, Props>(function SplatViewer(
           }
 
           if (disposed) return;
-          fallbackSceneRef.current = computeSceneBoundsFromSplatBuffer(parsedSPZ.data);
+          fallbackSceneRef.current = computeSceneFrameFromSplatBuffer(parsedSPZ.data);
 
           gs = new GaussianSplattingMesh("splat", null, scene);
           gs.updateData(
@@ -1261,7 +1833,7 @@ const SplatViewer = forwardRef<SplatViewerHandle, Props>(function SplatViewer(
           const conv: { buffer: ArrayBuffer } = await GaussianSplattingMesh.ConvertPLYWithSHToSplatAsync(rawBuffer) as { buffer: ArrayBuffer };
           if (disposed) return;
           const fullConv = conv.buffer;
-          fallbackSceneRef.current = computeSceneBoundsFromSplatBuffer(fullConv);
+          fallbackSceneRef.current = computeSceneFrameFromSplatBuffer(fullConv);
           if (splatId) void putCache(splatId, "full", fullConv, outputsVersion);
 
           gs = new GaussianSplattingMesh("splat", null, scene);
@@ -1271,8 +1843,9 @@ const SplatViewer = forwardRef<SplatViewerHandle, Props>(function SplatViewer(
         }
         gsRef.current = gs;
 
-        // Per-mesh quality
-        gs.scaling.x = -1;
+        // Backend output and current web/iOS cameras are already Y-up in the
+        // same identity scene space. Historical edited cameras are normalized
+        // on read; the mesh itself must never be mirrored.
         const mat = gs.material as any;
         if (mat) {
           mat.backFaceCulling = false;
@@ -1293,7 +1866,16 @@ const SplatViewer = forwardRef<SplatViewerHandle, Props>(function SplatViewer(
         }
 
         await placeCamera();
+        if (immersiveControls) {
+          const target = camera.getTarget();
+          setImmersiveBase(
+            [camera.position.x, camera.position.y, camera.position.z],
+            [target.x - camera.position.x, target.y - camera.position.y, target.z - camera.position.z],
+            camera.fov,
+          );
+        }
         setReady(true);
+        viewerInitializing = false;
         setStatus("");
         onReady?.();
 
@@ -1317,12 +1899,57 @@ const SplatViewer = forwardRef<SplatViewerHandle, Props>(function SplatViewer(
   // ── UI ─────────────────────────────────────────────────────────────────────
 
   return (
-    <div className={`relative w-full h-full bg-white select-none ${className ?? ""}`} tabIndex={0}>
+    <div ref={rootRef} className={`relative w-full h-full bg-white select-none ${className ?? ""}`} tabIndex={0}>
       <canvas
         ref={canvasRef}
         className="w-full h-full block outline-none"
         style={{ touchAction: "none" }}
       />
+
+      {immersiveControls && ready && (
+        <>
+          <div
+            className={`pointer-events-none absolute inset-x-0 top-[42%] z-10 flex justify-center px-6 transition-all duration-500 md:hidden ${showGestureHint ? "translate-y-0 opacity-100" : "translate-y-2 opacity-0"}`}
+            aria-hidden={!showGestureHint}
+          >
+            <div className="rounded-full border border-white/10 bg-black/55 px-4 py-2 text-center text-[12px] font-medium text-white/85 shadow-xl backdrop-blur-xl">
+              {t("viewer.immersive.gestureHint", lang)}
+            </div>
+          </div>
+
+          <div className="pointer-events-none absolute right-3 top-[calc(3.75rem+env(safe-area-inset-top,0px))] z-10 flex flex-col gap-2 md:hidden">
+            <button
+              type="button"
+              onClick={resetImmersiveView}
+              disabled={!immersiveAdjusted}
+              aria-label={t("viewer.immersive.reset", lang)}
+              className="pointer-events-auto flex h-11 w-11 items-center justify-center rounded-full border border-white/10 bg-black/45 text-white/90 shadow-lg backdrop-blur-xl transition-all enabled:hover:bg-black/60 enabled:active:scale-95 disabled:opacity-35 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/70"
+            >
+              <svg aria-hidden="true" width="18" height="18" viewBox="0 0 24 24" fill="none">
+                <path d="M4.7 8.7A8 8 0 1 1 4 13" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
+                <path d="M4.7 4.8v3.9h3.9" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
+              </svg>
+            </button>
+
+            {canFullscreen && (
+              <button
+                type="button"
+                onClick={() => { void toggleFullscreen(); }}
+                aria-label={t(isFullscreen ? "viewer.immersive.exitFullscreen" : "viewer.immersive.fullscreen", lang)}
+                className="pointer-events-auto flex h-11 w-11 items-center justify-center rounded-full border border-white/10 bg-black/45 text-white/90 shadow-lg backdrop-blur-xl transition-all hover:bg-black/60 active:scale-95 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/70"
+              >
+                <svg aria-hidden="true" width="18" height="18" viewBox="0 0 24 24" fill="none">
+                  {isFullscreen ? (
+                    <path d="M9 4v5H4M15 4v5h5M9 20v-5H4M15 20v-5h5" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
+                  ) : (
+                    <path d="M9 4H4v5M15 4h5v5M9 20H4v-5M15 20h5v-5" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
+                  )}
+                </svg>
+              </button>
+            )}
+          </div>
+        </>
+      )}
 
       {/* Loading overlay */}
       {!ready && (

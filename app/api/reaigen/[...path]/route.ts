@@ -81,10 +81,28 @@ function getSharedTokenForPath(joined: string, suffix: string): string | null {
   return null;
 }
 
+/**
+ * Public share content is split across the draft payload and the optional tour
+ * payload. A successful PIN verification must unlock both requests; otherwise
+ * a protected tour can load while its property page remains a blank 403.
+ */
+function getSharedContentToken(joined: string): string | null {
+  const parts = joined.split("/");
+  if (parts[0] !== "shared" || !parts[1]) return null;
+  if (parts.length === 2 || parts[2] === "tour-viewer") return parts[1];
+  return null;
+}
+
 // Map frontend proxy paths to Django API paths
 function resolveTarget(baseUrl: string, joined: string): string {
   // Reai creator agent is a separate Django app and privacy boundary.
   if (joined === "reai-agent" || joined.startsWith("reai-agent/")) {
+    return `${baseUrl}/api/v1/${joined}`;
+  }
+  // Lookup tables live beside the product apps in Django, not under /reaigen.
+  // Keeping them behind the authenticated same-origin proxy lets browser upload
+  // flows resolve canonical asset type IDs without hard-coded database PKs.
+  if (joined === "lookups" || joined.startsWith("lookups/")) {
     return `${baseUrl}/api/v1/${joined}`;
   }
   // Core app endpoints → /api/v1/core/*
@@ -125,9 +143,9 @@ async function proxy(
   const joined = path.join("/");
   const slash = joined.endsWith("/") ? "" : "/";
   const targetUrlSearchParams = new URLSearchParams(req.nextUrl.searchParams);
-  const sharedTourToken = getSharedTokenForPath(joined, "tour-viewer");
-  if (sharedTourToken && !targetUrlSearchParams.has("pin_token")) {
-    const pinToken = req.cookies.get(sharePinCookieName(sharedTourToken))?.value ?? null;
+  const sharedContentToken = getSharedContentToken(joined);
+  if (sharedContentToken && !targetUrlSearchParams.has("pin_token")) {
+    const pinToken = req.cookies.get(sharePinCookieName(sharedContentToken))?.value ?? null;
     if (pinToken) targetUrlSearchParams.set("pin_token", pinToken);
   }
   const qs = targetUrlSearchParams.size > 0 ? `?${targetUrlSearchParams.toString()}` : "";

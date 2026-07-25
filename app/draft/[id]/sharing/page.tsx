@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useCallback, use } from "react";
+import { useEffect, useState, useCallback, use, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { useAuth } from "../../../components/hooks/use-auth";
 import { AppShell } from "../../../components/app-shell";
@@ -12,6 +12,8 @@ import {
   listShares,
   createDraftShare,
   createSplatShare,
+  listUnits,
+  updateShare,
 } from "../../../lib/api/client";
 import type { FloorplanDetail } from "../../../lib/api/client";
 import { getSafeApiErrorMessage } from "../../../lib/api/error-message";
@@ -23,6 +25,49 @@ import { ShareLinkCard } from "../../../components/sharing/share-link-card";
 import type { ContentScope } from "../../../components/sharing/content-scope-selector";
 import { PageLoading } from "../../../components/page-loading";
 import { copyToClipboard, shareUrl } from "../../../lib/share-ui";
+import type { UnitLookup } from "../../../lib/unit-catalog";
+import { currentGalleryUploads } from "../../../lib/media";
+
+function primaryShareSplat(data: SplatsByDraftPayload | null) {
+  if (!data?.splats.length) return null;
+  return data.parent_splat_id
+    ? data.splats.find((splat) => (splat.splat_id ?? splat.id) === data.parent_splat_id) ?? data.splats[0]
+    : data.splats[0];
+}
+
+function isShareableTour(data: SplatsByDraftPayload | null) {
+  const splat = primaryShareSplat(data);
+  return Boolean(splat && splat.status === "completed" && (
+    splat.has_sog
+    || splat.has_splat
+    || splat.has_ply
+    || splat.url
+    || splat.format
+    || splat.available_formats?.length
+    || Object.keys(splat.signed_outputs ?? {}).length
+  ));
+}
+
+function scopeFromShare(
+  share: ShareData,
+  capabilities: { tour: boolean; photos: boolean; floorplan: boolean },
+): ContentScope {
+  const visibleFields = new Set(
+    share.fields.filter((field) => field.is_visible).map((field) => field.field_name),
+  );
+  if (visibleFields.size === 0) {
+    return defaultContentScope(capabilities.tour, capabilities.photos, capabilities.floorplan);
+  }
+  visibleFields.add("title");
+  const structuralFields = new Set(["title", "tour", "uploads", "floorplan"]);
+  return {
+    tour: capabilities.tour && visibleFields.has("tour"),
+    photos: capabilities.photos && visibleFields.has("uploads"),
+    floorplan: capabilities.floorplan && visibleFields.has("floorplan"),
+    details: [...visibleFields].some((field) => !structuralFields.has(field)),
+    selectedFields: visibleFields,
+  };
+}
 
 export default function SharingPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params);
@@ -35,14 +80,18 @@ export default function SharingPage({ params }: { params: Promise<{ id: string }
   const [splatData, setSplatData] = useState<SplatsByDraftPayload | null>(null);
   const [floorplan, setFloorplan] = useState<FloorplanDetail | null>(null);
   const [shares, setShares] = useState<ShareData[]>([]);
+  const [unitCatalog, setUnitCatalog] = useState<UnitLookup[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
   const [scope, setScope] = useState<ContentScope | null>(null);
+  const [editingShare, setEditingShare] = useState<ShareData | null>(null);
   const [formError, setFormError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
-  const [justCopied, setJustCopied] = useState(false);
+  const [notice, setNotice] = useState<"copied" | "saved" | null>(null);
   const [copyFailedUrl, setCopyFailedUrl] = useState<string | null>(null);
+  const [formVersion, setFormVersion] = useState(0);
+  const formRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
     if (!isLoading && !isAuthenticated) router.replace("/");
@@ -55,19 +104,19 @@ export default function SharingPage({ params }: { params: Promise<{ id: string }
       getDraft(draftId),
       getSplatsByDraft(draftId).catch(() => null),
       listShares().catch(() => [] as ShareData[]),
-    ]).then(([d, s, allShares]) => {
+      listUnits().catch(() => []),
+    ]).then(([d, s, allShares, fetchedUnits]) => {
       setDraft(d);
       setSplatData(s);
+      setUnitCatalog(fetchedUnits);
       const draftShares = (allShares as ShareData[]).filter(
         (sh) => sh.draft === draftId && sh.status !== "revoked"
       );
       setShares(draftShares);
       if (d.floorplan_id) getFloorplan(d.floorplan_id).then(setFloorplan).catch(() => {});
 
-      const hasSplat = !!(s?.splats?.length);
-      const hasPhotos = (d.raw_uploads ?? []).some(
-        (u: { mime_type?: string; asset_type?: string }) => u.mime_type?.startsWith("image") || u.asset_type === "photo"
-      );
+      const hasSplat = isShareableTour(s);
+      const hasPhotos = currentGalleryUploads(d.raw_uploads ?? [], "image").length > 0;
       const hasFp = !!d.floorplan_id || (d.draft_data ?? []).some(
         (e: { data_key: string }) => e.data_key === "captured_room_json" || e.data_key === "wall_graph_json"
       );
@@ -77,35 +126,53 @@ export default function SharingPage({ params }: { params: Promise<{ id: string }
     }).finally(() => setLoading(false));
   }, [isAuthenticated, draftId, lang]);
 
-  const primarySplat = splatData?.parent_splat_id
-    ? splatData.splats.find((s) => (s.splat_id ?? s.id) === splatData.parent_splat_id) ?? splatData.splats[0]
-    : splatData?.splats[0];
-  const hasTour = !!primarySplat && primarySplat.status === "completed" && Boolean(
-    primarySplat.has_sog || primarySplat.has_splat || primarySplat.has_ply || primarySplat.url || primarySplat.format || primarySplat.available_formats?.length || Object.keys(primarySplat.signed_outputs ?? {}).length,
-  );
+  const primarySplat = primaryShareSplat(splatData);
+  const hasTour = isShareableTour(splatData);
   const primarySplatId = primarySplat ? (primarySplat.splat_id ?? primarySplat.id) : undefined;
   const thumbUrl = primarySplat?.signed_outputs?.thumbnail ?? primarySplat?.thumbnail_url ?? null;
   const fpUrl = floorplan?.composite_url ?? null;
-  const hasPhotos = (draft?.raw_uploads ?? []).some(
-    (u) => u.mime_type?.startsWith("image") || u.asset_type === "photo"
-  );
+  const hasPhotos = currentGalleryUploads(draft?.raw_uploads ?? [], "image").length > 0;
   const hasFloorplan = !!fpUrl || (draft?.draft_data ?? []).some(
     (e) => e.data_key === "captured_room_json" || e.data_key === "wall_graph_json"
   );
 
-  const handleCreate = useCallback(async (formData: ShareFormData) => {
+  const handleSubmit = useCallback(async (formData: ShareFormData) => {
     setFormError(null);
     setSaving(true);
     try {
+      if (editingShare) {
+        const updatePayload: Parameters<typeof updateShare>[1] = { ...formData };
+        // The preset value 0 means "Never" in the UI. Django intentionally
+        // accepts only positive expires_in_hours values, but exposes the
+        // nullable expires_at field for clearing an existing expiry.
+        if (formData.expires_in_hours === 0) {
+          delete updatePayload.expires_in_hours;
+          updatePayload.expires_at = null;
+        }
+        // Leaving an existing PIN blank means keep it; do not ask Django to
+        // recreate PIN protection without the original secret.
+        if (editingShare.requires_pin && formData.share_type === "pin" && !formData.pin) {
+          delete updatePayload.share_type;
+        }
+        const updated = await updateShare(editingShare.id, updatePayload);
+        setShares((current) => current.map((share) => share.id === updated.id ? updated : share));
+        setEditingShare(null);
+        setScope(defaultContentScope(hasTour, hasPhotos, hasFloorplan));
+        setNotice("saved");
+        setTimeout(() => setNotice(null), 2000);
+        return;
+      }
       const s = scope?.tour && primarySplatId
         ? await createSplatShare(primarySplatId, formData)
         : await createDraftShare(draftId, formData);
       setShares((prev) => [s, ...prev]);
+      setScope(defaultContentScope(hasTour, hasPhotos, hasFloorplan));
+      setFormVersion((version) => version + 1);
       const url = shareUrl(s.token);
       setCopyFailedUrl(null);
       if (await copyToClipboard(url)) {
-        setJustCopied(true);
-        setTimeout(() => setJustCopied(false), 2000);
+        setNotice("copied");
+        setTimeout(() => setNotice(null), 2000);
       } else {
         // Clipboard blocked — still surface the link with a manual copy action.
         setCopyFailedUrl(url);
@@ -115,7 +182,13 @@ export default function SharingPage({ params }: { params: Promise<{ id: string }
     } finally {
       setSaving(false);
     }
-  }, [scope?.tour, primarySplatId, draftId, lang]);
+  }, [editingShare, scope?.tour, primarySplatId, draftId, lang, hasTour, hasPhotos, hasFloorplan]);
+
+  const cancelEdit = useCallback(() => {
+    setEditingShare(null);
+    setFormError(null);
+    setScope(defaultContentScope(hasTour, hasPhotos, hasFloorplan));
+  }, [hasFloorplan, hasPhotos, hasTour]);
 
   const handleShareUpdate = useCallback((shareId: number, updated: ShareData | null) => {
     if (!updated) {
@@ -134,7 +207,7 @@ export default function SharingPage({ params }: { params: Promise<{ id: string }
       <div className="min-h-screen flex items-center justify-center px-4">
         <div className="text-center space-y-4 max-w-xs">
           <p className="text-[14px] font-medium text-foreground/70">{error || t("draft.error.failedTitle", lang)}</p>
-          <Button variant="outline" size="sm" onClick={() => router.back()}>{t("common.goBack", lang)}</Button>
+          <Button variant="outline" size="sm" onClick={() => router.push(`/draft/${draftId}`)}>{t("common.goBack", lang)}</Button>
         </div>
       </div>
     );
@@ -144,26 +217,26 @@ export default function SharingPage({ params }: { params: Promise<{ id: string }
 
   return (
     <AppShell user={user} onLogout={logout}>
-      <div className="mx-auto w-full max-w-5xl pb-10">
+      <div className="mx-auto w-full max-w-[1180px] pb-8 md:pb-10">
         {/* Back */}
-        <button type="button" onClick={() => router.back()} className="mb-4 -ml-2 inline-flex min-h-11 items-center gap-1.5 rounded-full px-3 py-1.5 text-[13px] text-muted-foreground transition-colors hover:bg-foreground/[0.04] hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 sm:min-h-0">
+        <button type="button" onClick={() => router.push(`/draft/${draftId}`)} className="mb-4 -ml-2 inline-flex min-h-11 items-center gap-1.5 rounded-full px-3 py-1.5 text-[13px] text-muted-foreground transition-colors hover:bg-foreground/[0.04] hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 sm:min-h-0">
           <svg aria-hidden="true" width="15" height="15" viewBox="0 0 16 16" fill="none"><path d="M10 12L6 8L10 4" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/></svg>
           {t("common.back", lang)}
         </button>
 
         {/* Title */}
-        <h1 className="mb-5 text-[24px] font-semibold tracking-tight">
+        <h1 className="mb-5 text-[28px] font-semibold leading-tight tracking-[-0.025em] md:mb-7 md:text-[30px]">
           {t("sharing.pageTitle", lang)}
-          <span className="mt-1 block truncate text-[12px] font-normal text-foreground/50 sm:ml-2 sm:mt-0 sm:inline sm:text-[13px]">{title}</span>
+          <span className="mt-1.5 block truncate text-[13px] font-normal tracking-normal text-muted-foreground sm:ml-2 sm:mt-0 sm:inline">{title}</span>
         </h1>
 
         {/* Two-panel layout */}
         <div className="relative grid grid-cols-1 lg:grid-cols-2 gap-5 lg:gap-8">
           {/* Copy banner — absolutely positioned so it never shifts the layout */}
-          {justCopied && (
-            <div className="absolute inset-x-0 top-0 z-10 flex items-center gap-2 rounded-xl border border-foreground/15 bg-surface px-4 py-2.5 shadow-card animate-fade-in">
+          {notice && (
+            <div className="absolute inset-x-0 top-0 z-30 flex items-center gap-2 rounded-full border border-foreground/15 bg-card/95 px-4 py-2.5 shadow-elevated backdrop-blur-xl animate-fade-in">
               <svg aria-hidden="true" width="14" height="14" viewBox="0 0 16 16" fill="none"><path d="M3 8.5L6.5 12L13 4" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" /></svg>
-              <span className="text-[12px] font-medium">{t("sharing.linkCopied", lang)}</span>
+              <span className="text-[12px] font-medium">{t(notice === "copied" ? "sharing.linkCopied" : "common.saved", lang)}</span>
             </div>
           )}
           {copyFailedUrl && (
@@ -177,8 +250,8 @@ export default function SharingPage({ params }: { params: Promise<{ id: string }
                 onClick={async () => {
                   if (await copyToClipboard(copyFailedUrl)) {
                     setCopyFailedUrl(null);
-                    setJustCopied(true);
-                    setTimeout(() => setJustCopied(false), 2000);
+                    setNotice("copied");
+                    setTimeout(() => setNotice(null), 2000);
                   }
                 }}
               >
@@ -187,15 +260,41 @@ export default function SharingPage({ params }: { params: Promise<{ id: string }
             </div>
           )}
           {/* Right panel — Controls (shown first on mobile) */}
-          <div className="lg:order-2 space-y-3">
+          <div className="order-2 space-y-7 lg:order-2">
+            {/* Create or edit link */}
+            <div ref={formRef} className="scroll-mt-24">
+              <div className="mb-3 flex min-h-8 items-center justify-between gap-3 px-1">
+                <h2 className="text-[15px] font-semibold">{t(editingShare ? "shares.editSettings" : "sharing.createNewLink", lang)}</h2>
+                {editingShare ? (
+                  <span className="rounded-full bg-secondary px-2.5 py-1 text-[10px] font-semibold text-foreground/55">{t("sharing.linkLabel", lang)}</span>
+                ) : null}
+              </div>
+              {scope && (
+                <ShareCreateForm
+                  key={formVersion}
+                  scope={scope}
+                  onScopeChange={setScope}
+                  hasTour={hasTour}
+                  hasPhotos={hasPhotos}
+                  hasFloorplan={hasFloorplan}
+                  lang={lang}
+                  onSubmit={handleSubmit}
+                  saving={saving}
+                  error={formError}
+                  initialShare={editingShare}
+                  onCancelEdit={cancelEdit}
+                />
+              )}
+            </div>
+
             {/* Active links */}
             {shares.length > 0 && (
-              <div className="space-y-1.5">
+              <div className="space-y-2">
                 <div className="flex items-center gap-2 px-1">
                   <h2 className="text-[13px] font-semibold text-foreground/70">
                     {t("sharing.activeLinks", lang)}
                   </h2>
-                  <span className="inline-flex items-center justify-center h-[18px] min-w-[18px] rounded-full bg-foreground/[0.07] px-1.5 text-[11px] font-semibold text-foreground/50 tabular-nums">
+                  <span className="inline-flex h-[18px] min-w-[18px] items-center justify-center rounded-full bg-foreground/[0.07] px-1.5 text-[11px] font-semibold text-foreground/50 tabular-nums">
                     {shares.length}
                   </span>
                 </div>
@@ -206,33 +305,20 @@ export default function SharingPage({ params }: { params: Promise<{ id: string }
                     lang={lang}
                     dateFormat={user.localization?.date_format}
                     onUpdate={(updated) => handleShareUpdate(share.id, updated)}
-                    onEdit={() => {}}
+                    onEdit={() => {
+                      setEditingShare(share);
+                      setFormError(null);
+                      setScope(scopeFromShare(share, { tour: hasTour, photos: hasPhotos, floorplan: hasFloorplan }));
+                      requestAnimationFrame(() => formRef.current?.scrollIntoView({ behavior: "smooth", block: "start" }));
+                    }}
                   />
                 ))}
               </div>
             )}
-
-            {/* Create new link */}
-            <div className="rounded-xl border border-border/55 bg-surface p-4 shadow-card sm:p-5">
-              <h2 className="text-[15px] font-semibold mb-4">{t("sharing.createNewLink", lang)}</h2>
-              {scope && (
-                <ShareCreateForm
-                  scope={scope}
-                  onScopeChange={setScope}
-                  hasTour={hasTour}
-                  hasPhotos={hasPhotos}
-                  hasFloorplan={hasFloorplan}
-                  lang={lang}
-                  onSubmit={handleCreate}
-                  saving={saving}
-                  error={formError}
-                />
-              )}
-            </div>
           </div>
 
           {/* Left panel — Audience Preview */}
-          <div className="lg:order-1">
+          <div className="order-1 lg:order-1">
             <div className="lg:sticky lg:top-20">
               {scope && (
                 <SharePreview
@@ -240,7 +326,8 @@ export default function SharingPage({ params }: { params: Promise<{ id: string }
                   scope={scope}
                   hasTour={hasTour}
                   thumbUrl={thumbUrl}
-                  fpUrl={fpUrl}
+                  hasFloorplan={hasFloorplan}
+                  units={unitCatalog}
                   lang={lang}
                 />
               )}

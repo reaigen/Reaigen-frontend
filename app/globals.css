@@ -100,6 +100,49 @@
     background: hsl(var(--background));
   }
 
+  /*
+   * The media editor lives in a side panel, so viewport breakpoints can produce
+   * four unusably narrow cards. Size its grid from the panel itself instead.
+   */
+  .media-manager-workspace {
+    container-type: inline-size;
+  }
+
+  .media-manager-layout {
+    display: grid;
+    align-items: start;
+    gap: 1.25rem;
+  }
+
+  .media-manager-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(min(100%, 10rem), 1fr));
+    gap: 0.75rem;
+  }
+
+  .media-manager-inspector {
+    display: none;
+  }
+
+  @container (min-width: 700px) {
+    .media-manager-layout {
+      grid-template-columns: minmax(0, 1fr) 15rem;
+    }
+
+    .media-manager-inspector {
+      display: block;
+    }
+
+    .media-manager-card-order,
+    .media-manager-card-actions {
+      display: none !important;
+    }
+
+    .media-manager-card-meta {
+      margin-bottom: 0 !important;
+    }
+  }
+
   .glass-chip {
     border: 1px solid rgb(255 255 255 / 0.5);
     background: rgb(255 255 255 / 0.88);

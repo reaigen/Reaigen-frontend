@@ -10,6 +10,7 @@ import { t } from "../lib/i18n";
 import FloorplanViewer from "./floorplan-viewer";
 import { DraftImageGallery } from "./draft-image-gallery";
 import type { SharedDraftData, RoomData } from "../lib/tour-types";
+import { resolveUnit, unitLabel, type UnitLookup } from "../lib/unit-catalog";
 
 // ── Helpers ────────────────────────────────────────────────────────────
 
@@ -108,15 +109,19 @@ function SharedFloorplan({ floorplanUrl, rooms, lang }: { floorplanUrl: string; 
 
 // ── Component ──────────────────────────────────────────────────────────
 
-export function SharedDraftView({ draftData, lang, hasTour, onOpenTour, floorplanUrl, rooms }: {
+export function SharedDraftView({ draftData, lang, hasTour, onOpenTour, floorplanUrl, rooms, units }: {
   draftData: SharedDraftData;
   lang: string;
   hasTour?: boolean;
   onOpenTour?: () => void;
   floorplanUrl?: string | null;
   rooms?: RoomData[];
+  units: readonly UnitLookup[];
 }) {
-  const price = formatPrice(draftData.price, draftData.currency);
+  const currency = resolveUnit(units, draftData.currency, "CURRENCY");
+  const areaUnit = resolveUnit(units, draftData.area_unit, "AREA");
+  const lotUnit = resolveUnit(units, draftData.lot_size_unit, "AREA");
+  const price = formatPrice(draftData.price, currency?.code);
   const addressText = draftData.display_address || [draftData.city, draftData.state, draftData.country].filter(Boolean).join(", ");
   const photos = (draftData.uploads ?? []).filter((upload) => !upload.mime_type || upload.mime_type.startsWith("image/"));
 
@@ -187,9 +192,9 @@ export function SharedDraftView({ draftData, lang, hasTour, onOpenTour, floorpla
                 {([
                   [I.bed, draftData.bedrooms, t("shared.bed", lang)],
                   [I.bath, draftData.bathrooms, t("shared.bath", lang)],
-                  [I.area, draftData.area, draftData.area_unit || "m²"],
+                  [I.area, draftData.area, unitLabel(areaUnit) || null],
                   [I.year, draftData.year_built, null],
-                  [I.lot, draftData.lot_size, draftData.lot_size_unit || "m²"],
+                  [I.lot, draftData.lot_size, unitLabel(lotUnit) || null],
                 ] as [React.ReactNode, string | number | null | undefined, string | null][])
                   .filter(([, value]) => value != null && value !== "")
                   .map(([icon, value, label], i) => (
@@ -224,6 +229,8 @@ export function SharedDraftView({ draftData, lang, hasTour, onOpenTour, floorpla
                     draftData={draftData.floorplan.draft_data}
                     publicFloorplan={draftData.floorplan}
                     lang={lang}
+                    units={units}
+                    targetAreaUnit={draftData.area_unit}
                   />
                 ) : (
                   <SharedFloorplan floorplanUrl={floorplanUrl!} rooms={rooms ?? []} lang={lang} />

@@ -1197,9 +1197,9 @@ function SettingsField({ label, children, hint }: { label: string; children: Rea
 function LocalizationTab({ user, lang }: { user: UserProfile; lang: string }) {
   const loc = user.localization;
   const [language, setLanguage] = React.useState(loc?.language ?? "en");
-  const [currency, setCurrency] = React.useState(loc?.currency ?? "EUR");
-  const [areaUnit, setAreaUnit] = React.useState(loc?.area_unit ?? "SQM");
-  const [distanceUnit, setDistanceUnit] = React.useState(loc?.distance_unit ?? "M");
+  const [currency, setCurrency] = React.useState(loc?.currency ?? "");
+  const [areaUnit, setAreaUnit] = React.useState(loc?.area_unit ?? "");
+  const [distanceUnit, setDistanceUnit] = React.useState(loc?.distance_unit ?? "");
   const browserTz = typeof Intl !== "undefined" ? Intl.DateTimeFormat().resolvedOptions().timeZone : "UTC";
   const [timezone, setTimezone] = React.useState(loc?.timezone || browserTz);
   const [dateFormat, setDateFormat] = React.useState(loc?.date_format ?? "EU");
@@ -1213,7 +1213,12 @@ function LocalizationTab({ user, lang }: { user: UserProfile; lang: string }) {
     setPrefsLoading(true);
     setPrefsError(false);
     getAvailablePreferences()
-      .then(setPrefs)
+      .then((available) => {
+        setPrefs(available);
+        setCurrency((current) => current || available.currencies[0]?.code || "");
+        setAreaUnit((current) => current || flattenUnits(available.area_units)[0]?.code || "");
+        setDistanceUnit((current) => current || flattenUnits(available.distance_units)[0]?.code || "");
+      })
       .catch(() => setPrefsError(true))
       .finally(() => setPrefsLoading(false));
   }, []);
@@ -2036,20 +2041,25 @@ export function SettingsForm({ user, onSaved }: { user: UserProfile; onSaved: ()
       className="w-full md:grid md:grid-cols-[190px_minmax(0,1fr)] md:items-start md:gap-9"
     >
       <div className="mb-7 md:sticky md:top-20 md:mb-0">
-        {/* Mobile: horizontal scrollable pills — all sections visible, one tap to switch */}
-        <div className="-mx-4 mb-1 overflow-x-auto scrollbar-none px-4 md:hidden">
-          <TabsList className="flex w-max gap-1.5 bg-transparent p-0">
+        {/* Mobile: every section is available in one native, keyboard-friendly control. */}
+        <label className="relative block md:hidden">
+          <span className="sr-only">{t("settings.title", lang)}</span>
+          <select
+            value={activeTab}
+            onChange={(event) => {
+              const value = event.target.value;
+              setActiveTab(value);
+              window.history.replaceState(null, "", `#${value}`);
+            }}
+            className="h-12 w-full appearance-none rounded-2xl border border-border/70 bg-card px-4 pr-11 text-[16px] font-semibold text-foreground shadow-control outline-none transition-[border-color,box-shadow] focus-visible:border-foreground/30 focus-visible:ring-2 focus-visible:ring-ring/20"
+            aria-label={t("settings.title", lang)}
+          >
             {settingsTabs.map((tab) => (
-              <TabsTrigger
-                key={tab.value}
-                value={tab.value}
-                className="shrink-0 rounded-lg border border-border/55 bg-surface px-3.5 py-2 text-[13px] font-medium text-foreground/60 shadow-none transition-colors data-[state=active]:border-foreground data-[state=active]:bg-foreground data-[state=active]:text-background"
-              >
-                {t(tab.label, lang)}
-              </TabsTrigger>
+              <option key={tab.value} value={tab.value}>{t(tab.label, lang)}</option>
             ))}
-          </TabsList>
-        </div>
+          </select>
+          <ChevronDownIcon size={16} className="pointer-events-none absolute right-4 top-1/2 -translate-y-1/2 text-muted-foreground" />
+        </label>
         {/* Desktop: vertical list */}
         <TabsList className="hidden min-h-0 w-full flex-col items-stretch gap-1 rounded-xl border border-border/55 bg-surface p-2 text-muted-foreground md:flex">
           {settingsTabs.map((tab) => (

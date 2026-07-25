@@ -3,7 +3,7 @@
 import * as React from "react";
 import { Button } from "../../lib/ui/button";
 import { t } from "../../lib/i18n";
-import { SHARE_BUNDLES } from "../../lib/tour-types";
+import { SHARE_BUNDLES, type ShareData } from "../../lib/tour-types";
 import { ContentScopeSelector, type ContentScope } from "./content-scope-selector";
 import { PrivacyLevelSelector, type PrivacyLevel } from "./privacy-level-selector";
 import { LifetimeSelector } from "./lifetime-selector";
@@ -18,6 +18,8 @@ interface ShareCreateFormProps {
   onSubmit: (opts: ShareFormData) => Promise<void>;
   saving: boolean;
   error: string | null;
+  initialShare?: ShareData | null;
+  onCancelEdit?: () => void;
 }
 
 export interface ShareFormData {
@@ -37,12 +39,23 @@ export function ShareCreateForm({
   onSubmit,
   saving,
   error,
+  initialShare = null,
+  onCancelEdit,
 }: ShareCreateFormProps) {
   const [privacyLevel, setPrivacyLevel] = React.useState<PrivacyLevel>("open");
   const [pin, setPin] = React.useState("");
-  const [lifetimeHours, setLifetimeHours] = React.useState(0);
+  const [lifetimeHours, setLifetimeHours] = React.useState<number | null>(0);
 
-  const pinValid = privacyLevel !== "pin" || pin.length >= 4;
+  React.useEffect(() => {
+    setPrivacyLevel(initialShare?.requires_pin ? "pin" : "open");
+    setPin("");
+    // `null` means keep the existing exact expiry. A chosen preset replaces it.
+    setLifetimeHours(initialShare?.expires_at ? null : 0);
+  }, [initialShare]);
+
+  const pinValid = privacyLevel !== "pin"
+    || pin.length >= 4
+    || Boolean(initialShare?.requires_pin && pin.length === 0);
 
   const handleSubmit = async () => {
     // The scope toggles shape the actual field list: tour ⇄ tour,
@@ -61,29 +74,32 @@ export function ShareCreateForm({
         if (f !== "title" && f !== "uploads" && f !== "floorplan" && f !== "tour") fields.delete(f);
       }
     }
+    const hasExpiry = lifetimeHours === null ? Boolean(initialShare?.expires_at) : lifetimeHours > 0;
     const opts: ShareFormData = {
-      share_type: privacyLevel === "pin" ? "pin" : lifetimeHours > 0 ? "temporary" : "permanent",
+      share_type: privacyLevel === "pin" ? "pin" : hasExpiry ? "temporary" : "permanent",
       field_names: Array.from(fields),
     };
-    if (privacyLevel === "pin") opts.pin = pin;
-    if (lifetimeHours > 0) opts.expires_in_hours = lifetimeHours;
+    if (privacyLevel === "pin" && pin.length >= 4) opts.pin = pin;
+    if (lifetimeHours !== null && (initialShare || lifetimeHours > 0)) opts.expires_in_hours = lifetimeHours;
     await onSubmit(opts);
   };
 
   return (
-    <div className="space-y-5">
-      {error && <p role="alert" className="text-[12px] text-destructive">{error}</p>}
+    <div className="space-y-3">
+      {error && <p role="alert" className="rounded-2xl border border-destructive/25 bg-destructive/[0.035] px-4 py-3 text-[12px] text-destructive">{error}</p>}
 
-      <ContentScopeSelector
-        scope={scope}
-        onChange={onScopeChange}
-        hasTour={hasTour}
-        hasPhotos={hasPhotos}
-        hasFloorplan={hasFloorplan}
-        lang={lang}
-      />
+      <section className="rounded-[1.35rem] border border-border/60 bg-card p-4 shadow-card sm:rounded-2xl sm:p-5">
+        <ContentScopeSelector
+          scope={scope}
+          onChange={onScopeChange}
+          hasTour={hasTour}
+          hasPhotos={hasPhotos}
+          hasFloorplan={hasFloorplan}
+          lang={lang}
+        />
+      </section>
 
-      <div className="border-t border-border/30 pt-5">
+      <section className="rounded-[1.35rem] border border-border/60 bg-card p-4 shadow-card sm:rounded-2xl sm:p-5">
         <PrivacyLevelSelector
           level={privacyLevel}
           pin={pin}
@@ -91,24 +107,31 @@ export function ShareCreateForm({
           onPinChange={setPin}
           lang={lang}
         />
-      </div>
+      </section>
 
-      <div className="border-t border-border/30 pt-5">
+      <section className="rounded-[1.35rem] border border-border/60 bg-card p-4 shadow-card sm:rounded-2xl sm:p-5">
         <LifetimeSelector
           hours={lifetimeHours}
           onHoursChange={setLifetimeHours}
+          currentExpiry={initialShare?.expires_at}
           lang={lang}
         />
-      </div>
+      </section>
 
-      <div className="border-t border-border/30 pt-5">
+      <div className="sticky bottom-[calc(4rem+env(safe-area-inset-bottom,0px))] z-20 -mx-1 flex gap-2 rounded-full border border-border/70 bg-card/95 p-1.5 shadow-elevated backdrop-blur-xl md:static md:mx-0 md:border-0 md:bg-transparent md:p-0 md:pt-1 md:shadow-none">
+        {initialShare && onCancelEdit ? (
+          <Button type="button" variant="outline" className="h-11 flex-1 text-[13px] font-semibold" onClick={onCancelEdit} disabled={saving}>
+            {t("common.cancel", lang)}
+          </Button>
+        ) : null}
         <Button
-          className="w-full h-11 text-[13px] font-semibold shadow-sm"
+          type="button"
+          className="h-11 flex-1 text-[13px] font-semibold shadow-sm"
           onClick={handleSubmit}
           disabled={saving || !pinValid}
           loading={saving}
         >
-          {t("sharing.createAndCopy", lang)}
+          {t(initialShare ? "shareDialog.save" : "sharing.createAndCopy", lang)}
         </Button>
       </div>
     </div>

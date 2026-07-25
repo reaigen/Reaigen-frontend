@@ -12,10 +12,17 @@ interface Props {
   onRoomClick: (room: RoomData) => void;
   activeRoomId?: number | null;
   lang?: string;
+  open?: boolean;
+  onOpenChange?: (open: boolean) => void;
 }
 
-export default function FloorplanNav({ floorplanUrl, rooms, onRoomClick, activeRoomId, lang = "en" }: Props) {
-  const [expanded, setExpanded] = useState(false);
+export default function FloorplanNav({ floorplanUrl, rooms, onRoomClick, activeRoomId, lang = "en", open, onOpenChange }: Props) {
+  const [internalExpanded, setInternalExpanded] = useState(false);
+  const expanded = open ?? internalExpanded;
+  const setExpanded = (next: boolean) => {
+    if (open == null) setInternalExpanded(next);
+    onOpenChange?.(next);
+  };
 
   // Find bounds for normalizing room coordinates to SVG viewport
   const allPoints = rooms.flatMap((r) => r.boundary_points ?? []);
@@ -44,7 +51,7 @@ export default function FloorplanNav({ floorplanUrl, rooms, onRoomClick, activeR
   }
 
   return (
-    <div className="absolute bottom-20 left-3 z-20 animate-fade-in sm:left-auto sm:right-4">
+    <div className="absolute bottom-[calc(4.75rem+env(safe-area-inset-bottom,0px))] left-3 z-20 animate-fade-in sm:bottom-20 sm:left-auto sm:right-4">
       <button
         type="button"
         onClick={() => setExpanded(!expanded)}
@@ -59,7 +66,7 @@ export default function FloorplanNav({ floorplanUrl, rooms, onRoomClick, activeR
       </button>
 
       {expanded && (
-        <div className="max-w-[calc(100vw-1.5rem)] animate-fade-in-up rounded-2xl border border-white/10 bg-black/80 p-3 shadow-2xl sm:max-w-none">
+        <div className="max-h-[48dvh] max-w-[calc(100vw-1.5rem)] animate-fade-in-up overflow-auto rounded-2xl border border-white/10 bg-black/70 p-3 shadow-2xl backdrop-blur-2xl sm:max-w-none">
           {/* Floorplan image as background */}
           <div className="relative w-[min(300px,calc(100vw-3rem))]" style={{ aspectRatio: `${svgW} / ${svgH}` }}>
             {/* eslint-disable-next-line @next/next/no-img-element */}

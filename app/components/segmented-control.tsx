@@ -33,7 +33,7 @@ export function SegmentedControl<T extends string | number>({
       role="group"
       aria-label={ariaLabel}
       className={cn(
-        "flex h-12 min-w-0 items-center gap-1 overflow-x-auto rounded-full border border-border/55 bg-surface p-1 shadow-control scrollbar-hide sm:h-11",
+        "flex h-[3.25rem] min-w-0 items-center gap-1 overflow-x-auto rounded-full border border-border/55 bg-surface p-1 shadow-control scrollbar-hide sm:h-11",
         className,
       )}
     >
@@ -47,7 +47,7 @@ export function SegmentedControl<T extends string | number>({
             aria-label={option.ariaLabel}
             aria-pressed={active}
             className={cn(
-              "inline-flex h-10 shrink-0 items-center justify-center gap-2 rounded-full px-3 text-[12px] font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 sm:h-8",
+              "inline-flex h-11 shrink-0 items-center justify-center gap-2 rounded-full px-3 text-[12px] font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 sm:h-8",
               iconOnly && "w-10 px-0 sm:w-8",
               active
                 ? "bg-foreground text-background shadow-sm"

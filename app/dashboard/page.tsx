@@ -7,7 +7,7 @@ import { AppShell } from "../components/app-shell";
 import { CollectionCard } from "../components/collection-card";
 import { CollectionState } from "../components/collection-state";
 import { t, getUserLanguage } from "../lib/i18n";
-import { listAllSplats, listDrafts } from "../lib/api/client";
+import { listAllSplats, listDrafts, listUnits } from "../lib/api/client";
 import type { DraftListingItem, SplatListItem } from "../lib/tour-types";
 import Link from "next/link";
 import { Thumbnail } from "../components/thumbnail";
@@ -18,6 +18,9 @@ import { SearchField } from "../components/search-field";
 import { GridLayoutToggle } from "../components/grid-layout-toggle";
 import { ArrowRightIcon, ImageIcon, InfoIcon, ShareIcon } from "../components/icons";
 import { Button } from "../lib/ui/button";
+import { currentGalleryUploads } from "../lib/media";
+import { readDraftPageCache, writeDraftPageCache } from "../lib/resilient-draft-cache";
+import { resolveUnit, type UnitLookup } from "../lib/unit-catalog";
 
 function compactNumber(value: string | number | null | undefined, lang?: string) {
   if (value == null || value === "") return null;
@@ -30,19 +33,16 @@ function formatMoney(value: string | number | null | undefined, currency: string
   if (value == null || value === "") return null;
   const n = typeof value === "number" ? value : Number(value);
   if (!Number.isFinite(n) || n === 0) return null;
+  if (!currency) return compactNumber(n, lang);
   try {
-    return new Intl.NumberFormat(lang, { style: "currency", currency: currency || "EUR", maximumFractionDigits: 0 }).format(n);
+    return new Intl.NumberFormat(lang, { style: "currency", currency, maximumFractionDigits: 0 }).format(n);
   } catch {
-    return `${compactNumber(n, lang)}${currency ? ` ${currency}` : ""}`;
+    return compactNumber(n, lang);
   }
 }
 
 function getDraftThumbnail(draft: DraftListingItem): string | null {
-  const uploads = draft.raw_uploads ?? [];
-  const img = uploads
-    .filter((u) => u.mime_type?.startsWith("image") || u.asset_type === "photo")
-    .sort((a, b) => a.sort_order - b.sort_order)[0];
-  return img?.file_url ?? null;
+  return currentGalleryUploads(draft.raw_uploads, "image")[0]?.file_url ?? null;
 }
 
 type DashboardTourState = "ready" | "processing" | "issues";
@@ -61,6 +61,8 @@ export default function DashboardPage() {
   const [drafts, setDrafts] = React.useState<DraftListingItem[]>([]);
   const [draftsLoading, setDraftsLoading] = React.useState(true);
   const [draftsError, setDraftsError] = React.useState(false);
+  const [usingCachedDrafts, setUsingCachedDrafts] = React.useState(false);
+  const [retryAttempt, setRetryAttempt] = React.useState(0);
   const [reloadNonce, setReloadNonce] = React.useState(0);
   const [loadingMore, setLoadingMore] = React.useState(false);
   const [hasMore, setHasMore] = React.useState(false);
@@ -68,6 +70,7 @@ export default function DashboardPage() {
   const pageRef = React.useRef(1);
 
   const [tourStates, setTourStates] = React.useState<Record<number, DashboardTourState>>({});
+  const [unitCatalog, setUnitCatalog] = React.useState<UnitLookup[]>([]);
   const [searchInput, setSearchInput] = React.useState("");
   const [searchQuery, setSearchQuery] = React.useState("");
   const [gridCols, setGridCols] = React.useState<1 | 2>(2);
@@ -82,6 +85,7 @@ export default function DashboardPage() {
   }, []);
   const abortRef = React.useRef<AbortController | null>(null);
   const sentinelRef = React.useRef<HTMLDivElement>(null);
+  const draftsSettledRef = React.useRef(false);
 
   React.useEffect(() => {
     if (!isLoading && !isAuthenticated) router.replace("/");
@@ -102,8 +106,17 @@ export default function DashboardPage() {
     setHasMore(!!data.next);
     setTotalCount(data.count ?? 0);
     pageRef.current = page;
+    if (page === 1 && !searchQuery && user?.id) {
+      writeDraftPageCache(user.id, {
+        results,
+        count: data.count ?? results.length,
+        next: data.next ?? null,
+      });
+    }
+    setUsingCachedDrafts(false);
+    setRetryAttempt(0);
 
-  }, [searchQuery]);
+  }, [searchQuery, user?.id]);
 
   // Load tour availability in batches. This avoids one by-draft request per card.
   React.useEffect(() => {
@@ -124,18 +137,55 @@ export default function DashboardPage() {
   }, [isAuthenticated]);
 
   React.useEffect(() => {
+    if (!isAuthenticated) return;
+    let active = true;
+    void listUnits("CURRENCY")
+      .then((units) => { if (active) setUnitCatalog(units); })
+      .catch(() => { if (active) setUnitCatalog([]); });
+    return () => { active = false; };
+  }, [isAuthenticated]);
+
+  React.useEffect(() => {
     const timer = setTimeout(() => setSearchQuery(searchInput.trim()), 150);
     return () => clearTimeout(timer);
   }, [searchInput]);
 
   React.useEffect(() => {
     if (!isAuthenticated) return;
-    setDraftsLoading(true);
-    setDraftsError(false);
+    if (!draftsSettledRef.current) {
+      setDraftsLoading(true);
+      setDraftsError(false);
+    }
     loadPage(1, false)
-      .catch(() => setDraftsError(true))
-      .finally(() => setDraftsLoading(false));
-  }, [searchQuery, isAuthenticated, loadPage, reloadNonce]);
+      .then(() => setDraftsError(false))
+      .catch(() => {
+        const cached = !searchQuery && user?.id ? readDraftPageCache(user.id) : null;
+        if (cached?.results.length) {
+          setDrafts(cached.results);
+          setHasMore(!!cached.next);
+          setTotalCount(cached.count);
+          pageRef.current = 1;
+          setUsingCachedDrafts(true);
+          setDraftsError(false);
+        } else {
+          setDraftsError(true);
+        }
+        setRetryAttempt((attempt) => attempt + 1);
+      })
+      .finally(() => {
+        draftsSettledRef.current = true;
+        setDraftsLoading(false);
+      });
+  }, [searchQuery, isAuthenticated, loadPage, reloadNonce, user?.id]);
+
+  React.useEffect(() => {
+    if (!isAuthenticated || (!draftsError && !usingCachedDrafts)) return;
+    const delay = Math.min(30_000, 3_000 * (2 ** Math.min(retryAttempt, 3)));
+    const timer = window.setTimeout(() => {
+      if (!document.hidden) setReloadNonce((value) => value + 1);
+    }, delay);
+    return () => window.clearTimeout(timer);
+  }, [draftsError, isAuthenticated, retryAttempt, usingCachedDrafts]);
 
   React.useEffect(() => {
     if (!isAuthenticated) return;
@@ -224,8 +274,16 @@ export default function DashboardPage() {
           <GridLayoutToggle value={gridCols} onChange={handleGridCols} lang={lang} />
         </div>
 
+        {usingCachedDrafts && (
+          <div role="status" className="mb-5 flex items-start gap-3 rounded-2xl border border-border/70 bg-card px-3.5 py-3 text-[12px] text-foreground/65 shadow-control sm:mb-7 sm:items-center">
+            <InfoIcon size={16} className="mt-0.5 shrink-0 text-foreground/45 sm:mt-0" />
+            <p className="min-w-0 flex-1 leading-relaxed">{t("dashboard.cachedNotice", lang)}</p>
+            <Button type="button" variant="ghost" size="xs" className="shrink-0" onClick={() => setReloadNonce((value) => value + 1)}>{t("dashboard.refreshCreations", lang)}</Button>
+          </div>
+        )}
+
         {/* Cards */}
-        {draftsLoading ? (
+        {draftsLoading && drafts.length === 0 ? (
           <div className={`grid grid-cols-1 gap-7 ${gridCols === 2 ? "md:grid-cols-2" : "mx-auto max-w-2xl"}`}>
             {Array.from({ length: gridCols === 2 ? 4 : 3 }).map((_, i) => (
               <CollectionCard key={i} loading>
@@ -242,6 +300,7 @@ export default function DashboardPage() {
             kind="error"
             icon={<InfoIcon size={20} />}
             title={t("dashboard.loadFailed", lang)}
+            description={t("dashboard.reconnectHint", lang)}
             action={<Button type="button" variant="outline" size="sm" onClick={() => setReloadNonce((value) => value + 1)}>{t("common.tryAgain", lang)}</Button>}
           />
         ) : drafts.length === 0 ? (
@@ -255,10 +314,12 @@ export default function DashboardPage() {
           <>
           <div className={`grid grid-cols-1 gap-7 ${gridCols === 2 ? "md:grid-cols-2" : "mx-auto max-w-2xl"}`}>
             {drafts.map((draft, idx) => {
-              const prefPrice = formatMoney(draft.price_preferred, draft.price_preferred_currency, lang);
-              const origPrice = formatMoney(draft.price, draft.currency, lang);
+              const preferredCurrency = resolveUnit(unitCatalog, draft.price_preferred_currency, "CURRENCY");
+              const storedCurrency = resolveUnit(unitCatalog, draft.currency, "CURRENCY");
+              const prefPrice = formatMoney(draft.price_preferred, preferredCurrency?.code, lang);
+              const origPrice = formatMoney(draft.price, storedCurrency?.code, lang);
               const price = prefPrice || origPrice;
-              const showOrigPrice = prefPrice && origPrice && draft.price_preferred_currency !== draft.currency;
+              const showOrigPrice = prefPrice && origPrice && preferredCurrency?.id !== storedCurrency?.id;
               const address = draft.display_address || [draft.city, draft.state, draft.country].filter(Boolean).join(", ");
               const thumbUrl = getDraftThumbnail(draft);
               const draftTour = tourStates[draft.id];
