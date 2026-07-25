@@ -314,7 +314,7 @@ function normalizedSpecsNumbers(
   return normalized;
 }
 
-const fieldClass = "h-12 rounded-xl border-border/65 bg-card px-4 text-[16px] shadow-control focus-visible:ring-2 focus-visible:ring-ring/20 focus-visible:ring-offset-0 sm:h-11 sm:text-[14px]";
+const fieldClass = "editor-control-capsule h-12 rounded-full border !bg-card/90 px-4 text-[16px] focus-visible:ring-2 focus-visible:ring-ring/20 focus-visible:ring-offset-0 sm:h-11 sm:text-[14px]";
 
 function Field({ id, label, children }: { id: string; label: React.ReactNode; children: React.ReactNode }) {
   return <div className="space-y-1.5"><Label htmlFor={id} className="text-[13px] font-medium text-foreground/70">{label}</Label>{children}</div>;
@@ -343,7 +343,7 @@ function UnitPicker({
     <Select value={selected?.code ?? ""} onValueChange={onChange}>
       <SelectTrigger
         aria-label={label}
-        className="h-11 w-auto min-w-[4.25rem] rounded-full border-border/55 bg-surface-subtle px-2.5 text-[11px] font-semibold shadow-none hover:bg-secondary focus:ring-2 sm:h-9"
+        className="pen-touch-target h-11 w-auto min-w-[4.25rem] rounded-full border-border/55 bg-surface-subtle px-3 text-[11px] font-semibold shadow-none hover:bg-secondary focus:ring-2"
       >
         <span className="tabular-nums">
           {selected ? (showCode ? selected.code : selected.symbol) : "—"}
@@ -464,7 +464,7 @@ function DirectValueField({
               <button
                 type="button"
                 onClick={() => onChange("")}
-                className="flex h-11 w-11 items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-foreground/[0.05] hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring sm:h-10 sm:w-10"
+                className="pen-touch-target flex h-11 w-11 items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-foreground/[0.05] hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                 aria-label={`${t("draft.editor.clearValue", lang)}: ${labelText}`}
               >
                 <CloseIcon size={14} />
@@ -496,6 +496,9 @@ function NumericStepper({
   max,
   step = 1,
   numericContext = plainNumberContext,
+  optional = false,
+  emptyDefault,
+  lang,
 }: {
   id: string;
   label: string;
@@ -505,9 +508,12 @@ function NumericStepper({
   max: number;
   step?: number;
   numericContext?: NumericInputContext;
+  optional?: boolean;
+  emptyDefault?: number;
+  lang: string;
 }) {
   const parsed = parseNumericExpression(value, numericContext);
-  const fallbackValue = Math.min(max, Math.max(min, 0));
+  const fallbackValue = Math.min(max, Math.max(min, emptyDefault ?? 0));
   const numericValue = parsed?.value ?? fallbackValue;
   const steps = (numericValue - min) / step;
   const invalid = Boolean(value.trim()) && (
@@ -524,52 +530,91 @@ function NumericStepper({
     const next = Math.min(max, Math.max(min, numericValue + (direction * step)));
     onChange(Number.isInteger(next) ? String(next) : String(Number(next.toFixed(2))));
   };
+  const startValue = () => {
+    onChange(Number.isInteger(fallbackValue) ? String(fallbackValue) : String(Number(fallbackValue.toFixed(2))));
+  };
 
   return (
-    <div className="space-y-1">
-      <div className={cn("flex min-h-14 items-center justify-between gap-3 rounded-2xl border bg-surface-subtle px-3 py-2 shadow-control", invalid ? "border-destructive/60" : "border-border/55")}>
-        <Label htmlFor={id} className="min-w-0 text-[13px] font-medium text-foreground/75">{label}</Label>
-        <div className="flex shrink-0 items-center gap-1 rounded-full border border-border/60 bg-card p-1">
+    <Field id={id} label={label}>
+      <div
+        className={cn(
+          "editor-control-capsule flex h-12 items-center rounded-full border sm:h-11",
+          invalid ? "border-destructive/60" : "border-border/65",
+        )}
+      >
+        {optional && !value.trim() ? (
           <button
             type="button"
-            onClick={() => adjust(-1)}
-            disabled={numericValue <= min}
-            className="flex h-11 w-11 items-center justify-center rounded-full text-foreground/60 transition-colors hover:bg-secondary hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-25 sm:h-8 sm:w-8"
-            aria-label={`${label}: −`}
+            className="pen-touch-target flex h-full w-full min-w-0 items-center justify-between gap-3 rounded-full px-4 text-left transition-colors hover:bg-foreground/[0.035] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
+            onClick={startValue}
+            aria-label={`${t("draft.editor.addValue", lang)}: ${label}`}
           >
-            <MinusIcon size={14} />
+            <span className="min-w-0 flex-1 truncate text-[14px] text-muted-foreground">
+              {t("draft.editor.noValue", lang)}
+            </span>
+            <span className="inline-flex shrink-0 items-center gap-2 text-[12px] font-semibold text-foreground">
+              <PlusIcon size={14} />
+              {t("common.add", lang)}
+            </span>
           </button>
-          <input
-            id={id}
-            inputMode="text"
-            value={value}
-            maxLength={64}
-            aria-invalid={invalid || undefined}
-            placeholder="0"
-            onChange={(event) => onChange(event.target.value.replace(/[\r\n]/g, ""))}
-            onFocus={(event) => event.currentTarget.select()}
-            onBlur={() => {
-              if (!value.trim() || !parsed) return;
-              const clamped = Math.min(max, Math.max(min, parsed.value));
-              const snapped = min + (Math.round((clamped - min) / step) * step);
-              onChange(formatEditableNumber(snapped));
-            }}
-            className={cn("h-11 border-0 bg-transparent px-1 text-center text-[16px] font-semibold tabular-nums text-foreground outline-none sm:h-8 sm:text-[14px]", unitLabel ? "w-14" : "w-12")}
-          />
-          {unitLabel ? <span className="pr-1 text-[10px] font-semibold text-foreground/50">{unitLabel}</span> : null}
-          <button
-            type="button"
-            onClick={() => adjust(1)}
-            disabled={numericValue >= max}
-            className="flex h-11 w-11 items-center justify-center rounded-full bg-foreground text-background transition-colors hover:bg-foreground/85 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:opacity-25 sm:h-8 sm:w-8"
-            aria-label={`${label}: +`}
-          >
-            <PlusIcon size={14} />
-          </button>
-        </div>
+        ) : (
+          <>
+            <button
+              type="button"
+              onClick={() => adjust(-1)}
+              disabled={numericValue <= min}
+              className="pen-touch-target ml-1 flex h-11 w-11 shrink-0 items-center justify-center rounded-full text-foreground/60 transition-colors hover:bg-surface-subtle hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-25"
+              aria-label={`${label}: −`}
+            >
+              <MinusIcon size={14} />
+            </button>
+            <div className="flex min-w-0 flex-1 items-center justify-center">
+              <input
+                id={id}
+                inputMode={min < 0 ? "text" : Number.isInteger(step) ? "numeric" : "decimal"}
+                value={value}
+                maxLength={64}
+                aria-invalid={invalid || undefined}
+                placeholder="—"
+                onChange={(event) => onChange(event.target.value.replace(/[\r\n]/g, ""))}
+                onFocus={(event) => event.currentTarget.select()}
+                onBlur={() => {
+                  if (!value.trim() || !parsed) return;
+                  const clamped = Math.min(max, Math.max(min, parsed.value));
+                  const snapped = min + (Math.round((clamped - min) / step) * step);
+                  onChange(formatEditableNumber(snapped));
+                }}
+                className={cn(
+                  "h-11 min-w-0 border-0 bg-transparent px-1 text-center text-[16px] font-semibold tabular-nums text-foreground outline-none",
+                  unitLabel ? "w-16" : "w-14",
+                )}
+              />
+              {unitLabel ? <span className="shrink-0 pr-1 text-[10px] font-semibold text-foreground/50">{unitLabel}</span> : null}
+            </div>
+            <button
+              type="button"
+              onClick={() => adjust(1)}
+              disabled={numericValue >= max}
+              className="pen-touch-target flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-surface-subtle text-foreground transition-colors hover:bg-secondary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-25"
+              aria-label={`${label}: +`}
+            >
+              <PlusIcon size={14} />
+            </button>
+            {optional ? (
+              <button
+                type="button"
+                onClick={() => onChange("")}
+                className="pen-touch-target mr-1 flex h-11 w-11 shrink-0 items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-foreground/[0.05] hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                aria-label={`${t("draft.editor.clearValue", lang)}: ${label}`}
+              >
+                <CloseIcon size={14} />
+              </button>
+            ) : null}
+          </>
+        )}
       </div>
-      {preview ? <p className="px-2 text-right text-[10px] font-medium tabular-nums text-foreground/50" aria-live="polite">{preview}</p> : null}
-    </div>
+      {preview ? <p className="px-1 text-right text-[11px] font-medium tabular-nums text-foreground/55" aria-live="polite">{preview}</p> : null}
+    </Field>
   );
 }
 
@@ -588,7 +633,7 @@ function sectionIcon(key: string): React.ComponentType<IconProps> {
 // Grouped card, mirroring the iOS app's inset-grouped edit sections.
 function Section({ title, icon: Icon, children }: { title: React.ReactNode; icon?: React.ComponentType<IconProps>; children: React.ReactNode }) {
   return (
-    <section className="space-y-5 rounded-[1.5rem] border border-border/65 bg-card p-4 shadow-card sm:rounded-2xl sm:p-5">
+    <section className="space-y-5 rounded-[1.75rem] border border-border/65 bg-card p-4 shadow-card sm:p-5">
       <div className="flex items-center gap-3">
         {Icon ? <IconTile icon={Icon} /> : null}
         <h3 className="text-[16px] font-semibold tracking-[-0.015em] text-foreground">{title}</h3>
@@ -627,29 +672,38 @@ function AdvancedField({
     const recorded = hasRecordedFieldValue(field, value);
     const enabled = value === true || String(value).toLowerCase() === "true";
     return (
-      <div className="flex min-h-14 flex-col justify-between gap-2.5 rounded-2xl border border-border/55 bg-surface-subtle px-4 py-3 shadow-control min-[430px]:flex-row min-[430px]:items-center">
-        <Label htmlFor={id} className="text-[13px] font-medium text-foreground/75">{label}</Label>
-        <div id={id} className="grid grid-cols-3 rounded-full border border-border/60 bg-card p-1" role="group" aria-label={label}>
+      <Field id={id} label={label}>
+        <div
+          id={id}
+          className="editor-control-capsule grid h-12 grid-cols-3 rounded-full border sm:h-11"
+          role="group"
+          aria-label={label}
+        >
           {([
-            { key: "unset", label: t("common.notRecorded", lang), active: !recorded, value: undefined },
-            { key: "yes", label: t("common.yes", lang), active: recorded && enabled, value: true },
-            { key: "no", label: t("common.no", lang), active: recorded && !enabled, value: false },
+            { key: "unset", label: t("draft.editor.noValue", lang), ariaLabel: t("common.notRecorded", lang), active: !recorded, value: undefined },
+            { key: "yes", label: t("common.yes", lang), ariaLabel: t("common.yes", lang), active: recorded && enabled, value: true },
+            { key: "no", label: t("common.no", lang), ariaLabel: t("common.no", lang), active: recorded && !enabled, value: false },
           ] as const).map((option) => (
             <button
               key={option.key}
               type="button"
+              aria-label={`${label}: ${option.ariaLabel}`}
               aria-pressed={option.active}
               onClick={() => onChange(section, field.key, option.value)}
-              className={cn(
-                "min-h-9 rounded-full px-3 text-[10px] font-semibold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/35",
-                option.active ? "bg-foreground text-background shadow-sm" : "text-muted-foreground hover:text-foreground",
-              )}
+              className="pen-touch-target flex min-w-0 items-center justify-center px-1 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/35"
             >
-              {option.label}
+              <span
+                className={cn(
+                  "flex h-9 w-full min-w-0 items-center justify-center truncate rounded-full px-2 text-[11px] font-semibold transition-colors",
+                  option.active ? "bg-foreground text-background shadow-sm" : "text-muted-foreground hover:bg-surface-subtle hover:text-foreground",
+                )}
+              >
+                {option.label}
+              </span>
             </button>
           ))}
         </div>
-      </div>
+      </Field>
     );
   }
 
@@ -658,9 +712,8 @@ function AdvancedField({
       ? value.map(String)
       : typeof value === "string" ? value.split(",").map((item) => item.trim()).filter(Boolean) : [];
     return (
-      <div className="space-y-2">
-        <Label className="text-[13px] font-medium text-foreground/70">{label}</Label>
-        <div className="flex flex-wrap gap-2 rounded-2xl border border-border/50 bg-surface-subtle p-3">
+      <Field id={id} label={label}>
+        <div id={id} className="editor-control-capsule flex flex-wrap gap-2 rounded-[1.35rem] border p-2">
           {options.map((item) => {
             const active = selected.includes(item.value);
             return (
@@ -672,7 +725,7 @@ function AdvancedField({
                   onChange(section, field.key, next.length > 0 ? next : undefined);
                 }}
                 className={cn(
-                  "min-h-11 rounded-full border px-3.5 py-2 text-[12px] font-medium transition-colors sm:min-h-0",
+                  "pen-touch-target min-h-11 rounded-full border px-3.5 py-2 text-[12px] font-medium transition-colors",
                   active ? "border-foreground bg-foreground text-background" : "border-border/70 bg-surface text-foreground/65 hover:border-foreground/25 hover:text-foreground",
                 )}
                 aria-pressed={active}
@@ -682,7 +735,7 @@ function AdvancedField({
             );
           })}
         </div>
-      </div>
+      </Field>
     );
   }
 
@@ -709,20 +762,23 @@ function AdvancedField({
   }
 
   if (field.kind === "number") {
+    const min = field.min ?? 0;
+    const max = field.max ?? (field.key.includes("year") ? new Date().getFullYear() : 9999);
+    const emptyDefault = field.key.includes("year")
+      ? new Date().getFullYear()
+      : Math.min(max, Math.max(min, 0));
     return (
-      <DirectValueField
+      <NumericStepper
         id={id}
         label={label}
-        labelText={label}
         value={stringValue(value)}
         onChange={(next) => onChange(section, field.key, next || undefined)}
+        min={min}
+        max={max}
+        emptyDefault={emptyDefault}
+        optional
         lang={lang}
-        numeric
-        integer
         numericContext={numericContext}
-        numericMin={field.min}
-        numericMax={field.max}
-        placeholder={t("common.notRecorded", lang)}
       />
     );
   }
@@ -1255,6 +1311,7 @@ export function DraftEditor({
                     value={values.area}
                     onChange={(value) => setValue("area", value)}
                     lang={lang}
+                    placeholder={t("common.notRecorded", lang)}
                     numeric
                     numericContext={{ kind: "area", targetUnit: numericEnvironment.areaUnit, units }}
                     unitControl={hasAreaUnits ? (
@@ -1274,6 +1331,7 @@ export function DraftEditor({
                     value={values.lotSize}
                     onChange={(value) => setValue("lotSize", value)}
                     lang={lang}
+                    placeholder={t("common.notRecorded", lang)}
                     numeric
                     numericContext={{ kind: "area", targetUnit: numericEnvironment.lotUnit, units }}
                     unitControl={hasAreaUnits ? (
@@ -1287,12 +1345,20 @@ export function DraftEditor({
                     ) : undefined}
                   />
                 </div>
-                <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-                  <DirectValueField id="draft-year-built" label={t("draft.yearBuilt", lang)} labelText={t("draft.yearBuilt", lang)} value={values.yearBuilt} onChange={(value) => setValue("yearBuilt", value)} lang={lang} numeric integer />
-                </div>
-                <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-                  <NumericStepper id="draft-bedrooms" label={t("draft.bedrooms", lang)} value={values.bedrooms} onChange={(value) => setValue("bedrooms", value)} min={0} max={20} />
-                  <NumericStepper id="draft-bathrooms" label={t("draft.bathrooms", lang)} value={values.bathrooms} onChange={(value) => setValue("bathrooms", value)} min={0} max={10} />
+                <div className="grid grid-cols-1 gap-3 min-[720px]:grid-cols-3">
+                  <NumericStepper
+                    id="draft-year-built"
+                    label={t("draft.yearBuilt", lang)}
+                    value={values.yearBuilt}
+                    onChange={(value) => setValue("yearBuilt", value)}
+                    min={1850}
+                    max={new Date().getFullYear()}
+                    emptyDefault={new Date().getFullYear()}
+                    optional
+                    lang={lang}
+                  />
+                  <NumericStepper id="draft-bedrooms" label={t("draft.bedrooms", lang)} value={values.bedrooms} onChange={(value) => setValue("bedrooms", value)} min={0} max={20} lang={lang} />
+                  <NumericStepper id="draft-bathrooms" label={t("draft.bathrooms", lang)} value={values.bathrooms} onChange={(value) => setValue("bathrooms", value)} min={0} max={10} lang={lang} />
                 </div>
               </div>
               </Section>
@@ -1325,7 +1391,7 @@ export function DraftEditor({
               const recorded = section.allFields.filter((field) => hasRecordedFieldValue(field, specs[section.key]?.[field.key])).length;
               const summary = advancedSectionSummary(section.allFields, specs[section.key], propertyType, lang);
               return (
-                <section key={section.key} className="overflow-hidden rounded-[1.5rem] border border-border/65 bg-card shadow-card sm:rounded-2xl">
+                <section key={section.key} className="overflow-hidden rounded-[1.75rem] border border-border/65 bg-card shadow-card">
                   <button
                     type="button"
                     onClick={() => setExpandedSections((current) => {
@@ -1354,9 +1420,9 @@ export function DraftEditor({
                     </span>
                   </button>
                   {expanded ? (
-                    <div className="grid gap-4 border-t border-border/45 bg-surface-subtle/35 px-4 py-4 sm:grid-cols-2 sm:px-5 sm:py-5">
+                    <div className="grid items-start gap-x-4 gap-y-4 border-t border-border/45 bg-surface-subtle/35 px-4 py-4 sm:grid-cols-2 sm:px-5 sm:py-5">
                       {section.fields.map((field) => (
-                        <div key={field.key} className={cn((field.kind === "boolean" || field.kind === "multiselect" || field.kind === "subtype") && "sm:col-span-2")}>
+                        <div key={field.key} className={cn(field.kind === "multiselect" && "sm:col-span-2")}>
                           <AdvancedField
                             section={section.key}
                             field={field}
@@ -1374,7 +1440,7 @@ export function DraftEditor({
                 </section>
               );
             }) : (
-              <p className="rounded-[1.5rem] border border-dashed border-border/60 px-4 py-10 text-center text-[12px] text-muted-foreground sm:rounded-2xl">{t("draft.editor.emptyAdvanced", lang)}</p>
+              <p className="rounded-[1.75rem] border border-dashed border-border/60 px-4 py-10 text-center text-[12px] text-muted-foreground">{t("draft.editor.emptyAdvanced", lang)}</p>
             )}
           </div>
         )}

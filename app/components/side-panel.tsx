@@ -49,9 +49,14 @@ export function SidePanel({
       return;
     }
     const compact = window.matchMedia("(max-width: 639px)");
+    const tablet = window.matchMedia("(max-width: 1024px)");
     const viewport = window.visualViewport;
     const syncViewport = () => {
-      if (!compact.matches || !viewport) {
+      const keyboardRaised = Boolean(
+        viewport
+        && (window.innerHeight - viewport.height > 80 || viewport.offsetTop > 0),
+      );
+      if (!viewport || !tablet.matches || (!compact.matches && !keyboardRaised)) {
         setPhoneViewport(null);
         return;
       }
@@ -67,10 +72,12 @@ export function SidePanel({
     viewport?.addEventListener("resize", syncViewport);
     viewport?.addEventListener("scroll", syncViewport);
     compact.addEventListener("change", syncViewport);
+    tablet.addEventListener("change", syncViewport);
     return () => {
       viewport?.removeEventListener("resize", syncViewport);
       viewport?.removeEventListener("scroll", syncViewport);
       compact.removeEventListener("change", syncViewport);
+      tablet.removeEventListener("change", syncViewport);
     };
   }, [open]);
 
@@ -97,7 +104,7 @@ export function SidePanel({
             "data-[state=closed]:animate-[panelOut_180ms_ease-in] data-[state=open]:animate-[panelIn_220ms_var(--motion-ease-smooth)]",
             "sm:max-w-[520px]",
             headerMode === "editor"
-              ? "bg-background/90 backdrop-blur-2xl sm:inset-y-3 sm:right-3 sm:overflow-hidden sm:rounded-[2rem] sm:border"
+              ? "bg-background/90 backdrop-blur-2xl sm:inset-y-3 sm:right-3 sm:w-[calc(100%-1.5rem)] sm:overflow-hidden sm:rounded-[2rem] sm:border"
               : "bg-background",
             className,
           )}
@@ -111,12 +118,12 @@ export function SidePanel({
             )}>
               <div className="flex justify-start">
                 {closeIcon === "back" && onBack ? (
-                  <button type="button" onClick={onBack} aria-label={t("common.back", lang)} className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full text-foreground/50 transition-colors hover:bg-foreground/[0.055] hover:text-foreground focus-visible:bg-foreground/[0.045] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40 sm:h-9 sm:w-9">
+                  <button type="button" onClick={onBack} aria-label={t("common.back", lang)} className="pen-touch-target flex h-11 w-11 shrink-0 items-center justify-center rounded-full text-foreground/50 transition-colors hover:bg-foreground/[0.055] hover:text-foreground focus-visible:bg-foreground/[0.045] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40 sm:h-9 sm:w-9">
                     <ArrowLeftIcon size={18} />
                   </button>
                 ) : (
                   <Dialog.Close asChild>
-                    <button type="button" aria-label={t(closeIcon === "back" ? "common.back" : "common.close", lang)} className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full text-foreground/50 transition-colors hover:bg-foreground/[0.055] hover:text-foreground focus-visible:bg-foreground/[0.045] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40 sm:h-9 sm:w-9">
+                    <button type="button" aria-label={t(closeIcon === "back" ? "common.back" : "common.close", lang)} className="pen-touch-target flex h-11 w-11 shrink-0 items-center justify-center rounded-full text-foreground/50 transition-colors hover:bg-foreground/[0.055] hover:text-foreground focus-visible:bg-foreground/[0.045] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40 sm:h-9 sm:w-9">
                       {closeIcon === "back" ? <ArrowLeftIcon size={18} /> : <CloseIcon size={17} />}
                     </button>
                   </Dialog.Close>
@@ -147,7 +154,7 @@ export function SidePanel({
           <div
             ref={contentRef}
             data-side-panel-scroll
-            className={cn("min-h-0 flex-1 overscroll-contain overflow-y-auto px-5 py-5 scrollbar-thin sm:px-6", contentClassName)}
+            className={cn("min-h-0 flex-1 overscroll-contain overflow-y-auto px-5 pb-[max(1.25rem,env(safe-area-inset-bottom))] pt-5 scrollbar-thin sm:px-6", contentClassName)}
           >
             {children}
           </div>

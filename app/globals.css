@@ -199,6 +199,16 @@
     -webkit-backdrop-filter: blur(16px) saturate(1.08);
     backdrop-filter: blur(16px) saturate(1.08);
   }
+
+  /*
+   * Keep critical editor controls comfortably targetable by fingers and pens.
+   * The class is intentionally opt-in so dense desktop-only controls can stay
+   * compact while tablet interactions retain a reliable 44px hit area.
+   */
+  .pen-touch-target {
+    min-width: 2.75rem;
+    min-height: 2.75rem;
+  }
 }
 
 @layer utilities {

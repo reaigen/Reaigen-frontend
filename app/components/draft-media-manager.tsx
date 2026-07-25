@@ -62,6 +62,12 @@ interface PendingUpload {
   state: "queued" | "uploading" | "failed";
 }
 
+interface PointerReorderSession {
+  id: string;
+  pointerId: number;
+  startOrder: string[];
+}
+
 const MAX_FILES_PER_PICK = 30;
 const MAX_BROWSER_PHOTO_BYTES = 49 * 1024 * 1024;
 const NON_GALLERY_ROLES = new Set([
@@ -214,8 +220,7 @@ export function DraftMediaManager({
   const uploadDragDepth = React.useRef(0);
   const loadSequence = React.useRef(0);
   const versionRefreshTimers = React.useRef<number[]>([]);
-  const dragStartOrder = React.useRef<string[]>([]);
-  const dragCompleted = React.useRef(false);
+  const pointerReorder = React.useRef<PointerReorderSession | null>(null);
   const pendingUrls = React.useRef(new Set<string>());
   const reorderIdsRef = React.useRef<string[]>([]);
   const [uploads, setUploads] = React.useState<DraftUpload[]>([]);
@@ -428,17 +433,79 @@ export function DraftMediaManager({
     return () => window.clearTimeout(timeout);
   }, [undoOrderIds]);
 
-  const previewReorderAt = React.useCallback((targetId: string) => {
-    if (!draggingId || draggingId === targetId) return;
+  const previewReorderAt = React.useCallback((sourceId: string, targetId: string) => {
+    if (sourceId === targetId) return;
     const current = reorderIdsRef.current;
-    const sourceIndex = current.indexOf(draggingId);
+    const sourceIndex = current.indexOf(sourceId);
     const targetIndex = current.indexOf(targetId);
     if (sourceIndex < 0 || targetIndex < 0) return;
     const next = [...current];
     const [moved] = next.splice(sourceIndex, 1);
     next.splice(targetIndex, 0, moved);
     updateReorderIds(next);
-  }, [draggingId, updateReorderIds]);
+  }, [updateReorderIds]);
+
+  const beginPointerReorder = React.useCallback((
+    event: React.PointerEvent<HTMLButtonElement>,
+    id: string,
+  ) => {
+    if (busy) return;
+    event.preventDefault();
+    event.currentTarget.setPointerCapture(event.pointerId);
+    pointerReorder.current = {
+      id,
+      pointerId: event.pointerId,
+      startOrder: [...reorderIdsRef.current],
+    };
+    setSelectedId(id);
+    setDraggingId(id);
+  }, [busy]);
+
+  const continuePointerReorder = React.useCallback((
+    event: React.PointerEvent<HTMLButtonElement>,
+  ) => {
+    const session = pointerReorder.current;
+    if (!session || session.pointerId !== event.pointerId) return;
+    event.preventDefault();
+
+    const target = document
+      .elementsFromPoint(event.clientX, event.clientY)
+      .map((element) => element.closest<HTMLElement>("[data-reorder-id]"))
+      .find((element): element is HTMLElement => Boolean(element));
+    const targetId = target?.dataset.reorderId;
+    if (targetId) previewReorderAt(session.id, targetId);
+
+    const scroller = contentRef.current;
+    if (!scroller) return;
+    const bounds = scroller.getBoundingClientRect();
+    const edge = Math.min(88, bounds.height * 0.16);
+    if (event.clientY < bounds.top + edge) {
+      const strength = (bounds.top + edge - event.clientY) / edge;
+      scroller.scrollTop -= Math.max(4, Math.round(18 * strength));
+    } else if (event.clientY > bounds.bottom - edge) {
+      const strength = (event.clientY - (bounds.bottom - edge)) / edge;
+      scroller.scrollTop += Math.max(4, Math.round(18 * strength));
+    }
+  }, [previewReorderAt]);
+
+  const finishPointerReorder = React.useCallback((
+    event: React.PointerEvent<HTMLButtonElement>,
+    cancelled: boolean,
+  ) => {
+    const session = pointerReorder.current;
+    if (!session || session.pointerId !== event.pointerId) return;
+    event.preventDefault();
+    if (event.currentTarget.hasPointerCapture(event.pointerId)) {
+      event.currentTarget.releasePointerCapture(event.pointerId);
+    }
+    pointerReorder.current = null;
+    setDraggingId(null);
+    if (cancelled) {
+      updateReorderIds(session.startOrder);
+      return;
+    }
+    void commitReorderIds(reorderIdsRef.current);
+  }, [commitReorderIds, updateReorderIds]);
 
   const moveReorderItem = React.useCallback((id: string, offset: -1 | 1) => {
     const current = reorderIdsRef.current;
@@ -870,7 +937,7 @@ export function DraftMediaManager({
               <TabsTrigger
                 key={value}
                 value={value}
-                className="min-h-10 px-3 text-[11px] font-semibold data-[state=active]:bg-foreground data-[state=active]:text-background data-[state=active]:shadow-control sm:min-h-9"
+                className="pen-touch-target min-h-11 px-3 text-[11px] font-semibold data-[state=active]:bg-foreground data-[state=active]:text-background data-[state=active]:shadow-control"
               >
                 {t(`draft.media.${value}` as LocaleKey, lang)}
                 <span className={cn("ml-1.5 tabular-nums", filter === value ? "text-background/60" : "text-foreground/35")}>{count}</span>
@@ -885,7 +952,7 @@ export function DraftMediaManager({
               type="button"
               variant={reorderMode ? "default" : "ghost"}
               size="sm"
-              className="h-10 px-3 sm:h-9"
+              className="pen-touch-target h-11 px-3"
               onClick={() => {
                 if (!reorderMode) {
                   updateReorderIds(visibleGroups.map((group) => group.id));
@@ -906,7 +973,7 @@ export function DraftMediaManager({
             type="button"
             variant="ghost"
             size="sm"
-            className="h-10 px-3 sm:h-9"
+            className="pen-touch-target h-11 px-3"
             onClick={() => switchView("versions")}
             aria-label={t("draft.media.versions", lang)}
             title={`${t("draft.media.versions", lang)} (V)`}
@@ -966,7 +1033,7 @@ export function DraftMediaManager({
               size="sm"
               onClick={() => moveReorderItem(selected.id, -1)}
               disabled={busy || reorderSelectedIndex === 0}
-              className="min-w-0 px-3"
+              className="pen-touch-target min-h-11 min-w-0 px-3"
             >
               <ArrowLeftIcon size={14} />
               <span>{t("draft.media.moveEarlier", lang)}</span>
@@ -977,7 +1044,7 @@ export function DraftMediaManager({
               size="sm"
               onClick={() => moveReorderItem(selected.id, 1)}
               disabled={busy || reorderSelectedIndex === activeReorderIds.length - 1}
-              className="min-w-0 px-3"
+              className="pen-touch-target min-h-11 min-w-0 px-3"
             >
               <span>{t("draft.media.moveLater", lang)}</span>
               <ArrowRightIcon size={14} />
@@ -1027,6 +1094,7 @@ export function DraftMediaManager({
                   return (
                     <motion.article
                       key={group.id}
+                      data-reorder-id={group.id}
                       layout
                       transition={{ layout: { duration: 0.18, ease: "easeOut" } }}
                       animate={isDragging ? { scale: 1.015 } : { scale: 1 }}
@@ -1038,20 +1106,6 @@ export function DraftMediaManager({
                             ? "border-foreground ring-2 ring-foreground/10"
                             : "border-border/70 hover:border-foreground/40",
                       )}
-                      onDragEnter={() => previewReorderAt(group.id)}
-                      onDragOver={(event) => {
-                        if (!draggingId) return;
-                        event.preventDefault();
-                        event.dataTransfer.dropEffect = "move";
-                      }}
-                      onDrop={(event) => {
-                        if (!draggingId) return;
-                        event.preventDefault();
-                        event.stopPropagation();
-                        dragCompleted.current = true;
-                        setDraggingId(null);
-                        void commitReorderIds(reorderIdsRef.current);
-                      }}
                     >
                       <button
                         type="button"
@@ -1079,25 +1133,13 @@ export function DraftMediaManager({
                       ) : null}
                       <button
                         type="button"
-                        draggable={!busy}
-                        onPointerDown={() => setSelectedId(group.id)}
-                        onDragStart={(event) => {
-                          dragStartOrder.current = [...reorderIdsRef.current];
-                          dragCompleted.current = false;
-                          setSelectedId(group.id);
-                          setDraggingId(group.id);
-                          event.dataTransfer.effectAllowed = "move";
-                          event.dataTransfer.setData("text/plain", group.id);
-                          const card = event.currentTarget.closest("article");
-                          if (card instanceof HTMLElement) event.dataTransfer.setDragImage(card, card.offsetWidth / 2, 32);
-                        }}
-                        onDragEnd={() => {
-                          if (!dragCompleted.current) updateReorderIds(dragStartOrder.current);
-                          dragCompleted.current = false;
-                          setDraggingId(null);
-                        }}
+                        onPointerDown={(event) => beginPointerReorder(event, group.id)}
+                        onPointerMove={continuePointerReorder}
+                        onPointerUp={(event) => finishPointerReorder(event, false)}
+                        onPointerCancel={(event) => finishPointerReorder(event, true)}
+                        onContextMenu={(event) => event.preventDefault()}
                         disabled={busy}
-                        className="editor-control-capsule absolute right-2 top-2 flex h-9 w-9 cursor-grab items-center justify-center rounded-full border text-muted-foreground opacity-85 transition-[opacity,transform,color] hover:scale-105 hover:text-foreground focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring active:cursor-grabbing active:scale-95 disabled:opacity-30"
+                        className="editor-control-capsule pen-touch-target absolute right-2 top-2 flex h-11 w-11 touch-none select-none items-center justify-center rounded-full border text-muted-foreground opacity-90 transition-[opacity,transform,color] hover:scale-105 hover:text-foreground focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring active:cursor-grabbing active:scale-95 disabled:opacity-30 sm:h-10 sm:w-10"
                         aria-label={t("draft.media.dragToMove", lang)}
                         title={t("draft.media.dragToMove", lang)}
                       >

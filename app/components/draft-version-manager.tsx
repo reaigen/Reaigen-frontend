@@ -750,8 +750,8 @@ function ConfirmationCard({
     )}>
       <p className="text-[11px] leading-relaxed text-foreground/65">{message}</p>
       <div className="mt-3 flex flex-wrap justify-end gap-2">
-        <Button type="button" variant="ghost" size="xs" disabled={busy} onClick={onCancel}>{cancelLabel}</Button>
-        <Button type="button" size="xs" loading={busy} onClick={onConfirm}>{confirmLabel}</Button>
+        <Button type="button" variant="ghost" size="xs" className="pen-touch-target" disabled={busy} onClick={onCancel}>{cancelLabel}</Button>
+        <Button type="button" size="xs" className="pen-touch-target" loading={busy} onClick={onConfirm}>{confirmLabel}</Button>
       </div>
     </div>
   );
@@ -825,7 +825,7 @@ export function MediaVersionCard({
           <div className="editor-control-capsule pointer-events-auto flex shrink-0 overflow-hidden rounded-full border">
             <button
               type="button"
-              className="flex h-8 w-9 items-center justify-center text-muted-foreground transition-colors hover:bg-accent hover:text-accent-foreground disabled:opacity-30"
+              className="pen-touch-target flex h-11 w-11 items-center justify-center text-muted-foreground transition-colors hover:bg-accent hover:text-accent-foreground disabled:opacity-30 sm:h-9 sm:w-9"
               disabled={busy || !older}
               onClick={() => older && onSelect(older.id)}
               aria-label={t("reai.mediaPreviousVersion", lang)}
@@ -835,7 +835,7 @@ export function MediaVersionCard({
             <span className="h-5 w-px self-center bg-border/70" aria-hidden="true" />
             <button
               type="button"
-              className="flex h-8 w-9 items-center justify-center text-muted-foreground transition-colors hover:bg-accent hover:text-accent-foreground disabled:opacity-30"
+              className="pen-touch-target flex h-11 w-11 items-center justify-center text-muted-foreground transition-colors hover:bg-accent hover:text-accent-foreground disabled:opacity-30 sm:h-9 sm:w-9"
               disabled={busy || !newer}
               onClick={() => newer && onSelect(newer.id)}
               aria-label={t("reai.mediaNextVersion", lang)}
@@ -883,7 +883,7 @@ export function MediaVersionCard({
               type="button"
               variant="outline"
               size="xs"
-              className="editor-glass-control"
+              className="editor-glass-control pen-touch-target"
               disabled={busy}
               aria-expanded={createOpen}
               onClick={() => {
@@ -896,12 +896,12 @@ export function MediaVersionCard({
             </Button>
           ) : null}
           {!selected.is_deleted && !selected.is_master ? (
-            <Button type="button" size="xs" disabled={busy} onClick={() => onCandidate({ uploadId: selected.id, action: "promote" })}>{t("reai.mediaUseVersion", lang)}</Button>
+            <Button type="button" size="xs" className="pen-touch-target" disabled={busy} onClick={() => onCandidate({ uploadId: selected.id, action: "promote" })}>{t("reai.mediaUseVersion", lang)}</Button>
           ) : null}
           {!selected.is_deleted ? (
-            <Button type="button" variant="outline" size="xs" disabled={busy} onClick={() => onCandidate({ uploadId: selected.id, action: "hide" })}>{t("reai.mediaHide", lang)}</Button>
+            <Button type="button" variant="outline" size="xs" className="pen-touch-target" disabled={busy} onClick={() => onCandidate({ uploadId: selected.id, action: "hide" })}>{t("reai.mediaHide", lang)}</Button>
           ) : (
-            <Button type="button" size="xs" disabled={busy} onClick={() => onCandidate({ uploadId: selected.id, action: "restore" })}>{t("reai.mediaRestore", lang)}</Button>
+            <Button type="button" size="xs" className="pen-touch-target" disabled={busy} onClick={() => onCandidate({ uploadId: selected.id, action: "restore" })}>{t("reai.mediaRestore", lang)}</Button>
           )}
         </div>
 

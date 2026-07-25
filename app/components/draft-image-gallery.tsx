@@ -420,7 +420,7 @@ export function DraftImageGallery({ images, alt, fallbackUrl, lang = "en", onAct
           <button
             type="button"
             onClick={onManage}
-            className="absolute left-3 top-3 flex h-11 items-center gap-2 rounded-full border border-black/10 bg-white/90 px-3.5 text-[11px] font-semibold text-black/70 shadow-sm backdrop-blur-xl transition hover:bg-black hover:text-white hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-black/25 sm:h-9"
+            className="pen-touch-target absolute left-3 top-3 flex h-11 items-center gap-2 rounded-full border border-black/10 bg-white/90 px-3.5 text-[11px] font-semibold text-black/70 shadow-sm backdrop-blur-xl transition hover:bg-black hover:text-white hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-black/25"
             aria-label={manageLabel}
           >
             <EditIcon size={15} />
@@ -431,7 +431,7 @@ export function DraftImageGallery({ images, alt, fallbackUrl, lang = "en", onAct
         <button
           type="button"
           onClick={() => setLightboxIndex(activeIndex)}
-          className="absolute right-3 top-3 flex h-11 w-11 items-center justify-center rounded-full border border-black/10 bg-white/90 text-black/70 shadow-sm backdrop-blur-xl transition hover:bg-black hover:text-white hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-black/25 sm:h-9 sm:w-9"
+          className="pen-touch-target absolute right-3 top-3 flex h-11 w-11 items-center justify-center rounded-full border border-black/10 bg-white/90 text-black/70 shadow-sm backdrop-blur-xl transition hover:bg-black hover:text-white hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-black/25"
           aria-label={t("draft.gallery.fullscreen", lang)}
         >
           <ExpandIcon />
@@ -443,7 +443,7 @@ export function DraftImageGallery({ images, alt, fallbackUrl, lang = "en", onAct
               type="button"
               onClick={() => goTo(activeIndex - 1)}
               disabled={activeIndex === 0}
-              className="absolute left-3 top-1/2 flex h-10 w-10 -translate-y-1/2 items-center justify-center rounded-full border border-black/10 bg-white/90 text-black/70 shadow-sm backdrop-blur-xl transition-[background-color,color,transform,opacity] hover:scale-105 hover:bg-black hover:text-white hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-black/25 disabled:pointer-events-none disabled:opacity-30"
+              className="pen-touch-target absolute left-3 top-1/2 flex h-11 w-11 -translate-y-1/2 items-center justify-center rounded-full border border-black/10 bg-white/90 text-black/70 shadow-sm backdrop-blur-xl transition-[background-color,color,transform,opacity] hover:scale-105 hover:bg-black hover:text-white hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-black/25 disabled:pointer-events-none disabled:opacity-30"
               aria-label={t("draft.gallery.previous", lang)}
             >
               <ArrowLeftIcon size={18} />
@@ -452,7 +452,7 @@ export function DraftImageGallery({ images, alt, fallbackUrl, lang = "en", onAct
               type="button"
               onClick={() => goTo(activeIndex + 1)}
               disabled={activeIndex === count - 1}
-              className="absolute right-3 top-1/2 flex h-10 w-10 -translate-y-1/2 items-center justify-center rounded-full border border-black/10 bg-white/90 text-black/70 shadow-sm backdrop-blur-xl transition-[background-color,color,transform,opacity] hover:scale-105 hover:bg-black hover:text-white hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-black/25 disabled:pointer-events-none disabled:opacity-30"
+              className="pen-touch-target absolute right-3 top-1/2 flex h-11 w-11 -translate-y-1/2 items-center justify-center rounded-full border border-black/10 bg-white/90 text-black/70 shadow-sm backdrop-blur-xl transition-[background-color,color,transform,opacity] hover:scale-105 hover:bg-black hover:text-white hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-black/25 disabled:pointer-events-none disabled:opacity-30"
               aria-label={t("draft.gallery.next", lang)}
             >
               <ArrowRightIcon size={18} />
