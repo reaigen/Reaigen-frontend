@@ -5,6 +5,24 @@ right-hand layout column; it must not cover, blur, or disable the creation works
 capsule is labelled **Agent** and appears only when the server reports that the feature is enabled,
 configured, and consented for the user.
 
+## Backend ownership and transport
+
+The canonical Agent runtime is the Django `reaiagent` app in the
+`Reaigen-backend` repository. The frontend owns presentation and typed transport
+only. It does not own consent, tool authorization, model routing, proposals,
+knowledge policy, audit history, or Agent persistence.
+
+The browser calls `/api/reaigen/reai-agent/*`. The Next.js wildcard BFF maps
+that prefix to Django `/api/v1/reai-agent/*`, forwards the HTTP-only access
+cookie as a bearer token, refreshes expired access tokens, and returns private,
+no-store responses. The browser must never call Django, AWS RDS, OpenRouter, or
+private media services directly.
+
+The sibling `Reaigen-agent` repository is an optional stateless stdio MCP
+adapter and is not the web Agent backend. The production architecture and
+operator checks are defined in the backend repository at
+`docs/REAI_AGENT_PRODUCTION_RUNBOOK.md`.
+
 At 768–1439px, the supporting pane is a 400px modeless right drawer: it overlays the right edge
 without resizing, dimming, or locking the workspace. It docks from 1440px and consumes 360–400px in
 normal layout. The global navigation stays in its 88px compact form until 1728px, where it may

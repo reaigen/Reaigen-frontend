@@ -1045,7 +1045,7 @@ export interface ReaiAgentResponse {
   /** Optional bounded generative-UI blocks. Text is rendered as content and actions only re-prompt Agent. */
   ui_blocks?: ReaiAgentUiBlock[];
   proposal_token: string | null;
-  action_code?: "revoke_all_shares" | "manage_shares" | "share_inventory" | "share_status" | "settings_navigation" | "settings_update" | "select_share_fields" | "create_draft_share" | "translate_description" | "grade_draft_images" | "retouch_draft_image" | "cleanplate_draft_images" | "generative_hdr_draft_image" | "organize_draft_images" | "generate_draft_video";
+  action_code?: "revoke_all_shares" | "manage_shares" | "share_inventory" | "share_status" | "current_creation_overview" | "settings_navigation" | "settings_update" | "select_share_fields" | "create_draft_share" | "translate_description" | "grade_draft_images" | "retouch_draft_image" | "cleanplate_draft_images" | "generative_hdr_draft_image" | "organize_draft_images" | "generate_draft_video";
   action_token?: string | null;
   action_count?: number;
   share_action?: "list" | "pause" | "resume" | "revoke";
@@ -1078,7 +1078,7 @@ export interface ReaiAgentResponse {
     translated_text?: string | null;
   };
   media_action?: {
-    mode: "grade" | "cleanplate" | "generative_hdr" | "organize" | "video";
+    mode: "grade" | "retouch" | "cleanplate" | "generative_hdr" | "organize" | "video";
     scope: "selected" | "room" | "draft";
     upload_ids: number[];
     operations: Record<string, string | number | boolean>;
@@ -1335,7 +1335,7 @@ export async function applyReaiMediaAction(
   actionToken: string,
   improvementConversationId: string | null = null,
 ): Promise<{
-  action: "grade_draft_images" | "cleanplate_draft_images" | "generative_hdr_draft_image" | "organize_draft_images" | "generate_draft_video";
+  action: "grade_draft_images" | "retouch_draft_image" | "cleanplate_draft_images" | "generative_hdr_draft_image" | "organize_draft_images" | "generate_draft_video";
   draft_id: number;
   selected_upload_ids: number[];
   service_ids?: number[];
@@ -1419,11 +1419,322 @@ export async function restoreAgentCreationRevision(
   });
 }
 
-export async function saveReaiFeedback(conversationId: string, helpful: boolean): Promise<{ saved: boolean; feedback_id: number }> {
+export interface ReaiImprovementConversation {
+  id: string;
+  created_at: string;
+  updated_at: string;
+  expires_at: string;
+  messages: Array<{
+    role: "user" | "assistant" | "system";
+    content: string;
+    created_at: string;
+  }>;
+  actions: Array<{
+    tool: string;
+    action: string;
+    status: string;
+    before: Record<string, unknown>;
+    changes: Record<string, unknown>;
+    after: Record<string, unknown>;
+    created_at: string;
+  }>;
+}
+
+export async function getReaiImprovementConversations(): Promise<{
+  conversations: ReaiImprovementConversation[];
+}> {
+  return request("/api/reaigen/reai-agent/improvement-conversations/");
+}
+
+export async function deleteReaiImprovementConversation(
+  conversationId: string,
+): Promise<{ deleted: true }> {
+  return request("/api/reaigen/reai-agent/improvement-conversations/", {
+    method: "DELETE",
+    body: JSON.stringify({ conversation_id: conversationId }),
+  });
+}
+
+export async function saveReaiFeedback(
+  conversationId: string,
+  helpful: boolean,
+  correction = "",
+): Promise<{ saved: boolean; feedback_id: number }> {
   return request("/api/reaigen/reai-agent/improvement-conversations/", {
     method: "POST",
-    body: JSON.stringify({ conversation_id: conversationId, helpful }),
+    body: JSON.stringify({ conversation_id: conversationId, helpful, correction }),
   });
+}
+
+export interface ReaiImageInsight {
+  analysis_mode?: string;
+  category?: string;
+  subcategory?: string;
+  confidence?: number;
+  aesthetic_score?: number;
+  quality_score?: number;
+  technical_quality_score?: number;
+  marketing_score?: number;
+  duplicate_flag?: boolean;
+  recommended_gallery_position?: number;
+  keep_or_drop?: string;
+  section?: string;
+  processor: string;
+}
+
+export interface ReaiImageEditOperations {
+  auto_enhance?: boolean;
+  brightness?: number;
+  contrast?: number;
+  saturation?: number;
+  sharpness?: number;
+  exposure_ev?: number;
+  auto_white_balance?: boolean;
+  normalize_color_profile?: boolean;
+  temperature?: number;
+  tint?: number;
+  hue_degrees?: number;
+  rotation?: 0 | 90 | 180 | 270;
+  crop_aspect?: "original" | "1:1" | "4:3" | "3:2" | "16:9";
+  crop_x?: number;
+  crop_y?: number;
+}
+
+export interface ReaiImageSelection {
+  scope: "selected" | "room" | "draft";
+  upload_ids?: number[];
+  room_id?: string;
+  room_label?: string;
+}
+
+export type ReaiRetouchTarget = Partial<Record<
+  | "target_reflection"
+  | "target_display"
+  | "region_top_right"
+  | "region_top_left"
+  | "region_bottom_right"
+  | "region_bottom_left",
+  true
+>>;
+
+export interface ReaiCloudImageResult {
+  upload_id: number;
+  generated_upload_id?: number;
+  cleaned_upload_id?: number | null;
+  mode?: string;
+  target?: ReaiRetouchTarget;
+  status: "completed" | "failed";
+  detail?: string;
+}
+
+function invalidateReaiDraft(draftId: number) {
+  cache.delete(`/api/reaigen/drafts/${draftId}/`);
+  inFlight.delete(`/api/reaigen/drafts/${draftId}/`);
+}
+
+export async function analyzeReaiDraftImage(
+  draftId: number,
+  uploadId: number,
+  improvementConversationId: string | null = null,
+): Promise<{
+  upload_id: number;
+  insights: ReaiImageInsight;
+  execution_mode: "deterministic";
+  raw_image_sent_to_language_model: false;
+}> {
+  const result = await request(
+    `/api/reaigen/reai-agent/drafts/${draftId}/images/${uploadId}/insights/`,
+    {
+      method: "POST",
+      body: JSON.stringify({
+        confirmed: true,
+        improvement_conversation_id: improvementConversationId,
+      }),
+    },
+  );
+  invalidateReaiDraft(draftId);
+  return result;
+}
+
+export async function editReaiDraftImage(
+  draftId: number,
+  uploadId: number,
+  operations: ReaiImageEditOperations,
+  improvementConversationId: string | null = null,
+): Promise<{
+  service_id: number;
+  status: "pending";
+  execution_mode: "deterministic";
+  requires_version_review: true;
+}> {
+  const result = await request(
+    `/api/reaigen/reai-agent/drafts/${draftId}/images/${uploadId}/edit/`,
+    {
+      method: "POST",
+      body: JSON.stringify({
+        operations,
+        confirmed: true,
+        improvement_conversation_id: improvementConversationId,
+      }),
+    },
+  );
+  invalidateReaiDraft(draftId);
+  return result;
+}
+
+export async function editReaiDraftImages(
+  draftId: number,
+  selection: ReaiImageSelection,
+  operations: ReaiImageEditOperations,
+  improvementConversationId: string | null = null,
+): Promise<{
+  action: "grade_draft_images";
+  draft_id: number;
+  selected_upload_ids: number[];
+  service_ids: number[];
+  status: "pending";
+  execution_mode: "deterministic";
+  raw_image_sent_to_language_model: false;
+  requires_version_review: true;
+}> {
+  const result = await request(`/api/reaigen/reai-agent/drafts/${draftId}/images/edit-batch/`, {
+    method: "POST",
+    body: JSON.stringify({
+      ...selection,
+      operations,
+      confirmed: true,
+      improvement_conversation_id: improvementConversationId,
+    }),
+  });
+  invalidateReaiDraft(draftId);
+  return result;
+}
+
+export async function retouchReaiDraftImage(
+  draftId: number,
+  uploadId: number,
+  target: ReaiRetouchTarget,
+  improvementConversationId: string | null = null,
+): Promise<{
+  action: "retouch_draft_image";
+  draft_id: number;
+  selected_upload_ids: number[];
+  result: ReaiCloudImageResult;
+  execution_mode: "bounded_vfx_retouch";
+  raw_user_instruction_forwarded: false;
+  requires_version_review: true;
+}> {
+  const result = await request(`/api/reaigen/reai-agent/drafts/${draftId}/images/retouch/`, {
+    method: "POST",
+    body: JSON.stringify({
+      scope: "selected",
+      upload_ids: [uploadId],
+      target,
+      confirmed: true,
+      improvement_conversation_id: improvementConversationId,
+    }),
+  });
+  invalidateReaiDraft(draftId);
+  return result;
+}
+
+export async function cleanplateReaiDraftImages(
+  draftId: number,
+  selection: ReaiImageSelection,
+  improvementConversationId: string | null = null,
+): Promise<{
+  action: "cleanplate_draft_images";
+  draft_id: number;
+  selected_upload_ids: number[];
+  completed_count: number;
+  failed_count: number;
+  results: ReaiCloudImageResult[];
+  execution_mode: "cloud_image_edit";
+  raw_image_sent_to_language_model: false;
+  requires_version_review: true;
+}> {
+  const result = await request(`/api/reaigen/reai-agent/drafts/${draftId}/images/cleanplate/`, {
+    method: "POST",
+    body: JSON.stringify({
+      ...selection,
+      confirmed: true,
+      improvement_conversation_id: improvementConversationId,
+    }),
+  });
+  invalidateReaiDraft(draftId);
+  return result;
+}
+
+export async function generateReaiDraftImageHdr(
+  draftId: number,
+  uploadId: number,
+  improvementConversationId: string | null = null,
+): Promise<{
+  action: "generative_hdr_draft_image";
+  draft_id: number;
+  selected_upload_ids: number[];
+  result: ReaiCloudImageResult;
+  execution_mode: "cloud_image_edit";
+  requires_version_review: true;
+}> {
+  const result = await request(`/api/reaigen/reai-agent/drafts/${draftId}/images/hdr/`, {
+    method: "POST",
+    body: JSON.stringify({
+      scope: "selected",
+      upload_ids: [uploadId],
+      confirmed: true,
+      improvement_conversation_id: improvementConversationId,
+    }),
+  });
+  invalidateReaiDraft(draftId);
+  return result;
+}
+
+export async function organizeReaiDraftImages(
+  draftId: number,
+  improvementConversationId: string | null = null,
+): Promise<{
+  action: "organize_draft_images";
+  draft_id: number;
+  selected_upload_ids: number[];
+  status: "completed";
+  execution_mode: "deterministic";
+}> {
+  const result = await request(`/api/reaigen/reai-agent/drafts/${draftId}/images/organize/`, {
+    method: "POST",
+    body: JSON.stringify({
+      confirmed: true,
+      improvement_conversation_id: improvementConversationId,
+    }),
+  });
+  invalidateReaiDraft(draftId);
+  return result;
+}
+
+export async function generateReaiDraftVideo(
+  draftId: number,
+  sourceUploadId: number,
+  motion: "slow_push" | "slow_pull_back" | "pan_left" | "pan_right" = "slow_push",
+  improvementConversationId: string | null = null,
+): Promise<{
+  action: "generate_draft_video";
+  draft_id: number;
+  source_upload_id: number;
+  service_id: number;
+  status: "pending";
+  execution_mode: "runpod_async";
+}> {
+  const result = await request(`/api/reaigen/reai-agent/drafts/${draftId}/videos/generate/`, {
+    method: "POST",
+    body: JSON.stringify({
+      source_upload_id: sourceUploadId,
+      motion,
+      confirmed: true,
+      improvement_conversation_id: improvementConversationId,
+    }),
+  });
+  invalidateReaiDraft(draftId);
+  return result;
 }
 
 export interface FloorplanDetail {

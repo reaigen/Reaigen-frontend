@@ -671,10 +671,7 @@ function ReaiTab({ lang }: { lang: string }) {
     setError(null);
     setSuccess(null);
     try {
-      const payload = allowAll
-        ? { allow_all_tools: true }
-        : { allow_all_tools: false, tools: toolPermissions.tools };
-      setToolPermissions(await updateReaiToolPermissions(payload));
+      setToolPermissions(await updateReaiToolPermissions({ allow_all_tools: allowAll }));
       setSuccess(t("settings.reai.toolsSaved", lang));
     } catch (err) {
       setError(getSafeApiErrorMessage(err, lang));
@@ -834,7 +831,7 @@ function ReaiTab({ lang }: { lang: string }) {
               </div>
               <Switch
                 checked={improvementConsent.consented}
-                disabled={saving}
+                disabled={saving || (!consent?.consented && !improvementConsent.consented)}
                 onCheckedChange={() => void toggleImprovement()}
                 aria-label={t("settings.reai.improvementPermission", lang)}
               />

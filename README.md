@@ -158,12 +158,14 @@ The browser never calls Django directly. All API requests go through Next.js ser
 ```
 /api/auth/*     → Django /api/v1/core/auth/*
 /api/reaigen/*  → Django /api/v1/reaigen/*  (or /api/v1/core/users/*)
+/api/reaigen/reai-agent/* → Django /api/v1/reai-agent/*
 ```
 
 This handles:
 - JWT storage in HTTP-only cookies
 - Automatic token refresh on 401
 - Backend URL hidden from client
+- Private, no-store access to the canonical Django creator Agent
 
 ---
 
