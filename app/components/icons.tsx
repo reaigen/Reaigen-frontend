@@ -108,5 +108,46 @@ export const DragHandleIcon = fromRadix(DragHandleDots2Icon, "DragHandleIcon");
 export const MinusIcon = fromRadix(RadixMinusIcon, "MinusIcon");
 export const PlusIcon = fromRadix(RadixPlusIcon, "PlusIcon");
 
+export function OrbitIcon({ size = 18, width, height, ...props }: IconProps) {
+  return (
+    <svg viewBox="0 0 24 24" width={width ?? size} height={height ?? size} fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" aria-hidden={props["aria-hidden"] ?? true} {...props}>
+      <circle cx="12" cy="12" r="2.25" />
+      <path d="M4.25 12c0-4.55 3.47-8.25 7.75-8.25 2.9 0 5.43 1.7 6.75 4.2" />
+      <path d="m18.9 4.8.25 3.6-3.55-.55" />
+      <path d="M19.75 12c0 4.55-3.47 8.25-7.75 8.25-2.9 0-5.43-1.7-6.75-4.2" />
+      <path d="m5.1 19.2-.25-3.6 3.55.55" />
+    </svg>
+  );
+}
+
+export function FrameIcon({ size = 18, width, height, ...props }: IconProps) {
+  return (
+    <svg viewBox="0 0 24 24" width={width ?? size} height={height ?? size} fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" aria-hidden={props["aria-hidden"] ?? true} {...props}>
+      <path d="M4 9V4h5M15 4h5v5M20 15v5h-5M9 20H4v-5" />
+      <circle cx="12" cy="12" r="2" />
+    </svg>
+  );
+}
+
+export function CameraIcon({ size = 18, width, height, ...props }: IconProps) {
+  return (
+    <svg viewBox="0 0 24 24" width={width ?? size} height={height ?? size} fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" aria-hidden={props["aria-hidden"] ?? true} {...props}>
+      <rect x="4" y="7" width="12" height="10" rx="2" />
+      <path d="m16 10 4-2v8l-4-2" />
+      <circle cx="10" cy="12" r="2.25" />
+    </svg>
+  );
+}
+
+export function RotateIcon({ size = 18, width, height, ...props }: IconProps) {
+  return (
+    <svg viewBox="0 0 24 24" width={width ?? size} height={height ?? size} fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" aria-hidden={props["aria-hidden"] ?? true} {...props}>
+      <path d="M19.2 8.3A8 8 0 1 0 20 14" />
+      <path d="M19.2 4.6v3.7h-3.7" />
+      <circle cx="12" cy="12" r="2" />
+    </svg>
+  );
+}
+
 // The Agent uses a neutral wand glyph—never a colored app tile.
 export const SparklesIcon = fromRadix(MagicWandIcon, "SparklesIcon");

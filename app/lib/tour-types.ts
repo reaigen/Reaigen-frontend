@@ -1,4 +1,397 @@
 export type Vec3 = [number, number, number];
+export type SpatialViewMode = "surface" | "centers";
+export type SpatialCameraMode = "orbit" | "fly";
+
+/**
+ * Explicit, persisted transform from canonical scan space into tour space.
+ *
+ * Scan assets remain identity/Y-up on disk. This reversible transform is
+ * applied at runtime to the splat, RoomKit cage, trajectories and cameras.
+ */
+export interface GlobalSceneTransform {
+  version: 1;
+  coordinateSpace: "reaigen_y_up";
+  rotationDeg: Vec3;
+  translation: Vec3;
+  scale: number;
+}
+
+/** Versioned scene contract shared by web, iOS and backend renderers. */
+export interface UniversalSceneDescription {
+  schema: "com.reaigen.scene";
+  version: 1 | 2;
+  coordinateSystem: {
+    handedness: "right";
+    upAxis: "+Y";
+    forwardAxis: "+Z";
+    linearUnit: "meter";
+  };
+  rootTransform: {
+    translation: Vec3;
+    /** Quaternion component order is [x, y, z, w]. */
+    rotationQuaternion: [number, number, number, number];
+    scale: Vec3;
+    operationOrder: "scale-rotate-translate";
+  };
+  spatialPolicy?: {
+    canonicalSpace: "right-handed-y-up-meters";
+    presentationSpace: "world";
+    rootPrimPath: "/Reaigen";
+    pointTransform: "T*R*S";
+    directionTransform: "normalize(R*S)";
+    collisionQuerySpace: "canonical";
+    rootTransformAffects: string[];
+  };
+  contentSpace: {
+    splats: "canonical";
+    cameras: "canonical";
+    roomKit: "canonical";
+    trajectories: "canonical";
+  };
+  cameraPolicy: {
+    worldUp: Vec3;
+    horizon: "world-up";
+    storedBasis?: "position-forward-up";
+    rootTransformApplication?: "full-camera-basis";
+  };
+  editor?: {
+    rotationEulerDegrees: Vec3;
+    rotationOrder: "YXZ";
+  };
+  /** USD-aligned resolved-stage metadata, present from scene schema v2. */
+  stage?: {
+    identifier: string;
+    revision: number;
+    defaultPrim: "Reaigen";
+    upAxis: "Y";
+    metersPerUnit: number;
+    timeCodesPerSecond: number;
+  };
+  composition?: {
+    strengthOrder: "weak-to-strong";
+    layers: Array<{
+      id: string;
+      role: string;
+      immutable: boolean;
+      revision?: number | null;
+      version?: number | null;
+      primPaths?: string[];
+      assetUri?: string;
+    }>;
+  };
+  prims?: Array<{
+    path: string;
+    typeName: string;
+    assetUri?: string | null;
+    xformOpOrder?: string[];
+    attributes?: Record<string, unknown>;
+  }>;
+  cameraSets?: {
+    captured: SceneCameraSet;
+    authored: SceneCameraSet & { cameras?: SceneCamera[] };
+    immersive: SceneCameraSet;
+  };
+  geometry?: {
+    roomKit: {
+      primPath: string;
+      available: boolean;
+      scanBundleId?: number | null;
+      coordinateSpace?: "canonical";
+      rootTransformPrimPath?: "/Reaigen";
+      collision?: {
+        enabled: boolean;
+        role: "environment";
+        purpose: "guide";
+        querySpace: "canonical";
+      };
+    };
+    authoredOverrides: {
+      primPath: string;
+      sourceUri: string;
+      hasWallEdits: boolean;
+      hasOpeningEdits: boolean;
+      wallGraph?: SceneWallGraph | null;
+      openingEdits?: Record<string, unknown> | null;
+      sourceRecords?: Record<string, {
+        recordId: number;
+        updatedAt: string;
+      }>;
+    };
+    floorplan?: {
+      floorplanId?: number | null;
+      usdLayerCount: number;
+    };
+  };
+  trajectories?: Record<string, unknown>;
+  navigation?: {
+    firstPerson?: {
+      cameraPrimPath: string;
+      eyeHeightMeters: number;
+      collision: {
+        geometryPrimPaths: string[];
+        policy: string;
+        available: boolean;
+        fallback: string;
+        sourceGeometrySpace?: "canonical";
+        querySpace?: "canonical";
+        presentationCameraSpace?: "presentation-world";
+        rootTransformPrimPath?: "/Reaigen";
+      };
+    };
+  };
+  versioning?: {
+    reconstructionDelivery?: SceneVersionIdentity;
+    sceneRevision?: SceneVersionIdentity;
+    tourDelivery?: SceneVersionIdentity;
+  };
+  runtimeCapabilities?: Record<string, boolean>;
+  /** Immutable OpenUSD source graph backing this runtime projection. */
+  usdStage?: OpenUsdStageIdentity | null;
+}
+
+export interface OpenUsdStageIdentity {
+  schema: "com.reaigen.usd.scene";
+  schemaVersion: number;
+  format: "usda";
+  splatId: number;
+  sceneRevision: number;
+  rootLayer: "scene.usda";
+  stageSha256: string;
+  layerEndpoint: string;
+  bundleEndpoint: string;
+  layers: Array<{
+    identifier: string;
+    role: string;
+    strengthOrder: number;
+    sha256: string;
+  }>;
+  validation: {
+    valid: boolean;
+    validator: string;
+    openUsdAvailable: boolean;
+    openUsdVersion?: string;
+    errors: string[];
+  };
+}
+
+export interface SceneVersionIdentity {
+  id?: number | null;
+  version?: number | null;
+  revision?: number | null;
+  immutable: boolean;
+}
+
+export interface SceneCameraSet {
+  primPath: string;
+  kind: string;
+  storage: string;
+  count?: number;
+  persisted?: boolean;
+  sourceUri?: string;
+  description?: string;
+  cameras?: SceneCamera[];
+}
+
+export interface SceneCamera {
+  id: string;
+  primPath: string;
+  kind: string;
+  role: string;
+  label: string;
+  position: Vec3;
+  forward: Vec3;
+  up: Vec3;
+  projection: {
+    type: "perspective";
+    verticalFovDegrees?: number | null;
+  };
+  coordinateSpace: "canonical";
+}
+
+export interface SceneWallGraph {
+  vertices: Array<[number, number]>;
+  edges: Array<{ a: number; b: number }>;
+}
+
+export interface SceneRevisionSummary {
+  revision: number;
+  baseDeliveryVersion?: number | null;
+  changeSet: {
+    fields?: string[];
+    cameraCount?: number | null;
+    [key: string]: unknown;
+  };
+  createdBy?: number | null;
+  createdAt: string;
+  usdStageSha256?: string | null;
+  projectionSha256?: string | null;
+  usdValidated?: boolean;
+  isCurrent: boolean;
+}
+
+export interface SplatSceneResponse {
+  scene: UniversalSceneDescription;
+  usd?: OpenUsdStageIdentity | null;
+  currentRevision: number;
+  resolvedRevision: number;
+  revisions: SceneRevisionSummary[];
+}
+
+export type SceneDeliveryTargetProfile =
+  | "web"
+  | "ios"
+  | "visionos"
+  | "interchange";
+
+export interface SceneDeliverySummary {
+  id: number;
+  splatId: number;
+  targetProfile: SceneDeliveryTargetProfile;
+  version: number;
+  status: "candidate" | "ready" | "published" | "archived" | "failed";
+  sceneRevisionId: number;
+  sceneRevision: number;
+  sceneStageSha256: string;
+  reconstructionVersionId: number;
+  reconstructionVersion: number;
+  sourceJobId?: string | null;
+  manifest: {
+    schema: "com.reaigen.scene-delivery";
+    version: 1;
+    preservedAuthoredState: string[];
+    target: {
+      id: SceneDeliveryTargetProfile;
+      runtime: string;
+      packageKind: string;
+      resolverMode: string;
+    };
+    gaussian: {
+      schema: "ParticleField3DGaussianSplat";
+      selectedRepresentation: string;
+      assetUri: string;
+      representations: Array<{
+        format: string;
+        name: string;
+        assetUri: string;
+        storageReference: string;
+      }>;
+    };
+    portableCompanion?: {
+      format: "usdz";
+      purpose: string;
+      gaussianPayload: "external-reaigen-runtime";
+      reason: string;
+    };
+    [key: string]: unknown;
+  };
+  usd: {
+    rootLayer: "delivery.usda";
+    stageSha256: string;
+    validation: OpenUsdStageIdentity["validation"];
+    layerEndpoint: string;
+    bundleEndpoint: string;
+  };
+  assetEndpoint?: string;
+  publishEndpoint?: string;
+  publishedAt?: string | null;
+  createdAt: string;
+}
+
+export interface SceneDeliveryResolution {
+  delivery: SceneDeliverySummary;
+  sceneDescription: UniversalSceneDescription;
+  asset: {
+    /** Durable resolver identity authored into the USD stage. */
+    uri: string;
+    format: string;
+    /** Expiring authenticated transport URL; never persist as authorship. */
+    url: string;
+    fingerprint: string;
+  };
+}
+
+export interface SceneRefinementSummary {
+  id: number;
+  jobId: string;
+  status: string;
+  phase: string;
+  message: string;
+  progressPct: number;
+  iterations: number | null;
+  preset: string;
+  downsample: number;
+  outputFormats: string[];
+  sceneRevision: number;
+  sceneStageSha256: string;
+  baseReconstructionVersion?: number | null;
+  targetProfiles: SceneDeliveryTargetProfile[];
+  promotionPolicy: "manual";
+  createdAt: string;
+  completedAt?: string | null;
+}
+
+export interface DeliveryVersionSummary {
+  id: number;
+  version: number;
+  publication_status: "not_published" | "published" | "archived" | "failed";
+  is_master: boolean;
+  is_published: boolean;
+  scene_count: number;
+  assets_available: boolean;
+  source_job_id?: string | null;
+  source_results_s3_prefix?: string | null;
+  scene_revision?: number | null;
+  usd_stage_sha256?: string | null;
+  created_at: string;
+  published_at?: string | null;
+}
+
+export interface VirtualTourViewerPayload {
+  tour_id: number;
+  draft_id: number;
+  status: string;
+  product_publication_status: string;
+  config: Record<string, unknown>;
+  assets: Record<string, unknown>;
+  scene_count: number;
+  is_published: boolean;
+  latest_delivery_version?: DeliveryVersionSummary | null;
+  resolved_delivery_version?: DeliveryVersionSummary | null;
+  delivery_versions: DeliveryVersionSummary[];
+  scene_description?: UniversalSceneDescription | null;
+  assets_updated_at?: string | null;
+}
+
+/** Authoritative RoomKit wall geometry in the scan's identity, Y-up space. */
+export interface RoomKitCageWall {
+  id: string;
+  center: Vec3;
+  width: number;
+  height: number;
+  thickness: number;
+  yaw: number;
+}
+
+/** One camera sample from either the scan trajectory or the published tour. */
+export interface SpatialCameraSample {
+  position: Vec3;
+  forward: Vec3;
+  up: Vec3;
+  fov: number;
+}
+
+/** Keep independently captured room paths separate so they are never joined. */
+export interface SpatialTrajectory {
+  id: string;
+  label: string;
+  source: "scan" | "tour" | "saved";
+  samples: SpatialCameraSample[];
+}
+
+export interface SplatInspectionStats {
+  gaussianCount: number;
+  sampledCount: number;
+}
 
 export interface FeaturedRoom {
   id: number;
@@ -24,6 +417,8 @@ export interface TourData {
   version: number;
   positions: Vec3[];
   forwards: Vec3[];
+  /** Optional camera-up samples in the same canonical space as positions. */
+  ups?: Vec3[];
   arcLens: number[];
   totalArc: number;
   startIdx: number | null;
@@ -40,10 +435,15 @@ export interface TourData {
 }
 
 export interface SavedCamera {
+  id?: string;
   position: Vec3;
   forward: Vec3;
   up?: Vec3;
   fov?: number;
+  label?: string;
+  name?: string;
+  kind?: "capture" | "authored";
+  role?: "tour" | "hero" | "transition" | string;
   /** Coordinate marker added after the web viewer moved to identity scene space. */
   coordinate_space?: string;
 }
@@ -52,6 +452,9 @@ export interface CameraData {
   cameras: SavedCamera[];
   fovY?: number;
   sceneFov?: number;
+  globalTransform?: GlobalSceneTransform;
+  sceneDescription?: UniversalSceneDescription;
+  sceneRevision?: number;
   source?: string;
   cached?: boolean;
 }
@@ -109,6 +512,14 @@ export interface TourViewerData {
   signed_outputs: Record<string, string>;
   metadata: Record<string, unknown>;
   outputs_updated_at: string | null;
+  global_transform?: GlobalSceneTransform | null;
+  scene_description?: UniversalSceneDescription | null;
+  collision_geometry?: {
+    format: "roomplan-json";
+    coordinate_space: "canonical";
+    prim_path: "/Reaigen/Architecture/RoomKit";
+    url: string;
+  } | null;
   draft_title: string;
   floorplan_url: string | null;
   rooms: RoomData[];
@@ -260,7 +671,60 @@ export interface SplatViewerPayload {
   signed_outputs: Record<string, string>;
   metadata: Record<string, unknown>;
   outputs_updated_at: string | null;
+  global_transform?: GlobalSceneTransform | null;
+  scene_description?: UniversalSceneDescription | null;
+  collision_geometry?: TourViewerData["collision_geometry"];
   cameras?: CameraData | null;
+}
+
+export interface SplatPackageFileRef {
+  key: string;
+  url: string;
+}
+
+export interface SplatPackageRoomKitGeometry {
+  source: "scan_bundle";
+  scope: "estate" | "room";
+  scan_bundle_id: number;
+  room_directory: string | null;
+  files: Partial<Record<
+    "roomplan_json" | "scan_data_json" | "room_usdz" | "room_frame_indices_json",
+    SplatPackageFileRef
+  >>;
+}
+
+export interface SplatPackageRoomBundle {
+  source: "scan_bundle_room";
+  scope: "room";
+  scan_bundle_id: number;
+  scan_bundle_room_id: number | null;
+  room_label: string | null;
+  room_number: number | null;
+  capture_folder_slug: string;
+  files: Partial<Record<
+    "frames_jsonl" | "room_frame_indices_json" | "roomplan_json" | "scan_data_json" | "room_usdz",
+    SplatPackageFileRef
+  >>;
+}
+
+export interface SplatPackageRoomSummary {
+  id: number;
+  room_label?: string;
+}
+
+export interface SplatPackagePayload {
+  package_version: number;
+  scene_description?: UniversalSceneDescription | null;
+  scene_deliveries?: SceneDeliverySummary[];
+  scene_delivery_profiles?: Array<{
+    id: SceneDeliveryTargetProfile;
+    runtime: string;
+    packageKind: string;
+    portableUsdz: boolean;
+  }>;
+  original_roomkit_geometry: SplatPackageRoomKitGeometry | null;
+  room_bundle: SplatPackageRoomBundle | null;
+  room_splats: SplatPackageRoomSummary[];
 }
 
 export interface DraftUpload {

@@ -15,10 +15,17 @@
  *   4. Render: property card + optional tour overlay
  */
 
-import { useEffect, useState, useRef, useCallback, use } from "react";
+import { useEffect, useState, useRef, useCallback, useMemo, use } from "react";
 import { getSharedTourViewer, verifySharePin, getSharedDraftData, listUnits } from "../../lib/api/client";
 import { getApiErrorJson, getSafeApiErrorMessage } from "../../lib/api/error-message";
-import type { TourViewerData, TourData, RoomData, CameraData, SharedDraftData } from "../../lib/tour-types";
+import type {
+  TourViewerData,
+  TourData,
+  RoomData,
+  CameraData,
+  SharedDraftData,
+  RoomKitCageWall,
+} from "../../lib/tour-types";
 import dynamic from "next/dynamic";
 import TourControls from "../../components/tour-controls";
 import FloorplanNav from "../../components/floorplan-nav";
@@ -30,6 +37,8 @@ import { getBrowserLanguage, t } from "../../lib/i18n";
 import { PageLoading } from "../../components/page-loading";
 import type { SplatViewerHandle } from "../../components/splat-viewer";
 import type { UnitLookup } from "../../lib/unit-catalog";
+import { globalSceneTransformFromDescription } from "../../lib/global-scene-transform";
+import { parseRoomKitCage } from "../../lib/spatial-editor-data";
 
 const SplatViewer = dynamic(() => import("../../components/splat-viewer"), { ssr: false });
 
@@ -124,7 +133,36 @@ export default function SharedPage({ params }: { params: Promise<{ token: string
   const [activeRenderUrl, setActiveRenderUrl] = useState<string | null>(null);
   const [viewerReady, setViewerReady] = useState(false);
   const [tourPanel, setTourPanel] = useState<"property" | "floorplan" | null>(null);
+  const [roomKitCage, setRoomKitCage] = useState<RoomKitCageWall[]>([]);
   const splatRef = useRef<SplatViewerHandle | null>(null);
+  const globalSceneTransform = useMemo(
+    () => globalSceneTransformFromDescription(
+      tourViewerData?.scene_description,
+      tourViewerData?.global_transform,
+    ),
+    [tourViewerData?.scene_description, tourViewerData?.global_transform],
+  );
+
+  useEffect(() => {
+    const source = tourViewerData?.collision_geometry?.url;
+    if (!source) {
+      setRoomKitCage([]);
+      return;
+    }
+    let cancelled = false;
+    fetch(source, { credentials: "omit" })
+      .then((response) => {
+        if (!response.ok) throw new Error(`Collision geometry ${response.status}`);
+        return response.json();
+      })
+      .then((value) => {
+        if (!cancelled) setRoomKitCage(parseRoomKitCage(value));
+      })
+      .catch(() => {
+        if (!cancelled) setRoomKitCage([]);
+      });
+    return () => { cancelled = true; };
+  }, [tourViewerData?.collision_geometry?.url]);
 
   // ── Load both draft data and tour data in parallel ────────────────
 
@@ -349,6 +387,8 @@ export default function SharedPage({ params }: { params: Promise<{ token: string
           tourUrl={tourViewerData.tour_url ?? undefined}
           initialCameras={tourViewerData.cameras as CameraData ?? undefined}
           preferSavedCameras={!!tourViewerData.cameras?.cameras?.length}
+          globalSceneTransform={globalSceneTransform}
+          roomKitCage={roomKitCage}
           readOnly
           onReady={() => setViewerReady(true)}
           onError={() => {

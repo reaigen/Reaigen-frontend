@@ -758,7 +758,7 @@ export async function acceptAppContentDocument(data: {
 
 // ─── Splat Viewer & Tour ──────────────────────────────────────────────────
 
-import type { SplatViewerPayload, CameraData, TourViewerData, SplatListItem, ShareData, SharedDraftData, SplatsByDraftPayload, DraftListingItem, DraftDetailItem, DraftUpload } from "../tour-types";
+import type { SplatViewerPayload, SplatPackagePayload, SplatSceneResponse, SceneDeliveryResolution, SceneDeliverySummary, SceneDeliveryTargetProfile, SceneRefinementSummary, VirtualTourViewerPayload, CameraData, GlobalSceneTransform, UniversalSceneDescription, TourViewerData, SplatListItem, ShareData, SharedDraftData, SplatsByDraftPayload, DraftListingItem, DraftDetailItem, DraftUpload } from "../tour-types";
 
 export async function listSplats(page = 1, pageSize = 20, search = ""): Promise<{ results: SplatListItem[]; count: number; next: string | null }> {
   const q = search ? `&search=${encodeURIComponent(search)}` : "";
@@ -1890,6 +1890,142 @@ export async function getSplatViewer(splatId: number): Promise<SplatViewerPayloa
   return request(`/api/reaigen/splats/${splatId}/viewer/`);
 }
 
+export async function getSplatPackage(splatId: number): Promise<SplatPackagePayload> {
+  return request(`/api/reaigen/splats/${splatId}/package/`);
+}
+
+export async function getSplatScene(
+  splatId: number,
+  revision?: number,
+): Promise<SplatSceneResponse> {
+  const suffix = revision == null ? "" : `?revision=${encodeURIComponent(revision)}`;
+  return request(`/api/reaigen/splats/${splatId}/scene/${suffix}`);
+}
+
+export async function getSplatSceneDeliveries(
+  splatId: number,
+  targetProfile?: SceneDeliveryTargetProfile,
+): Promise<{
+  profiles: Array<{
+    id: SceneDeliveryTargetProfile;
+    label: string;
+    runtime: string;
+    packageKind: string;
+    portableUsdz: boolean;
+  }>;
+  deliveries: SceneDeliverySummary[];
+}> {
+  const suffix = targetProfile
+    ? `?targetProfile=${encodeURIComponent(targetProfile)}`
+    : "";
+  return request(`/api/reaigen/splats/${splatId}/scene/deliveries/${suffix}`);
+}
+
+export async function createSplatSceneDeliveries(
+  splatId: number,
+  data: {
+    sceneRevision?: number;
+    sceneRevisionId?: number;
+    sceneStageSha256?: string;
+    reconstructionVersion?: number;
+    reconstructionVersionId?: number;
+    targetProfiles: SceneDeliveryTargetProfile[];
+  },
+): Promise<{
+  promotionPolicy: "manual";
+  deliveries: SceneDeliverySummary[];
+}> {
+  return request(`/api/reaigen/splats/${splatId}/scene/deliveries/`, {
+    method: "POST",
+    body: JSON.stringify(data),
+  });
+}
+
+export async function resolveSplatSceneDelivery(
+  splatId: number,
+  deliveryId: number,
+): Promise<SceneDeliveryResolution> {
+  return request(
+    `/api/reaigen/splats/${splatId}/scene/deliveries/${deliveryId}/resolve/`,
+  );
+}
+
+export async function publishSplatSceneDelivery(
+  splatId: number,
+  deliveryId: number,
+): Promise<{
+  promotionPolicy: "explicit-target-publication";
+  archivedDeliveryIds: number[];
+  delivery: SceneDeliverySummary;
+}> {
+  return request(
+    `/api/reaigen/splats/${splatId}/scene/deliveries/${deliveryId}/publish/`,
+    { method: "POST" },
+  );
+}
+
+export async function getSplatRefinements(
+  splatId: number,
+): Promise<{
+  refinements: SceneRefinementSummary[];
+  sceneDeliveries: SceneDeliverySummary[];
+}> {
+  return request(`/api/reaigen/splats/${splatId}/refinements/`);
+}
+
+export async function requestSplatRefinement(
+  splatId: number,
+  data: {
+    baseSceneRevision?: number;
+    sceneStageSha256?: string;
+    baseReconstructionVersion?: number;
+    iterations?: number;
+    preset?: string;
+    downsample?: 1 | 2 | 4 | 8;
+    priority?: 0 | 1 | 2 | 3;
+    trainingEngine?: "gsplat" | "splatfiction" | "3dgut";
+    outputFormats?: Array<"ply" | "sog" | "splat">;
+    targetProfiles: SceneDeliveryTargetProfile[];
+    trainingOverrides?: Record<string, unknown>;
+  },
+): Promise<{
+  refinement: SceneRefinementSummary;
+  preservesApprovedScene: true;
+  promotionPolicy: "manual";
+}> {
+  return request(`/api/reaigen/splats/${splatId}/refinements/`, {
+    method: "POST",
+    body: JSON.stringify(data),
+  });
+}
+
+export async function downloadSplatSceneDeliveryBundle(
+  splatId: number,
+  deliveryId: number,
+): Promise<Blob> {
+  const response = await fetch(
+    `/api/reaigen/splats/${splatId}/scene/deliveries/${deliveryId}/usd/?bundle=1`,
+    {
+      credentials: "include",
+      cache: "no-store",
+    },
+  );
+  if (!response.ok) {
+    const body = await response.text();
+    if (response.status === 401) notifyUnauthorized();
+    throw new ApiError(response.status, body);
+  }
+  return response.blob();
+}
+
+export async function getVirtualTourViewer(
+  tourId: number,
+  version?: number,
+): Promise<VirtualTourViewerPayload> {
+  const suffix = version == null ? "" : `?version=${encodeURIComponent(version)}`;
+  return request(`/api/reaigen/tours/${tourId}/viewer/${suffix}`);
+}
+
 export async function getSplatsByDraft(draftId: number): Promise<SplatsByDraftPayload> {
   return request(`/api/reaigen/splats/by-draft/${draftId}/?all=true`);
 }
@@ -1916,13 +2052,71 @@ export async function getCameras(splatId: number): Promise<CameraData> {
   return request(`/api/reaigen/splats/${splatId}/cameras/`);
 }
 
+export async function downloadSplatUsdBundle(
+  splatId: number,
+  revision: number,
+  tourVersion?: number,
+): Promise<Blob> {
+  const query = new URLSearchParams({
+    revision: String(revision),
+    bundle: "1",
+  });
+  if (tourVersion != null) query.set("tourVersion", String(tourVersion));
+  const response = await fetch(
+    `/api/reaigen/splats/${splatId}/scene/usd/?${query.toString()}`,
+    {
+      credentials: "include",
+      cache: "no-store",
+    },
+  );
+  if (!response.ok) {
+    const body = await response.text();
+    if (response.status === 401) notifyUnauthorized();
+    throw new ApiError(response.status, body);
+  }
+  return response.blob();
+}
+
 export async function saveCameras(
   splatId: number,
-  data: { cameras: { position: number[]; forward: number[]; up?: number[]; fov?: number; coordinate_space?: string }[]; fovY?: number; sceneFov?: number },
+  data: {
+    cameras: {
+      id?: string;
+      position: number[];
+      forward: number[];
+      up?: number[];
+      fov?: number;
+      label?: string;
+      kind?: string;
+      role?: string;
+      coordinate_space?: string;
+    }[];
+    fovY?: number;
+    sceneFov?: number;
+    baseRevision?: number;
+  },
 ): Promise<CameraData> {
   return request(`/api/reaigen/splats/${splatId}/cameras/`, {
     method: "PATCH",
     body: JSON.stringify(data),
+  });
+}
+
+export async function saveGlobalSceneTransform(
+  splatId: number,
+  globalTransform: GlobalSceneTransform,
+  baseRevision?: number,
+): Promise<{
+  globalTransform: GlobalSceneTransform;
+  sceneDescription: UniversalSceneDescription;
+  sceneRevision: number;
+}> {
+  return request(`/api/reaigen/splats/${splatId}/cameras/`, {
+    method: "PATCH",
+    body: JSON.stringify({
+      globalTransform,
+      ...(baseRevision == null ? {} : { baseRevision }),
+    }),
   });
 }
 
