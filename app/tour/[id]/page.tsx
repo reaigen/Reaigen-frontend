@@ -46,24 +46,13 @@ const SOG_READY_TIMEOUT_MS = 15000;
 const SPATIAL_EDITOR_RND_ENABLED = process.env.NODE_ENV === "development";
 
 function pickRenderableUrl(viewer: SplatViewerPayload): string {
-  return viewer.signed_outputs?.sog
-    ?? viewer.signed_outputs?.["model.sog"]
-    ?? (viewer.format === "sog" ? viewer.url : undefined)
-    ?? viewer.signed_outputs?.splat
-    ?? viewer.signed_outputs?.["model.splat"]
-    ?? viewer.signed_outputs?.spz
-    ?? viewer.signed_outputs?.["model.spz"]
-    ?? viewer.signed_outputs?.ply
-    ?? viewer.signed_outputs?.["model.ply"]
-    ?? viewer.signed_outputs?.["output_mcmc.ply"]
-    ?? viewer.url;
+  return viewer.asset.url;
 }
 
 function pickFallbackRenderableUrl(viewer: SplatViewerPayload): string | null {
-  return viewer.signed_outputs?.ply
-    ?? viewer.signed_outputs?.["model.ply"]
-    ?? viewer.signed_outputs?.["output_mcmc.ply"]
-    ?? null;
+  return viewer.representations.find(
+    (representation) => representation.format === "ply",
+  )?.url ?? null;
 }
 
 async function fetchTextAsset(url: string | undefined): Promise<string | null> {
@@ -459,12 +448,10 @@ export default function TourPage({ params }: { params: Promise<{ id: string }> }
       <SplatViewer
         key={editorVersion}
         ref={splatRef}
-        splatUrl={activeRenderUrl ?? viewer.url}
+        splatUrl={activeRenderUrl ?? viewer.asset.url}
         splatId={resolvedSplatId}
-        tourUrl={viewer.tour_url ?? undefined}
         initialCameras={viewerCameras}
-        camerasUrl={`/api/reaigen/splats/${resolvedSplatId}/cameras/`}
-        outputsVersion={viewer.outputs_updated_at}
+        outputsVersion={viewer.asset.fingerprint}
         preferSavedCameras={preferSavedCameras}
         onReady={() => setViewerReady(true)}
         onError={() => {

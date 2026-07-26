@@ -673,8 +673,12 @@ export interface SplatViewerPayload {
   outputs_updated_at: string | null;
   global_transform?: GlobalSceneTransform | null;
   scene_description?: UniversalSceneDescription | null;
+  /** Exact published OpenUSD graph version used to resolve this runtime. */
+  scene_delivery: SceneDeliverySummary;
+  asset: SceneDeliveryResolution["asset"];
+  representations: SceneDeliveryResolution["asset"][];
   collision_geometry?: TourViewerData["collision_geometry"];
-  cameras?: CameraData | null;
+  cameras: CameraData;
 }
 
 export interface SplatPackageFileRef {

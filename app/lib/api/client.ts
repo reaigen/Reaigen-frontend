@@ -1887,11 +1887,15 @@ export async function searchDrafts(query: string, signal?: AbortSignal): Promise
 }
 
 export async function getSplatViewer(splatId: number): Promise<SplatViewerPayload> {
-  return request(`/api/reaigen/splats/${splatId}/viewer/`);
+  return request(
+    `/api/reaigen/splats/${splatId}/viewer/?targetProfile=web`,
+  );
 }
 
 export async function getSplatPackage(splatId: number): Promise<SplatPackagePayload> {
-  return request(`/api/reaigen/splats/${splatId}/package/`);
+  return request(
+    `/api/reaigen/splats/${splatId}/package/?targetProfile=web`,
+  );
 }
 
 export async function getSplatScene(
@@ -1947,6 +1951,18 @@ export async function resolveSplatSceneDelivery(
 ): Promise<SceneDeliveryResolution> {
   return request(
     `/api/reaigen/splats/${splatId}/scene/deliveries/${deliveryId}/resolve/`,
+  );
+}
+
+export async function resolveCurrentSplatSceneDelivery(
+  splatId: number,
+  targetProfile: SceneDeliveryTargetProfile,
+): Promise<SceneDeliveryResolution & {
+  representations: SceneDeliveryResolution["asset"][];
+}> {
+  return request(
+    `/api/reaigen/splats/${splatId}/scene/deliveries/current/`
+    + `?targetProfile=${encodeURIComponent(targetProfile)}`,
   );
 }
 
