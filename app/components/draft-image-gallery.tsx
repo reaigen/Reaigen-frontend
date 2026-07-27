@@ -177,22 +177,21 @@ function GalleryLightbox({
       className="fixed inset-0 z-[9999] flex overscroll-contain bg-white text-black animate-in fade-in duration-200"
     >
       <div className="pointer-events-none absolute inset-x-0 top-0 z-40 flex h-[72px] items-center justify-between gap-3 bg-gradient-to-b from-white via-white/90 to-transparent px-3 pt-safe sm:px-5">
-        <div className="min-w-0">
-          <span aria-live="polite" aria-atomic="true" className="inline-flex rounded-full border border-black/[0.08] bg-white/90 px-3 py-1.5 text-[11px] font-semibold tabular-nums text-black/60 shadow-sm backdrop-blur-xl">
-            {counterLabel(index, count, lang)}
-          </span>
-          {images[index]?.name ? <p className="mt-1.5 max-w-[55vw] truncate pl-1 text-[11px] font-medium text-black/45">{images[index].name}</p> : null}
-        </div>
         <button
           ref={closeRef}
           type="button"
           onClick={onClose}
-          className="pointer-events-auto flex h-11 items-center gap-2 rounded-full border border-black/[0.08] bg-white/90 px-4 text-[12px] font-semibold text-black/70 shadow-sm backdrop-blur-xl transition-[background-color,color,transform] hover:scale-[1.02] hover:bg-black hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-black/30"
+          className="floating-control pointer-events-auto gap-2 border border-black/[0.08] bg-white/90 px-4 text-black/70 shadow-sm backdrop-blur-xl hover:scale-[1.02] hover:bg-black hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-black/30"
           aria-label={t("common.close", lang)}
         >
           <CloseIcon size={17} />
           <span>{t("common.close", lang)}</span>
         </button>
+        <div className="min-w-0 text-right">
+          <span aria-live="polite" aria-atomic="true" className="inline-flex rounded-full border border-black/[0.08] bg-white/90 px-3 py-1.5 text-[11px] font-semibold tabular-nums text-black/60 shadow-sm backdrop-blur-xl">
+            {counterLabel(index, count, lang)}
+          </span>
+        </div>
       </div>
 
       {count > 1 ? (
@@ -201,7 +200,7 @@ function GalleryLightbox({
             type="button"
             onClick={() => goTo(index - 1)}
             disabled={index === 0}
-            className="absolute left-2 top-1/2 z-30 flex h-12 w-12 -translate-y-1/2 items-center justify-center rounded-full border border-black/[0.08] bg-white/90 text-black/65 shadow-sm backdrop-blur-xl transition-[background-color,color,transform,opacity] hover:scale-105 hover:bg-black hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-black/30 disabled:pointer-events-none disabled:opacity-20 sm:left-5"
+            className="floating-icon-button absolute left-2 top-1/2 z-30 -translate-y-1/2 border border-black/[0.08] bg-white/90 text-black/65 shadow-sm backdrop-blur-xl hover:scale-105 hover:bg-black hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-black/30 disabled:pointer-events-none disabled:opacity-20 sm:left-5"
             aria-label={t("draft.gallery.previous", lang)}
           >
             <ArrowLeftIcon size={18} />
@@ -210,7 +209,7 @@ function GalleryLightbox({
             type="button"
             onClick={() => goTo(index + 1)}
             disabled={index === count - 1}
-            className="absolute right-2 top-1/2 z-30 flex h-12 w-12 -translate-y-1/2 items-center justify-center rounded-full border border-black/[0.08] bg-white/90 text-black/65 shadow-sm backdrop-blur-xl transition-[background-color,color,transform,opacity] hover:scale-105 hover:bg-black hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-black/30 disabled:pointer-events-none disabled:opacity-20 sm:right-5"
+            className="floating-icon-button absolute right-2 top-1/2 z-30 -translate-y-1/2 border border-black/[0.08] bg-white/90 text-black/65 shadow-sm backdrop-blur-xl hover:scale-105 hover:bg-black hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-black/30 disabled:pointer-events-none disabled:opacity-20 sm:right-5"
             aria-label={t("draft.gallery.next", lang)}
           >
             <ArrowRightIcon size={18} />
@@ -246,7 +245,7 @@ function GalleryLightbox({
 
       {count > 1 ? (
         <div className="pointer-events-none absolute inset-x-0 bottom-3 z-30 flex justify-center px-3 pb-safe">
-          <div className="pointer-events-auto flex max-w-full gap-2 overflow-x-auto overscroll-x-contain rounded-2xl border border-black/[0.07] bg-white/90 p-2 shadow-[0_8px_28px_rgba(0,0,0,0.10)] backdrop-blur-2xl scrollbar-none">
+          <div className="floating-panel pointer-events-auto flex max-w-full gap-2 overflow-x-auto overscroll-x-contain border-black/[0.07] bg-white/90 p-2 shadow-[0_8px_28px_rgba(0,0,0,0.10)] backdrop-blur-2xl scrollbar-none">
             {images.map((image, imageIndex) => (
               <button
                 ref={(element) => { thumbnailRefs.current[imageIndex] = element; }}
@@ -406,7 +405,7 @@ export function DraftImageGallery({ images, alt, fallbackUrl, lang = "en", onAct
               >
                 <Thumbnail
                   src={image.url}
-                  alt={image.name || `${alt} ${imageIndex + 1}`}
+                  alt={`${alt} · ${counterLabel(imageIndex, count, lang)}`}
                   className="pointer-events-none absolute inset-0 h-full w-full select-none object-cover"
                   priority={imageIndex === 0}
                 />
@@ -420,7 +419,7 @@ export function DraftImageGallery({ images, alt, fallbackUrl, lang = "en", onAct
           <button
             type="button"
             onClick={onManage}
-            className="pen-touch-target absolute left-3 top-3 flex h-11 items-center gap-2 rounded-full border border-black/10 bg-white/90 px-3.5 text-[11px] font-semibold text-black/70 shadow-sm backdrop-blur-xl transition hover:bg-black hover:text-white hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-black/25"
+            className="floating-control pen-touch-target absolute left-3 top-3 gap-2 border border-black/10 bg-white/90 px-3.5 text-[11px] text-black/70 shadow-sm backdrop-blur-xl hover:bg-black hover:text-white hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-black/25"
             aria-label={manageLabel}
           >
             <EditIcon size={15} />
@@ -431,7 +430,7 @@ export function DraftImageGallery({ images, alt, fallbackUrl, lang = "en", onAct
         <button
           type="button"
           onClick={() => setLightboxIndex(activeIndex)}
-          className="pen-touch-target absolute right-3 top-3 flex h-11 w-11 items-center justify-center rounded-full border border-black/10 bg-white/90 text-black/70 shadow-sm backdrop-blur-xl transition hover:bg-black hover:text-white hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-black/25"
+          className="floating-icon-button pen-touch-target absolute right-3 top-3 border border-black/10 bg-white/90 text-black/70 shadow-sm backdrop-blur-xl hover:bg-black hover:text-white hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-black/25"
           aria-label={t("draft.gallery.fullscreen", lang)}
         >
           <ExpandIcon />
@@ -443,7 +442,7 @@ export function DraftImageGallery({ images, alt, fallbackUrl, lang = "en", onAct
               type="button"
               onClick={() => goTo(activeIndex - 1)}
               disabled={activeIndex === 0}
-              className="pen-touch-target absolute left-3 top-1/2 flex h-11 w-11 -translate-y-1/2 items-center justify-center rounded-full border border-black/10 bg-white/90 text-black/70 shadow-sm backdrop-blur-xl transition-[background-color,color,transform,opacity] hover:scale-105 hover:bg-black hover:text-white hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-black/25 disabled:pointer-events-none disabled:opacity-30"
+              className="floating-icon-button pen-touch-target absolute left-3 top-1/2 -translate-y-1/2 border border-black/10 bg-white/90 text-black/70 shadow-sm backdrop-blur-xl hover:scale-105 hover:bg-black hover:text-white hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-black/25 disabled:pointer-events-none disabled:opacity-30"
               aria-label={t("draft.gallery.previous", lang)}
             >
               <ArrowLeftIcon size={18} />
@@ -452,7 +451,7 @@ export function DraftImageGallery({ images, alt, fallbackUrl, lang = "en", onAct
               type="button"
               onClick={() => goTo(activeIndex + 1)}
               disabled={activeIndex === count - 1}
-              className="pen-touch-target absolute right-3 top-1/2 flex h-11 w-11 -translate-y-1/2 items-center justify-center rounded-full border border-black/10 bg-white/90 text-black/70 shadow-sm backdrop-blur-xl transition-[background-color,color,transform,opacity] hover:scale-105 hover:bg-black hover:text-white hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-black/25 disabled:pointer-events-none disabled:opacity-30"
+              className="floating-icon-button pen-touch-target absolute right-3 top-1/2 -translate-y-1/2 border border-black/10 bg-white/90 text-black/70 shadow-sm backdrop-blur-xl hover:scale-105 hover:bg-black hover:text-white hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-black/25 disabled:pointer-events-none disabled:opacity-30"
               aria-label={t("draft.gallery.next", lang)}
             >
               <ArrowRightIcon size={18} />

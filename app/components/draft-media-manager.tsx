@@ -10,7 +10,8 @@ import {
   getMediaVersions,
   listDraftUploads,
   manageMediaVersion,
-  reorderDraftUploads,
+  updateDraftUpload,
+  updateDraftGallery,
   uploadDraftPhoto,
   type MediaVersionGroup,
 } from "../lib/api/client";
@@ -37,8 +38,10 @@ import { SidePanel } from "./side-panel";
 import { StatusPill } from "./status-pill";
 import {
   MediaVersionCard,
+  MediaVersionCreationPanel,
   type MediaAction,
   type MediaVersionCreateKind,
+  type MediaVersionCreateRequest,
 } from "./draft-version-manager";
 
 type MediaFilter = "gallery" | "hidden";
@@ -66,6 +69,9 @@ interface PointerReorderSession {
   id: string;
   pointerId: number;
   startOrder: string[];
+  startX: number;
+  startY: number;
+  moved: boolean;
 }
 
 const MAX_FILES_PER_PICK = 30;
@@ -125,7 +131,8 @@ function buildMediaGroups(uploads: DraftUpload[]): MediaGroup[] {
         versions,
         active,
         kind,
-        visible: versions.some((version) => version.is_master && !version.is_deleted),
+        visible: active.is_gallery_visible !== false
+          && versions.some((version) => version.is_master && !version.is_deleted),
       } satisfies MediaGroup];
     })
     .sort((left, right) => (
@@ -172,9 +179,8 @@ function formatBytes(bytes: number, lang: string) {
   return `${new Intl.NumberFormat(lang || "en", { maximumFractionDigits: value >= 10 ? 0 : 1 }).format(value)} ${units[unit]}`;
 }
 
-function fileLabel(upload: DraftUpload, fallback: string) {
-  const name = (upload.file_name || "").trim();
-  return name || fallback;
+function mediaGroupLabel(kind: MediaKind, index: number, lang: string) {
+  return `${t(kind === "video" ? "draft.media.video" : "draft.media.photo", lang)} ${index + 1}`;
 }
 
 function MediaVisual({ upload, alt, className }: { upload: DraftUpload; alt: string; className?: string }) {
@@ -202,6 +208,55 @@ function LoadingMark({ label }: { label: string }) {
   );
 }
 
+function MediaManagerSkeleton() {
+  return (
+    <div className="media-manager-layout" aria-hidden="true">
+      <section className="media-manager-grid min-w-0">
+        {Array.from({ length: 4 }).map((_, index) => (
+          <div
+            key={index}
+            className="floating-panel-shape overflow-hidden border border-border/65 bg-card"
+          >
+            <div className="aspect-[4/3] animate-pulse bg-muted/60 motion-reduce:animate-none" />
+            <div className="space-y-2 px-3 py-3">
+              <div className="h-3 w-2/3 rounded-full bg-muted/70" />
+              <div className="h-3 w-1/3 rounded-full bg-muted/45" />
+            </div>
+          </div>
+        ))}
+      </section>
+      <aside className="floating-panel-shape media-manager-inspector overflow-hidden border border-border/65 bg-card">
+        <div className="aspect-[4/3] animate-pulse bg-muted/60 motion-reduce:animate-none" />
+        <div className="space-y-3 p-4">
+          <div className="h-4 w-2/3 rounded-full bg-muted/70" />
+          <div className="h-3 w-1/2 rounded-full bg-muted/45" />
+          <div className="h-10 rounded-full bg-muted/55" />
+        </div>
+      </aside>
+    </div>
+  );
+}
+
+function VersionManagerSkeleton() {
+  return (
+    <div className="grid gap-4 min-[760px]:grid-cols-2" aria-hidden="true">
+      {Array.from({ length: 2 }).map((_, index) => (
+        <div
+          key={index}
+          className="floating-panel-shape overflow-hidden border border-border/65 bg-card"
+        >
+          <div className="aspect-[16/9] animate-pulse bg-muted/60 motion-reduce:animate-none" />
+          <div className="space-y-3 p-4">
+            <div className="h-4 w-1/2 rounded-full bg-muted/70" />
+            <div className="h-3 w-3/4 rounded-full bg-muted/45" />
+            <div className="h-11 rounded-full bg-muted/55" />
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
 export function DraftMediaManager({
   open,
   onOpenChange,
@@ -223,6 +278,7 @@ export function DraftMediaManager({
   const pointerReorder = React.useRef<PointerReorderSession | null>(null);
   const pendingUrls = React.useRef(new Set<string>());
   const reorderIdsRef = React.useRef<string[]>([]);
+  const hasLoadedMedia = React.useRef(false);
   const [uploads, setUploads] = React.useState<DraftUpload[]>([]);
   const [selectedId, setSelectedId] = React.useState<string | null>(null);
   const [filter, setFilter] = React.useState<MediaFilter>("gallery");
@@ -240,6 +296,7 @@ export function DraftMediaManager({
   const [versionGroups, setVersionGroups] = React.useState<MediaVersionGroup[]>([]);
   const [selectedVersionIds, setSelectedVersionIds] = React.useState<Record<string, number>>({});
   const [versionCandidate, setVersionCandidate] = React.useState<MediaAction>(null);
+  const [versionCreateRequest, setVersionCreateRequest] = React.useState<MediaVersionCreateRequest | null>(null);
   const [versionBusy, setVersionBusy] = React.useState(false);
   const [versionNotice, setVersionNotice] = React.useState<string | null>(null);
   const [uploadDropActive, setUploadDropActive] = React.useState(false);
@@ -289,7 +346,7 @@ export function DraftMediaManager({
 
   const loadMedia = React.useCallback(async (showLoader = true) => {
     const sequence = ++loadSequence.current;
-    if (showLoader) setLoading(true);
+    if (showLoader && !hasLoadedMedia.current) setLoading(true);
     setError(null);
     setErrorCanRetryLoad(false);
     try {
@@ -299,6 +356,7 @@ export function DraftMediaManager({
       setVersionActionsAvailable(null);
       const nextUploads = mergeVersionState(allUploads, null);
       const nextGroups = buildMediaGroups(nextUploads);
+      hasLoadedMedia.current = true;
       setUploads(nextUploads);
       setSelectedId((current) => nextGroups.some((group) => group.id === current) ? current : nextGroups[0]?.id ?? null);
       setFilter((current) => keepUsefulFilter(nextGroups, current));
@@ -331,6 +389,20 @@ export function DraftMediaManager({
   }, [applyVersionGroups, draft.id, lang]);
 
   React.useEffect(() => {
+    hasLoadedMedia.current = false;
+    setUploads([]);
+    setSelectedId(null);
+    setLoading(false);
+  }, [draft.id]);
+
+  // The panel stays mounted while closed. Mark its first open as loading in a
+  // layout effect so the empty state never flashes for one frame before the
+  // request effect starts.
+  React.useLayoutEffect(() => {
+    if (open && !hasLoadedMedia.current) setLoading(true);
+  }, [draft.id, open]);
+
+  React.useEffect(() => {
     if (!open) return;
     setView("gallery");
     setReorderMode(false);
@@ -339,6 +411,7 @@ export function DraftMediaManager({
     reorderIdsRef.current = [];
     setConfirmAction(null);
     setVersionCandidate(null);
+    setVersionCreateRequest(null);
     setVersionNotice(null);
     setUploadDropActive(false);
     uploadDragDepth.current = 0;
@@ -358,18 +431,34 @@ export function DraftMediaManager({
   }, [draft.id, onChanged]);
 
   const changeVisibleOrder = React.useCallback(async (nextVisible: MediaGroup[]) => {
-    const ids = nextVisible.map((group) => group.active.id);
-    if (ids.length < 2) return false;
+    if (nextVisible.length < 2) return false;
     setBusy(true);
     setError(null);
     setErrorCanRetryLoad(false);
-    const orderById = new Map(ids.map((id, index) => [id, index]));
+    const orderByAsset = new Map(nextVisible.map((group, index) => [group.id, index]));
     setUploads((current) => current.map((upload) => {
-      const sortOrder = orderById.get(upload.id);
+      const assetId = upload.logical_asset_id || `upload-${upload.id}`;
+      const sortOrder = orderByAsset.get(assetId);
       return sortOrder === undefined ? upload : { ...upload, sort_order: sortOrder };
     }));
     try {
-      await reorderDraftUploads(ids);
+      const logicalItems = nextVisible.flatMap((group, sortOrder) => (
+        group.active.logical_asset_id
+          ? [{
+              logical_asset_id: group.active.logical_asset_id,
+              sort_order: sortOrder,
+            }]
+          : []
+      ));
+      const legacyUploads = nextVisible.flatMap((group, sortOrder) => (
+        group.active.logical_asset_id ? [] : [{ id: group.active.id, sortOrder }]
+      ));
+      if (logicalItems.length) await updateDraftGallery(draft.id, logicalItems);
+      if (legacyUploads.length) {
+        await Promise.all(legacyUploads.map(({ id, sortOrder }) => (
+          updateDraftUpload(id, { sort_order: sortOrder })
+        )));
+      }
       await loadMedia(false);
       await notifyChanged();
       return true;
@@ -381,24 +470,12 @@ export function DraftMediaManager({
     } finally {
       setBusy(false);
     }
-  }, [lang, loadMedia, notifyChanged]);
+  }, [draft.id, lang, loadMedia, notifyChanged]);
 
   const makeCover = React.useCallback(async (group: MediaGroup) => {
     if (group.kind !== "image" || !group.visible) return;
     setSelectedId(group.id);
     const next = [group, ...visibleGroups.filter((candidate) => candidate.id !== group.id)];
-    await changeVisibleOrder(next);
-  }, [changeVisibleOrder, visibleGroups]);
-
-  const moveGroup = React.useCallback(async (group: MediaGroup, offset: -1 | 1) => {
-    const sourceIndex = visibleGroups.findIndex((candidate) => candidate.id === group.id);
-    if (sourceIndex < 0) return;
-    const destination = sourceIndex + offset;
-    if (destination < 0 || destination >= visibleGroups.length) return;
-    const next = [...visibleGroups];
-    const [moved] = next.splice(sourceIndex, 1);
-    next.splice(destination, 0, moved);
-    setSelectedId(group.id);
     await changeVisibleOrder(next);
   }, [changeVisibleOrder, visibleGroups]);
 
@@ -458,10 +535,30 @@ export function DraftMediaManager({
       id,
       pointerId: event.pointerId,
       startOrder: [...reorderIdsRef.current],
+      startX: event.clientX,
+      startY: event.clientY,
+      moved: false,
     };
     setSelectedId(id);
     setDraggingId(id);
   }, [busy]);
+
+  const previewReorderFromPoint = React.useCallback((sourceId: string, clientX: number, clientY: number) => {
+    const cards = Array.from(
+      contentRef.current?.querySelectorAll<HTMLElement>("[data-reorder-id]") ?? [],
+    );
+    let nearest: { id: string; distance: number } | null = null;
+    for (const card of cards) {
+      const id = card.dataset.reorderId;
+      if (!id) continue;
+      const bounds = card.getBoundingClientRect();
+      const centerX = bounds.left + bounds.width / 2;
+      const centerY = bounds.top + bounds.height / 2;
+      const distance = Math.hypot(clientX - centerX, clientY - centerY);
+      if (!nearest || distance < nearest.distance) nearest = { id, distance };
+    }
+    if (nearest) previewReorderAt(sourceId, nearest.id);
+  }, [previewReorderAt]);
 
   const continuePointerReorder = React.useCallback((
     event: React.PointerEvent<HTMLButtonElement>,
@@ -470,12 +567,10 @@ export function DraftMediaManager({
     if (!session || session.pointerId !== event.pointerId) return;
     event.preventDefault();
 
-    const target = document
-      .elementsFromPoint(event.clientX, event.clientY)
-      .map((element) => element.closest<HTMLElement>("[data-reorder-id]"))
-      .find((element): element is HTMLElement => Boolean(element));
-    const targetId = target?.dataset.reorderId;
-    if (targetId) previewReorderAt(session.id, targetId);
+    if (!session.moved) {
+      session.moved = Math.hypot(event.clientX - session.startX, event.clientY - session.startY) >= 7;
+    }
+    if (session.moved) previewReorderFromPoint(session.id, event.clientX, event.clientY);
 
     const scroller = contentRef.current;
     if (!scroller) return;
@@ -488,18 +583,11 @@ export function DraftMediaManager({
       const strength = (event.clientY - (bounds.bottom - edge)) / edge;
       scroller.scrollTop += Math.max(4, Math.round(18 * strength));
     }
-  }, [previewReorderAt]);
+  }, [previewReorderFromPoint]);
 
-  const finishPointerReorder = React.useCallback((
-    event: React.PointerEvent<HTMLButtonElement>,
-    cancelled: boolean,
-  ) => {
+  const finalizePointerReorder = React.useCallback((pointerId: number, cancelled: boolean) => {
     const session = pointerReorder.current;
-    if (!session || session.pointerId !== event.pointerId) return;
-    event.preventDefault();
-    if (event.currentTarget.hasPointerCapture(event.pointerId)) {
-      event.currentTarget.releasePointerCapture(event.pointerId);
-    }
+    if (!session || session.pointerId !== pointerId) return;
     pointerReorder.current = null;
     setDraggingId(null);
     if (cancelled) {
@@ -508,6 +596,47 @@ export function DraftMediaManager({
     }
     void commitReorderIds(reorderIdsRef.current);
   }, [commitReorderIds, updateReorderIds]);
+
+  const finishPointerReorder = React.useCallback((
+    event: React.PointerEvent<HTMLButtonElement>,
+    cancelled: boolean,
+  ) => {
+    const session = pointerReorder.current;
+    if (!session || session.pointerId !== event.pointerId) return;
+    event.preventDefault();
+    if (!session.moved) {
+      session.moved = Math.hypot(event.clientX - session.startX, event.clientY - session.startY) >= 7;
+    }
+    if (!cancelled && session.moved) {
+      previewReorderFromPoint(session.id, event.clientX, event.clientY);
+    }
+    if (event.currentTarget.hasPointerCapture(event.pointerId)) {
+      event.currentTarget.releasePointerCapture(event.pointerId);
+    }
+    finalizePointerReorder(event.pointerId, cancelled);
+  }, [finalizePointerReorder, previewReorderFromPoint]);
+
+  React.useEffect(() => {
+    if (!draggingId) return;
+    const handlePointerUp = (event: PointerEvent) => {
+      const session = pointerReorder.current;
+      if (!session || session.pointerId !== event.pointerId) return;
+      if (!session.moved) {
+        session.moved = Math.hypot(event.clientX - session.startX, event.clientY - session.startY) >= 7;
+      }
+      if (session.moved) previewReorderFromPoint(session.id, event.clientX, event.clientY);
+      finalizePointerReorder(event.pointerId, false);
+    };
+    const handlePointerCancel = (event: PointerEvent) => {
+      finalizePointerReorder(event.pointerId, true);
+    };
+    window.addEventListener("pointerup", handlePointerUp);
+    window.addEventListener("pointercancel", handlePointerCancel);
+    return () => {
+      window.removeEventListener("pointerup", handlePointerUp);
+      window.removeEventListener("pointercancel", handlePointerCancel);
+    };
+  }, [draggingId, finalizePointerReorder, previewReorderFromPoint]);
 
   const moveReorderItem = React.useCallback((id: string, offset: -1 | 1) => {
     const current = reorderIdsRef.current;
@@ -534,15 +663,15 @@ export function DraftMediaManager({
 
   const hideSelected = React.useCallback(async () => {
     const targetGroup = confirmAction ? groups.find((group) => group.id === confirmAction.groupId) : null;
-    if (!targetGroup || targetGroup.kind !== "image" || !versionActionsAvailable) return;
+    if (!targetGroup || !targetGroup.active.logical_asset_id) return;
     setBusy(true);
     setError(null);
     setErrorCanRetryLoad(false);
     try {
-      const liveVersions = targetGroup.versions.filter((version) => !version.is_deleted);
-      for (const version of liveVersions) {
-        await manageMediaVersion(draft.id, version.id, "hide");
-      }
+      await updateDraftGallery(draft.id, [{
+        logical_asset_id: targetGroup.active.logical_asset_id,
+        visible: false,
+      }]);
       setConfirmAction(null);
       await loadMedia(false);
       await notifyChanged();
@@ -552,21 +681,19 @@ export function DraftMediaManager({
     } finally {
       setBusy(false);
     }
-  }, [confirmAction, draft.id, groups, lang, loadMedia, notifyChanged, versionActionsAvailable]);
+  }, [confirmAction, draft.id, groups, lang, loadMedia, notifyChanged]);
 
   const showGroup = React.useCallback(async (group: MediaGroup) => {
-    if (group.kind !== "image" || !versionActionsAvailable) return;
+    if (!group.active.logical_asset_id) return;
     setSelectedId(group.id);
     setBusy(true);
     setError(null);
     setErrorCanRetryLoad(false);
     try {
-      const target = group.versions.find((version) => version.is_master)
-        ?? group.versions.find((version) => !version.is_deleted)
-        ?? group.versions[0];
-      if (target.is_deleted) await manageMediaVersion(draft.id, target.id, "restore");
-      await manageMediaVersion(draft.id, target.id, "promote");
-      setFilter("gallery");
+      await updateDraftGallery(draft.id, [{
+        logical_asset_id: group.active.logical_asset_id,
+        visible: true,
+      }]);
       await loadMedia(false);
       await notifyChanged();
     } catch (nextError) {
@@ -575,7 +702,7 @@ export function DraftMediaManager({
     } finally {
       setBusy(false);
     }
-  }, [draft.id, lang, loadMedia, notifyChanged, versionActionsAvailable]);
+  }, [draft.id, lang, loadMedia, notifyChanged]);
 
   const uploadFiles = React.useCallback(async (chosen: File[]) => {
     if (!chosen.length) return;
@@ -600,7 +727,7 @@ export function DraftMediaManager({
     const items = files.map((file, index) => {
       const url = URL.createObjectURL(file);
       pendingUrls.current.add(url);
-      return { file, item: { id: `${Date.now()}-${index}-${file.name}`, name: file.name, url, file, state: "queued" as const } };
+      return { file, item: { id: `${Date.now()}-${index}-${file.name}`, name: `${t("draft.media.photo", lang)} ${index + 1}`, url, file, state: "queued" as const } };
     });
     setPending((current) => [...current, ...items.map(({ item }) => item)]);
     setBusy(true);
@@ -671,6 +798,7 @@ export function DraftMediaManager({
     reorderIdsRef.current = [];
     setConfirmAction(null);
     setVersionCandidate(null);
+    setVersionCreateRequest(null);
     window.requestAnimationFrame(() => contentRef.current?.scrollTo({ top: 0, behavior: "smooth" }));
   };
 
@@ -743,13 +871,12 @@ export function DraftMediaManager({
     }
   };
 
-  const selectedLabel = selected ? fileLabel(
-    selected.active,
-    selected.kind === "video" ? t("draft.media.video", lang) : t("draft.media.photo", lang),
-  ) : "";
+  const selectedLabel = selected
+    ? mediaGroupLabel(selected.kind, Math.max(0, groups.findIndex((group) => group.id === selected.id)), lang)
+    : "";
 
   const renderHideConfirmation = (className?: string) => confirmAction?.kind === "hide" ? (
-    <div className={cn("editor-glass-surface rounded-[1.5rem] border p-3.5 sm:rounded-2xl", className)}>
+    <div className={cn("floating-panel p-3.5", className)}>
       <div className="min-w-0">
         <p className="text-[13px] font-semibold">{t("draft.media.hideConfirm", lang)}</p>
         <p className="mt-0.5 text-[11px] leading-relaxed text-muted-foreground">
@@ -757,7 +884,7 @@ export function DraftMediaManager({
         </p>
         {confirmGroup ? (
           <p className="mt-1 truncate text-[10px] text-muted-foreground/75">
-            {fileLabel(confirmGroup.active, t("draft.media.photo", lang))}
+            {mediaGroupLabel(confirmGroup.kind, Math.max(0, groups.findIndex((group) => group.id === confirmGroup.id)), lang)}
           </p>
         ) : null}
       </div>
@@ -786,7 +913,7 @@ export function DraftMediaManager({
       onBack={view === "versions" ? () => switchView("gallery") : undefined}
       lang={lang}
       headerAction={view === "gallery" ? (
-        <Button type="button" variant="outline" size="sm" className="h-9 border-border/65 !bg-card/75 px-3 backdrop-blur-xl" onClick={requestUpload} disabled={busy}>
+        <Button type="button" variant="outline" size="sm" className="floating-control h-auto border-border/65 !bg-card/75 px-3 backdrop-blur-xl" onClick={requestUpload} disabled={busy}>
           <UploadIcon size={15} />
           <span className="hidden min-[390px]:inline">{t("draft.media.add", lang)}</span>
         </Button>
@@ -802,9 +929,9 @@ export function DraftMediaManager({
       />
 
       {view === "versions" ? (
-        <div>
+        <div className="relative">
           {error ? (
-            <div role="alert" className="mb-4 flex items-start justify-between gap-3 rounded-[1.5rem] border border-red-500/20 bg-red-500/[0.055] px-4 py-3 text-[11px] leading-relaxed text-red-800 sm:rounded-2xl">
+            <div role="alert" className="floating-panel-shape mb-4 flex items-start justify-between gap-3 border border-red-500/20 bg-red-500/[0.055] px-4 py-3 text-[11px] leading-relaxed text-red-800">
               <span>{error}</span>
               <Button type="button" variant="ghost" size="xs" onClick={() => setError(null)} className="shrink-0 text-red-900 hover:bg-red-500/10 hover:text-red-900">
                 {t("common.dismiss", lang)}
@@ -813,55 +940,75 @@ export function DraftMediaManager({
           ) : null}
 
           {versionNotice ? (
-            <div className="editor-glass-control mb-4 flex items-center gap-3 rounded-full border px-3.5 py-2.5 text-[11px] text-foreground/70" role="status" aria-live="polite">
+            <div
+              className="floating-capsule absolute right-0 top-0 z-20 flex max-w-[min(24rem,100%)] items-center gap-3 !bg-card/90 px-3.5 text-[11px] text-foreground/70"
+              role="status"
+              aria-live="polite"
+            >
               <span className="h-4 w-4 shrink-0 animate-spin rounded-full border-2 border-foreground/15 border-t-foreground/65" aria-hidden="true" />
               <span>{versionNotice}</span>
             </div>
           ) : null}
 
           {versionActionsAvailable === null ? (
-            <div className="flex min-h-[45vh] items-center justify-center" role="status">
-              <div className="text-center">
-                <span className="mx-auto block h-6 w-6 animate-spin rounded-full border-2 border-foreground/15 border-t-foreground/70" aria-hidden="true" />
-                <p className="mt-3 text-[11px] text-muted-foreground">{t("draft.media.loading", lang)}</p>
-              </div>
+            <div role="status" aria-label={t("draft.media.loading", lang)} aria-busy="true">
+              <VersionManagerSkeleton />
             </div>
           ) : versionActionsAvailable === false ? (
-            <div className="rounded-[1.5rem] border border-dashed border-border/70 bg-card px-6 py-14 text-center sm:rounded-2xl">
+            <div className="floating-panel-shape border border-dashed border-border/70 bg-card px-6 py-14 text-center">
               <VersionsIcon size={23} className="mx-auto text-foreground/25" />
               <Button type="button" variant="outline" size="sm" className="mt-4" onClick={() => void loadMedia(false)}>
                 {t("common.tryAgain", lang)}
               </Button>
             </div>
           ) : orderedVersionGroups.length === 0 ? (
-            <div className="rounded-[1.5rem] border border-dashed border-border/70 bg-card px-6 py-14 text-center sm:rounded-2xl">
+            <div className="floating-panel-shape border border-dashed border-border/70 bg-card px-6 py-14 text-center">
               <ImageIcon size={23} className="mx-auto text-foreground/25" />
               <p className="mt-3 text-[13px] font-semibold">{t("draft.versions.noMediaVersions", lang)}</p>
               <p className="mx-auto mt-1 max-w-sm text-[11px] leading-relaxed text-muted-foreground">{t("reai.mediaVersionsEmpty", lang)}</p>
             </div>
           ) : (
-            <div className="grid gap-4 min-[760px]:grid-cols-2">
-              {orderedVersionGroups.map(({ group, index }) => (
-                <MediaVersionCard
-                  key={group.logical_asset_id}
-                  group={group}
-                  groupIndex={index}
-                  selectedId={selectedVersionIds[group.logical_asset_id]}
+            <>
+              <div className="grid items-start gap-4 min-[760px]:grid-cols-2">
+                {orderedVersionGroups.map(({ group, index }) => (
+                  <MediaVersionCard
+                    key={group.logical_asset_id}
+                    group={group}
+                    groupIndex={index}
+                    selectedId={selectedVersionIds[group.logical_asset_id]}
+                    lang={lang}
+                    dateFormat={undefined}
+                    candidate={versionCandidate}
+                    busy={versionBusy}
+                    onSelect={(id) => {
+                      setSelectedVersionIds((current) => ({ ...current, [group.logical_asset_id]: id }));
+                      setVersionCandidate(null);
+                      setVersionCreateRequest(null);
+                    }}
+                    onCandidate={(nextCandidate) => {
+                      setVersionCandidate(nextCandidate);
+                      setVersionCreateRequest(null);
+                    }}
+                    onCancel={() => setVersionCandidate(null)}
+                    onConfirm={() => void applyVersionAction()}
+                    onRequestCreate={setVersionCreateRequest}
+                  />
+                ))}
+              </div>
+              {versionCreateRequest ? (
+                <MediaVersionCreationPanel
+                  request={versionCreateRequest}
                   lang={lang}
-                  dateFormat={undefined}
-                  candidate={versionCandidate}
                   busy={versionBusy}
-                  onSelect={(id) => {
-                    setSelectedVersionIds((current) => ({ ...current, [group.logical_asset_id]: id }));
-                    setVersionCandidate(null);
+                  onCancel={() => setVersionCreateRequest(null)}
+                  onCreate={(kind) => {
+                    const request = versionCreateRequest;
+                    setVersionCreateRequest(null);
+                    void createVersion(request.logicalAssetId, request.uploadId, kind);
                   }}
-                  onCandidate={setVersionCandidate}
-                  onCancel={() => setVersionCandidate(null)}
-                  onConfirm={() => void applyVersionAction()}
-                  onCreate={(uploadId, kind) => void createVersion(group.logical_asset_id, uploadId, kind)}
                 />
-              ))}
-            </div>
+              ) : null}
+            </>
           )}
         </div>
       ) : null}
@@ -901,9 +1048,9 @@ export function DraftMediaManager({
         }}
       >
       {uploadDropActive ? (
-        <div className="absolute inset-0 z-30 flex min-h-[55vh] items-center justify-center rounded-[1.5rem] border-2 border-dashed border-foreground/35 bg-background/92 backdrop-blur-sm sm:rounded-2xl">
+        <div className="floating-panel-shape absolute inset-0 z-30 flex min-h-[55vh] items-center justify-center border-2 border-dashed border-foreground/35 bg-background/92 backdrop-blur-sm">
           <div className="text-center">
-            <span className="editor-glass-control mx-auto flex h-12 w-12 items-center justify-center rounded-full border text-foreground/65">
+            <span className="floating-capsule floating-icon-button mx-auto flex items-center justify-center border text-foreground/65">
               <UploadIcon size={20} />
             </span>
             <p className="mt-3 text-[13px] font-semibold">{t("draft.media.dropPhotos", lang)}</p>
@@ -911,7 +1058,7 @@ export function DraftMediaManager({
         </div>
       ) : null}
       {error ? (
-        <div role="alert" className="mb-4 flex items-start justify-between gap-3 rounded-[1.5rem] border border-red-500/20 bg-red-500/[0.055] px-4 py-3 text-[11px] leading-relaxed text-red-800 sm:rounded-2xl">
+        <div role="alert" className="floating-panel-shape mb-4 flex items-start justify-between gap-3 border border-red-500/20 bg-red-500/[0.055] px-4 py-3 text-[11px] leading-relaxed text-red-800">
           <span>{error}</span>
           {loading ? null : (
             <Button type="button" variant="ghost" size="xs" onClick={errorCanRetryLoad ? retryLoad : () => setError(null)} className="shrink-0 text-red-900 hover:bg-red-500/10 hover:text-red-900">
@@ -934,14 +1081,14 @@ export function DraftMediaManager({
           }}
           className="min-w-0 flex-1 sm:max-w-[330px]"
         >
-          <TabsList className="editor-glass-control grid h-auto w-full grid-cols-2 border p-1" aria-label={t("draft.media.filter", lang)}>
+          <TabsList className="floating-toolbar grid h-auto w-full grid-cols-2 p-1" aria-label={t("draft.media.filter", lang)}>
           {(["gallery", "hidden"] as const).map((value) => {
             const count = value === "gallery" ? visibleGroups.length : hiddenGroups.length;
             return (
               <TabsTrigger
                 key={value}
                 value={value}
-                className="pen-touch-target min-h-11 px-3 text-[11px] font-semibold data-[state=active]:bg-foreground data-[state=active]:text-background data-[state=active]:shadow-control"
+                className="floating-control-sm h-auto w-full px-3 text-[11px] data-[state=active]:bg-foreground data-[state=active]:text-background data-[state=active]:shadow-control"
               >
                 {t(`draft.media.${value}` as LocaleKey, lang)}
                 <span className={cn("ml-1.5 tabular-nums", filter === value ? "text-background/60" : "text-foreground/35")}>{count}</span>
@@ -950,34 +1097,37 @@ export function DraftMediaManager({
           })}
           </TabsList>
         </Tabs>
-        <div className="flex shrink-0 items-center gap-1">
-          {filter === "gallery" && visibleGroups.length > 1 ? (
-            <Button
-              type="button"
-              variant={reorderMode ? "default" : "ghost"}
-              size="sm"
-              className="pen-touch-target h-11 px-3"
-              onClick={() => {
-                if (!reorderMode) {
-                  updateReorderIds(visibleGroups.map((group) => group.id));
-                  setReorderMode(true);
-                } else {
-                  setReorderMode(false);
-                }
-                setDraggingId(null);
-              }}
-              aria-pressed={reorderMode}
-              title={`${t(reorderMode ? "draft.media.finishReorder" : "draft.media.reorder", lang)} (A)`}
-            >
-              {reorderMode ? <CheckIcon size={15} /> : <DragHandleIcon size={15} />}
-              <span className="hidden min-[520px]:inline">{t(reorderMode ? "draft.media.finishReorder" : "draft.media.reorder", lang)}</span>
-            </Button>
-          ) : null}
+        <div className="grid shrink-0 grid-cols-2 items-center gap-1">
+          <Button
+            type="button"
+            variant={reorderMode ? "default" : "ghost"}
+            size="sm"
+            className={cn(
+              "pen-touch-target px-3",
+              (filter !== "gallery" || visibleGroups.length <= 1) && "pointer-events-none invisible",
+            )}
+            onClick={() => {
+              if (!reorderMode) {
+                updateReorderIds(visibleGroups.map((group) => group.id));
+                setReorderMode(true);
+              } else {
+                setReorderMode(false);
+              }
+              setDraggingId(null);
+            }}
+            aria-hidden={filter !== "gallery" || visibleGroups.length <= 1}
+            tabIndex={filter === "gallery" && visibleGroups.length > 1 ? 0 : -1}
+            aria-pressed={reorderMode}
+            title={`${t(reorderMode ? "draft.media.finishReorder" : "draft.media.reorder", lang)} (A)`}
+          >
+            {reorderMode ? <CheckIcon size={15} /> : <DragHandleIcon size={15} />}
+            <span className="hidden min-[520px]:inline">{t(reorderMode ? "draft.media.finishReorder" : "draft.media.reorder", lang)}</span>
+          </Button>
           <Button
             type="button"
             variant="ghost"
             size="sm"
-            className="pen-touch-target h-11 px-3"
+            className="pen-touch-target px-3"
             onClick={() => switchView("versions")}
             aria-label={t("draft.media.versions", lang)}
             title={`${t("draft.media.versions", lang)} (V)`}
@@ -992,10 +1142,10 @@ export function DraftMediaManager({
         <motion.div
           initial={{ opacity: 0, y: -4 }}
           animate={{ opacity: 1, y: 0 }}
-          className="mb-3"
+          className="pointer-events-none absolute inset-x-0 top-14 z-20 flex justify-end"
           role="status"
         >
-          <StatusPill className="editor-glass-control h-auto min-h-8 w-full justify-between gap-3 !bg-card/75 pl-3 pr-1">
+          <div className="floating-capsule pointer-events-auto flex w-full max-w-sm items-center justify-between gap-3 border !bg-card/90 pl-3 pr-1 text-foreground shadow-control">
             <span className="text-[10px] font-medium">{t("draft.media.orderSaved", lang)}</span>
             <Button
               type="button"
@@ -1003,25 +1153,39 @@ export function DraftMediaManager({
               size="xs"
               onClick={() => void undoReorder()}
               disabled={busy}
-              className="h-6 px-2.5 text-[10px]"
+              className="px-2.5 text-[10px]"
             >
               {t("draft.media.undoOrder", lang)}
             </Button>
-          </StatusPill>
+          </div>
         </motion.div>
       ) : null}
 
-      {reorderMode || filter === "hidden" || busy ? (
-        <div className="mb-4 flex min-h-5 items-start justify-between gap-3 px-1">
-          <p className="max-w-xl text-[11px] leading-relaxed text-muted-foreground">
-            {t(reorderMode ? "draft.media.reorderHint" : "draft.media.hiddenHint", lang)}
-          </p>
-          {busy ? <span role="status" className="shrink-0 text-[10px] font-medium text-muted-foreground">{t("draft.media.saving", lang)}</span> : null}
+      {filter === "hidden" || reorderMode ? (
+        <div className="floating-panel-shape mb-4 flex items-center gap-3 border border-border/65 bg-card px-3 py-2.5 shadow-control">
+          <span className="floating-capsule floating-icon-button-sm text-foreground/60">
+            {filter === "hidden" ? <EyeClosedIcon size={15} /> : <DragHandleIcon size={15} />}
+          </span>
+          <div className="min-w-0 flex-1">
+            <p className="text-[11px] font-semibold text-foreground/80">
+              {t(filter === "hidden" ? "draft.media.hidden" : "draft.media.galleryOrder", lang)}
+            </p>
+            <p className="mt-0.5 max-w-xl text-[10px] leading-relaxed text-muted-foreground">
+              {t(filter === "hidden" ? "draft.media.hiddenHint" : "draft.media.reorderHint", lang)}
+            </p>
+          </div>
+          <span
+            role="status"
+            className={cn("shrink-0 text-[10px] font-medium text-muted-foreground", !busy && "invisible")}
+            aria-hidden={!busy}
+          >
+            {t("draft.media.saving", lang)}
+          </span>
         </div>
-      ) : <div className="mb-3" />}
+      ) : null}
 
       {reorderMode && selected && reorderSelectedIndex >= 0 ? (
-        <div className="editor-glass-surface mb-4 flex flex-col gap-3 rounded-2xl border p-3 min-[520px]:flex-row min-[520px]:items-center min-[520px]:justify-between">
+        <div className="floating-panel mb-4 flex flex-col gap-3 p-3 min-[520px]:flex-row min-[520px]:items-center min-[520px]:justify-between">
           <div className="min-w-0">
             <p className="truncate text-[11px] font-semibold text-foreground/80" title={selectedLabel}>{selectedLabel}</p>
             <p className="mt-0.5 text-[10px] text-muted-foreground">
@@ -1057,21 +1221,11 @@ export function DraftMediaManager({
         </div>
       ) : null}
 
-      {versionActionsAvailable === false && groups.some((group) => group.kind === "image") ? (
-        <div className="editor-glass-surface mb-4 flex items-start gap-3 rounded-[1.5rem] border px-3.5 py-3 text-[10px] leading-relaxed text-muted-foreground sm:rounded-2xl">
-          <EyeClosedIcon size={16} className="mt-0.5 shrink-0 text-foreground/45" />
-          <span>{t("draft.media.versionAccess", lang)}</span>
-        </div>
-      ) : null}
-
       {renderHideConfirmation("media-manager-mobile-confirm mb-4")}
 
       {loading ? (
-        <div className="flex min-h-[54vh] items-center justify-center" role="status">
-          <div className="text-center">
-            <span className="mx-auto block h-6 w-6 animate-spin rounded-full border-2 border-foreground/15 border-t-foreground/70" aria-hidden="true" />
-            <p className="mt-3 text-[11px] text-muted-foreground">{t("draft.media.loading", lang)}</p>
-          </div>
+        <div role="status" aria-label={t("draft.media.loading", lang)} aria-busy="true">
+          <MediaManagerSkeleton />
         </div>
       ) : groups.length === 0 && pending.length === 0 ? (
         <div className="flex min-h-[54vh] flex-col items-center justify-center px-6 text-center">
@@ -1084,6 +1238,53 @@ export function DraftMediaManager({
             <UploadIcon size={16} /> {t("draft.media.addPhotos", lang)}
           </Button>
         </div>
+      ) : filter === "hidden" ? (
+        hiddenGroups.length > 0 ? (
+          <section className="grid gap-2.5" aria-label={t("draft.media.hidden", lang)}>
+            {hiddenGroups.map((group, index) => {
+              const label = mediaGroupLabel(group.kind, index, lang);
+              const restoreDisabled = busy || !group.active.logical_asset_id;
+              return (
+                <article
+                  key={group.id}
+                  className="floating-panel flex min-w-0 flex-col overflow-hidden border-border/65 sm:flex-row sm:items-center"
+                >
+                  <div className="relative aspect-[16/9] w-full shrink-0 overflow-hidden bg-surface-subtle sm:h-24 sm:w-40 sm:aspect-auto">
+                    <MediaVisual upload={group.active} alt={label} className="opacity-80" />
+                    <StatusPill tone="strong" className="absolute left-2 top-2 border-white/15 bg-black/60 text-[9px] text-white backdrop-blur-xl">
+                      <EyeClosedIcon size={11} /> {t("draft.media.hidden", lang)}
+                    </StatusPill>
+                  </div>
+                  <div className="flex min-w-0 flex-1 flex-col gap-3 p-3.5 sm:flex-row sm:items-center sm:justify-between sm:gap-5 sm:px-4 sm:py-3">
+                    <div className="min-w-0">
+                      <p className="truncate text-[13px] font-semibold text-foreground/85" title={label}>{label}</p>
+                      <div className="mt-1 flex flex-wrap gap-x-3 gap-y-1 text-[10px] text-muted-foreground">
+                        <span>{group.kind === "video" ? t("draft.media.video", lang) : t("draft.media.photo", lang)}</span>
+                        {group.active.file_size ? <span>{formatBytes(group.active.file_size, lang)}</span> : null}
+                        {group.active.uploaded_at ? <span>{formatDate(group.active.uploaded_at, undefined, lang)}</span> : null}
+                        {group.versions.length > 1 ? <span>{group.versions.length}× {t("draft.media.versions", lang)}</span> : null}
+                      </div>
+                    </div>
+                    <Button
+                      type="button"
+                      size="sm"
+                      onClick={() => void showGroup(group)}
+                      disabled={restoreDisabled}
+                      className="min-h-11 w-full shrink-0 px-4 sm:w-auto"
+                    >
+                      <EyeOpenIcon size={14} /> {t("draft.media.restoreToGallery", lang)}
+                    </Button>
+                  </div>
+                </article>
+              );
+            })}
+          </section>
+        ) : (
+          <div className="py-16 text-center text-muted-foreground">
+            <EyeOpenIcon size={22} className="mx-auto text-foreground/25" />
+            <p className="mt-3 text-[12px] font-medium">{t("draft.media.noHidden", lang)}</p>
+          </div>
+        )
       ) : (
         <div className={cn("media-manager-layout", reorderMode && "media-manager-layout-reorder")}>
           <section className="min-w-0" aria-label={t("draft.media.title", lang)}>
@@ -1092,7 +1293,7 @@ export function DraftMediaManager({
                 {activeReorderIds.map((groupId, index) => {
                   const group = visibleGroups.find((candidate) => candidate.id === groupId);
                   if (!group) return null;
-                  const label = fileLabel(group.active, t(group.kind === "video" ? "draft.media.video" : "draft.media.photo", lang));
+                  const label = mediaGroupLabel(group.kind, index, lang);
                   const isDragging = draggingId === group.id;
                   const isSelected = selected?.id === group.id;
                   return (
@@ -1103,7 +1304,7 @@ export function DraftMediaManager({
                       transition={{ layout: { duration: 0.18, ease: "easeOut" } }}
                       animate={isDragging ? { scale: 1.015 } : { scale: 1 }}
                       className={cn(
-                        "editor-glass-surface group relative min-w-0 overflow-hidden rounded-[1.5rem] border transition-[border-color,box-shadow,opacity] sm:rounded-2xl",
+                        "floating-panel group relative min-w-0 overflow-hidden transition-[border-color,box-shadow,opacity]",
                         isDragging
                           ? "z-10 border-foreground/55 opacity-90 shadow-card ring-2 ring-foreground/10"
                           : isSelected
@@ -1127,23 +1328,25 @@ export function DraftMediaManager({
                       >
                         <MediaVisual upload={group.active} alt="" />
                       </button>
-                      <StatusPill className="glass-chip pointer-events-none absolute left-2 top-2 h-7 min-w-7 justify-center px-2 text-[10px] tabular-nums">
-                        {index + 1}
-                      </StatusPill>
                       {group.id === coverId ? (
-                        <StatusPill className="glass-chip pointer-events-none absolute bottom-[2.65rem] left-2 h-7 text-[9px]">
-                          <StarIcon size={10} /> {t("draft.media.cover", lang)}
+                        <StatusPill tone="strong" className="pointer-events-none absolute left-2 top-2 border-white/15 bg-black/65 px-2 text-[9px] text-white backdrop-blur-xl">
+                          <StarIcon size={10} /> 1 · {t("draft.media.cover", lang)}
                         </StatusPill>
-                      ) : null}
+                      ) : (
+                        <StatusPill className="glass-chip pointer-events-none absolute left-2 top-2 min-w-7 justify-center px-2 text-[10px] tabular-nums">
+                          {index + 1}
+                        </StatusPill>
+                      )}
                       <button
                         type="button"
                         onPointerDown={(event) => beginPointerReorder(event, group.id)}
                         onPointerMove={continuePointerReorder}
                         onPointerUp={(event) => finishPointerReorder(event, false)}
                         onPointerCancel={(event) => finishPointerReorder(event, true)}
+                        onLostPointerCapture={(event) => finishPointerReorder(event, false)}
                         onContextMenu={(event) => event.preventDefault()}
                         disabled={busy}
-                        className="editor-control-capsule pen-touch-target absolute right-2 top-2 flex h-11 w-11 touch-none select-none items-center justify-center rounded-full border text-muted-foreground opacity-90 transition-[opacity,transform,color] hover:scale-105 hover:text-foreground focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring active:cursor-grabbing active:scale-95 disabled:opacity-30 sm:h-10 sm:w-10"
+                        className="floating-capsule floating-icon-button pen-touch-target absolute right-2 top-2 touch-none select-none text-muted-foreground opacity-90 hover:scale-105 hover:text-foreground focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring active:cursor-grabbing active:scale-95 disabled:opacity-30"
                         aria-label={t("draft.media.dragToMove", lang)}
                         title={t("draft.media.dragToMove", lang)}
                       >
@@ -1165,7 +1368,7 @@ export function DraftMediaManager({
               <>
             <div className="media-manager-grid">
               {filter === "gallery" ? pending.map((item) => (
-                <article key={item.id} className="editor-glass-surface overflow-hidden rounded-[1.5rem] border sm:rounded-2xl">
+                <article key={item.id} className="floating-panel overflow-hidden">
                   <div className="relative aspect-[16/9] overflow-hidden bg-surface-subtle">
                     <img src={item.url} alt={item.name} className="h-full w-full object-cover" />
                     {item.state === "failed" ? (
@@ -1187,17 +1390,20 @@ export function DraftMediaManager({
                 const isSelected = selected?.id === group.id;
                 const isCover = group.id === coverId;
                 const visibleIndex = visibleGroups.findIndex((candidate) => candidate.id === group.id);
-                const label = fileLabel(group.active, t(group.kind === "video" ? "draft.media.video" : "draft.media.photo", lang));
-                const versionActionDisabled = busy || versionActionsAvailable !== true;
+                const label = mediaGroupLabel(group.kind, Math.max(0, visibleIndex), lang);
+                const galleryActionDisabled = busy || !group.active.logical_asset_id;
                 return (
                   <motion.article
                     key={group.id}
                     layout
-                    transition={{ layout: { type: "spring", stiffness: 420, damping: 34 } }}
-                    whileHover={{ y: -2 }}
+                    transition={{ layout: { duration: 0.18, ease: "easeOut" } }}
                     className={cn(
-                      "editor-glass-surface min-w-0 overflow-hidden rounded-[1.5rem] border transition sm:rounded-2xl",
-                      isSelected ? "border-foreground ring-1 ring-foreground/15" : "border-border/65 hover:border-foreground/30",
+                      "floating-panel min-w-0 overflow-hidden transition",
+                      isSelected
+                        ? "border-foreground ring-1 ring-foreground/15"
+                        : isCover
+                          ? "border-foreground/35 ring-1 ring-foreground/10"
+                          : "border-border/65 hover:border-foreground/30",
                     )}
                   >
                     <div className="relative aspect-[16/9] overflow-hidden bg-surface-subtle">
@@ -1243,8 +1449,8 @@ export function DraftMediaManager({
 
                       <span className="pointer-events-none absolute left-2 top-2 flex flex-wrap gap-1.5">
                         {isCover ? (
-                          <StatusPill className="glass-chip text-[9px]">
-                            <StarIcon size={11} /> {t("draft.media.cover", lang)}
+                          <StatusPill tone="strong" className="border-white/15 bg-black/65 text-[9px] text-white backdrop-blur-xl">
+                            <StarIcon size={11} /> 1 · {t("draft.media.cover", lang)}
                           </StatusPill>
                         ) : null}
                         {!group.visible ? (
@@ -1253,6 +1459,11 @@ export function DraftMediaManager({
                           </StatusPill>
                         ) : null}
                       </span>
+                      {group.visible && !isCover ? (
+                        <StatusPill className="glass-chip pointer-events-none absolute right-2 top-2 min-w-7 justify-center px-2 text-[10px] tabular-nums">
+                          {visibleIndex + 1}
+                        </StatusPill>
+                      ) : null}
 
                     </div>
 
@@ -1260,7 +1471,6 @@ export function DraftMediaManager({
                       <div className="media-manager-card-meta mb-2 flex min-w-0 items-center justify-between gap-2 px-0.5">
                         <p className="truncate text-[11px] font-semibold text-foreground/75" title={label}>{label}</p>
                         <span className="flex shrink-0 items-center gap-1.5 text-[9px] text-muted-foreground">
-                          {group.visible ? <span className="tabular-nums">{visibleIndex + 1}</span> : null}
                           {group.kind === "video" ? <VideoIcon size={12} /> : group.versions.length > 1 ? <span>{group.versions.length}×</span> : null}
                         </span>
                       </div>
@@ -1288,10 +1498,10 @@ export function DraftMediaManager({
                               setSelectedId(group.id);
                               setConfirmAction({ kind: "hide", groupId: group.id });
                             }}
-                            disabled={versionActionDisabled}
+                            disabled={galleryActionDisabled}
                             className="min-h-10 w-full px-2 text-[10px]"
                             aria-label={t("draft.media.hideFromGallery", lang)}
-                            title={versionActionsAvailable === false ? t("draft.media.versionAccess", lang) : t("draft.media.hideFromGallery", lang)}
+                            title={t("draft.media.hideFromGallery", lang)}
                           >
                             <EyeClosedIcon size={13} /> {t("draft.media.hide", lang)}
                           </Button>
@@ -1301,9 +1511,8 @@ export function DraftMediaManager({
                           type="button"
                           size="sm"
                           onClick={() => void showGroup(group)}
-                          disabled={versionActionDisabled}
+                          disabled={galleryActionDisabled}
                           className="media-manager-card-actions min-h-10 w-full px-3 text-[11px]"
-                          title={versionActionsAvailable === false ? t("draft.media.versionAccess", lang) : undefined}
                         >
                           <EyeOpenIcon size={14} /> {t("draft.media.restoreToGallery", lang)}
                         </Button>
@@ -1318,10 +1527,10 @@ export function DraftMediaManager({
                   type="button"
                   onClick={requestUpload}
                   disabled={busy}
-                  className="editor-glass-surface group overflow-hidden rounded-[1.5rem] border border-dashed text-muted-foreground transition-colors hover:border-foreground/35 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50 sm:rounded-2xl"
+                  className="floating-panel group overflow-hidden border-dashed text-muted-foreground transition-colors hover:border-foreground/35 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50"
                 >
                   <span className="flex aspect-[16/9] items-center justify-center bg-surface-subtle/65 transition-colors group-hover:bg-surface-subtle">
-                    <span className="editor-glass-control flex h-10 w-10 items-center justify-center rounded-full border"><UploadIcon size={17} /></span>
+                    <span className="floating-capsule floating-icon-button"><UploadIcon size={17} /></span>
                   </span>
                   <span className="block px-3 py-2.5 text-left text-[11px] font-semibold">{t("draft.media.addPhotos", lang)}</span>
                 </button>
@@ -1330,15 +1539,15 @@ export function DraftMediaManager({
 
             {filteredGroups.length === 0 && pending.length === 0 ? (
               <div className="py-16 text-center text-muted-foreground">
-                {filter === "hidden" ? <EyeOpenIcon size={22} className="mx-auto text-foreground/25" /> : <ImageIcon size={22} className="mx-auto text-foreground/25" />}
-                <p className="mt-3 text-[12px] font-medium">{t(filter === "hidden" ? "draft.media.noHidden" : "draft.media.noVisible", lang)}</p>
+                <ImageIcon size={22} className="mx-auto text-foreground/25" />
+                <p className="mt-3 text-[12px] font-medium">{t("draft.media.noVisible", lang)}</p>
               </div>
             ) : null}
               </>
             )}
           </section>
 
-          <aside className="editor-glass-surface media-manager-inspector sticky top-0 min-w-0 overflow-hidden rounded-[1.5rem] border sm:rounded-2xl">
+          <aside className="floating-panel media-manager-inspector sticky top-0 min-w-0 overflow-hidden">
             {selected ? (
               <>
                 <div className="relative aspect-[16/9] overflow-hidden bg-black/[0.035]">
@@ -1358,12 +1567,26 @@ export function DraftMediaManager({
                   ) : null}
                 </div>
                 <div className="p-4">
+                  <p className="text-[9px] font-semibold uppercase tracking-[0.12em] text-muted-foreground">
+                    {selected.id === coverId
+                      ? t("draft.media.cover", lang)
+                      : selected.visible
+                        ? t("draft.media.position", lang)
+                          .replace("{current}", String(visibleGroups.findIndex((group) => group.id === selected.id) + 1))
+                          .replace("{total}", String(visibleGroups.length))
+                        : t("draft.media.hidden", lang)}
+                  </p>
                   <p className="truncate text-[13px] font-semibold" title={selectedLabel}>{selectedLabel}</p>
                   <div className="mt-2 flex flex-wrap gap-x-3 gap-y-1 text-[10px] text-muted-foreground">
                     <span>{selected.kind === "video" ? t("draft.media.video", lang) : t("draft.media.photo", lang)}</span>
                     {selected.active.file_size ? <span>{formatBytes(selected.active.file_size, lang)}</span> : null}
                     {selected.active.uploaded_at ? <span>{formatDate(selected.active.uploaded_at, undefined, lang)}</span> : null}
                   </div>
+                  {selected.id === coverId ? (
+                    <p className="mt-3 text-[10px] leading-relaxed text-muted-foreground">
+                      {t("draft.media.primaryPhotoHint", lang)}
+                    </p>
+                  ) : null}
                   <Button
                     type="button"
                     variant="secondary"
@@ -1382,18 +1605,15 @@ export function DraftMediaManager({
                       </Button>
                     ) : null}
                     {selected.kind === "image" && selected.visible ? (
-                      <Button type="button" variant="outline" className="w-full" onClick={() => setConfirmAction({ kind: "hide", groupId: selected.id })} disabled={busy || versionActionsAvailable !== true}>
+                      <Button type="button" variant="outline" className="w-full" onClick={() => setConfirmAction({ kind: "hide", groupId: selected.id })} disabled={busy || !selected.active.logical_asset_id}>
                         <EyeClosedIcon size={15} /> {t("draft.media.hideFromGallery", lang)}
                       </Button>
                     ) : selected.kind === "image" ? (
-                      <Button type="button" className="w-full" onClick={() => void showGroup(selected)} disabled={busy || versionActionsAvailable !== true}>
+                      <Button type="button" className="w-full" onClick={() => void showGroup(selected)} disabled={busy || !selected.active.logical_asset_id}>
                         <EyeOpenIcon size={15} /> {t("draft.media.restoreToGallery", lang)}
                       </Button>
                     ) : null}
                   </div>
-                  {versionActionsAvailable === false && selected.kind === "image" ? (
-                    <p className="mt-3 text-[10px] leading-relaxed text-muted-foreground">{t("draft.media.versionAccess", lang)}</p>
-                  ) : null}
                   {renderHideConfirmation("mt-4")}
                 </div>
               </>

@@ -117,14 +117,24 @@ export default function FloorplanViewer({
   targetAreaUnit,
 }: Props) {
   const [rendering, setRendering] = useState<FloorplanRenderingData | null>(null);
+  const [renderingLoading, setRenderingLoading] = useState(Boolean(floorplanId && !publicFloorplan));
   const [publicUnits, setPublicUnits] = useState<UnitLookup[]>([]);
 
   useEffect(() => {
-    if (!floorplanId || publicFloorplan) return;
+    if (!floorplanId || publicFloorplan) {
+      setRenderingLoading(false);
+      return;
+    }
     const ctrl = new AbortController();
+    setRenderingLoading(true);
     getFloorplanRendering(floorplanId, ctrl.signal)
-      .then(setRendering)
-      .catch(() => {});
+      .then((result) => {
+        if (!ctrl.signal.aborted) setRendering(result);
+      })
+      .catch(() => {})
+      .finally(() => {
+        if (!ctrl.signal.aborted) setRenderingLoading(false);
+      });
     return () => ctrl.abort();
   }, [floorplanId, publicFloorplan]);
 
@@ -180,16 +190,39 @@ export default function FloorplanViewer({
 
   const totalArea = model.local?.totalArea ?? 0;
 
+  if (!model.local && renderingLoading) {
+    return (
+      <div
+        className="overflow-hidden rounded-xl border border-border/40 bg-surface shadow-card"
+        role="status"
+        aria-label={t("draft.media.loading", lang)}
+        aria-busy="true"
+      >
+        <div className="aspect-[4/3] animate-pulse bg-muted/55 motion-reduce:animate-none" />
+        <div className="min-h-16 space-y-2 border-t border-border/40 px-4 py-3">
+          <div className="h-3 w-2/5 rounded-full bg-muted/65" />
+          <div className="h-3 w-3/5 rounded-full bg-muted/45" />
+        </div>
+      </div>
+    );
+  }
+
   let plan: React.ReactNode = null;
   if (model.local) {
     plan = <LocalPlan model={model.local} legendEntries={legendEntries} />;
   } else if (hasMesh) {
-    plan = <MeshPlan data={rendering!} legendEntries={legendEntries} lang={lang} formatArea={formatArea} />;
+    plan = (
+      <div className="aspect-[4/3] overflow-hidden bg-white">
+        <MeshPlan data={rendering!} legendEntries={legendEntries} lang={lang} formatArea={formatArea} />
+      </div>
+    );
   } else if (publicFloorplan?.composite_url || rendering?.composite?.url) {
     const url = publicFloorplan?.composite_url ?? rendering!.composite.url;
     plan = (
-      // eslint-disable-next-line @next/next/no-img-element
-      <img src={url} alt="" className="w-full block bg-white" />
+      <div className="relative aspect-[4/3] overflow-hidden bg-white">
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img src={url} alt="" className="absolute inset-0 h-full w-full object-contain" />
+      </div>
     );
   } else {
     return null;
@@ -403,7 +436,7 @@ function LocalPlan({
 
   return (
     <div className="relative">
-    <svg viewBox={`0 0 ${SVG_W} ${svgH}`} className="block w-full h-auto max-h-[440px]" xmlns="http://www.w3.org/2000/svg">
+    <svg viewBox={`0 0 ${SVG_W} ${svgH}`} className="block h-auto max-h-[440px] w-full" xmlns="http://www.w3.org/2000/svg">
       <rect width={SVG_W} height={svgH} fill="white" />
 
       {/* Walls with door/window holes (destination-out via mask) */}
@@ -605,7 +638,7 @@ function MeshPlan({
   const fontFor = Math.max(11, Math.min(16, s * 0.12));
 
   return (
-    <svg viewBox={`0 0 ${SVG_W} ${svgH}`} className="block w-full h-auto max-h-[440px]" xmlns="http://www.w3.org/2000/svg">
+    <svg viewBox={`0 0 ${SVG_W} ${svgH}`} className="block h-full w-full" xmlns="http://www.w3.org/2000/svg">
       <rect width={SVG_W} height={svgH} fill="white" />
 
       {/* Windows: thin outlined faces */}

@@ -4,11 +4,11 @@ import { useEffect, useState, useRef, use, useCallback, useMemo } from "react";
 import { useRouter } from "next/navigation";
 import { useAuth } from "../../components/hooks/use-auth";
 import {
+  authorUsdSceneTransformOperation,
   getDraft,
   getSplatPackage,
   getSplatViewer,
   getSplatsByDraft,
-  saveGlobalSceneTransform,
 } from "../../lib/api/client";
 import { isApiNotFound } from "../../lib/api/error-message";
 import type {
@@ -16,13 +16,10 @@ import type {
   DraftDetailItem,
   GlobalSceneTransform,
   RoomKitCageWall,
-  SpatialCameraMode,
-  SpatialTrajectory,
+  SpatialTransformTool,
   SpatialViewMode,
   SplatInspectionStats,
-  SplatPackageRoomBundle,
   SplatViewerPayload,
-  TourData,
 } from "../../lib/tour-types";
 import type { SplatViewerHandle } from "../../components/splat-viewer";
 import dynamic from "next/dynamic";
@@ -33,12 +30,14 @@ import { getUserLanguage, t } from "../../lib/i18n";
 import { PageLoading } from "../../components/page-loading";
 import { ArrowLeftIcon, InfoIcon, SearchIcon, TechnicalIcon } from "../../components/icons";
 import { buildTextDataMap } from "../../lib/floorplan-geometry";
-import { parseRoomKitCage, parseScanTrajectory, trajectoryFromTour } from "../../lib/spatial-editor-data";
+import { parseRoomKitCage } from "../../lib/spatial-editor-data";
 import {
   cloneGlobalSceneTransform,
-  globalSceneTransformFromDescription,
+  composedRootTransformFromScene,
+  composeGlobalSceneTransform,
   globalSceneTransformsEqual,
   IDENTITY_GLOBAL_SCENE_TRANSFORM,
+  relativeGlobalSceneTransform,
 } from "../../lib/global-scene-transform";
 
 const SplatViewer = dynamic(() => import("../../components/splat-viewer"), { ssr: false });
@@ -75,28 +74,6 @@ async function fetchJsonAsset(url: string | undefined): Promise<unknown> {
   }
 }
 
-async function trajectoryFromRoomBundle(
-  bundle: SplatPackageRoomBundle,
-  fallbackLabel: string,
-): Promise<SpatialTrajectory | null> {
-  const framesUrl = bundle.files.frames_jsonl?.url;
-  if (!framesUrl) return null;
-  const [frames, indices] = await Promise.all([
-    fetchTextAsset(framesUrl),
-    fetchJsonAsset(bundle.files.room_frame_indices_json?.url),
-  ]);
-  if (!frames) return null;
-  const roomIdentity = bundle.scan_bundle_room_id
-    ?? bundle.room_number
-    ?? bundle.capture_folder_slug;
-  return parseScanTrajectory(
-    frames,
-    indices,
-    `scan-room-${roomIdentity}`,
-    bundle.room_label?.trim() || fallbackLabel,
-  );
-}
-
 export default function TourPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params);
   const splatId = parseInt(id, 10);
@@ -118,10 +95,8 @@ export default function TourPage({ params }: { params: Promise<{ id: string }> }
   const [spatialDataLoading, setSpatialDataLoading] = useState(false);
   const [roomKitCage, setRoomKitCage] = useState<RoomKitCageWall[]>([]);
   const [showRoomKitCage, setShowRoomKitCage] = useState(true);
-  const [packageTrajectories, setPackageTrajectories] = useState<SpatialTrajectory[]>([]);
-  const [showSpatialTrajectory, setShowSpatialTrajectory] = useState(true);
-  const [selectedSpatialCamera, setSelectedSpatialCamera] = useState(0);
-  const [spatialCameraPreviewActive, setSpatialCameraPreviewActive] = useState(false);
+  const [showSpatialGrid, setShowSpatialGrid] = useState(false);
+  const [spatialTransformTool, setSpatialTransformTool] = useState<SpatialTransformTool>("select");
   const [globalSceneTransform, setGlobalSceneTransform] = useState<GlobalSceneTransform>(
     () => cloneGlobalSceneTransform(IDENTITY_GLOBAL_SCENE_TRANSFORM),
   );
@@ -130,16 +105,19 @@ export default function TourPage({ params }: { params: Promise<{ id: string }> }
   );
   const [globalTransformSaving, setGlobalTransformSaving] = useState(false);
   const [globalTransformError, setGlobalTransformError] = useState<string | null>(null);
-  const [spatialCameraMode, setSpatialCameraMode] = useState<SpatialCameraMode>("orbit");
-  const [loadedTour, setLoadedTour] = useState<TourData | null>(null);
   const splatRef = useRef<SplatViewerHandle | null>(null);
-  const loadedPackageSplatRef = useRef<number | null>(null);
   const loadedCollisionSplatRef = useRef<number | null>(null);
   const resolvedSplatId = viewer?.splat_id ?? splatId;
   const viewerCameras = viewer?.cameras as CameraData | undefined;
   const preferSavedCameras = !!viewerCameras?.cameras?.length || viewer?.format !== "sog";
   const preferredRenderUrl = viewer ? pickRenderableUrl(viewer) : null;
   const fallbackRenderUrl = viewer ? pickFallbackRenderableUrl(viewer) : null;
+
+  useEffect(() => {
+    // Start downloading the renderer chunk while the viewer payload is still
+    // in flight so opening a tour does not serialize API, JS and GPU startup.
+    void import("../../components/splat-viewer");
+  }, []);
 
   useEffect(() => {
     setActiveRenderUrl(preferredRenderUrl);
@@ -183,10 +161,7 @@ export default function TourPage({ params }: { params: Promise<{ id: string }> }
         return data;
       })
       .then((data) => {
-        const transform = globalSceneTransformFromDescription(
-          data.scene_description,
-          data.global_transform,
-        );
+        const transform = composedRootTransformFromScene(data.scene_description);
         setGlobalSceneTransform(transform);
         setSavedGlobalSceneTransform(cloneGlobalSceneTransform(transform));
         setGlobalTransformError(null);
@@ -218,6 +193,7 @@ export default function TourPage({ params }: { params: Promise<{ id: string }> }
     if (!viewer || loadedCollisionSplatRef.current === resolvedSplatId) return;
     let cancelled = false;
     setRoomKitCage([]);
+    setSpatialDataLoading(true);
 
     const loadCollisionGeometry = async () => {
       const splatPackage = await getSplatPackage(resolvedSplatId);
@@ -234,56 +210,11 @@ export default function TourPage({ params }: { params: Promise<{ id: string }> }
     loadCollisionGeometry().catch(() => {
       // The reconstruction footprint remains the declared runtime fallback.
       if (!cancelled) loadedCollisionSplatRef.current = resolvedSplatId;
+    }).finally(() => {
+      if (!cancelled) setSpatialDataLoading(false);
     });
     return () => { cancelled = true; };
   }, [resolvedSplatId, viewer]);
-
-  useEffect(() => {
-    if (!advancedOpen || !viewer || loadedPackageSplatRef.current === resolvedSplatId) return;
-    let cancelled = false;
-
-    const loadSpatialPackage = async () => {
-      setSpatialDataLoading(true);
-      const splatPackage = await getSplatPackage(resolvedSplatId);
-      if (cancelled) return;
-
-      let bundles: SplatPackageRoomBundle[] = [];
-      if (splatPackage.room_bundle) {
-        bundles = [splatPackage.room_bundle];
-      } else if (splatPackage.room_splats?.length) {
-        const roomPackages = await Promise.allSettled(
-          splatPackage.room_splats.map((room) => getSplatPackage(room.id)),
-        );
-        bundles = roomPackages.flatMap((result) => (
-          result.status === "fulfilled" && result.value.room_bundle
-            ? [result.value.room_bundle]
-            : []
-        ));
-      }
-
-      const trajectories = await Promise.all(
-        bundles.map((bundle, index) => trajectoryFromRoomBundle(
-          bundle,
-          `${t("spatialEditor.scanPath", lang)} ${index + 1}`,
-        )),
-      );
-      if (!cancelled) {
-        setPackageTrajectories(trajectories.flatMap((trajectory) => trajectory ? [trajectory] : []));
-        loadedPackageSplatRef.current = resolvedSplatId;
-      }
-    };
-
-    loadSpatialPackage()
-      .catch(() => {
-        // Unavailable package layers stay explicitly unavailable; tour cameras
-        // remain usable as a non-synthetic path fallback.
-        if (!cancelled) loadedPackageSplatRef.current = resolvedSplatId;
-      })
-      .finally(() => {
-        if (!cancelled) setSpatialDataLoading(false);
-      });
-    return () => { cancelled = true; };
-  }, [advancedOpen, lang, resolvedSplatId, viewer]);
 
   useEffect(() => {
     if (roomKitCage.length || !draft?.draft_data?.length) return;
@@ -296,49 +227,6 @@ export default function TourPage({ params }: { params: Promise<{ id: string }> }
     }
   }, [draft, roomKitCage.length]);
 
-  const spatialTrajectories = useMemo(() => {
-    if (packageTrajectories.length) return packageTrajectories;
-    if (!loadedTour) return [];
-    const fallback = trajectoryFromTour(loadedTour, t("spatialEditor.tourPath", lang));
-    return fallback ? [fallback] : [];
-  }, [lang, loadedTour, packageTrajectories]);
-  const spatialCameraSamples = useMemo(
-    () => spatialTrajectories.flatMap((trajectory) => trajectory.samples),
-    [spatialTrajectories],
-  );
-  const safeSpatialCamera = spatialCameraSamples.length
-    ? Math.max(0, Math.min(spatialCameraSamples.length - 1, selectedSpatialCamera))
-    : 0;
-  const activeSpatialCamera = spatialCameraSamples[safeSpatialCamera] ?? null;
-  const selectSpatialCamera = useCallback((index: number) => {
-    if (!spatialCameraSamples.length) return;
-    const nextIndex = ((index % spatialCameraSamples.length) + spatialCameraSamples.length)
-      % spatialCameraSamples.length;
-    setSelectedSpatialCamera(nextIndex);
-    if (!spatialCameraPreviewActive) return;
-    setSpatialCameraMode("fly");
-    splatRef.current?.navigateToSpatialCamera(spatialCameraSamples[nextIndex], false);
-  }, [spatialCameraPreviewActive, spatialCameraSamples]);
-  const selectSpatialTrajectory = useCallback((trajectoryIndex: number) => {
-    if (!spatialTrajectories.length) return;
-    const safeTrajectoryIndex = Math.max(
-      0,
-      Math.min(spatialTrajectories.length - 1, trajectoryIndex),
-    );
-    const offset = spatialTrajectories
-      .slice(0, safeTrajectoryIndex)
-      .reduce((total, trajectory) => total + trajectory.samples.length, 0);
-    splatRef.current?.stopCameraNavigation();
-    setSpatialCameraPreviewActive(false);
-    setSelectedSpatialCamera(offset);
-  }, [spatialTrajectories]);
-
-  useEffect(() => {
-    if (!advancedOpen || !viewerReady) return;
-    const frame = window.requestAnimationFrame(() => splatRef.current?.frameScene());
-    return () => window.cancelAnimationFrame(frame);
-  }, [advancedOpen, viewerReady]);
-
   const handleShotChange = useCallback((idx: number) => {
     setShotIdx(idx);
   }, []);
@@ -347,30 +235,33 @@ export default function TourPage({ params }: { params: Promise<{ id: string }> }
     () => !globalSceneTransformsEqual(globalSceneTransform, savedGlobalSceneTransform),
     [globalSceneTransform, savedGlobalSceneTransform],
   );
+  const editorTransformDelta = useMemo(
+    () => relativeGlobalSceneTransform(
+      savedGlobalSceneTransform,
+      globalSceneTransform,
+    ),
+    [globalSceneTransform, savedGlobalSceneTransform],
+  );
 
   const persistGlobalTransform = useCallback(async () => {
     if (!globalTransformDirty) return true;
     setGlobalTransformSaving(true);
     setGlobalTransformError(null);
     try {
-      const response = await saveGlobalSceneTransform(
+      const response = await authorUsdSceneTransformOperation(
         resolvedSplatId,
-        globalSceneTransform,
-        viewer?.scene_description?.stage?.revision,
+        editorTransformDelta,
+        viewer?.scene_description?.stage?.revision ?? 0,
+        viewer?.scene_description?.usdStage?.stageSha256,
       );
-      const saved = globalSceneTransformFromDescription(
-        response.sceneDescription,
-        response.globalTransform,
-      );
+      const saved = composedRootTransformFromScene(response.sceneDescription);
       setGlobalSceneTransform(saved);
       setSavedGlobalSceneTransform(cloneGlobalSceneTransform(saved));
       setViewer((current) => current ? {
         ...current,
-        global_transform: saved,
         scene_description: response.sceneDescription,
         cameras: current.cameras ? {
           ...current.cameras,
-          globalTransform: saved,
           sceneDescription: response.sceneDescription,
           sceneRevision: response.sceneRevision,
         } : current.cameras,
@@ -382,21 +273,46 @@ export default function TourPage({ params }: { params: Promise<{ id: string }> }
     } finally {
       setGlobalTransformSaving(false);
     }
-  }, [globalSceneTransform, globalTransformDirty, lang, resolvedSplatId, viewer?.scene_description?.stage?.revision]);
+  }, [
+    editorTransformDelta,
+    globalTransformDirty,
+    lang,
+    resolvedSplatId,
+    viewer?.scene_description?.stage?.revision,
+    viewer?.scene_description?.usdStage?.stageSha256,
+  ]);
 
-  const closeAdvancedEditor = useCallback(async () => {
-    splatRef.current?.stopCameraNavigation();
-    setSpatialCameraPreviewActive(false);
-    if (!await persistGlobalTransform()) return;
+  const closeAdvancedEditor = useCallback(() => {
+    // Closing the viewport never authors a hidden operation. Only Apply may
+    // create a USD opinion. Discard the pending session-layer delta.
+    setGlobalSceneTransform(cloneGlobalSceneTransform(savedGlobalSceneTransform));
+    setGlobalTransformError(null);
+    setSpatialTransformTool("select");
     setAdvancedOpen(false);
-    // Leave inspection mode in an actual tour pose. The transformed path has
-    // already been rebuilt while the orientation changed; jumping to the
-    // active shot makes the saved result immediately visible and prevents the
-    // editor's orbit camera from masquerading as the published tour state.
+    // Leave the scene-composition viewport in the active tour pose.
     window.requestAnimationFrame(() => {
-      splatRef.current?.goToShot(shotIdx, true);
+      splatRef.current?.goToShot(shotIdx, false);
     });
-  }, [persistGlobalTransform, shotIdx]);
+  }, [savedGlobalSceneTransform, shotIdx]);
+
+  const openAdvancedEditor = useCallback(async () => {
+    setSpatialTransformTool("select");
+    setAdvancedOpen(true);
+    try {
+      // Scene deliveries can be promoted while the tour page remains open.
+      // Revalidate before editing so the controls always represent the
+      // current immutable USD revision instead of a stale mounted payload.
+      const current = await getSplatViewer(resolvedSplatId, { fresh: true });
+      const transform = composedRootTransformFromScene(current.scene_description);
+      setGlobalSceneTransform(transform);
+      setSavedGlobalSceneTransform(cloneGlobalSceneTransform(transform));
+      setGlobalTransformError(null);
+      setViewer(current);
+    } catch {
+      // The already loaded delivery remains usable when revalidation is
+      // temporarily unavailable.
+    }
+  }, [resolvedSplatId]);
 
   if (isLoading || (!viewer && !error)) {
     return <PageLoading />;
@@ -461,18 +377,19 @@ export default function TourPage({ params }: { params: Promise<{ id: string }> }
           }
         }}
         onShotChange={handleShotChange}
-        onTourLoaded={setLoadedTour}
         spatialViewMode={advancedOpen ? spatialViewMode : "surface"}
         roomKitCage={roomKitCage}
         showRoomKitCage={advancedOpen && showRoomKitCage}
-        spatialTrajectories={spatialTrajectories}
-        showSpatialTrajectory={advancedOpen && showSpatialTrajectory}
-        selectedSpatialCamera={advancedOpen ? activeSpatialCamera : null}
+        showSpatialGrid={advancedOpen && showSpatialGrid}
         globalSceneTransform={globalSceneTransform}
+        spatialTransformTool={advancedOpen ? spatialTransformTool : "select"}
+        spatialGizmoResetKey={viewer.scene_description?.stage?.revision}
+        onSpatialTransformChange={(transform) => {
+          setGlobalTransformError(null);
+          setGlobalSceneTransform(transform);
+        }}
         onInspectionStats={setInspectionStats}
         spatialNavigation={advancedOpen}
-        spatialCameraMode={spatialCameraMode}
-        onSpatialCameraModeChange={setSpatialCameraMode}
         lang={lang}
       />
 
@@ -490,7 +407,7 @@ export default function TourPage({ params }: { params: Promise<{ id: string }> }
             <button
               onClick={() => router.push(viewer.draft_id ? `/draft/${viewer.draft_id}` : "/tours")}
               aria-label={t("common.back", lang)}
-              className="pen-touch-target flex h-11 w-11 items-center justify-center rounded-full border border-white/20 bg-black/45 text-white/90 shadow-lg backdrop-blur-xl transition-colors hover:bg-black/60 active:scale-95 xl:w-auto xl:gap-2 xl:px-3"
+              className="floating-control pen-touch-target flex w-[var(--floating-control)] items-center justify-center border border-white/20 bg-black/45 text-white/90 shadow-lg backdrop-blur-xl transition-colors hover:bg-black/60 active:scale-95 xl:w-auto xl:gap-2 xl:px-3"
             >
               <ArrowLeftIcon size={16} />
               <span className="hidden text-[12px] font-medium xl:inline">{t("common.back", lang)}</span>
@@ -498,8 +415,8 @@ export default function TourPage({ params }: { params: Promise<{ id: string }> }
             {SPATIAL_EDITOR_RND_ENABLED ? (
               <button
                 type="button"
-                onClick={() => setAdvancedOpen(true)}
-                className="editor-glass-control pen-touch-target flex h-11 items-center gap-2 rounded-full border px-3 text-[11px] font-semibold text-foreground transition-transform hover:scale-[1.02] active:scale-[0.98]"
+                onClick={() => { void openAdvancedEditor(); }}
+                className="floating-capsule pen-touch-target flex items-center gap-2 border px-3 text-[11px] font-semibold text-foreground transition-transform hover:scale-[1.02] active:scale-[0.98]"
               >
                 <TechnicalIcon size={14} />
                 <span>{t("spatialEditor.open", lang)}</span>
@@ -520,7 +437,6 @@ export default function TourPage({ params }: { params: Promise<{ id: string }> }
               setViewer((current) => current ? {
                 ...current,
                 cameras: saved,
-                global_transform: saved.globalTransform ?? current.global_transform,
                 scene_description: saved.sceneDescription ?? current.scene_description,
               } : current);
               setEditorVersion((v) => v + 1);
@@ -532,6 +448,7 @@ export default function TourPage({ params }: { params: Promise<{ id: string }> }
         <AdvancedTourEditor
           title={draft?.title || String(viewer.metadata?.title ?? t("spatialEditor.title", lang))}
           lang={lang}
+          sceneDescription={viewer.scene_description}
           viewMode={spatialViewMode}
           onViewModeChange={setSpatialViewMode}
           stats={inspectionStats}
@@ -539,40 +456,24 @@ export default function TourPage({ params }: { params: Promise<{ id: string }> }
           cageCount={roomKitCage.length}
           showCage={showRoomKitCage}
           onShowCageChange={setShowRoomKitCage}
-          trajectories={spatialTrajectories}
-          onSelectTrajectory={selectSpatialTrajectory}
-          showPath={showSpatialTrajectory}
-          onShowPathChange={setShowSpatialTrajectory}
-          selectedCamera={safeSpatialCamera}
-          onSelectCamera={selectSpatialCamera}
-          onLookThroughCamera={() => {
-            if (!activeSpatialCamera) return;
-            setSpatialCameraPreviewActive(true);
-            setSpatialCameraMode("fly");
-            splatRef.current?.navigateToSpatialCamera(activeSpatialCamera, false);
-          }}
-          cameraPreviewActive={spatialCameraPreviewActive}
-          onExitCameraPreview={() => {
-            splatRef.current?.stopCameraNavigation();
-            setSpatialCameraPreviewActive(false);
-          }}
-          rotation={globalSceneTransform.rotationDeg}
-          onRotationChange={(rotation) => {
+          showGrid={showSpatialGrid}
+          onShowGridChange={setShowSpatialGrid}
+          transform={editorTransformDelta}
+          transformTool={spatialTransformTool}
+          onTransformToolChange={setSpatialTransformTool}
+          onTransformChange={(transform) => {
             setGlobalTransformError(null);
-            setGlobalSceneTransform((current) => ({ ...current, rotationDeg: rotation }));
+            setGlobalSceneTransform(composeGlobalSceneTransform(
+              savedGlobalSceneTransform,
+              transform,
+            ));
           }}
           transformDirty={globalTransformDirty}
           transformSaving={globalTransformSaving}
           transformError={globalTransformError}
-          onSaveTransform={() => { void persistGlobalTransform(); }}
-          cameraMode={spatialCameraMode}
-          onCameraModeChange={(mode) => {
-            splatRef.current?.stopCameraNavigation();
-            setSpatialCameraPreviewActive(false);
-            setSpatialCameraMode(mode);
-          }}
+          onApplyTransform={() => { void persistGlobalTransform(); }}
           onFrameScene={() => splatRef.current?.frameScene()}
-          onClose={() => { void closeAdvancedEditor(); }}
+          onClose={closeAdvancedEditor}
         />
       )}
     </div>

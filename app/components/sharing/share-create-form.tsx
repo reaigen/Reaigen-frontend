@@ -88,45 +88,47 @@ export function ShareCreateForm({
     <div className="space-y-3">
       {error && <p role="alert" className="rounded-2xl border border-destructive/25 bg-destructive/[0.035] px-4 py-3 text-[12px] text-destructive">{error}</p>}
 
-      <section className="rounded-[1.35rem] border border-border/60 bg-card p-4 shadow-card sm:rounded-2xl sm:p-5">
-        <ContentScopeSelector
-          scope={scope}
-          onChange={onScopeChange}
-          hasTour={hasTour}
-          hasPhotos={hasPhotos}
-          hasFloorplan={hasFloorplan}
-          lang={lang}
-        />
-      </section>
+      <div className="floating-panel overflow-hidden">
+        <section className="p-4 sm:p-5">
+          <ContentScopeSelector
+            scope={scope}
+            onChange={onScopeChange}
+            hasTour={hasTour}
+            hasPhotos={hasPhotos}
+            hasFloorplan={hasFloorplan}
+            lang={lang}
+          />
+        </section>
 
-      <section className="rounded-[1.35rem] border border-border/60 bg-card p-4 shadow-card sm:rounded-2xl sm:p-5">
-        <PrivacyLevelSelector
-          level={privacyLevel}
-          pin={pin}
-          onLevelChange={setPrivacyLevel}
-          onPinChange={setPin}
-          lang={lang}
-        />
-      </section>
+        <section className="border-t border-border/45 p-4 sm:p-5">
+          <PrivacyLevelSelector
+            level={privacyLevel}
+            pin={pin}
+            onLevelChange={setPrivacyLevel}
+            onPinChange={setPin}
+            lang={lang}
+          />
+        </section>
 
-      <section className="rounded-[1.35rem] border border-border/60 bg-card p-4 shadow-card sm:rounded-2xl sm:p-5">
-        <LifetimeSelector
-          hours={lifetimeHours}
-          onHoursChange={setLifetimeHours}
-          currentExpiry={initialShare?.expires_at}
-          lang={lang}
-        />
-      </section>
+        <section className="border-t border-border/45 p-4 sm:p-5">
+          <LifetimeSelector
+            hours={lifetimeHours}
+            onHoursChange={setLifetimeHours}
+            currentExpiry={initialShare?.expires_at}
+            lang={lang}
+          />
+        </section>
+      </div>
 
-      <div className="sticky bottom-[calc(4rem+env(safe-area-inset-bottom,0px))] z-20 -mx-1 flex gap-2 rounded-full border border-border/70 bg-card/95 p-1.5 shadow-elevated backdrop-blur-xl md:static md:mx-0 md:border-0 md:bg-transparent md:p-0 md:pt-1 md:shadow-none">
+      <div className="floating-toolbar sticky bottom-[calc(4rem+env(safe-area-inset-bottom,0px))] z-20 -mx-1 md:static md:mx-0">
         {initialShare && onCancelEdit ? (
-          <Button type="button" variant="outline" className="h-11 flex-1 text-[13px] font-semibold" onClick={onCancelEdit} disabled={saving}>
+          <Button type="button" variant="ghost" className="floating-control h-auto flex-1 text-[13px] font-semibold" onClick={onCancelEdit} disabled={saving}>
             {t("common.cancel", lang)}
           </Button>
         ) : null}
         <Button
           type="button"
-          className="h-11 flex-1 text-[13px] font-semibold shadow-sm"
+          className="floating-control h-auto flex-1 text-[13px] font-semibold shadow-sm"
           onClick={handleSubmit}
           disabled={saving || !pinValid}
           loading={saving}

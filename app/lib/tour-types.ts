@@ -1,6 +1,7 @@
 export type Vec3 = [number, number, number];
 export type SpatialViewMode = "surface" | "centers";
 export type SpatialCameraMode = "orbit" | "fly";
+export type SpatialTransformTool = "select" | "move" | "rotate" | "scale";
 
 /**
  * Explicit, persisted transform from canonical scan space into tour space.
@@ -14,6 +15,38 @@ export interface GlobalSceneTransform {
   rotationDeg: Vec3;
   translation: Vec3;
   scale: number;
+}
+
+export interface UsdStageEditTarget {
+  layer: "authoring.usda";
+  primPath: "/Reaigen";
+}
+
+export interface UsdTransformOperation {
+  id: string;
+  type: "transform";
+  opName: string;
+  primPath: "/Reaigen";
+  layer: "authoring.usda";
+  space: "world";
+  revision: number;
+  enabled: boolean;
+  delta: {
+    translation: Vec3;
+    rotationDeg: Vec3;
+    scale: number;
+  };
+  matrix: number[][];
+}
+
+export interface UsdStageTransformEditResponse {
+  sceneDescription: UniversalSceneDescription;
+  sceneRevision: number;
+  usdStageSha256: string;
+  editTarget: UsdStageEditTarget;
+  authoredOperation: UsdTransformOperation;
+  sceneDeliveries: SceneDeliverySummary[];
+  archivedSceneDeliveryIds: number[];
 }
 
 /** Versioned scene contract shared by web, iOS and backend renderers. */
@@ -57,6 +90,14 @@ export interface UniversalSceneDescription {
   editor?: {
     rotationEulerDegrees: Vec3;
     rotationOrder: "YXZ";
+    authoringModel?: "lop-transform-stack";
+    editTarget?: {
+      layer: "authoring.usda";
+      primPath: "/Reaigen";
+    };
+    transformBase?: GlobalSceneTransform;
+    transformStack?: UsdTransformOperation[];
+    pendingOperation?: null;
   };
   /** USD-aligned resolved-stage metadata, present from scene schema v2. */
   stage?: {
@@ -391,6 +432,12 @@ export interface SpatialTrajectory {
 export interface SplatInspectionStats {
   gaussianCount: number;
   sampledCount: number;
+  /** Median of the sampled Gaussian's largest local-axis scale, in scene units. */
+  medianScale?: number;
+  /** 90th percentile of the sampled Gaussian's largest local-axis scale. */
+  p90Scale?: number;
+  /** Estimated share of large or locally sparse Gaussians in the diagnostic sample. */
+  largeOrSparsePercent?: number;
 }
 
 export interface FeaturedRoom {
@@ -452,7 +499,6 @@ export interface CameraData {
   cameras: SavedCamera[];
   fovY?: number;
   sceneFov?: number;
-  globalTransform?: GlobalSceneTransform;
   sceneDescription?: UniversalSceneDescription;
   sceneRevision?: number;
   source?: string;
@@ -512,7 +558,6 @@ export interface TourViewerData {
   signed_outputs: Record<string, string>;
   metadata: Record<string, unknown>;
   outputs_updated_at: string | null;
-  global_transform?: GlobalSceneTransform | null;
   scene_description?: UniversalSceneDescription | null;
   collision_geometry?: {
     format: "roomplan-json";
@@ -671,7 +716,6 @@ export interface SplatViewerPayload {
   signed_outputs: Record<string, string>;
   metadata: Record<string, unknown>;
   outputs_updated_at: string | null;
-  global_transform?: GlobalSceneTransform | null;
   scene_description?: UniversalSceneDescription | null;
   /** Exact published OpenUSD graph version used to resolve this runtime. */
   scene_delivery: SceneDeliverySummary;
@@ -735,6 +779,8 @@ export interface DraftUpload {
   id: number;
   file_url: string;
   file_name: string;
+  /** Stable client filename of the first upload in this logical media asset. */
+  original_file_name?: string | null;
   file_size: number;
   mime_type: string;
   asset_type: number | string;
@@ -749,6 +795,8 @@ export interface DraftUpload {
   role: string;
   status: string;
   is_master: boolean;
+  /** Logical gallery presentation state shared by every physical version. */
+  is_gallery_visible?: boolean;
   is_deleted?: boolean;
   logical_asset_id?: string | null;
   version?: number;

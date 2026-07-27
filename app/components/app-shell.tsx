@@ -21,6 +21,24 @@ function getInitials(user: UserProfile): string {
 
 const SIDEBAR_COLLAPSED_W = 88;
 const SIDEBAR_EXPANDED_W = 260;
+const REAI_PANEL_MIN_W = 420;
+const REAI_PANEL_MAX_W = 960;
+const REAI_PANEL_WIDTH_KEY = "reaigen:agentPanelWidth.v2";
+
+function clampAgentPanelWidth(width: number) {
+  const viewportLimit = typeof window === "undefined"
+    ? REAI_PANEL_MAX_W
+    : Math.max(
+      REAI_PANEL_MIN_W,
+      Math.min(
+        window.innerWidth * 0.58,
+        window.innerWidth
+          - (window.innerWidth >= 1728 ? SIDEBAR_EXPANDED_W : SIDEBAR_COLLAPSED_W)
+          - 480,
+      ),
+    );
+  return Math.round(Math.min(Math.max(width, REAI_PANEL_MIN_W), Math.min(REAI_PANEL_MAX_W, viewportLimit)));
+}
 
 export function AppShell({
   user,
@@ -52,9 +70,13 @@ export function AppShell({
   const [reaiViewport, setReaiViewport] = React.useState<{ height: number | null; offsetTop: number }>({ height: null, offsetTop: 0 });
   const [compactAgentViewport, setCompactAgentViewport] = React.useState(false);
   const [dockedAgentViewport, setDockedAgentViewport] = React.useState(false);
+  const [reaiPanelWidth, setReaiPanelWidth] = React.useState<number | null>(null);
+  const [reaiResizing, setReaiResizing] = React.useState(false);
   const reaiPanelRef = React.useRef<HTMLElement>(null);
   const reaiCloseRef = React.useRef<HTMLButtonElement>(null);
   const reaiReturnFocusRef = React.useRef<HTMLElement | null>(null);
+  const reaiPanelWidthRef = React.useRef<number | null>(null);
+  const reaiResizeActiveRef = React.useRef(false);
   const mobileAccountRef = React.useRef<HTMLDivElement>(null);
   const mobileAccountButtonRef = React.useRef<HTMLButtonElement>(null);
   const mobileAccountItemRefs = React.useRef<Array<HTMLAnchorElement | HTMLButtonElement | null>>([]);
@@ -74,6 +96,26 @@ export function AppShell({
       ? (reaiDraftTitle || t("reai.draftContext", lang))
       : t("reai.noDraftContext", lang);
   const settingsActive = pathname === "/settings" || pathname.startsWith("/settings/");
+
+  React.useLayoutEffect(() => {
+    const stored = Number(window.localStorage.getItem(REAI_PANEL_WIDTH_KEY));
+    if (!Number.isFinite(stored) || stored <= 0) return;
+    const next = clampAgentPanelWidth(stored);
+    reaiPanelWidthRef.current = next;
+    setReaiPanelWidth(next);
+  }, []);
+
+  React.useEffect(() => {
+    if (!reaiResizing) return;
+    const previousCursor = document.body.style.cursor;
+    const previousUserSelect = document.body.style.userSelect;
+    document.body.style.cursor = "col-resize";
+    document.body.style.userSelect = "none";
+    return () => {
+      document.body.style.cursor = previousCursor;
+      document.body.style.userSelect = previousUserSelect;
+    };
+  }, [reaiResizing]);
 
   React.useEffect(() => {
     let active = true;
@@ -270,10 +312,39 @@ export function AppShell({
     </button>
   ) : null;
 
+  const setAgentPanelWidth = (width: number) => {
+    const next = clampAgentPanelWidth(width);
+    reaiPanelWidthRef.current = next;
+    setReaiPanelWidth(next);
+    return next;
+  };
+
+  const finishAgentResize = () => {
+    if (!reaiResizeActiveRef.current) return;
+    reaiResizeActiveRef.current = false;
+    setReaiResizing(false);
+    const width = reaiPanelWidthRef.current;
+    if (width) window.localStorage.setItem(REAI_PANEL_WIDTH_KEY, String(width));
+  };
+
+  const resetAgentPanelWidth = () => {
+    reaiResizeActiveRef.current = false;
+    reaiPanelWidthRef.current = null;
+    setReaiResizing(false);
+    setReaiPanelWidth(null);
+    window.localStorage.removeItem(REAI_PANEL_WIDTH_KEY);
+  };
+
   return (
     <div
-      className="app-canvas min-h-screen transition-[padding] duration-200"
-      style={{ paddingRight: reaiOpen && dockedAgentViewport ? "var(--reai-panel-width)" : 0 }}
+      className={cn(
+        "app-canvas min-h-screen transition-[padding] duration-200",
+        reaiResizing && "transition-none",
+      )}
+      style={{
+        paddingRight: reaiOpen && dockedAgentViewport ? "var(--reai-panel-width)" : 0,
+        ...(reaiPanelWidth ? { "--reai-panel-width": `${reaiPanelWidth}px` } : {}),
+      } as React.CSSProperties}
     >
       {/* ── Desktop sidebar ──────────────────────────────────────── */}
       <aside
@@ -399,7 +470,7 @@ export function AppShell({
                 aria-expanded={mobileAccountOpen}
                 aria-controls="mobile-account-menu"
                 onClick={() => setMobileAccountOpen((open) => !open)}
-                className="flex h-11 w-11 items-center justify-center rounded-2xl p-1 transition-colors hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+                className="floating-icon-button p-1 transition-colors hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
               >
                 <Avatar size="sm">
                   {avatarUrl && <AvatarImage src={avatarUrl as string} />}
@@ -411,7 +482,7 @@ export function AppShell({
                   id="mobile-account-menu"
                   role="menu"
                   aria-label={displayName}
-                  className="absolute right-0 top-[calc(100%+0.5rem)] w-72 max-w-[calc(100vw-2rem)] overflow-hidden rounded-2xl border border-border bg-card p-2 shadow-xl animate-fade-in"
+                  className="floating-panel absolute right-0 top-[calc(100%+0.5rem)] w-72 max-w-[calc(100vw-2rem)] overflow-hidden border-border bg-card p-2 animate-fade-in"
                 >
                   <div role="presentation" className="min-w-0 border-b border-border/60 px-3 py-2.5">
                     <p className="truncate text-sm font-semibold text-foreground">{displayName}</p>
@@ -461,8 +532,13 @@ export function AppShell({
         )}
         style={{ marginLeft: `var(--sidebar-offset, 0px)` }}
       >
-        <AppContentMessages lang={lang} countryCode={user.profile?.country} regionCode={user.profile?.state} />
-        <div key={pathname} className="animate-fade-in">
+        <AppContentMessages
+          lang={lang}
+          countryCode={user.profile?.country}
+          regionCode={user.profile?.state}
+          className="pointer-events-none fixed bottom-20 right-4 z-[70] mb-0 max-h-[min(28rem,65dvh)] w-[min(28rem,calc(100vw-2rem))] overflow-y-auto [&>section]:pointer-events-auto md:bottom-6 md:right-6"
+        />
+        <div key={pathname} className="async-stable-region animate-fade-in">
           {children}
         </div>
       </main>
@@ -524,14 +600,72 @@ export function AppShell({
                 ? "100%"
                 : dockedAgentViewport
                   ? "var(--reai-panel-width)"
-                  : undefined,
+                  : "min(460px, calc(100vw - 4rem))",
             }}
             className={cn(
-              "agent-canvas fixed inset-y-0 right-0 z-[70] flex w-full flex-col border-l border-border transition-[transform,visibility] duration-200 sm:w-[400px] sm:max-w-[90vw]",
+              "agent-canvas fixed inset-y-0 right-0 z-[70] flex w-full flex-col border-l border-border transition-[transform,visibility] duration-200",
               dockedAgentViewport ? "shadow-none" : "shadow-[-18px_0_48px_-30px_rgba(0,0,0,0.28)]",
               reaiOpen ? "visible translate-x-0" : "pointer-events-none invisible translate-x-full",
             )}
           >
+            {dockedAgentViewport && reaiOpen ? (
+              <button
+                type="button"
+                role="separator"
+                aria-orientation="vertical"
+                aria-label={t("reai.resizePanel", lang)}
+                aria-valuemin={REAI_PANEL_MIN_W}
+                aria-valuemax={REAI_PANEL_MAX_W}
+                aria-valuenow={reaiPanelWidth ?? 560}
+                title={t("reai.resizePanel", lang)}
+                className="group absolute inset-y-0 left-0 z-20 w-7 -translate-x-1/2 cursor-col-resize touch-none focus-visible:outline-none"
+                onPointerDown={(event) => {
+                  if (event.button !== 0) return;
+                  event.preventDefault();
+                  reaiResizeActiveRef.current = true;
+                  setReaiResizing(true);
+                  event.currentTarget.setPointerCapture(event.pointerId);
+                }}
+                onPointerMove={(event) => {
+                  if (!reaiResizeActiveRef.current) return;
+                  setAgentPanelWidth(window.innerWidth - event.clientX);
+                }}
+                onPointerUp={(event) => {
+                  if (event.currentTarget.hasPointerCapture(event.pointerId)) {
+                    event.currentTarget.releasePointerCapture(event.pointerId);
+                  }
+                  finishAgentResize();
+                }}
+                onPointerCancel={finishAgentResize}
+                onLostPointerCapture={finishAgentResize}
+                onDoubleClick={resetAgentPanelWidth}
+                onKeyDown={(event) => {
+                  const current = reaiPanelWidth
+                    ?? Math.min(720, Math.max(480, window.innerWidth * 0.33));
+                  if (event.key === "ArrowLeft") {
+                    event.preventDefault();
+                    window.localStorage.setItem(REAI_PANEL_WIDTH_KEY, String(setAgentPanelWidth(current + 16)));
+                  } else if (event.key === "ArrowRight") {
+                    event.preventDefault();
+                    window.localStorage.setItem(REAI_PANEL_WIDTH_KEY, String(setAgentPanelWidth(current - 16)));
+                  } else if (event.key === "Home") {
+                    event.preventDefault();
+                    window.localStorage.setItem(REAI_PANEL_WIDTH_KEY, String(setAgentPanelWidth(REAI_PANEL_MIN_W)));
+                  } else if (event.key === "End") {
+                    event.preventDefault();
+                    window.localStorage.setItem(REAI_PANEL_WIDTH_KEY, String(setAgentPanelWidth(REAI_PANEL_MAX_W)));
+                  }
+                }}
+              >
+                <span
+                  aria-hidden="true"
+                  className={cn(
+                    "pointer-events-none absolute left-1/2 top-1/2 h-16 w-[3px] -translate-x-1/2 -translate-y-1/2 rounded-full bg-foreground/35 opacity-0 transition-[opacity,transform,background-color] duration-150 group-hover:opacity-45 group-focus-visible:opacity-60",
+                    reaiResizing && "scale-y-110 bg-foreground/45 opacity-60",
+                  )}
+                />
+              </button>
+            ) : null}
             <div className="flex h-14 shrink-0 items-center justify-between border-b border-border bg-card px-4 pt-safe">
               <div className="flex min-w-0 items-center gap-2.5">
                 <span className="flex h-8 w-8 shrink-0 items-center justify-center text-foreground">
@@ -547,7 +681,7 @@ export function AppShell({
                 type="button"
                 onClick={() => setReaiOpen(false)}
                 aria-label={t("reai.closeAgent", lang)}
-                className="flex h-11 w-11 items-center justify-center rounded-2xl text-foreground/45 transition-colors hover:bg-foreground/[0.05] hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 sm:h-9 sm:w-9"
+                className="floating-icon-button flex items-center justify-center text-foreground/45 transition-colors hover:bg-foreground/[0.05] hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
               >
                 <CloseIcon size={18} />
               </button>
@@ -561,7 +695,7 @@ export function AppShell({
 
       {/* CSS variables keep the ReaUI rail and X-style wide navigation aligned. */}
       <style>{`
-        :root { --reai-panel-width: clamp(360px, 25vw, 400px); }
+        :root { --reai-panel-width: clamp(480px, 33vw, 720px); }
         @media (min-width: 768px) {
           :root { --sidebar-offset: ${SIDEBAR_COLLAPSED_W}px; }
         }

@@ -57,7 +57,7 @@ export default function FloorplanNav({ floorplanUrl, rooms, onRoomClick, activeR
         onClick={() => setExpanded(!expanded)}
         aria-expanded={expanded}
         className={cn(
-          "mb-2 flex min-h-11 items-center gap-1.5 rounded-full border border-white/10 px-3 py-2 text-xs font-medium text-white/80 shadow-lg transition-colors hover:bg-black/85 hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/70",
+          "floating-control mb-2 flex items-center gap-1.5 border border-white/10 px-3 text-xs font-medium text-white/80 shadow-lg transition-colors hover:bg-black/85 hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/70",
           expanded ? "bg-black/85" : "bg-black/75",
         )}
       >
@@ -66,7 +66,7 @@ export default function FloorplanNav({ floorplanUrl, rooms, onRoomClick, activeR
       </button>
 
       {expanded && (
-        <div className="max-h-[48dvh] max-w-[calc(100vw-1.5rem)] animate-fade-in-up overflow-auto rounded-2xl border border-white/10 bg-black/70 p-3 shadow-2xl backdrop-blur-2xl sm:max-w-none">
+        <div className="floating-panel-shape max-h-[48dvh] max-w-[calc(100vw-1.5rem)] animate-fade-in-up overflow-auto border border-white/10 bg-black/70 p-3 shadow-2xl backdrop-blur-2xl sm:max-w-none">
           {/* Floorplan image as background */}
           <div className="relative w-[min(300px,calc(100vw-3rem))]" style={{ aspectRatio: `${svgW} / ${svgH}` }}>
             {/* eslint-disable-next-line @next/next/no-img-element */}

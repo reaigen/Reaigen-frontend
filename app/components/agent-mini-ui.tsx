@@ -42,7 +42,7 @@ function MiniBlock({
     const items = block.items.slice(0, 4);
     if (items.length === 0) return null;
     return (
-      <section aria-label={block.title} className="overflow-hidden rounded-[1.35rem] border border-border/65 bg-card shadow-control">
+      <section aria-label={block.title} className="floating-panel-shape overflow-hidden border border-border/65 bg-card shadow-control">
         <header className="flex items-start gap-2.5 border-b border-border/45 px-3 py-2.5">
           <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-foreground text-background">
             <LayoutIcon size={14} />
@@ -74,7 +74,7 @@ function MiniBlock({
       ? Math.max(0, Math.min(100, block.value))
       : null;
     return (
-      <section aria-label={block.title} className="rounded-[1.35rem] border border-border/65 bg-card p-3 shadow-control">
+      <section aria-label={block.title} className="floating-panel-shape border border-border/65 bg-card p-3 shadow-control">
         <div className="flex items-start gap-2.5">
           <span className={cn("flex h-8 w-8 shrink-0 items-center justify-center rounded-full", toneClass(block.tone))}>
             {block.tone === "success" ? <CheckIcon size={14} /> : <ClockIcon size={14} />}
@@ -111,7 +111,7 @@ function MiniBlock({
   const actions = block.actions.slice(0, 3);
   if (actions.length === 0) return null;
   return (
-    <section aria-label={block.title} className="overflow-hidden rounded-[1.35rem] border border-border/65 bg-card shadow-control">
+    <section aria-label={block.title} className="floating-panel-shape overflow-hidden border border-border/65 bg-card shadow-control">
       {block.title ? <h3 className="border-b border-border/45 px-3 py-2.5 text-[11px] font-semibold">{block.title}</h3> : null}
       <div className="divide-y divide-border/40">
         {actions.map((action, index) => (
@@ -170,7 +170,7 @@ export function AgentMiniUi({
   return (
     <div className="mt-3 space-y-2.5">
       {results.length > 0 ? (
-        <section aria-label={resultTitle} className="overflow-hidden rounded-[1.35rem] border border-border/65 bg-card shadow-control">
+        <section aria-label={resultTitle} className="floating-panel-shape overflow-hidden border border-border/65 bg-card shadow-control">
           <header className="flex items-center gap-2.5 border-b border-border/45 px-3 py-2.5">
             <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-foreground text-background">
               <ResultIcon size={14} />
@@ -212,7 +212,7 @@ export function AgentMiniUi({
       ) : null}
 
       {settingsSection ? (
-        <section aria-label={t("reai.settingsNavigationTitle", lang)} className="flex items-center gap-3 rounded-[1.35rem] border border-border/65 bg-card p-3 shadow-control">
+        <section aria-label={t("reai.settingsNavigationTitle", lang)} className="floating-panel-shape flex items-center gap-3 border border-border/65 bg-card p-3 shadow-control">
           <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-foreground text-background">
             <SettingsIcon size={15} />
           </span>
@@ -224,7 +224,7 @@ export function AgentMiniUi({
           </div>
           <Link
             href={safeSettingsPath(answer)}
-            className="inline-flex min-h-11 shrink-0 items-center gap-1.5 rounded-full border border-border/70 bg-background px-3 text-[10px] font-semibold transition-colors hover:bg-foreground hover:text-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 sm:min-h-9"
+            className="floating-control inline-flex shrink-0 items-center gap-1.5 border border-border/70 bg-background px-3 text-[10px] font-semibold transition-colors hover:bg-foreground hover:text-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
           >
             {t("reai.settingsNavigationOpen", lang)}
             <ArrowRightIcon size={11} />

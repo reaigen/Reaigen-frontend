@@ -19,8 +19,8 @@ interface LifetimeSelectorProps {
 
 export function LifetimeSelector({ hours, onHoursChange, currentExpiry, lang }: LifetimeSelectorProps) {
   return (
-    <div className="space-y-3">
-      <h3 className="text-[13px] font-semibold text-foreground/70">
+    <div className="space-y-3.5">
+      <h3 className="px-0.5 text-[12px] font-semibold text-foreground/65">
         {t("sharing.lifetime", lang)}
       </h3>
 
@@ -30,7 +30,7 @@ export function LifetimeSelector({ hours, onHoursChange, currentExpiry, lang }: 
         </p>
       ) : null}
 
-      <div className="grid grid-cols-3 gap-1.5 sm:grid-cols-5" role="group" aria-label={t("sharing.lifetime", lang)}>
+      <div className="floating-toolbar overflow-x-auto scrollbar-hide" role="group" aria-label={t("sharing.lifetime", lang)}>
         {LIFETIME_PRESETS.map((preset) => {
           const active = hours === preset.hours;
           return (
@@ -39,7 +39,7 @@ export function LifetimeSelector({ hours, onHoursChange, currentExpiry, lang }: 
               type="button"
               aria-pressed={active}
               onClick={() => onHoursChange(preset.hours)}
-              className={`min-h-11 rounded-full border px-2 text-[11px] font-semibold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 ${active ? "border-foreground bg-foreground text-background shadow-control" : "border-border/55 bg-card text-foreground/60 hover:border-foreground/20 hover:text-foreground"}`}
+              className={`floating-control pen-touch-target min-w-[5.75rem] flex-1 shrink-0 px-3 text-[11px] font-semibold leading-none transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ${active ? "bg-foreground text-background" : "text-foreground/55 hover:bg-card/70 hover:text-foreground"}`}
             >
               {t(preset.labelKey, lang)}
             </button>

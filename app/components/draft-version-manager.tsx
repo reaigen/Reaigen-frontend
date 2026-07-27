@@ -31,6 +31,7 @@ import {
   CheckIcon,
   ChevronDownIcon,
   ClockIcon,
+  CloseIcon,
   ExternalLinkIcon,
   ImageIcon,
   PlusIcon,
@@ -43,6 +44,12 @@ import { StatusPill } from "./status-pill";
 type VersionTab = "tour" | "listing" | "media";
 export type MediaAction = { uploadId: number; action: "promote" | "hide" | "restore" } | null;
 export type MediaVersionCreateKind = "enhance" | "cleanplate" | "hdr";
+export type MediaVersionCreateRequest = {
+  logicalAssetId: string;
+  uploadId: number;
+  version: number;
+  label: string;
+};
 type RevisionChange = { key: string; before: unknown; after: unknown };
 
 const REVISION_FIELD_KEYS: Record<string, LocaleKey> = {
@@ -203,7 +210,7 @@ function Working({ lang }: { lang: string }) {
 
 function EmptyVersionState({ icon: Icon, title, hint }: { icon: typeof TourIcon; title: string; hint: string }) {
   return (
-    <div className="rounded-[1.5rem] border border-dashed border-border/65 bg-card px-6 py-14 text-center sm:rounded-2xl">
+    <div className="floating-panel-shape border border-dashed border-border/65 bg-card px-6 py-14 text-center">
       <span className="mx-auto flex h-11 w-11 items-center justify-center rounded-full bg-surface-subtle text-foreground/30">
         <Icon size={20} />
       </span>
@@ -261,6 +268,7 @@ export function DraftVersionManager({
   const [restoreCandidate, setRestoreCandidate] = React.useState<number | null>(null);
   const [restoreBusy, setRestoreBusy] = React.useState(false);
   const [mediaCandidate, setMediaCandidate] = React.useState<MediaAction>(null);
+  const [mediaCreateRequest, setMediaCreateRequest] = React.useState<MediaVersionCreateRequest | null>(null);
   const [mediaBusy, setMediaBusy] = React.useState(false);
   const [mediaNotice, setMediaNotice] = React.useState<string | null>(null);
   const mediaRefreshTimers = React.useRef<number[]>([]);
@@ -330,6 +338,7 @@ export function DraftVersionManager({
     setTourCandidate(null);
     setRestoreCandidate(null);
     setMediaCandidate(null);
+    setMediaCreateRequest(null);
     setMediaNotice(null);
     setExpandedRevision(null);
     setActionError(null);
@@ -466,7 +475,7 @@ export function DraftVersionManager({
     >
       <Tabs value={activeTab} onValueChange={(value) => setActiveTab(value as VersionTab)}>
         <div className="mb-1">
-          <TabsList className="grid h-11 w-full grid-cols-3 rounded-full border border-border/60 bg-card p-1 shadow-control">
+          <TabsList className="floating-toolbar grid h-auto w-full grid-cols-3">
             <VersionTabTrigger value="tour" icon={TourIcon} label={t("draft.versions.tour", lang)} count={versions.length} />
             <VersionTabTrigger value="listing" icon={VersionsIcon} label={t("draft.versions.listing", lang)} count={history.length} />
             <VersionTabTrigger value="media" icon={ImageIcon} label={t("draft.versions.media", lang)} count={media.length} />
@@ -515,7 +524,7 @@ export function DraftVersionManager({
                   const date = formatDate(version.processing_completed_at ?? version.created_at ?? version.updated_at, dateFormat, lang);
                   return (
                     <article key={id} className={cn(
-                      "overflow-hidden rounded-[1.5rem] border bg-card p-3 shadow-control sm:rounded-2xl",
+                      "floating-panel-shape overflow-hidden border bg-card p-3 shadow-control",
                       active ? "border-foreground/20 ring-1 ring-foreground/[0.04]" : "border-border/60",
                     )}>
                       <div className="flex items-stretch gap-3">
@@ -526,7 +535,7 @@ export function DraftVersionManager({
                             <TourIcon size={22} className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 text-foreground/20" />
                           )}
                           {ready ? (
-                            <Link href={`/tour/${id}`} aria-label={t("tours.open", lang)} className="absolute right-2 top-2 flex h-8 w-8 items-center justify-center rounded-full border border-white/20 bg-black/55 text-white backdrop-blur-md transition-colors hover:bg-black/75 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white">
+                            <Link href={`/tour/${id}`} aria-label={t("tours.open", lang)} className="floating-icon-button-sm absolute right-2 top-2 flex items-center justify-center border border-white/20 bg-black/55 text-white backdrop-blur-md transition-colors hover:bg-black/75 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white">
                               <ExternalLinkIcon size={13} />
                             </Link>
                           ) : null}
@@ -595,7 +604,7 @@ export function DraftVersionManager({
                         current ? "bg-foreground" : "bg-border",
                       )} />
                       <div className={cn(
-                        "overflow-hidden rounded-[1.5rem] border bg-card shadow-control sm:rounded-2xl",
+                        "floating-panel-shape overflow-hidden border bg-card shadow-control",
                         current ? "border-foreground/20" : "border-border/60",
                       )}>
                         <button
@@ -690,12 +699,12 @@ export function DraftVersionManager({
                 {t("reai.mediaVersionsSafety", lang)}
               </p>
               {mediaNotice ? (
-                <div className="editor-glass-control mb-4 flex items-center gap-3 rounded-full border px-3.5 py-2.5 text-[11px] text-foreground/70" role="status" aria-live="polite">
+                <div className="floating-capsule mb-4 flex items-center gap-3 px-3.5 text-[11px] text-foreground/70" role="status" aria-live="polite">
                   <span className="h-4 w-4 shrink-0 animate-spin rounded-full border-2 border-foreground/15 border-t-foreground/65" aria-hidden="true" />
                   <span>{mediaNotice}</span>
                 </div>
               ) : null}
-              <div className="grid gap-4 lg:grid-cols-2">
+              <div className="grid items-start gap-4 lg:grid-cols-2">
                 {media.map((group, groupIndex) => (
                   <MediaVersionCard
                     key={group.logical_asset_id}
@@ -709,14 +718,31 @@ export function DraftVersionManager({
                     onSelect={(id) => {
                       setSelectedMedia((current) => ({ ...current, [group.logical_asset_id]: id }));
                       setMediaCandidate(null);
+                      setMediaCreateRequest(null);
                     }}
-                    onCandidate={setMediaCandidate}
+                    onCandidate={(nextCandidate) => {
+                      setMediaCandidate(nextCandidate);
+                      setMediaCreateRequest(null);
+                    }}
                     onCancel={() => setMediaCandidate(null)}
                     onConfirm={() => void applyMediaAction()}
-                    onCreate={(uploadId, kind) => void createMediaVersion(group.logical_asset_id, uploadId, kind)}
+                    onRequestCreate={setMediaCreateRequest}
                   />
                 ))}
               </div>
+              {mediaCreateRequest ? (
+                <MediaVersionCreationPanel
+                  request={mediaCreateRequest}
+                  lang={lang}
+                  busy={mediaBusy}
+                  onCancel={() => setMediaCreateRequest(null)}
+                  onCreate={(kind) => {
+                    const request = mediaCreateRequest;
+                    setMediaCreateRequest(null);
+                    void createMediaVersion(request.logicalAssetId, request.uploadId, kind);
+                  }}
+                />
+              ) : null}
             </>
           )}
         </TabsContent>
@@ -737,7 +763,7 @@ function VersionTabTrigger({
   count: number;
 }) {
   return (
-    <TabsTrigger value={value} className="group h-9 gap-1.5 px-2 text-[11px] data-[state=active]:bg-foreground data-[state=active]:text-background data-[state=active]:shadow-sm sm:text-[12px]">
+    <TabsTrigger value={value} className="floating-control group h-auto w-full gap-1.5 px-2 text-[11px] data-[state=active]:bg-foreground data-[state=active]:text-background data-[state=active]:shadow-sm sm:text-[12px]">
       <Icon size={14} />
       <span>{label}</span>
       {count > 0 ? <span className="hidden min-w-5 rounded-full bg-foreground/[0.07] px-1.5 py-0.5 text-[9px] font-semibold tabular-nums group-data-[state=active]:bg-background/15 min-[430px]:inline-flex">{count}</span> : null}
@@ -764,7 +790,7 @@ function ConfirmationCard({
 }) {
   return (
     <div className={cn(
-      "rounded-[1.5rem] border border-border/65 bg-card sm:rounded-2xl",
+      "floating-panel-shape border border-border/65 bg-card",
       compact ? "p-3" : "p-4 shadow-card",
     )}>
       <p className="text-[11px] leading-relaxed text-foreground/65">{message}</p>
@@ -773,6 +799,88 @@ function ConfirmationCard({
         <Button type="button" size="xs" className="pen-touch-target" loading={busy} onClick={onConfirm}>{confirmLabel}</Button>
       </div>
     </div>
+  );
+}
+
+export function MediaVersionCreationPanel({
+  request,
+  lang,
+  busy,
+  onCancel,
+  onCreate,
+}: {
+  request: MediaVersionCreateRequest;
+  lang: string;
+  busy: boolean;
+  onCancel: () => void;
+  onCreate: (kind: MediaVersionCreateKind) => void;
+}) {
+  const [kind, setKind] = React.useState<MediaVersionCreateKind>("enhance");
+
+  React.useEffect(() => {
+    setKind("enhance");
+  }, [request.uploadId]);
+
+  return (
+    <section className="floating-panel mt-4 overflow-hidden">
+      <div className="flex items-start justify-between gap-4 border-b border-border/45 px-4 py-3.5">
+        <div className="min-w-0">
+          <p className="text-[13px] font-semibold">{t("reai.mediaCreateQuestion", lang)}</p>
+          <p className="mt-1 truncate text-[10px] leading-relaxed text-muted-foreground" title={request.label}>
+            {request.label} · {t("reai.mediaCreateFrom", lang).replace("{version}", String(request.version))}
+          </p>
+        </div>
+        <Button type="button" variant="ghost" size="icon-sm" onClick={onCancel} disabled={busy} aria-label={t("common.cancel", lang)}>
+          <CloseIcon size={14} />
+        </Button>
+      </div>
+      <div className="grid gap-2 p-3 sm:grid-cols-3" role="radiogroup" aria-label={t("reai.mediaCreateQuestion", lang)}>
+        {([
+          ["enhance", "reai.mediaCreateEnhance", "reai.mediaCreateEnhanceHint"],
+          ["cleanplate", "reai.mediaCreateCleanplate", "reai.mediaCreateCleanplateHint"],
+          ["hdr", "reai.mediaCreateHdr", "reai.mediaCreateHdrHint"],
+        ] as const).map(([value, labelKey, hintKey]) => {
+          const active = kind === value;
+          return (
+            <button
+              key={value}
+              type="button"
+              role="radio"
+              aria-checked={active}
+              disabled={busy}
+              onClick={() => setKind(value)}
+              className={cn(
+                "flex min-h-24 items-start gap-3 rounded-2xl border p-3 text-left transition-[border-color,background-color] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50",
+                active
+                  ? "border-foreground/35 bg-foreground/[0.055]"
+                  : "border-border/55 bg-card/45 hover:border-foreground/25 hover:bg-card/75",
+              )}
+            >
+              <span className={cn(
+                "mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full border",
+                active ? "border-foreground bg-foreground text-background" : "border-border/80 bg-card text-transparent",
+              )}>
+                <CheckIcon size={11} />
+              </span>
+              <span className="min-w-0">
+                <span className="block text-[11px] font-semibold">{t(labelKey, lang)}</span>
+                <span className="mt-1 block text-[10px] leading-relaxed text-muted-foreground">{t(hintKey, lang)}</span>
+              </span>
+            </button>
+          );
+        })}
+      </div>
+      <div className="flex flex-col gap-3 border-t border-border/45 bg-card/45 px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
+        <p className="flex max-w-xl items-start gap-2 text-[9px] leading-relaxed text-muted-foreground">
+          <CheckIcon size={12} className="mt-0.5 shrink-0 text-foreground/60" />
+          {t("reai.mediaCreateHint", lang)}
+        </p>
+        <Button type="button" size="sm" className="shrink-0" loading={busy} onClick={() => onCreate(kind)}>
+          {t("reai.mediaCreateAction", lang)}
+          <ArrowRightIcon size={14} />
+        </Button>
+      </div>
+    </section>
   );
 }
 
@@ -788,7 +896,7 @@ export function MediaVersionCard({
   onCandidate,
   onCancel,
   onConfirm,
-  onCreate,
+  onRequestCreate,
 }: {
   group: MediaVersionGroup;
   groupIndex: number;
@@ -801,10 +909,8 @@ export function MediaVersionCard({
   onCandidate: (candidate: Exclude<MediaAction, null>) => void;
   onCancel: () => void;
   onConfirm: () => void;
-  onCreate?: (uploadId: number, kind: MediaVersionCreateKind) => void;
+  onRequestCreate?: (request: MediaVersionCreateRequest) => void;
 }) {
-  const [createOpen, setCreateOpen] = React.useState(false);
-  const [createKind, setCreateKind] = React.useState<MediaVersionCreateKind>("enhance");
   const versions = [...group.versions].sort((a, b) => a.version - b.version);
   const selected = versions.find((version) => version.id === selectedId)
     ?? versions.find((version) => version.is_master)
@@ -816,9 +922,10 @@ export function MediaVersionCard({
   const newer = selectedIndex < versions.length - 1 ? versions[selectedIndex + 1] : null;
   const operations = mediaOperationLabels(selected, lang);
   const selectedCandidate = candidate?.uploadId === selected.id ? candidate : null;
+  const assetLabel = t("reai.mediaAsset", lang).replace("{number}", String(groupIndex + 1));
 
   return (
-    <section className="editor-glass-surface overflow-hidden rounded-[1.5rem] border sm:rounded-2xl">
+    <section className="floating-panel overflow-hidden">
       <div className="relative aspect-[16/9] overflow-hidden bg-surface-subtle">
         {selected.file_url ? (
           <img src={selected.file_url} alt="" loading="lazy" className={cn("h-full w-full object-cover transition-opacity", selected.is_deleted && "opacity-65")} />
@@ -838,30 +945,32 @@ export function MediaVersionCard({
         <div className="absolute inset-x-3 bottom-3 flex items-end justify-between gap-3 text-white">
           <div className="min-w-0">
             <p className="text-[13px] font-semibold">v{selected.version}</p>
-            <p className="mt-0.5 truncate text-[10px] text-white/75">{selected.file_name || t("reai.mediaAsset", lang).replace("{number}", String(groupIndex + 1))}</p>
+            <p className="mt-0.5 truncate text-[10px] text-white/75">{assetLabel}</p>
             <p className="mt-0.5 text-[9px] text-white/55">{formatDate(selected.uploaded_at, dateFormat, lang)}</p>
           </div>
-          <div className="editor-control-capsule pointer-events-auto flex shrink-0 overflow-hidden rounded-full border">
-            <button
-              type="button"
-              className="pen-touch-target flex h-11 w-11 items-center justify-center text-muted-foreground transition-colors hover:bg-accent hover:text-accent-foreground disabled:opacity-30 sm:h-9 sm:w-9"
-              disabled={busy || !older}
-              onClick={() => older && onSelect(older.id)}
-              aria-label={t("reai.mediaPreviousVersion", lang)}
-            >
-              <ArrowLeftIcon size={14} />
-            </button>
-            <span className="h-5 w-px self-center bg-border/70" aria-hidden="true" />
-            <button
-              type="button"
-              className="pen-touch-target flex h-11 w-11 items-center justify-center text-muted-foreground transition-colors hover:bg-accent hover:text-accent-foreground disabled:opacity-30 sm:h-9 sm:w-9"
-              disabled={busy || !newer}
-              onClick={() => newer && onSelect(newer.id)}
-              aria-label={t("reai.mediaNextVersion", lang)}
-            >
-              <ArrowRightIcon size={14} />
-            </button>
-          </div>
+          {versions.length > 1 ? (
+            <div className="floating-capsule pointer-events-auto flex shrink-0 overflow-hidden">
+              <button
+                type="button"
+                className="floating-icon-button pen-touch-target text-muted-foreground hover:bg-accent hover:text-accent-foreground disabled:opacity-30"
+                disabled={busy || !older}
+                onClick={() => older && onSelect(older.id)}
+                aria-label={t("reai.mediaPreviousVersion", lang)}
+              >
+                <ArrowLeftIcon size={14} />
+              </button>
+              <span className="h-5 w-px self-center bg-border/70" aria-hidden="true" />
+              <button
+                type="button"
+                className="floating-icon-button pen-touch-target text-muted-foreground hover:bg-accent hover:text-accent-foreground disabled:opacity-30"
+                disabled={busy || !newer}
+                onClick={() => newer && onSelect(newer.id)}
+                aria-label={t("reai.mediaNextVersion", lang)}
+              >
+                <ArrowRightIcon size={14} />
+              </button>
+            </div>
+          ) : null}
         </div>
       </div>
 
@@ -897,17 +1006,21 @@ export function MediaVersionCard({
           {[mediaProcessorLabel(selected, lang), ...operations].join(" · ")}
         </p>
         <div className="flex flex-wrap items-center gap-2">
-          {onCreate && !selected.is_deleted ? (
+          {onRequestCreate && !selected.is_deleted ? (
             <Button
               type="button"
               variant="outline"
               size="xs"
-              className="editor-glass-control pen-touch-target"
+              className="floating-capsule pen-touch-target h-auto"
               disabled={busy}
-              aria-expanded={createOpen}
               onClick={() => {
-                setCreateOpen((current) => !current);
                 onCancel();
+                onRequestCreate({
+                  logicalAssetId: group.logical_asset_id,
+                  uploadId: selected.id,
+                  version: selected.version,
+                  label: assetLabel,
+                });
               }}
             >
               <PlusIcon size={13} />
@@ -923,73 +1036,6 @@ export function MediaVersionCard({
             <Button type="button" size="xs" className="pen-touch-target" disabled={busy} onClick={() => onCandidate({ uploadId: selected.id, action: "restore" })}>{t("reai.mediaRestore", lang)}</Button>
           )}
         </div>
-
-        {createOpen && onCreate ? (
-          <div className="mt-3 overflow-hidden rounded-2xl border border-border/55 bg-background/45">
-            <div className="border-b border-border/45 px-3.5 py-3">
-              <p className="text-[12px] font-semibold">{t("reai.mediaCreateQuestion", lang)}</p>
-              <p className="mt-1 text-[10px] leading-relaxed text-muted-foreground">
-                {t("reai.mediaCreateFrom", lang).replace("{version}", String(selected.version))}
-              </p>
-            </div>
-            <div role="radiogroup" aria-label={t("reai.mediaCreateQuestion", lang)}>
-              {([
-                ["enhance", "reai.mediaCreateEnhance", "reai.mediaCreateEnhanceHint"],
-                ["cleanplate", "reai.mediaCreateCleanplate", "reai.mediaCreateCleanplateHint"],
-                ["hdr", "reai.mediaCreateHdr", "reai.mediaCreateHdrHint"],
-              ] as const).map(([kind, labelKey, hintKey], index) => {
-                const active = createKind === kind;
-                return (
-              <button
-                key={kind}
-                type="button"
-                role="radio"
-                aria-checked={active}
-                disabled={busy}
-                className={cn(
-                  "group flex w-full items-start gap-3 px-3.5 py-3 text-left transition-colors hover:bg-foreground/[0.045] disabled:opacity-50",
-                  index > 0 && "border-t border-border/40",
-                  active && "bg-foreground/[0.045]",
-                )}
-                onClick={() => setCreateKind(kind)}
-              >
-                <span className={cn(
-                  "mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full border transition-colors",
-                  active
-                    ? "border-foreground bg-foreground text-background"
-                    : "border-border/80 bg-card text-transparent group-hover:border-foreground/45",
-                )}>
-                  <CheckIcon size={11} />
-                </span>
-                <span className="min-w-0">
-                  <span className="block text-[11px] font-semibold">{t(labelKey, lang)}</span>
-                  <span className="mt-1 block text-[10px] leading-relaxed text-muted-foreground">{t(hintKey, lang)}</span>
-                </span>
-              </button>
-                );
-              })}
-            </div>
-            <div className="border-t border-border/45 bg-card/45 p-3">
-              <p className="mb-2.5 flex items-start gap-2 text-[9px] leading-relaxed text-muted-foreground">
-                <CheckIcon size={12} className="mt-0.5 shrink-0 text-foreground/60" />
-                {t("reai.mediaCreateHint", lang)}
-              </p>
-              <Button
-                type="button"
-                size="sm"
-                className="w-full"
-                loading={busy}
-                onClick={() => {
-                  setCreateOpen(false);
-                  onCreate(selected.id, createKind);
-                }}
-              >
-                {t("reai.mediaCreateAction", lang)}
-                <ArrowRightIcon size={14} />
-              </Button>
-            </div>
-          </div>
-        ) : null}
 
         {selectedCandidate ? (
           <div className="mt-3 border-t border-border/45 pt-3">
@@ -1011,7 +1057,7 @@ export function MediaVersionCard({
 
 function AgentRequired({ lang }: { lang: string }) {
   return (
-    <div className="rounded-[1.5rem] border border-dashed border-border/65 bg-card px-6 py-12 text-center sm:rounded-2xl">
+    <div className="floating-panel-shape border border-dashed border-border/65 bg-card px-6 py-12 text-center">
       <span className="mx-auto flex h-11 w-11 items-center justify-center rounded-full bg-surface-subtle text-foreground/30"><VersionsIcon size={20} /></span>
       <p className="mx-auto mt-3 max-w-sm text-[12px] font-semibold leading-relaxed">{t("draft.versions.agentRequired", lang)}</p>
       <Link href="/settings#reai" className="mt-4 inline-flex rounded-full border border-border/70 px-3.5 py-2 text-[11px] font-semibold transition-colors hover:bg-surface-subtle focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">{t("settings.tab.reai", lang)}</Link>

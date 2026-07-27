@@ -16,7 +16,7 @@ import { PageHeader } from "../components/page-header";
 import { StatusPill } from "../components/status-pill";
 import { SearchField } from "../components/search-field";
 import { GridLayoutToggle } from "../components/grid-layout-toggle";
-import { ArrowRightIcon, ImageIcon, InfoIcon, ShareIcon } from "../components/icons";
+import { ImageIcon, InfoIcon, ShareIcon } from "../components/icons";
 import { Button } from "../lib/ui/button";
 import { currentGalleryUploads } from "../lib/media";
 import { readDraftPageCache, writeDraftPageCache } from "../lib/resilient-draft-cache";
@@ -74,8 +74,9 @@ export default function DashboardPage() {
   const [searchInput, setSearchInput] = React.useState("");
   const [searchQuery, setSearchQuery] = React.useState("");
   const [gridCols, setGridCols] = React.useState<1 | 2>(2);
-  // Read persisted layout after mount to avoid a hydration mismatch
-  React.useEffect(() => {
+  // Apply the persisted layout before the browser paints. Reading it in a
+  // passive effect visibly reshaped every card after the first frame.
+  React.useLayoutEffect(() => {
     const cached = localStorage.getItem("reaigen:gridCols");
     if (cached === "1") setGridCols(1);
   }, []);
@@ -257,7 +258,7 @@ export default function DashboardPage() {
           eyebrow={user.first_name ? `${t("dashboard.welcome", lang)}, ${user.first_name}` : t("dashboard.welcome", lang)}
           title={t("dashboard.creationsTitle", lang)}
           description={t("dashboard.creationsSubtitle", lang)}
-          actions={totalCount > 0 ? <StatusPill>{totalCount} {t("dashboard.items", lang)}</StatusPill> : undefined}
+          actions={<StatusPill>{totalCount} {t("dashboard.items", lang)}</StatusPill>}
           className="mb-5 sm:mb-8"
         />
         {/* Search bar */}
@@ -275,7 +276,10 @@ export default function DashboardPage() {
         </div>
 
         {usingCachedDrafts && (
-          <div role="status" className="mb-5 flex items-start gap-3 rounded-2xl border border-border/70 bg-card px-3.5 py-3 text-[12px] text-foreground/65 shadow-control sm:mb-7 sm:items-center">
+          <div
+            role="status"
+            className="floating-panel fixed right-4 top-20 z-50 flex w-[min(28rem,calc(100vw-2rem))] items-start gap-3 border-border/70 bg-card/95 px-3.5 py-3 text-[12px] text-foreground/65 backdrop-blur-xl sm:items-center md:right-6 md:top-6"
+          >
             <InfoIcon size={16} className="mt-0.5 shrink-0 text-foreground/45 sm:mt-0" />
             <p className="min-w-0 flex-1 leading-relaxed">{t("dashboard.cachedNotice", lang)}</p>
             <Button type="button" variant="ghost" size="xs" className="shrink-0" onClick={() => setReloadNonce((value) => value + 1)}>{t("dashboard.refreshCreations", lang)}</Button>
@@ -288,10 +292,6 @@ export default function DashboardPage() {
             {Array.from({ length: gridCols === 2 ? 4 : 3 }).map((_, i) => (
               <CollectionCard key={i} loading>
                 <div className="aspect-[16/10] bg-muted/45" />
-                <div className="flex h-12 items-center justify-between px-4">
-                  <div className="h-3 w-1/3 rounded bg-muted/55" />
-                  <div className="h-3 w-14 rounded bg-muted/40" />
-                </div>
               </CollectionCard>
             ))}
           </div>
@@ -341,19 +341,19 @@ export default function DashboardPage() {
                     className="block focus-visible:outline-none"
                     onMouseEnter={() => router.prefetch(`/draft/${draft.id}`)}
                   >
-                    <div className="relative aspect-[16/10] overflow-hidden bg-[#d8d2c8]">
+                    <div className="relative aspect-[16/10] overflow-hidden bg-surface-subtle">
                       {thumbUrl ? (
                         <Thumbnail src={thumbUrl} alt={draft.title} className="absolute inset-0 h-full w-full object-cover transition-transform duration-500 ease-out group-hover:scale-[1.03]" priority={idx < 4} />
                       ) : (
-                        <div className="absolute inset-0 flex items-center justify-center bg-gradient-to-br from-[#ded8ce] to-[#bbb3a7]">
-                          <ImageIcon size={42} className="text-black/15" />
+                        <div className="absolute inset-0 flex items-center justify-center bg-gradient-to-br from-surface-subtle via-muted/55 to-muted/80">
+                          <ImageIcon size={42} className="text-foreground/15" />
                         </div>
                       )}
                       <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/5 to-black/15" aria-hidden="true" />
                       <StatusPill
-                        tone={draftTour === "ready" ? "success" : draftTour === "issues" ? "danger" : draftTour === "processing" ? "warning" : draft.is_complete ? "neutral" : "warning"}
+                        tone={draftTour === "ready" ? "success" : draftTour === "issues" ? "danger" : draftTour === "processing" ? "warning" : draft.is_complete ? "success" : "warning"}
                         dot
-                        className="absolute left-3 top-3 border-white/25 bg-white/90 text-black shadow-[0_4px_16px_rgba(0,0,0,0.14)]"
+                        className="absolute left-3 top-3 border-white/15 bg-black/55 text-white/90 shadow-sm backdrop-blur-md"
                       >
                         {tourStatusLabel
                           ?? (draft.is_complete
@@ -366,9 +366,13 @@ export default function DashboardPage() {
                           {address && (
                             <p className="mt-1 truncate text-[12px] text-white/70">{address}</p>
                           )}
+                          <p className="mt-2 flex min-w-0 items-center gap-2 truncate text-[10px] font-medium text-white/65">
+                            <span className={`h-1.5 w-1.5 shrink-0 rounded-full ${draft.is_portfolio_visible ? "bg-emerald-400" : "bg-white/35"}`} aria-hidden="true" />
+                            <span className="truncate">{draft.is_portfolio_visible ? t("dashboard.portfolioVisible", lang) : t("dashboard.notInPortfolio", lang)}</span>
+                          </p>
                         </div>
                         {price && (
-                          <div className="shrink-0 rounded-full border border-white/45 bg-white/90 px-3 py-1.5 text-right text-black shadow-sm backdrop-blur-md">
+                          <div className="floating-status shrink-0 flex flex-col justify-center border border-white/45 bg-white/90 px-3 text-right text-black shadow-sm backdrop-blur-md">
                             <span className="block text-[13px] font-semibold tabular-nums">{price}</span>
                             {showOrigPrice && (
                               <span className="block text-[11px] text-black/55 tabular-nums">{origPrice}</span>
@@ -377,22 +381,12 @@ export default function DashboardPage() {
                         )}
                       </div>
                     </div>
-
-                    <div className="flex h-12 items-center justify-between gap-4 border-t border-border/70 bg-card px-4">
-                      <p className="flex min-w-0 items-center gap-2 truncate text-[11px] font-medium text-foreground/65">
-                        <span className={`h-1.5 w-1.5 shrink-0 rounded-full ${draft.is_portfolio_visible ? "bg-emerald-600" : "bg-foreground/20"}`} aria-hidden="true" />
-                        <span className="truncate">{draft.is_portfolio_visible ? t("dashboard.portfolioVisible", lang) : t("dashboard.notInPortfolio", lang)}</span>
-                      </p>
-                      <span className="inline-flex shrink-0 items-center gap-1.5 text-[12px] font-semibold text-foreground/70 transition-colors group-hover:text-foreground">
-                        {t("common.open", lang)} <ArrowRightIcon size={14} className="transition-transform duration-200 group-hover:translate-x-0.5" />
-                      </span>
-                    </div>
                   </Link>
 
                   <button
                     type="button"
                     onClick={() => router.push(`/draft/${draft.id}/sharing`)}
-                    className="absolute right-3 top-3 z-10 flex h-8 w-8 items-center justify-center rounded-full border border-white/15 bg-black/45 text-white/80 shadow-sm backdrop-blur-md transition-[background-color,color,opacity,transform] hover:scale-105 hover:bg-black/70 hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white focus-visible:ring-offset-2 focus-visible:ring-offset-black md:opacity-0 md:group-hover:opacity-100 md:group-focus-within:opacity-100"
+                    className="floating-icon-button-sm absolute right-3 top-3 z-10 flex items-center justify-center border border-white/15 bg-black/45 text-white/80 shadow-sm backdrop-blur-md transition-[background-color,color,opacity,transform] hover:scale-105 hover:bg-black/70 hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white focus-visible:ring-offset-2 focus-visible:ring-offset-black md:opacity-0 md:group-hover:opacity-100 md:group-focus-within:opacity-100"
                     aria-label={t("draft.share", lang)}
                   >
                     <ShareIcon size={14} />
@@ -408,10 +402,6 @@ export default function DashboardPage() {
               {Array.from({ length: gridCols === 2 ? 2 : 1 }).map((_, i) => (
                 <CollectionCard key={i} loading>
                   <div className="aspect-[16/10] bg-muted/45" />
-                  <div className="flex h-12 items-center justify-between px-4">
-                    <div className="h-3 w-1/3 rounded bg-muted/55" />
-                    <div className="h-3 w-14 rounded bg-muted/40" />
-                  </div>
                 </CollectionCard>
               ))}
             </div>

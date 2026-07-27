@@ -61,7 +61,16 @@ import {
 import { t, getUserLanguage, formatDate as fmtDate } from "../lib/i18n";
 import { cn } from "../lib/utils";
 import { ManagedLegalDocuments } from "./content-documents";
-import { ChevronDownIcon } from "./icons";
+import {
+  ChevronDownIcon,
+  ClockIcon,
+  EyeClosedIcon,
+  InfoIcon,
+  LockIcon,
+  MapPinIcon,
+  PriceIcon,
+  SparklesIcon,
+} from "./icons";
 
 function useAutoDismiss(value: boolean, setter: (v: boolean) => void, ms = 3000) {
   React.useEffect(() => {
@@ -75,26 +84,26 @@ function useAutoDismiss(value: boolean, setter: (v: boolean) => void, ms = 3000)
 function Card({ className, ...props }: React.HTMLAttributes<HTMLElement>) {
   return (
     <section
-      className={cn("mt-4 rounded-xl border border-border/60 bg-surface p-5 shadow-card first:mt-0", className)}
+      className={cn("rounded-[24px] border border-border/65 bg-card p-5 shadow-card sm:rounded-[28px] sm:p-6", className)}
       {...props}
     />
   );
 }
 
 function CardHeader({ className, ...props }: React.HTMLAttributes<HTMLDivElement>) {
-  return <div className={cn("pb-4", className)} {...props} />;
+  return <div className={cn("pb-5", className)} {...props} />;
 }
 
 function CardTitle({ className, ...props }: React.HTMLAttributes<HTMLHeadingElement>) {
-  return <h2 className={cn("text-[15px] font-semibold tracking-normal", className)} {...props} />;
+  return <h2 className={cn("text-[17px] font-semibold leading-tight tracking-[-0.02em]", className)} {...props} />;
 }
 
 function CardDescription({ className, ...props }: React.HTMLAttributes<HTMLParagraphElement>) {
-  return <p className={cn("mt-1 text-[13px] leading-relaxed text-muted-foreground", className)} {...props} />;
+  return <p className={cn("mt-1.5 text-[13px] leading-relaxed text-muted-foreground", className)} {...props} />;
 }
 
 function CardContent({ className, ...props }: React.HTMLAttributes<HTMLDivElement>) {
-  return <div className={cn("max-w-2xl", className)} {...props} />;
+  return <div className={cn("max-w-3xl", className)} {...props} />;
 }
 
 function formatAccountDate(value: string | null | undefined, lang: string, dateFormat?: string | null) {
@@ -1852,7 +1861,22 @@ function TwoFactorSection({ lang }: { lang: string }) {
     }
   }
 
-  if (fetchLoading) return null;
+  if (fetchLoading) {
+    return (
+      <Card aria-busy="true">
+        <CardHeader>
+          <CardTitle>{t("settings.security.twoFaTitle", lang)}</CardTitle>
+          <CardDescription>{t("settings.security.twoFaSubtitle", lang)}</CardDescription>
+        </CardHeader>
+        <CardContent>
+          <div className="flex min-h-11 items-center justify-between gap-4" aria-hidden="true">
+            <div className="h-7 w-24 animate-pulse rounded-full bg-muted/70 motion-reduce:animate-none" />
+            <div className="h-9 w-28 animate-pulse rounded-full bg-muted/55 motion-reduce:animate-none" />
+          </div>
+        </CardContent>
+      </Card>
+    );
+  }
 
   return (
     <Card>
@@ -1993,7 +2017,25 @@ function LinkedAccountsSection({ lang }: { lang: string }) {
     }
   }
 
-  if (loading) return null;
+  if (loading) {
+    return (
+      <Card aria-busy="true">
+        <CardHeader>
+          <CardTitle>{t("settings.security.linkedTitle", lang)}</CardTitle>
+          <CardDescription>{t("settings.security.linkedSubtitle", lang)}</CardDescription>
+        </CardHeader>
+        <CardContent>
+          <div className="flex min-h-11 items-center justify-between gap-4" aria-hidden="true">
+            <div className="space-y-2">
+              <div className="h-3 w-24 animate-pulse rounded-full bg-muted/70 motion-reduce:animate-none" />
+              <div className="h-3 w-40 animate-pulse rounded-full bg-muted/45 motion-reduce:animate-none" />
+            </div>
+            <div className="h-9 w-24 animate-pulse rounded-full bg-muted/55 motion-reduce:animate-none" />
+          </div>
+        </CardContent>
+      </Card>
+    );
+  }
 
   const accounts = data?.social_accounts ?? [];
   const canUnlink = data?.has_password || accounts.length > 1;
@@ -2160,16 +2202,16 @@ export function SettingsForm({ user, onSaved }: { user: UserProfile; onSaved: ()
     };
   }, []);
   const triggerClassName =
-    "shrink-0 justify-start rounded-none border-b-2 border-transparent px-1.5 pb-3 pt-0 text-[13px] shadow-none data-[state=active]:border-foreground data-[state=active]:bg-transparent data-[state=active]:shadow-none md:h-9 md:w-full md:rounded-lg md:border-0 md:px-3 md:py-0 md:text-left md:data-[state=active]:bg-foreground/[0.065]";
+    "h-11 w-full shrink-0 justify-start gap-3 rounded-2xl px-3.5 py-0 text-left text-[13px] font-medium shadow-none data-[state=active]:bg-foreground data-[state=active]:text-background data-[state=active]:shadow-control";
   const settingsTabs = [
-    { value: "profile", label: "settings.tab.profile" },
-    { value: "seller", label: "settings.tab.seller" },
-    { value: "privacy", label: "settings.tab.privacy" },
-    { value: "reai", label: "settings.tab.reai" },
-    { value: "localization", label: "settings.tab.localization" },
-    { value: "notifications", label: "settings.tab.notifications" },
-    { value: "billing", label: "settings.tab.billing" },
-    { value: "security", label: "settings.tab.security" },
+    { value: "profile", label: "settings.tab.profile", icon: InfoIcon },
+    { value: "seller", label: "settings.tab.seller", icon: MapPinIcon },
+    { value: "privacy", label: "settings.tab.privacy", icon: EyeClosedIcon },
+    { value: "reai", label: "settings.tab.reai", icon: SparklesIcon },
+    { value: "localization", label: "settings.tab.localization", icon: MapPinIcon },
+    { value: "notifications", label: "settings.tab.notifications", icon: ClockIcon },
+    { value: "billing", label: "settings.tab.billing", icon: PriceIcon },
+    { value: "security", label: "settings.tab.security", icon: LockIcon },
   ] as const;
 
   return (
@@ -2179,11 +2221,11 @@ export function SettingsForm({ user, onSaved }: { user: UserProfile; onSaved: ()
         setActiveTab(value);
         window.history.replaceState(null, "", `#${value}`);
       }}
-      className="w-full md:grid md:grid-cols-[190px_minmax(0,1fr)] md:items-start md:gap-9"
+      className="w-full lg:grid lg:grid-cols-[220px_minmax(0,1fr)] lg:items-start lg:gap-8 xl:gap-10"
     >
-      <div className="mb-7 md:sticky md:top-20 md:mb-0">
+      <div className="mb-6 lg:sticky lg:top-6 lg:mb-0">
         {/* Mobile: every section is available in one native, keyboard-friendly control. */}
-        <label className="relative block md:hidden">
+        <label className="relative block lg:hidden">
           <span className="sr-only">{t("settings.title", lang)}</span>
           <select
             value={activeTab}
@@ -2192,20 +2234,26 @@ export function SettingsForm({ user, onSaved }: { user: UserProfile; onSaved: ()
               setActiveTab(value);
               window.history.replaceState(null, "", `#${value}`);
             }}
-            className="h-12 w-full appearance-none rounded-2xl border border-border/70 bg-card px-4 pr-11 text-[16px] font-semibold text-foreground shadow-control outline-none transition-[border-color,box-shadow] focus-visible:border-foreground/30 focus-visible:ring-2 focus-visible:ring-ring/20"
+            className="h-12 w-full appearance-none rounded-full border border-border/75 bg-card px-5 pr-12 text-[16px] font-semibold text-foreground shadow-control outline-none transition-[border-color,box-shadow] focus-visible:border-foreground/30 focus-visible:ring-2 focus-visible:ring-ring/20"
             aria-label={t("settings.title", lang)}
           >
             {settingsTabs.map((tab) => (
               <option key={tab.value} value={tab.value}>{t(tab.label, lang)}</option>
             ))}
           </select>
-          <ChevronDownIcon size={16} className="pointer-events-none absolute right-4 top-1/2 -translate-y-1/2 text-muted-foreground" />
+          <ChevronDownIcon size={16} className="pointer-events-none absolute right-5 top-1/2 -translate-y-1/2 text-muted-foreground" />
         </label>
         {/* Desktop: vertical list */}
-        <TabsList className="hidden min-h-0 w-full flex-col items-stretch gap-1 rounded-xl border border-border/55 bg-surface p-2 text-muted-foreground md:flex">
-          {settingsTabs.map((tab) => (
-            <TabsTrigger key={tab.value} value={tab.value} className={triggerClassName}>{t(tab.label, lang)}</TabsTrigger>
-          ))}
+        <TabsList className="hidden h-auto min-h-0 w-full flex-col items-stretch gap-1 rounded-[24px] border border-border/65 bg-card p-2 text-muted-foreground shadow-card lg:flex">
+          {settingsTabs.map((tab) => {
+            const Icon = tab.icon;
+            return (
+              <TabsTrigger key={tab.value} value={tab.value} className={triggerClassName}>
+                <Icon size={16} className="shrink-0" />
+                <span className="min-w-0 truncate">{t(tab.label, lang)}</span>
+              </TabsTrigger>
+            );
+          })}
         </TabsList>
       </div>
       <div className="min-w-0">

@@ -104,7 +104,7 @@ export function SidePanel({
             "data-[state=closed]:animate-[panelOut_180ms_ease-in] data-[state=open]:animate-[panelIn_220ms_var(--motion-ease-smooth)]",
             "sm:max-w-[520px]",
             headerMode === "editor"
-              ? "bg-background/90 backdrop-blur-2xl sm:inset-y-3 sm:right-3 sm:w-[calc(100%-1.5rem)] sm:overflow-hidden sm:rounded-[2rem] sm:border"
+              ? "bg-background/90 backdrop-blur-2xl sm:inset-y-3 sm:right-3 sm:w-[calc(100%-1.5rem)] sm:overflow-hidden sm:rounded-[var(--floating-frame-radius)] sm:border"
               : "bg-background",
             className,
           )}
@@ -118,12 +118,12 @@ export function SidePanel({
             )}>
               <div className="flex justify-start">
                 {closeIcon === "back" && onBack ? (
-                  <button type="button" onClick={onBack} aria-label={t("common.back", lang)} className="pen-touch-target flex h-11 w-11 shrink-0 items-center justify-center rounded-full text-foreground/50 transition-colors hover:bg-foreground/[0.055] hover:text-foreground focus-visible:bg-foreground/[0.045] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40 sm:h-9 sm:w-9">
+                  <button type="button" onClick={onBack} aria-label={t("common.back", lang)} className="floating-icon-button pen-touch-target text-foreground/50 hover:bg-foreground/[0.055] hover:text-foreground focus-visible:bg-foreground/[0.045] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40">
                     <ArrowLeftIcon size={18} />
                   </button>
                 ) : (
                   <Dialog.Close asChild>
-                    <button type="button" aria-label={t(closeIcon === "back" ? "common.back" : "common.close", lang)} className="pen-touch-target flex h-11 w-11 shrink-0 items-center justify-center rounded-full text-foreground/50 transition-colors hover:bg-foreground/[0.055] hover:text-foreground focus-visible:bg-foreground/[0.045] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40 sm:h-9 sm:w-9">
+                    <button type="button" aria-label={t(closeIcon === "back" ? "common.back" : "common.close", lang)} className="floating-icon-button pen-touch-target text-foreground/50 hover:bg-foreground/[0.055] hover:text-foreground focus-visible:bg-foreground/[0.045] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40">
                       {closeIcon === "back" ? <ArrowLeftIcon size={18} /> : <CloseIcon size={17} />}
                     </button>
                   </Dialog.Close>
@@ -133,7 +133,7 @@ export function SidePanel({
                 <Dialog.Title className="truncate text-[15px] font-semibold tracking-[-0.01em]">{title}</Dialog.Title>
                 {description ? <Dialog.Description className="mt-0.5 truncate text-[11px] text-muted-foreground">{description}</Dialog.Description> : null}
               </div>
-              <div className="flex justify-end [&_button]:min-h-11 sm:[&_button]:min-h-9">{headerAction}</div>
+              <div className="flex justify-end [&_button]:min-h-11">{headerAction}</div>
             </header>
           ) : (
             <header className="flex min-h-16 shrink-0 items-start justify-between gap-4 border-b border-border/40 px-5 pb-4 pt-[max(1rem,env(safe-area-inset-top))] sm:px-6">
@@ -144,7 +144,7 @@ export function SidePanel({
               <div className="flex shrink-0 items-center gap-2">
                 {headerAction}
                 <Dialog.Close asChild>
-                  <button type="button" aria-label={t("common.close", lang)} className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full text-foreground/40 transition-colors hover:bg-foreground/[0.055] hover:text-foreground focus-visible:bg-foreground/[0.045] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40 sm:h-8 sm:w-8">
+                  <button type="button" aria-label={t("common.close", lang)} className="floating-icon-button text-foreground/40 hover:bg-foreground/[0.055] hover:text-foreground focus-visible:bg-foreground/[0.045] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40">
                     <CloseIcon size={17} />
                   </button>
                 </Dialog.Close>
@@ -158,7 +158,7 @@ export function SidePanel({
           >
             {children}
           </div>
-          {footer ? <footer className="shrink-0 border-t border-border/40 bg-background/95 px-5 pb-[max(0.75rem,env(safe-area-inset-bottom))] pt-3 backdrop-blur-xl [&_button]:min-h-11 sm:px-6 sm:[&_button]:min-h-9">{footer}</footer> : null}
+          {footer ? <footer className="shrink-0 border-t border-border/40 bg-background/95 px-5 pb-[max(0.75rem,env(safe-area-inset-bottom))] pt-3 backdrop-blur-xl [&_button]:min-h-11 sm:px-6">{footer}</footer> : null}
         </Dialog.Content>
       </Dialog.Portal>
     </Dialog.Root>

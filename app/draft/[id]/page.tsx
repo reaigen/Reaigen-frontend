@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, use, type ReactNode } from "react";
+import { useEffect, useRef, useState, use, type ReactNode } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { useAuth } from "../../components/hooks/use-auth";
@@ -101,14 +101,14 @@ function stripFormatting(text: string): string {
 
 // ── Data extraction ───────────────────────────────────────────────────────
 
-function getImages(uploads: DraftUpload[]) {
+function getImages(uploads: DraftUpload[], lang: string) {
   return currentGalleryUploads(uploads, "image")
-    .map((upload) => ({ id: upload.id, url: upload.file_url, name: upload.file_name }));
+    .map((upload, index) => ({ id: upload.id, url: upload.file_url, name: `${t("draft.media.photo", lang)} ${index + 1}` }));
 }
 
-function getVideos(uploads: DraftUpload[]) {
+function getVideos(uploads: DraftUpload[], lang: string) {
   return currentGalleryUploads(uploads, "video")
-    .map((upload) => ({ id: upload.id, url: upload.file_url, name: upload.file_name }));
+    .map((upload, index) => ({ id: upload.id, url: upload.file_url, name: `${t("draft.media.video", lang)} ${index + 1}` }));
 }
 
 /** Read from a specific spec section, e.g. sec("technical", "condition") */
@@ -413,6 +413,98 @@ function getFeatureChips(d: DraftDetailItem, lang: string): string[] {
 
 // ── Page ──────────────────────────────────────────────────────────────────
 
+function DraftPreviewSkeleton({ lang }: { lang: string }) {
+  return (
+    <div
+      className="mx-auto w-full max-w-[980px] pb-28 md:pb-12"
+      role="status"
+      aria-label={t("draft.media.loading", lang)}
+      aria-busy="true"
+    >
+      <div className="mb-5 flex min-h-11 items-center justify-between gap-3 md:mb-6 md:min-h-9">
+        <div className="h-4 w-16 rounded-full bg-muted/75" />
+        <div className="flex gap-2 lg:hidden">
+          <div className="h-11 w-11 rounded-full bg-muted/75 md:h-9 md:w-24" />
+          <div className="h-11 w-11 rounded-full bg-muted/75 md:h-9 md:w-24" />
+        </div>
+      </div>
+      <div className="space-y-6 lg:space-y-8">
+        <div className="min-w-0 space-y-4">
+          <div className="aspect-[16/10] w-full overflow-hidden rounded-[1.5rem] bg-muted/65 shadow-card ring-1 ring-border/60 sm:rounded-2xl md:aspect-video">
+            <div className="h-full w-full animate-pulse bg-gradient-to-br from-muted/45 via-muted/80 to-muted/50 motion-reduce:animate-none" />
+          </div>
+          <div className="space-y-3">
+            <div className="flex gap-2">
+              <div className="h-7 w-28 rounded-full bg-muted/75" />
+              <div className="h-7 w-32 rounded-full bg-muted/60" />
+            </div>
+            <div className="h-9 w-3/5 max-w-xl rounded-xl bg-muted/75" />
+            <div className="h-4 w-48 rounded-full bg-muted/55" />
+          </div>
+        </div>
+        <div className="grid gap-4 sm:grid-cols-2">
+          <div className="h-28 rounded-[1.5rem] border border-border/60 bg-card sm:rounded-2xl" />
+          <div className="h-28 rounded-[1.5rem] border border-border/60 bg-card sm:rounded-2xl" />
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function ExpandableDescription({ text, lang }: { text: string; lang: string }) {
+  const textRef = useRef<HTMLDivElement>(null);
+  const [expanded, setExpanded] = useState(false);
+  const [canExpand, setCanExpand] = useState(false);
+
+  useEffect(() => {
+    const node = textRef.current;
+    if (!node) return;
+
+    setExpanded(false);
+    const measure = () => {
+      const styles = window.getComputedStyle(node);
+      const lineHeight = Number.parseFloat(styles.lineHeight);
+      const collapsedHeight = Number.isFinite(lineHeight) ? lineHeight * 5 : 123;
+      setCanExpand(node.scrollHeight > collapsedHeight + 1);
+    };
+
+    const frame = window.requestAnimationFrame(measure);
+    const observer = new ResizeObserver(measure);
+    observer.observe(node);
+    window.addEventListener("resize", measure);
+
+    return () => {
+      window.cancelAnimationFrame(frame);
+      observer.disconnect();
+      window.removeEventListener("resize", measure);
+    };
+  }, [text]);
+
+  return (
+    <div className="rounded-[1.5rem] border border-border/70 bg-card px-5 py-5 shadow-card sm:rounded-2xl sm:px-6">
+      <div
+        ref={textRef}
+        className={cn(
+          "overflow-hidden whitespace-pre-line text-[14px] leading-[1.75] text-foreground/78 transition-[max-height] duration-300",
+          expanded ? "max-h-[200em]" : "max-h-[8.75em]",
+        )}
+      >
+        {text}
+      </div>
+      {canExpand ? (
+        <button
+          type="button"
+          aria-expanded={expanded}
+          onClick={() => setExpanded((value) => !value)}
+          className="-ml-2 mt-3 rounded-full px-2.5 py-1.5 text-[12px] font-semibold text-foreground/55 transition-colors hover:bg-foreground/[0.045] hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+        >
+          {expanded ? t("draft.showLess", lang) : t("draft.showMore", lang)}
+        </button>
+      ) : null}
+    </div>
+  );
+}
+
 export default function DraftPreviewPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params);
   const draftId = parseInt(id, 10);
@@ -424,7 +516,6 @@ export default function DraftPreviewPage({ params }: { params: Promise<{ id: str
   const [splatData, setSplatData] = useState<SplatsByDraftPayload | null>(null);
   const [unitCatalog, setUnitCatalog] = useState<UnitLookup[]>([]);
   const [error, setError] = useState<string | null>(null);
-  const [descExpanded, setDescExpanded] = useState(false);
   const [detailsExpanded, setDetailsExpanded] = useState(false);
   const [translationPending, setTranslationPending] = useState(false);
   const [activeImageId, setActiveImageId] = useState<number | null>(null);
@@ -550,7 +641,12 @@ export default function DraftPreviewPage({ params }: { params: Promise<{ id: str
   }, [draftId]);
 
   if (isLoading || (!draft && !error)) {
-    return <PageLoading />;
+    if (!user) return <PageLoading />;
+    return (
+      <AppShell user={user} onLogout={logout} hideMobileNav>
+        <DraftPreviewSkeleton lang={lang} />
+      </AppShell>
+    );
   }
 
   if (error) {
@@ -592,8 +688,8 @@ export default function DraftPreviewPage({ params }: { params: Promise<{ id: str
   const showOrigPrice = prefPrice && origPrice && preferredCurrency?.id !== storedCurrency?.id;
 
   const address = draft.display_address || [draft.city, draft.state, draft.country].filter(Boolean).join(", ");
-  const images = getImages(draft.raw_uploads);
-  const videos = getVideos(draft.raw_uploads);
+  const images = getImages(draft.raw_uploads, lang);
+  const videos = getVideos(draft.raw_uploads, lang);
   const facts = buildFacts(draft, lang, unitCatalog);
   const rows = buildRows(draft, lang, unitCatalog);
   const features = getFeatureChips(draft, lang);
@@ -601,7 +697,6 @@ export default function DraftPreviewPage({ params }: { params: Promise<{ id: str
   const hasTranslation = !!(draft.description_translated && draft.translation_status === "completed");
   const rawDesc = hasTranslation ? draft.description_translated! : draft.description;
   const description = rawDesc ? stripFormatting(rawDesc) : null;
-  const descLong = description && description.length > 200;
   const offerType = sec(draft, "taxonomy", "offer_type");
 
   const primarySplat = splatData?.parent_splat_id
@@ -636,22 +731,27 @@ export default function DraftPreviewPage({ params }: { params: Promise<{ id: str
         writeDraftDetailCache(user.id, draftId, updatedDraft);
       }}
     >
-      <div className="mx-auto w-full max-w-[980px] pb-28 md:pb-12">
+      <div className="relative mx-auto w-full max-w-[980px] pb-28 md:pb-12">
         {usingCachedDraft && (
-          <DraftCacheNotice lang={lang} refreshing={manualRefreshPending} onRefresh={refreshListing} />
+          <DraftCacheNotice
+            lang={lang}
+            refreshing={manualRefreshPending}
+            onRefresh={refreshListing}
+            className="fixed right-4 top-20 z-50 mb-0 w-[min(28rem,calc(100vw-2rem))] bg-card/95 backdrop-blur-xl md:right-6 md:top-6"
+          />
         )}
         {/* Creation toolbar */}
         <div className="mb-5 flex items-center justify-between gap-3 md:mb-6">
-          <button type="button" onClick={() => router.push("/dashboard")} className="-ml-2 inline-flex min-h-11 items-center gap-1.5 rounded-full px-3 py-1.5 text-[13px] font-medium text-muted-foreground transition-colors hover:bg-foreground/[0.04] hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 md:min-h-9">
+          <button type="button" onClick={() => router.push("/dashboard")} className="floating-control -ml-2 inline-flex items-center gap-1.5 px-3 text-[13px] font-medium text-muted-foreground transition-colors hover:bg-foreground/[0.04] hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2">
             <ArrowLeftIcon size={15} />
             {t("common.back", lang)}
           </button>
           <div className="flex items-center gap-2 lg:hidden">
-            <Button type="button" variant="ghost" size="icon-sm" className="h-11 w-11 md:h-9 md:w-auto md:px-3" onClick={() => setMediaOpen(true)} aria-label={t("draft.media.manage", lang)} title={t("draft.media.manage", lang)}>
+            <Button type="button" variant="ghost" size="icon" className="md:w-auto md:px-3" onClick={() => setMediaOpen(true)} aria-label={t("draft.media.manage", lang)} title={t("draft.media.manage", lang)}>
               <ImageIcon size={16} />
               <span className="hidden md:inline">{t("draft.media.manage", lang)}</span>
             </Button>
-            <Button type="button" variant="ghost" size="icon-sm" className="h-11 w-11 md:h-9 md:w-auto md:px-3" onClick={() => setVersionsOpen(true)} aria-label={t("draft.versions.title", lang)} title={t("draft.versions.title", lang)}>
+            <Button type="button" variant="ghost" size="icon" className="md:w-auto md:px-3" onClick={() => setVersionsOpen(true)} aria-label={t("draft.versions.title", lang)} title={t("draft.versions.title", lang)}>
               <VersionsIcon size={16} />
               <span className="hidden md:inline">{t("draft.versions.title", lang)}</span>
             </Button>
@@ -788,18 +888,7 @@ export default function DraftPreviewPage({ params }: { params: Promise<{ id: str
                       <p className="mb-2 text-[12px] text-foreground/50">{t("draft.descriptionPending", lang)}</p>
                     )}
                     {description && (
-                      <div className="rounded-[1.5rem] border border-border/70 bg-card px-5 py-5 shadow-card sm:rounded-2xl sm:px-6">
-                        <div className={cn("overflow-hidden transition-all duration-300", !descExpanded && descLong ? "max-h-[8.5em]" : "max-h-[200em]")}>
-                          <p className="whitespace-pre-line text-[14px] leading-[1.75] text-foreground/78">
-                            {description}
-                          </p>
-                        </div>
-                        {descLong && (
-                          <button type="button" aria-expanded={descExpanded} onClick={() => setDescExpanded(!descExpanded)} className="-ml-2 mt-3 rounded-full px-2.5 py-1.5 text-[12px] font-semibold text-foreground/55 transition-colors hover:bg-foreground/[0.045] hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2">
-                            {descExpanded ? t("draft.showLess", lang) : t("draft.showMore", lang)}
-                          </button>
-                        )}
-                      </div>
+                      <ExpandableDescription text={description} lang={lang} />
                     )}
                   </section>
                 )}

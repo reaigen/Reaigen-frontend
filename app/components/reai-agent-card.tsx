@@ -32,6 +32,7 @@ import { baseUnitForCategory, resolveUnit, unitLabel, type UnitLookup } from "..
 import { Button } from "../lib/ui/button";
 import { cn } from "../lib/utils";
 import { AgentMiniUi } from "./agent-mini-ui";
+import { MediaVersionCard, type MediaAction } from "./draft-version-manager";
 import { useAuth } from "./hooks/use-auth";
 import { StatusPill } from "./status-pill";
 import { SearchIcon, VersionsIcon, LayoutIcon, SparklesIcon, CheckIcon, CloseIcon, EditIcon, LockIcon, InfoIcon } from "./icons";
@@ -43,7 +44,6 @@ const ACTION_ICON: Record<string, typeof SearchIcon> = {
   "reai.quickCompare": VersionsIcon,
   "reai.quickBulk": LayoutIcon,
   "reai.quickImproveDescription": SparklesIcon,
-  "reai.quickTranslateDescription": SparklesIcon,
   "reai.quickCheckFields": CheckIcon,
   "reai.quickEditCurrent": EditIcon,
   "reai.quickSettingsAgent": SparklesIcon,
@@ -75,7 +75,7 @@ function AgentStatusBadge({
     <span
       role="status"
       className={cn(
-        "inline-flex items-center gap-1.5 rounded-2xl px-2.5 py-1 text-xs font-medium",
+        "floating-status inline-flex items-center gap-1.5 text-xs",
         tone === "success" && "bg-foreground text-background",
         tone === "pending" && "border border-border/55 bg-background text-foreground/75",
         tone === "neutral" && "bg-foreground/[0.06] text-muted-foreground",
@@ -233,17 +233,6 @@ function localizedLanguageName(code: string, lang: string): string {
   }
 }
 
-function mediaProcessorLabel(processor: string, lang: string): string {
-  const keys: Record<string, LocaleKey> = {
-    original: "reai.mediaOriginal",
-    "reai-local-image-editor-v1": "reai.mediaProcessor.localEdit",
-    cleanplate: "reai.mediaProcessor.cleanplate",
-    "vfx-retouch": "reai.mediaProcessor.retouch",
-    "openrouter-hdr": "reai.mediaProcessor.hdr",
-  };
-  return keys[processor] ? t(keys[processor], lang) : t("reai.mediaProcessor.processed", lang);
-}
-
 function mediaOperationSuffix(key: string, value: string | number | boolean, lang: string): string {
   if (typeof value === "boolean") return "";
   if (key === "motion") {
@@ -346,8 +335,9 @@ export function ReaiAgentCard({
   const [restoreCandidateId, setRestoreCandidateId] = useState<number | null>(null);
   const [historyNotice, setHistoryNotice] = useState<string | null>(null);
   const [mediaGroups, setMediaGroups] = useState<AgentMediaVersionGroup[]>([]);
+  const [selectedMediaVersionIds, setSelectedMediaVersionIds] = useState<Record<string, number>>({});
   const [mediaBusy, setMediaBusy] = useState(false);
-  const [mediaCandidate, setMediaCandidate] = useState<{ id: number; action: "promote" | "hide" | "restore" } | null>(null);
+  const [mediaCandidate, setMediaCandidate] = useState<MediaAction>(null);
   const [unitCatalog, setUnitCatalog] = useState<UnitLookup[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [copiedShareUrl, setCopiedShareUrl] = useState<string | null>(null);
@@ -357,7 +347,7 @@ export function ReaiAgentCard({
   const quickActions = workspaceContext === "settings"
     ? (["reai.quickSettingsAgent", "reai.quickSettingsLanguage", "reai.quickSettingsSecurity"] as const)
     : draftId
-    ? (["reai.quickImproveDescription", "reai.quickCheckFields", "reai.quickTranslateDescription"] as const)
+    ? (["reai.quickImproveDescription", "reai.quickCheckFields", "reai.quickEditCurrent"] as const)
     : (["reai.quickFind", "reai.quickCompare", "reai.quickBulk"] as const);
 
   useEffect(() => {
@@ -401,6 +391,14 @@ export function ReaiAgentCard({
     try {
       const result = await getAgentMediaVersions(draftId);
       setMediaGroups(result.groups);
+      setSelectedMediaVersionIds((current) => Object.fromEntries(result.groups.flatMap((group) => {
+        const currentSelection = group.versions.find((version) => version.id === current[group.logical_asset_id]);
+        const selected = currentSelection
+          ?? group.versions.find((version) => version.is_master)
+          ?? group.versions.find((version) => !version.is_deleted)
+          ?? group.versions[0];
+        return selected ? [[group.logical_asset_id, selected.id]] : [];
+      })));
     } catch (err) {
       setError(errorText(err, lang));
     } finally {
@@ -412,7 +410,7 @@ export function ReaiAgentCard({
     if (!draftId || !mediaCandidate) return;
     setMediaBusy(true);
     try {
-      await manageAgentMediaVersion(draftId, mediaCandidate.id, mediaCandidate.action);
+      await manageAgentMediaVersion(draftId, mediaCandidate.uploadId, mediaCandidate.action);
       setMediaCandidate(null);
       await loadMediaHistory();
       window.dispatchEvent(new CustomEvent("reai-media-updated", { detail: { draftId } }));
@@ -433,6 +431,7 @@ export function ReaiAgentCard({
     setShowMediaHistory(false);
     setHistory([]);
     setMediaGroups([]);
+    setSelectedMediaVersionIds({});
     setMediaCandidate(null);
     setRestoreCandidateId(null);
     setHistoryNotice(null);
@@ -703,7 +702,7 @@ export function ReaiAgentCard({
       ) : !consent.consented ? (
         <div className="mt-4 flex flex-col gap-3 rounded-2xl bg-background/70 p-3 sm:flex-row sm:items-center sm:justify-between">
           <p className="text-[12px] leading-relaxed text-foreground/65">{t("reai.enableInSettings", lang)}</p>
-          <Button asChild size="sm" variant="outline" className="min-h-11 rounded-2xl sm:min-h-0">
+          <Button asChild size="sm" variant="outline" className="min-h-11">
             <Link href="/settings#reai">{t("reai.openSettings", lang)}</Link>
           </Button>
         </div>
@@ -760,13 +759,13 @@ export function ReaiAgentCard({
             </nav>
           )}
           {draftId && !compactPanel && (
-            <nav className="grid grid-cols-3 gap-1 rounded-2xl bg-foreground/[0.045] p-1" aria-label={t("reai.title", lang)}>
+            <nav className="floating-toolbar mx-auto grid w-full max-w-[38rem] grid-cols-3" aria-label={t("reai.title", lang)}>
               <button
                 type="button"
                 aria-pressed={!showHistory && !showMediaHistory}
                 className={cn(
-                  "rounded-2xl px-2 py-2 text-[11px] font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2",
-                  !showHistory && !showMediaHistory ? "bg-foreground text-background" : "text-foreground/60 hover:bg-background/70 hover:text-foreground",
+                  "floating-control pen-touch-target w-full px-2 text-[11px] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+                  !showHistory && !showMediaHistory ? "bg-foreground text-background shadow-sm" : "text-foreground/60 hover:bg-background/70 hover:text-foreground",
                 )}
                 onClick={() => {
                   setShowHistory(false);
@@ -780,8 +779,8 @@ export function ReaiAgentCard({
                 aria-label={t("reai.mediaVersions", lang)}
                 aria-pressed={showMediaHistory}
                 className={cn(
-                  "rounded-2xl px-2 py-2 text-[11px] font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2",
-                  showMediaHistory ? "bg-foreground text-background" : "text-foreground/60 hover:bg-background/70 hover:text-foreground",
+                  "floating-control pen-touch-target w-full px-2 text-[11px] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+                  showMediaHistory ? "bg-foreground text-background shadow-sm" : "text-foreground/60 hover:bg-background/70 hover:text-foreground",
                 )}
                 onClick={() => {
                   if (!showMediaHistory) void loadMediaHistory();
@@ -796,8 +795,8 @@ export function ReaiAgentCard({
                 aria-label={t("reai.editHistory", lang)}
                 aria-pressed={showHistory}
                 className={cn(
-                  "rounded-2xl px-2 py-2 text-[11px] font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2",
-                  showHistory ? "bg-foreground text-background" : "text-foreground/60 hover:bg-background/70 hover:text-foreground",
+                  "floating-control pen-touch-target w-full px-2 text-[11px] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+                  showHistory ? "bg-foreground text-background shadow-sm" : "text-foreground/60 hover:bg-background/70 hover:text-foreground",
                 )}
                 onClick={() => {
                   if (!showHistory) void loadHistory();
@@ -936,75 +935,39 @@ export function ReaiAgentCard({
           )}
           {showMediaHistory && draftId && (
             <div className={cn("min-h-0 space-y-3 overflow-y-auto pr-1", panel && "flex-1")} aria-live="polite">
-              <div>
+              <div className="flex min-h-8 items-center justify-between gap-3 px-1">
                 <h3 className="text-[13px] font-semibold">{t("reai.mediaVersions", lang)}</h3>
-                <p className="mt-1 text-[11px] leading-relaxed text-muted-foreground">{t("reai.mediaVersionsSafety", lang)}</p>
+                {mediaGroups.length > 0 ? (
+                  <span className="floating-status inline-flex min-w-7 items-center justify-center border border-border/70 bg-card text-[10px] tabular-nums text-foreground/60 shadow-control">
+                    {mediaGroups.length}
+                  </span>
+                ) : null}
               </div>
               {mediaBusy && mediaGroups.length === 0 && <Working lang={lang} />}
               {!mediaBusy && mediaGroups.length === 0 && (
-                <p className="rounded-2xl border border-border/45 p-3 text-[11px] text-muted-foreground">{t("reai.mediaVersionsEmpty", lang)}</p>
+                <p className="rounded-[1.5rem] border border-dashed border-border/55 px-4 py-10 text-center text-[11px] text-muted-foreground">{t("reai.mediaVersionsEmpty", lang)}</p>
               )}
-              {mediaGroups.map((group, groupIndex) => (
-                <section key={group.logical_asset_id} className="overflow-hidden rounded-2xl border border-border/55 bg-background">
-                  <div className="border-b border-border/40 px-3 py-2 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
-                    {t("reai.mediaAsset", lang).replace("{number}", String(groupIndex + 1))}
-                  </div>
-                  <div className="divide-y divide-border/40">
-                    {group.versions.map((version) => (
-                      <article key={version.id} className={cn("p-3", version.is_deleted && "bg-foreground/[0.025] opacity-70")}>
-                        <div className="flex gap-3">
-                          <div className="h-16 w-20 shrink-0 overflow-hidden rounded-2xl bg-foreground/[0.05]">
-                            {version.file_url && (
-                              // Version URLs are short-lived, backend-signed media previews.
-                              // eslint-disable-next-line @next/next/no-img-element
-                              <img src={version.file_url} alt="" className="h-full w-full object-cover" />
-                            )}
-                          </div>
-                          <div className="min-w-0 flex-1">
-                            <div className="flex flex-wrap items-center gap-1.5">
-                              <span className="text-[12px] font-semibold">v{version.version}</span>
-                              {version.is_master && <span className="rounded-2xl bg-foreground px-1.5 py-0.5 text-[11px] font-medium text-background">{t("reai.mediaCurrent", lang)}</span>}
-                              {version.is_deleted && <span className="rounded-2xl bg-foreground/[0.08] px-1.5 py-0.5 text-[11px] font-medium">{t("reai.mediaHidden", lang)}</span>}
-                            </div>
-                            <p className="mt-1 truncate text-[11px] text-muted-foreground">{mediaProcessorLabel(version.processor, lang)}</p>
-                            <time className="mt-0.5 block text-[11px] text-muted-foreground/80">
-                              {formatDate(version.uploaded_at, dateFormat, lang)}
-                            </time>
-                          </div>
-                        </div>
-                        <div className="mt-2.5 flex flex-wrap items-center gap-2">
-                          {!version.is_deleted && !version.is_master && (
-                            <Button type="button" variant="outline" size="xs" className="rounded-2xl" disabled={mediaBusy} onClick={() => setMediaCandidate({ id: version.id, action: "promote" })}>
-                              {t("reai.mediaUseVersion", lang)}
-                            </Button>
-                          )}
-                          {!version.is_deleted && (
-                            <Button type="button" variant="ghost" size="xs" className="rounded-2xl" disabled={mediaBusy} onClick={() => setMediaCandidate({ id: version.id, action: "hide" })}>
-                              {t("reai.mediaHide", lang)}
-                            </Button>
-                          )}
-                          {version.is_deleted && (
-                            <Button type="button" variant="outline" size="xs" className="rounded-2xl" disabled={mediaBusy} onClick={() => setMediaCandidate({ id: version.id, action: "restore" })}>
-                              {t("reai.mediaRestore", lang)}
-                            </Button>
-                          )}
-                        </div>
-                        {mediaCandidate?.id === version.id && (
-                          <div className="mt-3 rounded-2xl bg-foreground/[0.04] p-2.5">
-                            <p className="text-[11px] leading-relaxed text-foreground/70">
-                              {t(mediaCandidate.action === "hide" ? "reai.mediaHideConfirm" : "reai.mediaActionConfirm", lang)}
-                            </p>
-                            <div className="mt-2 flex gap-2">
-                              <Button type="button" size="xs" className="rounded-2xl" loading={mediaBusy} onClick={() => void manageMediaVersion()}>{t("reai.confirm", lang)}</Button>
-                              <Button type="button" variant="ghost" size="xs" className="rounded-2xl" disabled={mediaBusy} onClick={() => setMediaCandidate(null)}>{t("reai.restoreCancel", lang)}</Button>
-                            </div>
-                          </div>
-                        )}
-                      </article>
-                    ))}
-                  </div>
-                </section>
-              ))}
+              <div className="agent-media-version-grid">
+                {mediaGroups.map((group, groupIndex) => (
+                  <MediaVersionCard
+                    key={group.logical_asset_id}
+                    group={group}
+                    groupIndex={groupIndex}
+                    selectedId={selectedMediaVersionIds[group.logical_asset_id]}
+                    lang={lang}
+                    dateFormat={dateFormat}
+                    candidate={mediaCandidate}
+                    busy={mediaBusy}
+                    onSelect={(id) => {
+                      setSelectedMediaVersionIds((current) => ({ ...current, [group.logical_asset_id]: id }));
+                      setMediaCandidate(null);
+                    }}
+                    onCandidate={setMediaCandidate}
+                    onCancel={() => setMediaCandidate(null)}
+                    onConfirm={() => void manageMediaVersion()}
+                  />
+                ))}
+              </div>
             </div>
           )}
           {!showHistory && !showMediaHistory && turns.length > 0 && (
@@ -1333,7 +1296,7 @@ export function ReaiAgentCard({
                                 href={shareUrl}
                                 target="_blank"
                                 rel="noreferrer"
-                                className="inline-flex min-h-11 min-w-11 items-center justify-center rounded-2xl px-2 py-1 text-[11px] font-medium text-muted-foreground transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 sm:min-h-0 sm:min-w-0"
+                                className="floating-control inline-flex min-w-11 items-center justify-center px-2 text-[11px] font-medium text-muted-foreground transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
                               >
                                 {t("reai.shareOpen", lang)}
                               </a>
@@ -1382,7 +1345,7 @@ export function ReaiAgentCard({
                               href={shareUrl}
                               target="_blank"
                               rel="noreferrer"
-                              className="inline-flex min-h-11 min-w-11 shrink-0 items-center justify-center rounded-2xl px-2 py-1 text-[11px] font-medium text-muted-foreground transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 sm:min-h-0 sm:min-w-0"
+                              className="floating-control inline-flex min-w-11 shrink-0 items-center justify-center px-2 text-[11px] font-medium text-muted-foreground transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
                             >
                               {t("reai.shareOpen", lang)}
                             </a>
@@ -1458,8 +1421,8 @@ export function ReaiAgentCard({
             </div>
           )}
           {!showHistory && !showMediaHistory && <div className={cn(
-            "flex items-end gap-1.5 border border-border bg-white transition-colors focus-within:border-foreground/25",
-            compactPanel ? "rounded-[24px] p-1.5" : "rounded-2xl p-2",
+            "floating-panel-shape flex items-end gap-1.5 border border-border bg-white transition-colors focus-within:border-foreground/25",
+            compactPanel ? "p-1.5" : "p-2",
           )}>
             <textarea
               value={message}
@@ -1486,8 +1449,8 @@ export function ReaiAgentCard({
               onClick={() => void ask()}
               aria-label={t("reai.ask", lang)}
               className={cn(
-                "inline-flex shrink-0 items-center justify-center gap-1.5 bg-creative text-[12px] font-semibold text-creative-foreground transition-colors hover:bg-creative/90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-creative focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-25",
-                compactPanel ? "h-11 w-11 rounded-full px-0" : "h-10 w-auto rounded-2xl px-3.5",
+                "bg-creative text-creative-foreground hover:bg-creative/90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-creative focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-25",
+                compactPanel ? "floating-icon-button px-0" : "floating-control w-auto gap-1.5 px-3.5",
               )}
             >
               <SparklesIcon size={15} />

@@ -2,19 +2,28 @@
 
 import { t } from "../lib/i18n";
 import { Button } from "../lib/ui/button";
+import { cn } from "../lib/utils";
 import { InfoIcon } from "./icons";
 
 export function DraftCacheNotice({
   lang,
   refreshing,
   onRefresh,
+  className,
 }: {
   lang: string;
   refreshing: boolean;
   onRefresh: () => void;
+  className?: string;
 }) {
   return (
-    <div role="status" className="mb-5 rounded-[1.5rem] border border-border/70 bg-card p-4 shadow-control sm:flex sm:items-center sm:gap-4 sm:rounded-2xl">
+    <div
+      role="status"
+      className={cn(
+        "mb-5 rounded-[1.5rem] border border-border/70 bg-card p-4 shadow-control sm:flex sm:items-center sm:gap-4 sm:rounded-2xl",
+        className,
+      )}
+    >
       <div className="flex min-w-0 items-start gap-3">
         <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-surface-subtle text-foreground/45">
           <InfoIcon size={16} />

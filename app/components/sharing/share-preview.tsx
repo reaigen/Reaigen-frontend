@@ -18,7 +18,9 @@ interface SharePreviewProps {
 }
 
 function getImages(uploads: DraftUpload[]) {
-  return currentGalleryUploads(uploads, "image").map((upload) => ({ url: upload.file_url }));
+  return currentGalleryUploads(uploads, "image").map((upload) => ({
+    url: upload.file_url,
+  }));
 }
 
 function formatPreviewPrice(value: string | number | null | undefined, currency: string | null | undefined, lang: string): string | null {
@@ -93,30 +95,27 @@ export function SharePreview({ draft, scope, hasTour, hasFloorplan, thumbUrl, un
 
   return (
     <div>
-      {/* Preview card */}
-      <div className="overflow-hidden rounded-[1.5rem] border border-border/60 bg-card shadow-card sm:rounded-2xl">
-        {/* Card header */}
-        <div className="border-b border-border/35 px-4 py-3">
-          <p className="text-[12px] font-semibold text-foreground/60">
-            {t("sharing.previewTitle", lang)}
-          </p>
-        </div>
+      <p className="mb-2.5 px-0.5 text-[12px] font-semibold text-foreground/60">
+        {t("sharing.previewTitle", lang)}
+      </p>
 
+      {/* Preview card */}
+      <div className="floating-panel overflow-hidden">
         {/* Hero */}
         {hasHero && (
-          <div className="relative aspect-[2/1] bg-muted/30 sm:aspect-[16/10]">
+          <div className="relative aspect-[16/10] bg-muted/30">
             {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img src={heroUrl} alt="" className="w-full h-full object-cover" />
+            <img src={heroUrl} alt="" decoding="async" className="h-full w-full object-cover" />
             <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/5 to-black/15" aria-hidden="true" />
             {tourIncluded && (
               <div className="absolute inset-0 flex items-center justify-center">
-                <div className="flex h-10 w-10 items-center justify-center rounded-full border border-white/15 bg-black/65 text-white shadow-sm backdrop-blur-md">
+                <div className="floating-icon-button flex items-center justify-center border border-white/15 bg-black/65 text-white shadow-sm backdrop-blur-md">
                   <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><polygon points="10,8 16,12 10,16"/></svg>
                 </div>
               </div>
             )}
             {tourIncluded && (
-              <div className="glass-chip absolute left-2.5 top-2.5 flex h-7 items-center gap-1 rounded-full px-2.5 text-[10px] font-semibold">
+              <div className="glass-chip floating-status absolute left-2.5 top-2.5 flex items-center gap-1 text-[10px]">
                 <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/></svg>
                 3D
               </div>
@@ -130,7 +129,7 @@ export function SharePreview({ draft, scope, hasTour, hasFloorplan, thumbUrl, un
                   </div>
                 ) : <span />}
                 {showPrice ? (
-                  <p className="glass-chip shrink-0 rounded-full px-3 py-1.5 text-[12px] font-semibold tabular-nums">
+                  <p className="glass-chip floating-status shrink-0 flex items-center px-3 text-[12px] tabular-nums">
                     {price}
                     {showOrigPrice ? <span className="ml-1.5 text-[10px] font-normal text-black/50">{origPrice}</span> : null}
                   </p>
@@ -141,7 +140,7 @@ export function SharePreview({ draft, scope, hasTour, hasFloorplan, thumbUrl, un
         )}
 
         {/* Property info */}
-        <div className="space-y-2 px-4 py-3.5 sm:px-5">
+        <div className="space-y-2 bg-card/35 px-4 py-3.5 sm:px-5">
           {showTitle && !hasHero && (
             <div>
               <h3 className="text-[14px] font-semibold leading-tight">{draft.title || t("dashboard.untitled", lang)}</h3>
@@ -173,11 +172,11 @@ export function SharePreview({ draft, scope, hasTour, hasFloorplan, thumbUrl, un
 
           {/* Photo row */}
           {photosIncluded && images.length > 1 && (
-            <div className="mt-1 hidden gap-px overflow-hidden rounded-lg bg-border/50 sm:flex">
-              {images.slice(0, 5).map((img, i) => (
-                <div key={i} className="aspect-square flex-1 overflow-hidden bg-muted/20">
+            <div className="mt-1 hidden gap-px overflow-hidden rounded-2xl border border-border/45 bg-border/50 sm:flex">
+              {images.slice(0, 5).map((img, index) => (
+                <div key={img.url} className="aspect-square flex-1 overflow-hidden bg-muted/20">
                   {/* eslint-disable-next-line @next/next/no-img-element */}
-                  <img src={img.url} alt="" className="w-full h-full object-cover" />
+                  <img src={img.url} alt={`${t("draft.media.photo", lang)} ${index + 1}`} loading="lazy" decoding="async" className="h-full w-full object-cover" />
                 </div>
               ))}
               {images.length > 5 && (
@@ -205,7 +204,7 @@ export function SharePreview({ draft, scope, hasTour, hasFloorplan, thumbUrl, un
             </p>
             <div className="-mx-1 flex gap-1.5 overflow-x-auto px-1 pb-0.5 scrollbar-hide sm:mx-0 sm:flex-wrap sm:overflow-visible sm:px-0 sm:pb-0">
               {includedItems.map((item) => (
-                <span key={item.label} className="inline-flex min-h-7 shrink-0 items-center gap-1.5 rounded-full bg-secondary px-2.5 py-1 text-[10px] font-semibold text-foreground/65">
+                <span key={item.label} className="floating-capsule floating-status inline-flex shrink-0 items-center gap-1.5 border text-[10px] text-foreground/65">
                   <svg width="10" height="10" viewBox="0 0 16 16" fill="none" className="shrink-0"><path d="M3 8l4 4 6-6" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/></svg>
                   {item.label}
                 </span>

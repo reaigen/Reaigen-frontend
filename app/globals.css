@@ -52,6 +52,14 @@
     /* White is a deliberate elevation layer, not the whole application. */
     --surface:                0 0% 100%;
     --surface-subtle:         220 10% 94%;
+
+    /* Floating workspace geometry. Materials live below; these dimensions do not drift per feature. */
+    --floating-panel-radius: 1.5rem;
+    --floating-frame-radius: 2rem;
+    --floating-control-sm: 2.25rem;
+    --floating-control: 2.75rem;
+    --floating-status: 1.75rem;
+    --floating-header: 3.5rem;
   }
 
   * { border-color: hsl(var(--border)); }
@@ -73,6 +81,7 @@
     line-height: 1.5;
     font-weight: 400;
     min-width: 320px;
+    min-height: 100dvh;
     overflow-x: hidden;
   }
 
@@ -106,6 +115,7 @@
    */
   .media-manager-workspace {
     container-type: inline-size;
+    overflow-anchor: none;
   }
 
   .media-manager-layout {
@@ -169,7 +179,8 @@
     backdrop-filter: blur(14px) saturate(1.12);
   }
 
-  .editor-glass-surface {
+  .editor-glass-surface,
+  .floating-panel {
     border-color: hsl(var(--border) / 0.72);
     background: hsl(var(--card) / 0.76);
     box-shadow:
@@ -179,7 +190,8 @@
     backdrop-filter: blur(22px) saturate(1.12);
   }
 
-  .editor-glass-control {
+  .editor-glass-control,
+  .floating-toolbar {
     border-color: hsl(var(--border) / 0.68);
     background: hsl(var(--card) / 0.82);
     box-shadow:
@@ -189,7 +201,8 @@
     backdrop-filter: blur(18px) saturate(1.1);
   }
 
-  .editor-control-capsule {
+  .editor-control-capsule,
+  .floating-capsule {
     border-color: hsl(var(--border) / 0.72);
     background: hsl(var(--card) / 0.94);
     color: hsl(var(--card-foreground));
@@ -200,6 +213,133 @@
     backdrop-filter: blur(16px) saturate(1.08);
   }
 
+  .floating-panel {
+    border-width: 1px;
+    border-style: solid;
+    border-radius: var(--floating-panel-radius);
+  }
+
+  .floating-panel-shape {
+    border-radius: var(--floating-panel-radius);
+  }
+
+  .floating-panel-frame {
+    border-radius: var(--floating-frame-radius);
+  }
+
+  .floating-header {
+    min-height: var(--floating-header);
+    padding: 0.375rem 0.5rem;
+    border-radius: 9999px;
+  }
+
+  .floating-toolbar {
+    display: flex;
+    align-items: center;
+    gap: 0.25rem;
+    padding: 0.375rem;
+    border-width: 1px;
+    border-style: solid;
+    border-radius: 9999px;
+  }
+
+  .floating-toolbar-shape {
+    display: flex;
+    align-items: center;
+    gap: 0.25rem;
+    padding: 0.375rem;
+    border-radius: 9999px;
+  }
+
+  .floating-capsule {
+    min-height: var(--floating-control);
+    border-width: 1px;
+    border-style: solid;
+    border-radius: 9999px;
+  }
+
+  .floating-control,
+  .floating-control-sm,
+  .floating-icon-button,
+  .floating-icon-button-sm {
+    display: inline-flex;
+    flex-shrink: 0;
+    align-items: center;
+    justify-content: center;
+    border-radius: 9999px;
+    font-weight: 600;
+    transition:
+      color var(--default-transition-duration) var(--motion-ease-smooth),
+      background-color var(--default-transition-duration) var(--motion-ease-smooth),
+      border-color var(--default-transition-duration) var(--motion-ease-smooth),
+      transform var(--default-transition-duration) var(--motion-ease-smooth);
+  }
+
+  .floating-control {
+    min-height: var(--floating-control);
+    padding-inline: 0.875rem;
+    font-size: 0.75rem;
+  }
+
+  .floating-control-sm {
+    min-height: var(--floating-control-sm);
+    padding-inline: 0.75rem;
+    font-size: 0.6875rem;
+  }
+
+  .floating-icon-button {
+    width: var(--floating-control);
+    height: var(--floating-control);
+  }
+
+  .floating-icon-button-sm {
+    width: var(--floating-control-sm);
+    height: var(--floating-control-sm);
+  }
+
+  .floating-tooltip {
+    min-height: 1.75rem;
+    border: 1px solid hsl(var(--border) / 0.65);
+    border-radius: 9999px;
+    background: hsl(var(--card) / 0.88);
+    padding: 0.375rem 0.75rem;
+    color: hsl(var(--card-foreground));
+    box-shadow: 0 6px 20px hsl(var(--foreground) / 0.1);
+    font-size: 0.625rem;
+    font-weight: 600;
+    line-height: 1;
+    white-space: nowrap;
+    -webkit-backdrop-filter: blur(18px) saturate(1.1);
+    backdrop-filter: blur(18px) saturate(1.1);
+  }
+
+  .floating-status {
+    min-height: var(--floating-status);
+    border-radius: 9999px;
+    padding-inline: 0.625rem;
+    font-size: 0.6875rem;
+    font-weight: 600;
+  }
+
+  .agent-media-version-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(min(100%, 18rem), 1fr));
+    align-items: start;
+    gap: 0.75rem;
+  }
+
+  .editor-number-input {
+    appearance: textfield;
+    -moz-appearance: textfield;
+  }
+
+  .editor-number-input::-webkit-inner-spin-button,
+  .editor-number-input::-webkit-outer-spin-button {
+    margin: 0;
+    -webkit-appearance: none;
+    appearance: none;
+  }
+
   /*
    * Keep critical editor controls comfortably targetable by fingers and pens.
    * The class is intentionally opt-in so dense desktop-only controls can stay
@@ -208,6 +348,28 @@
   .pen-touch-target {
     min-width: 2.75rem;
     min-height: 2.75rem;
+    touch-action: manipulation;
+    -webkit-tap-highlight-color: transparent;
+    user-select: none;
+  }
+
+  .loading-progress-track {
+    position: relative;
+    height: 0.1875rem;
+    overflow: hidden;
+    border-radius: 9999px;
+    background: hsl(var(--foreground) / 0.1);
+  }
+
+  .loading-progress-indeterminate {
+    position: absolute;
+    inset-block: 0;
+    left: 0;
+    width: 38%;
+    border-radius: inherit;
+    background: hsl(var(--foreground) / 0.52);
+    animation: loadingProgressForward 1.05s linear infinite;
+    will-change: transform;
   }
 }
 
@@ -233,6 +395,10 @@
   }
   .animate-fade-in-up {
     animation: fadeInUp 0.5s var(--motion-ease-smooth) both;
+  }
+  .async-stable-region,
+  [aria-busy="true"] {
+    overflow-anchor: none;
   }
   .animate-shimmer {
     animation: shimmer 1.5s ease-in-out infinite;
@@ -266,6 +432,10 @@
 @keyframes shimmer-bar {
   0% { transform: translateX(-100%); }
   100% { transform: translateX(200%); }
+}
+@keyframes loadingProgressForward {
+  0% { transform: translateX(-115%); }
+  100% { transform: translateX(365%); }
 }
 
 input:-webkit-autofill,

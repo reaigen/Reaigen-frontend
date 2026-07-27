@@ -13,7 +13,7 @@ interface GridLayoutToggleProps {
 export function GridLayoutToggle({ value, onChange, lang = "en" }: GridLayoutToggleProps) {
   return (
     <div
-      className="hidden h-8 items-center gap-0.5 rounded-full border border-border/65 bg-secondary/80 p-0.5 md:flex"
+      className="floating-toolbar hidden border-border/65 bg-secondary/80 md:flex"
       role="group"
       aria-label={`${t("dashboard.gridSingle", lang)} / ${t("dashboard.gridDouble", lang)}`}
     >
@@ -21,7 +21,7 @@ export function GridLayoutToggle({ value, onChange, lang = "en" }: GridLayoutTog
         type="button"
         onClick={() => onChange(1)}
         className={cn(
-          "flex h-7 w-7 items-center justify-center rounded-full transition-[background-color,color,box-shadow] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2",
+          "floating-icon-button-sm flex items-center justify-center transition-[background-color,color,box-shadow] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2",
           value === 1
             ? "bg-card text-foreground shadow-control"
             : "text-foreground/45 hover:text-foreground/75",
@@ -35,7 +35,7 @@ export function GridLayoutToggle({ value, onChange, lang = "en" }: GridLayoutTog
         type="button"
         onClick={() => onChange(2)}
         className={cn(
-          "flex h-7 w-7 items-center justify-center rounded-full transition-[background-color,color,box-shadow] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2",
+          "floating-icon-button-sm flex items-center justify-center transition-[background-color,color,box-shadow] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2",
           value === 2
             ? "bg-card text-foreground shadow-control"
             : "text-foreground/45 hover:text-foreground/75",

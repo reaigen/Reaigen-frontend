@@ -19,7 +19,7 @@ export function CollectionCard({
         loading
           ? "animate-pulse border-border/65"
           : "border-border/75 transition-[transform,box-shadow,border-color] duration-300 hover:-translate-y-0.5 hover:border-foreground/20 hover:shadow-[0_14px_34px_-20px_rgba(39,34,28,0.32)] focus-within:ring-2 focus-within:ring-ring/80 focus-within:ring-offset-2 focus-within:ring-offset-background",
-        revealIndex !== undefined && "opacity-0 animate-fade-in-up [animation-fill-mode:forwards]",
+        revealIndex !== undefined && "opacity-0 animate-fade-in [animation-fill-mode:forwards]",
         className,
       )}
       style={{

@@ -11,6 +11,7 @@ import type {
   RoomKitCageWall,
   SpatialCameraMode,
   SpatialCameraSample,
+  SpatialTransformTool,
   SpatialTrajectory,
   SpatialViewMode,
   SplatInspectionStats,
@@ -51,6 +52,23 @@ function slerpAngle(a: number, b: number, t: number): number {
   return a + d * t;
 }
 
+function normalizeVec3(value: Vec3, fallback: Vec3 = [0, 0, 1]): Vec3 {
+  const length = Math.hypot(value[0], value[1], value[2]);
+  if (!Number.isFinite(length) || length < 1e-6) return fallback;
+  return [value[0] / length, value[1] / length, value[2] / length];
+}
+
+function normalizedEditorDegrees(radians: number): number {
+  if (!Number.isFinite(radians)) return 0;
+  const degrees = radians * 180 / Math.PI;
+  const normalized = ((degrees + 180) % 360 + 360) % 360 - 180;
+  return Math.abs(normalized) < 0.005 ? 0 : Math.round(normalized * 100) / 100;
+}
+
+function editorAngleDistance(a: number, b: number): number {
+  return Math.abs(((a - b + 180) % 360 + 360) % 360 - 180);
+}
+
 const LOOK = 5;
 const TILT_Y = LOOK * Math.tan(5 * Math.PI / 180);
 const SH_C0 = 0.28209479177387814;
@@ -86,11 +104,15 @@ interface SceneFrame {
   radius: number;
   safePosition: Vec3;
   safeTarget: Vec3;
+  floorY: number;
+  ceilingY: number;
   footprint: { minX: number; maxX: number; minZ: number; maxZ: number };
 }
 
 interface SplatSample {
   positions: Float32Array;
+  colors: Float32Array;
+  structure: Float32Array;
   stats: SplatInspectionStats;
 }
 
@@ -122,20 +144,111 @@ function sampleSplatBuffer(buffer: ArrayBuffer, maximum = 24_000): SplatSample |
 
   const step = Math.max(1, Math.ceil(gaussianCount / maximum));
   const positions: number[] = [];
+  const colors: number[] = [];
+  const scaleMeasures: number[] = [];
+  const bytes = new Uint8Array(buffer);
   for (let index = 0; index < gaussianCount; index += step) {
     const offset = index * stride;
     const x = floats[offset];
     const y = floats[offset + 1];
     const z = floats[offset + 2];
     if (![x, y, z].every(Number.isFinite)) continue;
+    const scaleX = Math.abs(floats[offset + 3]);
+    const scaleY = Math.abs(floats[offset + 4]);
+    const scaleZ = Math.abs(floats[offset + 5]);
+    const scaleMeasure = Math.max(scaleX, scaleY, scaleZ);
     positions.push(x, y, z);
+    scaleMeasures.push(Number.isFinite(scaleMeasure) ? Math.max(1e-6, scaleMeasure) : 1e-6);
+    const colorOffset = index * stride * 4 + 24;
+    colors.push(
+      (bytes[colorOffset] ?? 128) / 255,
+      (bytes[colorOffset + 1] ?? 128) / 255,
+      (bytes[colorOffset + 2] ?? 128) / 255,
+      (bytes[colorOffset + 3] ?? 255) / 255,
+    );
   }
   if (positions.length < 24) return null;
+
+  const sampleCount = positions.length / 3;
+  const xValues: number[] = [];
+  const yValues: number[] = [];
+  const zValues: number[] = [];
+  for (let index = 0; index < sampleCount; index += 1) {
+    xValues.push(positions[index * 3]);
+    yValues.push(positions[index * 3 + 1]);
+    zValues.push(positions[index * 3 + 2]);
+  }
+  xValues.sort((a, b) => a - b);
+  yValues.sort((a, b) => a - b);
+  zValues.sort((a, b) => a - b);
+
+  const minX = percentile(xValues, 0.02);
+  const maxX = percentile(xValues, 0.98);
+  const minY = percentile(yValues, 0.02);
+  const maxY = percentile(yValues, 0.98);
+  const minZ = percentile(zValues, 0.02);
+  const maxZ = percentile(zValues, 0.98);
+  const robustDiagonal = Math.hypot(maxX - minX, maxY - minY, maxZ - minZ);
+  const voxelSize = Math.max(0.08, Math.min(0.36, robustDiagonal / 34));
+  const voxelKeys: string[] = [];
+  const voxelCounts = new Map<string, number>();
+  for (let index = 0; index < sampleCount; index += 1) {
+    const x = positions[index * 3];
+    const y = positions[index * 3 + 1];
+    const z = positions[index * 3 + 2];
+    const key = [
+      Math.floor((x - minX) / voxelSize),
+      Math.floor((y - minY) / voxelSize),
+      Math.floor((z - minZ) / voxelSize),
+    ].join(":");
+    voxelKeys.push(key);
+    voxelCounts.set(key, (voxelCounts.get(key) ?? 0) + 1);
+  }
+
+  const logScales = scaleMeasures
+    .map((scale) => Math.log(scale))
+    .sort((a, b) => a - b);
+  const scaleLow = percentile(logScales, 0.18);
+  const scaleHigh = percentile(logScales, 0.9);
+  const scaleRange = Math.max(1e-5, scaleHigh - scaleLow);
+  const densityLogs = voxelKeys
+    .map((key) => Math.log1p(voxelCounts.get(key) ?? 1))
+    .sort((a, b) => a - b);
+  const densityLow = percentile(densityLogs, 0.12);
+  const densityHigh = percentile(densityLogs, 0.9);
+  const densityRange = Math.max(1e-5, densityHigh - densityLow);
+  const structure: number[] = [];
+  let largeOrSparseCount = 0;
+  for (let index = 0; index < sampleCount; index += 1) {
+    const normalizedScale = Math.max(
+      0,
+      Math.min(1, (Math.log(scaleMeasures[index]) - scaleLow) / scaleRange),
+    );
+    const normalizedDensity = Math.max(
+      0,
+      Math.min(
+        1,
+        (Math.log1p(voxelCounts.get(voxelKeys[index]) ?? 1) - densityLow) / densityRange,
+      ),
+    );
+    const diagnosticRisk = Math.max(
+      0,
+      Math.min(1, normalizedScale * 0.72 + (1 - normalizedDensity) * 0.28),
+    );
+    if (diagnosticRisk >= 0.68) largeOrSparseCount += 1;
+    structure.push(normalizedScale, normalizedDensity, diagnosticRisk);
+  }
+
   return {
     positions: new Float32Array(positions),
+    colors: new Float32Array(colors),
+    structure: new Float32Array(structure),
     stats: {
       gaussianCount,
-      sampledCount: positions.length / 3,
+      sampledCount: sampleCount,
+      medianScale: Math.exp(percentile(logScales, 0.5)),
+      p90Scale: Math.exp(scaleHigh),
+      largeOrSparsePercent: (largeOrSparseCount / sampleCount) * 100,
     },
   };
 }
@@ -312,6 +425,8 @@ function computeSceneFrameFromSplatBuffer(buffer: ArrayBuffer): SceneFrame | nul
     radius,
     safePosition,
     safeTarget,
+    floorY,
+    ceilingY,
     footprint: { minX, maxX, minZ, maxZ },
   };
 }
@@ -638,10 +753,14 @@ interface Props {
   spatialViewMode?: SpatialViewMode;
   roomKitCage?: RoomKitCageWall[];
   showRoomKitCage?: boolean;
+  showSpatialGrid?: boolean;
   spatialTrajectories?: SpatialTrajectory[];
   showSpatialTrajectory?: boolean;
   selectedSpatialCamera?: SpatialCameraSample | null;
   globalSceneTransform?: GlobalSceneTransform;
+  spatialTransformTool?: SpatialTransformTool;
+  spatialGizmoResetKey?: string | number | null;
+  onSpatialTransformChange?: (transform: GlobalSceneTransform) => void;
   onInspectionStats?: (stats: SplatInspectionStats | null) => void;
   spatialNavigation?: boolean;
   spatialCameraMode?: SpatialCameraMode;
@@ -659,7 +778,7 @@ export interface SplatViewerHandle {
   navigateToSpatialCamera: (camera: SpatialCameraSample, instant?: boolean) => void;
   stopCameraNavigation: () => void;
   enableFreeCamera: () => void;
-  frameScene: () => void;
+  frameScene: (instant?: boolean) => void;
   /** Set camera FOV in degrees (applies immediately to the live BabylonJS camera). */
   setFov: (degrees: number) => void;
 }
@@ -684,10 +803,14 @@ const SplatViewer = forwardRef<SplatViewerHandle, Props>(function SplatViewer(
     spatialViewMode = "surface",
     roomKitCage = EMPTY_ROOM_KIT_CAGE,
     showRoomKitCage = false,
+    showSpatialGrid = false,
     spatialTrajectories = EMPTY_SPATIAL_TRAJECTORIES,
     showSpatialTrajectory = false,
     selectedSpatialCamera = null,
     globalSceneTransform = IDENTITY_GLOBAL_SCENE_TRANSFORM,
+    spatialTransformTool = "select",
+    spatialGizmoResetKey,
+    onSpatialTransformChange,
     onInspectionStats,
     spatialNavigation = false,
     spatialCameraMode = "orbit",
@@ -704,6 +827,9 @@ const SplatViewer = forwardRef<SplatViewerHandle, Props>(function SplatViewer(
   const sceneRef = useRef<any>(null);
   const gsRef = useRef<any>(null);
   const spatialRootRef = useRef<any>(null);
+  const spatialGizmoManagerRef = useRef<any>(null);
+  const globalSceneTransformRef = useRef(globalSceneTransform);
+  const onSpatialTransformChangeRef = useRef(onSpatialTransformChange);
   const splatBufferRef = useRef<ArrayBuffer | null>(null);
   const inspectionSampleRef = useRef<SplatSample | null>(null);
   const resizeRef = useRef<(() => void) | null>(null);
@@ -732,6 +858,14 @@ const SplatViewer = forwardRef<SplatViewerHandle, Props>(function SplatViewer(
     yaw: Math.PI / 4,
     pitch: 22 * Math.PI / 180,
   });
+
+  useEffect(() => {
+    globalSceneTransformRef.current = globalSceneTransform;
+  }, [globalSceneTransform]);
+
+  useEffect(() => {
+    onSpatialTransformChangeRef.current = onSpatialTransformChange;
+  }, [onSpatialTransformChange]);
 
   const [status, setStatus] = useState(() => t("viewer.status.loading", lang));
   const [downloadPct, setDownloadPct] = useState(0);
@@ -1199,7 +1333,15 @@ const SplatViewer = forwardRef<SplatViewerHandle, Props>(function SplatViewer(
     anim.fromFov = cam.fov;
     anim.toFov = shot.fov;
     anim.elapsed = 0;
-    anim.duration = instant ? 0.001 : 1.5;
+    const distance = Math.hypot(
+      tPos[0] - cur[0],
+      tPos[1] - cur[1],
+      tPos[2] - cur[2],
+    );
+    const yawDistance = Math.abs(slerpAngle(anim.fromAngle, anim.toAngle, 1) - anim.fromAngle);
+    anim.duration = instant
+      ? 0.001
+      : Math.max(0.5, Math.min(1.25, 0.38 + distance * 0.12 + yawDistance * 0.16));
     anim.active = true;
     (anim as any).exactForward = useExactForward;
 
@@ -1221,13 +1363,15 @@ const SplatViewer = forwardRef<SplatViewerHandle, Props>(function SplatViewer(
   const goToPrev = useCallback(() => {
     const n = tourData?.shots.length ?? 0;
     if (!n) return;
-    goToShot(shotIdxRef.current <= 0 ? n - 1 : shotIdxRef.current - 1);
+    if (shotIdxRef.current <= 0) return;
+    goToShot(shotIdxRef.current - 1);
   }, [goToShot, tourData]);
 
   const goToNext = useCallback(() => {
     const n = tourData?.shots.length ?? 0;
     if (!n) return;
-    goToShot(shotIdxRef.current >= n - 1 ? 0 : shotIdxRef.current + 1);
+    if (shotIdxRef.current >= n - 1) return;
+    goToShot(shotIdxRef.current + 1);
   }, [goToShot, tourData]);
 
   const getCurrentCamera = useCallback(() => {
@@ -1283,6 +1427,7 @@ const SplatViewer = forwardRef<SplatViewerHandle, Props>(function SplatViewer(
       cam.position.set(pos[0], pos[1], pos[2]);
       cam.setTarget(new B.Vector3(toTarget[0], toTarget[1], toTarget[2]));
       cam.fov = targetFov;
+      immersiveRenderBurstUntilRef.current = performance.now() + 220;
       animRef.current.active = false;
       animRef.current.holdActive = false;
       if (!immersiveControls && !spatialNavigationRef.current && canvasRef.current) {
@@ -1308,13 +1453,19 @@ const SplatViewer = forwardRef<SplatViewerHandle, Props>(function SplatViewer(
     anim.fromFov = cam.fov;
     anim.toFov = targetFov;
     anim.elapsed = 0;
-    // Adaptive duration based on distance
+    // Camera-to-camera travel is deliberately short and distance-aware.
+    // Re-targeting starts from the currently rendered pose, so repeated
+    // selections never queue stale animations.
     const dist = Math.hypot(
       pos[0] - cam.position.x,
       pos[1] - cam.position.y,
       pos[2] - cam.position.z,
     );
-    anim.duration = Math.max(0.8, Math.min(2.0, dist * 0.35));
+    const yawDistance = Math.abs(slerpAngle(anim.fromAngle, anim.toAngle, 1) - anim.fromAngle);
+    anim.duration = Math.max(
+      0.34,
+      Math.min(0.9, 0.28 + dist * 0.12 + yawDistance * 0.12),
+    );
     anim.active = true;
     anim.holdActive = false;
     anim.holdDuration = 0;
@@ -1383,18 +1534,80 @@ const SplatViewer = forwardRef<SplatViewerHandle, Props>(function SplatViewer(
     immersiveRenderBurstUntilRef.current = performance.now() + 350;
   }, []);
 
-  const frameScene = useCallback(() => {
+  const frameScene = useCallback((instant = false) => {
     const frame = fallbackSceneRef.current;
-    if (!frame) return;
+    const camera = cameraRef.current;
+    const B = babylonRef.current;
+    if (!frame || !camera || !B) return;
+
+    const canonicalCamera = inversePresentationPoint(
+      [camera.position.x, camera.position.y, camera.position.z],
+      globalSceneTransformRef.current,
+    );
+    const footprintWidth = frame.footprint.maxX - frame.footprint.minX;
+    const footprintDepth = frame.footprint.maxZ - frame.footprint.minZ;
+    const marginX = Math.max(0.15, footprintWidth * 0.04);
+    const marginZ = Math.max(0.15, footprintDepth * 0.04);
+    const cameraInside = (
+      canonicalCamera[0] >= frame.footprint.minX - marginX
+      && canonicalCamera[0] <= frame.footprint.maxX + marginX
+      && canonicalCamera[2] >= frame.footprint.minZ - marginZ
+      && canonicalCamera[2] <= frame.footprint.maxZ + marginZ
+    );
+
+    if (cameraInside) {
+      // Interior work is about the room around the current view, not the full
+      // reconstruction envelope. Establish a local orbit pivot in front of
+      // the user without moving the camera by even one pixel.
+      const currentTarget = camera.getTarget();
+      const forward = currentTarget.subtract(camera.position).normalize();
+      const focusDistance = Math.max(1.25, Math.min(3, frame.radius * 0.5));
+      const target = camera.position.add(forward.scale(focusDistance));
+      const offset = camera.position.subtract(target);
+      const radius = Math.max(0.25, offset.length());
+      spatialOrbitRef.current = {
+        enabled: true,
+        target: [target.x, target.y, target.z],
+        radius,
+        yaw: Math.atan2(offset.z, offset.x),
+        pitch: Math.asin(Math.max(-1, Math.min(1, offset.y / radius))),
+      };
+      immersiveRenderBurstUntilRef.current = performance.now() + 200;
+      return;
+    }
+
+    // An exterior camera is intentionally asking for the complete asset.
     const center = transformSpatialPoint(frame.center);
     const pose = spatialOrbitRef.current;
     pose.enabled = true;
     pose.target = center;
-    pose.radius = Math.max(2.2, frame.radius * globalSceneTransform.scale * 1.65);
+    pose.radius = Math.max(
+      2.2,
+      frame.radius * globalSceneTransformRef.current.scale * 1.65,
+    );
     pose.yaw = Math.PI / 4;
     pose.pitch = 22 * Math.PI / 180;
-    applySpatialOrbitPose();
-  }, [applySpatialOrbitPose, globalSceneTransform.scale, transformSpatialPoint]);
+    if (instant) {
+      applySpatialOrbitPose();
+      return;
+    }
+    const cosPitch = Math.cos(pose.pitch);
+    const position: Vec3 = [
+      pose.target[0] + pose.radius * cosPitch * Math.cos(pose.yaw),
+      pose.target[1] + pose.radius * Math.sin(pose.pitch),
+      pose.target[2] + pose.radius * cosPitch * Math.sin(pose.yaw),
+    ];
+    const forward = normalizeVec3([
+      pose.target[0] - position[0],
+      pose.target[1] - position[1],
+      pose.target[2] - position[2],
+    ]);
+    navigateToWorldCamera(position, forward, false, cameraRef.current?.fov, [0, 1, 0]);
+  }, [
+    applySpatialOrbitPose,
+    navigateToWorldCamera,
+    transformSpatialPoint,
+  ]);
 
   const navigateToSpatialCamera = useCallback((sample: SpatialCameraSample, instant = true) => {
     const camera = cameraRef.current;
@@ -1492,6 +1705,180 @@ const SplatViewer = forwardRef<SplatViewerHandle, Props>(function SplatViewer(
   }, [globalSceneTransform, ready]);
 
   useEffect(() => {
+    spatialGizmoManagerRef.current?.dispose?.();
+    spatialGizmoManagerRef.current = null;
+
+    if (!ready || !spatialNavigation || spatialTransformTool === "select") return;
+
+    const B = babylonRef.current;
+    const scene = sceneRef.current;
+    const root = spatialRootRef.current;
+    if (!B || !scene || !root) return;
+
+    // The USD root gizmo is a primary authoring control. Keep it screen-stable,
+    // pen-sized and visually identical to a DCC transform manipulator. Plane
+    // handles are intentionally omitted: Babylon's overlapping translucent
+    // planes read as one cyan knot against a photographic Gaussian scene.
+    const gizmoScale = compactTouch ? 1.72 : 1.46;
+    const axisScale = gizmoScale * 1.08;
+    const manager = new B.GizmoManager(scene, compactTouch ? 4.2 : 3.5);
+    spatialGizmoManagerRef.current = manager;
+    manager.usePointerToAttachGizmos = false;
+    manager.enableAutoPicking = false;
+    manager.clearGizmoOnEmptyPointerEvent = false;
+    manager.scaleRatio = gizmoScale;
+    if (B.GizmoCoordinatesMode?.World != null) {
+      manager.coordinatesMode = B.GizmoCoordinatesMode.World;
+    }
+
+    manager.positionGizmoEnabled = spatialTransformTool === "move";
+    manager.rotationGizmoEnabled = spatialTransformTool === "rotate";
+    manager.scaleGizmoEnabled = spatialTransformTool === "scale";
+    manager.attachToNode(root);
+
+    const palette = {
+      x: B.Color3.FromHexString("#FF1F3D"),
+      y: B.Color3.FromHexString("#00D95F"),
+      z: B.Color3.FromHexString("#087BFF"),
+      neutral: B.Color3.FromHexString("#FFF8E7"),
+    };
+    const tuneHandle = (handle: any, color: any, alpha = 1) => {
+      if (!handle) return;
+      if (handle.coloredMaterial) {
+        handle.coloredMaterial.diffuseColor = color;
+        handle.coloredMaterial.emissiveColor = color;
+        handle.coloredMaterial.specularColor = B.Color3.Black();
+        handle.coloredMaterial.disableLighting = true;
+        handle.coloredMaterial.alpha = alpha;
+      }
+      if (handle.hoverMaterial) {
+        const hover = B.Color3.Lerp(color, B.Color3.White(), 0.24);
+        handle.hoverMaterial.diffuseColor = hover;
+        handle.hoverMaterial.emissiveColor = hover;
+        handle.hoverMaterial.specularColor = B.Color3.Black();
+        handle.hoverMaterial.disableLighting = true;
+        handle.hoverMaterial.alpha = 1;
+      }
+      if ("rotationColor" in handle) handle.rotationColor = color;
+    };
+
+    const positionGizmo = manager.gizmos.positionGizmo;
+    if (positionGizmo) {
+      positionGizmo.planarGizmoEnabled = false;
+      positionGizmo.snapDistance = 0;
+      positionGizmo.xGizmo.scaleRatio = axisScale;
+      positionGizmo.yGizmo.scaleRatio = axisScale;
+      positionGizmo.zGizmo.scaleRatio = axisScale;
+      tuneHandle(positionGizmo.xGizmo, palette.x);
+      tuneHandle(positionGizmo.yGizmo, palette.y);
+      tuneHandle(positionGizmo.zGizmo, palette.z);
+    }
+
+    const rotationGizmo = manager.gizmos.rotationGizmo;
+    if (rotationGizmo) {
+      rotationGizmo.sensitivity = compactTouch ? 1.15 : 0.9;
+      rotationGizmo.snapDistance = 0;
+      rotationGizmo.xGizmo.scaleRatio = gizmoScale;
+      rotationGizmo.yGizmo.scaleRatio = gizmoScale;
+      rotationGizmo.zGizmo.scaleRatio = gizmoScale;
+      tuneHandle(rotationGizmo.xGizmo, palette.x);
+      tuneHandle(rotationGizmo.yGizmo, palette.y);
+      tuneHandle(rotationGizmo.zGizmo, palette.z);
+    }
+
+    const scaleGizmo = manager.gizmos.scaleGizmo;
+    if (scaleGizmo) {
+      // The shared scene contract permits only a uniform root scale.
+      scaleGizmo.xGizmo.isEnabled = false;
+      scaleGizmo.yGizmo.isEnabled = false;
+      scaleGizmo.zGizmo.isEnabled = false;
+      scaleGizmo.uniformScaleGizmo.isEnabled = true;
+      scaleGizmo.snapDistance = 0;
+      tuneHandle(scaleGizmo.uniformScaleGizmo, palette.neutral);
+    }
+
+    const activeGizmo = positionGizmo ?? rotationGizmo ?? scaleGizmo;
+    const publishTransform = () => {
+      const previous = globalSceneTransformRef.current;
+      if (spatialTransformTool === "scale") {
+        const uniformScale = Math.max(
+          0.001,
+          Math.min(1000, Number(root.scaling.x.toFixed(4))),
+        );
+        root.scaling.setAll(uniformScale);
+      }
+
+      const euler = root.rotationQuaternion?.toEulerAngles?.()
+        ?? root.rotation
+        ?? B.Vector3.Zero();
+      const principalRotation: Vec3 = [
+        normalizedEditorDegrees(euler.x),
+        normalizedEditorDegrees(euler.y),
+        normalizedEditorDegrees(euler.z),
+      ];
+      const alternateRotation: Vec3 = [
+        normalizedEditorDegrees(Math.PI - euler.x),
+        normalizedEditorDegrees(euler.y + Math.PI),
+        normalizedEditorDegrees(euler.z + Math.PI),
+      ];
+      const principalDistance = principalRotation.reduce(
+        (sum, value, index) => sum + editorAngleDistance(value, previous.rotationDeg[index]),
+        0,
+      );
+      const alternateDistance = alternateRotation.reduce(
+        (sum, value, index) => sum + editorAngleDistance(value, previous.rotationDeg[index]),
+        0,
+      );
+      const rotationDeg = alternateDistance < principalDistance
+        ? alternateRotation
+        : principalRotation;
+
+      const nextTransform: GlobalSceneTransform = {
+        version: 1,
+        coordinateSpace: "reaigen_y_up",
+        translation: spatialTransformTool === "move"
+          ? [
+              Number(root.position.x.toFixed(4)),
+              Number(root.position.y.toFixed(4)),
+              Number(root.position.z.toFixed(4)),
+            ]
+          : [...previous.translation] as Vec3,
+        rotationDeg: spatialTransformTool === "rotate"
+          ? rotationDeg
+          : [...previous.rotationDeg] as Vec3,
+        scale: spatialTransformTool === "scale"
+          ? Math.max(0.001, Math.min(1000, Number(root.scaling.x.toFixed(4))))
+          : previous.scale,
+      };
+
+      globalSceneTransformRef.current = nextTransform;
+      onSpatialTransformChangeRef.current?.(nextTransform);
+      root.computeWorldMatrix(true);
+      immersiveRenderBurstUntilRef.current = performance.now() + 300;
+    };
+
+    const dragObserver = activeGizmo?.onDragObservable.add(publishTransform);
+    const dragEndObserver = activeGizmo?.onDragEndObservable.add(publishTransform);
+    scene.render();
+
+    return () => {
+      if (dragObserver) activeGizmo?.onDragObservable.remove(dragObserver);
+      if (dragEndObserver) activeGizmo?.onDragEndObservable.remove(dragEndObserver);
+      if (spatialGizmoManagerRef.current === manager) {
+        spatialGizmoManagerRef.current = null;
+      }
+      manager.dispose();
+      scene.render();
+    };
+  }, [
+    compactTouch,
+    ready,
+    spatialNavigation,
+    spatialGizmoResetKey,
+    spatialTransformTool,
+  ]);
+
+  useEffect(() => {
     const canonical = canonicalTourDataRef.current;
     if (!ready || !canonical) return;
     // Keep playback data synchronized without snapping the camera while the
@@ -1516,28 +1903,124 @@ const SplatViewer = forwardRef<SplatViewerHandle, Props>(function SplatViewer(
     }
 
     const buffer = splatBufferRef.current;
-    const sample = buffer ? sampleSplatBuffer(buffer) : null;
+    const sample = buffer
+      ? sampleSplatBuffer(buffer, compactTouch ? 3_200 : 7_500)
+      : null;
     inspectionSampleRef.current = sample;
     onInspectionStats?.(sample?.stats ?? null);
 
-    gs.visibility = spatialViewMode === "centers" ? 0.22 : 1;
+    gs.visibility = spatialViewMode === "centers" ? 0.76 : 1;
 
     if (spatialViewMode === "centers" && sample) {
       const mesh = new B.Mesh("reaigen-gaussian-centers", scene);
       const positions = Array.from(sample.positions);
+      const colors = Array.from(sample.colors);
+      const structure = Array.from(sample.structure);
       const indices = Array.from({ length: positions.length / 3 }, (_, index) => index);
       mesh.setVerticesData(B.VertexBuffer.PositionKind, positions, false);
+      mesh.setVerticesData(B.VertexBuffer.ColorKind, colors, false, 4);
+      mesh.setVerticesData("structure", structure, false, 3);
       mesh.setIndices(indices);
-      const material = new B.StandardMaterial("reaigen-gaussian-centers-material", scene);
-      material.disableLighting = true;
-      material.emissiveColor = new B.Color3(0.06, 0.74, 0.78);
+      const shaderName = "reaigenGaussianStructure";
+      B.Effect.ShadersStore[`${shaderName}VertexShader`] = `
+        precision highp float;
+        attribute vec3 position;
+        attribute vec4 color;
+        attribute vec3 structure;
+        uniform mat4 world;
+        uniform mat4 worldViewProjection;
+        uniform vec3 cameraPosition;
+        uniform float pointSize;
+        uniform float nearFade;
+        uniform float farFade;
+        varying float vVisibility;
+        varying vec4 vPointColor;
+        varying vec3 vStructure;
+
+        void main(void) {
+          vec4 worldPosition = world * vec4(position, 1.0);
+          float cameraDistance = distance(worldPosition.xyz, cameraPosition);
+          float nearVisibility = smoothstep(nearFade * 0.22, nearFade, cameraDistance);
+          float farVisibility = 1.0 - smoothstep(farFade * 0.72, farFade, cameraDistance);
+          vVisibility = nearVisibility * farVisibility;
+          vPointColor = color;
+          vStructure = structure;
+          gl_Position = worldViewProjection * vec4(position, 1.0);
+          float footprint = mix(0.82, 2.85, smoothstep(0.0, 1.0, structure.x));
+          float support = mix(0.86, 1.08, structure.y);
+          gl_PointSize = pointSize * footprint * support;
+        }
+      `;
+      B.Effect.ShadersStore[`${shaderName}FragmentShader`] = `
+        precision highp float;
+        uniform float opacity;
+        varying float vVisibility;
+        varying vec4 vPointColor;
+        varying vec3 vStructure;
+
+        void main(void) {
+          vec2 centered = gl_PointCoord - vec2(0.5);
+          float radius = length(centered);
+          float softDisc = 1.0 - smoothstep(0.37, 0.5, radius);
+          float core = 1.0 - smoothstep(0.18, 0.36, radius);
+          float rim = max(0.0, softDisc - core);
+          float supportOpacity = mix(0.38, 1.0, vStructure.y);
+          float alpha = (core * 0.72 + rim) * vVisibility * opacity
+            * supportOpacity * max(0.4, vPointColor.a);
+          if (alpha < 0.012) discard;
+          vec3 supportedColor = mix(vPointColor.rgb, vec3(0.16, 0.18, 0.20), 0.22);
+          vec3 diagnosticColor = mix(
+            supportedColor,
+            vec3(0.88, 0.43, 0.20),
+            smoothstep(0.48, 0.92, vStructure.z) * 0.82
+          );
+          vec3 finalColor = mix(diagnosticColor * 0.58, diagnosticColor, core);
+          gl_FragColor = vec4(finalColor, alpha);
+        }
+      `;
+      const material = new B.ShaderMaterial(
+        "reaigen-gaussian-structure-material",
+        scene,
+        { vertex: shaderName, fragment: shaderName },
+        {
+          attributes: ["position", "color", "structure"],
+          uniforms: [
+            "world",
+            "worldViewProjection",
+            "cameraPosition",
+            "pointSize",
+            "nearFade",
+            "farFade",
+            "opacity",
+          ],
+          needAlphaBlending: true,
+        },
+      );
       material.pointsCloud = true;
-      material.pointSize = 2.6;
-      material.alpha = 0.84;
+      material.fillMode = B.Material.PointFillMode;
+      material.backFaceCulling = false;
+      material.alphaMode = B.Engine.ALPHA_COMBINE;
+      const sceneRadius = fallbackSceneRef.current?.radius ?? 4;
+      material.setFloat("pointSize", compactTouch ? 2.45 : 2.8);
+      material.setFloat("nearFade", 0.6);
+      material.setFloat("farFade", Math.max(5.5, Math.min(12, sceneRadius * 1.9)));
+      material.setFloat("opacity", 0.72);
       mesh.material = material;
       mesh.alwaysSelectAsActiveMesh = true;
+      mesh.renderingGroupId = 1;
+      mesh.alphaIndex = 20;
       mesh.parent = root;
-      disposables.push(mesh, material);
+      const pointObserver = scene.onBeforeRenderObservable.add(() => {
+        const camera = cameraRef.current;
+        if (camera) material.setVector3("cameraPosition", camera.globalPosition ?? camera.position);
+      });
+      disposables.push(
+        mesh,
+        material,
+        {
+          dispose: () => scene.onBeforeRenderObservable.remove(pointObserver),
+        },
+      );
     }
 
     if (showRoomKitCage) {
@@ -1563,6 +2046,337 @@ const SplatViewer = forwardRef<SplatViewerHandle, Props>(function SplatViewer(
         mesh.parent = root;
         disposables.push(mesh);
       }
+    }
+
+    if (showSpatialGrid) {
+      const frame = fallbackSceneRef.current;
+      const camera = cameraRef.current;
+      let centerX = frame?.center[0] ?? 0;
+      let centerZ = frame?.center[2] ?? 0;
+      let interiorGrid = false;
+
+      if (frame && camera) {
+        const currentCanonical = inversePresentationPoint(
+          [camera.position.x, camera.position.y, camera.position.z],
+          globalSceneTransformRef.current,
+        );
+        const target = camera.getTarget();
+        const targetCanonical = inversePresentationPoint(
+          [target.x, target.y, target.z],
+          globalSceneTransformRef.current,
+        );
+        const width = frame.footprint.maxX - frame.footprint.minX;
+        const depth = frame.footprint.maxZ - frame.footprint.minZ;
+        const marginX = Math.max(0.15, width * 0.04);
+        const marginZ = Math.max(0.15, depth * 0.04);
+        interiorGrid = (
+          currentCanonical[0] >= frame.footprint.minX - marginX
+          && currentCanonical[0] <= frame.footprint.maxX + marginX
+          && currentCanonical[2] >= frame.footprint.minZ - marginZ
+          && currentCanonical[2] <= frame.footprint.maxZ + marginZ
+        );
+        if (interiorGrid) {
+          centerX = Math.max(
+            frame.footprint.minX,
+            Math.min(frame.footprint.maxX, targetCanonical[0]),
+          );
+          centerZ = Math.max(
+            frame.footprint.minZ,
+            Math.min(frame.footprint.maxZ, targetCanonical[2]),
+          );
+        }
+      }
+
+      const canonicalGridRadius = interiorGrid
+        ? Math.max(1.75, Math.min(2.8, (frame?.radius ?? 4) * 0.58))
+        : Math.max(4, Math.min(10, (frame?.radius ?? 4) * 1.15));
+      root.computeWorldMatrix(true);
+      const transformedGridAnchor = B.Vector3.TransformCoordinates(
+        new B.Vector3(centerX, (frame?.floorY ?? 0), centerZ),
+        root.getWorldMatrix(),
+      );
+      const gridRadius = canonicalGridRadius * Math.max(
+        0.001,
+        Math.abs(globalSceneTransformRef.current.scale),
+      );
+      const majorStep = gridRadius > 7 ? 2 : 1;
+      const minorStep = majorStep / 4;
+      const halfSize = Math.ceil(gridRadius / majorStep) * majorStep;
+      // Reaigen presentation space is explicitly Y-up. The working grid is a
+      // DCC world reference, not object geometry, so it remains on world XZ
+      // even while the authored USD root rotates or scales the scan.
+      centerX = transformedGridAnchor.x;
+      centerZ = transformedGridAnchor.z;
+      const floorY = transformedGridAnchor.y + 0.006;
+      const minX = centerX - halfSize;
+      const maxX = centerX + halfSize;
+      const minZ = centerZ - halfSize;
+      const maxZ = centerZ + halfSize;
+      const textureSize = compactTouch ? 1024 : 2048;
+      const gridTexture = new B.DynamicTexture(
+        "reaigen-working-grid-texture",
+        { width: textureSize, height: textureSize },
+        scene,
+        true,
+        B.Texture.TRILINEAR_SAMPLINGMODE,
+      );
+      gridTexture.hasAlpha = true;
+      gridTexture.wrapU = B.Texture.CLAMP_ADDRESSMODE;
+      gridTexture.wrapV = B.Texture.CLAMP_ADDRESSMODE;
+      gridTexture.anisotropicFilteringLevel = 16;
+
+      const context = gridTexture.getContext();
+      context.clearRect(0, 0, textureSize, textureSize);
+      context.lineCap = "butt";
+
+      const coordinateToPixel = (value: number, minimum: number) => (
+        (value - minimum) / (halfSize * 2) * textureSize
+      );
+      const drawGridLine = (
+        fromX: number,
+        fromY: number,
+        toX: number,
+        toY: number,
+        color: string,
+        width: number,
+      ) => {
+        context.beginPath();
+        context.moveTo(fromX, fromY);
+        context.lineTo(toX, toY);
+        context.strokeStyle = color;
+        context.lineWidth = width;
+        context.stroke();
+      };
+      const drawNeutralGridLine = (
+        fromX: number,
+        fromY: number,
+        toX: number,
+        toY: number,
+        major: boolean,
+      ) => {
+        // A fine light stroke over a wider dark keyline remains legible on
+        // both white walls and dark floors without reading as neon.
+        drawGridLine(
+          fromX,
+          fromY,
+          toX,
+          toY,
+          major ? "rgba(10, 13, 17, 0.50)" : "rgba(12, 15, 19, 0.25)",
+          major ? 3.2 : 1.8,
+        );
+        drawGridLine(
+          fromX,
+          fromY,
+          toX,
+          toY,
+          major ? "rgba(242, 245, 248, 0.56)" : "rgba(242, 245, 248, 0.34)",
+          major ? 1.25 : 0.72,
+        );
+      };
+      const drawAxisLine = (
+        fromX: number,
+        fromY: number,
+        toX: number,
+        toY: number,
+        color: string,
+      ) => {
+        drawGridLine(fromX, fromY, toX, toY, "rgba(8, 10, 14, 0.45)", 4.1);
+        drawGridLine(fromX, fromY, toX, toY, color, 2.1);
+      };
+
+      const firstX = Math.ceil(minX / minorStep) * minorStep;
+      const firstZ = Math.ceil(minZ / minorStep) * minorStep;
+      for (let x = firstX; x <= maxX + 1e-5; x += minorStep) {
+        if (Math.abs(x) < minorStep * 0.15) continue;
+        const major = Math.abs(x / majorStep - Math.round(x / majorStep)) < 1e-4;
+        const pixel = coordinateToPixel(x, minX);
+        drawNeutralGridLine(
+          pixel,
+          0,
+          pixel,
+          textureSize,
+          major,
+        );
+      }
+      for (let z = firstZ; z <= maxZ + 1e-5; z += minorStep) {
+        if (Math.abs(z) < minorStep * 0.15) continue;
+        const major = Math.abs(z / majorStep - Math.round(z / majorStep)) < 1e-4;
+        const pixel = textureSize - coordinateToPixel(z, minZ);
+        drawNeutralGridLine(
+          0,
+          pixel,
+          textureSize,
+          pixel,
+          major,
+        );
+      }
+      if (minZ <= 0 && maxZ >= 0) {
+        const xAxisPixel = textureSize - coordinateToPixel(0, minZ);
+        drawAxisLine(
+          0,
+          xAxisPixel,
+          textureSize,
+          xAxisPixel,
+          "rgba(255, 46, 72, 0.82)",
+        );
+      }
+      // The editor grid is local to the current working area. Keep a subtle
+      // crosshair at that anchor even when the absolute USD origin is outside
+      // the room, so its orientation remains immediately readable.
+      const anchorPixel = textureSize * 0.5;
+      drawAxisLine(
+        0,
+        anchorPixel,
+        textureSize,
+        anchorPixel,
+        "rgba(255, 46, 72, 0.72)",
+      );
+      drawAxisLine(
+        anchorPixel,
+        0,
+        anchorPixel,
+        textureSize,
+        "rgba(30, 139, 255, 0.72)",
+      );
+      if (minX <= 0 && maxX >= 0) {
+        const zAxisPixel = coordinateToPixel(0, minX);
+        drawAxisLine(
+          zAxisPixel,
+          0,
+          zAxisPixel,
+          textureSize,
+          "rgba(30, 139, 255, 0.82)",
+        );
+      }
+
+      // Fade the working surface before its edge so the finite editor aid
+      // never reads as a bright rectangular card in the Gaussian scene.
+      context.globalCompositeOperation = "destination-in";
+      const fade = context.createRadialGradient(
+        textureSize * 0.5,
+        textureSize * 0.5,
+        textureSize * 0.18,
+        textureSize * 0.5,
+        textureSize * 0.5,
+        textureSize * 0.56,
+      );
+      fade.addColorStop(0, "rgba(255, 255, 255, 1)");
+      fade.addColorStop(0.62, "rgba(255, 255, 255, 0.82)");
+      fade.addColorStop(1, "rgba(255, 255, 255, 0)");
+      context.fillStyle = fade;
+      context.fillRect(0, 0, textureSize, textureSize);
+      context.globalCompositeOperation = "source-over";
+      gridTexture.update(false);
+
+      const gridShaderName = "reaigenWorkingGrid";
+      B.Effect.ShadersStore[`${gridShaderName}VertexShader`] = `
+        precision highp float;
+        attribute vec3 position;
+        attribute vec2 uv;
+        uniform mat4 world;
+        uniform mat4 worldViewProjection;
+        varying vec2 vUV;
+        varying vec3 vWorldPosition;
+
+        void main(void) {
+          vec4 worldPosition = world * vec4(position, 1.0);
+          vWorldPosition = worldPosition.xyz;
+          vUV = uv;
+          gl_Position = worldViewProjection * vec4(position, 1.0);
+        }
+      `;
+      B.Effect.ShadersStore[`${gridShaderName}FragmentShader`] = `
+        precision highp float;
+        uniform sampler2D gridTexture;
+        uniform vec3 cameraPosition;
+        uniform vec3 gridNormal;
+        uniform float fadeStart;
+        uniform float fadeEnd;
+        uniform float opacity;
+        varying vec2 vUV;
+        varying vec3 vWorldPosition;
+
+        void main(void) {
+          vec4 grid = texture2D(gridTexture, vUV);
+          float cameraDistance = distance(vWorldPosition, cameraPosition);
+          float distanceFade = 1.0 - smoothstep(fadeStart, fadeEnd, cameraDistance);
+          vec3 viewDirection = normalize(cameraPosition - vWorldPosition);
+          float incidence = abs(dot(viewDirection, normalize(gridNormal)));
+          float horizonFade = smoothstep(0.055, 0.22, incidence);
+          float alpha = grid.a * distanceFade * horizonFade * opacity;
+          if (alpha < 0.008) discard;
+          gl_FragColor = vec4(grid.rgb, alpha);
+        }
+      `;
+      const gridMaterial = new B.ShaderMaterial(
+        "reaigen-working-grid-material",
+        scene,
+        { vertex: gridShaderName, fragment: gridShaderName },
+        {
+          attributes: ["position", "uv"],
+          uniforms: [
+            "world",
+            "worldViewProjection",
+            "cameraPosition",
+            "gridNormal",
+            "fadeStart",
+            "fadeEnd",
+            "opacity",
+          ],
+          samplers: ["gridTexture"],
+          needAlphaBlending: true,
+        },
+      );
+      gridMaterial.backFaceCulling = false;
+      gridMaterial.alphaMode = B.Engine.ALPHA_COMBINE;
+      gridMaterial.setTexture("gridTexture", gridTexture);
+      gridMaterial.setFloat("fadeStart", Math.max(1.4, gridRadius * 0.58));
+      gridMaterial.setFloat("fadeEnd", Math.max(3.2, gridRadius * 1.45));
+      gridMaterial.setFloat("opacity", 1);
+
+      const corners = [
+        new B.Vector3(minX, floorY, minZ),
+        new B.Vector3(maxX, floorY, minZ),
+        new B.Vector3(maxX, floorY, maxZ),
+        new B.Vector3(minX, floorY, maxZ),
+      ];
+      const gridNormal = new B.Vector3(0, 1, 0);
+      gridMaterial.setVector3("gridNormal", gridNormal);
+      const gridMesh = new B.Mesh("reaigen-working-grid", scene);
+      const vertexData = new B.VertexData();
+      vertexData.positions = corners.flatMap((corner: any) => [
+        corner.x,
+        corner.y,
+        corner.z,
+      ]);
+      vertexData.indices = [0, 1, 2, 0, 2, 3];
+      vertexData.uvs = [0, 1, 1, 1, 1, 0, 0, 0];
+      vertexData.applyToMesh(gridMesh);
+      gridMesh.material = gridMaterial;
+      gridMesh.isPickable = false;
+      // Babylon's Gaussian renderer does not write a conventional opaque
+      // depth surface. Draw editor references after the splat, then control
+      // their presence with the shader's distance, horizon and radial fades.
+      gridMesh.renderingGroupId = 1;
+      gridMesh.alphaIndex = 5;
+      gridMesh.alwaysSelectAsActiveMesh = true;
+      const gridObserver = scene.onBeforeRenderObservable.add(() => {
+        const camera = cameraRef.current;
+        if (camera) {
+          gridMaterial.setVector3(
+            "cameraPosition",
+            camera.globalPosition ?? camera.position,
+          );
+        }
+      });
+      disposables.push(
+        gridMesh,
+        gridMaterial,
+        gridTexture,
+        {
+          dispose: () => scene.onBeforeRenderObservable.remove(gridObserver),
+        },
+      );
     }
 
     if (showSpatialTrajectory) {
@@ -1612,36 +2426,6 @@ const SplatViewer = forwardRef<SplatViewerHandle, Props>(function SplatViewer(
         }
       });
 
-      if (selectedSpatialCamera) {
-        const position = new B.Vector3(...selectedSpatialCamera.position);
-        const forward = new B.Vector3(...selectedSpatialCamera.forward).normalize();
-        const up = new B.Vector3(...selectedSpatialCamera.up).normalize();
-        const right = B.Vector3.Cross(forward, up).normalize();
-        const length = 0.34;
-        const spread = length * Math.tan(Math.max(0.25, selectedSpatialCamera.fov) / 2);
-        const target = position.add(forward.scale(length));
-        const corners = [
-          target.add(up.scale(spread)).add(right.scale(spread)),
-          target.add(up.scale(spread)).subtract(right.scale(spread)),
-          target.subtract(up.scale(spread)).subtract(right.scale(spread)),
-          target.subtract(up.scale(spread)).add(right.scale(spread)),
-        ];
-        const frustum = B.MeshBuilder.CreateLineSystem(
-          "reaigen-active-camera",
-          {
-            lines: [
-              ...corners.map((corner) => [position, corner]),
-              [corners[0], corners[1], corners[2], corners[3], corners[0]],
-              [position, target],
-            ],
-          },
-          scene,
-        );
-        frustum.color = new B.Color3(1, 0.47, 0.08);
-        frustum.alpha = 1;
-        frustum.parent = root;
-        disposables.push(frustum);
-      }
     }
 
     scene.render();
@@ -1653,14 +2437,68 @@ const SplatViewer = forwardRef<SplatViewerHandle, Props>(function SplatViewer(
     };
   }, [
     onInspectionStats,
+    compactTouch,
     ready,
     roomKitCage,
-    selectedSpatialCamera,
     showRoomKitCage,
+    showSpatialGrid,
     showSpatialTrajectory,
     spatialNavigation,
     spatialTrajectories,
     spatialViewMode,
+  ]);
+
+  // The active camera marker changes continuously while scrubbing. Keep it
+  // separate from the static cage/path effect so a slider gesture does not
+  // rebuild every wall, line and inspection sample for each camera index.
+  useEffect(() => {
+    if (
+      !ready ||
+      !spatialNavigation ||
+      !showSpatialTrajectory ||
+      !selectedSpatialCamera
+    ) return;
+    const B = babylonRef.current;
+    const scene = sceneRef.current;
+    const root = spatialRootRef.current;
+    if (!B || !scene || !root) return;
+
+    const position = new B.Vector3(...selectedSpatialCamera.position);
+    const forward = new B.Vector3(...selectedSpatialCamera.forward).normalize();
+    const up = new B.Vector3(...selectedSpatialCamera.up).normalize();
+    const right = B.Vector3.Cross(forward, up).normalize();
+    const length = 0.34;
+    const spread = length * Math.tan(Math.max(0.25, selectedSpatialCamera.fov) / 2);
+    const target = position.add(forward.scale(length));
+    const corners = [
+      target.add(up.scale(spread)).add(right.scale(spread)),
+      target.add(up.scale(spread)).subtract(right.scale(spread)),
+      target.subtract(up.scale(spread)).subtract(right.scale(spread)),
+      target.subtract(up.scale(spread)).add(right.scale(spread)),
+    ];
+    const frustum = B.MeshBuilder.CreateLineSystem(
+      "reaigen-active-camera",
+      {
+        lines: [
+          ...corners.map((corner) => [position, corner]),
+          [corners[0], corners[1], corners[2], corners[3], corners[0]],
+          [position, target],
+        ],
+      },
+      scene,
+    );
+    frustum.color = new B.Color3(1, 0.47, 0.08);
+    frustum.alpha = 1;
+    frustum.parent = root;
+    scene.render();
+    return () => {
+      try { frustum.dispose(); } catch { /* best effort */ }
+    };
+  }, [
+    ready,
+    selectedSpatialCamera,
+    showSpatialTrajectory,
+    spatialNavigation,
   ]);
 
   // ── Tour loading ───────────────────────────────────────────────────────────
@@ -1793,7 +2631,6 @@ const SplatViewer = forwardRef<SplatViewerHandle, Props>(function SplatViewer(
           pitch: Math.asin(Math.max(-1, Math.min(1, dy / radius))),
         };
       }
-      applySpatialOrbitPose();
     } else {
       spatialOrbitRef.current.enabled = false;
     }
@@ -1864,6 +2701,8 @@ const SplatViewer = forwardRef<SplatViewerHandle, Props>(function SplatViewer(
 
     const handlePointerDown = (event: PointerEvent) => {
       if (event.pointerType === "mouse" && ![0, 1, 2].includes(event.button)) return;
+      const gizmoManager = spatialGizmoManagerRef.current;
+      if (gizmoManager?.isHovered || gizmoManager?.isDragging) return;
       const pan = event.button === 1
         || event.button === 2
         || event.shiftKey
@@ -1933,6 +2772,7 @@ const SplatViewer = forwardRef<SplatViewerHandle, Props>(function SplatViewer(
     };
 
     const handleWheel = (event: WheelEvent) => {
+      if (spatialGizmoManagerRef.current?.isDragging) return;
       if (spatialCameraMode === "orbit") {
         dollyOrbit(event.deltaY * 0.0015);
       } else {
@@ -1982,7 +2822,9 @@ const SplatViewer = forwardRef<SplatViewerHandle, Props>(function SplatViewer(
       pressed.delete(event.key.toLowerCase());
     };
     const handleContextMenu = (event: MouseEvent) => event.preventDefault();
-    const handleDoubleClick = () => frameScene();
+    const handleDoubleClick = () => {
+      if (!spatialGizmoManagerRef.current?.isHovered) frameScene();
+    };
 
     const movementObserver = scene.onBeforeRenderObservable.add(() => {
       if (spatialCameraMode !== "fly" || !pressed.size) return;
@@ -2021,6 +2863,7 @@ const SplatViewer = forwardRef<SplatViewerHandle, Props>(function SplatViewer(
     return () => {
       pointers.clear();
       pressed.clear();
+      spatialOrbitRef.current.enabled = false;
       canvas.style.cursor = "";
       canvas.removeEventListener("pointerdown", handlePointerDown);
       canvas.removeEventListener("pointermove", handlePointerMove);
@@ -2307,11 +3150,26 @@ const SplatViewer = forwardRef<SplatViewerHandle, Props>(function SplatViewer(
         });
         engineRef.current = engine;
 
-        // VKGS-tier DPR cap: lock at 1.5× to keep sort/render sharp without
-        // overloading the GPU on retina displays. No motion drop — switching
-        // DPR is itself a visible artefact.
+        // Keep the existing Retina cap for a settled frame, then use a modest
+        // motion scale while a camera is travelling or being manipulated.
+        // The canvas keeps its CSS size, so this is progressive refinement
+        // rather than a layout change.
         const dpr = typeof window !== "undefined" ? window.devicePixelRatio || 1 : 1;
-        engine.setHardwareScalingLevel(dpr / Math.min(dpr, 1.5));
+        const restingHardwareScale = Math.max(1, dpr / Math.min(dpr, 1.5));
+        const motionHardwareScale = Math.max(
+          restingHardwareScale,
+          typeof window !== "undefined" && window.innerWidth * window.innerHeight > 1_900_000
+            ? 1.65
+            : 1.45,
+        );
+        let activeHardwareScale = restingHardwareScale;
+        const applyHardwareScale = (next: number) => {
+          if (Math.abs(activeHardwareScale - next) < 0.01) return;
+          activeHardwareScale = next;
+          engine.setHardwareScalingLevel(next);
+          engine.resize();
+        };
+        engine.setHardwareScalingLevel(restingHardwareScale);
 
         engine.onContextLostObservable.add(() => console.warn("[REAI] WebGL context lost"));
         engine.onContextRestoredObservable.add(() => {
@@ -2338,6 +3196,11 @@ const SplatViewer = forwardRef<SplatViewerHandle, Props>(function SplatViewer(
         camera.keysUpward = [69];    // E
         camera.keysDownward = [81];  // Q
         cameraRef.current = camera;
+        camera.onViewMatrixChangedObservable.add(() => {
+          if (!animRef.current.active) {
+            immersiveRenderBurstUntilRef.current = performance.now() + 220;
+          }
+        });
 
         // VKGS-tier: no post-process pipeline. Engine-level antialias:true
         // provides clean splat silhouettes without colour transforms or blits.
@@ -2459,8 +3322,9 @@ const SplatViewer = forwardRef<SplatViewerHandle, Props>(function SplatViewer(
           anim.elapsed = Math.min(anim.elapsed + dt, anim.duration);
           const rawT = anim.elapsed / anim.duration;
           const et = quintic(rawT);
-          // Rotation leads position slightly for cinematic "look where you're going" feel
-          const rotT = quintic(Math.min(1, rawT * 1.15));
+          // Keep position, orientation and FOV on one timing curve. A leading
+          // rotation felt like the trajectory briefly changed direction.
+          const rotT = et;
           const px = anim.fromPos[0] + (anim.toPos[0] - anim.fromPos[0]) * et;
           const py = anim.fromPos[1] + (anim.toPos[1] - anim.fromPos[1]) * et;
           const pz = anim.fromPos[2] + (anim.toPos[2] - anim.fromPos[2]) * et;
@@ -2498,13 +3362,26 @@ const SplatViewer = forwardRef<SplatViewerHandle, Props>(function SplatViewer(
         // stay responsive without holding the GPU at 60 fps.
         let viewerInitializing = true;
         let lastIdleRenderAt = 0;
+        let lastMotionAt = performance.now();
         engine.runRenderLoop(() => {
           const coast = immersiveCoastRef.current;
+          const now = performance.now();
+          const qualityMoving = viewerInitializing ||
+            animRef.current.active ||
+            immersivePointersActiveRef.current ||
+            now < immersiveRenderBurstUntilRef.current ||
+            Math.abs(coast.yaw) >= 0.04 ||
+            Math.abs(coast.pitch) >= 0.04;
+          if (qualityMoving) lastMotionAt = now;
+          applyHardwareScale(
+            qualityMoving || now - lastMotionAt < 180
+              ? motionHardwareScale
+              : restingHardwareScale,
+          );
           const moving = viewerInitializing || !immersiveControls ||
             animRef.current.active || immersivePointersActiveRef.current ||
-            performance.now() < immersiveRenderBurstUntilRef.current ||
+            now < immersiveRenderBurstUntilRef.current ||
             Math.abs(coast.yaw) >= 0.04 || Math.abs(coast.pitch) >= 0.04;
-          const now = performance.now();
           if (!moving && now - lastIdleRenderAt < 500) return;
           lastIdleRenderAt = now;
           scene.render();
@@ -2580,19 +3457,28 @@ const SplatViewer = forwardRef<SplatViewerHandle, Props>(function SplatViewer(
         let gs: any = null;
 
         const isSogUrl = splatUrl.split("?")[0].toLowerCase().endsWith(".sog");
+        const isSpzUrl = splatUrl.split("?")[0].toLowerCase().endsWith(".spz");
+        const sourceCacheEligible = isSogUrl || isSpzUrl;
 
-        const cachedFull: ArrayBuffer | null = (!isSogUrl && splatId)
+        const [cachedSource, cachedFull]: [ArrayBuffer | null, ArrayBuffer | null] = await Promise.all([
+          sourceCacheEligible && splatId
+            ? getCache(splatId, "source", outputsVersion)
+            : Promise.resolve(null),
+          !sourceCacheEligible && splatId
           ? await getCache(splatId, "full", outputsVersion)
-          : null;
+          : Promise.resolve(null),
+        ]);
 
         if (disposed) return;
 
         // Download the file
         setStatus(t("viewer.status.downloading", lang));
-        let rawBuffer: ArrayBuffer | null = cachedFull;
+        let rawBuffer: ArrayBuffer | null = cachedSource ?? cachedFull;
 
         if (!rawBuffer) {
-          const resp = await fetch(splatUrl, { cache: "no-store" });
+          // Asset URLs are fingerprinted. Browser + IndexedDB caching keeps
+          // repeat opens fast without risking a stale reconstruction.
+          const resp = await fetch(splatUrl, { cache: "force-cache" });
           if (!resp.ok) throw new Error(`Download ${resp.status}`);
           const total = parseInt(resp.headers.get("content-length") || "0", 10);
           const reader = resp.body!.getReader();
@@ -2610,6 +3496,9 @@ const SplatViewer = forwardRef<SplatViewerHandle, Props>(function SplatViewer(
           let off2 = 0;
           for (const c of chunks) { u8.set(c, off2); off2 += c.length; }
           if (disposed) return;
+          if (sourceCacheEligible && splatId) {
+            void putCache(splatId, "source", rawBuffer, outputsVersion);
+          }
         }
 
         // Detect format by signature first, then by URL suffix for signed URLs without clear MIME.
@@ -2617,14 +3506,17 @@ const SplatViewer = forwardRef<SplatViewerHandle, Props>(function SplatViewer(
         const isZip = u8.length >= 2 && u8[0] === 0x50 && u8[1] === 0x4B;
         const isGZippedSpz = u8.length >= 2 && u8[0] === 0x1f && u8[1] === 0x8b;
         const isNgspSpz = u8.length >= 4 && u8[0] === 0x4e && u8[1] === 0x47 && u8[2] === 0x53 && u8[3] === 0x50;
-        const isSpzUrl = splatUrl.split("?")[0].toLowerCase().endsWith(".spz");
-
         if (isZip || isSogUrl) {
           // SOG format: unzip and parse with BabylonJS SOG parser
           setStatus(t("viewer.status.processing", lang));
           const { ParseSogMeta } = await import("@babylonjs/loaders/SPLAT/sog");
           const fflate = await import("fflate");
-          const zipData = fflate.unzipSync(new Uint8Array(rawBuffer));
+          const zipData = await new Promise<Record<string, Uint8Array>>((resolve, reject) => {
+            fflate.unzip(new Uint8Array(rawBuffer), (error, data) => {
+              if (error) reject(error);
+              else resolve(data);
+            });
+          });
           let vkgsMeta: VkgsSogMeta | null = null;
           const metaEntry = zipData["meta.json"];
           if (metaEntry) {
@@ -2720,12 +3612,13 @@ const SplatViewer = forwardRef<SplatViewerHandle, Props>(function SplatViewer(
         } else {
           // PLY/splat format
           setStatus(t("viewer.status.processing", lang));
-          const conv: { buffer: ArrayBuffer } = await GaussianSplattingMesh.ConvertPLYWithSHToSplatAsync(rawBuffer) as { buffer: ArrayBuffer };
+          const fullConv = cachedFull ?? (
+            await GaussianSplattingMesh.ConvertPLYWithSHToSplatAsync(rawBuffer) as { buffer: ArrayBuffer }
+          ).buffer;
           if (disposed) return;
-          const fullConv = conv.buffer;
           fallbackSceneRef.current = computeSceneFrameFromSplatBuffer(fullConv);
           splatBufferRef.current = fullConv;
-          if (splatId) void putCache(splatId, "full", fullConv, outputsVersion);
+          if (!cachedFull && splatId) void putCache(splatId, "full", fullConv, outputsVersion);
 
           gs = new GaussianSplattingMesh("splat", null, scene);
           await gs.updateDataAsync(fullConv);
@@ -2819,7 +3712,7 @@ const SplatViewer = forwardRef<SplatViewerHandle, Props>(function SplatViewer(
               onClick={resetImmersiveView}
               disabled={!immersiveAdjusted}
               aria-label={t("viewer.immersive.reset", lang)}
-              className="pointer-events-auto flex h-11 w-11 items-center justify-center rounded-full border border-white/10 bg-black/45 text-white/90 shadow-lg backdrop-blur-xl transition-all enabled:hover:bg-black/60 enabled:active:scale-95 disabled:opacity-35 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/70"
+              className="floating-icon-button pointer-events-auto border border-white/10 bg-black/45 text-white/90 shadow-lg backdrop-blur-xl enabled:hover:bg-black/60 enabled:active:scale-95 disabled:opacity-35 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/70"
             >
               <svg aria-hidden="true" width="18" height="18" viewBox="0 0 24 24" fill="none">
                 <path d="M4.7 8.7A8 8 0 1 1 4 13" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
@@ -2832,7 +3725,7 @@ const SplatViewer = forwardRef<SplatViewerHandle, Props>(function SplatViewer(
                 type="button"
                 onClick={() => { void toggleFullscreen(); }}
                 aria-label={t(isFullscreen ? "viewer.immersive.exitFullscreen" : "viewer.immersive.fullscreen", lang)}
-                className="pointer-events-auto flex h-11 w-11 items-center justify-center rounded-full border border-white/10 bg-black/45 text-white/90 shadow-lg backdrop-blur-xl transition-all hover:bg-black/60 active:scale-95 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/70"
+                className="floating-icon-button pointer-events-auto border border-white/10 bg-black/45 text-white/90 shadow-lg backdrop-blur-xl hover:bg-black/60 active:scale-95 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/70"
               >
                 <svg aria-hidden="true" width="18" height="18" viewBox="0 0 24 24" fill="none">
                   {isFullscreen ? (
@@ -2847,30 +3740,38 @@ const SplatViewer = forwardRef<SplatViewerHandle, Props>(function SplatViewer(
         </>
       )}
 
-      {/* Loading overlay */}
-      {!ready && (
-        <div className="absolute inset-0 z-10 flex flex-col items-center justify-center bg-white">
+      {/* Keep one loading surface mounted and cross-fade it into the first
+          rendered frame. This avoids the page loader → viewer loader flash. */}
+      <div
+        className={`absolute inset-0 z-10 flex flex-col items-center justify-center bg-background transition-opacity duration-500 ease-[var(--motion-ease-smooth)] ${
+          ready ? "pointer-events-none opacity-0" : "opacity-100"
+        }`}
+        aria-hidden={ready}
+      >
           <span
-            className="mb-7 text-[26px] text-foreground/90"
-            style={{ fontFamily: "var(--font-brand), ui-serif, Georgia, serif", fontWeight: 500, letterSpacing: "0.01em" }}
+            className="mb-6 text-[28px] text-foreground/85"
+            style={{ fontFamily: "var(--font-brand), ui-serif, Georgia, serif", fontWeight: 400, letterSpacing: "0.01em" }}
           >
             Reaigen
           </span>
-          {/* Single indicator: real download fill when we have a percentage,
-              otherwise an indeterminate shimmer. Never both. */}
-          <div className="mb-3 h-[3px] w-44 overflow-hidden rounded-full bg-foreground/10">
-            {downloadPct > 0 && downloadPct < 100 ? (
+          <div
+            className="loading-progress-track mb-3 w-36"
+            role="progressbar"
+            aria-valuemin={0}
+            aria-valuemax={100}
+            aria-valuenow={downloadPct > 0 ? downloadPct : undefined}
+          >
+            {downloadPct > 0 ? (
               <div
-                className="h-full rounded-full bg-foreground/50 transition-all duration-200"
-                style={{ width: `${downloadPct}%` }}
+                className="h-full rounded-full bg-foreground/55 transition-[width] duration-300 ease-[var(--motion-ease-smooth)]"
+                style={{ width: `${Math.min(100, downloadPct)}%` }}
               />
             ) : (
-              <div className="h-full w-1/2 rounded-full bg-foreground/40 animate-[shimmer-bar_1.2s_ease-in-out_infinite]" />
+              <span className="loading-progress-indeterminate" />
             )}
           </div>
-          <span className="text-[13px] text-muted-foreground">{status}</span>
-        </div>
-      )}
+          <span className="min-h-5 text-[12px] text-muted-foreground">{status}</span>
+      </div>
     </div>
   );
 });

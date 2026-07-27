@@ -83,12 +83,11 @@ export function ContentScopeSelector({ scope, onChange, hasTour, hasPhotos, hasF
   ];
 
   return (
-    <div className="space-y-3">
-      <h3 className="text-[13px] font-semibold text-foreground/70">
+    <div className="space-y-3.5">
+      <h3 className="px-0.5 text-[12px] font-semibold text-foreground/65">
         {t("sharing.whatToShare", lang)}
       </h3>
 
-      {/* Content choices are selection tiles, not four competing primary actions. */}
       <div className="grid grid-cols-2 gap-2">
         {cards.map((card) => {
           const active = card.available && scope[card.key];
@@ -100,22 +99,20 @@ export function ContentScopeSelector({ scope, onChange, hasTour, hasPhotos, hasF
               aria-disabled={!card.available}
               aria-pressed={active}
               onClick={() => toggleCard(card.key)}
-              className={`group relative flex min-h-16 w-full items-center gap-2.5 rounded-2xl border px-3 py-2.5 text-left transition-[background-color,border-color,box-shadow] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 ${
+              className={`floating-panel-shape pen-touch-target group relative flex min-h-14 w-full items-center gap-2.5 border px-3 py-2 text-left transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 ${
                 !card.available
-                  ? "cursor-not-allowed border-border/35 bg-surface-subtle text-foreground/35 opacity-60"
-                  : active
-                    ? "border-foreground/25 bg-card text-foreground shadow-control"
-                    : "border-border/55 bg-card/70 text-foreground/60 hover:border-foreground/15 hover:bg-card hover:text-foreground"
+                  ? "cursor-not-allowed border-border/30 bg-surface-subtle/65 text-foreground/30"
+                  : `editor-control-capsule border-border/55 ${active ? "text-foreground" : "text-foreground/55 hover:bg-card hover:text-foreground"}`
               }`}
             >
-              <span className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-full transition-colors ${active ? "bg-foreground text-background" : "bg-secondary text-foreground/55"}`}>
+              <span className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-full transition-colors ${active ? "bg-foreground text-background" : "bg-secondary/80 text-foreground/50"}`}>
                 {card.icon}
               </span>
-              <span className="min-w-0 text-[12px] font-semibold leading-[1.25]">
+              <span className="min-w-0 pr-4 text-[11px] font-semibold leading-[1.2] sm:text-[12px]">
                 {t(card.labelKey, lang)}
               </span>
               {active ? (
-                <span className="absolute right-2.5 top-2.5 flex h-4 w-4 items-center justify-center rounded-full bg-foreground text-background">
+                <span className="absolute right-2.5 top-1/2 flex h-4 w-4 -translate-y-1/2 items-center justify-center rounded-full bg-foreground text-background">
                   <CheckIcon size={9} />
                 </span>
               ) : null}
@@ -126,18 +123,18 @@ export function ContentScopeSelector({ scope, onChange, hasTour, hasPhotos, hasF
 
       {/* Details sub-section — bundle pills inline + optional custom toggles */}
       {scope.details && (
-        <div className="space-y-2.5">
-          <div className="grid grid-cols-3 gap-1 rounded-full border border-border/55 bg-surface-subtle p-1 shadow-control">
+        <div className="space-y-1.5">
+          <div className="floating-toolbar grid grid-cols-3">
             {BUNDLE_OPTIONS.map(({ name, labelKey }) => (
               <button
                 key={name}
                 type="button"
                 aria-pressed={activeBundle === name}
                 onClick={() => handleBundleClick(name)}
-                className={`min-h-9 min-w-0 rounded-full px-1.5 py-1 text-[11px] font-semibold leading-tight transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ${
+                className={`floating-control pen-touch-target min-w-0 px-2 text-[11px] font-semibold leading-tight transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ${
                   activeBundle === name
-                    ? "bg-foreground text-background shadow-sm"
-                    : "text-foreground/50 hover:bg-card hover:text-foreground/75"
+                    ? "bg-foreground text-background"
+                    : "text-foreground/50 hover:bg-card/70 hover:text-foreground/75"
                 }`}
               >
                 <span className="block truncate">{t(labelKey, lang)}</span>
@@ -149,7 +146,7 @@ export function ContentScopeSelector({ scope, onChange, hasTour, hasPhotos, hasF
             type="button"
             aria-expanded={detailsExpanded}
             onClick={() => setDetailsExpanded((v) => !v)}
-            className="flex min-h-11 w-full items-center justify-between rounded-xl px-3 text-[12px] font-semibold text-foreground/55 transition-colors hover:bg-foreground/[0.04] hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+            className="floating-control pen-touch-target flex w-full items-center justify-between px-3.5 text-[11px] font-semibold text-foreground/55 transition-colors hover:bg-foreground/[0.04] hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
           >
             <span>{t("shareDialog.customizeFields", lang)}</span>
             <span className="flex items-center gap-2">
@@ -159,7 +156,7 @@ export function ContentScopeSelector({ scope, onChange, hasTour, hasPhotos, hasF
           </button>
 
           {detailsExpanded && (
-            <div className="space-y-4 rounded-2xl border border-border/45 bg-surface-subtle p-3.5 animate-fade-in">
+            <div className="floating-panel-shape space-y-4 border border-border/45 bg-surface-subtle/75 p-3.5 animate-fade-in">
               {SHARE_FIELD_GROUPS.map((group) => (
                 <div key={group.key} className="space-y-1.5">
                   <p className="text-[11px] font-medium text-foreground/50 uppercase tracking-wide">

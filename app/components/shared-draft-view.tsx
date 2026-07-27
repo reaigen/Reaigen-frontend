@@ -44,9 +44,14 @@ function SharedFloorplan({ floorplanUrl, rooms, lang }: { floorplanUrl: string; 
 
   if (!hasRooms) {
     return (
-      <div className="rounded-2xl overflow-hidden border border-border/40 bg-background">
+      <div className="relative aspect-[4/3] overflow-hidden rounded-2xl border border-border/40 bg-background">
         {/* eslint-disable-next-line @next/next/no-img-element */}
-        <img src={floorplanUrl} alt={t("tour.floorplan.alt", lang)} className="w-full" loading="lazy" />
+        <img
+          src={floorplanUrl}
+          alt={t("tour.floorplan.alt", lang)}
+          className="absolute inset-0 h-full w-full object-contain"
+          loading="lazy"
+        />
       </div>
     );
   }
@@ -68,9 +73,12 @@ function SharedFloorplan({ floorplanUrl, rooms, lang }: { floorplanUrl: string; 
   ];
 
   return (
-    <div className="relative rounded-2xl overflow-hidden border border-border/40 bg-background">
+    <div
+      className="relative overflow-hidden rounded-2xl border border-border/40 bg-background"
+      style={{ aspectRatio: `${svgW} / ${svgH}` }}
+    >
       {/* eslint-disable-next-line @next/next/no-img-element */}
-      <img src={floorplanUrl} alt={t("tour.floorplan.alt", lang)} className="w-full block" loading="lazy" />
+      <img src={floorplanUrl} alt={t("tour.floorplan.alt", lang)} className="absolute inset-0 h-full w-full" loading="lazy" />
       <svg viewBox={`0 0 ${svgW} ${svgH}`} className="absolute inset-0 w-full h-full" style={{ pointerEvents: "none" }}>
         {rooms.map((room) => {
           const pts = room.boundary_points;

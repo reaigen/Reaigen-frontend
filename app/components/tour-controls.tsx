@@ -19,8 +19,8 @@ export default function TourControls({ shots, currentIdx, onGoToShot, onPrev, on
 
   return (
     <div className="absolute bottom-[calc(0.75rem+env(safe-area-inset-bottom,0px))] left-1/2 z-20 max-w-[calc(100%-1rem)] -translate-x-1/2 animate-fade-in-up sm:bottom-[calc(1.5rem+env(safe-area-inset-bottom,0px))] sm:max-w-[calc(100%-2rem)]">
-      <div className="flex w-fit max-w-full items-center justify-center gap-0.5 rounded-2xl border border-white/10 bg-black/70 p-1 shadow-2xl backdrop-blur-2xl sm:gap-1 sm:rounded-full">
-        <button type="button" onClick={onPrev} className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full text-white/70 transition-colors hover:bg-white/10 hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/70 sm:h-8 sm:w-8" aria-label={t("tour.controls.previousShot", lang)}>
+      <div className="floating-toolbar-shape flex w-fit max-w-full items-center justify-center gap-1 border border-white/10 bg-black/70 p-1 shadow-2xl backdrop-blur-2xl">
+        <button type="button" onClick={onPrev} disabled={currentIdx <= 0} className="floating-icon-button flex shrink-0 items-center justify-center text-white/70 transition-colors hover:bg-white/10 hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/70 disabled:cursor-default disabled:opacity-25 disabled:hover:bg-transparent" aria-label={t("tour.controls.previousShot", lang)}>
           <ArrowLeftIcon size={14} />
         </button>
 
@@ -37,7 +37,7 @@ export default function TourControls({ shots, currentIdx, onGoToShot, onPrev, on
               key={i}
               type="button"
               onClick={() => onGoToShot(i)}
-              className="group flex h-11 min-w-8 items-center justify-center rounded-full px-1 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/70 sm:h-8 sm:min-w-6"
+              className="group flex h-[var(--floating-control)] min-w-8 items-center justify-center rounded-full px-1 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/70"
               aria-label={shots[i].label || `${t("tour.controls.shot", lang)} ${i + 1}`}
               aria-current={i === currentIdx ? "true" : undefined}
             >
@@ -46,7 +46,7 @@ export default function TourControls({ shots, currentIdx, onGoToShot, onPrev, on
           ))}
         </div>
 
-        <button type="button" onClick={onNext} className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full text-white/70 transition-colors hover:bg-white/10 hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/70 sm:h-8 sm:w-8" aria-label={t("tour.controls.nextShot", lang)}>
+        <button type="button" onClick={onNext} disabled={currentIdx >= shots.length - 1} className="floating-icon-button flex shrink-0 items-center justify-center text-white/70 transition-colors hover:bg-white/10 hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/70 disabled:cursor-default disabled:opacity-25 disabled:hover:bg-transparent" aria-label={t("tour.controls.nextShot", lang)}>
           <ArrowRightIcon size={14} />
         </button>
 

@@ -860,7 +860,7 @@ export async function acceptAppContentDocument(data: {
 
 // ─── Splat Viewer & Tour ──────────────────────────────────────────────────
 
-import type { SplatViewerPayload, SplatPackagePayload, SplatSceneResponse, SceneDeliveryResolution, SceneDeliverySummary, SceneDeliveryTargetProfile, SceneRefinementSummary, VirtualTourViewerPayload, CameraData, GlobalSceneTransform, UniversalSceneDescription, TourViewerData, SplatListItem, ShareData, SharedDraftData, SplatsByDraftPayload, DraftListingItem, DraftDetailItem, DraftUpload } from "../tour-types";
+import type { SplatViewerPayload, SplatPackagePayload, SplatSceneResponse, SceneDeliveryResolution, SceneDeliverySummary, SceneDeliveryTargetProfile, SceneRefinementSummary, VirtualTourViewerPayload, CameraData, GlobalSceneTransform, UsdStageTransformEditResponse, TourViewerData, SplatListItem, ShareData, SharedDraftData, SplatsByDraftPayload, DraftListingItem, DraftDetailItem, DraftUpload } from "../tour-types";
 
 export async function listSplats(page = 1, pageSize = 20, search = ""): Promise<{ results: SplatListItem[]; count: number; next: string | null }> {
   const q = search ? `&search=${encodeURIComponent(search)}` : "";
@@ -916,6 +916,36 @@ export async function updateDraftUpload(
 /** Persist the gallery order using the same 0-based sort_order contract as iOS. */
 export async function reorderDraftUploads(uploadIds: number[]): Promise<DraftUpload[]> {
   return Promise.all(uploadIds.map((uploadId, sortOrder) => updateDraftUpload(uploadId, { sort_order: sortOrder })));
+}
+
+export interface DraftGalleryUpdate {
+  logical_asset_id: string;
+  sort_order?: number;
+  visible?: boolean;
+}
+
+export interface DraftGalleryUpdateResult {
+  draft_id: number;
+  items: Array<{
+    logical_asset_id: string;
+    sort_order: number;
+    visible: boolean;
+    current_upload_id: number | null;
+  }>;
+}
+
+/**
+ * Persist presentation state for logical media assets. The backend applies
+ * every change to all physical versions so version promotion cannot undo it.
+ */
+export async function updateDraftGallery(
+  draftId: number,
+  items: DraftGalleryUpdate[],
+): Promise<DraftGalleryUpdateResult> {
+  return request("/api/reaigen/uploads/gallery/", {
+    method: "PATCH",
+    body: JSON.stringify({ draft_post: draftId, items }),
+  });
 }
 
 interface AssetTypeLookup {
@@ -2013,10 +2043,18 @@ export async function searchDrafts(query: string, signal?: AbortSignal): Promise
   return abortableRequest(`/api/reaigen/drafts/?page=1&page_size=50&search=${q}`, signal);
 }
 
-export async function getSplatViewer(splatId: number): Promise<SplatViewerPayload> {
-  return request(
-    `/api/reaigen/splats/${splatId}/viewer/?targetProfile=web`,
-  );
+export async function getSplatViewer(
+  splatId: number,
+  options: { fresh?: boolean } = {},
+): Promise<SplatViewerPayload> {
+  const path = `/api/reaigen/splats/${splatId}/viewer/?targetProfile=web`;
+  if (options.fresh) {
+    cache.delete(path);
+    const data = await fetchGetData(path, { cache: "no-store" });
+    cache.set(path, { data, ts: Date.now() });
+    return data as SplatViewerPayload;
+  }
+  return request(path);
 }
 
 export async function getSplatPackage(splatId: number): Promise<SplatPackagePayload> {
@@ -2245,20 +2283,26 @@ export async function saveCameras(
   });
 }
 
-export async function saveGlobalSceneTransform(
+export async function authorUsdSceneTransformOperation(
   splatId: number,
-  globalTransform: GlobalSceneTransform,
-  baseRevision?: number,
-): Promise<{
-  globalTransform: GlobalSceneTransform;
-  sceneDescription: UniversalSceneDescription;
-  sceneRevision: number;
-}> {
-  return request(`/api/reaigen/splats/${splatId}/cameras/`, {
-    method: "PATCH",
+  delta: GlobalSceneTransform,
+  baseRevision: number,
+  baseStageSha256?: string,
+): Promise<UsdStageTransformEditResponse> {
+  return request(`/api/reaigen/splats/${splatId}/scene/edits/`, {
+    method: "POST",
     body: JSON.stringify({
-      globalTransform,
-      ...(baseRevision == null ? {} : { baseRevision }),
+      baseRevision,
+      ...(baseStageSha256 ? { baseStageSha256 } : {}),
+      editTarget: {
+        layer: "authoring.usda",
+        primPath: "/Reaigen",
+      },
+      operation: {
+        type: "transform",
+        space: "world",
+        delta,
+      },
     }),
   });
 }
@@ -2281,13 +2325,40 @@ export async function getSharedDraftData(token: string): Promise<SharedDraftData
   }
   const currentSharedUploads = [...sharedUploadGroups.values()].flatMap((versions) => {
     const current = versions.find((upload) => upload.is_master !== false && upload.is_deleted !== true);
-    return current ? [current] : [];
+    if (!current) return [];
+    const authoritativeOriginalName = versions.find((upload) => (
+      typeof upload.original_file_name === "string" && upload.original_file_name.trim()
+    ))?.original_file_name as string | undefined;
+    const original = [...versions].sort((left, right) => {
+      const leftIsRoot = left.supersedes == null && left.source_upload_id == null ? 0 : 1;
+      const rightIsRoot = right.supersedes == null && right.source_upload_id == null ? 0 : 1;
+      if (leftIsRoot !== rightIsRoot) return leftIsRoot - rightIsRoot;
+
+      const leftVersion = Number.isFinite(Number(left.version)) ? Number(left.version) : Number.POSITIVE_INFINITY;
+      const rightVersion = Number.isFinite(Number(right.version)) ? Number(right.version) : Number.POSITIVE_INFINITY;
+      if (leftVersion !== rightVersion) return leftVersion - rightVersion;
+
+      const leftTimestamp = Date.parse(String(left.uploaded_at ?? ""));
+      const rightTimestamp = Date.parse(String(right.uploaded_at ?? ""));
+      return (Number.isFinite(leftTimestamp) ? leftTimestamp : Number.POSITIVE_INFINITY)
+          - (Number.isFinite(rightTimestamp) ? rightTimestamp : Number.POSITIVE_INFINITY)
+        || Number(left.id ?? 0) - Number(right.id ?? 0);
+    })[0];
+    const enriched: Record<string, unknown> = {
+      ...current,
+      original_file_name: authoritativeOriginalName
+        ?? original?.file_name
+        ?? original?.name
+        ?? current.file_name
+        ?? current.name,
+    };
+    return [enriched];
   });
   const uploads = currentSharedUploads
     .sort((left, right) => Number(left.sort_order ?? 0) - Number(right.sort_order ?? 0))
     .map((u) => ({
       url: (u.file_url ?? u.url ?? "") as string,
-      name: (u.file_name ?? u.name ?? "") as string,
+      name: (u.original_file_name ?? u.file_name ?? u.name ?? "") as string,
       mime_type: (u.mime_type ?? "") as string,
     }))
     .filter((u: { url: string }) => u.url);

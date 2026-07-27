@@ -97,7 +97,7 @@ export function ShareLinkCard({ share, lang, dateFormat, onUpdate, onEdit }: Sha
   };
 
   return (
-    <div className={`overflow-hidden rounded-[1.35rem] border transition-colors sm:rounded-xl ${isLive ? "border-border/55 bg-card shadow-card hover:border-foreground/20" : "border-border/35 bg-surface-subtle"}`}>
+    <div className={`overflow-hidden border transition-colors ${isLive ? "floating-panel border-border/55 hover:border-foreground/20" : "floating-panel-shape border-border/35 bg-surface-subtle/75"}`}>
       {/* Collapsed row */}
       <div className="flex w-full flex-col gap-2.5 px-3.5 py-2.5 sm:flex-row sm:items-center">
         <button type="button" onClick={handleToggleExpand} aria-expanded={expanded} className="flex w-full min-w-0 flex-1 items-center gap-2.5 rounded-lg text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2">
@@ -167,7 +167,7 @@ export function ShareLinkCard({ share, lang, dateFormat, onUpdate, onEdit }: Sha
         <div className="overflow-hidden">
           <div className={`border-t border-border/40 px-3.5 py-3 space-y-3 ${expanded ? "" : "invisible"}`}>
           {isLive && (
-            <div className="flex items-center gap-2 rounded-xl bg-surface-subtle px-3 py-2">
+            <div className="floating-capsule flex items-center gap-2 border px-3 py-2">
               <p className="flex-1 text-[11px] font-mono text-foreground/70 truncate select-all">{shareUrl(share.token)}</p>
             </div>
           )}
@@ -193,24 +193,24 @@ export function ShareLinkCard({ share, lang, dateFormat, onUpdate, onEdit }: Sha
               {!confirmRevoke ? (
                 <>
                   <Button type="button" variant="outline" size="sm" onClick={(e) => { e.stopPropagation(); onEdit(); }}
-                    className="h-8 rounded-full px-3.5 text-[12px] text-foreground/80 hover:text-foreground">
+                    className="px-3.5 text-[12px] text-foreground/80 hover:text-foreground">
                     {t("shares.editSettings", lang)}
                   </Button>
                   {isActive && (
                     <Button type="button" variant="outline" size="sm" onClick={handlePause} disabled={actionLoading}
-                      className="h-8 rounded-full px-3.5 text-[12px] text-foreground/60 hover:text-foreground">
+                      className="px-3.5 text-[12px] text-foreground/60 hover:text-foreground">
                       {t("shares.pause", lang)}
                     </Button>
                   )}
                   {isPaused && (
                     <Button type="button" variant="outline" size="sm" onClick={handleResume} disabled={actionLoading}
-                      className="h-8 rounded-full px-3.5 text-[12px] text-foreground/70 hover:text-foreground">
+                      className="px-3.5 text-[12px] text-foreground/70 hover:text-foreground">
                       {t("shares.resume", lang)}
                     </Button>
                   )}
                   <div className="hidden flex-1 sm:block" />
                   <Button type="button" variant="outline" size="sm" onClick={(e) => { e.stopPropagation(); setConfirmRevoke(true); }}
-                    className="h-8 rounded-full px-3.5 text-[12px] text-foreground/50 hover:border-destructive/30 hover:bg-destructive/[0.04] hover:text-destructive">
+                    className="px-3.5 text-[12px] text-foreground/50 hover:border-destructive/30 hover:bg-destructive/[0.04] hover:text-destructive">
                     {t("shares.revoke", lang)}
                   </Button>
                 </>
@@ -219,11 +219,11 @@ export function ShareLinkCard({ share, lang, dateFormat, onUpdate, onEdit }: Sha
                   <span className="mr-auto text-[11px] text-destructive/70">{t("shares.revokeConfirm", lang)}</span>
                   <div className="hidden flex-1 sm:block" />
                   <Button type="button" variant="ghost" size="sm" onClick={(e) => { e.stopPropagation(); setConfirmRevoke(false); }}
-                    className="h-8 rounded-full px-3 text-[12px] text-foreground/50 hover:text-foreground">
+                    className="px-3 text-[12px] text-foreground/50 hover:text-foreground">
                     {t("shares.cancel", lang)}
                   </Button>
                   <Button type="button" variant="destructive" size="sm" onClick={handleRevoke} disabled={actionLoading}
-                    className="h-8 rounded-full px-3.5 text-[12px]">
+                    className="px-3.5 text-[12px]">
                     {t("shares.revoke", lang)}
                   </Button>
                 </>

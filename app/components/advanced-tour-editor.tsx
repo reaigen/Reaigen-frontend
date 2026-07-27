@@ -1,25 +1,35 @@
 "use client";
 
-import { useEffect, useMemo, useState, type ReactNode } from "react";
+import {
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type ReactNode,
+} from "react";
 import type {
-  SpatialCameraMode,
-  SpatialTrajectory,
+  GlobalSceneTransform,
+  SpatialTransformTool,
   SpatialViewMode,
   SplatInspectionStats,
+  UniversalSceneDescription,
   Vec3,
 } from "../lib/tour-types";
 import { t } from "../lib/i18n";
 import { cn } from "../lib/utils";
 import {
-  ArrowLeftIcon,
-  ArrowRightIcon,
-  CameraIcon,
   CheckIcon,
+  CloseIcon,
   EyeOpenIcon,
   FloorplanIcon,
   FrameIcon,
+  GridIcon,
+  MinusIcon,
+  MoveIcon,
   OrbitIcon,
+  PlusIcon,
   RotateIcon,
+  ScaleIcon,
   TechnicalIcon,
   TourIcon,
 } from "./icons";
@@ -27,6 +37,7 @@ import {
 interface Props {
   title: string;
   lang: string;
+  sceneDescription?: UniversalSceneDescription | null;
   viewMode: SpatialViewMode;
   onViewModeChange: (mode: SpatialViewMode) => void;
   stats: SplatInspectionStats | null;
@@ -34,203 +45,227 @@ interface Props {
   cageCount: number;
   showCage: boolean;
   onShowCageChange: (value: boolean) => void;
-  trajectories: SpatialTrajectory[];
-  onSelectTrajectory: (index: number) => void;
-  showPath: boolean;
-  onShowPathChange: (value: boolean) => void;
-  selectedCamera: number;
-  onSelectCamera: (index: number) => void;
-  onLookThroughCamera: () => void;
-  cameraPreviewActive: boolean;
-  onExitCameraPreview: () => void;
-  rotation: Vec3;
-  onRotationChange: (rotation: Vec3) => void;
+  showGrid: boolean;
+  onShowGridChange: (value: boolean) => void;
+  transform: GlobalSceneTransform;
+  onTransformChange: (transform: GlobalSceneTransform) => void;
+  transformTool: SpatialTransformTool;
+  onTransformToolChange: (tool: SpatialTransformTool) => void;
   transformDirty: boolean;
   transformSaving: boolean;
   transformError: string | null;
-  onSaveTransform: () => void;
-  cameraMode: SpatialCameraMode;
-  onCameraModeChange: (mode: SpatialCameraMode) => void;
+  onApplyTransform: () => void;
   onFrameScene: () => void;
   onClose: () => void;
 }
 
-function replaceTokens(value: string, tokens: Record<string, string | number>) {
-  return Object.entries(tokens).reduce(
-    (result, [key, token]) => result.replace(`{${key}}`, String(token)),
-    value,
-  );
-}
+type AxisIndex = 0 | 1 | 2;
 
 function normalizedDegrees(value: number) {
   if (!Number.isFinite(value)) return 0;
   const normalized = ((value + 180) % 360 + 360) % 360 - 180;
-  return Math.abs(normalized) < 0.005 ? 0 : Math.round(normalized);
+  return Math.abs(normalized) < 0.005 ? 0 : Math.round(normalized * 100) / 100;
 }
 
-function LayerSwitch({
+function rounded(value: number, precision = 3) {
+  if (!Number.isFinite(value)) return 0;
+  const factor = 10 ** precision;
+  const result = Math.round(value * factor) / factor;
+  return Math.abs(result) < 1 / factor ? 0 : result;
+}
+
+function basename(path: string) {
+  const parts = path.split("/").filter(Boolean);
+  return parts.at(-1) || path;
+}
+
+function ModeButton({
   icon,
   label,
-  detail,
-  checked,
-  disabled,
-  onChange,
+  shortcut,
+  active,
+  onClick,
 }: {
   icon: ReactNode;
   label: string;
-  detail: string;
-  checked: boolean;
-  disabled?: boolean;
-  onChange: (checked: boolean) => void;
+  shortcut: string;
+  active?: boolean;
+  onClick: () => void;
 }) {
   return (
     <button
       type="button"
-      role="switch"
-      aria-checked={checked}
-      disabled={disabled}
-      onClick={() => onChange(!checked)}
-      className="pen-touch-target flex min-h-12 w-full items-center gap-3 rounded-2xl px-2 text-left transition-colors hover:bg-foreground/[0.05] disabled:cursor-default disabled:opacity-45"
+      aria-pressed={active}
+      aria-label={label}
+      aria-keyshortcuts={shortcut}
+      title={`${label} · ${shortcut}`}
+      onClick={onClick}
+      className={cn(
+        "floating-control group pen-touch-target relative gap-2 text-[11px] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+        active
+          ? "bg-foreground text-background shadow-sm"
+          : "text-foreground/55 hover:bg-foreground/[0.06] hover:text-foreground active:scale-95",
+      )}
     >
-      <span className={cn(
-        "flex h-9 w-9 shrink-0 items-center justify-center rounded-full transition-colors",
-        checked && !disabled ? "bg-foreground text-background" : "bg-foreground/[0.06] text-foreground/55",
-      )}>
-        {icon}
-      </span>
-      <span className="min-w-0 flex-1">
-        <span className="block truncate text-[11px] font-semibold text-foreground">{label}</span>
-        <span className="block truncate text-[9px] text-muted-foreground">{detail}</span>
-      </span>
-      <span className={cn(
-        "relative h-6 w-10 shrink-0 rounded-full transition-colors",
-        checked && !disabled ? "bg-foreground" : "bg-foreground/10",
-      )}>
-        <span className={cn(
-        "absolute top-1 h-4 w-4 rounded-full bg-background shadow-sm transition-transform",
-          checked && !disabled ? "translate-x-5" : "translate-x-1",
-        )} />
+      {icon}
+      <span className={cn(active ? "inline" : "hidden")}>{label}</span>
+      <span
+        role="tooltip"
+        className="floating-tooltip pointer-events-none absolute bottom-[calc(100%+0.65rem)] left-1/2 z-50 w-max -translate-x-1/2 translate-y-1 opacity-0 transition-[opacity,transform] group-hover:translate-y-0 group-hover:opacity-100 group-focus-visible:translate-y-0 group-focus-visible:opacity-100"
+      >
+        {label}
+        <span className="ml-1.5 text-foreground/35">{shortcut}</span>
       </span>
     </button>
   );
 }
 
-function CameraTransport({
-  lang,
-  samples,
-  selectedCamera,
-  selectedTrajectory,
-  rangeStart,
-  rangeEnd,
-  cameraPreviewActive,
-  onSelectCamera,
-  onLookThroughCamera,
-  onExitCameraPreview,
-  compact = false,
+function ViewportToolButton({
+  icon,
+  label,
+  shortcut,
+  active,
+  disabled,
+  onClick,
 }: {
-  lang: string;
-  samples: SpatialTrajectory["samples"];
-  selectedCamera: number;
-  selectedTrajectory: SpatialTrajectory | null;
-  rangeStart: number;
-  rangeEnd: number;
-  cameraPreviewActive: boolean;
-  onSelectCamera: (index: number) => void;
-  onLookThroughCamera: () => void;
-  onExitCameraPreview: () => void;
-  compact?: boolean;
+  icon: ReactNode;
+  label: string;
+  shortcut?: string;
+  active?: boolean;
+  disabled?: boolean;
+  onClick: () => void;
 }) {
-  if (samples.length < 2) return null;
+  return (
+    <button
+      type="button"
+      disabled={disabled}
+      aria-pressed={active}
+      aria-label={label}
+      aria-keyshortcuts={shortcut}
+      title={shortcut ? `${label} · ${shortcut}` : label}
+      onClick={onClick}
+      className={cn(
+        "floating-icon-button group pen-touch-target relative",
+        active
+          ? "bg-foreground text-background shadow-sm"
+          : "text-foreground/48 hover:bg-foreground/[0.06] hover:text-foreground active:scale-95",
+        disabled && "cursor-not-allowed opacity-30",
+      )}
+    >
+      {icon}
+      <span
+        role="tooltip"
+        className="floating-tooltip pointer-events-none absolute left-[calc(100%+0.7rem)] top-1/2 z-50 w-max -translate-y-1/2 translate-x-1 opacity-0 transition-[opacity,transform] group-hover:translate-x-0 group-hover:opacity-100 group-focus-visible:translate-x-0 group-focus-visible:opacity-100"
+      >
+        {label}
+        {shortcut ? <span className="ml-1.5 text-foreground/35">{shortcut}</span> : null}
+      </span>
+    </button>
+  );
+}
 
-  const selectRelative = (direction: -1 | 1) => {
-    const rangeLength = Math.max(1, rangeEnd - rangeStart + 1);
-    const localIndex = selectedCamera - rangeStart;
-    const next = rangeStart + ((localIndex + direction + rangeLength) % rangeLength);
-    onSelectCamera(next);
+function AxisValueField({
+  axis,
+  label,
+  value,
+  unit,
+  step,
+  selected,
+  onSelect,
+  onChange,
+}: {
+  axis?: "X" | "Y" | "Z";
+  label: string;
+  value: number;
+  unit: string;
+  step: number;
+  selected: boolean;
+  onSelect: () => void;
+  onChange: (value: number) => void;
+}) {
+  const [draft, setDraft] = useState(String(value));
+  const inputFocused = useRef(false);
+  const axisColor = axis === "X"
+    ? "bg-[#ff3b30] text-white shadow-[0_2px_8px_rgba(255,59,48,0.28)]"
+    : axis === "Y"
+      ? "bg-[#30d158] text-[#06290f] shadow-[0_2px_8px_rgba(48,209,88,0.25)]"
+      : "bg-[#0a84ff] text-white shadow-[0_2px_8px_rgba(10,132,255,0.28)]";
+
+  useEffect(() => {
+    if (!inputFocused.current) setDraft(String(value));
+  }, [value]);
+
+  const commitDraft = () => {
+    const next = Number(draft);
+    if (Number.isFinite(next)) {
+      onChange(next);
+      setDraft(String(next));
+    } else {
+      setDraft(String(value));
+    }
   };
-  const currentInTrajectory = selectedCamera - rangeStart + 1;
-  const camerasInTrajectory = rangeEnd - rangeStart + 1;
 
   return (
-    <div className={cn(
-      "editor-glass-control border text-foreground",
-      compact ? "rounded-[1.25rem] p-2" : "rounded-[1.5rem] p-1.5 pl-3",
-    )}>
-      <div className={cn(
-        "flex items-center",
-        compact ? "flex-wrap gap-1.5" : "gap-1.5",
-      )}>
-        <span className={cn("min-w-0", compact ? "mb-1 w-full px-1" : "w-36")}>
-          <span className="block truncate text-[10px] font-semibold">
-            {replaceTokens(t("spatialEditor.camera", lang), {
-              current: currentInTrajectory,
-              total: camerasInTrajectory,
-            })}
+    <label
+      className={cn(
+        "flex min-h-[var(--floating-control-sm)] min-w-0 flex-1 cursor-text items-center justify-center gap-1.5 rounded-full px-2 transition-colors",
+        selected
+          ? "bg-foreground/[0.075] text-foreground"
+          : "text-foreground/62 hover:bg-foreground/[0.035] hover:text-foreground",
+      )}
+      onPointerDown={onSelect}
+    >
+        {axis ? (
+          <span className={cn(
+            "flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-[9px] font-semibold transition-colors",
+            selected
+              ? axisColor
+              : "bg-foreground/[0.06] text-foreground/50",
+          )}>
+            {axis}
           </span>
-          <span className="block truncate text-[8px] text-muted-foreground">
-            {selectedTrajectory?.label}
-          </span>
-        </span>
-        <button
-          type="button"
-          onClick={() => selectRelative(-1)}
-          className="pen-touch-target flex h-10 w-10 shrink-0 items-center justify-center rounded-full text-foreground/60 transition-colors hover:bg-foreground/[0.07] hover:text-foreground"
-          aria-label={t("cameraEditor.prev", lang)}
-          title={`${t("cameraEditor.prev", lang)} · ←`}
-        >
-          <ArrowLeftIcon size={14} />
-        </button>
-        <button
-          type="button"
-          onClick={cameraPreviewActive ? onExitCameraPreview : onLookThroughCamera}
-          className={cn(
-            "pen-touch-target flex h-10 min-w-0 flex-1 items-center justify-center gap-2 rounded-full px-3 text-[10px] font-semibold transition-colors",
-            cameraPreviewActive
-              ? "editor-control-capsule border text-foreground"
-              : "bg-foreground text-background",
-          )}
-        >
-          {cameraPreviewActive ? <OrbitIcon size={13} /> : <EyeOpenIcon size={13} />}
-          <span className="truncate">
-            {cameraPreviewActive
-              ? t("spatialEditor.freeView", lang)
-              : t("spatialEditor.lookThrough", lang)}
-          </span>
-        </button>
-        <button
-          type="button"
-          onClick={() => selectRelative(1)}
-          className="pen-touch-target flex h-10 w-10 shrink-0 items-center justify-center rounded-full text-foreground/60 transition-colors hover:bg-foreground/[0.07] hover:text-foreground"
-          aria-label={t("cameraEditor.next", lang)}
-          title={`${t("cameraEditor.next", lang)} · →`}
-        >
-          <ArrowRightIcon size={14} />
-        </button>
-      </div>
-      <label className={cn("block px-2", compact ? "mt-1" : "mt-0.5")}>
-        <span className="sr-only">
-          {replaceTokens(t("spatialEditor.camera", lang), {
-            current: currentInTrajectory,
-            total: camerasInTrajectory,
-          })}
-        </span>
+        ) : null}
         <input
-          type="range"
-          min={rangeStart}
-          max={rangeEnd}
-          step={1}
-          value={selectedCamera}
-          onChange={(event) => onSelectCamera(Number(event.target.value))}
-          className={cn("w-full cursor-pointer accent-foreground", compact ? "h-9" : "h-7")}
+          type="number"
+          inputMode="decimal"
+          step={step}
+          value={draft}
+          aria-label={label}
+          onFocus={(event) => {
+            onSelect();
+            inputFocused.current = true;
+            event.currentTarget.select();
+          }}
+          onBlur={() => {
+            inputFocused.current = false;
+            commitDraft();
+          }}
+          onKeyDown={(event) => {
+            if (event.key === "Enter") event.currentTarget.blur();
+            if (event.key === "Escape") {
+              setDraft(String(value));
+              event.currentTarget.blur();
+            }
+          }}
+          onChange={(event) => {
+            const nextDraft = event.target.value;
+            setDraft(nextDraft);
+            if (!["", "-", ".", "-."].includes(nextDraft)) {
+              const next = Number(nextDraft);
+              if (Number.isFinite(next)) onChange(next);
+            }
+          }}
+          className="editor-number-input w-[3.5rem] min-w-0 bg-transparent text-right text-[13px] font-medium tabular-nums text-current outline-none"
         />
-      </label>
-    </div>
+        <span className="text-[10px] font-medium text-foreground/38">{unit}</span>
+    </label>
   );
 }
 
 export function AdvancedTourEditor({
   title,
   lang,
+  sceneDescription,
   viewMode,
   onViewModeChange,
   stats,
@@ -238,71 +273,86 @@ export function AdvancedTourEditor({
   cageCount,
   showCage,
   onShowCageChange,
-  trajectories,
-  onSelectTrajectory,
-  showPath,
-  onShowPathChange,
-  selectedCamera,
-  onSelectCamera,
-  onLookThroughCamera,
-  cameraPreviewActive,
-  onExitCameraPreview,
-  rotation,
-  onRotationChange,
+  showGrid,
+  onShowGridChange,
+  transform,
+  onTransformChange,
+  transformTool,
+  onTransformToolChange,
   transformDirty,
   transformSaving,
   transformError,
-  onSaveTransform,
-  cameraMode,
-  onCameraModeChange,
+  onApplyTransform,
   onFrameScene,
   onClose,
 }: Props) {
-  const [orientationOpen, setOrientationOpen] = useState(false);
-  const [axis, setAxis] = useState<0 | 1 | 2>(1);
-  const samples = useMemo(() => trajectories.flatMap((trajectory) => trajectory.samples), [trajectories]);
-  const safeCamera = samples.length
-    ? Math.max(0, Math.min(samples.length - 1, selectedCamera))
-    : 0;
-  const selectedCameraContext = useMemo(() => {
-    let offset = 0;
-    for (const [trajectoryIndex, trajectory] of trajectories.entries()) {
-      if (safeCamera < offset + trajectory.samples.length) {
-        return {
-          trajectory,
-          trajectoryIndex,
-          start: offset,
-          end: offset + trajectory.samples.length - 1,
-        };
-      }
-      offset += trajectory.samples.length;
-    }
-    const trajectory = trajectories[0] ?? null;
-    return trajectory
-      ? { trajectory, trajectoryIndex: 0, start: 0, end: trajectory.samples.length - 1 }
-      : null;
-  }, [safeCamera, trajectories]);
-  const selectedTrajectory = selectedCameraContext?.trajectory ?? null;
-  const selectedTrajectoryIndex = selectedCameraContext?.trajectoryIndex ?? 0;
-  const trajectoryStart = selectedCameraContext?.start ?? 0;
-  const trajectoryEnd = selectedCameraContext?.end ?? Math.max(0, samples.length - 1);
-  const pathLabel = selectedTrajectory?.source === "scan"
-    ? t("spatialEditor.scanPath", lang)
-    : selectedTrajectory?.source === "saved"
-      ? t("spatialEditor.savedPath", lang)
-      : t("spatialEditor.tourPath", lang);
+  const [sceneOpen, setSceneOpen] = useState(false);
+  const [precisionOpen, setPrecisionOpen] = useState(false);
+  const [activeAxis, setActiveAxis] = useState<AxisIndex>(0);
   const hasCage = cageCount > 0;
-  const hasPath = samples.length > 1;
-  const hasRotation = rotation.some((value) => Math.abs(value) > 0.005);
-  const updateAxis = (value: number) => {
-    const next = [...rotation] as Vec3;
-    next[axis] = normalizedDegrees(value);
-    onRotationChange(next);
+  const stageRevision = sceneDescription?.stage?.revision;
+  const usdValid = sceneDescription?.usdStage?.validation.valid;
+  const gaussianPrim = useMemo(
+    () => sceneDescription?.prims?.find((prim) => (
+      prim.typeName.toLowerCase().includes("gaussian")
+      || prim.path.toLowerCase().includes("gaussiansplat")
+    )),
+    [sceneDescription?.prims],
+  );
+  const gaussianPath = gaussianPrim?.path ?? "/Reaigen/World/GaussianSplat";
+  const roomKitPath = sceneDescription?.geometry?.roomKit?.primPath
+    ?? "/Reaigen/Architecture/RoomKit";
+
+  const activeVector = transformTool === "move"
+    ? transform.translation
+    : transform.rotationDeg;
+  const activeUnit = transformTool === "move" ? "m" : "°";
+  const activeStep = transformTool === "move" ? 0.01 : 1;
+  const activePrecisionValue = transformTool === "scale"
+    ? transform.scale
+    : activeVector[activeAxis];
+
+  const updateAxis = (axis: AxisIndex, rawValue: number) => {
+    if (!Number.isFinite(rawValue)) return;
+    if (transformTool === "scale") {
+      onTransformChange({
+        ...transform,
+        scale: Math.max(0.001, Math.min(1000, rounded(rawValue))),
+      });
+      return;
+    }
+    const key = transformTool === "move" ? "translation" : "rotationDeg";
+    const next = [...transform[key]] as Vec3;
+    next[axis] = key === "rotationDeg"
+      ? normalizedDegrees(rawValue)
+      : Math.max(-10000, Math.min(10000, rounded(rawValue)));
+    onTransformChange({ ...transform, [key]: next });
+  };
+
+  const resetActive = () => {
+    if (transformTool === "move") {
+      onTransformChange({ ...transform, translation: [0, 0, 0] });
+    } else if (transformTool === "rotate") {
+      onTransformChange({ ...transform, rotationDeg: [0, 0, 0] });
+    } else if (transformTool === "scale") {
+      onTransformChange({ ...transform, scale: 1 });
+    }
   };
 
   useEffect(() => {
-    if (!cameraPreviewActive || samples.length < 2) return;
+    setActiveAxis(0);
+    if (transformTool === "select") setPrecisionOpen(false);
+  }, [transformTool]);
+
+  useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
+      const key = event.key.toLowerCase();
+      if ((event.metaKey || event.ctrlKey) && key === "s") {
+        event.preventDefault();
+        if (transformDirty && !transformSaving) onApplyTransform();
+        return;
+      }
+
       const target = event.target as HTMLElement | null;
       if (
         target?.isContentEditable
@@ -310,320 +360,396 @@ export function AdvancedTourEditor({
         || target?.tagName === "TEXTAREA"
         || target?.tagName === "SELECT"
       ) return;
-      if (event.key !== "ArrowLeft" && event.key !== "ArrowRight") return;
-      event.preventDefault();
-      const direction = event.key === "ArrowLeft" ? -1 : 1;
-      const rangeLength = Math.max(1, trajectoryEnd - trajectoryStart + 1);
-      const localIndex = safeCamera - trajectoryStart;
-      onSelectCamera(
-        trajectoryStart + ((localIndex + direction + rangeLength) % rangeLength),
-      );
+      const toolByKey: Partial<Record<string, SpatialTransformTool>> = {
+        q: "select",
+        w: "move",
+        e: "rotate",
+        r: "scale",
+      };
+      if (toolByKey[key]) {
+        event.preventDefault();
+        onTransformToolChange(toolByKey[key]!);
+      } else if (key === "g") {
+        event.preventDefault();
+        onShowGridChange(!showGrid);
+      } else if (key === "f") {
+        event.preventDefault();
+        onFrameScene();
+      } else if (key === "escape") {
+        if (precisionOpen) {
+          event.preventDefault();
+          setPrecisionOpen(false);
+        } else if (sceneOpen) {
+          event.preventDefault();
+          setSceneOpen(false);
+        } else if (transformTool !== "select") {
+          event.preventDefault();
+          onTransformToolChange("select");
+        } else if (!transformDirty) {
+          event.preventDefault();
+          onClose();
+        }
+      }
     };
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
   }, [
-    cameraPreviewActive,
-    onSelectCamera,
-    safeCamera,
-    samples.length,
-    trajectoryEnd,
-    trajectoryStart,
+    onFrameScene,
+    onApplyTransform,
+    onClose,
+    onShowGridChange,
+    onTransformToolChange,
+    precisionOpen,
+    sceneOpen,
+    showGrid,
+    transformDirty,
+    transformSaving,
+    transformTool,
   ]);
 
-  useEffect(() => {
-    if (transformError) setOrientationOpen(true);
-  }, [transformError]);
-
   return (
-    <div className="pointer-events-none absolute inset-0 z-30">
-      <header className="editor-glass-surface pointer-events-auto absolute inset-x-3 top-[calc(0.75rem+env(safe-area-inset-top,0px))] mx-auto flex min-h-12 max-w-[34rem] items-center justify-between gap-3 rounded-full border px-2.5 py-1.5 text-foreground sm:inset-x-auto sm:left-1/2 sm:top-[calc(1rem+env(safe-area-inset-top,0px))] sm:w-[min(34rem,calc(100vw-9rem))] sm:-translate-x-1/2">
-        <span className="flex min-w-0 items-center gap-2.5 pl-2">
-          <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-foreground text-background">
-            <TechnicalIcon size={14} />
+    <div className="pointer-events-none absolute inset-0 z-30 text-foreground">
+      <header className="floating-panel floating-header pointer-events-auto absolute inset-x-3 top-[calc(0.75rem+env(safe-area-inset-top,0px))] mx-auto flex max-w-[38rem] items-center justify-between gap-3 sm:inset-x-auto sm:left-1/2 sm:w-[min(38rem,calc(100vw-7rem))] sm:-translate-x-1/2">
+        <span className="flex min-w-0 items-center gap-2.5 pl-1">
+          <span className="floating-icon-button-sm bg-foreground text-background">
+            <TechnicalIcon size={15} />
           </span>
           <span className="min-w-0">
             <span className="flex items-center gap-2">
               <span className="truncate text-[12px] font-semibold">{t("spatialEditor.title", lang)}</span>
-              <span className="rounded-full bg-foreground/[0.07] px-2 py-0.5 text-[8px] font-bold uppercase tracking-[0.12em] text-foreground/55">
+              <span className="rounded-full bg-foreground/[0.07] px-1.5 py-0.5 text-[7px] font-bold uppercase tracking-[0.1em] text-foreground/50">
                 {t("spatialEditor.rnd", lang)}
               </span>
             </span>
-            <span className="block truncate text-[10px] text-muted-foreground">{title}</span>
+            <span className="block truncate text-[9px] text-muted-foreground">{title}</span>
           </span>
         </span>
-        <button
-          type="button"
-          onClick={onClose}
-          disabled={transformSaving}
-          className="pen-touch-target flex h-10 shrink-0 items-center gap-2 rounded-full bg-foreground px-3 text-[11px] font-semibold text-background transition-transform hover:scale-[1.02] active:scale-[0.98] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-wait disabled:opacity-60"
-        >
-          <CheckIcon size={13} />
-          {transformSaving ? t("spatialEditor.savingTransform", lang) : t("spatialEditor.done", lang)}
-        </button>
-      </header>
 
-      <nav className="editor-glass-control pointer-events-auto absolute bottom-[calc(1rem+env(safe-area-inset-bottom,0px))] left-3 flex items-center gap-1 rounded-full border p-1.5 text-foreground md:bottom-auto md:top-1/2 md:-translate-y-1/2 md:flex-col">
-        <button
-          type="button"
-          aria-pressed={cameraMode === "orbit"}
-          onClick={() => onCameraModeChange("orbit")}
-          className={cn(
-            "pen-touch-target flex h-11 w-11 items-center justify-center rounded-full transition-colors",
-            cameraMode === "orbit" ? "bg-foreground text-background" : "text-foreground/55 hover:bg-foreground/[0.06]",
-          )}
-          title={t("spatialEditor.orbit", lang)}
-        >
-          <OrbitIcon size={16} />
-        </button>
-        <button
-          type="button"
-          aria-pressed={cameraMode === "fly"}
-          onClick={() => onCameraModeChange("fly")}
-          className={cn(
-            "pen-touch-target flex h-11 w-11 items-center justify-center rounded-full transition-colors",
-            cameraMode === "fly" ? "bg-foreground text-background" : "text-foreground/55 hover:bg-foreground/[0.06]",
-          )}
-          title={t("spatialEditor.fly", lang)}
-        >
-          <CameraIcon size={16} />
-        </button>
-        <span className="mx-1 h-6 w-px bg-foreground/10 md:mx-2 md:my-1 md:h-px md:w-7" aria-hidden="true" />
-        <button
-          type="button"
-          onClick={onFrameScene}
-          className="pen-touch-target flex h-11 w-11 items-center justify-center rounded-full text-foreground/55 transition-colors hover:bg-foreground/[0.06] hover:text-foreground"
-          title={`${t("spatialEditor.frame", lang)} · F`}
-        >
-          <FrameIcon size={16} />
-        </button>
-      </nav>
-
-      <section className="editor-glass-surface pointer-events-auto absolute inset-x-2 bottom-[calc(5.25rem+env(safe-area-inset-bottom,0px))] max-h-[58dvh] overflow-y-auto rounded-[1.5rem] border p-3 text-foreground sm:inset-x-auto sm:bottom-auto sm:right-4 sm:top-[calc(5.25rem+env(safe-area-inset-top,0px))] sm:w-[18rem] sm:max-h-[calc(100dvh-6.5rem)]">
-        <div className="flex items-center justify-between gap-3 px-2 pb-2">
-          <h2 className="text-[11px] font-semibold">{t("spatialEditor.layers", lang)}</h2>
-          {stats ? (
-            <span className="text-[9px] tabular-nums text-muted-foreground">
-              {replaceTokens(t("spatialEditor.gaussians", lang), {
-                count: new Intl.NumberFormat(lang, { notation: "compact", maximumFractionDigits: 1 }).format(stats.gaussianCount),
-              })}
-            </span>
-          ) : null}
-        </div>
-
-        <div className="grid grid-cols-2 rounded-full bg-foreground/[0.06] p-1">
-          {(["surface", "centers"] as const).map((mode) => (
+        <span className="flex shrink-0 items-center gap-1.5">
+          <span className={cn(
+            "hidden items-center gap-1.5 px-1 text-[9px] font-semibold sm:flex",
+            transformDirty ? "text-amber-700 dark:text-amber-300" : "text-foreground/42",
+          )}>
+            <span className={cn(
+              "h-1.5 w-1.5 rounded-full",
+              transformDirty ? "bg-amber-500" : "bg-emerald-500",
+            )} />
+            {transformSaving
+              ? t("spatialEditor.savingTransform", lang)
+              : transformDirty
+                ? t("spatialEditor.unsavedTransform", lang)
+                : t("spatialEditor.savedTransform", lang)}
+          </span>
+          {transformDirty ? (
             <button
-              key={mode}
               type="button"
-              aria-pressed={viewMode === mode}
-              onClick={() => onViewModeChange(mode)}
-              className={cn(
-                "pen-touch-target h-10 rounded-full text-[10px] font-semibold transition-colors",
-                viewMode === mode
-                  ? "editor-control-capsule border text-foreground"
-                  : "text-foreground/50 hover:text-foreground",
-              )}
+              onClick={onApplyTransform}
+              disabled={transformSaving}
+              aria-keyshortcuts="Control+S Meta+S"
+              title={t("spatialEditor.applyTransformHint", lang)}
+              className="floating-control pen-touch-target gap-1.5 bg-foreground px-4 text-[10px] text-background shadow-sm hover:scale-[1.015] active:scale-[0.985] disabled:cursor-wait disabled:opacity-60"
             >
-              {mode === "surface" ? t("spatialEditor.surface", lang) : t("spatialEditor.centers", lang)}
+              <CheckIcon size={12} />
+              <span>{transformSaving
+                ? t("spatialEditor.savingTransform", lang)
+                : t("spatialEditor.applyTransform", lang)}</span>
             </button>
-          ))}
-        </div>
-
-        <div className="mt-2 border-t border-foreground/[0.07] pt-2">
-          <LayerSwitch
-            icon={<FloorplanIcon size={15} />}
-            label={t("spatialEditor.structure", lang)}
-            detail={dataLoading
-              ? t("spatialEditor.loading", lang)
-              : hasCage
-              ? `${t("spatialEditor.available", lang)} · ${cageCount}`
-              : t("spatialEditor.unavailable", lang)}
-            checked={showCage && hasCage}
-            disabled={!hasCage}
-            onChange={onShowCageChange}
-          />
-          <LayerSwitch
-            icon={<TourIcon size={15} />}
-            label={t("spatialEditor.path", lang)}
-            detail={dataLoading && !hasPath
-              ? t("spatialEditor.loading", lang)
-              : hasPath
-                ? `${pathLabel} · ${samples.length}`
-                : t("spatialEditor.unavailable", lang)}
-            checked={showPath && hasPath}
-            disabled={!hasPath}
-            onChange={onShowPathChange}
-          />
-          {showPath && trajectories.length > 1 ? (
-            <div className="mt-1 flex gap-1 overflow-x-auto px-1 pb-1">
-              {trajectories.map((trajectory, index) => (
-                <button
-                  key={trajectory.id}
-                  type="button"
-                  aria-pressed={selectedTrajectoryIndex === index}
-                  onClick={() => onSelectTrajectory(index)}
-                  className={cn(
-                    "pen-touch-target h-9 shrink-0 rounded-full px-3 text-[9px] font-semibold transition-colors",
-                    selectedTrajectoryIndex === index
-                      ? "bg-foreground text-background"
-                      : "editor-control-capsule border text-foreground/60",
-                  )}
-                >
-                  {trajectory.label}
-                </button>
-              ))}
-            </div>
           ) : null}
-        </div>
-
-        {showPath && hasPath ? (
-          <div className="mt-2 sm:hidden">
-            <CameraTransport
-              compact
-              lang={lang}
-              samples={samples}
-              selectedCamera={safeCamera}
-              selectedTrajectory={selectedTrajectory}
-              rangeStart={trajectoryStart}
-              rangeEnd={trajectoryEnd}
-              cameraPreviewActive={cameraPreviewActive}
-              onSelectCamera={onSelectCamera}
-              onLookThroughCamera={onLookThroughCamera}
-              onExitCameraPreview={onExitCameraPreview}
-            />
-          </div>
-        ) : null}
-
-        <div className="mt-2 border-t border-foreground/[0.07] pt-2">
           <button
             type="button"
-            onClick={() => setOrientationOpen((open) => !open)}
-            className="pen-touch-target flex min-h-12 w-full items-center gap-3 rounded-2xl px-2 text-left transition-colors hover:bg-foreground/[0.05]"
+            onClick={onClose}
+            disabled={transformSaving}
+            title={transformDirty
+              ? t("spatialEditor.discardPendingAndClose", lang)
+              : t("common.close", lang)}
+            className={cn(
+              "pen-touch-target gap-1.5 text-[9px] hover:scale-[1.015] active:scale-[0.985] disabled:cursor-wait disabled:opacity-60",
+              transformDirty
+                ? "floating-icon-button bg-foreground/[0.065] text-foreground/62 hover:bg-foreground/[0.1] hover:text-foreground"
+                : "floating-control bg-foreground px-4 text-background",
+            )}
           >
-            <span className={cn(
-              "flex h-9 w-9 shrink-0 items-center justify-center rounded-full",
-              hasRotation ? "bg-foreground text-background" : "bg-foreground/[0.06] text-foreground/55",
-            )}>
-              <RotateIcon size={15} />
-            </span>
-            <span className="min-w-0 flex-1">
-              <span className="block truncate text-[11px] font-semibold">{t("spatialEditor.orientation", lang)}</span>
-              <span className="block truncate text-[9px] tabular-nums text-muted-foreground">
-                X {rotation[0]}° · Y {rotation[1]}° · Z {rotation[2]}°
+            <CloseIcon size={11} />
+            <span className={cn(transformDirty && "sr-only")}>{t("common.close", lang)}</span>
+          </button>
+        </span>
+      </header>
+
+      <div className="floating-toolbar pointer-events-auto absolute left-3 top-1/2 -translate-y-1/2 flex-col sm:left-4">
+        <ViewportToolButton
+          icon={<EyeOpenIcon size={15} />}
+          label={viewMode === "surface"
+            ? t("spatialEditor.centers", lang)
+            : t("spatialEditor.surface", lang)}
+          onClick={() => onViewModeChange(viewMode === "surface" ? "centers" : "surface")}
+          active={viewMode === "centers"}
+        />
+        <ViewportToolButton
+          icon={<FloorplanIcon size={15} />}
+          label={t("spatialEditor.structure", lang)}
+          disabled={!hasCage}
+          onClick={() => onShowCageChange(!showCage)}
+          active={showCage && hasCage}
+        />
+        <ViewportToolButton
+          icon={<GridIcon size={15} />}
+          label={t("spatialEditor.grid", lang)}
+          shortcut="G"
+          onClick={() => onShowGridChange(!showGrid)}
+          active={showGrid}
+        />
+        <ViewportToolButton
+          icon={<FrameIcon size={15} />}
+          label={t("spatialEditor.frame", lang)}
+          shortcut="F"
+          onClick={onFrameScene}
+        />
+        <span className="mx-auto h-px w-7 bg-foreground/[0.09]" />
+        <button
+          type="button"
+          aria-expanded={sceneOpen}
+          aria-label={t("spatialEditor.usdStructure", lang)}
+          onClick={() => setSceneOpen((open) => !open)}
+          className={cn(
+            "floating-icon-button pen-touch-target group relative",
+            sceneOpen
+              ? "bg-foreground text-background"
+              : "text-foreground/55 hover:bg-foreground/[0.06] hover:text-foreground",
+          )}
+          title={t("spatialEditor.usdStructure", lang)}
+        >
+          <TourIcon size={15} />
+          <span
+            aria-hidden="true"
+            className="floating-tooltip pointer-events-none absolute left-[calc(100%+0.65rem)] z-50 opacity-0 transition-opacity duration-150 group-hover:opacity-100 group-focus-visible:opacity-100"
+          >
+            {t("spatialEditor.usdStructure", lang)}
+          </span>
+        </button>
+      </div>
+
+      {sceneOpen ? (
+        <section className="floating-panel pointer-events-auto absolute left-[4.75rem] top-1/2 w-[min(18rem,calc(100vw-6rem))] -translate-y-1/2 p-3 animate-fade-in sm:left-[5.25rem]">
+          <div className="flex items-center justify-between gap-3 px-1 pb-2">
+            <span>
+              <span className="block text-[11px] font-semibold">{t("spatialEditor.usdStructure", lang)}</span>
+              <span className="block max-w-[13rem] truncate text-[8px] text-muted-foreground">
+                {sceneDescription?.stage?.identifier ?? "scene.usda"}
               </span>
             </span>
-            <span className={cn(
-              "rounded-full px-2 py-1 text-[8px] font-semibold",
-              transformDirty
-                ? "bg-amber-500/15 text-amber-700 dark:text-amber-300"
-                : "bg-foreground/[0.06] text-foreground/50",
-            )}>
-              {transformSaving
-                ? t("spatialEditor.savingTransform", lang)
-                : transformDirty
-                  ? t("spatialEditor.unsavedTransform", lang)
-                  : t("spatialEditor.savedTransform", lang)}
+            <span className="flex items-center gap-1.5">
+              {usdValid ? <CheckIcon size={10} className="text-emerald-600" /> : null}
+              {stageRevision != null ? (
+                <span className="rounded-full bg-foreground/[0.06] px-2 py-1 text-[8px] font-semibold text-foreground/45">
+                  r{stageRevision}
+                </span>
+              ) : null}
             </span>
-          </button>
+          </div>
+          <div className="rounded-[1rem] bg-foreground/[0.045] p-2">
+            <div className="flex items-center gap-2 rounded-[0.8rem] bg-card/70 px-3 py-2.5">
+              <TourIcon size={13} />
+              <span className="text-[10px] font-semibold">Reaigen</span>
+              <span className="ml-auto text-[8px] text-muted-foreground">Xform</span>
+            </div>
+            <div className="ml-5 border-l border-foreground/[0.1] pl-3">
+              <div className="flex items-center gap-2 py-2.5">
+                <EyeOpenIcon size={13} className="text-foreground/50" />
+                <span className="min-w-0 flex-1 truncate text-[9px] font-semibold">{basename(gaussianPath)}</span>
+                <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" />
+              </div>
+              <div className={cn("flex items-center gap-2 py-2.5", !hasCage && "opacity-40")}>
+                <FloorplanIcon size={13} className="text-foreground/50" />
+                <span className="min-w-0 flex-1 truncate text-[9px] font-semibold">{basename(roomKitPath)}</span>
+                <span className="text-[8px] text-muted-foreground">
+                  {dataLoading ? "…" : hasCage ? cageCount : "—"}
+                </span>
+              </div>
+            </div>
+          </div>
+          {stats ? (
+            <div className="flex items-center justify-between px-1 pt-2 text-[8px] text-muted-foreground">
+              <span>{t("spatialEditor.gaussiansLabel", lang)}</span>
+              <span className="font-semibold tabular-nums">
+                {new Intl.NumberFormat(lang, {
+                  notation: "compact",
+                  maximumFractionDigits: 1,
+                }).format(stats.gaussianCount)}
+              </span>
+            </div>
+          ) : null}
+        </section>
+      ) : null}
 
-          {orientationOpen ? (
-            <div className="mt-2 rounded-2xl bg-muted/55 p-2">
-              <div className="grid grid-cols-3 rounded-full bg-card/55 p-1">
-                {(["X", "Y", "Z"] as const).map((axisLabel, index) => (
-                  <button
-                    key={axisLabel}
-                    type="button"
-                    aria-pressed={axis === index}
-                    onClick={() => setAxis(index as 0 | 1 | 2)}
-                    className={cn(
-                      "pen-touch-target h-9 rounded-full text-[10px] font-semibold",
-                      axis === index ? "bg-foreground text-background" : "text-foreground/50",
-                    )}
-                    aria-label={`${t("spatialEditor.axis", lang)} ${axisLabel}`}
-                  >
-                    {axisLabel}
-                  </button>
-                ))}
-              </div>
-              <div className="mt-2 grid grid-cols-[auto_1fr_auto] items-center gap-1.5">
-                <button
-                  type="button"
-                  onClick={() => updateAxis(rotation[axis] - 90)}
-                  className="editor-control-capsule pen-touch-target h-10 rounded-full border px-3 text-[10px] font-semibold"
-                >
-                  −90°
-                </button>
-                <label className="editor-control-capsule flex h-10 min-w-0 items-center rounded-full border px-3">
-                  <input
-                    type="number"
-                    inputMode="numeric"
-                    min={-180}
-                    max={180}
-                    step={1}
-                    value={rotation[axis]}
-                    onChange={(event) => updateAxis(Number(event.target.value))}
-                    className="w-full min-w-0 bg-transparent text-center text-[11px] font-semibold tabular-nums outline-none"
-                    aria-label={`${t("spatialEditor.axis", lang)} ${["X", "Y", "Z"][axis]}`}
-                  />
-                  <span className="text-[10px] text-muted-foreground">°</span>
-                </label>
-                <button
-                  type="button"
-                  onClick={() => updateAxis(rotation[axis] + 90)}
-                  className="editor-control-capsule pen-touch-target h-10 rounded-full border px-3 text-[10px] font-semibold"
-                >
-                  +90°
-                </button>
-              </div>
+      {viewMode === "centers" ? (
+        <section className="floating-toolbar pointer-events-auto absolute bottom-[calc(1rem+env(safe-area-inset-bottom,0px))] right-4 hidden min-h-[var(--floating-control)] gap-2.5 px-3 animate-fade-in xl:flex">
+          <span className="text-[9px] font-semibold text-foreground/72">
+            {t("spatialEditor.pointDiagnostic", lang)}
+          </span>
+          <span
+            aria-hidden="true"
+            className="h-1.5 w-14 rounded-full bg-[linear-gradient(90deg,rgba(46,52,58,0.72)_0%,rgba(224,109,51,0.9)_100%)]"
+          />
+          <span className="text-[8px] text-muted-foreground">
+            {t("spatialEditor.pointSupported", lang)}
+            <span aria-hidden="true" className="px-1.5 text-foreground/25">→</span>
+            {t("spatialEditor.pointWeak", lang)}
+          </span>
+          {stats?.largeOrSparsePercent != null ? (
+            <span className="rounded-full bg-foreground/[0.06] px-2 py-1 text-[8px] font-semibold tabular-nums text-foreground/55">
+              {new Intl.NumberFormat(lang, { maximumFractionDigits: 1 }).format(
+                stats.largeOrSparsePercent,
+              )}%
+            </span>
+          ) : null}
+        </section>
+      ) : null}
+
+      <section className="floating-toolbar pointer-events-auto absolute bottom-[calc(0.75rem+env(safe-area-inset-bottom,0px))] left-1/2 max-w-[calc(100vw-1.5rem)] -translate-x-1/2">
+        {transformError ? (
+          <p
+            role="alert"
+            className="floating-capsule absolute bottom-[calc(100%+0.5rem)] left-1/2 flex w-max max-w-[min(24rem,calc(100vw-1.5rem))] -translate-x-1/2 items-center px-4 text-[10px] font-medium text-destructive"
+          >
+            {transformError}
+          </p>
+        ) : null}
+
+        {precisionOpen && transformTool !== "select" ? (
+          <div className="floating-panel absolute bottom-[calc(100%+0.55rem)] left-1/2 w-[min(31rem,calc(100vw-1.5rem))] -translate-x-1/2 p-2 animate-fade-in-up">
+            <div className="mb-1.5 flex items-center justify-between gap-3 px-2">
+              <span className="text-[11px] font-semibold">
+                {transformTool === "move"
+                  ? t("spatialEditor.position", lang)
+                  : transformTool === "rotate"
+                    ? t("spatialEditor.rotation", lang)
+                    : t("spatialEditor.scale", lang)}
+              </span>
               <button
                 type="button"
-                disabled={!hasRotation}
-                onClick={() => onRotationChange([0, 0, 0])}
-                className="pen-touch-target mt-1 h-9 w-full rounded-full text-[9px] font-semibold text-foreground/55 hover:bg-foreground/[0.06] disabled:opacity-30"
+                onClick={resetActive}
+                className="floating-control-sm text-[9px] text-foreground/45 hover:bg-foreground/[0.06] hover:text-foreground"
               >
                 {t("spatialEditor.reset", lang)}
               </button>
+            </div>
+
+            <div className={cn(
+              "flex items-center gap-1.5",
+              transformTool === "scale" && "mx-auto max-w-[18rem]",
+            )}>
+              <div className="floating-capsule flex min-w-0 flex-1 items-center p-1">
+                {transformTool === "scale" ? (
+                  <AxisValueField
+                    label={t("spatialEditor.scale", lang)}
+                    value={transform.scale}
+                    unit="×"
+                    step={0.05}
+                    selected
+                    onSelect={() => setActiveAxis(0)}
+                    onChange={(value) => updateAxis(0, value)}
+                  />
+                ) : (
+                  (["X", "Y", "Z"] as const).map((axis, index) => (
+                    <div key={axis} className="flex min-w-0 flex-1 items-center">
+                      {index > 0 ? (
+                        <span className="h-5 w-px shrink-0 bg-foreground/[0.07]" />
+                      ) : null}
+                      <AxisValueField
+                        axis={axis}
+                        label={`${transformTool === "move"
+                          ? t("spatialEditor.position", lang)
+                          : t("spatialEditor.rotation", lang)} ${axis}`}
+                        value={activeVector[index]}
+                        unit={activeUnit}
+                        step={activeStep}
+                        selected={activeAxis === index}
+                        onSelect={() => setActiveAxis(index as AxisIndex)}
+                        onChange={(value) => updateAxis(index as AxisIndex, value)}
+                      />
+                    </div>
+                  ))
+                )}
+              </div>
+
+              <div className="floating-capsule flex shrink-0 items-center p-1">
+                <button
+                  type="button"
+                  className="floating-icon-button pen-touch-target text-foreground/45 hover:bg-foreground/[0.06] hover:text-foreground active:bg-foreground active:text-background"
+                  onClick={() => updateAxis(
+                    transformTool === "scale" ? 0 : activeAxis,
+                    activePrecisionValue - (transformTool === "scale" ? 0.05 : activeStep),
+                  )}
+                  aria-label={t("common.decrease", lang)}
+                >
+                  <MinusIcon size={12} />
+                </button>
+                <span className="h-5 w-px bg-foreground/[0.07]" />
+                <button
+                  type="button"
+                  className="floating-icon-button pen-touch-target text-foreground/45 hover:bg-foreground/[0.06] hover:text-foreground active:bg-foreground active:text-background"
+                  onClick={() => updateAxis(
+                    transformTool === "scale" ? 0 : activeAxis,
+                    activePrecisionValue + (transformTool === "scale" ? 0.05 : activeStep),
+                  )}
+                  aria-label={t("common.increase", lang)}
+                >
+                  <PlusIcon size={12} />
+                </button>
+              </div>
+            </div>
+          </div>
+        ) : null}
+
+        <nav className="scrollbar-hide flex max-w-full items-center justify-center gap-1 overflow-x-auto rounded-full bg-foreground/[0.045] p-1">
+          <ModeButton
+            icon={<OrbitIcon size={15} />}
+            label={t("spatialEditor.freeView", lang)}
+            shortcut="Q"
+            active={transformTool === "select"}
+            onClick={() => onTransformToolChange("select")}
+          />
+          <ModeButton
+            icon={<MoveIcon size={15} />}
+            label={t("spatialEditor.moveTool", lang)}
+            shortcut="W"
+            active={transformTool === "move"}
+            onClick={() => onTransformToolChange("move")}
+          />
+          <ModeButton
+            icon={<RotateIcon size={15} />}
+            label={t("spatialEditor.rotateTool", lang)}
+            shortcut="E"
+            active={transformTool === "rotate"}
+            onClick={() => onTransformToolChange("rotate")}
+          />
+          <ModeButton
+            icon={<ScaleIcon size={15} />}
+            label={t("spatialEditor.scale", lang)}
+            shortcut="R"
+            active={transformTool === "scale"}
+            onClick={() => onTransformToolChange("scale")}
+          />
+          {transformTool !== "select" ? (
+            <>
+              <span className="mx-0.5 h-7 w-px shrink-0 bg-foreground/[0.09]" />
               <button
                 type="button"
-                disabled={!transformDirty || transformSaving}
-                onClick={onSaveTransform}
-                className="pen-touch-target mt-1 flex h-10 w-full items-center justify-center gap-2 rounded-full bg-foreground text-[10px] font-semibold text-background transition-transform hover:scale-[1.01] active:scale-[0.99] disabled:cursor-default disabled:opacity-35"
+                aria-expanded={precisionOpen}
+                title={t("spatialEditor.precision", lang)}
+                onClick={() => setPrecisionOpen((open) => !open)}
+                className={cn(
+                  "floating-capsule floating-control pen-touch-target gap-2 text-[10px]",
+                  precisionOpen && "bg-foreground text-background",
+                )}
               >
-                <CheckIcon size={12} />
-                {transformSaving
-                  ? t("spatialEditor.savingTransform", lang)
-                  : t("spatialEditor.saveTransform", lang)}
+                <TechnicalIcon size={14} />
+                <span className="hidden sm:inline">{t("spatialEditor.precision", lang)}</span>
               </button>
-              {transformError ? (
-                <p role="alert" className="px-2 pt-2 text-[9px] leading-relaxed text-destructive">
-                  {transformError}
-                </p>
-              ) : null}
-            </div>
+            </>
           ) : null}
-        </div>
+        </nav>
       </section>
-
-      {showPath && hasPath ? (
-        <div className="pointer-events-auto absolute bottom-[calc(1rem+env(safe-area-inset-bottom,0px))] left-1/2 hidden w-[min(34rem,calc(100vw-9rem))] -translate-x-1/2 sm:block">
-          <CameraTransport
-            lang={lang}
-            samples={samples}
-            selectedCamera={safeCamera}
-            selectedTrajectory={selectedTrajectory}
-            rangeStart={trajectoryStart}
-            rangeEnd={trajectoryEnd}
-            cameraPreviewActive={cameraPreviewActive}
-            onSelectCamera={onSelectCamera}
-            onLookThroughCamera={onLookThroughCamera}
-            onExitCameraPreview={onExitCameraPreview}
-          />
-        </div>
-      ) : (
-        <div className="editor-glass-control pointer-events-none absolute bottom-[calc(1rem+env(safe-area-inset-bottom,0px))] left-1/2 hidden -translate-x-1/2 rounded-full border px-3 py-2 text-[9px] font-medium text-foreground/55 md:block">
-          {t("spatialEditor.controls", lang)}
-        </div>
-      )}
     </div>
   );
 }

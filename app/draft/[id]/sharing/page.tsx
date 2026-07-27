@@ -27,6 +27,7 @@ import { PageLoading } from "../../../components/page-loading";
 import { copyToClipboard, shareUrl } from "../../../lib/share-ui";
 import type { UnitLookup } from "../../../lib/unit-catalog";
 import { currentGalleryUploads } from "../../../lib/media";
+import { PageHeader } from "../../../components/page-header";
 
 function primaryShareSplat(data: SplatsByDraftPayload | null) {
   if (!data?.splats.length) return null;
@@ -217,30 +218,30 @@ export default function SharingPage({ params }: { params: Promise<{ id: string }
 
   return (
     <AppShell user={user} onLogout={logout}>
-      <div className="mx-auto w-full max-w-[1180px] pb-8 md:pb-10">
+      <div className="mx-auto w-full max-w-[1320px] pb-8 md:pb-10">
         {/* Back */}
-        <button type="button" onClick={() => router.push(`/draft/${draftId}`)} className="mb-4 -ml-2 inline-flex min-h-11 items-center gap-1.5 rounded-full px-3 py-1.5 text-[13px] text-muted-foreground transition-colors hover:bg-foreground/[0.04] hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 sm:min-h-0">
+        <button type="button" onClick={() => router.push(`/draft/${draftId}`)} className="floating-control mb-3 -ml-2 inline-flex items-center gap-1.5 px-3 text-[13px] text-muted-foreground transition-colors hover:bg-foreground/[0.04] hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2">
           <svg aria-hidden="true" width="15" height="15" viewBox="0 0 16 16" fill="none"><path d="M10 12L6 8L10 4" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/></svg>
           {t("common.back", lang)}
         </button>
 
-        {/* Title */}
-        <h1 className="mb-5 text-[28px] font-semibold leading-tight tracking-[-0.025em] md:mb-7 md:text-[30px]">
-          {t("sharing.pageTitle", lang)}
-          <span className="mt-1.5 block truncate text-[13px] font-normal tracking-normal text-muted-foreground sm:ml-2 sm:mt-0 sm:inline">{title}</span>
-        </h1>
+        <PageHeader
+          title={t("sharing.pageTitle", lang)}
+          description={title}
+          className="mb-6 md:mb-8"
+        />
 
         {/* Two-panel layout */}
-        <div className="relative grid grid-cols-1 lg:grid-cols-2 gap-5 lg:gap-8">
+        <div className="relative grid grid-cols-1 gap-6 lg:grid-cols-[minmax(0,0.92fr)_minmax(30rem,1.08fr)] lg:items-start lg:gap-8">
           {/* Copy banner — absolutely positioned so it never shifts the layout */}
           {notice && (
-            <div className="absolute inset-x-0 top-0 z-30 flex items-center gap-2 rounded-full border border-foreground/15 bg-card/95 px-4 py-2.5 shadow-elevated backdrop-blur-xl animate-fade-in">
+            <div className="floating-capsule absolute inset-x-0 top-0 z-30 flex items-center gap-2 border border-foreground/15 bg-card/95 px-4 shadow-elevated backdrop-blur-xl animate-fade-in">
               <svg aria-hidden="true" width="14" height="14" viewBox="0 0 16 16" fill="none"><path d="M3 8.5L6.5 12L13 4" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" /></svg>
               <span className="text-[12px] font-medium">{t(notice === "copied" ? "sharing.linkCopied" : "common.saved", lang)}</span>
             </div>
           )}
           {copyFailedUrl && (
-            <div className="absolute inset-x-0 top-0 z-10 flex items-center gap-2 rounded-xl border border-border/60 bg-surface px-4 py-2.5 shadow-card animate-fade-in">
+            <div className="floating-capsule absolute inset-x-0 top-0 z-10 flex items-center gap-2 border px-4 animate-fade-in">
               <p className="min-w-0 flex-1 truncate select-all font-mono text-[12px] text-foreground/70">{copyFailedUrl}</p>
               <Button
                 type="button"
@@ -260,11 +261,11 @@ export default function SharingPage({ params }: { params: Promise<{ id: string }
             </div>
           )}
           {/* Right panel — Controls (shown first on mobile) */}
-          <div className="order-2 space-y-7 lg:order-2">
+          <div className="order-1 space-y-6 lg:order-2">
             {/* Create or edit link */}
             <div ref={formRef} className="scroll-mt-24">
-              <div className="mb-3 flex min-h-8 items-center justify-between gap-3 px-1">
-                <h2 className="text-[15px] font-semibold">{t(editingShare ? "shares.editSettings" : "sharing.createNewLink", lang)}</h2>
+              <div className="mb-3 flex min-h-8 items-center justify-between gap-3 px-1.5">
+                <h2 className="text-[16px] font-semibold tracking-[-0.015em]">{t(editingShare ? "shares.editSettings" : "sharing.createNewLink", lang)}</h2>
                 {editingShare ? (
                   <span className="rounded-full bg-secondary px-2.5 py-1 text-[10px] font-semibold text-foreground/55">{t("sharing.linkLabel", lang)}</span>
                 ) : null}
@@ -318,8 +319,8 @@ export default function SharingPage({ params }: { params: Promise<{ id: string }
           </div>
 
           {/* Left panel — Audience Preview */}
-          <div className="order-1 lg:order-1">
-            <div className="lg:sticky lg:top-20">
+          <div className="order-2 lg:order-1">
+            <div className="lg:sticky lg:top-6">
               {scope && (
                 <SharePreview
                   draft={draft}

@@ -64,7 +64,7 @@ export function SharedPropertyPanel({
         type="button"
         aria-expanded={open}
         onClick={() => setOpen(!open)}
-        className="flex min-h-11 items-center gap-1.5 rounded-full border border-white/10 bg-black/40 px-3 py-2.5 text-[11px] font-medium text-white/70 backdrop-blur-xl transition-colors hover:bg-black/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/70 sm:min-h-0 sm:py-1.5"
+        className="floating-control flex items-center gap-1.5 border border-white/10 bg-black/40 px-3 text-[11px] font-medium text-white/70 backdrop-blur-xl transition-colors hover:bg-black/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/70"
       >
         <DocumentIcon size={12} />
         {t("shared.propertyInfo", lang)}
@@ -72,7 +72,7 @@ export function SharedPropertyPanel({
       </button>
 
       {open && (
-        <div className="mt-1.5 bg-black/50 backdrop-blur-xl border border-white/10 rounded-xl max-h-[50dvh] overflow-y-auto p-3.5 space-y-3">
+        <div className="floating-panel-shape mt-1.5 max-h-[50dvh] space-y-3 overflow-y-auto border border-white/10 bg-black/50 p-3.5 backdrop-blur-xl">
           {hasPrice && (
             <p className="text-[16px] font-semibold text-white">{formatPrice(draftData.price, currency?.code)}</p>
           )}

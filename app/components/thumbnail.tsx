@@ -25,8 +25,8 @@ export function Thumbnail({ src, alt, className = "", priority = false }: Thumbn
 
   if (error) {
     return (
-      <div className="absolute inset-0 flex items-center justify-center bg-muted/20">
-        <svg width="40" height="40" viewBox="0 0 24 24" fill="none" className="text-foreground/8" aria-hidden="true">
+      <div className="absolute inset-0 flex items-center justify-center bg-surface-subtle">
+        <svg width="40" height="40" viewBox="0 0 24 24" fill="none" className="text-foreground/15" aria-hidden="true">
           <rect x="3" y="3" width="18" height="18" rx="2" stroke="currentColor" strokeWidth="1.5" />
           <circle cx="8.5" cy="8.5" r="1.5" fill="currentColor" />
           <path d="M21 15l-5-5L5 21" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />

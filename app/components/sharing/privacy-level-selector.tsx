@@ -32,8 +32,8 @@ export function PrivacyLevelSelector({ level, pin, onLevelChange, onPinChange, l
   ];
 
   return (
-    <div className="space-y-3">
-      <h3 className="text-[13px] font-semibold text-foreground/70">
+    <div className="space-y-3.5">
+      <h3 className="px-0.5 text-[12px] font-semibold text-foreground/65">
         {t("sharing.protection", lang)}
       </h3>
 
@@ -49,17 +49,17 @@ export function PrivacyLevelSelector({ level, pin, onLevelChange, onPinChange, l
                 onLevelChange(option.value);
                 if (option.value !== "pin") onPinChange("");
               }}
-              className={`relative flex min-h-[4.25rem] items-start gap-3 rounded-2xl border px-3.5 py-3 text-left transition-[background-color,border-color,box-shadow] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 ${active ? "border-foreground/25 bg-card shadow-control" : "border-border/55 bg-card/70 hover:border-foreground/15 hover:bg-card"}`}
+              className="editor-control-capsule floating-panel-shape pen-touch-target relative flex min-h-16 items-center gap-2.5 border border-border/55 px-3 py-2.5 text-left transition-colors hover:bg-card focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
             >
-              <span className={`mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-full ${active ? "bg-foreground text-background" : "bg-secondary text-foreground/55"}`}>
+              <span className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-full ${active ? "bg-foreground text-background" : "bg-secondary/80 text-foreground/50"}`}>
                 {option.icon}
               </span>
               <span className="min-w-0 pr-5">
                 <span className="block text-[12px] font-semibold leading-snug text-foreground/85">{t(option.labelKey as LocaleKey, lang)}</span>
-                <span className="mt-1 block text-[10px] leading-snug text-muted-foreground">{t(option.descriptionKey as LocaleKey, lang)}</span>
+                <span className="mt-0.5 block text-[10px] leading-snug text-muted-foreground">{t(option.descriptionKey as LocaleKey, lang)}</span>
               </span>
               {active ? (
-                <span className="absolute right-3 top-3 flex h-4 w-4 items-center justify-center rounded-full bg-foreground text-background">
+                <span className="absolute right-3 top-1/2 flex h-4 w-4 -translate-y-1/2 items-center justify-center rounded-full bg-foreground text-background">
                   <CheckIcon size={9} />
                 </span>
               ) : null}
@@ -77,7 +77,7 @@ export function PrivacyLevelSelector({ level, pin, onLevelChange, onPinChange, l
             placeholder={t("shareDialog.pinPlaceholder", lang)}
             value={pin}
             onChange={(e) => onPinChange(e.target.value.replace(/\D/g, "").slice(0, 10))}
-            className="h-11 rounded-xl text-[14px] tabular-nums"
+            className="editor-control-capsule h-11 rounded-full px-4 text-[14px] tabular-nums"
             autoFocus
           />
           <p className="text-[11px] text-foreground/50">{t("shared.pin.minLength", lang)}</p>

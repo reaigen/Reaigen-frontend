@@ -37,7 +37,7 @@ import { getBrowserLanguage, t } from "../../lib/i18n";
 import { PageLoading } from "../../components/page-loading";
 import type { SplatViewerHandle } from "../../components/splat-viewer";
 import type { UnitLookup } from "../../lib/unit-catalog";
-import { globalSceneTransformFromDescription } from "../../lib/global-scene-transform";
+import { composedRootTransformFromScene } from "../../lib/global-scene-transform";
 import { parseRoomKitCage } from "../../lib/spatial-editor-data";
 
 const SplatViewer = dynamic(() => import("../../components/splat-viewer"), { ssr: false });
@@ -136,11 +136,8 @@ export default function SharedPage({ params }: { params: Promise<{ token: string
   const [roomKitCage, setRoomKitCage] = useState<RoomKitCageWall[]>([]);
   const splatRef = useRef<SplatViewerHandle | null>(null);
   const globalSceneTransform = useMemo(
-    () => globalSceneTransformFromDescription(
-      tourViewerData?.scene_description,
-      tourViewerData?.global_transform,
-    ),
-    [tourViewerData?.scene_description, tourViewerData?.global_transform],
+    () => composedRootTransformFromScene(tourViewerData?.scene_description),
+    [tourViewerData?.scene_description],
   );
 
   useEffect(() => {
@@ -410,7 +407,7 @@ export default function SharedPage({ params }: { params: Promise<{ token: string
         <button
           type="button"
         onClick={() => { setTourPanel(null); setTourOpen(false); }}
-          className="absolute left-3 top-[calc(0.75rem+env(safe-area-inset-top,0px))] z-20 flex h-11 items-center gap-1.5 rounded-full border border-white/10 bg-black/40 px-3 text-[11px] font-medium text-white/70 backdrop-blur-xl transition-colors hover:bg-black/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/70 sm:left-4 sm:top-[calc(1rem+env(safe-area-inset-top,0px))] sm:h-8"
+          className="floating-control absolute left-3 top-[calc(0.75rem+env(safe-area-inset-top,0px))] z-20 flex items-center gap-1.5 border border-white/10 bg-black/40 px-3 text-[11px] font-medium text-white/70 backdrop-blur-xl transition-colors hover:bg-black/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/70 sm:left-4 sm:top-[calc(1rem+env(safe-area-inset-top,0px))]"
         >
           <svg aria-hidden="true" width="12" height="12" viewBox="0 0 16 16" fill="none"><path d="M10 12L6 8l4-4" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/></svg>
           {t("common.back", lang)}
@@ -418,7 +415,7 @@ export default function SharedPage({ params }: { params: Promise<{ token: string
 
         {/* Branding */}
         <div className="absolute right-3 top-[calc(0.75rem+env(safe-area-inset-top,0px))] z-20 animate-fade-in sm:right-4 sm:top-[calc(1rem+env(safe-area-inset-top,0px))]">
-          <span className="text-[13px] text-white/50 bg-black/20 backdrop-blur-sm px-2.5 py-1 rounded-full" style={{ fontFamily: "var(--font-brand), ui-serif, Georgia, serif", fontWeight: 400 }}>Reaigen</span>
+          <span className="floating-status flex items-center bg-black/20 text-[13px] text-white/50 backdrop-blur-sm" style={{ fontFamily: "var(--font-brand), ui-serif, Georgia, serif", fontWeight: 400 }}>Reaigen</span>
         </div>
 
         {tourMeta && (

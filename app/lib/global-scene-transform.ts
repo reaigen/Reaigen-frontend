@@ -41,13 +41,14 @@ export function normalizeGlobalSceneTransform(value: unknown): GlobalSceneTransf
 }
 
 /**
- * Prefer the universal scene contract and fall back to the migration-era
- * globalTransform object. The editor Euler hint is only used to populate the
- * controls; runtime renderers receive the same transform semantics.
+ * Read the composed `/Reaigen` root from the resolved USD stage projection.
+ *
+ * There is intentionally no secondary web transform fallback. If the stage
+ * does not provide a supported root opinion, the canonical identity stage is
+ * used.
  */
-export function globalSceneTransformFromDescription(
+export function composedRootTransformFromScene(
   sceneDescription: unknown,
-  legacyTransform?: unknown,
 ): GlobalSceneTransform {
   if (
     sceneDescription
@@ -74,7 +75,7 @@ export function globalSceneTransformFromDescription(
       });
     }
   }
-  return normalizeGlobalSceneTransform(legacyTransform);
+  return cloneGlobalSceneTransform(IDENTITY_GLOBAL_SCENE_TRANSFORM);
 }
 
 export function cloneGlobalSceneTransform(
@@ -104,6 +105,62 @@ export function globalSceneTransformsEqual(
 }
 
 type QuaternionXYZW = [number, number, number, number];
+
+function normalizeDegrees(value: number): number {
+  const normalized = ((value + 180) % 360 + 360) % 360 - 180;
+  return Math.abs(normalized) < 0.00001 ? 0 : normalized;
+}
+
+function multiplyQuaternions(
+  left: QuaternionXYZW,
+  right: QuaternionXYZW,
+): QuaternionXYZW {
+  const [lx, ly, lz, lw] = left;
+  const [rx, ry, rz, rw] = right;
+  const result: QuaternionXYZW = [
+    lw * rx + lx * rw + ly * rz - lz * ry,
+    lw * ry - lx * rz + ly * rw + lz * rx,
+    lw * rz + lx * ry - ly * rx + lz * rw,
+    lw * rw - lx * rx - ly * ry - lz * rz,
+  ];
+  const length = Math.hypot(...result) || 1;
+  return result.map((value) => value / length) as QuaternionXYZW;
+}
+
+function inverseQuaternion(
+  quaternion: QuaternionXYZW,
+): QuaternionXYZW {
+  return [-quaternion[0], -quaternion[1], -quaternion[2], quaternion[3]];
+}
+
+/**
+ * Convert a normalized quaternion into the editor's Y-X-Z Euler order.
+ * Runtime composition remains quaternion based; this exists only so the
+ * rebased precision controls can display an identity-relative delta.
+ */
+function quaternionToEditorDegrees(
+  quaternion: QuaternionXYZW,
+): Vec3 {
+  const [x, y, z, w] = quaternion;
+  const m00 = 1 - 2 * (y * y + z * z);
+  const m02 = 2 * (x * z + y * w);
+  const m10 = 2 * (x * y + z * w);
+  const m11 = 1 - 2 * (x * x + z * z);
+  const m12 = 2 * (y * z - x * w);
+  const m20 = 2 * (x * z - y * w);
+  const m22 = 1 - 2 * (x * x + y * y);
+  const pitch = Math.asin(Math.max(-1, Math.min(1, -m12)));
+  const cosPitch = Math.cos(pitch);
+  const yaw = Math.abs(cosPitch) > 1e-7
+    ? Math.atan2(m02, m22)
+    : Math.atan2(-m20, m00);
+  const roll = Math.abs(cosPitch) > 1e-7
+    ? Math.atan2(m10, m11)
+    : 0;
+  return [pitch, yaw, roll].map(
+    (value) => normalizeDegrees(value * 180 / Math.PI),
+  ) as Vec3;
+}
 
 /**
  * Match the backend/OpenUSD authoring quaternion exactly.
@@ -136,6 +193,54 @@ export function globalSceneQuaternion(
   ];
   const length = Math.hypot(...quaternion) || 1;
   return quaternion.map((value) => value / length) as QuaternionXYZW;
+}
+
+/**
+ * Compose an identity-relative editor delta over an authored USD root.
+ *
+ * Translation remains in presentation/world axes, rotation is pre-multiplied
+ * in world space, and scale stays uniform. The result is still one legal
+ * `/Reaigen` T·R·S root transform.
+ */
+export function composeGlobalSceneTransform(
+  authored: GlobalSceneTransform,
+  delta: GlobalSceneTransform,
+): GlobalSceneTransform {
+  return {
+    version: 1,
+    coordinateSpace: "reaigen_y_up",
+    translation: authored.translation.map(
+      (value, index) => value + delta.translation[index],
+    ) as Vec3,
+    rotationDeg: quaternionToEditorDegrees(multiplyQuaternions(
+      globalSceneQuaternion(delta),
+      globalSceneQuaternion(authored),
+    )),
+    scale: Math.max(0.001, Math.min(1000, authored.scale * delta.scale)),
+  };
+}
+
+/**
+ * Resolve the editor delta from the immutable authored USD root to the current
+ * preview. Applying the preview makes it the next authored root, so this value
+ * naturally returns to identity without moving the rendered scene.
+ */
+export function relativeGlobalSceneTransform(
+  authored: GlobalSceneTransform,
+  preview: GlobalSceneTransform,
+): GlobalSceneTransform {
+  return {
+    version: 1,
+    coordinateSpace: "reaigen_y_up",
+    translation: preview.translation.map(
+      (value, index) => value - authored.translation[index],
+    ) as Vec3,
+    rotationDeg: quaternionToEditorDegrees(multiplyQuaternions(
+      globalSceneQuaternion(preview),
+      inverseQuaternion(globalSceneQuaternion(authored)),
+    )),
+    scale: Math.max(0.001, Math.min(1000, preview.scale / authored.scale)),
+  };
 }
 
 function rotateByQuaternion(vector: Vec3, quaternion: QuaternionXYZW): Vec3 {

@@ -16,6 +16,7 @@ import {
   EyeClosedIcon as RadixEyeClosedIcon,
   EyeOpenIcon as RadixEyeOpenIcon,
   GearIcon,
+  GridIcon as RadixGridIcon,
   HomeIcon as RadixHomeIcon,
   ImageIcon as RadixImageIcon,
   InfoCircledIcon,
@@ -90,6 +91,7 @@ export const UploadIcon = fromRadix(RadixUploadIcon, "UploadIcon");
 export const EyeOpenIcon = fromRadix(RadixEyeOpenIcon, "EyeOpenIcon");
 export const EyeClosedIcon = fromRadix(RadixEyeClosedIcon, "EyeClosedIcon");
 export const FloorplanIcon = fromRadix(RadixLayoutIcon, "FloorplanIcon");
+export const GridIcon = fromRadix(RadixGridIcon, "GridIcon");
 export const LockIcon = fromRadix(LockClosedIcon, "LockIcon");
 
 // Direction, state, and utility actions.
@@ -145,6 +147,34 @@ export function RotateIcon({ size = 18, width, height, ...props }: IconProps) {
       <path d="M19.2 8.3A8 8 0 1 0 20 14" />
       <path d="M19.2 4.6v3.7h-3.7" />
       <circle cx="12" cy="12" r="2" />
+    </svg>
+  );
+}
+
+export function SelectIcon({ size = 18, width, height, ...props }: IconProps) {
+  return (
+    <svg viewBox="0 0 24 24" width={width ?? size} height={height ?? size} fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" aria-hidden={props["aria-hidden"] ?? true} {...props}>
+      <path d="m5 3 13 8-6.2 1.45L9 19Z" />
+      <path d="m12.1 12.4 4.6 5.6" />
+    </svg>
+  );
+}
+
+export function MoveIcon({ size = 18, width, height, ...props }: IconProps) {
+  return (
+    <svg viewBox="0 0 24 24" width={width ?? size} height={height ?? size} fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" aria-hidden={props["aria-hidden"] ?? true} {...props}>
+      <path d="M12 3v18M3 12h18" />
+      <path d="m9 6 3-3 3 3M18 9l3 3-3 3M9 18l3 3 3-3M6 9l-3 3 3 3" />
+    </svg>
+  );
+}
+
+export function ScaleIcon({ size = 18, width, height, ...props }: IconProps) {
+  return (
+    <svg viewBox="0 0 24 24" width={width ?? size} height={height ?? size} fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" aria-hidden={props["aria-hidden"] ?? true} {...props}>
+      <path d="M4 10V4h6M14 20h6v-6" />
+      <path d="m9 9-5-5M15 15l5 5" />
+      <rect x="9" y="9" width="6" height="6" rx="1" />
     </svg>
   );
 }

@@ -343,7 +343,12 @@ function UnitPicker({
     <Select value={selected?.code ?? ""} onValueChange={onChange}>
       <SelectTrigger
         aria-label={label}
-        className="pen-touch-target h-11 w-auto min-w-[4.25rem] rounded-full border-border/55 bg-surface-subtle px-3 text-[11px] font-semibold shadow-none hover:bg-secondary focus:ring-2"
+        className={cn(
+          "pen-touch-target !h-full !min-h-0 shrink-0 rounded-full border-border/65 bg-surface-subtle px-3 text-[12px] font-semibold shadow-none hover:bg-secondary focus:ring-2",
+          category === "CURRENCY"
+            ? "!w-[5.25rem] !min-w-[5.25rem]"
+            : "!w-[4.625rem] !min-w-[4.625rem]",
+        )}
       >
         <span className="tabular-nums">
           {selected ? (showCode ? selected.code : selected.symbol) : "—"}
@@ -447,16 +452,16 @@ function DirectValueField({
           }}
           className={cn(
             fieldClass,
-            unitControl && showClear ? "pr-40" : unitControl ? "pr-24" : showStaticUnit && showClear ? "pr-32" : showStaticUnit ? "pr-20" : showClear ? "pr-12" : undefined,
+            unitControl && showClear ? "pr-[8.5rem]" : unitControl ? "pr-[5.5rem]" : showStaticUnit && showClear ? "pr-[8.5rem]" : showStaticUnit ? "pr-[5.5rem]" : showClear ? "pr-12" : undefined,
             invalid && "border-destructive/60 focus-visible:ring-destructive/20",
             className,
           )}
         />
         {unitControl || showStaticUnit || showClear ? (
-          <span className="absolute inset-y-0 right-1 flex items-center gap-1">
+          <span className="absolute inset-y-0 right-0 flex items-center">
             {unitControl}
             {showStaticUnit ? (
-              <span className="pointer-events-none rounded-full border border-border/55 bg-surface-subtle px-2.5 py-1.5 text-[11px] font-semibold tabular-nums text-foreground/65">
+              <span className="pointer-events-none flex h-full min-h-0 w-[4.625rem] shrink-0 items-center justify-center rounded-full border border-border/65 bg-surface-subtle px-3 text-[12px] font-semibold tabular-nums text-foreground/65">
                 {unitLabel}
               </span>
             ) : null}
@@ -464,7 +469,7 @@ function DirectValueField({
               <button
                 type="button"
                 onClick={() => onChange("")}
-                className="pen-touch-target flex h-11 w-11 items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-foreground/[0.05] hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                className="pen-touch-target flex h-full w-12 shrink-0 items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-foreground/[0.05] hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
                 aria-label={`${t("draft.editor.clearValue", lang)}: ${labelText}`}
               >
                 <CloseIcon size={14} />
@@ -545,30 +550,37 @@ function NumericStepper({
         {optional && !value.trim() ? (
           <button
             type="button"
-            className="pen-touch-target flex h-full w-full min-w-0 items-center justify-between gap-3 rounded-full px-4 text-left transition-colors hover:bg-foreground/[0.035] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
+            className="pen-touch-target flex h-full w-full min-w-0 items-center justify-between gap-2 rounded-full pl-4 text-left transition-colors hover:bg-foreground/[0.035] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
             onClick={startValue}
             aria-label={`${t("draft.editor.addValue", lang)}: ${label}`}
           >
             <span className="min-w-0 flex-1 truncate text-[14px] text-muted-foreground">
               {t("draft.editor.noValue", lang)}
             </span>
-            <span className="inline-flex shrink-0 items-center gap-2 text-[12px] font-semibold text-foreground">
+            <span className="inline-flex h-full shrink-0 items-center gap-2 rounded-full bg-surface-subtle px-3 text-[12px] font-semibold text-foreground">
               <PlusIcon size={14} />
               {t("common.add", lang)}
             </span>
           </button>
         ) : (
-          <>
+          <div
+            className={cn(
+              "grid h-full w-full min-w-0 items-center",
+              optional
+                ? "grid-cols-[2.75rem_minmax(5.5rem,1fr)_2.75rem_2.75rem]"
+                : "grid-cols-[2.75rem_minmax(4rem,1fr)_2.75rem]",
+            )}
+          >
             <button
               type="button"
               onClick={() => adjust(-1)}
               disabled={numericValue <= min}
-              className="pen-touch-target ml-1 flex h-11 w-11 shrink-0 items-center justify-center rounded-full text-foreground/60 transition-colors hover:bg-surface-subtle hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-25"
+              className="pen-touch-target flex h-full w-full items-center justify-center rounded-full bg-surface-subtle text-foreground/70 transition-colors hover:bg-secondary hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring disabled:text-muted-foreground disabled:opacity-45"
               aria-label={`${label}: −`}
             >
               <MinusIcon size={14} />
             </button>
-            <div className="flex min-w-0 flex-1 items-center justify-center">
+            <div className="flex h-full min-w-0 items-center justify-center px-1">
               <input
                 id={id}
                 inputMode={min < 0 ? "text" : Number.isInteger(step) ? "numeric" : "decimal"}
@@ -584,10 +596,7 @@ function NumericStepper({
                   const snapped = min + (Math.round((clamped - min) / step) * step);
                   onChange(formatEditableNumber(snapped));
                 }}
-                className={cn(
-                  "h-11 min-w-0 border-0 bg-transparent px-1 text-center text-[16px] font-semibold tabular-nums text-foreground outline-none",
-                  unitLabel ? "w-16" : "w-14",
-                )}
+                className="h-full w-full min-w-0 flex-1 border-0 bg-transparent px-1 text-center text-[16px] font-semibold tabular-nums text-foreground outline-none"
               />
               {unitLabel ? <span className="shrink-0 pr-1 text-[10px] font-semibold text-foreground/50">{unitLabel}</span> : null}
             </div>
@@ -595,7 +604,7 @@ function NumericStepper({
               type="button"
               onClick={() => adjust(1)}
               disabled={numericValue >= max}
-              className="pen-touch-target flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-surface-subtle text-foreground transition-colors hover:bg-secondary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-25"
+              className="pen-touch-target flex h-full w-full items-center justify-center rounded-full bg-surface-subtle text-foreground/70 transition-colors hover:bg-secondary hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring disabled:text-muted-foreground disabled:opacity-45"
               aria-label={`${label}: +`}
             >
               <PlusIcon size={14} />
@@ -604,13 +613,13 @@ function NumericStepper({
               <button
                 type="button"
                 onClick={() => onChange("")}
-                className="pen-touch-target mr-1 flex h-11 w-11 shrink-0 items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-foreground/[0.05] hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                className="pen-touch-target flex h-full w-full items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-foreground/[0.05] hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
                 aria-label={`${t("draft.editor.clearValue", lang)}: ${label}`}
               >
                 <CloseIcon size={14} />
               </button>
             ) : null}
-          </>
+          </div>
         )}
       </div>
       {preview ? <p className="px-1 text-right text-[11px] font-medium tabular-nums text-foreground/55" aria-live="polite">{preview}</p> : null}
@@ -1182,7 +1191,7 @@ export function DraftEditor({
             onChange={setMode}
             ariaLabel={t("draft.editor.title", lang)}
             className="grid w-full grid-cols-2"
-            itemClassName="w-full font-semibold"
+            itemClassName="w-full text-[14px] font-semibold"
             options={[
               { value: "basic", label: t("draft.editor.modeBasic", lang) },
               { value: "advanced", label: t("draft.editor.modeAdvanced", lang) },
