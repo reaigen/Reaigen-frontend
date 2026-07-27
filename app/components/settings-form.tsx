@@ -52,6 +52,12 @@ import {
   type ReaiImprovementConsent,
 } from "../lib/api/client";
 import { getSafeApiErrorMessage } from "../lib/api/error-message";
+import {
+  disableWebPushForUser,
+  enableWebPushForUser,
+  getWebPushStateForUser,
+  type WebPushState,
+} from "../lib/web-push";
 import { t, getUserLanguage, formatDate as fmtDate } from "../lib/i18n";
 import { cn } from "../lib/utils";
 import { ManagedLegalDocuments } from "./content-documents";
@@ -1033,15 +1039,68 @@ function NotificationsTab({ user, onSaved, lang }: { user: UserProfile; onSaved:
   const pd = user.personalized_data;
   const [enabled, setEnabled] = React.useState(pd?.notifications_enabled ?? true);
   const [email, setEmail] = React.useState(pd?.email_notifications ?? true);
+  const [push, setPush] = React.useState(pd?.push_notifications ?? false);
   const [processing, setProcessing] = React.useState(pd?.notify_processing_complete ?? true);
   const [processingFailed, setProcessingFailed] = React.useState(pd?.notify_processing_failed ?? true);
+  const [uploadLanded, setUploadLanded] = React.useState(pd?.notify_upload_landed ?? false);
   const [newFeatures, setNewFeatures] = React.useState(pd?.notify_new_features ?? true);
   const [systemUpdates, setSystemUpdates] = React.useState(pd?.notify_system_updates ?? true);
   const [billing, setBilling] = React.useState(pd?.notify_billing ?? true);
+  const [sound, setSound] = React.useState(pd?.notification_sound ?? true);
+  const [quietHours, setQuietHours] = React.useState(Boolean(
+    pd?.notification_quiet_hours_start
+    && pd?.notification_quiet_hours_end,
+  ));
+  const [quietStart, setQuietStart] = React.useState(
+    pd?.notification_quiet_hours_start?.slice(0, 5) ?? "22:00",
+  );
+  const [quietEnd, setQuietEnd] = React.useState(
+    pd?.notification_quiet_hours_end?.slice(0, 5) ?? "08:00",
+  );
+  const [browserPushState, setBrowserPushState] = React.useState<WebPushState>("available");
+  const [browserPushBusy, setBrowserPushBusy] = React.useState(false);
   const [saving, setSaving] = React.useState(false);
   const [error, setError] = React.useState<string | null>(null);
   const [success, setSuccess] = React.useState(false);
   useAutoDismiss(success, setSuccess);
+
+  React.useEffect(() => {
+    let active = true;
+    void getWebPushStateForUser(user.id).then((state) => {
+      if (active) setBrowserPushState(state);
+    });
+    return () => { active = false; };
+  }, [user.id]);
+
+  const toggleThisBrowser = React.useCallback(async (value: boolean) => {
+    setBrowserPushBusy(true);
+    setError(null);
+    try {
+      if (!value) {
+        await disableWebPushForUser(user.id);
+        setBrowserPushState("available");
+        return;
+      }
+      const result = await enableWebPushForUser(user.id);
+      if (result.status === "enabled") {
+        setBrowserPushState("enabled");
+        if (!push) setPush(true);
+        setSuccess(true);
+      } else if (result.status === "denied") {
+        setBrowserPushState("denied");
+        setError(t("settings.notifications.browserDenied", lang));
+      } else if (result.status === "unsupported") {
+        setBrowserPushState("unsupported");
+        setError(t("settings.notifications.browserUnsupported", lang));
+      } else if (result.status === "not_configured") {
+        setError(t("settings.notifications.browserUnavailable", lang));
+      } else {
+        setError(t("settings.notifications.browserFailed", lang));
+      }
+    } finally {
+      setBrowserPushBusy(false);
+    }
+  }, [lang, push, user.id]);
 
   // Auto-save on any change (debounced to avoid rapid fire)
   const isFirstRender = React.useRef(true);
@@ -1056,11 +1115,22 @@ function NotificationsTab({ user, onSaved, lang }: { user: UserProfile; onSaved:
       updatePersonalizedData({
         notifications_enabled: enabled,
         email_notifications: email,
+        push_notifications: push,
         notify_processing_complete: processing,
         notify_processing_failed: processingFailed,
+        notify_upload_landed: uploadLanded,
         notify_new_features: newFeatures,
         notify_system_updates: systemUpdates,
         notify_billing: billing,
+        notification_sound: sound,
+        notification_quiet_hours_start: quietHours
+          ? `${quietStart || "22:00"}:00`
+          : null,
+        notification_quiet_hours_end: quietHours
+          ? `${quietEnd || "08:00"}:00`
+          : null,
+        notification_timezone: Intl.DateTimeFormat()
+          .resolvedOptions().timeZone || "UTC",
       })
         .then(() => { setSuccess(true); onSaved(); })
         .catch((err) => setError(getSafeApiErrorMessage(err, lang)))
@@ -1068,7 +1138,21 @@ function NotificationsTab({ user, onSaved, lang }: { user: UserProfile; onSaved:
     }, 400);
     return () => clearTimeout(timeout);
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [enabled, email, processing, processingFailed, newFeatures, systemUpdates, billing]);
+  }, [
+    enabled,
+    email,
+    push,
+    processing,
+    processingFailed,
+    uploadLanded,
+    newFeatures,
+    systemUpdates,
+    billing,
+    sound,
+    quietHours,
+    quietStart,
+    quietEnd,
+  ]);
 
   return (
     <Card>
@@ -1092,6 +1176,31 @@ function NotificationsTab({ user, onSaved, lang }: { user: UserProfile; onSaved:
                   onChange={setEmail}
                 />
                 <ToggleRow
+                  label={t("settings.notifications.push", lang)}
+                  hint={t("settings.notifications.pushHint", lang)}
+                  checked={push}
+                  onChange={setPush}
+                />
+                {push && (
+                  <ToggleRow
+                    label={t("settings.notifications.thisBrowser", lang)}
+                    hint={
+                      browserPushState === "denied"
+                        ? t("settings.notifications.browserDenied", lang)
+                        : browserPushState === "unsupported"
+                          ? t("settings.notifications.browserUnsupported", lang)
+                          : t("settings.notifications.thisBrowserHint", lang)
+                    }
+                    checked={browserPushState === "enabled"}
+                    onChange={(value) => { void toggleThisBrowser(value); }}
+                    disabled={
+                      browserPushBusy
+                      || browserPushState === "denied"
+                      || browserPushState === "unsupported"
+                    }
+                  />
+                )}
+                <ToggleRow
                   label={t("settings.notifications.processing", lang)}
                   checked={processing}
                   onChange={setProcessing}
@@ -1101,6 +1210,41 @@ function NotificationsTab({ user, onSaved, lang }: { user: UserProfile; onSaved:
                   checked={processingFailed}
                   onChange={setProcessingFailed}
                 />
+                <ToggleRow
+                  label={t("settings.notifications.uploadLanded", lang)}
+                  hint={t("settings.notifications.uploadLandedHint", lang)}
+                  checked={uploadLanded}
+                  onChange={setUploadLanded}
+                />
+                <ToggleRow
+                  label={t("settings.notifications.sound", lang)}
+                  checked={sound}
+                  onChange={setSound}
+                />
+                <ToggleRow
+                  label={t("settings.notifications.quietHours", lang)}
+                  hint={t("settings.notifications.quietHoursHint", lang)}
+                  checked={quietHours}
+                  onChange={setQuietHours}
+                />
+                {quietHours && (
+                  <div className="grid grid-cols-2 gap-3 py-3.5">
+                    <SettingsField label={t("settings.notifications.quietFrom", lang)}>
+                      <Input
+                        type="time"
+                        value={quietStart}
+                        onChange={(event) => setQuietStart(event.target.value)}
+                      />
+                    </SettingsField>
+                    <SettingsField label={t("settings.notifications.quietUntil", lang)}>
+                      <Input
+                        type="time"
+                        value={quietEnd}
+                        onChange={(event) => setQuietEnd(event.target.value)}
+                      />
+                    </SettingsField>
+                  </div>
+                )}
                 <ToggleRow
                   label={t("settings.notifications.newFeatures", lang)}
                   checked={newFeatures}
@@ -1121,7 +1265,7 @@ function NotificationsTab({ user, onSaved, lang }: { user: UserProfile; onSaved:
           </div>
 
           {/* Status feedback */}
-          <div className="h-6 pt-3">
+          <div className="min-h-6 pt-3">
             {saving && <p className="text-[12px] text-muted-foreground">{t("common.saving", lang)}</p>}
             {error && <p className="text-[12px] text-destructive">{error}</p>}
             {success && !saving && <p className="text-[12px] text-success">{t("settings.notifications.saved", lang)}</p>}

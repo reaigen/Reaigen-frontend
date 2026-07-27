@@ -106,7 +106,18 @@ function resolveTarget(baseUrl: string, joined: string): string {
     return `${baseUrl}/api/v1/${joined}`;
   }
   // Core app endpoints → /api/v1/core/*
-  const coreRoutes = ["users", "profiles", "personalized-data", "billing", "activities", "contact-links", "auth", "content"];
+  const coreRoutes = [
+    "users",
+    "profiles",
+    "personalized-data",
+    "billing",
+    "activities",
+    "contact-links",
+    "auth",
+    "content",
+    "notification-devices",
+    "notifications",
+  ];
   for (const prefix of coreRoutes) {
     if (joined.startsWith(prefix)) {
       return `${baseUrl}/api/v1/core/${joined}`;

@@ -9,6 +9,10 @@ import {
   getProfile,
   type UserProfile,
 } from "../../lib/api/client";
+import {
+  disableWebPushForUser,
+  restoreWebPushForUser,
+} from "../../lib/web-push";
 
 const SILENT_REFRESH_INTERVAL_MS = 45 * 60 * 1000;
 
@@ -42,6 +46,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     userRef.current = user;
   }, [user]);
 
+  // Repair an already-authorized browser subscription after login or a
+  // cleared service worker. Never prompt here; permission prompts are only
+  // triggered by the explicit Settings toggle.
+  React.useEffect(() => {
+    if (!user?.personalized_data?.push_notifications) return;
+    void restoreWebPushForUser(user.id);
+  }, [user?.id, user?.personalized_data?.push_notifications]);
+
   const refreshProfile = React.useCallback(async (): Promise<UserProfile | null> => {
     try {
       const profile = await getProfile();
@@ -66,7 +78,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   // clean login instead of leaving them on a stale authenticated page.
   React.useEffect(() => {
     const handleUnauthorized = () => {
-      if (userRef.current === null) return; // not logged in / already on auth
+      const expiredUser = userRef.current;
+      if (expiredUser === null) return; // not logged in / already on auth
+      void disableWebPushForUser(expiredUser.id, {
+        unregisterBackend: false,
+      });
       setUser(null);
       if (typeof window !== "undefined" && window.location.pathname !== "/") {
         window.location.href = "/";
@@ -132,6 +148,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   );
 
   const logout = React.useCallback(async () => {
+    const currentUser = userRef.current;
+    if (currentUser) {
+      await disableWebPushForUser(currentUser.id);
+    }
     try { await apiLogout(); } catch {}
     setUser(null);
   }, []);

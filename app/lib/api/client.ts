@@ -78,6 +78,14 @@ function invalidateCache(path: string) {
   for (const key of cache.keys()) {
     if (key.startsWith(prefix)) cache.delete(key);
   }
+  // The profile response embeds personalized_data. A preference PATCH must
+  // invalidate both views or a cross-platform setting can appear to revert
+  // for up to five minutes even though the backend saved it correctly.
+  if (path.startsWith("/api/reaigen/personalized-data/")) {
+    for (const key of cache.keys()) {
+      if (key.startsWith("/api/reaigen/users/")) cache.delete(key);
+    }
+  }
 }
 
 async function request(path: string, options: RequestInit = {}) {
@@ -273,8 +281,43 @@ export interface PersonalizedData {
   notify_billing: boolean;
   notify_processing_complete: boolean;
   notify_processing_failed: boolean;
+  notify_upload_landed: boolean;
+  notification_sound: boolean;
+  notification_quiet_hours_start: string | null;
+  notification_quiet_hours_end: string | null;
+  notification_timezone: string;
+  preferences: Record<string, unknown>;
   onboarding_completed: boolean;
   onboarding_step: number;
+}
+
+export interface NotificationDevice {
+  id: number;
+  platform: "ios" | "web";
+  app_id: string;
+  environment: "production" | "sandbox";
+  enabled: boolean;
+  last_seen_at: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface WebPushConfig {
+  enabled: boolean;
+  public_key: string;
+}
+
+export interface NotificationMessage {
+  id: number;
+  event_type: string;
+  collapse_key: string;
+  title: string;
+  body: string;
+  data: Record<string, string | number | boolean | null>;
+  status: string;
+  read_at: string | null;
+  sent_at: string | null;
+  created_at: string;
 }
 
 export interface BillingAccount {
@@ -397,10 +440,69 @@ export async function updatePersonalizedData(data: Partial<{
   notify_billing: boolean;
   notify_processing_complete: boolean;
   notify_processing_failed: boolean;
+  notify_upload_landed: boolean;
+  notification_sound: boolean;
+  notification_quiet_hours_start: string | null;
+  notification_quiet_hours_end: string | null;
+  notification_timezone: string;
+  preferences: Record<string, unknown>;
 }>): Promise<PersonalizedData> {
   return request("/api/reaigen/personalized-data/me/", {
     method: "PATCH",
     body: JSON.stringify(data),
+  });
+}
+
+export async function getWebPushConfig(): Promise<WebPushConfig> {
+  return request(
+    "/api/reaigen/notification-devices/web-push-config/",
+  );
+}
+
+export async function registerWebPushDevice(data: {
+  endpoint: string;
+  p256dh: string;
+  auth: string;
+}): Promise<NotificationDevice> {
+  return request("/api/reaigen/notification-devices/", {
+    method: "POST",
+    body: JSON.stringify({
+      platform: "web",
+      app_id: "reaigen-web",
+      environment: "production",
+      ...data,
+    }),
+  });
+}
+
+export async function deleteNotificationDevice(deviceId: number): Promise<void> {
+  await request(
+    `/api/reaigen/notification-devices/${encodeURIComponent(deviceId)}/`,
+    { method: "DELETE" },
+  );
+}
+
+export async function getNotificationMessages(): Promise<{
+  count: number;
+  results: NotificationMessage[];
+}> {
+  return freshRequest("/api/reaigen/notifications/");
+}
+
+export async function markNotificationRead(
+  notificationId: number,
+): Promise<NotificationMessage> {
+  return request(
+    `/api/reaigen/notifications/${encodeURIComponent(notificationId)}/read/`,
+    { method: "POST" },
+  );
+}
+
+export async function markAllNotificationsRead(): Promise<{
+  marked_read: number;
+}> {
+  return request("/api/reaigen/notifications/read-all/", {
+    method: "POST",
   });
 }
 
