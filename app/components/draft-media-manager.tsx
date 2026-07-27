@@ -4,15 +4,15 @@
 import * as React from "react";
 import { motion } from "framer-motion";
 import {
-  cleanplateReaiDraftImages,
-  editReaiDraftImage,
-  generateReaiDraftImageHdr,
-  getAgentMediaVersions,
+  cleanplateDraftImages,
+  editDraftImage,
+  generateDraftImageHdr,
+  getMediaVersions,
   listDraftUploads,
-  manageAgentMediaVersion,
+  manageMediaVersion,
   reorderDraftUploads,
   uploadDraftPhoto,
-  type AgentMediaVersionGroup,
+  type MediaVersionGroup,
 } from "../lib/api/client";
 import { getSafeApiErrorMessage } from "../lib/api/error-message";
 import { formatDate, t, type LocaleKey } from "../lib/i18n";
@@ -143,7 +143,7 @@ function keepUsefulFilter(groups: MediaGroup[], current: MediaFilter): MediaFilt
   return hasVisible ? "gallery" : "hidden";
 }
 
-function mergeVersionState(uploads: DraftUpload[], groups: AgentMediaVersionGroup[] | null) {
+function mergeVersionState(uploads: DraftUpload[], groups: MediaVersionGroup[] | null) {
   if (!groups) return uploads;
   const versionById = new Map(groups.flatMap((group) => group.versions.map((version) => [version.id, version] as const)));
   return uploads.map((upload) => {
@@ -237,7 +237,7 @@ export function DraftMediaManager({
   const [errorCanRetryLoad, setErrorCanRetryLoad] = React.useState(false);
   const [confirmAction, setConfirmAction] = React.useState<ConfirmAction>(null);
   const [view, setView] = React.useState<MediaManagerView>("gallery");
-  const [versionGroups, setVersionGroups] = React.useState<AgentMediaVersionGroup[]>([]);
+  const [versionGroups, setVersionGroups] = React.useState<MediaVersionGroup[]>([]);
   const [selectedVersionIds, setSelectedVersionIds] = React.useState<Record<string, number>>({});
   const [versionCandidate, setVersionCandidate] = React.useState<MediaAction>(null);
   const [versionBusy, setVersionBusy] = React.useState(false);
@@ -263,7 +263,7 @@ export function DraftMediaManager({
       return left.index - right.index;
     }), [selected?.id, versionGroups]);
 
-  const applyVersionGroups = React.useCallback((nextGroups: AgentMediaVersionGroup[]) => {
+  const applyVersionGroups = React.useCallback((nextGroups: MediaVersionGroup[]) => {
     setVersionGroups(nextGroups);
     setSelectedVersionIds((current) => Object.fromEntries(nextGroups.flatMap((group) => {
       const currentSelection = group.versions.find((version) => version.id === current[group.logical_asset_id]);
@@ -293,7 +293,7 @@ export function DraftMediaManager({
     setError(null);
     setErrorCanRetryLoad(false);
     try {
-      const versionRequest = getAgentMediaVersions(draft.id).then((result) => result.groups).catch(() => null);
+      const versionRequest = getMediaVersions(draft.id).then((result) => result.groups);
       const allUploads = await listDraftUploads(draft.id, { includeDeleted: true, fresh: true });
       if (sequence !== loadSequence.current) return;
       setVersionActionsAvailable(null);
@@ -304,19 +304,21 @@ export function DraftMediaManager({
       setFilter((current) => keepUsefulFilter(nextGroups, current));
       if (showLoader) setLoading(false);
 
-      // Version state enriches the already-visible grid; it must never hold the
-      // current gallery behind an optional Agent-consent request.
+      // Version state enriches the already-visible grid; a temporary tool
+      // outage must never hold the current gallery behind this request.
       void versionRequest.then((versionResult) => {
         if (sequence !== loadSequence.current) return;
-        setVersionActionsAvailable(versionResult !== null);
-        applyVersionGroups(versionResult ?? []);
-        if (versionResult) {
-          const enrichedUploads = mergeVersionState(allUploads, versionResult);
-          const enrichedGroups = buildMediaGroups(enrichedUploads);
-          setUploads(enrichedUploads);
-          setSelectedId((current) => enrichedGroups.some((group) => group.id === current) ? current : enrichedGroups[0]?.id ?? null);
-          setFilter((current) => keepUsefulFilter(enrichedGroups, current));
-        }
+        setVersionActionsAvailable(true);
+        applyVersionGroups(versionResult);
+        const enrichedUploads = mergeVersionState(allUploads, versionResult);
+        const enrichedGroups = buildMediaGroups(enrichedUploads);
+        setUploads(enrichedUploads);
+        setSelectedId((current) => enrichedGroups.some((group) => group.id === current) ? current : enrichedGroups[0]?.id ?? null);
+        setFilter((current) => keepUsefulFilter(enrichedGroups, current));
+      }).catch((reason) => {
+        if (sequence !== loadSequence.current) return;
+        setVersionActionsAvailable(false);
+        setError(getSafeApiErrorMessage(reason, lang));
       });
     } catch (nextError) {
       if (sequence === loadSequence.current) {
@@ -539,7 +541,7 @@ export function DraftMediaManager({
     try {
       const liveVersions = targetGroup.versions.filter((version) => !version.is_deleted);
       for (const version of liveVersions) {
-        await manageAgentMediaVersion(draft.id, version.id, "hide");
+        await manageMediaVersion(draft.id, version.id, "hide");
       }
       setConfirmAction(null);
       await loadMedia(false);
@@ -562,8 +564,8 @@ export function DraftMediaManager({
       const target = group.versions.find((version) => version.is_master)
         ?? group.versions.find((version) => !version.is_deleted)
         ?? group.versions[0];
-      if (target.is_deleted) await manageAgentMediaVersion(draft.id, target.id, "restore");
-      await manageAgentMediaVersion(draft.id, target.id, "promote");
+      if (target.is_deleted) await manageMediaVersion(draft.id, target.id, "restore");
+      await manageMediaVersion(draft.id, target.id, "promote");
       setFilter("gallery");
       await loadMedia(false);
       await notifyChanged();
@@ -678,7 +680,7 @@ export function DraftMediaManager({
     setError(null);
     setErrorCanRetryLoad(false);
     try {
-      await manageAgentMediaVersion(draft.id, versionCandidate.uploadId, versionCandidate.action);
+      await manageMediaVersion(draft.id, versionCandidate.uploadId, versionCandidate.action);
       setVersionCandidate(null);
       await loadMedia(false);
       await notifyChanged();
@@ -705,20 +707,20 @@ export function DraftMediaManager({
     try {
       let createdUploadId: number | null = null;
       if (kind === "enhance") {
-        await editReaiDraftImage(draft.id, uploadId, {
+        await editDraftImage(draft.id, uploadId, {
           auto_enhance: true,
           auto_white_balance: true,
           normalize_color_profile: true,
         });
       } else if (kind === "cleanplate") {
-        const result = await cleanplateReaiDraftImages(draft.id, {
+        const result = await cleanplateDraftImages(draft.id, {
           scope: "selected",
           upload_ids: [uploadId],
         });
         const created = result.results.find((item) => item.status === "completed");
         createdUploadId = created?.generated_upload_id ?? created?.cleaned_upload_id ?? null;
       } else {
-        const result = await generateReaiDraftImageHdr(draft.id, uploadId);
+        const result = await generateDraftImageHdr(draft.id, uploadId);
         createdUploadId = result.result.generated_upload_id ?? result.result.cleaned_upload_id ?? null;
       }
 
@@ -827,7 +829,9 @@ export function DraftMediaManager({
           ) : versionActionsAvailable === false ? (
             <div className="rounded-[1.5rem] border border-dashed border-border/70 bg-card px-6 py-14 text-center sm:rounded-2xl">
               <VersionsIcon size={23} className="mx-auto text-foreground/25" />
-              <p className="mx-auto mt-3 max-w-sm text-[12px] font-semibold leading-relaxed">{t("draft.versions.agentRequired", lang)}</p>
+              <Button type="button" variant="outline" size="sm" className="mt-4" onClick={() => void loadMedia(false)}>
+                {t("common.tryAgain", lang)}
+              </Button>
             </div>
           ) : orderedVersionGroups.length === 0 ? (
             <div className="rounded-[1.5rem] border border-dashed border-border/70 bg-card px-6 py-14 text-center sm:rounded-2xl">

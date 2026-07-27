@@ -1462,7 +1462,7 @@ export async function applyReaiMediaAction(
   return result;
 }
 
-export interface AgentMediaVersion {
+export interface MediaVersion {
   id: number;
   logical_asset_id: string;
   version: number;
@@ -1480,10 +1480,15 @@ export interface AgentMediaVersion {
   authenticity_boundary: boolean;
 }
 
-export interface AgentMediaVersionGroup {
+export interface MediaVersionGroup {
   logical_asset_id: string;
-  versions: AgentMediaVersion[];
+  versions: MediaVersion[];
 }
+
+// Compatibility names for the Agent conversation UI. Product media controls
+// use the neutral types and owner-scoped regular-tool endpoints below.
+export type AgentMediaVersion = MediaVersion;
+export type AgentMediaVersionGroup = MediaVersionGroup;
 
 export async function getAgentMediaVersions(
   draftId: number,
@@ -1498,6 +1503,26 @@ export async function manageAgentMediaVersion(
 ): Promise<{ action: string; draft_id: number; version: AgentMediaVersion; physical_delete: false }> {
   const result = await request(
     `/api/reaigen/reai-agent/workspace/drafts/${draftId}/media-versions/${uploadId}/action/`,
+    { method: "POST", body: JSON.stringify({ action, confirmed: true }) },
+  );
+  cache.delete(`/api/reaigen/drafts/${draftId}/`);
+  inFlight.delete(`/api/reaigen/drafts/${draftId}/`);
+  return result;
+}
+
+export async function getMediaVersions(
+  draftId: number,
+): Promise<{ draft_id: number; groups: MediaVersionGroup[]; physical_delete_available: false }> {
+  return request(`/api/reaigen/tools/drafts/${draftId}/media-versions/`);
+}
+
+export async function manageMediaVersion(
+  draftId: number,
+  uploadId: number,
+  action: "promote" | "hide" | "restore",
+): Promise<{ action: string; draft_id: number; version: MediaVersion; physical_delete: false }> {
+  const result = await request(
+    `/api/reaigen/tools/drafts/${draftId}/media-versions/${uploadId}/action/`,
     { method: "POST", body: JSON.stringify({ action, confirmed: true }) },
   );
   cache.delete(`/api/reaigen/drafts/${draftId}/`);
@@ -1634,7 +1659,7 @@ function invalidateReaiDraft(draftId: number) {
   inFlight.delete(`/api/reaigen/drafts/${draftId}/`);
 }
 
-export async function analyzeReaiDraftImage(
+export async function analyzeDraftImage(
   draftId: number,
   uploadId: number,
   improvementConversationId: string | null = null,
@@ -1645,7 +1670,7 @@ export async function analyzeReaiDraftImage(
   raw_image_sent_to_language_model: false;
 }> {
   const result = await request(
-    `/api/reaigen/reai-agent/drafts/${draftId}/images/${uploadId}/insights/`,
+    `/api/reaigen/tools/drafts/${draftId}/images/${uploadId}/insights/`,
     {
       method: "POST",
       body: JSON.stringify({
@@ -1658,7 +1683,7 @@ export async function analyzeReaiDraftImage(
   return result;
 }
 
-export async function editReaiDraftImage(
+export async function editDraftImage(
   draftId: number,
   uploadId: number,
   operations: ReaiImageEditOperations,
@@ -1670,7 +1695,7 @@ export async function editReaiDraftImage(
   requires_version_review: true;
 }> {
   const result = await request(
-    `/api/reaigen/reai-agent/drafts/${draftId}/images/${uploadId}/edit/`,
+    `/api/reaigen/tools/drafts/${draftId}/images/${uploadId}/edit/`,
     {
       method: "POST",
       body: JSON.stringify({
@@ -1684,7 +1709,7 @@ export async function editReaiDraftImage(
   return result;
 }
 
-export async function editReaiDraftImages(
+export async function editDraftImages(
   draftId: number,
   selection: ReaiImageSelection,
   operations: ReaiImageEditOperations,
@@ -1699,7 +1724,7 @@ export async function editReaiDraftImages(
   raw_image_sent_to_language_model: false;
   requires_version_review: true;
 }> {
-  const result = await request(`/api/reaigen/reai-agent/drafts/${draftId}/images/edit-batch/`, {
+  const result = await request(`/api/reaigen/tools/drafts/${draftId}/images/edit-batch/`, {
     method: "POST",
     body: JSON.stringify({
       ...selection,
@@ -1712,7 +1737,7 @@ export async function editReaiDraftImages(
   return result;
 }
 
-export async function retouchReaiDraftImage(
+export async function retouchDraftImage(
   draftId: number,
   uploadId: number,
   target: ReaiRetouchTarget,
@@ -1726,7 +1751,7 @@ export async function retouchReaiDraftImage(
   raw_user_instruction_forwarded: false;
   requires_version_review: true;
 }> {
-  const result = await request(`/api/reaigen/reai-agent/drafts/${draftId}/images/retouch/`, {
+  const result = await request(`/api/reaigen/tools/drafts/${draftId}/images/retouch/`, {
     method: "POST",
     body: JSON.stringify({
       scope: "selected",
@@ -1740,7 +1765,7 @@ export async function retouchReaiDraftImage(
   return result;
 }
 
-export async function cleanplateReaiDraftImages(
+export async function cleanplateDraftImages(
   draftId: number,
   selection: ReaiImageSelection,
   improvementConversationId: string | null = null,
@@ -1755,7 +1780,7 @@ export async function cleanplateReaiDraftImages(
   raw_image_sent_to_language_model: false;
   requires_version_review: true;
 }> {
-  const result = await request(`/api/reaigen/reai-agent/drafts/${draftId}/images/cleanplate/`, {
+  const result = await request(`/api/reaigen/tools/drafts/${draftId}/images/cleanplate/`, {
     method: "POST",
     body: JSON.stringify({
       ...selection,
@@ -1767,7 +1792,7 @@ export async function cleanplateReaiDraftImages(
   return result;
 }
 
-export async function generateReaiDraftImageHdr(
+export async function generateDraftImageHdr(
   draftId: number,
   uploadId: number,
   improvementConversationId: string | null = null,
@@ -1779,7 +1804,7 @@ export async function generateReaiDraftImageHdr(
   execution_mode: "cloud_image_edit";
   requires_version_review: true;
 }> {
-  const result = await request(`/api/reaigen/reai-agent/drafts/${draftId}/images/hdr/`, {
+  const result = await request(`/api/reaigen/tools/drafts/${draftId}/images/hdr/`, {
     method: "POST",
     body: JSON.stringify({
       scope: "selected",
@@ -1792,7 +1817,7 @@ export async function generateReaiDraftImageHdr(
   return result;
 }
 
-export async function organizeReaiDraftImages(
+export async function organizeDraftImages(
   draftId: number,
   improvementConversationId: string | null = null,
 ): Promise<{
@@ -1802,7 +1827,7 @@ export async function organizeReaiDraftImages(
   status: "completed";
   execution_mode: "deterministic";
 }> {
-  const result = await request(`/api/reaigen/reai-agent/drafts/${draftId}/images/organize/`, {
+  const result = await request(`/api/reaigen/tools/drafts/${draftId}/images/organize/`, {
     method: "POST",
     body: JSON.stringify({
       confirmed: true,
@@ -1813,7 +1838,7 @@ export async function organizeReaiDraftImages(
   return result;
 }
 
-export async function generateReaiDraftVideo(
+export async function generateDraftVideoFromImage(
   draftId: number,
   sourceUploadId: number,
   motion: "slow_push" | "slow_pull_back" | "pan_left" | "pan_right" = "slow_push",
@@ -1826,7 +1851,7 @@ export async function generateReaiDraftVideo(
   status: "pending";
   execution_mode: "runpod_async";
 }> {
-  const result = await request(`/api/reaigen/reai-agent/drafts/${draftId}/videos/generate/`, {
+  const result = await request(`/api/reaigen/tools/drafts/${draftId}/videos/generate/`, {
     method: "POST",
     body: JSON.stringify({
       source_upload_id: sourceUploadId,

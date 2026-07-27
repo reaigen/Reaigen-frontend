@@ -6,18 +6,18 @@ import Link from "next/link";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "../lib/ui/tabs";
 import { Button } from "../lib/ui/button";
 import {
-  cleanplateReaiDraftImages,
-  editReaiDraftImage,
-  generateReaiDraftImageHdr,
+  cleanplateDraftImages,
+  editDraftImage,
+  generateDraftImageHdr,
   getAgentCreationHistory,
-  getAgentMediaVersions,
+  getMediaVersions,
   getReaiAgentConsent,
-  manageAgentMediaVersion,
+  manageMediaVersion,
   restoreAgentCreationRevision,
   setActiveSplat,
   type AgentCreationRevision,
-  type AgentMediaVersion,
-  type AgentMediaVersionGroup,
+  type MediaVersion,
+  type MediaVersionGroup,
 } from "../lib/api/client";
 import { getSafeApiErrorMessage } from "../lib/api/error-message";
 import { formatDate, t, type LocaleKey } from "../lib/i18n";
@@ -164,7 +164,7 @@ function revisionValue(
   return String(value).replace(/_/g, " ");
 }
 
-function mediaProcessorLabel(version: AgentMediaVersion, lang: string) {
+function mediaProcessorLabel(version: MediaVersion, lang: string) {
   const processor = version.processor.trim().toLowerCase();
   if (!processor || processor === "original") return t("reai.mediaOriginal", lang);
   if (processor.includes("cleanplate")) return t("reai.mediaProcessor.cleanplate", lang);
@@ -174,7 +174,7 @@ function mediaProcessorLabel(version: AgentMediaVersion, lang: string) {
   return humanize(version.processor);
 }
 
-function mediaOperationLabels(version: AgentMediaVersion, lang: string) {
+function mediaOperationLabels(version: MediaVersion, lang: string) {
   return Object.entries(version.operations ?? {})
     .filter(([, value]) => value !== false && value != null)
     .slice(0, 3)
@@ -249,11 +249,12 @@ export function DraftVersionManager({
   const [activeTab, setActiveTab] = React.useState<VersionTab>("tour");
   const [agentEnabled, setAgentEnabled] = React.useState<boolean | null>(null);
   const [history, setHistory] = React.useState<AgentCreationRevision[]>([]);
-  const [media, setMedia] = React.useState<AgentMediaVersionGroup[]>([]);
+  const [media, setMedia] = React.useState<MediaVersionGroup[]>([]);
   const [selectedMedia, setSelectedMedia] = React.useState<Record<string, number>>({});
   const [expandedRevision, setExpandedRevision] = React.useState<number | null>(null);
-  const [loadingAgentData, setLoadingAgentData] = React.useState(false);
-  const [agentDataError, setAgentDataError] = React.useState<string | null>(null);
+  const [loadingVersionData, setLoadingVersionData] = React.useState(false);
+  const [historyDataError, setHistoryDataError] = React.useState<string | null>(null);
+  const [mediaDataError, setMediaDataError] = React.useState<string | null>(null);
   const [actionError, setActionError] = React.useState<string | null>(null);
   const [tourCandidate, setTourCandidate] = React.useState<number | "auto" | null>(null);
   const [tourBusy, setTourBusy] = React.useState(false);
@@ -272,7 +273,7 @@ export function DraftVersionManager({
     [history],
   );
 
-  const applyMediaGroups = React.useCallback((groups: AgentMediaVersionGroup[]) => {
+  const applyMediaGroups = React.useCallback((groups: MediaVersionGroup[]) => {
     setMedia(groups);
     setSelectedMedia((current) => Object.fromEntries(groups.flatMap((group) => {
       const currentSelection = group.versions.find((version) => version.id === current[group.logical_asset_id]);
@@ -284,28 +285,42 @@ export function DraftVersionManager({
     })));
   }, []);
 
-  const loadAgentData = React.useCallback(async () => {
-    setLoadingAgentData(true);
-    setAgentDataError(null);
+  const loadVersionData = React.useCallback(async () => {
+    setLoadingVersionData(true);
+    setHistoryDataError(null);
+    setMediaDataError(null);
     try {
-      const consent = await getReaiAgentConsent();
-      setAgentEnabled(consent.consented);
-      if (!consent.consented) {
-        setHistory([]);
+      const [mediaResult, consentResult] = await Promise.allSettled([
+        getMediaVersions(draft.id),
+        getReaiAgentConsent(),
+      ]);
+      if (mediaResult.status === "fulfilled") {
+        applyMediaGroups(mediaResult.value.groups);
+      } else {
         applyMediaGroups([]);
+        setMediaDataError(getSafeApiErrorMessage(mediaResult.reason, lang));
+      }
+
+      if (consentResult.status === "rejected") {
+        setAgentEnabled(null);
+        setHistory([]);
+        setHistoryDataError(getSafeApiErrorMessage(consentResult.reason, lang));
         return;
       }
-      const [historyResult, mediaResult] = await Promise.all([
-        getAgentCreationHistory(draft.id),
-        getAgentMediaVersions(draft.id),
-      ]);
-      setHistory(historyResult.revisions);
-      applyMediaGroups(mediaResult.groups);
-    } catch (reason) {
-      setAgentEnabled(null);
-      setAgentDataError(getSafeApiErrorMessage(reason, lang));
+      setAgentEnabled(consentResult.value.consented);
+      if (!consentResult.value.consented) {
+        setHistory([]);
+        return;
+      }
+      try {
+        const historyResult = await getAgentCreationHistory(draft.id);
+        setHistory(historyResult.revisions);
+      } catch (reason) {
+        setHistory([]);
+        setHistoryDataError(getSafeApiErrorMessage(reason, lang));
+      }
     } finally {
-      setLoadingAgentData(false);
+      setLoadingVersionData(false);
     }
   }, [applyMediaGroups, draft.id, lang]);
 
@@ -318,8 +333,8 @@ export function DraftVersionManager({
     setMediaNotice(null);
     setExpandedRevision(null);
     setActionError(null);
-    void loadAgentData();
-  }, [open, loadAgentData]);
+    void loadVersionData();
+  }, [open, loadVersionData]);
 
   React.useEffect(() => {
     if (open) return;
@@ -354,7 +369,7 @@ export function DraftVersionManager({
       const result = await restoreAgentCreationRevision(draft.id, revisionId);
       onDraftRestored(result.draft);
       setRestoreCandidate(null);
-      await loadAgentData();
+      await loadVersionData();
     } catch (reason) {
       setActionError(getSafeApiErrorMessage(reason, lang));
     } finally {
@@ -367,8 +382,8 @@ export function DraftVersionManager({
     setMediaBusy(true);
     setActionError(null);
     try {
-      await manageAgentMediaVersion(draft.id, mediaCandidate.uploadId, mediaCandidate.action);
-      const result = await getAgentMediaVersions(draft.id);
+      await manageMediaVersion(draft.id, mediaCandidate.uploadId, mediaCandidate.action);
+      const result = await getMediaVersions(draft.id);
       applyMediaGroups(result.groups);
       setMediaCandidate(null);
     } catch (reason) {
@@ -392,25 +407,25 @@ export function DraftVersionManager({
     try {
       let createdUploadId: number | null = null;
       if (kind === "enhance") {
-        await editReaiDraftImage(draft.id, uploadId, {
+        await editDraftImage(draft.id, uploadId, {
           auto_enhance: true,
           auto_white_balance: true,
           normalize_color_profile: true,
         });
       } else if (kind === "cleanplate") {
-        const result = await cleanplateReaiDraftImages(draft.id, {
+        const result = await cleanplateDraftImages(draft.id, {
           scope: "selected",
           upload_ids: [uploadId],
         });
         const created = result.results.find((item) => item.status === "completed");
         createdUploadId = created?.generated_upload_id ?? created?.cleaned_upload_id ?? null;
       } else {
-        const result = await generateReaiDraftImageHdr(draft.id, uploadId);
+        const result = await generateDraftImageHdr(draft.id, uploadId);
         createdUploadId = result.result.generated_upload_id ?? result.result.cleaned_upload_id ?? null;
       }
 
       const refresh = async () => {
-        const result = await getAgentMediaVersions(draft.id);
+        const result = await getMediaVersions(draft.id);
         applyMediaGroups(result.groups);
       };
       await refresh();
@@ -429,9 +444,15 @@ export function DraftVersionManager({
     }
   };
 
-  const agentUnavailable = agentEnabled === false && !loadingAgentData;
-  const agentDataFailed = agentEnabled === null && Boolean(agentDataError) && !loadingAgentData;
-  const visibleError = actionError ?? (activeTab === "tour" ? null : agentDataError);
+  const agentUnavailable = agentEnabled === false && !loadingVersionData;
+  const historyDataFailed = Boolean(historyDataError) && !loadingVersionData;
+  const mediaDataFailed = Boolean(mediaDataError) && !loadingVersionData;
+  const visibleError = actionError
+    ?? (activeTab === "listing"
+      ? historyDataError
+      : activeTab === "media"
+        ? mediaDataError
+        : null);
 
   return (
     <SidePanel
@@ -455,7 +476,7 @@ export function DraftVersionManager({
         {visibleError ? (
           <div role="alert" className="mt-4 flex items-center justify-between gap-3 rounded-2xl border border-destructive/20 bg-destructive/[0.045] px-4 py-3 text-[12px] text-destructive">
             <p className="min-w-0 leading-relaxed">{visibleError}</p>
-            {agentDataFailed && activeTab !== "tour" ? <Button type="button" variant="outline" size="xs" className="shrink-0" onClick={() => void loadAgentData()}>{t("common.tryAgain", lang)}</Button> : null}
+            {(historyDataFailed || mediaDataFailed) && activeTab !== "tour" ? <Button type="button" variant="outline" size="xs" className="shrink-0" onClick={() => void loadVersionData()}>{t("common.tryAgain", lang)}</Button> : null}
           </div>
         ) : null}
 
@@ -549,9 +570,9 @@ export function DraftVersionManager({
         </TabsContent>
 
         <TabsContent value="listing" className="mt-3">
-          {loadingAgentData ? <Working lang={lang} /> : agentUnavailable ? (
+          {loadingVersionData ? <Working lang={lang} /> : agentUnavailable ? (
             <AgentRequired lang={lang} />
-          ) : agentDataFailed ? null : sortedHistory.length === 0 ? (
+          ) : historyDataFailed ? null : sortedHistory.length === 0 ? (
             <EmptyVersionState icon={VersionsIcon} title={t("draft.versions.noListingHistory", lang)} hint={t("reai.historyEmpty", lang)} />
           ) : (
             <>
@@ -660,9 +681,7 @@ export function DraftVersionManager({
         </TabsContent>
 
         <TabsContent value="media" className="mt-3">
-          {loadingAgentData ? <Working lang={lang} /> : agentUnavailable ? (
-            <AgentRequired lang={lang} />
-          ) : agentDataFailed ? null : media.length === 0 ? (
+          {loadingVersionData ? <Working lang={lang} /> : mediaDataFailed ? null : media.length === 0 ? (
             <EmptyVersionState icon={ImageIcon} title={t("draft.versions.noMediaVersions", lang)} hint={t("reai.mediaVersionsEmpty", lang)} />
           ) : (
             <>
@@ -771,7 +790,7 @@ export function MediaVersionCard({
   onConfirm,
   onCreate,
 }: {
-  group: AgentMediaVersionGroup;
+  group: MediaVersionGroup;
   groupIndex: number;
   selectedId: number | undefined;
   lang: string;
