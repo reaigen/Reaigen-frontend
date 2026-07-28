@@ -860,7 +860,7 @@ export async function acceptAppContentDocument(data: {
 
 // ─── Splat Viewer & Tour ──────────────────────────────────────────────────
 
-import type { SplatViewerPayload, SplatPackagePayload, SplatSceneResponse, SceneDeliveryResolution, SceneDeliverySummary, SceneDeliveryTargetProfile, SceneRefinementSummary, VirtualTourViewerPayload, CameraData, GlobalSceneTransform, UsdStageTransformEditResponse, TourViewerData, SplatListItem, ShareData, SharedDraftData, SplatsByDraftPayload, DraftListingItem, DraftDetailItem, DraftUpload } from "../tour-types";
+import type { SplatViewerPayload, SplatPackagePayload, SplatSceneResponse, SceneDeliveryResolution, SceneDeliverySummary, SceneDeliveryTargetProfile, SceneRefinementSummary, VirtualTourViewerPayload, CameraData, GlobalSceneTransform, UsdStageTransformEditResponse, TourViewerData, SplatListItem, ShareData, SharedDraftData, SplatsByDraftPayload, DraftListingItem, DraftDetailItem, DraftUpload, DraftTourAssetsPayload, DraftTourPublicationSelection } from "../tour-types";
 
 export async function listSplats(page = 1, pageSize = 20, search = ""): Promise<{ results: SplatListItem[]; count: number; next: string | null }> {
   const q = search ? `&search=${encodeURIComponent(search)}` : "";
@@ -2045,9 +2045,11 @@ export async function searchDrafts(query: string, signal?: AbortSignal): Promise
 
 export async function getSplatViewer(
   splatId: number,
-  options: { fresh?: boolean } = {},
+  options: { fresh?: boolean; tourId?: number } = {},
 ): Promise<SplatViewerPayload> {
-  const path = `/api/reaigen/splats/${splatId}/viewer/?targetProfile=web`;
+  const query = new URLSearchParams({ targetProfile: "web" });
+  if (options.tourId != null) query.set("tourId", String(options.tourId));
+  const path = `/api/reaigen/splats/${splatId}/viewer/?${query.toString()}`;
   if (options.fresh) {
     cache.delete(path);
     const data = await fetchGetData(path, { cache: "no-store" });
@@ -2211,6 +2213,57 @@ export async function getSplatsByDraft(draftId: number): Promise<SplatsByDraftPa
   return request(`/api/reaigen/splats/by-draft/${draftId}/?all=true`);
 }
 
+export async function getDraftTourAssets(draftId: number): Promise<DraftTourAssetsPayload> {
+  return request(`/api/reaigen/drafts/${draftId}/tours/`);
+}
+
+export async function reserveDraftTourAsset(
+  draftId: number,
+  data: {
+    asset_id: string;
+    name?: string;
+    capture_reason: "initial" | "renovation" | "rescan" | "imported" | "other";
+    renovation_of_id?: number | null;
+  },
+): Promise<DraftTourAssetsPayload & {
+  reserved_tour_id: number;
+  reserved_asset_id: string;
+  created: boolean;
+}> {
+  return request(`/api/reaigen/drafts/${draftId}/tours/`, {
+    method: "POST",
+    body: JSON.stringify(data),
+  });
+}
+
+export async function updateDraftTourPublication(
+  draftId: number,
+  entries: DraftTourPublicationSelection[],
+  applyToActiveShares = true,
+): Promise<DraftTourAssetsPayload & {
+  publication_created: boolean;
+  active_shares_updated: boolean;
+}> {
+  return request(`/api/reaigen/drafts/${draftId}/tours/`, {
+    method: "PUT",
+    body: JSON.stringify({
+      entries,
+      apply_to_active_shares: applyToActiveShares,
+    }),
+  });
+}
+
+export async function renameDraftTourAsset(
+  draftId: number,
+  tourId: number,
+  name: string,
+): Promise<DraftTourAssetsPayload> {
+  return request(`/api/reaigen/drafts/${draftId}/tours/`, {
+    method: "PATCH",
+    body: JSON.stringify({ tour_id: tourId, name }),
+  });
+}
+
 export async function setActiveSplat(
   draftId: number,
   splatId: number | null,
@@ -2307,8 +2360,9 @@ export async function authorUsdSceneTransformOperation(
   });
 }
 
-export async function getSharedTourViewer(token: string): Promise<TourViewerData> {
-  return request(`/api/reaigen/shared/${encodeURIComponent(token)}/tour-viewer/`);
+export async function getSharedTourViewer(token: string, tourId?: number): Promise<TourViewerData> {
+  const query = tourId == null ? "" : `?tour_id=${encodeURIComponent(tourId)}`;
+  return request(`/api/reaigen/shared/${encodeURIComponent(token)}/tour-viewer/${query}`);
 }
 
 export async function getSharedDraftData(token: string): Promise<SharedDraftData | null> {
@@ -2368,6 +2422,21 @@ export async function getSharedDraftData(token: string): Promise<SharedDraftData
       value: (e.data_value ?? e.value ?? "") as string,
     }))
     .filter((e: { key: string }) => e.key);
+  const tours = (Array.isArray(raw.tours) ? raw.tours : [])
+    .map((tour: Record<string, unknown>) => ({
+      tour_id: Number(tour.tour_id),
+      tour_asset_id: String(tour.tour_asset_id ?? ""),
+      name: String(tour.name ?? ""),
+      capture_reason: String(tour.capture_reason ?? "other"),
+      captured_at: String(tour.captured_at ?? ""),
+      is_primary: tour.is_primary === true,
+      sort_order: Number(tour.sort_order ?? 0),
+      targets: (Array.isArray(tour.targets) ? tour.targets : [])
+        .filter((target): target is "web" | "ios" => target === "web" || target === "ios"),
+    }))
+    .filter((tour: { tour_id: number }) => (
+      Number.isInteger(tour.tour_id) && tour.tour_id > 0
+    ));
   return {
     title: raw.title,
     description: raw.description,
@@ -2387,6 +2456,7 @@ export async function getSharedDraftData(token: string): Promise<SharedDraftData
     uploads,
     data: data.length ? data : undefined,
     floorplan: raw.floorplan ?? null,
+    tours,
   };
 }
 

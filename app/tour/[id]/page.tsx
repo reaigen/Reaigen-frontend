@@ -74,9 +74,18 @@ async function fetchJsonAsset(url: string | undefined): Promise<unknown> {
   }
 }
 
-export default function TourPage({ params }: { params: Promise<{ id: string }> }) {
+export default function TourPage({
+  params,
+  searchParams,
+}: {
+  params: Promise<{ id: string }>;
+  searchParams: Promise<{ tourId?: string | string[] }>;
+}) {
   const { id } = use(params);
+  const query = use(searchParams);
   const splatId = parseInt(id, 10);
+  const rawTourId = Array.isArray(query.tourId) ? query.tourId[0] : query.tourId;
+  const requestedTourId = rawTourId ? parseInt(rawTourId, 10) : undefined;
   const { isAuthenticated, isLoading, user } = useAuth();
   const router = useRouter();
   const lang = getUserLanguage(user?.localization);
@@ -143,8 +152,11 @@ export default function TourPage({ params }: { params: Promise<{ id: string }> }
 
   useEffect(() => {
     if (!isAuthenticated || isNaN(splatId)) return;
-    getSplatViewer(splatId)
+    getSplatViewer(splatId, {
+      tourId: Number.isFinite(requestedTourId) ? requestedTourId : undefined,
+    })
       .then(async (data) => {
+        if (Number.isFinite(requestedTourId)) return data;
         if (!data.draft_id) return data;
 
         try {
@@ -174,7 +186,7 @@ export default function TourPage({ params }: { params: Promise<{ id: string }> }
           setError(t("tour.error.loadFailed", lang));
         }
       });
-  }, [isAuthenticated, splatId, router, lang, retryCount]);
+  }, [isAuthenticated, splatId, requestedTourId, router, lang, retryCount]);
 
   useEffect(() => {
     if (!isAuthenticated || !viewer?.draft_id) return;
@@ -302,7 +314,10 @@ export default function TourPage({ params }: { params: Promise<{ id: string }> }
       // Scene deliveries can be promoted while the tour page remains open.
       // Revalidate before editing so the controls always represent the
       // current immutable USD revision instead of a stale mounted payload.
-      const current = await getSplatViewer(resolvedSplatId, { fresh: true });
+      const current = await getSplatViewer(resolvedSplatId, {
+        fresh: true,
+        tourId: Number.isFinite(requestedTourId) ? requestedTourId : undefined,
+      });
       const transform = composedRootTransformFromScene(current.scene_description);
       setGlobalSceneTransform(transform);
       setSavedGlobalSceneTransform(cloneGlobalSceneTransform(transform));
@@ -312,7 +327,7 @@ export default function TourPage({ params }: { params: Promise<{ id: string }> }
       // The already loaded delivery remains usable when revalidation is
       // temporarily unavailable.
     }
-  }, [resolvedSplatId]);
+  }, [requestedTourId, resolvedSplatId]);
 
   if (isLoading || (!viewer && !error)) {
     return <PageLoading />;

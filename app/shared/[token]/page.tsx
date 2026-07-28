@@ -134,10 +134,16 @@ export default function SharedPage({ params }: { params: Promise<{ token: string
   const [viewerReady, setViewerReady] = useState(false);
   const [tourPanel, setTourPanel] = useState<"property" | "floorplan" | null>(null);
   const [roomKitCage, setRoomKitCage] = useState<RoomKitCageWall[]>([]);
+  const [switchingTourId, setSwitchingTourId] = useState<number | null>(null);
+  const [tourSwitchError, setTourSwitchError] = useState<string | null>(null);
   const splatRef = useRef<SplatViewerHandle | null>(null);
   const globalSceneTransform = useMemo(
     () => composedRootTransformFromScene(tourViewerData?.scene_description),
     [tourViewerData?.scene_description],
+  );
+  const availableTours = useMemo(
+    () => tourViewerData?.available_tours ?? draftData?.tours ?? [],
+    [draftData?.tours, tourViewerData?.available_tours],
   );
 
   useEffect(() => {
@@ -161,16 +167,36 @@ export default function SharedPage({ params }: { params: Promise<{ token: string
     return () => { cancelled = true; };
   }, [tourViewerData?.collision_geometry?.url]);
 
-  // ── Load both draft data and tour data in parallel ────────────────
+  // ── Load draft, then tour under one counted share visit ───────────
 
   const loadContent = useCallback(async () => {
     setError(null);
     setErrorKind(null);
     setLoading(true);
 
-    // Load draft data and tour data in parallel
-    const [draftResult, tourResult] = await Promise.allSettled([
+    // The first response establishes the backend share session through the
+    // same-origin proxy. Loading the tour afterwards keeps one visible page
+    // visit from consuming two max-view slots.
+    const [draftResult] = await Promise.allSettled([
       getSharedDraftData(token),
+    ]);
+
+    const draftGate = draftResult.status === "rejected"
+      ? getApiErrorJson(draftResult.reason)
+      : null;
+    if (draftGate?.requires_pin) {
+      setRequiresPin(true);
+      setLoading(false);
+      return;
+    }
+    if (draftGate?.requires_auth) {
+      setErrorKind("auth");
+      setError(t("shared.error.signInRequired", lang));
+      setLoading(false);
+      return;
+    }
+
+    const [tourResult] = await Promise.allSettled([
       getSharedTourViewer(token),
     ]);
 
@@ -290,6 +316,30 @@ export default function SharedPage({ params }: { params: Promise<{ token: string
     }
   }, [tourMeta]);
 
+  const handleOpenTour = useCallback(async (tourId?: number) => {
+    setTourSwitchError(null);
+    if (tourId == null || tourViewerData?.tour_id === tourId) {
+      setTourOpen(true);
+      return;
+    }
+    setSwitchingTourId(tourId);
+    try {
+      const next = await getSharedTourViewer(token, tourId);
+      setTourViewerData(next);
+      setTourMeta(null);
+      setShotIdx(0);
+      setActiveRoomId(null);
+      setTourPanel(null);
+      setTourOpen(true);
+    } catch (reason) {
+      setTourSwitchError(
+        getSafeApiErrorMessage(reason, lang, "shared.error.loadFailed"),
+      );
+    } finally {
+      setSwitchingTourId(null);
+    }
+  }, [lang, token, tourViewerData?.tour_id]);
+
   // ── Render ────────────────────────────────────────────────────────
 
   // PIN gate
@@ -372,8 +422,32 @@ export default function SharedPage({ params }: { params: Promise<{ token: string
   return (
     <>
       {draftData && (
-        <SharedDraftView draftData={draftData} lang={lang} hasTour={hasTour} onOpenTour={() => setTourOpen(true)} floorplanUrl={tourViewerData?.floorplan_url} rooms={tourViewerData?.rooms} units={unitCatalog} />
+        <SharedDraftView
+          draftData={draftData}
+          lang={lang}
+          hasTour={hasTour}
+          tours={availableTours}
+          onOpenTour={(tourId) => { void handleOpenTour(tourId); }}
+          floorplanUrl={tourViewerData?.floorplan_url}
+          rooms={tourViewerData?.rooms}
+          units={unitCatalog}
+        />
       )}
+      {tourSwitchError && !tourOpen ? (
+        <div
+          role="alert"
+          className="fixed bottom-[calc(1rem+env(safe-area-inset-bottom,0px))] left-1/2 z-50 flex w-[min(28rem,calc(100vw-2rem))] -translate-x-1/2 items-center gap-3 rounded-2xl border border-red-500/20 bg-background/95 px-4 py-3 text-[12px] text-foreground shadow-xl backdrop-blur"
+        >
+          <span className="min-w-0 flex-1">{tourSwitchError}</span>
+          <button
+            type="button"
+            onClick={() => setTourSwitchError(null)}
+            className="shrink-0 text-[11px] font-semibold text-foreground/55"
+          >
+            {lang.toLowerCase().startsWith("sk") ? "Zavrieť" : "Close"}
+          </button>
+        </div>
+      ) : null}
 
       {tourOpen && tourViewerData && (
         <div className="fixed inset-0 z-[9999] bg-white">
@@ -417,6 +491,33 @@ export default function SharedPage({ params }: { params: Promise<{ token: string
         <div className="absolute right-3 top-[calc(0.75rem+env(safe-area-inset-top,0px))] z-20 animate-fade-in sm:right-4 sm:top-[calc(1rem+env(safe-area-inset-top,0px))]">
           <span className="floating-status flex items-center bg-black/20 text-[13px] text-white/50 backdrop-blur-sm" style={{ fontFamily: "var(--font-brand), ui-serif, Georgia, serif", fontWeight: 400 }}>Reaigen</span>
         </div>
+
+        {availableTours.length > 1 && (
+          <div className="absolute left-1/2 top-[calc(0.75rem+env(safe-area-inset-top,0px))] z-20 w-[min(15rem,calc(100vw-11rem))] -translate-x-1/2 sm:top-[calc(1rem+env(safe-area-inset-top,0px))]">
+            <label className="sr-only" htmlFor="shared-tour-version">Virtual tour</label>
+            <select
+              id="shared-tour-version"
+              value={tourViewerData.tour_id ?? ""}
+              disabled={switchingTourId != null}
+              onChange={(event) => {
+                const nextTourId = Number(event.target.value);
+                if (Number.isInteger(nextTourId)) void handleOpenTour(nextTourId);
+              }}
+              className="floating-control h-10 w-full appearance-none truncate border border-white/15 bg-black/40 px-3 text-center text-[11px] font-semibold text-white/90 outline-none backdrop-blur-xl focus-visible:ring-2 focus-visible:ring-white/70 disabled:opacity-60"
+            >
+              {availableTours.map((tour) => (
+                <option key={tour.tour_id} value={tour.tour_id} className="bg-neutral-900 text-white">
+                  {tour.name}
+                </option>
+              ))}
+            </select>
+            {tourSwitchError ? (
+              <p role="alert" className="mt-1 rounded-lg bg-red-950/80 px-2 py-1 text-center text-[10px] text-white">
+                {tourSwitchError}
+              </p>
+            ) : null}
+          </div>
+        )}
 
         {tourMeta && (
           <TourControls shots={tourMeta.shots} currentIdx={shotIdx} onGoToShot={(i) => splatRef.current?.goToShot(i)} onPrev={() => splatRef.current?.goToPrev()} onNext={() => splatRef.current?.goToNext()} lang={lang} />

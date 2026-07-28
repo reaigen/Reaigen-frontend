@@ -11,6 +11,8 @@ import { fetchBackend } from "../../../lib/server/backend-fetch";
 const BACKEND_URL =
   process.env.REAIGEN_BACKEND_URL ?? "http://localhost:8000";
 const SHARE_PIN_COOKIE_PREFIX = "reaigen_share_pin_";
+const SHARE_SESSION_COOKIE_PREFIX = "reaigen_share_session_";
+const DJANGO_SESSION_COOKIE_NAME = "sessionid";
 const SHARE_PIN_COOKIE_MAX_AGE = 60 * 60 * 12; // 12 hours
 
 function backendCandidates(): string[] {
@@ -63,6 +65,10 @@ function sharePinCookieName(token: string): string {
   return `${SHARE_PIN_COOKIE_PREFIX}${createHash("sha256").update(token).digest("hex").slice(0, 24)}`;
 }
 
+function shareSessionCookieName(token: string): string {
+  return `${SHARE_SESSION_COOKIE_PREFIX}${createHash("sha256").update(token).digest("hex").slice(0, 24)}`;
+}
+
 function sharePinCookieOptions(token: string) {
   return {
     httpOnly: true,
@@ -71,6 +77,40 @@ function sharePinCookieOptions(token: string) {
     path: `/api/reaigen/shared/${encodeURIComponent(token)}/`,
     maxAge: SHARE_PIN_COOKIE_MAX_AGE,
   };
+}
+
+function shareSessionCookieOptions(token: string) {
+  return {
+    httpOnly: true,
+    sameSite: "lax" as const,
+    secure: process.env.NODE_ENV === "production",
+    path: `/api/reaigen/shared/${encodeURIComponent(token)}/`,
+    maxAge: SHARE_PIN_COOKIE_MAX_AGE,
+  };
+}
+
+function backendSessionCookieValue(response: Response): string | null {
+  const setCookie = response.headers.get("set-cookie");
+  if (!setCookie) return null;
+  const match = setCookie.match(
+    new RegExp(`(?:^|[,;]\\s*)${DJANGO_SESSION_COOKIE_NAME}=([^;,\\s]+)`),
+  );
+  return match?.[1] ?? null;
+}
+
+function preserveSharedVisitSession(
+  response: NextResponse,
+  backendResponse: Response,
+  token: string | null,
+): void {
+  if (!token) return;
+  const sessionValue = backendSessionCookieValue(backendResponse);
+  if (!sessionValue) return;
+  response.cookies.set(
+    shareSessionCookieName(token),
+    sessionValue,
+    shareSessionCookieOptions(token),
+  );
 }
 
 function getSharedTokenForPath(joined: string, suffix: string): string | null {
@@ -167,6 +207,14 @@ async function proxy(
   const ct = req.headers.get("Content-Type");
   if (ct) headers["Content-Type"] = ct;
   if (accessToken) headers["Authorization"] = `Bearer ${accessToken}`;
+  if (sharedContentToken) {
+    const sharedSession = req.cookies.get(
+      shareSessionCookieName(sharedContentToken),
+    )?.value;
+    if (sharedSession) {
+      headers.Cookie = `${DJANGO_SESSION_COOKIE_NAME}=${sharedSession}`;
+    }
+  }
 
   const init: RequestInit = { method: req.method, headers };
   if (req.method !== "GET" && req.method !== "HEAD") {
@@ -192,6 +240,11 @@ async function proxy(
             status: res.status,
             headers: noStoreHeaders(contentType),
           });
+          preserveSharedVisitSession(
+            response,
+            res,
+            sharedContentToken,
+          );
           setAuthCookies(response, { access: newAccess }, refreshToken);
           return response;
         } else {
@@ -211,6 +264,11 @@ async function proxy(
         status: res.status,
         headers: useCache ? cacheableHeaders(contentType) : noStoreHeaders(contentType),
       });
+      preserveSharedVisitSession(
+        response,
+        res,
+        sharedContentToken,
+      );
 
       const verifiedShareToken = getSharedTokenForPath(joined, "verify-pin");
       if (res.ok && verifiedShareToken && contentType.includes("application/json")) {

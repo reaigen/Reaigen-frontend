@@ -21,6 +21,7 @@ import { cn } from "../../lib/utils";
 import { DraftEditor } from "../../components/draft-editor";
 import { DraftVersionManager } from "../../components/draft-version-manager";
 import { DraftMediaManager } from "../../components/draft-media-manager";
+import { DraftTourAssetsPanel } from "../../components/draft-tour-assets-panel";
 import {
   ArrowLeftIcon,
   DocumentIcon,
@@ -873,6 +874,14 @@ export default function DraftPreviewPage({ params }: { params: Promise<{ id: str
             </div>
           </section>
         </div>
+
+        <DraftTourAssetsPanel
+          draftId={draftId}
+          lang={lang}
+          onPrimaryChanged={(activeSplatId) => setSplatData((current) => (
+            current ? { ...current, parent_splat_id: activeSplatId } : current
+          ))}
+        />
 
         {(hasNarrative || hasSupportingDetails) && (
           <div className="mt-8 space-y-7 lg:mt-10">

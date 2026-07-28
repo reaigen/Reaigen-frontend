@@ -389,6 +389,11 @@ export interface DeliveryVersionSummary {
 
 export interface VirtualTourViewerPayload {
   tour_id: number;
+  tour_asset_id?: string;
+  tour_name?: string;
+  capture_reason?: string;
+  captured_at?: string;
+  renovation_of_asset_id?: string | null;
   draft_id: number;
   status: string;
   product_publication_status: string;
@@ -544,6 +549,99 @@ export interface SharedDraftData {
   uploads?: { url: string; name?: string; mime_type?: string }[];
   data?: { key: string; value: string }[];
   floorplan?: SharedFloorplanPayload | null;
+  tours?: SharedTourSummary[];
+}
+
+export interface SharedTourSummary {
+  tour_id: number;
+  tour_asset_id: string;
+  name: string;
+  capture_reason: string;
+  captured_at: string;
+  is_primary: boolean;
+  sort_order: number;
+  targets: Array<"web" | "ios">;
+}
+
+export interface DraftTourAssetDeliveryVersion {
+  id: number;
+  version: number;
+  publication_status: string;
+  is_published: boolean;
+  usd_stage_sha256?: string | null;
+}
+
+export interface DraftTourAssetPublicationState {
+  visible: boolean;
+  is_primary: boolean;
+  sort_order: number | null;
+  targets: Array<"web" | "ios">;
+}
+
+export interface DraftTourAsset {
+  id: number;
+  asset_id: string;
+  draft_id: number;
+  name: string;
+  capture_reason: "initial" | "renovation" | "rescan" | "imported" | "other";
+  captured_at: string;
+  renovation_of_id: number | null;
+  renovation_of_asset_id: string | null;
+  source_splat_id: number | null;
+  source_scan_bundle_id: number | null;
+  status: string;
+  is_product_published: boolean;
+  latest_delivery_version: DraftTourAssetDeliveryVersion | null;
+  publication: DraftTourAssetPublicationState;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface DraftTourPublicationEntry {
+  tour_id: number;
+  tour_asset_id: string;
+  display_name: string;
+  tour_delivery_version_id: number;
+  tour_delivery_version: number;
+  source_splat_id: number;
+  is_primary: boolean;
+  sort_order: number;
+  targets: Array<"web" | "ios">;
+  target_deliveries: Partial<Record<"web" | "ios", {
+    id: number;
+    version: number;
+    status: string;
+    usd_stage_sha256: string;
+  }>>;
+}
+
+export interface DraftTourPublication {
+  id: number;
+  revision: number;
+  manifest_sha256: string;
+  usd: {
+    root_layer: string;
+    stage_sha256: string;
+    validation: { valid: boolean; errors?: string[] };
+    layer_endpoint: string;
+  };
+  entries: DraftTourPublicationEntry[];
+  created_at: string;
+}
+
+export interface DraftTourAssetsPayload {
+  schema: "com.reaigen.draft-tour-assets";
+  version: 1;
+  draft_id: number;
+  assets: DraftTourAsset[];
+  publication: DraftTourPublication | null;
+}
+
+export interface DraftTourPublicationSelection {
+  tour_id: number;
+  targets: Array<"web" | "ios">;
+  is_primary: boolean;
+  sort_order: number;
 }
 
 export interface TourViewerData {
@@ -571,6 +669,16 @@ export interface TourViewerData {
   room_splats: RoomSplatData[];
   cameras: CameraData | null;
   draft_data?: SharedDraftData | null;
+  tour_id?: number;
+  tour_asset_id?: string;
+  tour_name?: string;
+  tour_publication?: {
+    id: number;
+    revision: number;
+    manifest_sha256: string;
+    usd_stage_sha256: string;
+  };
+  available_tours?: SharedTourSummary[];
 }
 
 export interface ShareFieldData {

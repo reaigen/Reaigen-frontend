@@ -154,14 +154,28 @@ The version manager separates three different streams because they have differen
 
 ### Tour versions
 
-Tour versions are always available when multiple spatial outputs exist. One parent splat is the
-live pin for the creation. Changing it requires confirmation because the live tour is consumed by
-the owner page, mobile app, and existing public links. “Use newest” returns selection to the backend
-policy; choosing a specific scan pins that scan.
+Tour captures are durable listing assets, not replacements for one mutable parent splat. An initial
+capture, a post-renovation capture, an independent rescan, and an import each keep their own stable
+asset UUID, exact reconstruction, delivery versions, and lineage.
+
+The draft's **Tours & delivery** panel separates capture from publication:
+
+- **New scan** reserves a new asset without removing the current tour.
+- Web and iPhone/iPad visibility are independent switches.
+- Any number of ready captures may be visible, while one visible capture is the default.
+- Saving creates an immutable listing publication revision and a validated layered-USD listing
+  graph.
+- Updating existing share links is an explicit owner choice. When disabled, each existing link
+  remains pinned to the exact publication it already exposed.
+- Hiding every tour changes public visibility but keeps the owner's working capture available for
+  reopening and later publication.
 
 Only completed, renderable outputs can become live. Processing and failed scans remain visible with
 honest status, but never expose a non-working View Tour action. Each tour row shows its available
-thumbnail, scan provenance, completion date, and live state before presenting an activation action.
+thumbnail, scan provenance, completion date, target visibility, and default state before presenting
+an activation action. Owner and shared viewer routes carry the selected tour ID and fail closed;
+they never substitute a different capture. A public listing shows a simple selector only when more
+than one Web tour is visible.
 
 ### Listing history
 
