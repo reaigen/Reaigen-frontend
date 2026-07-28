@@ -878,6 +878,7 @@ export default function DraftPreviewPage({ params }: { params: Promise<{ id: str
         <DraftTourAssetsPanel
           draftId={draftId}
           lang={lang}
+          splats={splatData?.splats}
           onPrimaryChanged={(activeSplatId) => setSplatData((current) => (
             current ? { ...current, parent_splat_id: activeSplatId } : current
           ))}

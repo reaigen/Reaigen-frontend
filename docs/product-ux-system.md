@@ -91,6 +91,10 @@ header, while global chrome owns navigation, account, and Agent access.
 The creation page is the source of truth for the owner-facing listing preview.
 
 - The active tour must be visible in the status row and available from the top action group.
+- Virtual tours use the same section hierarchy as gallery, floor plan, and listing details. The
+  creation page shows compact thumbnail rows with provenance, client availability, and honest
+  readiness; one **Manage tours** action opens publication controls. It does not show capture or
+  OpenUSD implementation controls on the listing canvas.
 - Edit opens an accessible, focus-trapped side panel. It persists through the ownership-checked
   Django `PATCH /drafts/{id}/` endpoint.
 - Manual editing has Basic and Advanced modes. Basic owns the few high-frequency facts; Advanced is

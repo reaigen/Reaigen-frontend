@@ -8,6 +8,7 @@ import {
 } from "../lib/api/client";
 import { getSafeApiErrorMessage } from "../lib/api/error-message";
 import type {
+  DraftSplatVersion,
   DraftTourAsset,
   DraftTourAssetsPayload,
   DraftTourPublicationSelection,
@@ -20,10 +21,12 @@ import {
   ClockIcon,
   ExternalLinkIcon,
   InfoIcon,
+  PlayIcon,
   TourIcon,
 } from "./icons";
 import { SidePanel } from "./side-panel";
 import { StatusPill } from "./status-pill";
+import { Thumbnail } from "./thumbnail";
 
 type Target = "web" | "ios";
 
@@ -37,21 +40,21 @@ interface Selection {
 const COPY = {
   en: {
     title: "Virtual tours",
-    ready: "Ready to share",
-    readyToPublish: "Ready for publishing",
-    preparing: "Preparing",
-    needsDelivery: "Publishing setup required",
-    none: "No tour yet",
-    summary: (published: number, ready: number, total: number) => (
+    summary: (published: number, ready: number, previewable: number, total: number) => (
       total === 0
-        ? "No tour uploaded from the iPhone app yet"
-        : `${published} published · ${ready} ready · ${total} total`
+        ? "Tours from the mobile app appear here automatically"
+        : published > 0
+          ? `Available to clients · ${published}`
+          : ready > 0
+            ? `Ready to publish · ${ready}`
+            : previewable > 0
+              ? `Preview available · ${previewable}`
+              : `Being prepared · ${total}`
     ),
-    primary: "Default tour",
     view: "Open tour",
-    manage: "Tours & delivery",
-    mobileSourceTitle: "New tours come from the mobile app",
-    mobileSourceHint: "Capture on iPhone or iPad. After a reliable upload and backend validation, each scan appears here automatically as a separate tour.",
+    manage: "Manage tours",
+    manageShort: "Manage",
+    more: (value: number) => `+${value} more in tour manager`,
     panelTitle: "Tours & delivery",
     panelDescription: "Publish one or more ready tours and choose the default clients see first.",
     captured: "Tour assets",
@@ -61,6 +64,7 @@ const COPY = {
     iosHint: "Available in the iOS delivery",
     makePrimary: "Use as default",
     primaryBadge: "Default",
+    preview: "Preview tour",
     pending: "Waiting for mobile upload",
     processing: "Processing",
     failed: "Needs attention",
@@ -71,11 +75,11 @@ const COPY = {
     shareHint: "Existing links move to this exact publication revision.",
     save: "Publish selection",
     saved: "Tour delivery was published as a new immutable revision.",
-    empty: "Create the first scan in the iPhone app.",
+    emptyTitle: "No virtual tour yet",
+    empty: "Capture the property in the Reaigen iPhone or iPad app. The tour will appear here after its upload is validated.",
     retry: "Try again",
-    usdHealthy: "USD hierarchy healthy",
-    usdInvalid: "USD validation failed",
-    revision: (value: number) => `Revision ${value}`,
+    usdHealthy: "Delivery verified",
+    usdInvalid: "Delivery needs attention",
     reasonInitial: "Initial capture",
     reasonRenovation: "After renovation",
     reasonRescan: "Rescan",
@@ -88,21 +92,21 @@ const COPY = {
   },
   sk: {
     title: "Virtuálne prehliadky",
-    ready: "Pripravené na zdieľanie",
-    readyToPublish: "Pripravené na zverejnenie",
-    preparing: "Pripravuje sa",
-    needsDelivery: "Vyžaduje nastavenie zverejnenia",
-    none: "Zatiaľ bez prehliadky",
-    summary: (published: number, ready: number, total: number) => (
+    summary: (published: number, ready: number, previewable: number, total: number) => (
       total === 0
-        ? "Zatiaľ nebola nahraná žiadna prehliadka z aplikácie pre iPhone"
-        : `${published} zverejnených · ${ready} pripravených · ${total} celkom`
+        ? "Prehliadky z mobilnej aplikácie sa tu zobrazia automaticky"
+        : published > 0
+          ? `Dostupné pre klientov · ${published}`
+          : ready > 0
+            ? `Pripravené na zverejnenie · ${ready}`
+            : previewable > 0
+              ? `Náhľad je dostupný · ${previewable}`
+              : `Pripravuje sa · ${total}`
     ),
-    primary: "Predvolená prehliadka",
     view: "Otvoriť prehliadku",
-    manage: "Prehliadky a doručenie",
-    mobileSourceTitle: "Nové prehliadky vznikajú v mobilnej aplikácii",
-    mobileSourceHint: "Snímanie spustíte na iPhone alebo iPade. Po spoľahlivom nahratí a kontrole backendom sa tu každé snímanie automaticky zobrazí ako samostatná prehliadka.",
+    manage: "Spravovať prehliadky",
+    manageShort: "Spravovať",
+    more: (value: number) => `+${value} ďalších v správe prehliadok`,
     panelTitle: "Prehliadky a doručenie",
     panelDescription: "Zverejnite jednu alebo viac pripravených prehliadok a vyberte predvolenú pre klientov.",
     captured: "Prehliadky",
@@ -112,6 +116,7 @@ const COPY = {
     iosHint: "Dostupná v iOS doručení",
     makePrimary: "Nastaviť ako predvolenú",
     primaryBadge: "Predvolená",
+    preview: "Zobraziť náhľad",
     pending: "Čaká na nahratie z mobilu",
     processing: "Spracúva sa",
     failed: "Vyžaduje pozornosť",
@@ -122,11 +127,11 @@ const COPY = {
     shareHint: "Existujúce odkazy prejdú na túto presnú verziu publikácie.",
     save: "Zverejniť výber",
     saved: "Doručenie prehliadok bolo uložené ako nová nemenná verzia.",
-    empty: "Prvé snímanie vytvorte v aplikácii pre iPhone.",
+    emptyTitle: "Zatiaľ bez virtuálnej prehliadky",
+    empty: "Nehnuteľnosť nasnímajte v aplikácii Reaigen pre iPhone alebo iPad. Po overení nahrávania sa prehliadka zobrazí tu.",
     retry: "Skúsiť znova",
-    usdHealthy: "USD hierarchia je v poriadku",
-    usdInvalid: "Kontrola USD zlyhala",
-    revision: (value: number) => `Verzia ${value}`,
+    usdHealthy: "Doručenie je overené",
+    usdInvalid: "Doručenie vyžaduje pozornosť",
     reasonInitial: "Prvé snímanie",
     reasonRenovation: "Po rekonštrukcii",
     reasonRescan: "Nové snímanie",
@@ -149,6 +154,74 @@ function isReady(asset: DraftTourAsset) {
       && asset.is_product_published
       && asset.latest_delivery_version?.is_published,
   );
+}
+
+function isRenderableSplat(splat: DraftSplatVersion | undefined) {
+  return Boolean(
+    splat
+      && splat.status.toLowerCase() === "completed"
+      && (
+        splat.has_sog
+        || splat.has_splat
+        || splat.has_ply
+        || splat.url
+        || splat.format
+        || splat.available_formats?.length
+        || Object.keys(splat.signed_outputs ?? {}).length
+      ),
+  );
+}
+
+function assetStatus(
+  asset: DraftTourAsset,
+  selection: Selection | undefined,
+  text: ReturnType<typeof copyFor>,
+) {
+  const ready = isReady(asset);
+  const visible = Boolean(selection?.web || selection?.ios);
+  if (ready) {
+    return {
+      ready,
+      visible,
+      label: visible ? text.published : text.hidden,
+      tone: visible ? "success" as const : "neutral" as const,
+      hint: null,
+    };
+  }
+  if (asset.status === "failed") {
+    return {
+      ready,
+      visible,
+      label: text.failed,
+      tone: "danger" as const,
+      hint: text.failedHint,
+    };
+  }
+  if (asset.status === "processing") {
+    return {
+      ready,
+      visible,
+      label: text.processing,
+      tone: "warning" as const,
+      hint: text.processingHint,
+    };
+  }
+  if (asset.source_splat_id && asset.status === "completed") {
+    return {
+      ready,
+      visible,
+      label: text.deliveryPending,
+      tone: "warning" as const,
+      hint: text.deliveryPendingHint,
+    };
+  }
+  return {
+    ready,
+    visible,
+    label: text.pending,
+    tone: "neutral" as const,
+    hint: text.waitingForMobile,
+  };
 }
 
 function selectionSignature(values: Record<number, Selection>) {
@@ -182,10 +255,12 @@ function dateLabel(value: string, lang: string) {
 export function DraftTourAssetsPanel({
   draftId,
   lang,
+  splats = [],
   onPrimaryChanged,
 }: {
   draftId: number;
   lang: string;
+  splats?: DraftSplatVersion[];
   onPrimaryChanged?: (splatId: number | null) => void;
 }) {
   const text = copyFor(lang);
@@ -245,10 +320,40 @@ export function DraftTourAssetsPanel({
     }),
     [readyAssets, selections],
   );
-  const primaryAsset = React.useMemo(
-    () => readyAssets.find((asset) => selections[asset.id]?.isPrimary) ?? null,
-    [readyAssets, selections],
+  const splatsById = React.useMemo(() => new Map(
+    splats.map((splat) => [splat.splat_id ?? splat.id, splat] as const),
+  ), [splats]);
+  const previewableAssets = React.useMemo(
+    () => payload?.assets.filter((asset) => (
+      asset.source_splat_id != null
+        && isRenderableSplat(splatsById.get(asset.source_splat_id))
+    )) ?? [],
+    [payload?.assets, splatsById],
   );
+  const thumbnailsBySplatId = React.useMemo(() => new Map(
+    [...splatsById].flatMap(([splatId, splat]) => {
+      const thumbnail = splat.signed_outputs?.thumbnail ?? splat.thumbnail_url;
+      return thumbnail ? [[splatId, thumbnail] as const] : [];
+    }),
+  ), [splatsById]);
+  const orderedAssets = React.useMemo(() => (
+    [...(payload?.assets ?? [])].sort((left, right) => {
+      const leftSelection = selections[left.id];
+      const rightSelection = selections[right.id];
+      const leftPrimary = leftSelection?.isPrimary ? 1 : 0;
+      const rightPrimary = rightSelection?.isPrimary ? 1 : 0;
+      if (leftPrimary !== rightPrimary) return rightPrimary - leftPrimary;
+      const leftReady = isReady(left) ? 1 : 0;
+      const rightReady = isReady(right) ? 1 : 0;
+      if (leftReady !== rightReady) return rightReady - leftReady;
+      const leftLanded = left.source_splat_id ? 1 : 0;
+      const rightLanded = right.source_splat_id ? 1 : 0;
+      if (leftLanded !== rightLanded) return rightLanded - leftLanded;
+      return new Date(right.captured_at).getTime() - new Date(left.captured_at).getTime();
+    })
+  ), [payload?.assets, selections]);
+  const overviewAssets = orderedAssets.slice(0, 3);
+  const remainingAssets = Math.max(0, orderedAssets.length - overviewAssets.length);
   const usdHealthy = payload?.publication?.usd.validation.valid === true;
   const changed = baseline !== selectionSignature(selections);
 
@@ -323,83 +428,163 @@ export function DraftTourAssetsPanel({
     }
   };
 
-  const statusText = primaryAsset
-    ? text.ready
-    : readyAssets.length > 0
-      ? text.readyToPublish
-      : payload?.assets.some((asset) => (
-          asset.source_splat_id != null && asset.status === "completed"
-        ))
-        ? text.needsDelivery
-      : payload?.assets.length
-        ? text.preparing
-        : text.none;
-
   return (
-    <section className="mt-8 overflow-hidden rounded-[1.75rem] border border-border/70 bg-card shadow-card sm:rounded-[2rem]">
-      <div className="p-5 sm:p-6">
-        <div className="flex items-start gap-3">
-          <span className={cn(
-            "flex h-11 w-11 shrink-0 items-center justify-center rounded-full",
-            primaryAsset ? "bg-emerald-500/10 text-emerald-600" : "bg-foreground/[0.05] text-foreground/45",
-          )}>
-            {primaryAsset ? <CheckIcon size={19} /> : <TourIcon size={19} />}
-          </span>
-          <div className="min-w-0 flex-1">
-            <div className="flex flex-wrap items-start justify-between gap-2">
-              <div>
-                <h2 className="text-[18px] font-semibold tracking-[-0.02em]">{text.title}</h2>
-                <p className={cn(
-                  "mt-0.5 text-[13px] font-medium",
-                  primaryAsset ? "text-emerald-600" : "text-muted-foreground",
-                )}>
-                  {statusText}
-                </p>
-              </div>
-              {payload?.publication ? (
-                <StatusPill tone={usdHealthy ? "success" : "danger"} dot>
-                  {text.revision(payload.publication.revision)}
-                </StatusPill>
-              ) : null}
-            </div>
-            <p className="mt-2 text-[12px] leading-relaxed text-muted-foreground">
-              {text.summary(
-                visibleAssets.length,
-                readyAssets.length,
-                payload?.assets.length ?? 0,
+    <section className="mt-8">
+      <div className="mb-3 flex items-end justify-between gap-3">
+        <div className="min-w-0">
+          <h2 className="flex items-center gap-2 text-[14px] font-semibold">
+            <TourIcon size={16} className="text-foreground/55" />
+            <span>{text.title}</span>
+          </h2>
+          <p className="ml-6 mt-1 truncate text-[11px] text-muted-foreground">
+            {text.summary(
+              visibleAssets.length,
+              readyAssets.length,
+              previewableAssets.length,
+              payload?.assets.length ?? 0,
+            )}
+          </p>
+        </div>
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          className="shrink-0"
+          onClick={() => setOpen(true)}
+        >
+          <TourIcon size={14} />
+          <span className="sm:hidden">{text.manageShort}</span>
+          <span className="hidden sm:inline">{text.manage}</span>
+        </Button>
+      </div>
+
+      {loading && !payload ? (
+        <div className="overflow-hidden rounded-[1.5rem] border border-border/70 bg-card shadow-card sm:rounded-2xl">
+          {Array.from({ length: 2 }).map((_, index) => (
+            <div
+              key={index}
+              className={cn(
+                "grid animate-pulse grid-cols-[88px_minmax(0,1fr)] gap-3 p-4 sm:grid-cols-[132px_minmax(0,1fr)] sm:gap-4",
+                index === 0 && "border-b border-border/55",
               )}
+            >
+              <div className="aspect-[16/10] rounded-xl bg-muted/55" />
+              <div className="flex min-w-0 flex-col justify-center gap-2">
+                <div className="h-3 w-2/3 rounded bg-muted/60" />
+                <div className="h-2.5 w-1/2 rounded bg-muted/40" />
+              </div>
+            </div>
+          ))}
+        </div>
+      ) : error && !payload ? (
+        <div className="flex items-center gap-3 rounded-[1.5rem] border border-red-500/20 bg-card p-4 shadow-card sm:rounded-2xl">
+          <InfoIcon size={18} className="shrink-0 text-red-600" />
+          <p className="min-w-0 flex-1 text-[12px] text-muted-foreground">{error}</p>
+          <Button type="button" variant="outline" size="sm" onClick={() => { void load(); }}>
+            {text.retry}
+          </Button>
+        </div>
+      ) : !payload?.assets.length ? (
+        <div className="flex items-start gap-3 rounded-[1.5rem] border border-dashed border-border bg-card p-5 sm:items-center sm:rounded-2xl">
+          <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-foreground/[0.045] text-foreground/45">
+            <TourIcon size={18} />
+          </span>
+          <div className="min-w-0">
+            <h3 className="text-[13px] font-semibold">{text.emptyTitle}</h3>
+            <p className="mt-1 max-w-2xl text-[11px] leading-relaxed text-muted-foreground">
+              {text.empty}
             </p>
           </div>
         </div>
+      ) : (
+        <div className="overflow-hidden rounded-[1.5rem] border border-border/70 bg-card shadow-card sm:rounded-2xl">
+          {overviewAssets.map((asset, index) => {
+            const selection = selections[asset.id];
+            const state = assetStatus(asset, selection, text);
+            const thumbnail = asset.source_splat_id
+              ? thumbnailsBySplatId.get(asset.source_splat_id)
+              : null;
+            const canPreview = asset.source_splat_id != null
+              && isRenderableSplat(splatsById.get(asset.source_splat_id));
+            return (
+              <article
+                key={asset.id}
+                className={cn(
+                  "grid grid-cols-[88px_minmax(0,1fr)] gap-3 p-4 sm:grid-cols-[132px_minmax(0,1fr)] sm:gap-4 sm:p-5",
+                  index < overviewAssets.length - 1 && "border-b border-border/55",
+                )}
+              >
+                <div className="relative aspect-[16/10] overflow-hidden rounded-xl bg-surface-subtle ring-1 ring-inset ring-border/45">
+                  {thumbnail ? (
+                    <Thumbnail
+                      src={thumbnail}
+                      alt={asset.name}
+                      className="absolute inset-0 h-full w-full object-cover"
+                      priority={index === 0}
+                    />
+                  ) : (
+                    <div className="absolute inset-0 flex items-center justify-center text-foreground/20">
+                      {state.ready ? <TourIcon size={28} /> : <ClockIcon size={24} />}
+                    </div>
+                  )}
+                </div>
 
-        {primaryAsset ? (
-          <div className="mt-5 flex items-center gap-3 border-t border-border/60 pt-5">
-            <div className="min-w-0 flex-1">
-              <p className="text-[11px] font-medium text-muted-foreground">{text.primary}</p>
-              <p className="mt-0.5 truncate text-[14px] font-semibold">{primaryAsset.name}</p>
-            </div>
-            {primaryAsset.source_splat_id ? (
-              <Button asChild size="sm">
-                <Link href={`/tour/${primaryAsset.source_splat_id}?tourId=${primaryAsset.id}`}>
-                  <ExternalLinkIcon size={14} />
-                  {text.view}
-                </Link>
-              </Button>
-            ) : null}
-          </div>
-        ) : null}
+                <div className="min-w-0 self-center">
+                  <div className="flex flex-wrap items-start justify-between gap-2">
+                    <div className="min-w-0">
+                      <h3 className="truncate text-[13px] font-semibold sm:text-[14px]">{asset.name}</h3>
+                      <p className="mt-0.5 truncate text-[10px] text-muted-foreground sm:text-[11px]">
+                        {reasonLabel(asset, text)} · {dateLabel(asset.captured_at, lang)}
+                      </p>
+                    </div>
+                    <StatusPill tone={state.tone} dot className="shrink-0">
+                      {state.label}
+                    </StatusPill>
+                  </div>
 
-        <div className="mt-5">
-          <Button className="w-full" onClick={() => setOpen(true)}>
-            <TourIcon size={15} />
-            {text.manage}
-          </Button>
-          <p className="mt-3 flex items-start gap-2 text-[11px] leading-relaxed text-muted-foreground">
-            <InfoIcon size={14} className="mt-0.5 shrink-0" />
-            <span>{text.mobileSourceHint}</span>
-          </p>
+                  <div className="mt-2.5 flex flex-wrap items-center gap-1.5">
+                    {selection?.isPrimary ? (
+                      <StatusPill tone="strong">{text.primaryBadge}</StatusPill>
+                    ) : null}
+                    {selection?.web ? <StatusPill>{text.web}</StatusPill> : null}
+                    {selection?.ios ? <StatusPill>{text.ios}</StatusPill> : null}
+                    {state.ready && !state.visible ? (
+                      <span className="text-[10px] text-muted-foreground">{text.hidden}</span>
+                    ) : null}
+                  </div>
+
+                  {state.hint ? (
+                    <p className="mt-2 line-clamp-2 text-[10px] leading-relaxed text-muted-foreground sm:text-[11px]">
+                      {state.hint}
+                    </p>
+                  ) : null}
+
+                  {asset.source_splat_id && (state.ready || canPreview) ? (
+                    <Button asChild variant="ghost" size="xs" className="mt-2 -ml-2">
+                      <Link href={state.ready
+                        ? `/tour/${asset.source_splat_id}?tourId=${asset.id}`
+                        : `/tour/${asset.source_splat_id}`}
+                      >
+                        <PlayIcon size={13} />
+                        {state.ready ? text.view : text.preview}
+                      </Link>
+                    </Button>
+                  ) : null}
+                </div>
+              </article>
+            );
+          })}
+          {remainingAssets > 0 ? (
+            <button
+              type="button"
+              onClick={() => setOpen(true)}
+              className="flex w-full items-center justify-center border-t border-border/55 bg-surface-subtle px-4 py-3 text-[11px] font-semibold text-foreground/65 transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
+            >
+              {text.more(remainingAssets)}
+            </button>
+          ) : null}
         </div>
-      </div>
+      )}
 
       <SidePanel
         open={open}
@@ -415,6 +600,7 @@ export function DraftTourAssetsPanel({
                 : text.summary(
                     visibleAssets.length,
                     readyAssets.length,
+                    previewableAssets.length,
                     payload?.assets.length ?? 0,
                   )}
             </div>
@@ -430,20 +616,6 @@ export function DraftTourAssetsPanel({
         )}
       >
         <div className="space-y-5 p-5 sm:p-6">
-          <div className="rounded-2xl border border-border/70 bg-foreground/[0.025] p-4">
-            <div className="flex items-start gap-3">
-              <span className="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-xl bg-card text-foreground/55">
-                <InfoIcon size={15} />
-              </span>
-              <div>
-                <p className="text-[13px] font-semibold">{text.mobileSourceTitle}</p>
-                <p className="mt-1 text-[11px] leading-relaxed text-muted-foreground">
-                  {text.mobileSourceHint}
-                </p>
-              </div>
-            </div>
-          </div>
-
           {notice ? (
             <div role="status" className="rounded-2xl border border-emerald-500/20 bg-emerald-500/[0.06] px-4 py-3 text-[12px] leading-relaxed text-emerald-800">
               {notice}
@@ -465,40 +637,41 @@ export function DraftTourAssetsPanel({
                 <span className="h-5 w-5 animate-spin rounded-full border-2 border-foreground/15 border-t-foreground/60" />
               </div>
             ) : !payload?.assets.length ? (
-              <div className="rounded-2xl border border-dashed border-border p-8 text-center text-[12px] text-muted-foreground">
-                {text.empty}
+              <div className="rounded-2xl border border-dashed border-border p-7 text-center">
+                <span className="mx-auto flex h-10 w-10 items-center justify-center rounded-full bg-foreground/[0.045] text-foreground/45">
+                  <TourIcon size={18} />
+                </span>
+                <h4 className="mt-3 text-[13px] font-semibold">{text.emptyTitle}</h4>
+                <p className="mx-auto mt-1 max-w-sm text-[11px] leading-relaxed text-muted-foreground">
+                  {text.empty}
+                </p>
               </div>
             ) : (
               <div className="space-y-3">
-                {payload.assets.map((asset) => {
-                  const ready = isReady(asset);
+                {orderedAssets.map((asset) => {
                   const selection = selections[asset.id];
-                  const visible = Boolean(selection?.web || selection?.ios);
-                  const status = ready
-                    ? (visible ? text.published : text.hidden)
-                    : asset.status === "failed"
-                      ? text.failed
-                      : asset.status === "processing"
-                        ? text.processing
-                        : asset.source_splat_id && asset.status === "completed"
-                          ? text.deliveryPending
-                          : text.pending;
-                  const pendingHint = asset.status === "failed"
-                    ? text.failedHint
-                    : asset.source_splat_id && asset.status === "completed"
-                      ? text.deliveryPendingHint
-                      : asset.status === "processing"
-                        ? text.processingHint
-                        : text.waitingForMobile;
+                  const state = assetStatus(asset, selection, text);
+                  const thumbnail = asset.source_splat_id
+                    ? thumbnailsBySplatId.get(asset.source_splat_id)
+                    : null;
+                  const canPreview = asset.source_splat_id != null
+                    && isRenderableSplat(splatsById.get(asset.source_splat_id));
                   return (
                     <article key={asset.id} className="rounded-2xl border border-border/70 bg-card p-4">
                       <div className="flex items-start gap-3">
-                        <span className={cn(
-                          "mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-xl",
-                          ready ? "bg-emerald-500/10 text-emerald-600" : "bg-foreground/[0.05] text-foreground/45",
-                        )}>
-                          {ready ? <TourIcon size={16} /> : <ClockIcon size={16} />}
-                        </span>
+                        <div className="relative mt-0.5 h-11 w-[4.4rem] shrink-0 overflow-hidden rounded-xl bg-surface-subtle ring-1 ring-inset ring-border/45">
+                          {thumbnail ? (
+                            <Thumbnail
+                              src={thumbnail}
+                              alt={asset.name}
+                              className="absolute inset-0 h-full w-full object-cover"
+                            />
+                          ) : (
+                            <div className="absolute inset-0 flex items-center justify-center text-foreground/25">
+                              {state.ready ? <TourIcon size={18} /> : <ClockIcon size={17} />}
+                            </div>
+                          )}
+                        </div>
                         <div className="min-w-0 flex-1">
                           <div className="flex flex-wrap items-start justify-between gap-2">
                             <div className="min-w-0">
@@ -508,14 +681,14 @@ export function DraftTourAssetsPanel({
                               </p>
                             </div>
                             <StatusPill
-                              tone={asset.status === "failed" ? "danger" : ready && visible ? "success" : "neutral"}
+                              tone={state.tone}
                               dot
                             >
-                              {status}
+                              {state.label}
                             </StatusPill>
                           </div>
 
-                          {ready ? (
+                          {state.ready ? (
                             <div className="mt-4 space-y-3 border-t border-border/55 pt-4">
                               <label className="flex items-center gap-3">
                                 <span className="min-w-0 flex-1">
@@ -541,7 +714,7 @@ export function DraftTourAssetsPanel({
                                   aria-label={`${text.ios}: ${asset.name}`}
                                 />
                               </label>
-                              {visible ? (
+                              {state.visible ? (
                                 <button
                                   type="button"
                                   role="radio"
@@ -573,9 +746,19 @@ export function DraftTourAssetsPanel({
                               ) : null}
                             </div>
                           ) : (
-                            <p className="mt-3 rounded-xl bg-foreground/[0.035] px-3 py-2.5 text-[11px] leading-relaxed text-muted-foreground">
-                              {pendingHint}
-                            </p>
+                            <div className="mt-3">
+                              <p className="rounded-xl bg-foreground/[0.035] px-3 py-2.5 text-[11px] leading-relaxed text-muted-foreground">
+                                {state.hint}
+                              </p>
+                              {canPreview && asset.source_splat_id ? (
+                                <Button asChild variant="outline" size="sm" className="mt-3 w-full">
+                                  <Link href={`/tour/${asset.source_splat_id}`}>
+                                    <ExternalLinkIcon size={13} />
+                                    {text.preview}
+                                  </Link>
+                                </Button>
+                              ) : null}
+                            </div>
                           )}
                         </div>
                       </div>
