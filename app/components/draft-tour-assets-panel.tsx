@@ -78,7 +78,7 @@ const COPY = {
     published: "Published",
     shareTitle: "Update active shares",
     shareHint: "Existing links move to this exact publication revision.",
-    save: "Publish selection",
+    saveShort: "Publish",
     saved: "Tour delivery was published as a new immutable revision.",
     emptyTitle: "No virtual tour yet",
     empty: "Capture the property in the Reaigen iPhone or iPad app. The tour will appear here after its upload is validated.",
@@ -149,7 +149,7 @@ const COPY = {
     published: "Zverejnená",
     shareTitle: "Aktualizovať aktívne zdieľania",
     shareHint: "Existujúce odkazy prejdú na túto presnú verziu publikácie.",
-    save: "Zverejniť výber",
+    saveShort: "Zverejniť",
     saved: "Doručenie prehliadok bolo uložené ako nová nemenná verzia.",
     emptyTitle: "Zatiaľ bez virtuálnej prehliadky",
     empty: "Nehnuteľnosť nasnímajte v aplikácii Reaigen pre iPhone alebo iPad. Po overení nahrávania sa prehliadka zobrazí tu.",
@@ -443,6 +443,14 @@ export function DraftTourAssetsPanel({
   const remainingAssets = Math.max(0, orderedAssets.length - overviewAssets.length);
   const usdHealthy = payload?.publication?.usd.validation.valid === true;
   const changed = baseline !== selectionSignature(selections);
+  const panelSummary = payload?.publication
+    ? (usdHealthy ? text.usdHealthy : text.usdInvalid)
+    : text.summary(
+        visibleAssets.length,
+        readyAssets.length,
+        previewableAssets.length,
+        payload?.assets.length ?? 0,
+      );
   const hasActiveAssets = payload?.assets.some((asset) => (
     ["uploading", "queued", "processing"].includes(
       asset.lifecycle?.state ?? "",
@@ -606,8 +614,8 @@ export function DraftTourAssetsPanel({
           ))}
         </div>
       ) : error && !payload ? (
-        <div className="flex items-center gap-3 rounded-[1.5rem] border border-red-500/20 bg-card p-4 shadow-card sm:rounded-2xl">
-          <InfoIcon size={18} className="shrink-0 text-red-600" />
+        <div className="flex items-center gap-3 rounded-[1.5rem] border border-destructive/20 bg-card p-4 shadow-card sm:rounded-2xl">
+          <InfoIcon size={18} className="shrink-0 text-destructive" />
           <p className="min-w-0 flex-1 text-[12px] text-muted-foreground">{error}</p>
           <Button type="button" variant="outline" size="sm" onClick={() => { void load(); }}>
             {text.retry}
@@ -737,39 +745,30 @@ export function DraftTourAssetsPanel({
         open={open}
         onOpenChange={setOpen}
         title={text.panelTitle}
-        description={text.panelDescription}
+        description={panelSummary}
+        headerMode="editor"
+        className="sm:max-w-[640px]"
         lang={lang}
-        footer={(
-          <div className="flex w-full items-center justify-between gap-3">
-            <div className="min-w-0 text-[11px] text-muted-foreground">
-              {payload?.publication
-                ? (usdHealthy ? text.usdHealthy : text.usdInvalid)
-                : text.summary(
-                    visibleAssets.length,
-                    readyAssets.length,
-                    previewableAssets.length,
-                    payload?.assets.length ?? 0,
-                  )}
-            </div>
-            <Button
-              size="sm"
-              loading={saving}
-              disabled={!changed || saving || loading}
-              onClick={() => { void save(); }}
-            >
-              {text.save}
-            </Button>
-          </div>
+        headerAction={(
+          <Button
+            size="xs"
+            className="h-11 min-w-[4.75rem] px-3 sm:h-9"
+            loading={saving}
+            disabled={!changed || saving || loading}
+            onClick={() => { void save(); }}
+          >
+            {text.saveShort}
+          </Button>
         )}
       >
-        <div className="space-y-5 p-5 sm:p-6">
+        <div className="space-y-5">
           {notice ? (
-            <div role="status" className="rounded-2xl border border-emerald-500/20 bg-emerald-500/[0.06] px-4 py-3 text-[12px] leading-relaxed text-emerald-800">
+            <div role="status" className="floating-panel-shape border border-success/20 bg-success/[0.055] px-4 py-3 text-[12px] leading-relaxed text-success">
               {notice}
             </div>
           ) : null}
           {error ? (
-            <div role="alert" className="rounded-2xl border border-red-500/20 bg-red-500/[0.05] px-4 py-3 text-[12px] leading-relaxed text-red-700">
+            <div role="alert" className="floating-panel-shape border border-destructive/20 bg-destructive/[0.045] px-4 py-3 text-[12px] leading-relaxed text-destructive">
               {error}
             </div>
           ) : null}
@@ -778,6 +777,9 @@ export function DraftTourAssetsPanel({
             <h3 className="mb-3 text-[12px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">
               {text.captured}
             </h3>
+            <p className="mb-4 max-w-xl text-[11px] leading-relaxed text-muted-foreground">
+              {text.panelDescription}
+            </p>
 
             {loading ? (
               <div className="flex justify-center py-14">
@@ -808,7 +810,7 @@ export function DraftTourAssetsPanel({
                       : undefined,
                   );
                   return (
-                    <article key={asset.id} className="rounded-2xl border border-border/70 bg-card p-4">
+                    <article key={asset.id} className="floating-panel p-4">
                       <div className="flex items-start gap-3">
                         <div className="relative mt-0.5 h-11 w-[4.4rem] shrink-0 overflow-hidden rounded-xl bg-surface-subtle ring-1 ring-inset ring-border/45">
                           {thumbnail ? (
@@ -876,14 +878,14 @@ export function DraftTourAssetsPanel({
                                   <span className={cn(
                                     "flex h-4 w-4 items-center justify-center rounded-full border",
                                     selection?.isPrimary
-                                      ? "border-emerald-600 bg-emerald-600 text-white"
+                                      ? "border-success bg-success text-success-foreground"
                                       : "border-foreground/25",
                                   )}>
                                     {selection?.isPrimary ? <CheckIcon size={10} /> : null}
                                   </span>
                                   {text.makePrimary}
                                   {selection?.isPrimary ? (
-                                    <span className="ml-auto text-[10px] text-emerald-600">{text.primaryBadge}</span>
+                                    <span className="ml-auto text-[10px] text-success">{text.primaryBadge}</span>
                                   ) : null}
                                 </button>
                               ) : null}
@@ -935,8 +937,8 @@ export function DraftTourAssetsPanel({
                           {asset.lifecycle?.can_remove ? (
                             <div className="mt-3 border-t border-border/55 pt-3">
                               {confirmRemoveId === asset.id ? (
-                                <div className="rounded-xl border border-red-500/20 bg-red-500/[0.045] p-3">
-                                  <p className="text-[12px] font-semibold text-red-700">
+                                <div className="floating-panel-shape border border-destructive/20 bg-destructive/[0.04] p-3">
+                                  <p className="text-[12px] font-semibold text-destructive">
                                     {text.removeConfirmTitle}
                                   </p>
                                   <p className="mt-1 text-[10px] leading-relaxed text-muted-foreground">
@@ -945,7 +947,7 @@ export function DraftTourAssetsPanel({
                                     )}
                                   </p>
                                   {changed ? (
-                                    <p className="mt-2 text-[10px] font-medium text-amber-700">
+                                    <p className="mt-2 text-[10px] font-medium text-foreground/60">
                                       {text.saveBeforeRemove}
                                     </p>
                                   ) : null}
@@ -981,7 +983,7 @@ export function DraftTourAssetsPanel({
                                   type="button"
                                   variant="ghost"
                                   size="xs"
-                                  className="text-red-700 hover:bg-red-500/[0.07] hover:text-red-800"
+                                  className="text-foreground/55 hover:bg-foreground/[0.045] hover:text-foreground"
                                   onClick={() => setConfirmRemoveId(asset.id)}
                                 >
                                   <TrashIcon size={13} />
@@ -1003,7 +1005,7 @@ export function DraftTourAssetsPanel({
             )}
           </div>
 
-          <label className="flex items-center gap-3 rounded-2xl border border-border/70 bg-card p-4">
+          <label className="floating-panel flex items-center gap-3 p-4">
             <span className="min-w-0 flex-1">
               <span className="block text-[12px] font-semibold">{text.shareTitle}</span>
               <span className="mt-0.5 block text-[10px] leading-relaxed text-muted-foreground">{text.shareHint}</span>

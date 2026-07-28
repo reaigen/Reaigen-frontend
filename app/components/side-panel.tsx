@@ -6,6 +6,13 @@ import { ArrowLeftIcon, CloseIcon } from "./icons";
 import { t } from "../lib/i18n";
 import { cn } from "../lib/utils";
 
+/**
+ * `default` preserves the flat, edge-to-edge drawer as an alternate side-panel
+ * composition. `editor` is the shared rounded floating shell used by focused
+ * editing workspaces such as Parameters, Media, and Tours.
+ */
+export type SidePanelMode = "default" | "editor";
+
 export function SidePanel({
   open,
   onOpenChange,
@@ -31,7 +38,7 @@ export function SidePanel({
   children: React.ReactNode;
   footer?: React.ReactNode;
   headerAction?: React.ReactNode;
-  headerMode?: "default" | "editor";
+  headerMode?: SidePanelMode;
   className?: string;
   style?: React.CSSProperties;
   contentClassName?: string;
