@@ -578,6 +578,30 @@ export interface DraftTourAssetPublicationState {
   targets: Array<"web" | "ios">;
 }
 
+export type DraftTourAssetLifecycleState =
+  | "reserved"
+  | "uploading"
+  | "queued"
+  | "processing"
+  | "preview"
+  | "ready"
+  | "published"
+  | "failed";
+
+export interface DraftTourAssetLifecycle {
+  state: DraftTourAssetLifecycleState;
+  origin: "ios" | "web" | "owner";
+  landed: boolean;
+  progress_pct: number | null;
+  can_start_capture: boolean;
+  can_preview: boolean;
+  preview_targets: Array<"web" | "ios">;
+  can_publish: boolean;
+  can_remove: boolean;
+  removal_kind: "cancel" | "archive" | null;
+  protected_reason: string | null;
+}
+
 export interface DraftTourAsset {
   id: number;
   asset_id: string;
@@ -593,6 +617,7 @@ export interface DraftTourAsset {
   is_product_published: boolean;
   latest_delivery_version: DraftTourAssetDeliveryVersion | null;
   publication: DraftTourAssetPublicationState;
+  lifecycle?: DraftTourAssetLifecycle;
   created_at: string;
   updated_at: string;
 }

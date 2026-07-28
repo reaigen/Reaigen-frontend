@@ -4,6 +4,7 @@ import * as React from "react";
 import Link from "next/link";
 import {
   getDraftTourAssets,
+  removeDraftTourAsset,
   updateDraftTourPublication,
 } from "../lib/api/client";
 import { getSafeApiErrorMessage } from "../lib/api/error-message";
@@ -22,6 +23,7 @@ import {
   ExternalLinkIcon,
   InfoIcon,
   PlayIcon,
+  TrashIcon,
   TourIcon,
 } from "./icons";
 import { SidePanel } from "./side-panel";
@@ -66,6 +68,9 @@ const COPY = {
     primaryBadge: "Default",
     preview: "Preview tour",
     pending: "Waiting for mobile upload",
+    reserved: "Scan not started",
+    uploading: "Uploading from iPhone",
+    queued: "Upload landed · waiting to process",
     processing: "Processing",
     failed: "Needs attention",
     deliveryPending: "Publishing not ready",
@@ -86,9 +91,25 @@ const COPY = {
     reasonImported: "Imported",
     reasonOther: "Capture",
     waitingForMobile: "Waiting for the iPhone upload to land. This entry will update automatically.",
+    reservedHint: "This is an empty capture placeholder. Continue it in the iPhone app or remove it here.",
+    uploadingHint: "The iPhone is sending this capture. You can leave this page; progress updates automatically.",
+    queuedHint: "The complete upload has landed safely and is waiting for processing.",
     processingHint: "The backend is processing and validating this tour. Delivery controls unlock when it is ready.",
     deliveryPendingHint: "The tour reconstruction exists, but a validated product delivery has not been published yet.",
     failedHint: "This tour could not be prepared. Review the processing result before trying again from the mobile app.",
+    progress: (value: number) => `${Math.round(value)}% complete`,
+    removePlaceholder: "Remove placeholder",
+    cancelAndRemove: "Cancel & remove",
+    archiveTour: "Archive tour",
+    removeConfirmTitle: "Remove this tour?",
+    removeConfirmCancel: "Keep tour",
+    removeConfirm: (kind: "cancel" | "archive") => (
+      kind === "cancel"
+        ? "Uploading or processing will stop where possible. The audit record remains recoverable."
+        : "The tour will disappear from this listing workspace. Its audit record remains recoverable."
+    ),
+    saveBeforeRemove: "Save or undo delivery changes before removing a tour.",
+    removed: "The tour was removed safely.",
   },
   sk: {
     title: "Virtuálne prehliadky",
@@ -118,6 +139,9 @@ const COPY = {
     primaryBadge: "Predvolená",
     preview: "Zobraziť náhľad",
     pending: "Čaká na nahratie z mobilu",
+    reserved: "Skenovanie sa nezačalo",
+    uploading: "Nahráva sa z iPhonu",
+    queued: "Nahratie dorazilo · čaká na spracovanie",
     processing: "Spracúva sa",
     failed: "Vyžaduje pozornosť",
     deliveryPending: "Zverejnenie nie je pripravené",
@@ -138,9 +162,25 @@ const COPY = {
     reasonImported: "Importovaná",
     reasonOther: "Snímanie",
     waitingForMobile: "Čaká na dokončenie nahrávania z iPhonu. Stav sa potom aktualizuje automaticky.",
+    reservedHint: "Toto je prázdne rezervované snímanie. Pokračujte v aplikácii pre iPhone alebo ho tu odstráňte.",
+    uploadingHint: "iPhone odosiela snímanie. Túto stránku môžete zavrieť; priebeh sa aktualizuje automaticky.",
+    queuedHint: "Celé nahratie bezpečne dorazilo a čaká na spracovanie.",
     processingHint: "Backend prehliadku spracúva a kontroluje. Nastavenia doručenia sa sprístupnia, keď bude pripravená.",
     deliveryPendingHint: "Rekonštrukcia prehliadky existuje, ale overené produktové doručenie ešte nebolo zverejnené.",
     failedHint: "Prehliadku sa nepodarilo pripraviť. Pred opakovaním v mobilnej aplikácii skontrolujte výsledok spracovania.",
+    progress: (value: number) => `Dokončené na ${Math.round(value)} %`,
+    removePlaceholder: "Odstrániť rezerváciu",
+    cancelAndRemove: "Zrušiť a odstrániť",
+    archiveTour: "Archivovať prehliadku",
+    removeConfirmTitle: "Odstrániť túto prehliadku?",
+    removeConfirmCancel: "Ponechať prehliadku",
+    removeConfirm: (kind: "cancel" | "archive") => (
+      kind === "cancel"
+        ? "Nahrávanie alebo spracovanie sa podľa možnosti zastaví. Záznam zostane obnoviteľný."
+        : "Prehliadka zmizne z pracovného priestoru inzerátu. Záznam zostane obnoviteľný."
+    ),
+    saveBeforeRemove: "Pred odstránením prehliadky uložte alebo zrušte zmeny doručenia.",
+    removed: "Prehliadka bola bezpečne odstránená.",
   },
 } as const;
 
@@ -149,6 +189,7 @@ function copyFor(lang: string) {
 }
 
 function isReady(asset: DraftTourAsset) {
+  if (asset.lifecycle) return asset.lifecycle.can_publish;
   return Boolean(
     asset.source_splat_id
       && asset.is_product_published
@@ -172,6 +213,17 @@ function isRenderableSplat(splat: DraftSplatVersion | undefined) {
   );
 }
 
+function canPreviewOnWeb(
+  asset: DraftTourAsset,
+  splat: DraftSplatVersion | undefined,
+) {
+  if (asset.lifecycle) {
+    return asset.lifecycle.can_preview
+      && asset.lifecycle.preview_targets.includes("web");
+  }
+  return asset.source_splat_id != null && isRenderableSplat(splat);
+}
+
 function assetStatus(
   asset: DraftTourAsset,
   selection: Selection | undefined,
@@ -188,7 +240,8 @@ function assetStatus(
       hint: null,
     };
   }
-  if (asset.status === "failed") {
+  const lifecycle = asset.lifecycle?.state;
+  if (lifecycle === "failed" || asset.status === "failed") {
     return {
       ready,
       visible,
@@ -197,7 +250,25 @@ function assetStatus(
       hint: text.failedHint,
     };
   }
-  if (asset.status === "processing") {
+  if (lifecycle === "uploading") {
+    return {
+      ready,
+      visible,
+      label: text.uploading,
+      tone: "warning" as const,
+      hint: text.uploadingHint,
+    };
+  }
+  if (lifecycle === "queued") {
+    return {
+      ready,
+      visible,
+      label: text.queued,
+      tone: "warning" as const,
+      hint: text.queuedHint,
+    };
+  }
+  if (lifecycle === "processing" || asset.status === "processing") {
     return {
       ready,
       visible,
@@ -206,13 +277,25 @@ function assetStatus(
       hint: text.processingHint,
     };
   }
-  if (asset.source_splat_id && asset.status === "completed") {
+  if (
+    lifecycle === "preview"
+    || (asset.source_splat_id && asset.status === "completed")
+  ) {
     return {
       ready,
       visible,
       label: text.deliveryPending,
       tone: "warning" as const,
       hint: text.deliveryPendingHint,
+    };
+  }
+  if (lifecycle === "reserved") {
+    return {
+      ready,
+      visible,
+      label: text.reserved,
+      tone: "neutral" as const,
+      hint: text.reservedHint,
     };
   }
   return {
@@ -270,6 +353,8 @@ export function DraftTourAssetsPanel({
   const [baseline, setBaseline] = React.useState("");
   const [loading, setLoading] = React.useState(true);
   const [saving, setSaving] = React.useState(false);
+  const [removingId, setRemovingId] = React.useState<number | null>(null);
+  const [confirmRemoveId, setConfirmRemoveId] = React.useState<number | null>(null);
   const [applyToShares, setApplyToShares] = React.useState(true);
   const [error, setError] = React.useState<string | null>(null);
   const [notice, setNotice] = React.useState<string | null>(null);
@@ -324,9 +409,11 @@ export function DraftTourAssetsPanel({
     splats.map((splat) => [splat.splat_id ?? splat.id, splat] as const),
   ), [splats]);
   const previewableAssets = React.useMemo(
-    () => payload?.assets.filter((asset) => (
-      asset.source_splat_id != null
-        && isRenderableSplat(splatsById.get(asset.source_splat_id))
+    () => payload?.assets.filter((asset) => canPreviewOnWeb(
+      asset,
+      asset.source_splat_id
+        ? splatsById.get(asset.source_splat_id)
+        : undefined,
     )) ?? [],
     [payload?.assets, splatsById],
   );
@@ -356,6 +443,31 @@ export function DraftTourAssetsPanel({
   const remainingAssets = Math.max(0, orderedAssets.length - overviewAssets.length);
   const usdHealthy = payload?.publication?.usd.validation.valid === true;
   const changed = baseline !== selectionSignature(selections);
+  const hasActiveAssets = payload?.assets.some((asset) => (
+    ["uploading", "queued", "processing"].includes(
+      asset.lifecycle?.state ?? "",
+    )
+  )) ?? false;
+
+  React.useEffect(() => {
+    if (!hasActiveAssets || changed || saving || removingId != null) return;
+    const timer = window.setInterval(() => {
+      if (document.visibilityState !== "visible") return;
+      void getDraftTourAssets(draftId)
+        .then(applyPayload)
+        .catch(() => {
+          // Keep the last authoritative state during a transient poll error.
+        });
+    }, 5_000);
+    return () => window.clearInterval(timer);
+  }, [
+    applyPayload,
+    changed,
+    draftId,
+    hasActiveAssets,
+    removingId,
+    saving,
+  ]);
 
   const normalizePrimary = React.useCallback((
     next: Record<number, Selection>,
@@ -425,6 +537,23 @@ export function DraftTourAssetsPanel({
       setError(getSafeApiErrorMessage(caught, lang));
     } finally {
       setSaving(false);
+    }
+  };
+
+  const removeTour = async (asset: DraftTourAsset) => {
+    if (!asset.lifecycle?.can_remove || removingId != null) return;
+    setRemovingId(asset.id);
+    setError(null);
+    setNotice(null);
+    try {
+      const result = await removeDraftTourAsset(draftId, asset.id);
+      applyPayload(result);
+      setConfirmRemoveId(null);
+      setNotice(text.removed);
+    } catch (caught) {
+      setError(getSafeApiErrorMessage(caught, lang));
+    } finally {
+      setRemovingId(null);
     }
   };
 
@@ -504,8 +633,12 @@ export function DraftTourAssetsPanel({
             const thumbnail = asset.source_splat_id
               ? thumbnailsBySplatId.get(asset.source_splat_id)
               : null;
-            const canPreview = asset.source_splat_id != null
-              && isRenderableSplat(splatsById.get(asset.source_splat_id));
+            const canPreview = canPreviewOnWeb(
+              asset,
+              asset.source_splat_id
+                ? splatsById.get(asset.source_splat_id)
+                : undefined,
+            );
             return (
               <article
                 key={asset.id}
@@ -557,6 +690,20 @@ export function DraftTourAssetsPanel({
                     <p className="mt-2 line-clamp-2 text-[10px] leading-relaxed text-muted-foreground sm:text-[11px]">
                       {state.hint}
                     </p>
+                  ) : null}
+
+                  {asset.lifecycle?.progress_pct != null ? (
+                    <div className="mt-2" aria-label={text.progress(asset.lifecycle.progress_pct)}>
+                      <div className="h-1.5 overflow-hidden rounded-full bg-foreground/10">
+                        <div
+                          className="h-full rounded-full bg-foreground/65 transition-[width] duration-500"
+                          style={{ width: `${asset.lifecycle.progress_pct}%` }}
+                        />
+                      </div>
+                      <p className="mt-1 text-[9px] font-medium text-muted-foreground">
+                        {text.progress(asset.lifecycle.progress_pct)}
+                      </p>
+                    </div>
                   ) : null}
 
                   {asset.source_splat_id && (state.ready || canPreview) ? (
@@ -654,8 +801,12 @@ export function DraftTourAssetsPanel({
                   const thumbnail = asset.source_splat_id
                     ? thumbnailsBySplatId.get(asset.source_splat_id)
                     : null;
-                  const canPreview = asset.source_splat_id != null
-                    && isRenderableSplat(splatsById.get(asset.source_splat_id));
+                  const canPreview = canPreviewOnWeb(
+                    asset,
+                    asset.source_splat_id
+                      ? splatsById.get(asset.source_splat_id)
+                      : undefined,
+                  );
                   return (
                     <article key={asset.id} className="rounded-2xl border border-border/70 bg-card p-4">
                       <div className="flex items-start gap-3">
@@ -750,6 +901,26 @@ export function DraftTourAssetsPanel({
                               <p className="rounded-xl bg-foreground/[0.035] px-3 py-2.5 text-[11px] leading-relaxed text-muted-foreground">
                                 {state.hint}
                               </p>
+                              {asset.lifecycle?.progress_pct != null ? (
+                                <div className="mt-3">
+                                  <div
+                                    role="progressbar"
+                                    aria-valuemin={0}
+                                    aria-valuemax={100}
+                                    aria-valuenow={asset.lifecycle.progress_pct}
+                                    aria-label={text.progress(asset.lifecycle.progress_pct)}
+                                    className="h-2 overflow-hidden rounded-full bg-foreground/10"
+                                  >
+                                    <div
+                                      className="h-full rounded-full bg-foreground/70 transition-[width] duration-500"
+                                      style={{ width: `${asset.lifecycle.progress_pct}%` }}
+                                    />
+                                  </div>
+                                  <p className="mt-1.5 text-[10px] font-medium text-muted-foreground">
+                                    {text.progress(asset.lifecycle.progress_pct)}
+                                  </p>
+                                </div>
+                              ) : null}
                               {canPreview && asset.source_splat_id ? (
                                 <Button asChild variant="outline" size="sm" className="mt-3 w-full">
                                   <Link href={`/tour/${asset.source_splat_id}`}>
@@ -760,6 +931,67 @@ export function DraftTourAssetsPanel({
                               ) : null}
                             </div>
                           )}
+
+                          {asset.lifecycle?.can_remove ? (
+                            <div className="mt-3 border-t border-border/55 pt-3">
+                              {confirmRemoveId === asset.id ? (
+                                <div className="rounded-xl border border-red-500/20 bg-red-500/[0.045] p-3">
+                                  <p className="text-[12px] font-semibold text-red-700">
+                                    {text.removeConfirmTitle}
+                                  </p>
+                                  <p className="mt-1 text-[10px] leading-relaxed text-muted-foreground">
+                                    {text.removeConfirm(
+                                      asset.lifecycle.removal_kind ?? "archive",
+                                    )}
+                                  </p>
+                                  {changed ? (
+                                    <p className="mt-2 text-[10px] font-medium text-amber-700">
+                                      {text.saveBeforeRemove}
+                                    </p>
+                                  ) : null}
+                                  <div className="mt-3 flex justify-end gap-2">
+                                    <Button
+                                      type="button"
+                                      variant="ghost"
+                                      size="xs"
+                                      disabled={removingId === asset.id}
+                                      onClick={() => setConfirmRemoveId(null)}
+                                    >
+                                      {text.removeConfirmCancel}
+                                    </Button>
+                                    <Button
+                                      type="button"
+                                      variant="destructive"
+                                      size="xs"
+                                      loading={removingId === asset.id}
+                                      disabled={changed}
+                                      onClick={() => { void removeTour(asset); }}
+                                    >
+                                      <TrashIcon size={13} />
+                                      {asset.lifecycle.removal_kind === "cancel"
+                                        ? text.cancelAndRemove
+                                        : text.archiveTour}
+                                    </Button>
+                                  </div>
+                                </div>
+                              ) : (
+                                <Button
+                                  type="button"
+                                  variant="ghost"
+                                  size="xs"
+                                  className="text-red-700 hover:bg-red-500/[0.07] hover:text-red-800"
+                                  onClick={() => setConfirmRemoveId(asset.id)}
+                                >
+                                  <TrashIcon size={13} />
+                                  {asset.lifecycle.state === "reserved"
+                                    ? text.removePlaceholder
+                                    : asset.lifecycle.removal_kind === "cancel"
+                                      ? text.cancelAndRemove
+                                      : text.archiveTour}
+                                </Button>
+                              )}
+                            </div>
+                          ) : null}
                         </div>
                       </div>
                     </article>

@@ -2214,7 +2214,7 @@ export async function getSplatsByDraft(draftId: number): Promise<SplatsByDraftPa
 }
 
 export async function getDraftTourAssets(draftId: number): Promise<DraftTourAssetsPayload> {
-  return request(`/api/reaigen/drafts/${draftId}/tours/`);
+  return freshRequest(`/api/reaigen/drafts/${draftId}/tours/`);
 }
 
 export async function updateDraftTourPublication(
@@ -2242,6 +2242,20 @@ export async function renameDraftTourAsset(
   return request(`/api/reaigen/drafts/${draftId}/tours/`, {
     method: "PATCH",
     body: JSON.stringify({ tour_id: tourId, name }),
+  });
+}
+
+export async function removeDraftTourAsset(
+  draftId: number,
+  tourId: number,
+): Promise<DraftTourAssetsPayload & {
+  removed_tour_id: number;
+  removal_kind?: "cancel" | "archive";
+  already_removed: boolean;
+  recoverable: boolean;
+}> {
+  return request(`/api/reaigen/drafts/${draftId}/tours/${tourId}/`, {
+    method: "DELETE",
   });
 }
 

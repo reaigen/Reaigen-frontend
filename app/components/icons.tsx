@@ -38,6 +38,7 @@ import {
   Share2Icon,
   StarIcon as RadixStarIcon,
   TokensIcon,
+  TrashIcon as RadixTrashIcon,
   UploadIcon as RadixUploadIcon,
   VideoIcon as RadixVideoIcon,
 } from "@radix-ui/react-icons";
@@ -109,6 +110,7 @@ export const MoreIcon = fromRadix(DotsHorizontalIcon, "MoreIcon");
 export const DragHandleIcon = fromRadix(DragHandleDots2Icon, "DragHandleIcon");
 export const MinusIcon = fromRadix(RadixMinusIcon, "MinusIcon");
 export const PlusIcon = fromRadix(RadixPlusIcon, "PlusIcon");
+export const TrashIcon = fromRadix(RadixTrashIcon, "TrashIcon");
 
 export function OrbitIcon({ size = 18, width, height, ...props }: IconProps) {
   return (
