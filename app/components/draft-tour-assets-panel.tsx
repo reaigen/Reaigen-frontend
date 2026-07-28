@@ -949,11 +949,12 @@ export function DraftTourAssetsPanel({
                                       {text.saveBeforeRemove}
                                     </p>
                                   ) : null}
-                                  <div className="mt-3 flex justify-end gap-2">
+                                  <div className="mt-3 grid gap-2">
                                     <Button
                                       type="button"
-                                      variant="ghost"
+                                      variant="outline"
                                       size="xs"
+                                      className="h-auto min-h-9 w-full justify-center whitespace-normal py-2 text-center leading-tight"
                                       disabled={removingId === asset.id}
                                       onClick={() => setConfirmRemoveId(null)}
                                     >
@@ -963,6 +964,7 @@ export function DraftTourAssetsPanel({
                                       type="button"
                                       variant="destructive"
                                       size="xs"
+                                      className="h-auto min-h-9 w-full justify-center whitespace-normal py-2 text-center leading-tight"
                                       loading={removingId === asset.id}
                                       disabled={changed}
                                       onClick={() => { void removeTour(asset); }}
