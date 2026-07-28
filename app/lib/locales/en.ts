@@ -883,6 +883,8 @@ const en = {
   "draft.gallery.exitFullscreen":        "Exit fullscreen",
   "draft.gallery.previous":              "Previous image",
   "draft.gallery.next":                  "Next image",
+  "draft.gallery.allPhotos":             "All photos",
+  "draft.gallery.photoView":             "Photo view",
   "draft.floorArea":                     "Floor area",
   "draft.landArea":                      "Land area",
   "draft.basementArea":                  "Basement area",

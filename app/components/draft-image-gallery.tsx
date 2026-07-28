@@ -4,7 +4,7 @@ import * as React from "react";
 import { createPortal } from "react-dom";
 import { t } from "../lib/i18n";
 import { cn } from "../lib/utils";
-import { ArrowLeftIcon, ArrowRightIcon, CloseIcon, EditIcon } from "./icons";
+import { ArrowLeftIcon, ArrowRightIcon, CloseIcon, EditIcon, GridIcon } from "./icons";
 import { Thumbnail } from "./thumbnail";
 
 export interface GalleryImage {
@@ -56,6 +56,7 @@ function GalleryLightbox({
   images,
   alt,
   startIndex,
+  startInOverview,
   lang,
   onClose,
   onIndexChange,
@@ -63,6 +64,7 @@ function GalleryLightbox({
   images: GalleryImage[];
   alt: string;
   startIndex: number;
+  startInOverview?: boolean;
   lang: string;
   onClose: () => void;
   onIndexChange: (index: number) => void;
@@ -71,14 +73,19 @@ function GalleryLightbox({
   const scrollRef = React.useRef<HTMLDivElement>(null);
   const closeRef = React.useRef<HTMLButtonElement>(null);
   const returnFocusRef = React.useRef<HTMLElement | null>(null);
-  const thumbnailRefs = React.useRef<Array<HTMLButtonElement | null>>([]);
+  const pendingPhotoIndexRef = React.useRef(startIndex);
   const [index, setIndex] = React.useState(startIndex);
   const count = images.length;
+  const overviewAvailable = count >= 5;
+  const [viewMode, setViewMode] = React.useState<"photo" | "overview">(
+    startInOverview && overviewAvailable ? "overview" : "photo",
+  );
 
   const goTo = React.useCallback((next: number, behavior: ScrollBehavior = preferredScrollBehavior()) => {
     const element = scrollRef.current;
     if (!element) return;
     const clamped = Math.max(0, Math.min(next, count - 1));
+    pendingPhotoIndexRef.current = clamped;
     element.scrollTo({ left: clamped * element.clientWidth, behavior });
     setIndex(clamped);
   }, [count]);
@@ -87,6 +94,7 @@ function GalleryLightbox({
     returnFocusRef.current = document.activeElement instanceof HTMLElement ? document.activeElement : null;
     const element = scrollRef.current;
     if (element) element.scrollLeft = startIndex * element.clientWidth;
+    pendingPhotoIndexRef.current = startIndex;
     setIndex(startIndex);
     const frame = requestAnimationFrame(() => {
       closeRef.current?.focus();
@@ -97,26 +105,32 @@ function GalleryLightbox({
     };
   }, [startIndex]);
 
+  React.useLayoutEffect(() => {
+    if (viewMode !== "photo") return;
+    const frame = requestAnimationFrame(() => {
+      const element = scrollRef.current;
+      if (element) element.scrollLeft = pendingPhotoIndexRef.current * element.clientWidth;
+    });
+    return () => cancelAnimationFrame(frame);
+  }, [viewMode]);
+
   React.useEffect(() => {
     const element = scrollRef.current;
     if (!element) return;
     const handleScroll = () => {
       if (!element.clientWidth) return;
-      setIndex(Math.max(0, Math.min(Math.round(element.scrollLeft / element.clientWidth), count - 1)));
+      const nextIndex = Math.max(0, Math.min(Math.round(element.scrollLeft / element.clientWidth), count - 1));
+      pendingPhotoIndexRef.current = nextIndex;
+      setIndex(nextIndex);
     };
     element.addEventListener("scroll", handleScroll, { passive: true });
     return () => element.removeEventListener("scroll", handleScroll);
-  }, [count]);
+  }, [count, viewMode]);
 
   React.useEffect(() => onIndexChange(index), [index, onIndexChange]);
 
   React.useEffect(() => {
     preloadNeighbors(images, index);
-    thumbnailRefs.current[index]?.scrollIntoView({
-      behavior: preferredScrollBehavior(),
-      block: "nearest",
-      inline: "center",
-    });
   }, [images, index]);
 
   React.useEffect(() => {
@@ -136,16 +150,16 @@ function GalleryLightbox({
       if (event.key === "Escape") {
         event.preventDefault();
         onClose();
-      } else if (event.key === "ArrowLeft") {
+      } else if (viewMode === "photo" && event.key === "ArrowLeft") {
         event.preventDefault();
         goTo(index - 1);
-      } else if (event.key === "ArrowRight") {
+      } else if (viewMode === "photo" && event.key === "ArrowRight") {
         event.preventDefault();
         goTo(index + 1);
-      } else if (event.key === "Home") {
+      } else if (viewMode === "photo" && event.key === "Home") {
         event.preventDefault();
         goTo(0);
-      } else if (event.key === "End") {
+      } else if (viewMode === "photo" && event.key === "End") {
         event.preventDefault();
         goTo(count - 1);
       } else if (event.key === "Tab") {
@@ -166,7 +180,7 @@ function GalleryLightbox({
     };
     window.addEventListener("keydown", handleKey);
     return () => window.removeEventListener("keydown", handleKey);
-  }, [count, goTo, index, onClose]);
+  }, [count, goTo, index, onClose, viewMode]);
 
   return createPortal(
     <div
@@ -174,98 +188,141 @@ function GalleryLightbox({
       role="dialog"
       aria-modal="true"
       aria-label={alt}
-      className="fixed inset-0 z-[9999] flex overscroll-contain bg-white text-black animate-in fade-in duration-200"
+      className="fixed inset-0 z-[9999] flex overscroll-contain bg-surface text-foreground animate-in fade-in duration-200"
     >
-      <div className="pointer-events-none absolute inset-x-0 top-0 z-40 flex h-[72px] items-center justify-between gap-3 bg-gradient-to-b from-white via-white/90 to-transparent px-3 pt-safe sm:px-5">
-        <button
-          ref={closeRef}
-          type="button"
-          onClick={onClose}
-          className="floating-control pointer-events-auto gap-2 border border-black/[0.08] bg-white/90 px-4 text-black/70 shadow-sm backdrop-blur-xl hover:scale-[1.02] hover:bg-black hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-black/30"
-          aria-label={t("common.close", lang)}
-        >
-          <CloseIcon size={17} />
-          <span>{t("common.close", lang)}</span>
-        </button>
-        <div className="min-w-0 text-right">
-          <span aria-live="polite" aria-atomic="true" className="inline-flex rounded-full border border-black/[0.08] bg-white/90 px-3 py-1.5 text-[11px] font-semibold tabular-nums text-black/60 shadow-sm backdrop-blur-xl">
-            {counterLabel(index, count, lang)}
-          </span>
+      <header className="pointer-events-none absolute inset-x-0 top-0 z-40 grid h-20 grid-cols-[1fr_auto_1fr] items-center px-3 pt-safe sm:h-24 sm:px-8">
+        <div className="flex min-w-0 justify-start">
+          <button
+            ref={closeRef}
+            type="button"
+            onClick={onClose}
+            className="floating-capsule floating-control pen-touch-target pointer-events-auto gap-2 bg-card/95 px-3.5 text-foreground shadow-control hover:bg-foreground hover:text-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 sm:px-4"
+            aria-label={t("common.close", lang)}
+          >
+            <CloseIcon size={17} />
+            <span className="hidden text-sm font-semibold sm:inline">{t("common.close", lang)}</span>
+          </button>
         </div>
-      </div>
+        <span
+          aria-live="polite"
+          aria-atomic="true"
+          className="text-sm font-semibold tabular-nums tracking-[-0.01em] text-foreground/70 sm:text-base"
+        >
+          {viewMode === "overview" ? t("draft.gallery.allPhotos", lang) : `${index + 1} / ${count}`}
+        </span>
+        <div className="flex min-w-0 justify-end">
+          {overviewAvailable ? (
+            <button
+              type="button"
+              onClick={() => {
+                if (viewMode === "overview") {
+                  pendingPhotoIndexRef.current = index;
+                  setViewMode("photo");
+                } else {
+                  setViewMode("overview");
+                }
+              }}
+              className="floating-capsule floating-control pen-touch-target pointer-events-auto gap-2 bg-card/95 px-3.5 text-foreground shadow-control hover:bg-foreground hover:text-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 sm:px-4"
+              aria-label={t(viewMode === "overview" ? "draft.gallery.photoView" : "draft.gallery.allPhotos", lang)}
+              aria-pressed={viewMode === "overview"}
+            >
+              {viewMode === "overview" ? <ExpandIcon /> : <GridIcon size={16} />}
+              <span className="hidden text-sm font-semibold sm:inline">
+                {t(viewMode === "overview" ? "draft.gallery.photoView" : "draft.gallery.allPhotos", lang)}
+              </span>
+            </button>
+          ) : null}
+        </div>
+      </header>
 
-      {count > 1 ? (
+      {viewMode === "photo" && count > 1 ? (
         <>
           <button
             type="button"
             onClick={() => goTo(index - 1)}
             disabled={index === 0}
-            className="floating-icon-button absolute left-2 top-1/2 z-30 -translate-y-1/2 border border-black/[0.08] bg-white/90 text-black/65 shadow-sm backdrop-blur-xl hover:scale-105 hover:bg-black hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-black/30 disabled:pointer-events-none disabled:opacity-20 sm:left-5"
+            className="floating-capsule floating-icon-button pen-touch-target absolute left-2 top-1/2 z-30 h-12 w-12 -translate-y-1/2 bg-card/95 text-foreground shadow-control hover:bg-foreground hover:text-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:invisible sm:left-7 sm:h-13 sm:w-13"
             aria-label={t("draft.gallery.previous", lang)}
           >
-            <ArrowLeftIcon size={18} />
+            <ArrowLeftIcon size={20} />
           </button>
           <button
             type="button"
             onClick={() => goTo(index + 1)}
             disabled={index === count - 1}
-            className="floating-icon-button absolute right-2 top-1/2 z-30 -translate-y-1/2 border border-black/[0.08] bg-white/90 text-black/65 shadow-sm backdrop-blur-xl hover:scale-105 hover:bg-black hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-black/30 disabled:pointer-events-none disabled:opacity-20 sm:right-5"
+            className="floating-capsule floating-icon-button pen-touch-target absolute right-2 top-1/2 z-30 h-12 w-12 -translate-y-1/2 bg-card/95 text-foreground shadow-control hover:bg-foreground hover:text-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:invisible sm:right-7 sm:h-13 sm:w-13"
             aria-label={t("draft.gallery.next", lang)}
           >
-            <ArrowRightIcon size={18} />
+            <ArrowRightIcon size={20} />
           </button>
         </>
       ) : null}
 
-      <div
-        ref={scrollRef}
-        className="flex h-full w-full touch-pan-x snap-x snap-mandatory overflow-x-auto overscroll-x-contain scrollbar-none"
-      >
-        {images.map((image, imageIndex) => (
-          <div
-            key={`${image.id ?? image.url}-${imageIndex}`}
-            className={cn(
-              "flex h-full w-full flex-none snap-start items-center justify-center px-3 pt-[72px] sm:px-20",
-              count > 1 ? "pb-24" : "pb-5",
-            )}
-          >
-            {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img
-              src={image.url}
-              alt={image.name || `${alt} ${imageIndex + 1}`}
-              className={cn(
-                "max-h-full max-w-full select-none object-contain transition-[opacity,transform] duration-300 ease-out sm:rounded-lg",
-                imageIndex === index ? "scale-100 opacity-100" : "scale-[0.985] opacity-55",
-              )}
-              draggable={false}
-            />
-          </div>
-        ))}
-      </div>
-
-      {count > 1 ? (
-        <div className="pointer-events-none absolute inset-x-0 bottom-3 z-30 flex justify-center px-3 pb-safe">
-          <div className="floating-panel pointer-events-auto flex max-w-full gap-2 overflow-x-auto overscroll-x-contain border-black/[0.07] bg-white/90 p-2 shadow-[0_8px_28px_rgba(0,0,0,0.10)] backdrop-blur-2xl scrollbar-none">
-            {images.map((image, imageIndex) => (
-              <button
-                ref={(element) => { thumbnailRefs.current[imageIndex] = element; }}
-                key={`${image.id ?? image.url}-lightbox-thumb`}
-                type="button"
-                onClick={() => goTo(imageIndex)}
+      {viewMode === "photo" ? (
+        <div
+          ref={scrollRef}
+          className="flex h-full w-full touch-pan-x snap-x snap-mandatory overflow-x-auto overscroll-x-contain scrollbar-none"
+        >
+          {images.map((image, imageIndex) => (
+            <div
+              key={`${image.id ?? image.url}-${imageIndex}`}
+              className="flex h-full w-full flex-none snap-start items-center justify-center px-14 pb-8 pt-20 sm:px-28 sm:pb-10 sm:pt-24 lg:px-40"
+            >
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img
+                src={image.url}
+                alt={`${alt} ${imageIndex + 1}`}
                 className={cn(
-                  "relative h-11 w-[4.25rem] shrink-0 overflow-hidden rounded-lg border bg-black/[0.03] transition-[opacity,transform,border-color] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-black/30",
-                  imageIndex === index ? "scale-100 border-black/70 opacity-100" : "scale-[0.96] border-black/[0.07] opacity-45 hover:scale-100 hover:opacity-90",
+                  "max-h-[calc(100dvh-7rem)] max-w-full select-none rounded-[var(--radius)] object-contain transition-opacity duration-200 ease-out motion-reduce:transition-none sm:max-h-[calc(100dvh-10rem)]",
+                  imageIndex === index ? "opacity-100" : "opacity-80",
                 )}
-                aria-label={counterLabel(imageIndex, count, lang)}
-                aria-current={imageIndex === index ? "true" : undefined}
-              >
-                {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img src={image.thumbnail_url || image.url} alt="" className="h-full w-full object-cover" />
-              </button>
-            ))}
+                draggable={false}
+              />
+            </div>
+          ))}
+        </div>
+      ) : (
+        <div className="h-full w-full overflow-y-auto overscroll-y-contain px-3 pb-8 pt-20 scrollbar-none sm:px-8 sm:pb-12 sm:pt-24">
+          <div className="mx-auto grid max-w-[100rem] grid-flow-dense auto-rows-[clamp(8rem,34vw,13rem)] grid-cols-2 gap-2 sm:gap-3 md:auto-rows-[clamp(9.5rem,14vw,16rem)] md:grid-cols-4">
+            {images.map((image, imageIndex) => {
+              const isFeatureTile = imageIndex % 5 === 0;
+              return (
+                <button
+                  type="button"
+                  key={`${image.id ?? image.url}-overview-${imageIndex}`}
+                  onClick={() => {
+                    pendingPhotoIndexRef.current = imageIndex;
+                    setIndex(imageIndex);
+                    setViewMode("photo");
+                  }}
+                  className={cn(
+                    "group relative overflow-hidden rounded-[var(--radius)] border bg-surface-subtle text-left shadow-sm transition-[border-color,transform] hover:border-foreground/35 hover:shadow-control focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 active:scale-[0.995]",
+                    isFeatureTile ? "col-span-2 row-span-2" : "col-span-1 row-span-1",
+                    imageIndex === index ? "border-foreground/45" : "border-border/65",
+                  )}
+                  aria-label={`${counterLabel(imageIndex, count, lang)}: ${t("draft.gallery.photoView", lang)}`}
+                  aria-current={imageIndex === index ? "true" : undefined}
+                >
+                  <Thumbnail
+                    src={image.thumbnail_url || image.url}
+                    alt={`${alt} ${imageIndex + 1}`}
+                    className="absolute inset-0 h-full w-full select-none object-cover transition-transform duration-500 ease-out group-hover:scale-[1.015] motion-reduce:transition-none"
+                    priority={imageIndex < 5}
+                  />
+                  <span
+                    className={cn(
+                      "floating-capsule floating-control-sm pointer-events-none absolute bottom-2 left-2 min-w-9 bg-card/90 px-2.5 text-[11px] tabular-nums shadow-control backdrop-blur-md sm:bottom-3 sm:left-3",
+                      imageIndex === index ? "bg-foreground text-background" : "text-foreground/75",
+                    )}
+                  >
+                    {imageIndex + 1}
+                  </span>
+                </button>
+              );
+            })}
           </div>
         </div>
-      ) : null}
+      )}
     </div>,
     document.body,
   );
@@ -282,7 +339,9 @@ export function DraftImageGallery({ images, alt, fallbackUrl, lang = "en", onAct
   );
   const [activeIndex, setActiveIndex] = React.useState(0);
   const [lightboxIndex, setLightboxIndex] = React.useState<number | null>(null);
+  const [lightboxStartsInOverview, setLightboxStartsInOverview] = React.useState(false);
   const count = displayImages.length;
+  const mosaicAvailable = count >= 5;
 
   React.useEffect(() => {
     if (activeIndex < count) return;
@@ -317,7 +376,14 @@ export function DraftImageGallery({ images, alt, fallbackUrl, lang = "en", onAct
     setActiveIndex(clamped);
   }, [count]);
 
-  const closeLightbox = React.useCallback(() => setLightboxIndex(null), []);
+  const openLightbox = React.useCallback((imageIndex: number, overview = false) => {
+    setLightboxStartsInOverview(overview);
+    setLightboxIndex(imageIndex);
+  }, []);
+  const closeLightbox = React.useCallback(() => {
+    setLightboxIndex(null);
+    setLightboxStartsInOverview(false);
+  }, []);
   const syncLightboxIndex = React.useCallback((next: number) => goTo(next, "auto"), [goTo]);
   const handleKeyboardNavigation = React.useCallback((event: React.KeyboardEvent) => {
     if (event.altKey || event.ctrlKey || event.metaKey) return;
@@ -335,9 +401,9 @@ export function DraftImageGallery({ images, alt, fallbackUrl, lang = "en", onAct
       goTo(count - 1);
     } else if (event.key.toLocaleLowerCase("en") === "f") {
       event.preventDefault();
-      setLightboxIndex(activeIndex);
+      openLightbox(activeIndex);
     }
-  }, [activeIndex, count, goTo]);
+  }, [activeIndex, count, goTo, openLightbox]);
 
   if (count === 0) {
     return (
@@ -358,7 +424,6 @@ export function DraftImageGallery({ images, alt, fallbackUrl, lang = "en", onAct
       <div
         ref={galleryRef}
         role="region"
-        aria-roledescription="carousel"
         aria-label={alt}
         onKeyDown={handleKeyboardNavigation}
         className="detail-hero-gallery group relative aspect-[16/10] overflow-hidden bg-white ring-1 ring-inset ring-black/[0.045] md:aspect-video md:rounded-xl"
@@ -382,7 +447,10 @@ export function DraftImageGallery({ images, alt, fallbackUrl, lang = "en", onAct
             pointerStartRef.current = null;
             suppressImageClickRef.current = false;
           }}
-          className="flex h-full w-full touch-pan-x snap-x snap-mandatory overflow-x-auto overscroll-x-contain scrollbar-none"
+          className={cn(
+            "flex h-full w-full touch-pan-x snap-x snap-mandatory overflow-x-auto overscroll-x-contain scrollbar-none",
+            mosaicAvailable && "lg:hidden",
+          )}
         >
           {displayImages.map((image, imageIndex) => (
             <button
@@ -390,7 +458,7 @@ export function DraftImageGallery({ images, alt, fallbackUrl, lang = "en", onAct
               key={`${image.id ?? image.url}-${imageIndex}`}
               onClick={() => {
                 if (suppressImageClickRef.current) return;
-                setLightboxIndex(imageIndex);
+                openLightbox(imageIndex);
               }}
               tabIndex={imageIndex === activeIndex ? 0 : -1}
               aria-label={`${t("draft.gallery.fullscreen", lang)}: ${counterLabel(imageIndex, count, lang)}`}
@@ -415,6 +483,31 @@ export function DraftImageGallery({ images, alt, fallbackUrl, lang = "en", onAct
           ))}
         </div>
 
+        {mosaicAvailable ? (
+          <div className="hidden h-full w-full grid-cols-4 grid-rows-2 gap-1 lg:grid">
+            {displayImages.slice(0, 5).map((image, imageIndex) => (
+              <button
+                type="button"
+                key={`${image.id ?? image.url}-mosaic-${imageIndex}`}
+                onClick={() => openLightbox(imageIndex)}
+                className={cn(
+                  "group/tile relative overflow-hidden bg-surface-subtle text-left outline-none focus-visible:z-10 focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring",
+                  imageIndex === 0 ? "col-span-2 row-span-2" : "col-span-1 row-span-1",
+                )}
+                aria-label={`${t("draft.gallery.photoView", lang)}: ${counterLabel(imageIndex, count, lang)}`}
+              >
+                <Thumbnail
+                  src={image.thumbnail_url || image.url}
+                  alt={`${alt} ${imageIndex + 1}`}
+                  className="absolute inset-0 h-full w-full select-none object-cover transition-transform duration-500 ease-out group-hover/tile:scale-[1.012] motion-reduce:transition-none"
+                  priority
+                />
+                <span className="pointer-events-none absolute inset-0 bg-black/0 transition-colors duration-200 group-hover/tile:bg-black/[0.035]" />
+              </button>
+            ))}
+          </div>
+        ) : null}
+
         {onManage ? (
           <button
             type="button"
@@ -429,12 +522,28 @@ export function DraftImageGallery({ images, alt, fallbackUrl, lang = "en", onAct
 
         <button
           type="button"
-          onClick={() => setLightboxIndex(activeIndex)}
-          className="floating-icon-button pen-touch-target absolute right-3 top-3 border border-black/10 bg-white/90 text-black/70 shadow-sm backdrop-blur-xl hover:bg-black hover:text-white hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-black/25"
+          onClick={() => openLightbox(activeIndex)}
+          className={cn(
+            "floating-icon-button pen-touch-target absolute right-3 top-3 border border-black/10 bg-white/90 text-black/70 shadow-sm backdrop-blur-xl hover:bg-black hover:text-white hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-black/25",
+            mosaicAvailable && "lg:hidden",
+          )}
           aria-label={t("draft.gallery.fullscreen", lang)}
         >
           <ExpandIcon />
         </button>
+
+        {mosaicAvailable ? (
+          <button
+            type="button"
+            onClick={() => openLightbox(activeIndex, true)}
+            className="floating-capsule floating-control pen-touch-target absolute bottom-3 right-3 z-10 hidden gap-2 bg-card/92 px-4 text-[12px] text-foreground shadow-control backdrop-blur-xl hover:bg-foreground hover:text-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 lg:inline-flex"
+            aria-label={t("draft.gallery.allPhotos", lang)}
+          >
+            <GridIcon size={16} />
+            <span>{t("draft.gallery.allPhotos", lang)}</span>
+            <span className="tabular-nums opacity-60">{count}</span>
+          </button>
+        ) : null}
 
         {count > 1 ? (
           <>
@@ -442,7 +551,10 @@ export function DraftImageGallery({ images, alt, fallbackUrl, lang = "en", onAct
               type="button"
               onClick={() => goTo(activeIndex - 1)}
               disabled={activeIndex === 0}
-              className="floating-icon-button pen-touch-target absolute left-3 top-1/2 -translate-y-1/2 border border-black/10 bg-white/90 text-black/70 shadow-sm backdrop-blur-xl hover:scale-105 hover:bg-black hover:text-white hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-black/25 disabled:pointer-events-none disabled:opacity-30"
+              className={cn(
+                "floating-icon-button pen-touch-target absolute left-3 top-1/2 -translate-y-1/2 border border-black/10 bg-white/90 text-black/70 shadow-sm backdrop-blur-xl hover:scale-105 hover:bg-black hover:text-white hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-black/25 disabled:pointer-events-none disabled:opacity-30",
+                mosaicAvailable && "lg:hidden",
+              )}
               aria-label={t("draft.gallery.previous", lang)}
             >
               <ArrowLeftIcon size={18} />
@@ -451,7 +563,10 @@ export function DraftImageGallery({ images, alt, fallbackUrl, lang = "en", onAct
               type="button"
               onClick={() => goTo(activeIndex + 1)}
               disabled={activeIndex === count - 1}
-              className="floating-icon-button pen-touch-target absolute right-3 top-1/2 -translate-y-1/2 border border-black/10 bg-white/90 text-black/70 shadow-sm backdrop-blur-xl hover:scale-105 hover:bg-black hover:text-white hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-black/25 disabled:pointer-events-none disabled:opacity-30"
+              className={cn(
+                "floating-icon-button pen-touch-target absolute right-3 top-1/2 -translate-y-1/2 border border-black/10 bg-white/90 text-black/70 shadow-sm backdrop-blur-xl hover:scale-105 hover:bg-black hover:text-white hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-black/25 disabled:pointer-events-none disabled:opacity-30",
+                mosaicAvailable && "lg:hidden",
+              )}
               aria-label={t("draft.gallery.next", lang)}
             >
               <ArrowRightIcon size={18} />
@@ -460,7 +575,10 @@ export function DraftImageGallery({ images, alt, fallbackUrl, lang = "en", onAct
         ) : null}
 
         {count > 1 ? (
-          <div className="pointer-events-none absolute inset-x-0 bottom-3 flex justify-center">
+          <div className={cn(
+            "pointer-events-none absolute inset-x-0 bottom-3 flex justify-center",
+            mosaicAvailable && "lg:hidden",
+          )}>
             {count <= 10 ? (
               <div className="pointer-events-auto flex items-center rounded-full border border-black/[0.07] bg-white/90 px-1 py-0.5 shadow-sm backdrop-blur-xl">
                 {displayImages.map((image, imageIndex) => (
@@ -495,6 +613,7 @@ export function DraftImageGallery({ images, alt, fallbackUrl, lang = "en", onAct
           images={displayImages}
           alt={alt}
           startIndex={lightboxIndex}
+          startInOverview={lightboxStartsInOverview}
           lang={lang}
           onClose={closeLightbox}
           onIndexChange={syncLightboxIndex}

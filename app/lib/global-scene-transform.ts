@@ -23,6 +23,135 @@ function finiteVec3(value: unknown, fallback: Vec3): Vec3 {
   return [value[0], value[1], value[2]];
 }
 
+function isFiniteNumberArray(value: unknown, length: number): value is number[] {
+  return (
+    Array.isArray(value)
+    && value.length === length
+    && value.every((item) => typeof item === "number" && Number.isFinite(item))
+  );
+}
+
+/**
+ * Validate the shared backend/web/iOS projection before it is allowed to
+ * influence rendering.
+ *
+ * Schema v2 is the materialized view of the immutable OpenUSD stage. Keeping
+ * these checks beside the transform reader prevents a partially decoded or
+ * platform-specific payload from silently becoming a different scene.
+ */
+export function isSupportedUniversalSceneDescription(
+  value: unknown,
+): value is UniversalSceneDescription {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return false;
+  const scene = value as Partial<UniversalSceneDescription>;
+  const coordinateSystem = scene.coordinateSystem;
+  const root = scene.rootTransform;
+  const contentSpace = scene.contentSpace;
+  const cameraPolicy = scene.cameraPolicy;
+  if (
+    scene.schema !== "com.reaigen.scene"
+    || (scene.version !== 1 && scene.version !== 2)
+    || coordinateSystem?.handedness !== "right"
+    || coordinateSystem.upAxis !== "+Y"
+    || coordinateSystem.forwardAxis !== "+Z"
+    || coordinateSystem.linearUnit !== "meter"
+    || root?.operationOrder !== "scale-rotate-translate"
+    || !isFiniteNumberArray(root.translation, 3)
+    || !isFiniteNumberArray(root.rotationQuaternion, 4)
+    || !isFiniteNumberArray(root.scale, 3)
+    || root.scale.some((item) => item <= 0)
+    || Math.max(...root.scale) - Math.min(...root.scale) > 0.000001
+    || Math.hypot(...root.rotationQuaternion) <= 0.000001
+    || contentSpace?.splats !== "canonical"
+    || contentSpace.cameras !== "canonical"
+    || contentSpace.roomKit !== "canonical"
+    || contentSpace.trajectories !== "canonical"
+    || !isFiniteNumberArray(cameraPolicy?.worldUp, 3)
+    || cameraPolicy.worldUp.some((item, index) => item !== [0, 1, 0][index])
+    || cameraPolicy.horizon !== "world-up"
+  ) {
+    return false;
+  }
+
+  if (scene.version === 2) {
+    const stage = scene.stage;
+    const policy = scene.spatialPolicy;
+    const composition = scene.composition;
+    const requiredAffectedPrims = [
+      "/Reaigen/World/GaussianSplat",
+      "/Reaigen/Architecture/RoomKit",
+      "/Reaigen/Cameras",
+      "/Reaigen/Trajectories",
+    ];
+    if (
+      !stage
+      || typeof stage.identifier !== "string"
+      || stage.identifier.length === 0
+      || !Number.isInteger(stage.revision)
+      || stage.revision < 0
+      || stage.defaultPrim !== "Reaigen"
+      || stage.upAxis !== "Y"
+      || Math.abs(stage.metersPerUnit - 1) > 0.000001
+      || Math.abs(stage.timeCodesPerSecond - 24) > 0.000001
+      || !policy
+      || policy.canonicalSpace !== "right-handed-y-up-meters"
+      || policy.presentationSpace !== "world"
+      || policy.rootPrimPath !== "/Reaigen"
+      || policy.pointTransform !== "T*R*S"
+      || policy.directionTransform !== "normalize(R*S)"
+      || policy.collisionQuerySpace !== "canonical"
+      || !Array.isArray(policy.rootTransformAffects)
+      || !requiredAffectedPrims.every((primPath) => (
+        policy.rootTransformAffects.includes(primPath)
+      ))
+      || cameraPolicy.storedBasis !== "position-forward-up"
+      || cameraPolicy.rootTransformApplication !== "full-camera-basis"
+      || !composition
+      || composition.strengthOrder !== "weak-to-strong"
+      || !Array.isArray(composition.layers)
+      || composition.layers.length !== 4
+      || composition.layers.some((layer) => !layer.immutable)
+      || composition.layers.map((layer) => layer.role).join(",")
+        !== "capture,reconstruction,authoring,presentation"
+    ) {
+      return false;
+    }
+    const usdStage = scene.usdStage;
+    const expectedUsdLayers = [
+      ["capture", "capture.usda", 0],
+      ["reconstruction", "reconstruction.usda", 1],
+      ["architecture", "architecture.usda", 2],
+      ["authoring", "authoring.usda", 3],
+      ["presentation", "presentation.usda", 4],
+      ["root", "scene.usda", 5],
+    ] as const;
+    if (
+      !usdStage
+      || usdStage.schema !== "com.reaigen.usd.scene"
+        || usdStage.schemaVersion !== 1
+        || usdStage.format !== "usda"
+        || usdStage.rootLayer !== "scene.usda"
+        || usdStage.sceneRevision !== stage.revision
+        || typeof usdStage.stageSha256 !== "string"
+        || usdStage.stageSha256.length !== 64
+        || !Array.isArray(usdStage.layers)
+        || usdStage.layers.length !== expectedUsdLayers.length
+        || usdStage.layers.some((layer, index) => (
+          layer.role !== expectedUsdLayers[index][0]
+          || layer.identifier !== expectedUsdLayers[index][1]
+          || layer.strengthOrder !== expectedUsdLayers[index][2]
+          || typeof layer.sha256 !== "string"
+          || layer.sha256.length !== 64
+        ))
+        || !usdStage.validation
+        || !usdStage.validation.valid
+    ) {
+      return false;
+    }
+  }
+  return true;
+}
+
 export function normalizeGlobalSceneTransform(value: unknown): GlobalSceneTransform {
   if (!value || typeof value !== "object" || Array.isArray(value)) {
     return cloneGlobalSceneTransform(IDENTITY_GLOBAL_SCENE_TRANSFORM);
@@ -50,30 +179,18 @@ export function normalizeGlobalSceneTransform(value: unknown): GlobalSceneTransf
 export function composedRootTransformFromScene(
   sceneDescription: unknown,
 ): GlobalSceneTransform {
-  if (
-    sceneDescription
-    && typeof sceneDescription === "object"
-    && !Array.isArray(sceneDescription)
-  ) {
-    const scene = sceneDescription as Partial<UniversalSceneDescription>;
+  if (isSupportedUniversalSceneDescription(sceneDescription)) {
+    const scene = sceneDescription;
     const root = scene.rootTransform;
-    const editor = scene.editor;
-    if (
-      scene.schema === "com.reaigen.scene"
-      && (scene.version === 1 || scene.version === 2)
-      && root
-      && root.operationOrder === "scale-rotate-translate"
-      && Array.isArray(root.scale)
-    ) {
-      const scale = root.scale[0];
-      return normalizeGlobalSceneTransform({
-        version: 1,
-        coordinateSpace: "reaigen_y_up",
-        rotationDeg: editor?.rotationEulerDegrees,
-        translation: root.translation,
-        scale,
-      });
-    }
+    return normalizeGlobalSceneTransform({
+      version: 1,
+      coordinateSpace: "reaigen_y_up",
+      // The OpenUSD root quaternion is authoritative. Editor Euler metadata is
+      // a display hint and must never become a second transform source.
+      rotationDeg: quaternionToEditorDegrees(root.rotationQuaternion),
+      translation: root.translation,
+      scale: root.scale[0],
+    });
   }
   return cloneGlobalSceneTransform(IDENTITY_GLOBAL_SCENE_TRANSFORM);
 }

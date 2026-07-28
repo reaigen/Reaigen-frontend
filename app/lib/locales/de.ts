@@ -870,6 +870,8 @@ const de: LocaleStrings = {
   "draft.gallery.exitFullscreen":        "Vollbild beenden",
   "draft.gallery.previous":              "Vorheriges Bild",
   "draft.gallery.next":                  "Nächstes Bild",
+  "draft.gallery.allPhotos":             "Alle Fotos",
+  "draft.gallery.photoView":             "Fotoansicht",
   "draft.floorArea":                     "Wohnfläche",
   "draft.landArea":                      "Grundstücksfläche",
   "draft.basementArea":                  "Kellerfläche",

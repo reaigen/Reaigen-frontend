@@ -870,6 +870,8 @@ const cs: LocaleStrings = {
   "draft.gallery.exitFullscreen":        "Ukončit celou obrazovku",
   "draft.gallery.previous":              "Předchozí obrázek",
   "draft.gallery.next":                  "Další obrázek",
+  "draft.gallery.allPhotos":             "Všechny fotografie",
+  "draft.gallery.photoView":             "Zobrazení fotografie",
   "draft.floorArea":                     "Podlahová plocha",
   "draft.landArea":                      "Plocha pozemku",
   "draft.basementArea":                  "Plocha suterénu",

@@ -88,37 +88,35 @@ export function ShareCreateForm({
     <div className="space-y-3">
       {error && <p role="alert" className="rounded-2xl border border-destructive/25 bg-destructive/[0.035] px-4 py-3 text-[12px] text-destructive">{error}</p>}
 
-      <div className="floating-panel overflow-hidden">
-        <section className="p-4 sm:p-5">
-          <ContentScopeSelector
-            scope={scope}
-            onChange={onScopeChange}
-            hasTour={hasTour}
-            hasPhotos={hasPhotos}
-            hasFloorplan={hasFloorplan}
-            lang={lang}
-          />
-        </section>
+      <section className="floating-panel p-4 sm:p-5">
+        <ContentScopeSelector
+          scope={scope}
+          onChange={onScopeChange}
+          hasTour={hasTour}
+          hasPhotos={hasPhotos}
+          hasFloorplan={hasFloorplan}
+          lang={lang}
+        />
+      </section>
 
-        <section className="border-t border-border/45 p-4 sm:p-5">
-          <PrivacyLevelSelector
-            level={privacyLevel}
-            pin={pin}
-            onLevelChange={setPrivacyLevel}
-            onPinChange={setPin}
-            lang={lang}
-          />
-        </section>
+      <section className="floating-panel p-4 sm:p-5">
+        <PrivacyLevelSelector
+          level={privacyLevel}
+          pin={pin}
+          onLevelChange={setPrivacyLevel}
+          onPinChange={setPin}
+          lang={lang}
+        />
+      </section>
 
-        <section className="border-t border-border/45 p-4 sm:p-5">
-          <LifetimeSelector
-            hours={lifetimeHours}
-            onHoursChange={setLifetimeHours}
-            currentExpiry={initialShare?.expires_at}
-            lang={lang}
-          />
-        </section>
-      </div>
+      <section className="floating-panel p-4 sm:p-5">
+        <LifetimeSelector
+          hours={lifetimeHours}
+          onHoursChange={setLifetimeHours}
+          currentExpiry={initialShare?.expires_at}
+          lang={lang}
+        />
+      </section>
 
       <div className="floating-toolbar sticky bottom-[calc(4rem+env(safe-area-inset-bottom,0px))] z-20 -mx-1 md:static md:mx-0">
         {initialShare && onCancelEdit ? (
