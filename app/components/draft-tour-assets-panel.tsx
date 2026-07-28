@@ -325,6 +325,32 @@ function reasonLabel(asset: DraftTourAsset, text: ReturnType<typeof copyFor>) {
   }
 }
 
+function hasGeneratedTourName(asset: DraftTourAsset) {
+  const value = asset.name.trim();
+  return /^(?:(?:new\s+)?virtual tour|initial capture|after renovation|rescan|imported tour)(?:\s*[·-]\s*\d{4}-\d{2}-\d{2})?$/i.test(value);
+}
+
+function assetDisplayName(
+  asset: DraftTourAsset,
+  text: ReturnType<typeof copyFor>,
+) {
+  const value = asset.name.trim();
+  return value && !hasGeneratedTourName(asset)
+    ? value
+    : reasonLabel(asset, text);
+}
+
+function assetSubtitle(
+  asset: DraftTourAsset,
+  text: ReturnType<typeof copyFor>,
+  lang: string,
+) {
+  const date = dateLabel(asset.captured_at, lang);
+  return hasGeneratedTourName(asset)
+    ? date
+    : `${reasonLabel(asset, text)} · ${date}`;
+}
+
 function dateLabel(value: string, lang: string) {
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return value;
@@ -638,6 +664,7 @@ export function DraftTourAssetsPanel({
           {overviewAssets.map((asset, index) => {
             const selection = selections[asset.id];
             const state = assetStatus(asset, selection, text);
+            const displayName = assetDisplayName(asset, text);
             const thumbnail = asset.source_splat_id
               ? thumbnailsBySplatId.get(asset.source_splat_id)
               : null;
@@ -659,7 +686,7 @@ export function DraftTourAssetsPanel({
                   {thumbnail ? (
                     <Thumbnail
                       src={thumbnail}
-                      alt={asset.name}
+                      alt={displayName}
                       className="absolute inset-0 h-full w-full object-cover"
                       priority={index === 0}
                     />
@@ -673,9 +700,9 @@ export function DraftTourAssetsPanel({
                 <div className="min-w-0 self-center">
                   <div className="flex flex-wrap items-start justify-between gap-2">
                     <div className="min-w-0">
-                      <h3 className="truncate text-[13px] font-semibold sm:text-[14px]">{asset.name}</h3>
+                      <h3 className="truncate text-[13px] font-semibold sm:text-[14px]">{displayName}</h3>
                       <p className="mt-0.5 truncate text-[10px] text-muted-foreground sm:text-[11px]">
-                        {reasonLabel(asset, text)} · {dateLabel(asset.captured_at, lang)}
+                        {assetSubtitle(asset, text, lang)}
                       </p>
                     </div>
                     <StatusPill tone={state.tone} dot className="shrink-0">
@@ -800,6 +827,7 @@ export function DraftTourAssetsPanel({
                 {orderedAssets.map((asset) => {
                   const selection = selections[asset.id];
                   const state = assetStatus(asset, selection, text);
+                  const displayName = assetDisplayName(asset, text);
                   const thumbnail = asset.source_splat_id
                     ? thumbnailsBySplatId.get(asset.source_splat_id)
                     : null;
@@ -816,7 +844,7 @@ export function DraftTourAssetsPanel({
                           {thumbnail ? (
                             <Thumbnail
                               src={thumbnail}
-                              alt={asset.name}
+                              alt={displayName}
                               className="absolute inset-0 h-full w-full object-cover"
                             />
                           ) : (
@@ -828,9 +856,9 @@ export function DraftTourAssetsPanel({
                         <div className="min-w-0 flex-1">
                           <div className="flex flex-wrap items-start justify-between gap-2">
                             <div className="min-w-0">
-                              <h4 className="truncate text-[14px] font-semibold">{asset.name}</h4>
+                              <h4 className="truncate text-[14px] font-semibold">{displayName}</h4>
                               <p className="mt-0.5 text-[11px] text-muted-foreground">
-                                {reasonLabel(asset, text)} · {dateLabel(asset.captured_at, lang)}
+                                {assetSubtitle(asset, text, lang)}
                               </p>
                             </div>
                             <StatusPill
@@ -852,7 +880,7 @@ export function DraftTourAssetsPanel({
                                   size="sm"
                                   checked={selection?.web ?? false}
                                   onCheckedChange={(checked) => setTarget(asset.id, "web", checked)}
-                                  aria-label={`${text.web}: ${asset.name}`}
+                                  aria-label={`${text.web}: ${displayName}`}
                                 />
                               </label>
                               <label className="flex items-center gap-3">
@@ -864,7 +892,7 @@ export function DraftTourAssetsPanel({
                                   size="sm"
                                   checked={selection?.ios ?? false}
                                   onCheckedChange={(checked) => setTarget(asset.id, "ios", checked)}
-                                  aria-label={`${text.ios}: ${asset.name}`}
+                                  aria-label={`${text.ios}: ${displayName}`}
                                 />
                               </label>
                               {state.visible ? (
