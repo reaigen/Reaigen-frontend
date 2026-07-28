@@ -556,6 +556,7 @@ export interface SharedTourSummary {
   tour_id: number;
   tour_asset_id: string;
   name: string;
+  name_is_custom?: boolean;
   capture_reason: string;
   captured_at: string;
   is_primary: boolean;
@@ -607,6 +608,7 @@ export interface DraftTourAsset {
   asset_id: string;
   draft_id: number;
   name: string;
+  name_is_custom?: boolean;
   capture_reason: "initial" | "renovation" | "rescan" | "imported" | "other";
   captured_at: string;
   renovation_of_id: number | null;

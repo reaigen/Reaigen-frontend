@@ -4,6 +4,7 @@ import * as React from "react";
 import Link from "next/link";
 import {
   getDraftTourAssets,
+  renameDraftTourAsset,
   removeDraftTourAsset,
   updateDraftTourPublication,
 } from "../lib/api/client";
@@ -20,6 +21,8 @@ import { cn } from "../lib/utils";
 import {
   CheckIcon,
   ClockIcon,
+  CloseIcon,
+  EditIcon,
   ExternalLinkIcon,
   InfoIcon,
   PlayIcon,
@@ -110,6 +113,12 @@ const COPY = {
     ),
     saveBeforeRemove: "Save or undo delivery changes before removing a tour.",
     removed: "The tour was removed safely.",
+    editName: "Rename tour",
+    namePlaceholder: "Tour name",
+    saveName: "Save name",
+    cancelName: "Cancel",
+    renamed: "Tour name was saved.",
+    nameRequired: "Enter a tour name.",
   },
   sk: {
     title: "Virtuálne prehliadky",
@@ -181,6 +190,12 @@ const COPY = {
     ),
     saveBeforeRemove: "Pred odstránením prehliadky uložte alebo zrušte zmeny doručenia.",
     removed: "Prehliadka bola bezpečne odstránená.",
+    editName: "Premenovať prehliadku",
+    namePlaceholder: "Názov prehliadky",
+    saveName: "Uložiť názov",
+    cancelName: "Zrušiť",
+    renamed: "Názov prehliadky bol uložený.",
+    nameRequired: "Zadajte názov prehliadky.",
   },
 } as const;
 
@@ -315,40 +330,67 @@ function selectionSignature(values: Record<number, Selection>) {
   );
 }
 
-function reasonLabel(asset: DraftTourAsset, text: ReturnType<typeof copyFor>) {
-  switch (asset.capture_reason) {
-    case "initial": return text.reasonInitial;
-    case "renovation": return text.reasonRenovation;
-    case "rescan": return text.reasonRescan;
-    case "imported": return text.reasonImported;
-    default: return text.reasonOther;
-  }
+function reasonLabel(asset: DraftTourAsset, lang: string) {
+  const labels = {
+    en: {
+      initial: "Initial capture",
+      renovation: "After renovation",
+      rescan: "Fresh rescan",
+      imported: "Imported",
+      other: "Capture",
+    },
+    sk: {
+      initial: "Prvé snímanie",
+      renovation: "Po rekonštrukcii",
+      rescan: "Nové preskenovanie",
+      imported: "Importovaná",
+      other: "Snímanie",
+    },
+    cs: {
+      initial: "První nasnímání",
+      renovation: "Po rekonstrukci",
+      rescan: "Nové skenování",
+      imported: "Importovaná",
+      other: "Snímání",
+    },
+    de: {
+      initial: "Erste Aufnahme",
+      renovation: "Nach der Renovierung",
+      rescan: "Neue Aufnahme",
+      imported: "Importiert",
+      other: "Aufnahme",
+    },
+  } as const;
+  const copy = labels[lang.slice(0, 2).toLowerCase() as keyof typeof labels]
+    ?? labels.en;
+  return copy[asset.capture_reason as keyof typeof copy] ?? copy.other;
 }
 
 function hasGeneratedTourName(asset: DraftTourAsset) {
+  if (asset.name_is_custom === true) return false;
+  if (asset.name_is_custom === false) return true;
   const value = asset.name.trim();
   return /^(?:(?:new\s+)?virtual tour|initial capture|after renovation|rescan|imported tour)(?:\s*[·-]\s*\d{4}-\d{2}-\d{2})?$/i.test(value);
 }
 
 function assetDisplayName(
   asset: DraftTourAsset,
-  text: ReturnType<typeof copyFor>,
+  lang: string,
 ) {
   const value = asset.name.trim();
   return value && !hasGeneratedTourName(asset)
     ? value
-    : reasonLabel(asset, text);
+    : reasonLabel(asset, lang);
 }
 
 function assetSubtitle(
   asset: DraftTourAsset,
-  text: ReturnType<typeof copyFor>,
   lang: string,
 ) {
   const date = dateLabel(asset.captured_at, lang);
   return hasGeneratedTourName(asset)
     ? date
-    : `${reasonLabel(asset, text)} · ${date}`;
+    : `${reasonLabel(asset, lang)} · ${date}`;
 }
 
 function dateLabel(value: string, lang: string) {
@@ -379,6 +421,10 @@ export function DraftTourAssetsPanel({
   const [baseline, setBaseline] = React.useState("");
   const [loading, setLoading] = React.useState(true);
   const [saving, setSaving] = React.useState(false);
+  const [editingNameId, setEditingNameId] = React.useState<number | null>(null);
+  const [nameDraft, setNameDraft] = React.useState("");
+  const [nameBaseline, setNameBaseline] = React.useState("");
+  const [renamingId, setRenamingId] = React.useState<number | null>(null);
   const [removingId, setRemovingId] = React.useState<number | null>(null);
   const [confirmRemoveId, setConfirmRemoveId] = React.useState<number | null>(null);
   const [applyToShares, setApplyToShares] = React.useState(true);
@@ -591,6 +637,48 @@ export function DraftTourAssetsPanel({
     }
   };
 
+  const beginRename = (asset: DraftTourAsset) => {
+    const displayName = assetDisplayName(asset, lang);
+    setEditingNameId(asset.id);
+    setNameDraft(displayName);
+    setNameBaseline(displayName);
+    setError(null);
+    setNotice(null);
+  };
+
+  const cancelRename = () => {
+    if (renamingId != null) return;
+    setEditingNameId(null);
+    setNameDraft("");
+    setNameBaseline("");
+  };
+
+  const saveName = async (asset: DraftTourAsset) => {
+    const name = nameDraft.trim();
+    if (!name) {
+      setError(text.nameRequired);
+      return;
+    }
+    if (name === nameBaseline) {
+      cancelRename();
+      return;
+    }
+    setRenamingId(asset.id);
+    setError(null);
+    setNotice(null);
+    try {
+      applyPayload(await renameDraftTourAsset(draftId, asset.id, name));
+      setEditingNameId(null);
+      setNameDraft("");
+      setNameBaseline("");
+      setNotice(text.renamed);
+    } catch (caught) {
+      setError(getSafeApiErrorMessage(caught, lang));
+    } finally {
+      setRenamingId(null);
+    }
+  };
+
   return (
     <section className="mt-8">
       <div className="mb-3 flex items-end justify-between gap-3">
@@ -664,7 +752,7 @@ export function DraftTourAssetsPanel({
           {overviewAssets.map((asset, index) => {
             const selection = selections[asset.id];
             const state = assetStatus(asset, selection, text);
-            const displayName = assetDisplayName(asset, text);
+            const displayName = assetDisplayName(asset, lang);
             const thumbnail = asset.source_splat_id
               ? thumbnailsBySplatId.get(asset.source_splat_id)
               : null;
@@ -700,9 +788,23 @@ export function DraftTourAssetsPanel({
                 <div className="min-w-0 self-center">
                   <div className="flex flex-wrap items-start justify-between gap-2">
                     <div className="min-w-0">
-                      <h3 className="truncate text-[13px] font-semibold sm:text-[14px]">{displayName}</h3>
+                      <div className="flex min-w-0 items-center gap-1">
+                        <h3 className="truncate text-[13px] font-semibold sm:text-[14px]">{displayName}</h3>
+                        <button
+                          type="button"
+                          aria-label={`${text.editName}: ${displayName}`}
+                          title={text.editName}
+                          className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-foreground/35 transition-colors hover:bg-foreground/[0.055] hover:text-foreground"
+                          onClick={() => {
+                            beginRename(asset);
+                            setOpen(true);
+                          }}
+                        >
+                          <EditIcon size={12} />
+                        </button>
+                      </div>
                       <p className="mt-0.5 truncate text-[10px] text-muted-foreground sm:text-[11px]">
-                        {assetSubtitle(asset, text, lang)}
+                        {assetSubtitle(asset, lang)}
                       </p>
                     </div>
                     <StatusPill tone={state.tone} dot className="shrink-0">
@@ -770,7 +872,10 @@ export function DraftTourAssetsPanel({
 
       <SidePanel
         open={open}
-        onOpenChange={setOpen}
+        onOpenChange={(next) => {
+          setOpen(next);
+          if (!next) cancelRename();
+        }}
         title={text.panelTitle}
         description={panelSummary}
         headerMode="editor"
@@ -827,7 +932,7 @@ export function DraftTourAssetsPanel({
                 {orderedAssets.map((asset) => {
                   const selection = selections[asset.id];
                   const state = assetStatus(asset, selection, text);
-                  const displayName = assetDisplayName(asset, text);
+                  const displayName = assetDisplayName(asset, lang);
                   const thumbnail = asset.source_splat_id
                     ? thumbnailsBySplatId.get(asset.source_splat_id)
                     : null;
@@ -855,10 +960,68 @@ export function DraftTourAssetsPanel({
                         </div>
                         <div className="min-w-0 flex-1">
                           <div className="flex flex-wrap items-start justify-between gap-2">
-                            <div className="min-w-0">
-                              <h4 className="truncate text-[14px] font-semibold">{displayName}</h4>
+                            <div className={cn(
+                              "min-w-0",
+                              editingNameId === asset.id && "basis-full",
+                            )}>
+                              {editingNameId === asset.id ? (
+                                <div className="flex min-w-0 items-center gap-1.5">
+                                  <input
+                                    autoFocus
+                                    value={nameDraft}
+                                    maxLength={120}
+                                    aria-label={text.namePlaceholder}
+                                    placeholder={text.namePlaceholder}
+                                    disabled={renamingId === asset.id}
+                                    className="h-9 min-w-0 flex-1 rounded-xl border border-border bg-card px-3 text-[13px] font-semibold outline-none focus-visible:ring-2 focus-visible:ring-ring/40 disabled:opacity-60"
+                                    onChange={(event) => setNameDraft(event.target.value)}
+                                    onKeyDown={(event) => {
+                                      if (event.key === "Enter") {
+                                        event.preventDefault();
+                                        void saveName(asset);
+                                      } else if (event.key === "Escape") {
+                                        event.preventDefault();
+                                        cancelRename();
+                                      }
+                                    }}
+                                  />
+                                  <button
+                                    type="button"
+                                    aria-label={text.saveName}
+                                    title={text.saveName}
+                                    disabled={renamingId === asset.id || !nameDraft.trim()}
+                                    className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-foreground text-background disabled:opacity-35"
+                                    onClick={() => { void saveName(asset); }}
+                                  >
+                                    <CheckIcon size={13} />
+                                  </button>
+                                  <button
+                                    type="button"
+                                    aria-label={text.cancelName}
+                                    title={text.cancelName}
+                                    disabled={renamingId === asset.id}
+                                    className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-foreground/[0.055] text-foreground/55 disabled:opacity-35"
+                                    onClick={cancelRename}
+                                  >
+                                    <CloseIcon size={13} />
+                                  </button>
+                                </div>
+                              ) : (
+                                <div className="flex min-w-0 items-center gap-1">
+                                  <h4 className="truncate text-[14px] font-semibold">{displayName}</h4>
+                                  <button
+                                    type="button"
+                                    aria-label={`${text.editName}: ${displayName}`}
+                                    title={text.editName}
+                                    className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-foreground/35 transition-colors hover:bg-foreground/[0.055] hover:text-foreground"
+                                    onClick={() => beginRename(asset)}
+                                  >
+                                    <EditIcon size={12} />
+                                  </button>
+                                </div>
+                              )}
                               <p className="mt-0.5 text-[11px] text-muted-foreground">
-                                {assetSubtitle(asset, text, lang)}
+                                {assetSubtitle(asset, lang)}
                               </p>
                             </div>
                             <StatusPill

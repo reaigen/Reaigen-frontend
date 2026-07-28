@@ -24,6 +24,7 @@ import type {
   RoomData,
   CameraData,
   SharedDraftData,
+  SharedTourSummary,
   RoomKitCageWall,
 } from "../../lib/tour-types";
 import dynamic from "next/dynamic";
@@ -45,6 +46,49 @@ const SplatViewer = dynamic(() => import("../../components/splat-viewer"), { ssr
 // ── Splat URL selection ────────────────────────────────────────────────
 
 const SOG_READY_TIMEOUT_MS = 15000;
+
+function sharedTourDisplayName(tour: SharedTourSummary, lang: string) {
+  const generated = tour.name_is_custom === false
+    || (
+      tour.name_is_custom == null
+      && /^(?:(?:new\s+)?virtual tour|initial capture|after renovation|rescan|imported tour)(?:\s*[·-]\s*\d{4}-\d{2}-\d{2})?$/i.test(tour.name.trim())
+    );
+  if (!generated && tour.name.trim()) return tour.name.trim();
+
+  const language = lang.slice(0, 2).toLowerCase();
+  const labels = {
+    en: {
+      initial: "Initial capture",
+      renovation: "After renovation",
+      rescan: "Fresh rescan",
+      imported: "Imported",
+      other: "Property tour",
+    },
+    sk: {
+      initial: "Prvé nasnímanie",
+      renovation: "Po rekonštrukcii",
+      rescan: "Nové preskenovanie",
+      imported: "Importovaná",
+      other: "Prehliadka nehnuteľnosti",
+    },
+    cs: {
+      initial: "První nasnímání",
+      renovation: "Po rekonstrukci",
+      rescan: "Nové skenování",
+      imported: "Importovaná",
+      other: "Prohlídka nemovitosti",
+    },
+    de: {
+      initial: "Erste Aufnahme",
+      renovation: "Nach der Renovierung",
+      rescan: "Neue Aufnahme",
+      imported: "Importiert",
+      other: "Immobilienrundgang",
+    },
+  } as const;
+  const copy = labels[language as keyof typeof labels] ?? labels.en;
+  return copy[tour.capture_reason as keyof typeof copy] ?? copy.other;
+}
 
 function pickRenderableUrl(data: TourViewerData): string {
   return data.signed_outputs?.sog
@@ -494,7 +538,7 @@ export default function SharedPage({ params }: { params: Promise<{ token: string
 
         {availableTours.length > 1 && (
           <div className="absolute left-1/2 top-[calc(0.75rem+env(safe-area-inset-top,0px))] z-20 w-[min(15rem,calc(100vw-11rem))] -translate-x-1/2 sm:top-[calc(1rem+env(safe-area-inset-top,0px))]">
-            <label className="sr-only" htmlFor="shared-tour-version">Virtual tour</label>
+            <label className="sr-only" htmlFor="shared-tour-version">{t("tours.title", lang)}</label>
             <select
               id="shared-tour-version"
               value={tourViewerData.tour_id ?? ""}
@@ -507,7 +551,7 @@ export default function SharedPage({ params }: { params: Promise<{ token: string
             >
               {availableTours.map((tour) => (
                 <option key={tour.tour_id} value={tour.tour_id} className="bg-neutral-900 text-white">
-                  {tour.name}
+                  {sharedTourDisplayName(tour, lang)}
                 </option>
               ))}
             </select>
