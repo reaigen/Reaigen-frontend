@@ -40,6 +40,7 @@ const COPY = {
     ready: "Ready to share",
     readyToPublish: "Ready for publishing",
     preparing: "Preparing",
+    needsDelivery: "Publishing setup required",
     none: "No tour yet",
     summary: (published: number, ready: number, total: number) => (
       total === 0
@@ -60,9 +61,10 @@ const COPY = {
     iosHint: "Available in the iOS delivery",
     makePrimary: "Use as default",
     primaryBadge: "Default",
-    pending: "Waiting for scan",
+    pending: "Waiting for mobile upload",
     processing: "Processing",
     failed: "Needs attention",
+    deliveryPending: "Publishing not ready",
     hidden: "Not published",
     published: "Published",
     shareTitle: "Update active shares",
@@ -79,13 +81,17 @@ const COPY = {
     reasonRescan: "Rescan",
     reasonImported: "Imported",
     reasonOther: "Capture",
-    waitingForMobile: "Waiting for the iPhone upload or backend processing. Delivery controls unlock after validation.",
+    waitingForMobile: "Waiting for the iPhone upload to land. This entry will update automatically.",
+    processingHint: "The backend is processing and validating this tour. Delivery controls unlock when it is ready.",
+    deliveryPendingHint: "The tour reconstruction exists, but a validated product delivery has not been published yet.",
+    failedHint: "This tour could not be prepared. Review the processing result before trying again from the mobile app.",
   },
   sk: {
     title: "Virtuálne prehliadky",
     ready: "Pripravené na zdieľanie",
     readyToPublish: "Pripravené na zverejnenie",
     preparing: "Pripravuje sa",
+    needsDelivery: "Vyžaduje nastavenie zverejnenia",
     none: "Zatiaľ bez prehliadky",
     summary: (published: number, ready: number, total: number) => (
       total === 0
@@ -106,9 +112,10 @@ const COPY = {
     iosHint: "Dostupná v iOS doručení",
     makePrimary: "Nastaviť ako predvolenú",
     primaryBadge: "Predvolená",
-    pending: "Čaká na snímanie",
+    pending: "Čaká na nahratie z mobilu",
     processing: "Spracúva sa",
     failed: "Vyžaduje pozornosť",
+    deliveryPending: "Zverejnenie nie je pripravené",
     hidden: "Nezverejnená",
     published: "Zverejnená",
     shareTitle: "Aktualizovať aktívne zdieľania",
@@ -125,7 +132,10 @@ const COPY = {
     reasonRescan: "Nové snímanie",
     reasonImported: "Importovaná",
     reasonOther: "Snímanie",
-    waitingForMobile: "Čaká na nahratie z iPhonu alebo spracovanie backendom. Nastavenia doručenia sa sprístupnia po kontrole.",
+    waitingForMobile: "Čaká na dokončenie nahrávania z iPhonu. Stav sa potom aktualizuje automaticky.",
+    processingHint: "Backend prehliadku spracúva a kontroluje. Nastavenia doručenia sa sprístupnia, keď bude pripravená.",
+    deliveryPendingHint: "Rekonštrukcia prehliadky existuje, ale overené produktové doručenie ešte nebolo zverejnené.",
+    failedHint: "Prehliadku sa nepodarilo pripraviť. Pred opakovaním v mobilnej aplikácii skontrolujte výsledok spracovania.",
   },
 } as const;
 
@@ -317,6 +327,10 @@ export function DraftTourAssetsPanel({
     ? text.ready
     : readyAssets.length > 0
       ? text.readyToPublish
+      : payload?.assets.some((asset) => (
+          asset.source_splat_id != null && asset.status === "completed"
+        ))
+        ? text.needsDelivery
       : payload?.assets.length
         ? text.preparing
         : text.none;
@@ -466,7 +480,16 @@ export function DraftTourAssetsPanel({
                       ? text.failed
                       : asset.status === "processing"
                         ? text.processing
-                        : text.pending;
+                        : asset.source_splat_id && asset.status === "completed"
+                          ? text.deliveryPending
+                          : text.pending;
+                  const pendingHint = asset.status === "failed"
+                    ? text.failedHint
+                    : asset.source_splat_id && asset.status === "completed"
+                      ? text.deliveryPendingHint
+                      : asset.status === "processing"
+                        ? text.processingHint
+                        : text.waitingForMobile;
                   return (
                     <article key={asset.id} className="rounded-2xl border border-border/70 bg-card p-4">
                       <div className="flex items-start gap-3">
@@ -551,7 +574,7 @@ export function DraftTourAssetsPanel({
                             </div>
                           ) : (
                             <p className="mt-3 rounded-xl bg-foreground/[0.035] px-3 py-2.5 text-[11px] leading-relaxed text-muted-foreground">
-                              {text.waitingForMobile}
+                              {pendingHint}
                             </p>
                           )}
                         </div>
