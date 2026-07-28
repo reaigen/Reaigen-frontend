@@ -4,7 +4,6 @@ import * as React from "react";
 import Link from "next/link";
 import {
   getDraftTourAssets,
-  reserveDraftTourAsset,
   updateDraftTourPublication,
 } from "../lib/api/client";
 import { getSafeApiErrorMessage } from "../lib/api/error-message";
@@ -20,7 +19,7 @@ import {
   CheckIcon,
   ClockIcon,
   ExternalLinkIcon,
-  PlusIcon,
+  InfoIcon,
   TourIcon,
 } from "./icons";
 import { SidePanel } from "./side-panel";
@@ -39,22 +38,22 @@ const COPY = {
   en: {
     title: "Virtual tours",
     ready: "Ready to share",
+    readyToPublish: "Ready for publishing",
     preparing: "Preparing",
     none: "No tour yet",
-    summary: (visible: number, total: number) => `${visible} visible of ${total} captured`,
+    summary: (published: number, ready: number, total: number) => (
+      total === 0
+        ? "No tour uploaded from the iPhone app yet"
+        : `${published} published · ${ready} ready · ${total} total`
+    ),
     primary: "Default tour",
     view: "Open tour",
     manage: "Tours & delivery",
-    add: "New scan",
-    addHint: "Keep the current tour and add a new capture as another asset.",
-    renovation: "After renovation",
-    renovationHint: "Link the new capture to the current default tour.",
-    rescan: "Independent rescan",
-    rescanHint: "Create another tour without replacing an earlier one.",
-    created: "Scan slot created. Open this listing on iPhone and tap Start scan.",
+    mobileSourceTitle: "New tours come from the mobile app",
+    mobileSourceHint: "Capture on iPhone or iPad. After a reliable upload and backend validation, each scan appears here automatically as a separate tour.",
     panelTitle: "Tours & delivery",
-    panelDescription: "Choose which captures clients can see.",
-    captured: "Captured tours",
+    panelDescription: "Publish one or more ready tours and choose the default clients see first.",
+    captured: "Tour assets",
     web: "Web",
     webHint: "Visible in shared web listings",
     ios: "iPhone & iPad",
@@ -80,27 +79,27 @@ const COPY = {
     reasonRescan: "Rescan",
     reasonImported: "Imported",
     reasonOther: "Capture",
-    startOnIphone: "Start this reserved scan on iPhone",
+    waitingForMobile: "Waiting for the iPhone upload or backend processing. Delivery controls unlock after validation.",
   },
   sk: {
     title: "Virtuálne prehliadky",
     ready: "Pripravené na zdieľanie",
+    readyToPublish: "Pripravené na zverejnenie",
     preparing: "Pripravuje sa",
     none: "Zatiaľ bez prehliadky",
-    summary: (visible: number, total: number) => `${visible} zobrazených z ${total} nasnímaných`,
+    summary: (published: number, ready: number, total: number) => (
+      total === 0
+        ? "Zatiaľ nebola nahraná žiadna prehliadka z aplikácie pre iPhone"
+        : `${published} zverejnených · ${ready} pripravených · ${total} celkom`
+    ),
     primary: "Predvolená prehliadka",
     view: "Otvoriť prehliadku",
     manage: "Prehliadky a doručenie",
-    add: "Nové snímanie",
-    addHint: "Ponechajte aktuálnu prehliadku a pridajte nové snímanie ako ďalší objekt.",
-    renovation: "Po rekonštrukcii",
-    renovationHint: "Prepojí nové snímanie s aktuálnou predvolenou prehliadkou.",
-    rescan: "Samostatné nové snímanie",
-    rescanHint: "Vytvorí ďalšiu prehliadku bez nahradenia pôvodnej.",
-    created: "Miesto pre snímanie je pripravené. Otvorte ponuku na iPhone a klepnite na Spustiť snímanie.",
+    mobileSourceTitle: "Nové prehliadky vznikajú v mobilnej aplikácii",
+    mobileSourceHint: "Snímanie spustíte na iPhone alebo iPade. Po spoľahlivom nahratí a kontrole backendom sa tu každé snímanie automaticky zobrazí ako samostatná prehliadka.",
     panelTitle: "Prehliadky a doručenie",
-    panelDescription: "Vyberte, ktoré snímania uvidia klienti.",
-    captured: "Nasnímané prehliadky",
+    panelDescription: "Zverejnite jednu alebo viac pripravených prehliadok a vyberte predvolenú pre klientov.",
+    captured: "Prehliadky",
     web: "Web",
     webHint: "Viditeľná v zdieľaných webových ponukách",
     ios: "iPhone a iPad",
@@ -126,7 +125,7 @@ const COPY = {
     reasonRescan: "Nové snímanie",
     reasonImported: "Importovaná",
     reasonOther: "Snímanie",
-    startOnIphone: "Spustite toto pripravené snímanie na iPhone",
+    waitingForMobile: "Čaká na nahratie z iPhonu alebo spracovanie backendom. Nastavenia doručenia sa sprístupnia po kontrole.",
   },
 } as const;
 
@@ -186,7 +185,6 @@ export function DraftTourAssetsPanel({
   const [baseline, setBaseline] = React.useState("");
   const [loading, setLoading] = React.useState(true);
   const [saving, setSaving] = React.useState(false);
-  const [reserving, setReserving] = React.useState<"renovation" | "rescan" | null>(null);
   const [applyToShares, setApplyToShares] = React.useState(true);
   const [error, setError] = React.useState<string | null>(null);
   const [notice, setNotice] = React.useState<string | null>(null);
@@ -281,26 +279,6 @@ export function DraftTourAssetsPanel({
     setSelections((current) => normalizePrimary(current, assetId));
   };
 
-  const reserve = async (reason: "renovation" | "rescan") => {
-    if (reserving) return;
-    setReserving(reason);
-    setError(null);
-    setNotice(null);
-    try {
-      const result = await reserveDraftTourAsset(draftId, {
-        asset_id: globalThis.crypto.randomUUID(),
-        capture_reason: reason,
-        renovation_of_id: reason === "renovation" ? primaryAsset?.id ?? null : null,
-      });
-      applyPayload(result);
-      setNotice(text.created);
-    } catch (caught) {
-      setError(getSafeApiErrorMessage(caught, lang));
-    } finally {
-      setReserving(null);
-    }
-  };
-
   const save = async () => {
     if (saving || !changed) return;
     setSaving(true);
@@ -338,7 +316,7 @@ export function DraftTourAssetsPanel({
   const statusText = primaryAsset
     ? text.ready
     : readyAssets.length > 0
-      ? text.preparing
+      ? text.readyToPublish
       : payload?.assets.length
         ? text.preparing
         : text.none;
@@ -371,7 +349,11 @@ export function DraftTourAssetsPanel({
               ) : null}
             </div>
             <p className="mt-2 text-[12px] leading-relaxed text-muted-foreground">
-              {text.summary(visibleAssets.length, payload?.assets.length ?? 0)}
+              {text.summary(
+                visibleAssets.length,
+                readyAssets.length,
+                payload?.assets.length ?? 0,
+              )}
             </p>
           </div>
         </div>
@@ -393,15 +375,15 @@ export function DraftTourAssetsPanel({
           </div>
         ) : null}
 
-        <div className="mt-5 grid grid-cols-1 gap-2 sm:grid-cols-2">
-          <Button variant="outline" onClick={() => setOpen(true)}>
-            <PlusIcon size={15} />
-            {text.add}
-          </Button>
-          <Button onClick={() => setOpen(true)}>
+        <div className="mt-5">
+          <Button className="w-full" onClick={() => setOpen(true)}>
             <TourIcon size={15} />
             {text.manage}
           </Button>
+          <p className="mt-3 flex items-start gap-2 text-[11px] leading-relaxed text-muted-foreground">
+            <InfoIcon size={14} className="mt-0.5 shrink-0" />
+            <span>{text.mobileSourceHint}</span>
+          </p>
         </div>
       </div>
 
@@ -416,7 +398,11 @@ export function DraftTourAssetsPanel({
             <div className="min-w-0 text-[11px] text-muted-foreground">
               {payload?.publication
                 ? (usdHealthy ? text.usdHealthy : text.usdInvalid)
-                : text.summary(visibleAssets.length, payload?.assets.length ?? 0)}
+                : text.summary(
+                    visibleAssets.length,
+                    readyAssets.length,
+                    payload?.assets.length ?? 0,
+                  )}
             </div>
             <Button
               size="sm"
@@ -430,35 +416,18 @@ export function DraftTourAssetsPanel({
         )}
       >
         <div className="space-y-5 p-5 sm:p-6">
-          <div className="grid gap-2 sm:grid-cols-2">
-            <button
-              type="button"
-              disabled={Boolean(reserving)}
-              onClick={() => { void reserve("renovation"); }}
-              className="rounded-2xl border border-border/70 bg-card p-4 text-left transition-colors hover:bg-foreground/[0.025] disabled:opacity-50"
-            >
-              <span className="flex items-center gap-2 text-[13px] font-semibold">
-                <PlusIcon size={15} />
-                {text.renovation}
+          <div className="rounded-2xl border border-border/70 bg-foreground/[0.025] p-4">
+            <div className="flex items-start gap-3">
+              <span className="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-xl bg-card text-foreground/55">
+                <InfoIcon size={15} />
               </span>
-              <span className="mt-1.5 block text-[11px] leading-relaxed text-muted-foreground">
-                {text.renovationHint}
-              </span>
-            </button>
-            <button
-              type="button"
-              disabled={Boolean(reserving)}
-              onClick={() => { void reserve("rescan"); }}
-              className="rounded-2xl border border-border/70 bg-card p-4 text-left transition-colors hover:bg-foreground/[0.025] disabled:opacity-50"
-            >
-              <span className="flex items-center gap-2 text-[13px] font-semibold">
-                <PlusIcon size={15} />
-                {text.rescan}
-              </span>
-              <span className="mt-1.5 block text-[11px] leading-relaxed text-muted-foreground">
-                {text.rescanHint}
-              </span>
-            </button>
+              <div>
+                <p className="text-[13px] font-semibold">{text.mobileSourceTitle}</p>
+                <p className="mt-1 text-[11px] leading-relaxed text-muted-foreground">
+                  {text.mobileSourceHint}
+                </p>
+              </div>
+            </div>
           </div>
 
           {notice ? (
@@ -582,7 +551,7 @@ export function DraftTourAssetsPanel({
                             </div>
                           ) : (
                             <p className="mt-3 rounded-xl bg-foreground/[0.035] px-3 py-2.5 text-[11px] leading-relaxed text-muted-foreground">
-                              {text.startOnIphone}
+                              {text.waitingForMobile}
                             </p>
                           )}
                         </div>

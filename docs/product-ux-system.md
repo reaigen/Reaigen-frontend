@@ -158,9 +158,13 @@ Tour captures are durable listing assets, not replacements for one mutable paren
 capture, a post-renovation capture, an independent rescan, and an import each keep their own stable
 asset UUID, exact reconstruction, delivery versions, and lineage.
 
-The draft's **Tours & delivery** panel separates capture from publication:
+The draft's **Tours & delivery** panel is a publication and delivery surface, not a capture
+surface:
 
-- **New scan** reserves a new asset without removing the current tour.
+- Physical capture and capture-asset reservation start only in the Reaigen iPhone/iPad app.
+  The web portal never presents a scan action.
+- After the mobile upload lands and the backend validates it, the resulting independent tour asset
+  appears in the panel automatically without replacing an earlier tour.
 - Web and iPhone/iPad visibility are independent switches.
 - Any number of ready captures may be visible, while one visible capture is the default.
 - Saving creates an immutable listing publication revision and a validated layered-USD listing

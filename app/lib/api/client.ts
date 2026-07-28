@@ -2217,25 +2217,6 @@ export async function getDraftTourAssets(draftId: number): Promise<DraftTourAsse
   return request(`/api/reaigen/drafts/${draftId}/tours/`);
 }
 
-export async function reserveDraftTourAsset(
-  draftId: number,
-  data: {
-    asset_id: string;
-    name?: string;
-    capture_reason: "initial" | "renovation" | "rescan" | "imported" | "other";
-    renovation_of_id?: number | null;
-  },
-): Promise<DraftTourAssetsPayload & {
-  reserved_tour_id: number;
-  reserved_asset_id: string;
-  created: boolean;
-}> {
-  return request(`/api/reaigen/drafts/${draftId}/tours/`, {
-    method: "POST",
-    body: JSON.stringify(data),
-  });
-}
-
 export async function updateDraftTourPublication(
   draftId: number,
   entries: DraftTourPublicationSelection[],
