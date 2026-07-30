@@ -8,7 +8,7 @@ import { saveCameras, getCameras } from "@/app/lib/api/client";
 import { getSafeApiErrorMessage } from "@/app/lib/api/error-message";
 import { cameraFovDegrees, cameraFovRadians, markIdentityCamera, normalizeCameraData } from "@/app/lib/camera-coordinates";
 import { t } from "@/app/lib/i18n";
-import type { CameraData, Vec3 } from "@/app/lib/tour-types";
+import type { CameraData, GlobalSceneTransform, Vec3 } from "@/app/lib/tour-types";
 import type { SplatViewerHandle } from "./splat-viewer";
 
 interface CameraShot {
@@ -36,10 +36,13 @@ interface Props {
   initialCameras?: CameraData | null;
   defaultMode?: "edit" | "preview";
   onSaved?: (saved: CameraData) => void;
+  saveHandler?: (data: CameraData) => Promise<CameraData>;
+  sceneTransform?: GlobalSceneTransform;
+  appearance?: "overlay" | "workspace";
   lang?: string;
 }
 
-export default function CameraEditor({ splatId, viewerRef, activeShotIdx, initialCameras, defaultMode = "edit", onSaved, lang = "en" }: Props) {
+export default function CameraEditor({ splatId, viewerRef, activeShotIdx, initialCameras, defaultMode = "edit", onSaved, saveHandler, sceneTransform, appearance = "overlay", lang = "en" }: Props) {
   const [shots, setShots] = useState<CameraShot[]>([]);
   const [mode, setMode] = useState<"edit" | "preview">(defaultMode);
   const [previewIdx, setPreviewIdx] = useState(0);
@@ -49,14 +52,22 @@ export default function CameraEditor({ splatId, viewerRef, activeShotIdx, initia
   const [message, setMessage] = useState<string | null>(null);
   const [isError, setIsError] = useState(false);
   const [loaded, setLoaded] = useState(false);
-  const [sceneFov, setSceneFov] = useState<number>(85);
+  const [sceneFov, setSceneFov] = useState<number>(60);
   const [sceneRevision, setSceneRevision] = useState(0);
+  const [dirty, setDirty] = useState(false);
   // Keep the 3D scene primary on every device. The compact capsule still
   // exposes camera count, navigation, capture, and preview; users expand the
   // full editor only when they intentionally start editing.
   const [isCollapsed, setIsCollapsed] = useState(true);
   const previewTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const clearMessageTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const autoSaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const editGenerationRef = useRef(0);
+
+  // Camera coordinates returned by SplatViewer are already canonical. Keep the
+  // prop for API compatibility with other editor surfaces, but never apply the
+  // scene inverse a second time.
+  void sceneTransform;
 
   // Load existing saved cameras on mount. New camera payloads use identity
   // scene space; historical edited payloads are migrated once on read.
@@ -65,33 +76,41 @@ export default function CameraEditor({ splatId, viewerRef, activeShotIdx, initia
     const applyCameraData = (rawData: CameraData) => {
       if (!active) return;
       const data = normalizeCameraData(rawData);
-      const sceneCameraFov = data.sceneFov
-        ? cameraFovRadians(data.sceneFov, 0.66)
-        : null;
-      if (data.cameras?.length) {
-        const loaded = data.cameras.map((c, i) => ({
+      const currentViewportFov = viewerRef.current?.getCurrentCamera()?.fov ?? Math.PI / 3;
+      const loadedShots = (data.cameras ?? []).map((c, i) => ({
           id: c.id ?? newCameraId(),
           position: c.position,
           forward: c.forward,
           up: c.up ?? [0, 1, 0],
-          fov: sceneCameraFov ?? cameraFovRadians(c.fov ?? data.fovY, 0.66),
+          // A shot's captured lens is authoritative. sceneFov is only a
+          // fallback for historical payloads that did not store per-shot FOV.
+          fov: cameraFovRadians(c.fov ?? data.fovY ?? data.sceneFov, currentViewportFov),
           label: c.label ?? c.name ?? `${t("cameraEditor.camera", lang)} ${i + 1}`,
           kind: "authored" as const,
           role: (c.role === "hero" || c.role === "transition" ? c.role : "tour") as CameraShot["role"],
         }));
-        setShots(loaded);
-        setSelectedIdx(defaultMode === "preview" ? 0 : null);
+      setShots(loadedShots);
+      setDirty(false);
+      editGenerationRef.current += 1;
+      setSelectedIdx(defaultMode === "preview" && loadedShots.length ? 0 : null);
+      if (loadedShots.length) {
         setPreviewIdx(0);
         // Start in preview mode — fly to first shot but don't auto-loop
-        if (defaultMode === "preview" && loaded.length > 0) {
+        if (defaultMode === "preview") {
           setMode("preview");
           setPreviewIdx(0);
         }
+      } else {
+        setPreviewIdx(0);
+        setMode("edit");
       }
       if (data.sceneFov) {
         const sceneFovDegrees = cameraFovDegrees(data.sceneFov);
         setSceneFov(sceneFovDegrees);
-        viewerRef.current?.setFov(sceneFovDegrees);
+      } else {
+        setSceneFov(cameraFovDegrees(
+          loadedShots[0]?.fov ?? currentViewportFov,
+        ));
       }
       setSceneRevision(data.sceneRevision ?? data.sceneDescription?.stage?.revision ?? 0);
     };
@@ -107,7 +126,7 @@ export default function CameraEditor({ splatId, viewerRef, activeShotIdx, initia
       .catch(() => {})
       .finally(() => { if (active) setLoaded(true); });
     return () => { active = false; };
-  }, [initialCameras, splatId]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [splatId]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Sync with external shot index (arrow-key navigation in viewer)
   useEffect(() => {
@@ -122,6 +141,7 @@ export default function CameraEditor({ splatId, viewerRef, activeShotIdx, initia
     return () => {
       if (previewTimerRef.current) clearTimeout(previewTimerRef.current);
       if (clearMessageTimerRef.current) clearTimeout(clearMessageTimerRef.current);
+      if (autoSaveTimerRef.current) clearTimeout(autoSaveTimerRef.current);
     };
   }, []);
 
@@ -140,7 +160,9 @@ export default function CameraEditor({ splatId, viewerRef, activeShotIdx, initia
     setSelectedIdx(idx);
     setPreviewIdx(idx);
     if (preview) setMode("preview");
-    viewerRef.current?.navigateToCamera(shot.position, shot.forward, false, shot.fov, shot.up);
+    // Camera selection in an authoring tool is a cut, not a queued flight.
+    // The next pointer movement can therefore take control immediately.
+    viewerRef.current?.navigateToCamera(shot.position, shot.forward, true, shot.fov, shot.up);
     if (!preview) setTransientMessage(`${t("cameraEditor.viewing", lang)} ${idx + 1}`, 1000);
   }, [lang, setTransientMessage, shots, viewerRef]);
 
@@ -167,9 +189,9 @@ export default function CameraEditor({ splatId, viewerRef, activeShotIdx, initia
         ...prev,
         {
           id: newCameraId(),
-          position: cam.position,
-          forward: cam.forward,
-          up: cam.up,
+          position: [...cam.position] as Vec3,
+          forward: [...cam.forward] as Vec3,
+          up: [...cam.up] as Vec3,
           fov: cam.fov,
           label: `${t("cameraEditor.camera", lang)} ${prev.length + 1}`,
           kind: "authored" as const,
@@ -181,6 +203,8 @@ export default function CameraEditor({ splatId, viewerRef, activeShotIdx, initia
       setPreviewIdx(nextIdx);
       return next;
     });
+    editGenerationRef.current += 1;
+    setDirty(true);
     setMode("edit");
     setIsCollapsed(false);
     setTransientMessage(t("cameraEditor.messageCaptured", lang));
@@ -193,9 +217,17 @@ export default function CameraEditor({ splatId, viewerRef, activeShotIdx, initia
     if (!cam) return;
     setShots((prev) =>
       prev.map((s, i) =>
-        i === idx ? { ...s, position: cam.position, forward: cam.forward, up: cam.up, fov: cam.fov } : s
+        i === idx ? {
+          ...s,
+          position: [...cam.position] as Vec3,
+          forward: [...cam.forward] as Vec3,
+          up: [...cam.up] as Vec3,
+          fov: cam.fov,
+        } : s
       )
     );
+    editGenerationRef.current += 1;
+    setDirty(true);
     setUpdatedIdx(idx);
     setSelectedIdx(idx);
     setPreviewIdx(idx);
@@ -218,13 +250,16 @@ export default function CameraEditor({ splatId, viewerRef, activeShotIdx, initia
       }
       return next;
     });
+    editGenerationRef.current += 1;
+    setDirty(true);
     setTransientMessage(t("cameraEditor.messageRemoved", lang));
   }, [setTransientMessage, lang]);
 
   const moveShot = useCallback((idx: number, dir: -1 | 1) => {
+    const target = idx + dir;
+    if (target < 0 || target >= shots.length) return;
     setShots((prev) => {
       const next = [...prev];
-      const target = idx + dir;
       if (target < 0 || target >= next.length) return prev;
       [next[idx], next[target]] = [next[target], next[idx]];
       if (selectedIdx === idx) setSelectedIdx(target);
@@ -234,21 +269,25 @@ export default function CameraEditor({ splatId, viewerRef, activeShotIdx, initia
       // Renumber labels after reorder
       return next.map((s, i) => ({ ...s, label: `${t("cameraEditor.camera", lang)} ${i + 1}` }));
     });
+    editGenerationRef.current += 1;
+    setDirty(true);
     setTransientMessage(t("cameraEditor.messageOrderUpdated", lang), 1400);
-  }, [previewIdx, selectedIdx, setTransientMessage, lang]);
+  }, [previewIdx, selectedIdx, setTransientMessage, shots.length, lang]);
 
-  const handleSave = useCallback(async () => {
-    if (!shots.length) {
-      setIsError(false);
-      setMessage(t("cameraEditor.messageAddShotFirst", lang));
-      return;
-    }
+  const handleSave = useCallback(async (announce = true) => {
+    const generation = editGenerationRef.current;
+    const snapshot = shots.map((shot) => ({
+      ...shot,
+      position: [...shot.position] as Vec3,
+      forward: [...shot.forward] as Vec3,
+      up: [...shot.up] as Vec3,
+    }));
     setSaving(true);
     setIsError(false);
-    setMessage(null);
+    if (announce) setMessage(null);
     try {
-      const saved = await saveCameras(splatId, {
-        cameras: shots.map((s) => markIdentityCamera({
+      const payload: CameraData = {
+        cameras: snapshot.map((s) => markIdentityCamera({
           id: s.id,
           position: [...s.position],
           forward: [...s.forward],
@@ -258,18 +297,27 @@ export default function CameraEditor({ splatId, viewerRef, activeShotIdx, initia
           kind: s.kind,
           role: s.role,
         })),
-        fovY: shots[0]?.fov ?? 0.66,
+        fovY: snapshot[0]?.fov ?? cameraFovRadians(sceneFov, 0.66),
         sceneFov,
-        baseRevision: sceneRevision,
-      });
+      };
+      const saved = saveHandler
+        ? await saveHandler(payload)
+        : await saveCameras(splatId, {
+            ...payload,
+            baseRevision: sceneRevision,
+          });
       setSceneRevision(saved.sceneRevision ?? saved.sceneDescription?.stage?.revision ?? sceneRevision + 1);
-      if (saved.cameras?.length === shots.length) {
+      if (
+        editGenerationRef.current === generation
+        && saved.cameras?.length === snapshot.length
+      ) {
         setShots((current) => current.map((shot, index) => ({
           ...shot,
           id: saved.cameras[index]?.id ?? shot.id,
         })));
       }
-      setTransientMessage(t("cameraEditor.messageSaved", lang));
+      if (editGenerationRef.current === generation) setDirty(false);
+      if (announce) setTransientMessage(t("cameraEditor.messageSaved", lang));
       onSaved?.(saved);
     } catch (err) {
       setIsError(true);
@@ -277,12 +325,31 @@ export default function CameraEditor({ splatId, viewerRef, activeShotIdx, initia
     } finally {
       setSaving(false);
     }
-  }, [shots, splatId, sceneFov, sceneRevision, setTransientMessage, onSaved, lang]);
+  }, [shots, splatId, sceneFov, sceneRevision, setTransientMessage, onSaved, saveHandler, lang]);
+
+  // Camera edits are workspace edits. Persist them automatically so collapsing
+  // or closing the panel cannot silently discard a captured shot.
+  useEffect(() => {
+    if (!loaded || !dirty || saving) return;
+    if (autoSaveTimerRef.current) clearTimeout(autoSaveTimerRef.current);
+    autoSaveTimerRef.current = setTimeout(() => {
+      autoSaveTimerRef.current = null;
+      void handleSave(false);
+    }, 650);
+    return () => {
+      if (autoSaveTimerRef.current) {
+        clearTimeout(autoSaveTimerRef.current);
+        autoSaveTimerRef.current = null;
+      }
+    };
+  }, [dirty, handleSave, loaded, saving]);
 
   const handleSceneFovChange = useCallback((value: number) => {
     setSceneFov(value);
     const radians = cameraFovRadians(value, 0.66);
     setShots((current) => current.map((shot) => ({ ...shot, fov: radians })));
+    editGenerationRef.current += 1;
+    setDirty(true);
     viewerRef.current?.setFov(value);
   }, [viewerRef]);
 
@@ -296,7 +363,7 @@ export default function CameraEditor({ splatId, viewerRef, activeShotIdx, initia
     viewerRef.current?.navigateToCamera(
       shots[targetIdx].position,
       shots[targetIdx].forward,
-      false,
+      true,
       shots[targetIdx].fov,
       shots[targetIdx].up,
     );
@@ -337,16 +404,14 @@ export default function CameraEditor({ splatId, viewerRef, activeShotIdx, initia
   const prevShot = useCallback(() => {
     if (!shots.length) return;
     const current = selectedIdx ?? previewIdx;
-    if (current <= 0) return;
-    const next = current - 1;
+    const next = (current - 1 + shots.length) % shots.length;
     goToLocalShot(next, mode === "preview");
   }, [goToLocalShot, mode, previewIdx, selectedIdx, shots.length]);
 
   const nextShot = useCallback(() => {
     if (!shots.length) return;
     const current = selectedIdx ?? previewIdx;
-    if (current >= shots.length - 1) return;
-    const next = current + 1;
+    const next = (current + 1) % shots.length;
     goToLocalShot(next, mode === "preview");
   }, [goToLocalShot, mode, previewIdx, selectedIdx, shots.length]);
 
@@ -356,14 +421,13 @@ export default function CameraEditor({ splatId, viewerRef, activeShotIdx, initia
 
   const ArrowLeft = <ArrowLeftIcon size={14} />;
   const ArrowRight = <ArrowRightIcon size={14} />;
-  const currentNavigationIndex = selectedIdx ?? previewIdx;
-  const canGoPrevious = shots.length > 1 && currentNavigationIndex > 0;
-  const canGoNext = shots.length > 1 && currentNavigationIndex < shots.length - 1;
+  const canGoPrevious = shots.length > 1;
+  const canGoNext = shots.length > 1;
 
   // ── Preview mode: floating pill with arrows ─────────────────────────────
   if (mode === "preview") {
     return (
-      <div className="absolute inset-x-2 bottom-[calc(0.75rem+env(safe-area-inset-bottom,0px))] z-30 flex justify-center animate-fade-in md:inset-x-6 md:bottom-[calc(1.5rem+env(safe-area-inset-bottom,0px))] xl:inset-x-auto xl:bottom-auto xl:right-4 xl:top-4 xl:justify-end">
+      <div className={`absolute inset-x-2 bottom-[calc(0.75rem+env(safe-area-inset-bottom,0px))] z-30 flex justify-center animate-fade-in md:inset-x-6 md:bottom-[calc(1.5rem+env(safe-area-inset-bottom,0px))] xl:inset-x-auto xl:bottom-auto xl:right-4 xl:justify-end ${appearance === "workspace" ? "camera-editor-workspace xl:top-20" : "xl:top-4"}`}>
         <div className="floating-toolbar-shape max-w-full border border-white/[0.1] bg-black/70 text-white shadow-2xl backdrop-blur-2xl">
           {/* Play / Pause */}
           <button
@@ -465,7 +529,7 @@ export default function CameraEditor({ splatId, viewerRef, activeShotIdx, initia
   // ── Edit collapsed: compact pill ────────────────────────────────────────
   if (isCollapsed) {
     return (
-      <div className="absolute inset-x-2 bottom-[calc(0.75rem+env(safe-area-inset-bottom,0px))] z-30 flex justify-center animate-fade-in md:inset-x-6 md:bottom-[calc(1.5rem+env(safe-area-inset-bottom,0px))] xl:inset-x-auto xl:bottom-auto xl:right-4 xl:top-4 xl:justify-end">
+      <div className={`absolute inset-x-2 bottom-[calc(0.75rem+env(safe-area-inset-bottom,0px))] z-30 flex justify-center animate-fade-in md:inset-x-6 md:bottom-[calc(1.5rem+env(safe-area-inset-bottom,0px))] xl:inset-x-auto xl:bottom-auto xl:right-4 xl:justify-end ${appearance === "workspace" ? "camera-editor-workspace xl:top-20" : "xl:top-4"}`}>
         <div className="floating-toolbar-shape max-w-full border border-white/[0.1] bg-black/70 text-white shadow-2xl backdrop-blur-2xl">
           <button
             type="button"
@@ -559,7 +623,7 @@ export default function CameraEditor({ splatId, viewerRef, activeShotIdx, initia
 
   // ── Edit mode expanded: full camera panel ───────────────────────────────
   return (
-    <div className="absolute inset-x-0 bottom-0 z-30 animate-fade-in md:inset-x-6 md:bottom-[calc(1.5rem+env(safe-area-inset-bottom,0px))] md:mx-auto md:max-w-[42rem] xl:inset-x-auto xl:bottom-auto xl:right-4 xl:top-4 xl:mx-0 xl:w-[19.5rem]">
+    <div className={`absolute inset-x-0 bottom-0 z-30 animate-fade-in md:inset-x-6 md:bottom-[calc(1.5rem+env(safe-area-inset-bottom,0px))] md:mx-auto md:max-w-[42rem] xl:inset-x-auto xl:bottom-auto xl:right-4 xl:mx-0 xl:w-[20rem] ${appearance === "workspace" ? "camera-editor-workspace xl:top-20" : "xl:top-4"}`}>
       <div className="max-h-[56dvh] overflow-hidden rounded-t-[var(--floating-panel-radius)] border border-white/[0.1] bg-black/70 pb-[env(safe-area-inset-bottom,0px)] text-white shadow-2xl backdrop-blur-2xl md:max-h-[60dvh] md:rounded-[var(--floating-panel-radius)] md:pb-0 xl:max-h-[calc(100dvh-4.5rem)]">
         <div className="flex h-4 items-center justify-center md:hidden" aria-hidden="true">
           <span className="h-1 w-9 rounded-full bg-white/25" />
@@ -609,11 +673,10 @@ export default function CameraEditor({ splatId, viewerRef, activeShotIdx, initia
               variant="outline"
               size="sm"
               className="floating-control-sm h-auto border-white/[0.08] bg-white/10 px-3 text-white/70 shadow-none hover:bg-white/15 hover:text-white"
-              onClick={handleSave}
+              onClick={() => void handleSave()}
               loading={saving}
-              disabled={!shots.length}
             >
-              {t("cameraEditor.saveCameras", lang)}
+              {dirty ? t("cameraEditor.saveCameras", lang) : t("cameraEditor.messageSaved", lang)}
             </Button>
           </div>
 

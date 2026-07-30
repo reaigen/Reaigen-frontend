@@ -62,26 +62,31 @@ const nextConfig: NextConfig = {
         headers: securityHeaders,
       },
       {
-        source: "/api/reaigen/users/:path*",
-        headers: [
-          ...securityHeaders,
-          { key: "Cache-Control", value: "private, max-age=300" },
-        ],
-      },
-      {
-        source: "/api/reaigen/content/:path*",
-        headers: [
-          ...securityHeaders,
-          { key: "Cache-Control", value: "private, max-age=600" },
-        ],
-      },
-      {
         source: "/api/:path*",
         headers: [
           ...securityHeaders,
-          { key: "Cache-Control", value: "private, no-store" },
+          { key: "Cache-Control", value: "private, no-store, no-cache, max-age=0, must-revalidate" },
+          { key: "Pragma", value: "no-cache" },
+          { key: "Expires", value: "0" },
         ],
       },
+      ...[
+        "/dashboard/:path*",
+        "/draft/:path*",
+        "/tour/:path*",
+        "/tours/:path*",
+        "/shares/:path*",
+        "/settings/:path*",
+        "/create/:path*",
+      ].map((source) => ({
+        source,
+        headers: [
+          ...securityHeaders,
+          { key: "Cache-Control", value: "private, no-store, no-cache, max-age=0, must-revalidate" },
+          { key: "Pragma", value: "no-cache" },
+          { key: "Expires", value: "0" },
+        ],
+      })),
     ];
   },
 };

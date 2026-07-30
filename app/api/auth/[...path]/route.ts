@@ -35,6 +35,7 @@ function noStoreHeaders(contentType: string) {
     "Cache-Control": "private, no-store, no-cache, max-age=0, must-revalidate",
     Pragma: "no-cache",
     Expires: "0",
+    Vary: "Cookie, Authorization",
   };
 }
 
@@ -50,6 +51,7 @@ async function proxy(
       { ok: true },
       { status: 200, headers: noStoreHeaders("application/json") },
     );
+    response.headers.set("Clear-Site-Data", "\"cache\", \"storage\"");
     clearAuthCookies(response);
     return response;
   }
@@ -66,7 +68,7 @@ async function proxy(
   }
 
   for (const baseUrl of backendCandidates()) {
-    const target = `${baseUrl}/api/v1/core/auth/${joined}${slash}`;
+    const target = `${baseUrl}/api/v1/core/auth/${joined}${slash}${req.nextUrl.search}`;
     try {
       const res = await fetchBackend(target, { ...init, cache: "no-store" }, 5_000);
       const data = await res.text();
@@ -78,17 +80,28 @@ async function proxy(
 
       if (res.ok && contentType.includes("application/json")) {
         try {
-          const payload = JSON.parse(data) as { access?: string; refresh?: string; user?: unknown };
-          if (payload.access || payload.refresh) {
-            const body: Record<string, unknown> = { ok: true };
+          const payload = JSON.parse(data) as {
+            access?: string;
+            refresh?: string;
+            tokens?: { access?: string; refresh?: string };
+            user?: unknown;
+            message?: string;
+          };
+          const tokenPayload = payload.tokens ?? payload;
+          if (tokenPayload.access || tokenPayload.refresh) {
+            const body: Record<string, unknown> = { ok: true, message: payload.message };
             if (payload.user) body.user = payload.user;
             const sanitized = NextResponse.json(
               body,
               { status: res.status, headers: noStoreHeaders("application/json") },
             );
+            // Flush responses cached by older web builds before establishing
+            // the new identity. Current builds mark every private response
+            // no-store, so this is primarily a migration safety boundary.
+            sanitized.headers.set("Clear-Site-Data", "\"cache\"");
             setAuthCookies(
               sanitized,
-              payload,
+              tokenPayload,
               req.cookies.get(REFRESH_COOKIE_NAME)?.value ?? null,
             );
             return sanitized;

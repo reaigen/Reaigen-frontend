@@ -6,6 +6,7 @@ import { useAuth } from "../../components/hooks/use-auth";
 import {
   authorUsdSceneTransformOperation,
   getDraft,
+  hasWebCreationAccess,
   getSplatPackage,
   getSplatViewer,
   getSplatsByDraft,
@@ -42,7 +43,6 @@ import {
 
 const SplatViewer = dynamic(() => import("../../components/splat-viewer"), { ssr: false });
 const SOG_READY_TIMEOUT_MS = 15000;
-const SPATIAL_EDITOR_RND_ENABLED = process.env.NODE_ENV === "development";
 
 function pickRenderableUrl(viewer: SplatViewerPayload): string {
   return viewer.asset.url;
@@ -88,6 +88,23 @@ export default function TourPage({
   const requestedTourId = rawTourId ? parseInt(rawTourId, 10) : undefined;
   const { isAuthenticated, isLoading, user } = useAuth();
   const router = useRouter();
+  const [spatialEditorAllowed, setSpatialEditorAllowed] = useState(false);
+
+  useEffect(() => {
+    if (!isAuthenticated) {
+      setSpatialEditorAllowed(false);
+      return;
+    }
+    let active = true;
+    void hasWebCreationAccess()
+      .then((allowed) => {
+        if (active) setSpatialEditorAllowed(allowed);
+      })
+      .catch(() => {
+        if (active) setSpatialEditorAllowed(false);
+      });
+    return () => { active = false; };
+  }, [isAuthenticated]);
   const lang = getUserLanguage(user?.localization);
 
   const [viewer, setViewer] = useState<SplatViewerPayload | null>(null);
@@ -121,6 +138,32 @@ export default function TourPage({
   const preferSavedCameras = !!viewerCameras?.cameras?.length || viewer?.format !== "sog";
   const preferredRenderUrl = viewer ? pickRenderableUrl(viewer) : null;
   const fallbackRenderUrl = viewer ? pickFallbackRenderableUrl(viewer) : null;
+  const workspaceComposition = useMemo(
+    () => (viewer?.workspace?.nodes ?? [])
+      .filter((node) => (
+        node.splat_id !== resolvedSplatId
+        && node.visible
+        && Boolean(node.asset.url)
+      ))
+      .map((node) => ({
+        id: node.id,
+        url: node.asset.url!,
+        visible: node.visible,
+        transform: {
+          version: 1 as const,
+          coordinateSpace: "reaigen_y_up" as const,
+          translation: node.transform.translation,
+          rotationDeg: node.transform.rotationDeg,
+          scale3: node.transform.scale3 ?? [
+            node.transform.scale,
+            node.transform.scale,
+            node.transform.scale,
+          ],
+          scale: node.transform.scale,
+        },
+      })),
+    [resolvedSplatId, viewer?.workspace?.nodes],
+  );
 
   useEffect(() => {
     // Start downloading the renderer chunk while the viewer payload is still
@@ -405,6 +448,7 @@ export default function TourPage({
         }}
         onInspectionStats={setInspectionStats}
         spatialNavigation={advancedOpen}
+        compositionAssets={workspaceComposition}
         lang={lang}
       />
 
@@ -427,7 +471,7 @@ export default function TourPage({
               <ArrowLeftIcon size={16} />
               <span className="hidden text-[12px] font-medium xl:inline">{t("common.back", lang)}</span>
             </button>
-            {SPATIAL_EDITOR_RND_ENABLED ? (
+            {spatialEditorAllowed ? (
               <button
                 type="button"
                 onClick={() => { void openAdvancedEditor(); }}

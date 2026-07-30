@@ -2,13 +2,17 @@
 
 import * as React from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import {
+  createWebTour,
   getDraftTourAssets,
+  hasWebCreationAccess,
   renameDraftTourAsset,
   removeDraftTourAsset,
   updateDraftTourPublication,
 } from "../lib/api/client";
 import { getSafeApiErrorMessage } from "../lib/api/error-message";
+import { t } from "../lib/i18n";
 import type {
   DraftSplatVersion,
   DraftTourAsset,
@@ -243,6 +247,7 @@ function assetStatus(
   asset: DraftTourAsset,
   selection: Selection | undefined,
   text: ReturnType<typeof copyFor>,
+  lang: string,
 ) {
   const ready = isReady(asset);
   const visible = Boolean(selection?.web || selection?.ios);
@@ -263,6 +268,15 @@ function assetStatus(
       label: text.failed,
       tone: "danger" as const,
       hint: text.failedHint,
+    };
+  }
+  if (asset.editor_workspace && !asset.source_splat_id) {
+    return {
+      ready,
+      visible,
+      label: t("webEditor.workspaceDraft", lang),
+      tone: "neutral" as const,
+      hint: t("webEditor.workspaceDraftHint", lang),
     };
   }
   if (lifecycle === "uploading") {
@@ -415,6 +429,7 @@ export function DraftTourAssetsPanel({
   onPrimaryChanged?: (splatId: number | null) => void;
 }) {
   const text = copyFor(lang);
+  const router = useRouter();
   const [open, setOpen] = React.useState(false);
   const [payload, setPayload] = React.useState<DraftTourAssetsPayload | null>(null);
   const [selections, setSelections] = React.useState<Record<number, Selection>>({});
@@ -430,6 +445,32 @@ export function DraftTourAssetsPanel({
   const [applyToShares, setApplyToShares] = React.useState(true);
   const [error, setError] = React.useState<string | null>(null);
   const [notice, setNotice] = React.useState<string | null>(null);
+  const [canCreateInWeb, setCanCreateInWeb] = React.useState(false);
+  const [creatingInWeb, setCreatingInWeb] = React.useState(false);
+
+  React.useEffect(() => {
+    let active = true;
+    void hasWebCreationAccess()
+      .then((allowed) => {
+        if (active) setCanCreateInWeb(allowed);
+      })
+      .catch(() => {
+        if (active) setCanCreateInWeb(false);
+      });
+    return () => { active = false; };
+  }, []);
+
+  const createInWeb = React.useCallback(async () => {
+    setCreatingInWeb(true);
+    setError(null);
+    try {
+      const workspace = await createWebTour({ draft_id: draftId });
+      router.push(`/create/tour/${workspace.tour_id}`);
+    } catch (reason) {
+      setError(getSafeApiErrorMessage(reason, lang));
+      setCreatingInWeb(false);
+    }
+  }, [draftId, lang, router]);
 
   const applyPayload = React.useCallback((next: DraftTourAssetsPayload) => {
     const mapped = Object.fromEntries(next.assets.map((asset, index) => [
@@ -696,17 +737,34 @@ export function DraftTourAssetsPanel({
             )}
           </p>
         </div>
-        <Button
-          type="button"
-          variant="outline"
-          size="sm"
-          className="shrink-0"
-          onClick={() => setOpen(true)}
-        >
-          <TourIcon size={14} />
-          <span className="sm:hidden">{text.manageShort}</span>
-          <span className="hidden sm:inline">{text.manage}</span>
-        </Button>
+        <div className="flex shrink-0 items-center gap-2">
+          {canCreateInWeb ? (
+            <Button
+              type="button"
+              size="sm"
+              className="shrink-0"
+              loading={creatingInWeb}
+              onClick={() => { void createInWeb(); }}
+            >
+              <TourIcon size={14} />
+              <span className="hidden sm:inline">{t("webCreate.tourAction", lang)}</span>
+              <span className="sm:hidden">{t("common.add", lang)}</span>
+            </Button>
+          ) : null}
+          {payload?.assets.length ? (
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            className="shrink-0"
+            onClick={() => setOpen(true)}
+          >
+            <TourIcon size={14} />
+            <span className="sm:hidden">{text.manageShort}</span>
+            <span className="hidden sm:inline">{text.manage}</span>
+          </Button>
+          ) : null}
+        </div>
       </div>
 
       {loading && !payload ? (
@@ -740,18 +798,30 @@ export function DraftTourAssetsPanel({
           <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-foreground/[0.045] text-foreground/45">
             <TourIcon size={18} />
           </span>
-          <div className="min-w-0">
+          <div className="min-w-0 flex-1">
             <h3 className="text-[13px] font-semibold">{text.emptyTitle}</h3>
             <p className="mt-1 max-w-2xl text-[11px] leading-relaxed text-muted-foreground">
               {text.empty}
             </p>
           </div>
+          {canCreateInWeb ? (
+            <Button
+              type="button"
+              size="sm"
+              className="shrink-0"
+              loading={creatingInWeb}
+              onClick={() => { void createInWeb(); }}
+            >
+              <TourIcon size={14} />
+              {t("webCreate.tourAction", lang)}
+            </Button>
+          ) : null}
         </div>
       ) : (
         <div className="overflow-hidden rounded-[1.5rem] border border-border/70 bg-card shadow-card sm:rounded-2xl">
           {overviewAssets.map((asset, index) => {
             const selection = selections[asset.id];
-            const state = assetStatus(asset, selection, text);
+            const state = assetStatus(asset, selection, text, lang);
             const displayName = assetDisplayName(asset, lang);
             const thumbnail = asset.source_splat_id
               ? thumbnailsBySplatId.get(asset.source_splat_id)
@@ -854,6 +924,14 @@ export function DraftTourAssetsPanel({
                       </Link>
                     </Button>
                   ) : null}
+                  {asset.editor_workspace || (canCreateInWeb && asset.source_splat_id) ? (
+                    <Button asChild variant="outline" size="xs" className="mt-2">
+                      <Link href={`/create/tour/${asset.id}`}>
+                        <EditIcon size={13} />
+                        {t("webCreate.openEditor", lang)}
+                      </Link>
+                    </Button>
+                  ) : null}
                 </div>
               </article>
             );
@@ -931,7 +1009,7 @@ export function DraftTourAssetsPanel({
               <div className="space-y-3">
                 {orderedAssets.map((asset) => {
                   const selection = selections[asset.id];
-                  const state = assetStatus(asset, selection, text);
+                  const state = assetStatus(asset, selection, text, lang);
                   const displayName = assetDisplayName(asset, lang);
                   const thumbnail = asset.source_splat_id
                     ? thumbnailsBySplatId.get(asset.source_splat_id)
@@ -1119,6 +1197,14 @@ export function DraftTourAssetsPanel({
                                   <Link href={`/tour/${asset.source_splat_id}`}>
                                     <ExternalLinkIcon size={13} />
                                     {text.preview}
+                                  </Link>
+                                </Button>
+                              ) : null}
+                              {asset.editor_workspace || (canCreateInWeb && asset.source_splat_id) ? (
+                                <Button asChild variant="outline" size="sm" className="mt-3 w-full">
+                                  <Link href={`/create/tour/${asset.id}`}>
+                                    <EditIcon size={13} />
+                                    {t("webCreate.openEditor", lang)}
                                   </Link>
                                 </Button>
                               ) : null}

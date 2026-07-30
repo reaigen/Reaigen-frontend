@@ -20,11 +20,26 @@ import type {
   TourShot,
 } from "@/app/lib/tour-types";
 import {
+  clampSceneScaleComponent,
   IDENTITY_GLOBAL_SCENE_TRANSFORM,
+  globalSceneScale3,
   inversePresentationPoint,
+  sceneScaleMagnitude,
+  transformCanonicalDirection,
   transformCanonicalPoint,
 } from "@/app/lib/global-scene-transform";
 import { resolveRoomKitMovement } from "@/app/lib/spatial-editor-data";
+import {
+  countMask,
+  distanceToPolyline,
+  filterPackedSplats,
+  packedSplatsToPly,
+  pointInsidePolygon,
+  type PackedSplatData,
+  type SplatSelectionOperation,
+  type SplatSelectionStats,
+  type SplatSelectionTool,
+} from "@/app/lib/splat-editing";
 
 /**
  * SplatViewer — BabylonJS Gaussian Splatting renderer with guided tour.
@@ -265,6 +280,7 @@ function sampleSplatBuffer(buffer: ArrayBuffer, maximum = 24_000): SplatSample |
 function computeSceneFrameFromSplatBuffer(buffer: ArrayBuffer): SceneFrame | null {
   if (buffer.byteLength < 32) return null;
   const floats = new Float32Array(buffer);
+  const bytes = new Uint8Array(buffer);
   const stride = 8;
   const count = Math.floor(floats.length / stride);
   if (!count) return null;
@@ -281,6 +297,12 @@ function computeSceneFrameFromSplatBuffer(buffer: ArrayBuffer): SceneFrame | nul
     const y = floats[base + 1];
     const z = floats[base + 2];
     if (!Number.isFinite(x) || !Number.isFinite(y) || !Number.isFinite(z)) continue;
+    // Reconstruction exports often retain a very large low-opacity scaffold
+    // around the actual scan. Those points are useful to a trainer but are not
+    // visible content and must never determine the editor floor or framing.
+    // Babylon's packed splat row stores opacity in byte 27.
+    const alpha = bytes[i * 32 + 27] ?? 255;
+    if (alpha < 32) continue;
     xs.push(x);
     ys.push(y);
     zs.push(z);
@@ -291,14 +313,14 @@ function computeSceneFrameFromSplatBuffer(buffer: ArrayBuffer): SceneFrame | nul
   const sortedY = [...ys].sort((a, b) => a - b);
   const sortedZ = [...zs].sort((a, b) => a - b);
 
-  // Match the native renderer: p5/p95 removes flyaway Gaussians without
-  // shaving away the room envelope.
-  const minX = percentile(sortedX, 0.05);
-  const maxX = percentile(sortedX, 0.95);
-  const floorY = percentile(sortedY, 0.05);
-  const ceilingY = percentile(sortedY, 0.95);
-  const minZ = percentile(sortedZ, 0.05);
-  const maxZ = percentile(sortedZ, 0.95);
+  // The opacity pass has already removed the training scaffold. A p2/p98
+  // envelope now retains the authored room while rejecting isolated flyaways.
+  const minX = percentile(sortedX, 0.02);
+  const maxX = percentile(sortedX, 0.98);
+  const floorY = percentile(sortedY, 0.02);
+  const ceilingY = percentile(sortedY, 0.98);
+  const minZ = percentile(sortedZ, 0.02);
+  const maxZ = percentile(sortedZ, 0.98);
   const width = Math.max(0.2, maxX - minX);
   const height = Math.max(0.2, ceilingY - floorY);
   const depth = Math.max(0.2, maxZ - minZ);
@@ -429,6 +451,46 @@ function computeSceneFrameFromSplatBuffer(buffer: ArrayBuffer): SceneFrame | nul
     ceilingY,
     footprint: { minX, maxX, minZ, maxZ },
   };
+}
+
+function editorFramePose(
+  frame: SceneFrame,
+  transform: GlobalSceneTransform,
+): { target: Vec3; position: Vec3; radius: number; yaw: number; pitch: number } {
+  const corners: Vec3[] = [];
+  for (const x of [frame.footprint.minX, frame.footprint.maxX]) {
+    for (const y of [frame.floorY, frame.ceilingY]) {
+      for (const z of [frame.footprint.minZ, frame.footprint.maxZ]) {
+        corners.push(transformCanonicalPoint([x, y, z], transform));
+      }
+    }
+  }
+  const minX = Math.min(...corners.map((point) => point[0]));
+  const maxX = Math.max(...corners.map((point) => point[0]));
+  const minY = Math.min(...corners.map((point) => point[1]));
+  const maxY = Math.max(...corners.map((point) => point[1]));
+  const minZ = Math.min(...corners.map((point) => point[2]));
+  const maxZ = Math.max(...corners.map((point) => point[2]));
+  const target: Vec3 = [
+    (minX + maxX) * 0.5,
+    (minY + maxY) * 0.5,
+    (minZ + maxZ) * 0.5,
+  ];
+  const diagonal = Math.hypot(maxX - minX, maxY - minY, maxZ - minZ);
+  const radius = Math.max(2.2, diagonal * 0.72);
+  const yaw = Math.PI / 4;
+  const pitch = 22 * Math.PI / 180;
+  const cosPitch = Math.cos(pitch);
+  const position: Vec3 = [
+    target[0] + radius * cosPitch * Math.cos(yaw),
+    target[1] + radius * Math.sin(pitch),
+    target[2] + radius * cosPitch * Math.sin(yaw),
+  ];
+  // The authoring grid is the world floor. A malformed prior pose or a scene
+  // whose transform is still below ground may never start the operator below
+  // that floor; keep the target truthful and raise only the editor eye.
+  position[1] = Math.max(0.35, minY + 0.35, position[1]);
+  return { target, position, radius, yaw, pitch };
 }
 
 function shouldUseCameraPose(
@@ -732,7 +794,99 @@ const defaultImmersivePose = (): ImmersivePose => ({
   fov: 0.66,
 });
 
+async function loadCompositionGaussian(
+  BABYLON: any,
+  scene: any,
+  url: string,
+  name: string,
+): Promise<any> {
+  const response = await fetch(url, { cache: "force-cache" });
+  if (!response.ok) throw new Error(`Download ${response.status}`);
+  const rawBuffer = await response.arrayBuffer();
+  const bytes = new Uint8Array(rawBuffer);
+  const normalizedUrl = url.split("?")[0].toLowerCase();
+  const isSog = normalizedUrl.endsWith(".sog")
+    || (bytes.length >= 2 && bytes[0] === 0x50 && bytes[1] === 0x4b);
+  const { GaussianSplattingMesh } = BABYLON;
+  const mesh = new GaussianSplattingMesh(name, null, scene);
+
+  if (isSog) {
+    const { ParseSogMeta } = await import("@babylonjs/loaders/SPLAT/sog");
+    const fflate = await import("fflate");
+    const zipData = await new Promise<Record<string, Uint8Array>>((resolve, reject) => {
+      fflate.unzip(bytes, (error, data) => error ? reject(error) : resolve(data));
+    });
+    let vkgsMeta: VkgsSogMeta | null = null;
+    const metaEntry = zipData["meta.json"];
+    if (metaEntry) {
+      try {
+        const meta = JSON.parse(new TextDecoder().decode(metaEntry)) as VkgsSogMeta & {
+          shN?: { shape?: number[]; files?: string[]; bands?: number };
+        };
+        if (isVkgsSogMeta(meta)) {
+          vkgsMeta = meta;
+        }
+        const shN = (
+          meta as unknown as {
+            shN?: { shape?: number[]; files?: string[]; bands?: number };
+          }
+        ).shN;
+        if (
+          !vkgsMeta
+          && shN
+          && (
+            !Array.isArray(shN.files)
+            || !shN.files.length
+            || (
+              typeof shN.bands !== "number"
+              && !(Array.isArray(shN.shape) && typeof shN.shape[1] === "number")
+            )
+          )
+        ) {
+          delete (
+            meta as unknown as {
+              shN?: { shape?: number[]; files?: string[]; bands?: number };
+            }
+          ).shN;
+          zipData["meta.json"] = new TextEncoder().encode(JSON.stringify(meta));
+        }
+      } catch {
+        // Babylon will report malformed SOG metadata below.
+      }
+    }
+    let parsed: ParsedSogData;
+    if (vkgsMeta) {
+      parsed = await parseVkgsSogMeta(zipData, vkgsMeta, scene);
+    } else {
+      parsed = await ParseSogMeta(new Map(Object.entries(zipData)), "", scene);
+    }
+    const sh = parsed.sh?.length ? parsed.sh : undefined;
+    mesh.updateData(
+      parsed.data,
+      sh,
+      { flipY: false },
+      undefined,
+      sh ? (parsed.shDegree ?? 0) : 0,
+    );
+  } else {
+    const converted = (
+      await GaussianSplattingMesh.ConvertPLYWithSHToSplatAsync(rawBuffer)
+    ) as { buffer: ArrayBuffer };
+    await mesh.updateDataAsync(converted.buffer);
+  }
+  mesh.alwaysSelectAsActiveMesh = true;
+  if (mesh.material) mesh.material.backFaceCulling = false;
+  return mesh;
+}
+
 // ── Props & Handle ───────────────────────────────────────────────────────────
+
+export interface SplatCompositionAsset {
+  id: string;
+  url: string;
+  visible: boolean;
+  transform: GlobalSceneTransform;
+}
 
 interface Props {
   splatUrl: string;
@@ -759,12 +913,23 @@ interface Props {
   selectedSpatialCamera?: SpatialCameraSample | null;
   globalSceneTransform?: GlobalSceneTransform;
   spatialTransformTool?: SpatialTransformTool;
+  spatialTransformSpace?: "world" | "local";
+  spatialTransformSnap?: boolean;
   spatialGizmoResetKey?: string | number | null;
+  onSpatialTransformStart?: () => void;
+  onSpatialTransformEnd?: () => void;
   onSpatialTransformChange?: (transform: GlobalSceneTransform) => void;
+  onSceneFrame?: (frame: SceneFrame) => void;
   onInspectionStats?: (stats: SplatInspectionStats | null) => void;
   spatialNavigation?: boolean;
   spatialCameraMode?: SpatialCameraMode;
   onSpatialCameraModeChange?: (mode: SpatialCameraMode) => void;
+  splatSelectionTool?: SplatSelectionTool;
+  splatSelectionOperation?: SplatSelectionOperation;
+  splatBrushRadius?: number;
+  onSplatSelectionChange?: (stats: SplatSelectionStats) => void;
+  /** Additional OpenUSD workspace nodes rendered around the editable node. */
+  compositionAssets?: SplatCompositionAsset[];
   lang?: string;
 }
 
@@ -781,6 +946,13 @@ export interface SplatViewerHandle {
   frameScene: (instant?: boolean) => void;
   /** Set camera FOV in degrees (applies immediately to the live BabylonJS camera). */
   setFov: (degrees: number) => void;
+  clearSplatSelection: () => void;
+  invertSplatSelection: () => void;
+  pruneSelectedSplats: () => void;
+  pruneUnselectedSplats: () => void;
+  undoSplatPrune: () => void;
+  resetSplatPrune: () => void;
+  exportPrunedPly: (filename?: string) => Promise<File | null>;
 }
 
 // ── Component ────────────────────────────────────────────────────────────────
@@ -809,12 +981,22 @@ const SplatViewer = forwardRef<SplatViewerHandle, Props>(function SplatViewer(
     selectedSpatialCamera = null,
     globalSceneTransform = IDENTITY_GLOBAL_SCENE_TRANSFORM,
     spatialTransformTool = "select",
+    spatialTransformSpace = "world",
+    spatialTransformSnap = false,
     spatialGizmoResetKey,
+    onSpatialTransformStart,
+    onSpatialTransformEnd,
     onSpatialTransformChange,
+    onSceneFrame,
     onInspectionStats,
     spatialNavigation = false,
     spatialCameraMode = "orbit",
     onSpatialCameraModeChange,
+    splatSelectionTool = "none",
+    splatSelectionOperation = "replace",
+    splatBrushRadius = 28,
+    onSplatSelectionChange,
+    compositionAssets = [],
     lang = "en",
   },
   ref,
@@ -828,9 +1010,19 @@ const SplatViewer = forwardRef<SplatViewerHandle, Props>(function SplatViewer(
   const gsRef = useRef<any>(null);
   const spatialRootRef = useRef<any>(null);
   const spatialGizmoManagerRef = useRef<any>(null);
+  const compositionMeshesRef = useRef<any[]>([]);
   const globalSceneTransformRef = useRef(globalSceneTransform);
+  const onSpatialTransformStartRef = useRef(onSpatialTransformStart);
+  const onSpatialTransformEndRef = useRef(onSpatialTransformEnd);
   const onSpatialTransformChangeRef = useRef(onSpatialTransformChange);
+  const onSceneFrameRef = useRef(onSceneFrame);
   const splatBufferRef = useRef<ArrayBuffer | null>(null);
+  const originalSplatDataRef = useRef<PackedSplatData | null>(null);
+  const aliveSplatMaskRef = useRef<Uint8Array | null>(null);
+  const selectedSplatMaskRef = useRef<Uint8Array | null>(null);
+  const splatPruneHistoryRef = useRef<Uint8Array[]>([]);
+  const selectionOverlayRef = useRef<any>(null);
+  const onSplatSelectionChangeRef = useRef(onSplatSelectionChange);
   const inspectionSampleRef = useRef<SplatSample | null>(null);
   const resizeRef = useRef<(() => void) | null>(null);
   const animRef = useRef<Anim>(defaultAnim());
@@ -867,8 +1059,27 @@ const SplatViewer = forwardRef<SplatViewerHandle, Props>(function SplatViewer(
     onSpatialTransformChangeRef.current = onSpatialTransformChange;
   }, [onSpatialTransformChange]);
 
+  useEffect(() => {
+    onSpatialTransformStartRef.current = onSpatialTransformStart;
+    onSpatialTransformEndRef.current = onSpatialTransformEnd;
+  }, [onSpatialTransformEnd, onSpatialTransformStart]);
+
+  useEffect(() => {
+    onSceneFrameRef.current = onSceneFrame;
+  }, [onSceneFrame]);
+
+  useEffect(() => {
+    onSplatSelectionChangeRef.current = onSplatSelectionChange;
+  }, [onSplatSelectionChange]);
+
   const [status, setStatus] = useState(() => t("viewer.status.loading", lang));
   const [downloadPct, setDownloadPct] = useState(0);
+  const [splatSelectionRevision, setSplatSelectionRevision] = useState(0);
+  const [selectionGesture, setSelectionGesture] = useState<{
+    tool: Exclude<SplatSelectionTool, "none">;
+    points: Array<{ x: number; y: number }>;
+    pointer: { x: number; y: number };
+  } | null>(null);
   const [ready, setReady] = useState(false);
   const [tourData, setTourData] = useState<TourData | null>(null);
   const [immersiveAdjusted, setImmersiveAdjusted] = useState(false);
@@ -1396,6 +1607,31 @@ const SplatViewer = forwardRef<SplatViewerHandle, Props>(function SplatViewer(
 
   const getTourData = useCallback(() => tourData, [tourData]);
 
+  const syncSpatialOrbitToCamera = useCallback(() => {
+    if (
+      !spatialNavigationRef.current
+      || spatialCameraModeRef.current !== "orbit"
+    ) return;
+    const cam = cameraRef.current;
+    if (!cam) return;
+    const target = cam.getTarget();
+    const forward = target.subtract(cam.position).normalize();
+    const focusDistance = Math.max(
+      1.25,
+      Math.min(4, (fallbackSceneRef.current?.radius ?? 4) * 0.5),
+    );
+    const pivot = cam.position.add(forward.scale(focusDistance));
+    const offset = cam.position.subtract(pivot);
+    const radius = Math.max(0.25, offset.length());
+    spatialOrbitRef.current = {
+      enabled: true,
+      target: [pivot.x, pivot.y, pivot.z],
+      radius,
+      yaw: Math.atan2(offset.z, offset.x),
+      pitch: Math.asin(Math.max(-1, Math.min(1, offset.y / radius))),
+    };
+  }, []);
+
   const navigateToWorldCamera = useCallback((
     pos: Vec3,
     fwd: Vec3,
@@ -1433,6 +1669,7 @@ const SplatViewer = forwardRef<SplatViewerHandle, Props>(function SplatViewer(
       if (!immersiveControls && !spatialNavigationRef.current && canvasRef.current) {
         cam.attachControl(canvasRef.current, true);
       }
+      syncSpatialOrbitToCamera();
       return;
     }
 
@@ -1469,7 +1706,7 @@ const SplatViewer = forwardRef<SplatViewerHandle, Props>(function SplatViewer(
     anim.active = true;
     anim.holdActive = false;
     anim.holdDuration = 0;
-  }, [immersiveControls, setImmersiveBase]);
+  }, [immersiveControls, setImmersiveBase, syncSpatialOrbitToCamera]);
 
   const navigateToCamera = useCallback((
     pos: Vec3,
@@ -1504,6 +1741,11 @@ const SplatViewer = forwardRef<SplatViewerHandle, Props>(function SplatViewer(
     animRef.current.holdActive = false;
     scrollVelocityRef.current = 0;
     freeModeRef.current = true;
+    if (spatialNavigationRef.current) {
+      cam.detachControl();
+      syncSpatialOrbitToCamera();
+      return;
+    }
     if (immersiveControls) {
       const target = cam.getTarget();
       setImmersiveBase(
@@ -1515,7 +1757,7 @@ const SplatViewer = forwardRef<SplatViewerHandle, Props>(function SplatViewer(
     } else {
       cam.attachControl(canvasRef.current, true);
     }
-  }, [immersiveControls, setImmersiveBase]);
+  }, [immersiveControls, setImmersiveBase, syncSpatialOrbitToCamera]);
 
   const applySpatialOrbitPose = useCallback(() => {
     const camera = cameraRef.current;
@@ -1540,73 +1782,37 @@ const SplatViewer = forwardRef<SplatViewerHandle, Props>(function SplatViewer(
     const B = babylonRef.current;
     if (!frame || !camera || !B) return;
 
-    const canonicalCamera = inversePresentationPoint(
-      [camera.position.x, camera.position.y, camera.position.z],
-      globalSceneTransformRef.current,
-    );
-    const footprintWidth = frame.footprint.maxX - frame.footprint.minX;
-    const footprintDepth = frame.footprint.maxZ - frame.footprint.minZ;
-    const marginX = Math.max(0.15, footprintWidth * 0.04);
-    const marginZ = Math.max(0.15, footprintDepth * 0.04);
-    const cameraInside = (
-      canonicalCamera[0] >= frame.footprint.minX - marginX
-      && canonicalCamera[0] <= frame.footprint.maxX + marginX
-      && canonicalCamera[2] >= frame.footprint.minZ - marginZ
-      && canonicalCamera[2] <= frame.footprint.maxZ + marginZ
-    );
-
-    if (cameraInside) {
-      // Interior work is about the room around the current view, not the full
-      // reconstruction envelope. Establish a local orbit pivot in front of
-      // the user without moving the camera by even one pixel.
-      const currentTarget = camera.getTarget();
-      const forward = currentTarget.subtract(camera.position).normalize();
-      const focusDistance = Math.max(1.25, Math.min(3, frame.radius * 0.5));
-      const target = camera.position.add(forward.scale(focusDistance));
-      const offset = camera.position.subtract(target);
-      const radius = Math.max(0.25, offset.length());
-      spatialOrbitRef.current = {
-        enabled: true,
-        target: [target.x, target.y, target.z],
-        radius,
-        yaw: Math.atan2(offset.z, offset.x),
-        pitch: Math.asin(Math.max(-1, Math.min(1, offset.y / radius))),
-      };
-      immersiveRenderBurstUntilRef.current = performance.now() + 200;
-      return;
-    }
-
-    // An exterior camera is intentionally asking for the complete asset.
-    const center = transformSpatialPoint(frame.center);
+    // DCC convention: Frame Selected is deterministic. It always frames the
+    // visible asset bounds and establishes one stable orbit pivot.
+    const framed = editorFramePose(frame, globalSceneTransformRef.current);
     const pose = spatialOrbitRef.current;
     pose.enabled = true;
-    pose.target = center;
-    pose.radius = Math.max(
-      2.2,
-      frame.radius * globalSceneTransformRef.current.scale * 1.65,
-    );
-    pose.yaw = Math.PI / 4;
-    pose.pitch = 22 * Math.PI / 180;
+    pose.target = framed.target;
+    pose.radius = framed.radius;
+    pose.yaw = framed.yaw;
+    pose.pitch = framed.pitch;
     if (instant) {
-      applySpatialOrbitPose();
+      camera.position.set(...framed.position);
+      camera.upVector.set(0, 1, 0);
+      camera.setTarget(new B.Vector3(...framed.target));
+      camera.rotation.z = 0;
+      immersiveRenderBurstUntilRef.current = performance.now() + 350;
       return;
     }
-    const cosPitch = Math.cos(pose.pitch);
-    const position: Vec3 = [
-      pose.target[0] + pose.radius * cosPitch * Math.cos(pose.yaw),
-      pose.target[1] + pose.radius * Math.sin(pose.pitch),
-      pose.target[2] + pose.radius * cosPitch * Math.sin(pose.yaw),
-    ];
     const forward = normalizeVec3([
-      pose.target[0] - position[0],
-      pose.target[1] - position[1],
-      pose.target[2] - position[2],
+      framed.target[0] - framed.position[0],
+      framed.target[1] - framed.position[1],
+      framed.target[2] - framed.position[2],
     ]);
-    navigateToWorldCamera(position, forward, false, cameraRef.current?.fov, [0, 1, 0]);
+    navigateToWorldCamera(
+      framed.position,
+      forward,
+      false,
+      cameraRef.current?.fov,
+      [0, 1, 0],
+    );
   }, [
-    applySpatialOrbitPose,
     navigateToWorldCamera,
-    transformSpatialPoint,
   ]);
 
   const navigateToSpatialCamera = useCallback((sample: SpatialCameraSample, instant = true) => {
@@ -1646,6 +1852,121 @@ const SplatViewer = forwardRef<SplatViewerHandle, Props>(function SplatViewer(
     immersiveRenderBurstUntilRef.current = performance.now() + 350;
   }, []);
 
+  const publishSplatSelectionStats = useCallback(() => {
+    const alive = aliveSplatMaskRef.current;
+    const selected = selectedSplatMaskRef.current;
+    if (!alive || !selected) return;
+    let remaining = 0;
+    let selectedCount = 0;
+    for (let index = 0; index < alive.length; index += 1) {
+      if (!alive[index]) continue;
+      remaining += 1;
+      if (selected[index]) selectedCount += 1;
+    }
+    onSplatSelectionChangeRef.current?.({
+      total: alive.length,
+      selected: selectedCount,
+      remaining,
+      pruned: alive.length - remaining,
+      dirty: remaining !== alive.length,
+    });
+  }, []);
+
+  const refreshPrunedSplatMesh = useCallback(() => {
+    const source = originalSplatDataRef.current;
+    const alive = aliveSplatMaskRef.current;
+    const gs = gsRef.current;
+    const scene = sceneRef.current;
+    if (!source || !alive || !gs || !scene) return;
+    const filtered = filterPackedSplats(source, alive);
+    splatBufferRef.current = filtered.buffer;
+    gs.updateData(
+      filtered.buffer,
+      filtered.sh?.length ? filtered.sh : undefined,
+      { flipY: false },
+      undefined,
+      filtered.shDegree ?? 0,
+    );
+    fallbackSceneRef.current = computeSceneFrameFromSplatBuffer(filtered.buffer);
+    setSplatSelectionRevision((value) => value + 1);
+    publishSplatSelectionStats();
+    immersiveRenderBurstUntilRef.current = performance.now() + 500;
+    scene.render();
+  }, [publishSplatSelectionStats]);
+
+  const clearSplatSelection = useCallback(() => {
+    selectedSplatMaskRef.current?.fill(0);
+    setSplatSelectionRevision((value) => value + 1);
+    publishSplatSelectionStats();
+    sceneRef.current?.render();
+  }, [publishSplatSelectionStats]);
+
+  const invertSplatSelection = useCallback(() => {
+    const alive = aliveSplatMaskRef.current;
+    const selected = selectedSplatMaskRef.current;
+    if (!alive || !selected) return;
+    for (let index = 0; index < selected.length; index += 1) {
+      selected[index] = alive[index] ? (selected[index] ? 0 : 1) : 0;
+    }
+    setSplatSelectionRevision((value) => value + 1);
+    publishSplatSelectionStats();
+    sceneRef.current?.render();
+  }, [publishSplatSelectionStats]);
+
+  const applySplatPrune = useCallback((removeSelected: boolean) => {
+    const alive = aliveSplatMaskRef.current;
+    const selected = selectedSplatMaskRef.current;
+    if (!alive || !selected) return;
+    const next = alive.slice();
+    let remaining = 0;
+    for (let index = 0; index < next.length; index += 1) {
+      if (!next[index]) continue;
+      const remove = removeSelected ? Boolean(selected[index]) : !selected[index];
+      if (remove) next[index] = 0;
+      else remaining += 1;
+    }
+    if (remaining < 1 || remaining === countMask(alive)) return;
+    splatPruneHistoryRef.current = [
+      ...splatPruneHistoryRef.current.slice(-11),
+      alive.slice(),
+    ];
+    aliveSplatMaskRef.current = next;
+    selected.fill(0);
+    refreshPrunedSplatMesh();
+  }, [refreshPrunedSplatMesh]);
+
+  const pruneSelectedSplats = useCallback(() => applySplatPrune(true), [applySplatPrune]);
+  const pruneUnselectedSplats = useCallback(() => applySplatPrune(false), [applySplatPrune]);
+
+  const undoSplatPrune = useCallback(() => {
+    const previous = splatPruneHistoryRef.current.pop();
+    if (!previous) return;
+    aliveSplatMaskRef.current = previous;
+    selectedSplatMaskRef.current?.fill(0);
+    refreshPrunedSplatMesh();
+  }, [refreshPrunedSplatMesh]);
+
+  const resetSplatPrune = useCallback(() => {
+    const alive = aliveSplatMaskRef.current;
+    if (!alive) return;
+    alive.fill(1);
+    selectedSplatMaskRef.current?.fill(0);
+    splatPruneHistoryRef.current = [];
+    refreshPrunedSplatMesh();
+  }, [refreshPrunedSplatMesh]);
+
+  const exportPrunedPly = useCallback(async (filename = "reaigen-pruned.ply") => {
+    const source = originalSplatDataRef.current;
+    const alive = aliveSplatMaskRef.current;
+    if (!source || !alive || countMask(alive) < 1) return null;
+    const filtered = filterPackedSplats(source, alive);
+    const blob = packedSplatsToPly(filtered);
+    return new File([blob], filename, {
+      type: "application/octet-stream",
+      lastModified: Date.now(),
+    });
+  }, []);
+
   useImperativeHandle(ref, () => ({
     goToShot,
     goToPrev,
@@ -1658,6 +1979,13 @@ const SplatViewer = forwardRef<SplatViewerHandle, Props>(function SplatViewer(
     enableFreeCamera,
     frameScene,
     setFov,
+    clearSplatSelection,
+    invertSplatSelection,
+    pruneSelectedSplats,
+    pruneUnselectedSplats,
+    undoSplatPrune,
+    resetSplatPrune,
+    exportPrunedPly,
   }), [
     goToShot,
     goToPrev,
@@ -1670,6 +1998,13 @@ const SplatViewer = forwardRef<SplatViewerHandle, Props>(function SplatViewer(
     enableFreeCamera,
     frameScene,
     setFov,
+    clearSplatSelection,
+    invertSplatSelection,
+    pruneSelectedSplats,
+    pruneUnselectedSplats,
+    undoSplatPrune,
+    resetSplatPrune,
+    exportPrunedPly,
   ]);
 
   // ── Spatial inspection layers ──────────────────────────────────────────────
@@ -1693,7 +2028,7 @@ const SplatViewer = forwardRef<SplatViewerHandle, Props>(function SplatViewer(
     const [x, y, z] = globalSceneTransform.rotationDeg;
     const [tx, ty, tz] = globalSceneTransform.translation;
     root.position.set(tx, ty, tz);
-    root.scaling.setAll(globalSceneTransform.scale);
+    root.scaling.set(...globalSceneScale3(globalSceneTransform));
     root.rotationQuaternion = B.Quaternion.RotationYawPitchRoll(
       y * Math.PI / 180,
       x * Math.PI / 180,
@@ -1703,6 +2038,60 @@ const SplatViewer = forwardRef<SplatViewerHandle, Props>(function SplatViewer(
     root.computeWorldMatrix(true);
     scene.render();
   }, [globalSceneTransform, ready]);
+
+  useEffect(() => {
+    for (const item of compositionMeshesRef.current) item.root?.dispose?.(false, true);
+    compositionMeshesRef.current = [];
+    if (!ready || !compositionAssets.length) return;
+
+    const B = babylonRef.current;
+    const scene = sceneRef.current;
+    if (!B || !scene) return;
+    let disposed = false;
+
+    const load = async () => {
+      const loaded: any[] = [];
+      for (const asset of compositionAssets) {
+        if (disposed || !asset.visible || !asset.url) continue;
+        try {
+          const mesh = await loadCompositionGaussian(
+            B,
+            scene,
+            asset.url,
+            `splat-composition-${asset.id}`,
+          );
+          if (disposed) {
+            mesh.dispose?.(false, true);
+            break;
+          }
+          const root = new B.TransformNode(`splat-composition-root-${asset.id}`, scene);
+          const [x, y, z] = asset.transform.rotationDeg;
+          const [tx, ty, tz] = asset.transform.translation;
+          root.position.set(tx, ty, tz);
+          root.scaling.set(...globalSceneScale3(asset.transform));
+          root.rotationQuaternion = B.Quaternion.RotationYawPitchRoll(
+            y * Math.PI / 180,
+            x * Math.PI / 180,
+            z * Math.PI / 180,
+          );
+          mesh.parent = root;
+          root.computeWorldMatrix(true);
+          loaded.push({ root, mesh });
+          scene.render();
+        } catch (error) {
+          console.warn(`[REAI] Could not load composition node ${asset.id}:`, error);
+        }
+      }
+      if (!disposed) compositionMeshesRef.current = loaded;
+    };
+    void load();
+
+    return () => {
+      disposed = true;
+      for (const item of compositionMeshesRef.current) item.root?.dispose?.(false, true);
+      compositionMeshesRef.current = [];
+    };
+  }, [compositionAssets, ready]);
 
   useEffect(() => {
     spatialGizmoManagerRef.current?.dispose?.();
@@ -1719,16 +2108,20 @@ const SplatViewer = forwardRef<SplatViewerHandle, Props>(function SplatViewer(
     // pen-sized and visually identical to a DCC transform manipulator. Plane
     // handles are intentionally omitted: Babylon's overlapping translucent
     // planes read as one cyan knot against a photographic Gaussian scene.
-    const gizmoScale = compactTouch ? 1.72 : 1.46;
-    const axisScale = gizmoScale * 1.08;
-    const manager = new B.GizmoManager(scene, compactTouch ? 4.2 : 3.5);
+    const gizmoScale = compactTouch ? 1.15 : 0.96;
+    const axisScale = gizmoScale;
+    // Babylon's second constructor argument is line thickness, not a general
+    // UI scale. The old 3.5–4.2 value produced oversized toy-like arrows.
+    const manager = new B.GizmoManager(scene, compactTouch ? 1.65 : 1.2);
     spatialGizmoManagerRef.current = manager;
     manager.usePointerToAttachGizmos = false;
     manager.enableAutoPicking = false;
     manager.clearGizmoOnEmptyPointerEvent = false;
     manager.scaleRatio = gizmoScale;
     if (B.GizmoCoordinatesMode?.World != null) {
-      manager.coordinatesMode = B.GizmoCoordinatesMode.World;
+      manager.coordinatesMode = spatialTransformSpace === "local"
+        ? B.GizmoCoordinatesMode.Local
+        : B.GizmoCoordinatesMode.World;
     }
 
     manager.positionGizmoEnabled = spatialTransformTool === "move";
@@ -1737,16 +2130,15 @@ const SplatViewer = forwardRef<SplatViewerHandle, Props>(function SplatViewer(
     manager.attachToNode(root);
 
     const palette = {
-      x: B.Color3.FromHexString("#FF1F3D"),
-      y: B.Color3.FromHexString("#00D95F"),
-      z: B.Color3.FromHexString("#087BFF"),
-      neutral: B.Color3.FromHexString("#FFF8E7"),
+      x: B.Color3.FromHexString("#F2384A"),
+      y: B.Color3.FromHexString("#21C55D"),
+      z: B.Color3.FromHexString("#2878FF"),
     };
     const tuneHandle = (handle: any, color: any, alpha = 1) => {
       if (!handle) return;
       if (handle.coloredMaterial) {
         handle.coloredMaterial.diffuseColor = color;
-        handle.coloredMaterial.emissiveColor = color;
+        handle.coloredMaterial.emissiveColor = color.scale(0.18);
         handle.coloredMaterial.specularColor = B.Color3.Black();
         handle.coloredMaterial.disableLighting = true;
         handle.coloredMaterial.alpha = alpha;
@@ -1754,7 +2146,7 @@ const SplatViewer = forwardRef<SplatViewerHandle, Props>(function SplatViewer(
       if (handle.hoverMaterial) {
         const hover = B.Color3.Lerp(color, B.Color3.White(), 0.24);
         handle.hoverMaterial.diffuseColor = hover;
-        handle.hoverMaterial.emissiveColor = hover;
+        handle.hoverMaterial.emissiveColor = hover.scale(0.22);
         handle.hoverMaterial.specularColor = B.Color3.Black();
         handle.hoverMaterial.disableLighting = true;
         handle.hoverMaterial.alpha = 1;
@@ -1765,7 +2157,7 @@ const SplatViewer = forwardRef<SplatViewerHandle, Props>(function SplatViewer(
     const positionGizmo = manager.gizmos.positionGizmo;
     if (positionGizmo) {
       positionGizmo.planarGizmoEnabled = false;
-      positionGizmo.snapDistance = 0;
+      positionGizmo.snapDistance = spatialTransformSnap ? 0.1 : 0;
       positionGizmo.xGizmo.scaleRatio = axisScale;
       positionGizmo.yGizmo.scaleRatio = axisScale;
       positionGizmo.zGizmo.scaleRatio = axisScale;
@@ -1777,10 +2169,11 @@ const SplatViewer = forwardRef<SplatViewerHandle, Props>(function SplatViewer(
     const rotationGizmo = manager.gizmos.rotationGizmo;
     if (rotationGizmo) {
       rotationGizmo.sensitivity = compactTouch ? 1.15 : 0.9;
-      rotationGizmo.snapDistance = 0;
-      rotationGizmo.xGizmo.scaleRatio = gizmoScale;
-      rotationGizmo.yGizmo.scaleRatio = gizmoScale;
-      rotationGizmo.zGizmo.scaleRatio = gizmoScale;
+      rotationGizmo.snapDistance = spatialTransformSnap ? 5 * Math.PI / 180 : 0;
+      const rotationScale = gizmoScale * 1.18;
+      rotationGizmo.xGizmo.scaleRatio = rotationScale;
+      rotationGizmo.yGizmo.scaleRatio = rotationScale;
+      rotationGizmo.zGizmo.scaleRatio = rotationScale;
       tuneHandle(rotationGizmo.xGizmo, palette.x);
       tuneHandle(rotationGizmo.yGizmo, palette.y);
       tuneHandle(rotationGizmo.zGizmo, palette.z);
@@ -1788,26 +2181,47 @@ const SplatViewer = forwardRef<SplatViewerHandle, Props>(function SplatViewer(
 
     const scaleGizmo = manager.gizmos.scaleGizmo;
     if (scaleGizmo) {
-      // The shared scene contract permits only a uniform root scale.
-      scaleGizmo.xGizmo.isEnabled = false;
-      scaleGizmo.yGizmo.isEnabled = false;
-      scaleGizmo.zGizmo.isEnabled = false;
-      scaleGizmo.uniformScaleGizmo.isEnabled = true;
-      scaleGizmo.snapDistance = 0;
-      tuneHandle(scaleGizmo.uniformScaleGizmo, palette.neutral);
+      scaleGizmo.xGizmo.isEnabled = true;
+      scaleGizmo.yGizmo.isEnabled = true;
+      scaleGizmo.zGizmo.isEnabled = true;
+      // The stock center octahedron obscures the pivot and reads as an
+      // unrelated knob. Per-axis scale is the primary workspace operation;
+      // uniform values remain available through the inspector.
+      scaleGizmo.uniformScaleGizmo.isEnabled = false;
+      scaleGizmo.snapDistance = spatialTransformSnap ? 0.05 : 0;
+      for (const [handle, color] of [
+        [scaleGizmo.xGizmo, palette.x],
+        [scaleGizmo.yGizmo, palette.y],
+        [scaleGizmo.zGizmo, palette.z],
+      ] as const) {
+        handle.scaleRatio = axisScale * 1.04;
+        handle.sensitivity = compactTouch ? 0.85 : 0.72;
+        handle.incrementalSnap = true;
+        tuneHandle(handle, color);
+
+        // Retain Babylon's generous invisible collider and drag behavior, but
+        // replace the visible cube-like terminal with a thin DCC scale cap.
+        // This improves precision without making the hit target smaller.
+        const visibleMeshes = handle._gizmoMesh?.getChildMeshes?.() ?? [];
+        for (const mesh of visibleMeshes) {
+          if (mesh.visibility === 0) continue;
+          if (mesh.name === "yPosMesh") {
+            mesh.scaling.set(0.105, 0.032, 0.105);
+          } else if (mesh.name === "cylinder") {
+            mesh.scaling.x = 0.72;
+            mesh.scaling.z = 0.72;
+          }
+        }
+      }
     }
 
-    const activeGizmo = positionGizmo ?? rotationGizmo ?? scaleGizmo;
+    const activeGizmo = spatialTransformTool === "move"
+      ? positionGizmo
+      : spatialTransformTool === "rotate"
+        ? rotationGizmo
+        : scaleGizmo;
     const publishTransform = () => {
       const previous = globalSceneTransformRef.current;
-      if (spatialTransformTool === "scale") {
-        const uniformScale = Math.max(
-          0.001,
-          Math.min(1000, Number(root.scaling.x.toFixed(4))),
-        );
-        root.scaling.setAll(uniformScale);
-      }
-
       const euler = root.rotationQuaternion?.toEulerAngles?.()
         ?? root.rotation
         ?? B.Vector3.Zero();
@@ -1847,8 +2261,19 @@ const SplatViewer = forwardRef<SplatViewerHandle, Props>(function SplatViewer(
           ? rotationDeg
           : [...previous.rotationDeg] as Vec3,
         scale: spatialTransformTool === "scale"
-          ? Math.max(0.001, Math.min(1000, Number(root.scaling.x.toFixed(4))))
+          ? sceneScaleMagnitude([
+              root.scaling.x,
+              root.scaling.y,
+              root.scaling.z,
+            ])
           : previous.scale,
+        scale3: spatialTransformTool === "scale"
+          ? [
+              clampSceneScaleComponent(Number(root.scaling.x.toFixed(4))),
+              clampSceneScaleComponent(Number(root.scaling.y.toFixed(4))),
+              clampSceneScaleComponent(Number(root.scaling.z.toFixed(4))),
+            ]
+          : globalSceneScale3(previous),
       };
 
       globalSceneTransformRef.current = nextTransform;
@@ -1857,11 +2282,18 @@ const SplatViewer = forwardRef<SplatViewerHandle, Props>(function SplatViewer(
       immersiveRenderBurstUntilRef.current = performance.now() + 300;
     };
 
+    const dragStartObserver = activeGizmo?.onDragStartObservable.add(() => {
+      onSpatialTransformStartRef.current?.();
+    });
     const dragObserver = activeGizmo?.onDragObservable.add(publishTransform);
-    const dragEndObserver = activeGizmo?.onDragEndObservable.add(publishTransform);
+    const dragEndObserver = activeGizmo?.onDragEndObservable.add(() => {
+      publishTransform();
+      onSpatialTransformEndRef.current?.();
+    });
     scene.render();
 
     return () => {
+      if (dragStartObserver) activeGizmo?.onDragStartObservable.remove(dragStartObserver);
       if (dragObserver) activeGizmo?.onDragObservable.remove(dragObserver);
       if (dragEndObserver) activeGizmo?.onDragEndObservable.remove(dragEndObserver);
       if (spatialGizmoManagerRef.current === manager) {
@@ -1875,6 +2307,8 @@ const SplatViewer = forwardRef<SplatViewerHandle, Props>(function SplatViewer(
     ready,
     spatialNavigation,
     spatialGizmoResetKey,
+    spatialTransformSnap,
+    spatialTransformSpace,
     spatialTransformTool,
   ]);
 
@@ -2091,23 +2525,32 @@ const SplatViewer = forwardRef<SplatViewerHandle, Props>(function SplatViewer(
         ? Math.max(1.75, Math.min(2.8, (frame?.radius ?? 4) * 0.58))
         : Math.max(4, Math.min(10, (frame?.radius ?? 4) * 1.15));
       root.computeWorldMatrix(true);
-      const transformedGridAnchor = B.Vector3.TransformCoordinates(
+      const transformedSceneAnchor = B.Vector3.TransformCoordinates(
         new B.Vector3(centerX, (frame?.floorY ?? 0), centerZ),
         root.getWorldMatrix(),
       );
-      const gridRadius = canonicalGridRadius * Math.max(
+      const scaledRadius = canonicalGridRadius * Math.max(
         0.001,
         Math.abs(globalSceneTransformRef.current.scale),
       );
-      const majorStep = gridRadius > 7 ? 2 : 1;
+      const gridRadius = Math.min(
+        50,
+        Math.max(
+          4,
+          scaledRadius,
+          Math.abs(transformedSceneAnchor.x) + scaledRadius,
+          Math.abs(transformedSceneAnchor.z) + scaledRadius,
+        ),
+      );
+      const majorStep = gridRadius > 20 ? 5 : gridRadius > 7 ? 2 : 1;
       const minorStep = majorStep / 4;
       const halfSize = Math.ceil(gridRadius / majorStep) * majorStep;
       // Reaigen presentation space is explicitly Y-up. The working grid is a
-      // DCC world reference, not object geometry, so it remains on world XZ
-      // even while the authored USD root rotates or scales the scan.
-      centerX = transformedGridAnchor.x;
-      centerZ = transformedGridAnchor.z;
-      const floorY = transformedGridAnchor.y + 0.006;
+      // DCC world reference, not object geometry. Its origin and floor must
+      // never follow the selected asset's transform.
+      centerX = 0;
+      centerZ = 0;
+      const floorY = 0.006;
       const minX = centerX - halfSize;
       const maxX = centerX + halfSize;
       const minZ = centerZ - halfSize;
@@ -2154,23 +2597,13 @@ const SplatViewer = forwardRef<SplatViewerHandle, Props>(function SplatViewer(
         toY: number,
         major: boolean,
       ) => {
-        // A fine light stroke over a wider dark keyline remains legible on
-        // both white walls and dark floors without reading as neon.
         drawGridLine(
           fromX,
           fromY,
           toX,
           toY,
-          major ? "rgba(10, 13, 17, 0.50)" : "rgba(12, 15, 19, 0.25)",
-          major ? 3.2 : 1.8,
-        );
-        drawGridLine(
-          fromX,
-          fromY,
-          toX,
-          toY,
-          major ? "rgba(242, 245, 248, 0.56)" : "rgba(242, 245, 248, 0.34)",
-          major ? 1.25 : 0.72,
+          major ? "rgba(48, 53, 61, 0.42)" : "rgba(67, 73, 82, 0.22)",
+          major ? 1.35 : 0.72,
         );
       };
       const drawAxisLine = (
@@ -2180,8 +2613,7 @@ const SplatViewer = forwardRef<SplatViewerHandle, Props>(function SplatViewer(
         toY: number,
         color: string,
       ) => {
-        drawGridLine(fromX, fromY, toX, toY, "rgba(8, 10, 14, 0.45)", 4.1);
-        drawGridLine(fromX, fromY, toX, toY, color, 2.1);
+        drawGridLine(fromX, fromY, toX, toY, color, 1.65);
       };
 
       const firstX = Math.ceil(minX / minorStep) * minorStep;
@@ -2210,19 +2642,8 @@ const SplatViewer = forwardRef<SplatViewerHandle, Props>(function SplatViewer(
           major,
         );
       }
-      if (minZ <= 0 && maxZ >= 0) {
-        const xAxisPixel = textureSize - coordinateToPixel(0, minZ);
-        drawAxisLine(
-          0,
-          xAxisPixel,
-          textureSize,
-          xAxisPixel,
-          "rgba(255, 46, 72, 0.82)",
-        );
-      }
-      // The editor grid is local to the current working area. Keep a subtle
-      // crosshair at that anchor even when the absolute USD origin is outside
-      // the room, so its orientation remains immediately readable.
+      // One X/Z origin pair. The old grid drew these axes once as absolute
+      // lines, again as an anchor crosshair, and a third time as line meshes.
       const anchorPixel = textureSize * 0.5;
       drawAxisLine(
         0,
@@ -2238,16 +2659,6 @@ const SplatViewer = forwardRef<SplatViewerHandle, Props>(function SplatViewer(
         textureSize,
         "rgba(30, 139, 255, 0.72)",
       );
-      if (minX <= 0 && maxX >= 0) {
-        const zAxisPixel = coordinateToPixel(0, minX);
-        drawAxisLine(
-          zAxisPixel,
-          0,
-          zAxisPixel,
-          textureSize,
-          "rgba(30, 139, 255, 0.82)",
-        );
-      }
 
       // Fade the working surface before its edge so the finite editor aid
       // never reads as a bright rectangular card in the Gaussian scene.
@@ -2298,12 +2709,10 @@ const SplatViewer = forwardRef<SplatViewerHandle, Props>(function SplatViewer(
 
         void main(void) {
           vec4 grid = texture2D(gridTexture, vUV);
-          float cameraDistance = distance(vWorldPosition, cameraPosition);
-          float distanceFade = 1.0 - smoothstep(fadeStart, fadeEnd, cameraDistance);
           vec3 viewDirection = normalize(cameraPosition - vWorldPosition);
           float incidence = abs(dot(viewDirection, normalize(gridNormal)));
-          float horizonFade = smoothstep(0.055, 0.22, incidence);
-          float alpha = grid.a * distanceFade * horizonFade * opacity;
+          float horizonFade = smoothstep(0.01, 0.08, incidence);
+          float alpha = grid.a * horizonFade * opacity;
           if (alpha < 0.008) discard;
           gl_FragColor = vec4(grid.rgb, alpha);
         }
@@ -2360,6 +2769,7 @@ const SplatViewer = forwardRef<SplatViewerHandle, Props>(function SplatViewer(
       gridMesh.renderingGroupId = 1;
       gridMesh.alphaIndex = 5;
       gridMesh.alwaysSelectAsActiveMesh = true;
+
       const gridObserver = scene.onBeforeRenderObservable.add(() => {
         const camera = cameraRef.current;
         if (camera) {
@@ -2635,7 +3045,11 @@ const SplatViewer = forwardRef<SplatViewerHandle, Props>(function SplatViewer(
       spatialOrbitRef.current.enabled = false;
     }
 
-    type EditorPointer = { x: number; y: number; pan: boolean };
+    type EditorPointer = {
+      x: number;
+      y: number;
+      action: "orbit" | "pan" | "dolly";
+    };
     const pointers = new Map<number, EditorPointer>();
     const pressed = new Set<string>();
     let previousPinchDistance: number | null = null;
@@ -2675,9 +3089,13 @@ const SplatViewer = forwardRef<SplatViewerHandle, Props>(function SplatViewer(
         pose.target[1] - camera.position.y,
         pose.target[2] - camera.position.z,
       ).normalize();
-      const right = B.Vector3.Cross(forward, B.Vector3.Up()).normalize();
-      const up = B.Vector3.Cross(right, forward).normalize();
-      const scale = Math.max(0.0008, pose.radius * 0.0012);
+      // Camera-plane pan: an orthonormal screen basis prevents the sideways
+      // drift produced by a world-up cross product at oblique view angles.
+      const authoredUp = camera.upVector?.clone?.() ?? B.Vector3.Up();
+      const right = B.Vector3.Cross(authoredUp, forward).normalize();
+      const up = B.Vector3.Cross(forward, right).normalize();
+      const viewportHeight = Math.max(1, canvas.clientHeight);
+      const scale = 2 * pose.radius * Math.tan(camera.fov * 0.5) / viewportHeight;
       const movement = right.scale(-dx * scale).add(up.scale(dy * scale));
       pose.target = [
         pose.target[0] + movement.x,
@@ -2703,17 +3121,24 @@ const SplatViewer = forwardRef<SplatViewerHandle, Props>(function SplatViewer(
       if (event.pointerType === "mouse" && ![0, 1, 2].includes(event.button)) return;
       const gizmoManager = spatialGizmoManagerRef.current;
       if (gizmoManager?.isHovered || gizmoManager?.isDragging) return;
-      const pan = event.button === 1
-        || event.button === 2
-        || event.shiftKey
-        || event.altKey
-        || (event.pointerType === "pen" && (event.buttons & 2) !== 0);
-      pointers.set(event.pointerId, { x: event.clientX, y: event.clientY, pan });
+      if (animRef.current.active || animRef.current.holdActive) {
+        animRef.current.active = false;
+        animRef.current.holdActive = false;
+        syncSpatialOrbitToCamera();
+      }
+      const action: EditorPointer["action"] = event.pointerType !== "mouse"
+        ? ((event.pointerType === "pen" && (event.buttons & 2) !== 0) ? "pan" : "orbit")
+        : event.button === 1
+          ? "pan"
+          : event.button === 2
+            ? "dolly"
+            : "orbit";
+      pointers.set(event.pointerId, { x: event.clientX, y: event.clientY, action });
       previousPinchDistance = pinchDistance();
       previousCentroid = pointerCentroid();
       syncFlyAngles();
       try { canvas.setPointerCapture(event.pointerId); } catch { /* best effort */ }
-      canvas.style.cursor = pan ? "grabbing" : "grabbing";
+      canvas.style.cursor = action === "dolly" ? "ns-resize" : "grabbing";
       event.preventDefault();
     };
 
@@ -2740,8 +3165,10 @@ const SplatViewer = forwardRef<SplatViewerHandle, Props>(function SplatViewer(
       const dx = event.clientX - previous.x;
       const dy = event.clientY - previous.y;
       if (spatialCameraMode === "orbit") {
-        if (previous.pan) {
+        if (previous.action === "pan") {
           panOrbit(dx, dy);
+        } else if (previous.action === "dolly") {
+          dollyOrbit(dy * 0.008);
         } else {
           const pose = spatialOrbitRef.current;
           pose.yaw -= dx * 0.006;
@@ -2773,11 +3200,19 @@ const SplatViewer = forwardRef<SplatViewerHandle, Props>(function SplatViewer(
 
     const handleWheel = (event: WheelEvent) => {
       if (spatialGizmoManagerRef.current?.isDragging) return;
+      const deltaPixels = event.deltaY * (
+        event.deltaMode === WheelEvent.DOM_DELTA_LINE
+          ? 16
+          : event.deltaMode === WheelEvent.DOM_DELTA_PAGE
+            ? Math.max(1, canvas.clientHeight)
+            : 1
+      );
+      const normalizedDelta = Math.max(-120, Math.min(120, deltaPixels));
       if (spatialCameraMode === "orbit") {
-        dollyOrbit(event.deltaY * 0.0015);
+        dollyOrbit(normalizedDelta * 0.00135);
       } else {
         const scale = fallbackSceneRef.current?.radius ?? 2;
-        moveFly(-event.deltaY * scale * 0.0008);
+        moveFly(-normalizedDelta * scale * 0.0008);
       }
       event.preventDefault();
     };
@@ -2806,7 +3241,6 @@ const SplatViewer = forwardRef<SplatViewerHandle, Props>(function SplatViewer(
         if (event.key === "ArrowLeft") panOrbit(panStep, 0);
         else if (event.key === "ArrowRight") panOrbit(-panStep, 0);
         else if (event.key === "ArrowUp") panOrbit(0, panStep);
-        else if (event.key === "ArrowDown") panOrbit(0, -panStep);
         else if (key === "+" || key === "=") dollyOrbit(-0.12);
         else if (key === "-" || key === "_") dollyOrbit(0.12);
         else return;
@@ -2822,9 +3256,6 @@ const SplatViewer = forwardRef<SplatViewerHandle, Props>(function SplatViewer(
       pressed.delete(event.key.toLowerCase());
     };
     const handleContextMenu = (event: MouseEvent) => event.preventDefault();
-    const handleDoubleClick = () => {
-      if (!spatialGizmoManagerRef.current?.isHovered) frameScene();
-    };
 
     const movementObserver = scene.onBeforeRenderObservable.add(() => {
       if (spatialCameraMode !== "fly" || !pressed.size) return;
@@ -2856,7 +3287,6 @@ const SplatViewer = forwardRef<SplatViewerHandle, Props>(function SplatViewer(
     canvas.addEventListener("pointercancel", finishPointer);
     canvas.addEventListener("wheel", handleWheel, { passive: false });
     canvas.addEventListener("contextmenu", handleContextMenu);
-    canvas.addEventListener("dblclick", handleDoubleClick);
     window.addEventListener("keydown", handleKeyDown);
     window.addEventListener("keyup", handleKeyUp);
 
@@ -2871,7 +3301,6 @@ const SplatViewer = forwardRef<SplatViewerHandle, Props>(function SplatViewer(
       canvas.removeEventListener("pointercancel", finishPointer);
       canvas.removeEventListener("wheel", handleWheel);
       canvas.removeEventListener("contextmenu", handleContextMenu);
-      canvas.removeEventListener("dblclick", handleDoubleClick);
       window.removeEventListener("keydown", handleKeyDown);
       window.removeEventListener("keyup", handleKeyUp);
       scene.onBeforeRenderObservable.remove(movementObserver);
@@ -2885,6 +3314,224 @@ const SplatViewer = forwardRef<SplatViewerHandle, Props>(function SplatViewer(
     ready,
     spatialCameraMode,
     spatialNavigation,
+    syncSpatialOrbitToCamera,
+  ]);
+
+  useEffect(() => {
+    if (!ready || !spatialNavigation || splatSelectionTool === "none") {
+      setSelectionGesture(null);
+      return;
+    }
+    const canvas = canvasRef.current;
+    const scene = sceneRef.current;
+    const root = spatialRootRef.current;
+    const source = originalSplatDataRef.current;
+    if (!canvas || !scene || !root || !source) return;
+
+    type ActiveGesture = {
+      pointerId: number;
+      tool: Exclude<SplatSelectionTool, "none">;
+      operation: SplatSelectionOperation;
+      points: Array<{ x: number; y: number }>;
+    };
+    let active: ActiveGesture | null = null;
+    const localPoint = (event: PointerEvent) => {
+      const rect = canvas.getBoundingClientRect();
+      return { x: event.clientX - rect.left, y: event.clientY - rect.top };
+    };
+    const effectiveOperation = (event: PointerEvent): SplatSelectionOperation => {
+      if (event.ctrlKey || event.metaKey) return "subtract";
+      if (event.shiftKey) return "add";
+      return splatSelectionOperation;
+    };
+    const updateGestureSurface = (gesture: ActiveGesture, pointer: { x: number; y: number }) => {
+      setSelectionGesture({
+        tool: gesture.tool,
+        points: [...gesture.points],
+        pointer,
+      });
+    };
+    const applyGesture = (gesture: ActiveGesture) => {
+      const alive = aliveSplatMaskRef.current;
+      const selected = selectedSplatMaskRef.current;
+      const currentSource = originalSplatDataRef.current;
+      if (!alive || !selected || !currentSource || gesture.points.length < 1) return;
+      if (gesture.operation === "replace") selected.fill(0);
+
+      root.computeWorldMatrix(true);
+      const matrix = root.getWorldMatrix().multiply(scene.getTransformMatrix());
+      const m = matrix.m as ArrayLike<number>;
+      const floats = new Float32Array(currentSource.buffer);
+      const width = Math.max(1, canvas.clientWidth);
+      const height = Math.max(1, canvas.clientHeight);
+      const first = gesture.points[0];
+      const last = gesture.points[gesture.points.length - 1];
+      const minX = Math.min(first.x, last.x);
+      const maxX = Math.max(first.x, last.x);
+      const minY = Math.min(first.y, last.y);
+      const maxY = Math.max(first.y, last.y);
+      const polygon = gesture.tool === "lasso" && gesture.points.length > 2
+        ? [...gesture.points, gesture.points[0]]
+        : gesture.points;
+
+      for (let index = 0; index < alive.length; index += 1) {
+        if (!alive[index]) {
+          selected[index] = 0;
+          continue;
+        }
+        const offset = index * 8;
+        const x = floats[offset];
+        const y = floats[offset + 1];
+        const z = floats[offset + 2];
+        const clipX = x * m[0] + y * m[4] + z * m[8] + m[12];
+        const clipY = x * m[1] + y * m[5] + z * m[9] + m[13];
+        const clipZ = x * m[2] + y * m[6] + z * m[10] + m[14];
+        const clipW = x * m[3] + y * m[7] + z * m[11] + m[15];
+        if (!Number.isFinite(clipW) || clipW <= 1e-7) continue;
+        const ndcZ = clipZ / clipW;
+        if (ndcZ < -1 || ndcZ > 1) continue;
+        const screenX = (clipX / clipW + 1) * width * 0.5;
+        const screenY = (1 - clipY / clipW) * height * 0.5;
+        let hit = false;
+        if (gesture.tool === "box") {
+          hit = screenX >= minX && screenX <= maxX && screenY >= minY && screenY <= maxY;
+        } else if (gesture.tool === "lasso") {
+          hit = polygon.length > 3 && pointInsidePolygon([screenX, screenY, 0], polygon);
+        } else {
+          hit = distanceToPolyline(screenX, screenY, gesture.points) <= splatBrushRadius;
+        }
+        if (!hit) continue;
+        selected[index] = gesture.operation === "subtract" ? 0 : 1;
+      }
+      setSplatSelectionRevision((value) => value + 1);
+      publishSplatSelectionStats();
+      immersiveRenderBurstUntilRef.current = performance.now() + 500;
+      scene.render();
+    };
+
+    const handlePointerDown = (event: PointerEvent) => {
+      if (event.button !== 0) return;
+      const point = localPoint(event);
+      active = {
+        pointerId: event.pointerId,
+        tool: splatSelectionTool,
+        operation: effectiveOperation(event),
+        points: [point],
+      };
+      try { canvas.setPointerCapture(event.pointerId); } catch { /* best effort */ }
+      updateGestureSurface(active, point);
+      event.preventDefault();
+      event.stopImmediatePropagation();
+    };
+    const handlePointerMove = (event: PointerEvent) => {
+      if (!active || active.pointerId !== event.pointerId) return;
+      const point = localPoint(event);
+      if (active.tool === "box") {
+        active.points = [active.points[0], point];
+      } else {
+        const previous = active.points[active.points.length - 1];
+        if (Math.hypot(point.x - previous.x, point.y - previous.y) >= 2) {
+          active.points.push(point);
+        }
+      }
+      updateGestureSurface(active, point);
+      event.preventDefault();
+      event.stopImmediatePropagation();
+    };
+    const finishPointer = (event: PointerEvent) => {
+      if (!active || active.pointerId !== event.pointerId) return;
+      const completed = active;
+      active = null;
+      try { canvas.releasePointerCapture(event.pointerId); } catch { /* best effort */ }
+      setSelectionGesture(null);
+      applyGesture(completed);
+      event.preventDefault();
+      event.stopImmediatePropagation();
+    };
+    const blockContextMenu = (event: MouseEvent) => event.preventDefault();
+
+    canvas.style.cursor = "crosshair";
+    canvas.addEventListener("pointerdown", handlePointerDown, true);
+    canvas.addEventListener("pointermove", handlePointerMove, true);
+    canvas.addEventListener("pointerup", finishPointer, true);
+    canvas.addEventListener("pointercancel", finishPointer, true);
+    canvas.addEventListener("contextmenu", blockContextMenu);
+    return () => {
+      active = null;
+      setSelectionGesture(null);
+      canvas.style.cursor = "";
+      canvas.removeEventListener("pointerdown", handlePointerDown, true);
+      canvas.removeEventListener("pointermove", handlePointerMove, true);
+      canvas.removeEventListener("pointerup", finishPointer, true);
+      canvas.removeEventListener("pointercancel", finishPointer, true);
+      canvas.removeEventListener("contextmenu", blockContextMenu);
+    };
+  }, [
+    publishSplatSelectionStats,
+    ready,
+    spatialNavigation,
+    splatBrushRadius,
+    splatSelectionOperation,
+    splatSelectionTool,
+  ]);
+
+  useEffect(() => {
+    selectionOverlayRef.current?.dispose?.(false, true);
+    selectionOverlayRef.current = null;
+    if (!ready || !spatialNavigation) return;
+    const B = babylonRef.current;
+    const scene = sceneRef.current;
+    const root = spatialRootRef.current;
+    const source = originalSplatDataRef.current;
+    const alive = aliveSplatMaskRef.current;
+    const selected = selectedSplatMaskRef.current;
+    if (!B || !scene || !root || !source || !alive || !selected) return;
+
+    let selectedCount = 0;
+    for (let index = 0; index < selected.length; index += 1) {
+      if (alive[index] && selected[index]) selectedCount += 1;
+    }
+    if (!selectedCount) return;
+    const sampleStep = Math.max(1, Math.ceil(selectedCount / 100_000));
+    const positions: number[] = [];
+    const floats = new Float32Array(source.buffer);
+    let seen = 0;
+    for (let index = 0; index < selected.length; index += 1) {
+      if (!alive[index] || !selected[index]) continue;
+      if (seen % sampleStep === 0) {
+        const offset = index * 8;
+        positions.push(floats[offset], floats[offset + 1], floats[offset + 2]);
+      }
+      seen += 1;
+    }
+
+    const mesh = new B.Mesh("reaigen-splat-selection", scene);
+    mesh.setVerticesData(B.VertexBuffer.PositionKind, positions, false);
+    mesh.setIndices(Array.from({ length: positions.length / 3 }, (_, index) => index));
+    const material = new B.StandardMaterial("reaigen-splat-selection-material", scene);
+    material.pointsCloud = true;
+    material.pointSize = compactTouch ? 5 : 4;
+    material.disableLighting = true;
+    material.emissiveColor = new B.Color3(1, 0.39, 0.06);
+    material.diffuseColor = material.emissiveColor;
+    material.alpha = 0.96;
+    material.disableDepthWrite = true;
+    mesh.material = material;
+    mesh.isPickable = false;
+    mesh.alwaysSelectAsActiveMesh = true;
+    mesh.renderingGroupId = 3;
+    mesh.parent = root;
+    selectionOverlayRef.current = mesh;
+    scene.render();
+    return () => {
+      if (selectionOverlayRef.current === mesh) selectionOverlayRef.current = null;
+      mesh.dispose(false, true);
+    };
+  }, [
+    compactTouch,
+    ready,
+    spatialNavigation,
+    splatSelectionRevision,
   ]);
 
   // ── Keyboard navigation ────────────────────────────────────────────────────
@@ -3150,18 +3797,17 @@ const SplatViewer = forwardRef<SplatViewerHandle, Props>(function SplatViewer(
         });
         engineRef.current = engine;
 
-        // Keep the existing Retina cap for a settled frame, then use a modest
-        // motion scale while a camera is travelling or being manipulated.
-        // The canvas keeps its CSS size, so this is progressive refinement
-        // rather than a layout change.
+        // Babylon's hardware scale is inverse resolution: 0.5 renders at 2×
+        // CSS pixels, while values above 1 blur below CSS resolution. The old
+        // formula was reversed and could make a desktop editor look like a
+        // 720p stream. Authoring now stays Retina-crisp, including in motion.
         const dpr = typeof window !== "undefined" ? window.devicePixelRatio || 1 : 1;
-        const restingHardwareScale = Math.max(1, dpr / Math.min(dpr, 1.5));
-        const motionHardwareScale = Math.max(
-          restingHardwareScale,
-          typeof window !== "undefined" && window.innerWidth * window.innerHeight > 1_900_000
-            ? 1.65
-            : 1.45,
-        );
+        const authoringDpr = compactTouch ? Math.min(dpr, 1.5) : Math.min(dpr, 2.5);
+        const viewingDpr = Math.min(dpr, 1.5);
+        const restingHardwareScale = 1 / (spatialNavigation ? authoringDpr : viewingDpr);
+        const motionHardwareScale = spatialNavigation
+          ? restingHardwareScale
+          : 1 / Math.min(dpr, compactTouch ? 1 : 1.2);
         let activeHardwareScale = restingHardwareScale;
         const applyHardwareScale = (next: number) => {
           if (Math.abs(activeHardwareScale - next) < 0.01) return;
@@ -3170,6 +3816,10 @@ const SplatViewer = forwardRef<SplatViewerHandle, Props>(function SplatViewer(
           engine.resize();
         };
         engine.setHardwareScalingLevel(restingHardwareScale);
+        // The engine is created before the DPR override. Force allocation of
+        // the native-resolution backbuffer immediately; otherwise it can stay
+        // at its initial CSS-pixel size until the first window resize.
+        engine.resize(true);
 
         engine.onContextLostObservable.add(() => console.warn("[REAI] WebGL context lost"));
         engine.onContextRestoredObservable.add(() => {
@@ -3179,7 +3829,9 @@ const SplatViewer = forwardRef<SplatViewerHandle, Props>(function SplatViewer(
 
         const scene = new BABYLON.Scene(engine);
         sceneRef.current = scene;
-        scene.clearColor = new BABYLON.Color4(1, 1, 1, 1);
+        scene.clearColor = spatialNavigation
+          ? new BABYLON.Color4(0.965, 0.969, 0.976, 1)
+          : new BABYLON.Color4(1, 1, 1, 1);
 
         const camera = new BABYLON.FreeCamera("cam", BABYLON.Vector3.Zero(), scene);
         camera.minZ = 0.1;
@@ -3348,6 +4000,7 @@ const SplatViewer = forwardRef<SplatViewerHandle, Props>(function SplatViewer(
               if (!immersiveControls && !spatialNavigationRef.current && canvasRef.current) {
                 camera.attachControl(canvasRef.current, true);
               }
+              syncSpatialOrbitToCamera();
             } else if (!readOnly && !(anim as any).exactForward && !anim.holdActive && anim.holdDuration > 0) {
               anim.holdActive = true;
               anim.holdElapsed = 0;
@@ -3395,6 +4048,30 @@ const SplatViewer = forwardRef<SplatViewerHandle, Props>(function SplatViewer(
         // ── Place camera from COLMAP data ──
         async function placeCamera() {
           const fallback = fallbackSceneRef.current;
+          // An authored workspace opens in a neutral editor frame. Captured
+          // cameras are shots, not viewport state, and are entered explicitly
+          // from the camera panel.
+          if (fallback && spatialNavigationRef.current) {
+            const framed = editorFramePose(
+              fallback,
+              globalSceneTransformRef.current,
+            );
+            camera.position.set(...framed.position);
+            camera.upVector.set(0, 1, 0);
+            camera.setTarget(new BABYLON.Vector3(...framed.target));
+            camera.rotation.z = 0;
+            camera.fov = 60 * Math.PI / 180;
+            camera.minZ = Math.max(0.02, framed.radius / 500);
+            camera.maxZ = Math.max(100, framed.radius * 40);
+            spatialOrbitRef.current = {
+              enabled: true,
+              target: framed.target,
+              radius: framed.radius,
+              yaw: framed.yaw,
+              pitch: framed.pitch,
+            };
+            return;
+          }
           try {
             let d: CameraData | null = null;
             const assetSplatId = extractSplatIdFromAssetUrl(splatUrl);
@@ -3420,16 +4097,36 @@ const SplatViewer = forwardRef<SplatViewerHandle, Props>(function SplatViewer(
               const nx = fx / fl, ny = fy / fl, nz = fz / fl;
               // Captured and edited cameras are authoritative viewpoints. Do
               // not offset them: look-through must reproduce the stored pose.
-              const px = c.position[0];
-              const py = c.position[1];
-              const pz = c.position[2];
-              const candidate: Vec3 = [px, py, pz];
+              const canonicalPosition: Vec3 = [
+                c.position[0],
+                c.position[1],
+                c.position[2],
+              ];
+              const canonicalForward: Vec3 = [nx, ny, nz];
+              const canonicalUp = normalizeVec3(
+                (c.up ?? [0, 1, 0]) as Vec3,
+                [0, 1, 0],
+              );
+              const editorTransform = globalSceneTransformRef.current;
+              const worldPosition = spatialNavigationRef.current
+                ? transformCanonicalPoint(canonicalPosition, editorTransform)
+                : canonicalPosition;
+              const worldForward = spatialNavigationRef.current
+                ? transformCanonicalDirection(canonicalForward, editorTransform)
+                : canonicalForward;
+              const worldUp = spatialNavigationRef.current
+                ? transformCanonicalDirection(canonicalUp, editorTransform)
+                : canonicalUp;
               const allowCameraPose =
                 !assetSplatId || !splatId || assetSplatId === splatId || !!initialCameras?.cameras?.length;
-              if (allowCameraPose && shouldUseCameraPose(candidate, fallback)) {
-                camera.position.set(px, py, pz);
+              if (allowCameraPose && shouldUseCameraPose(canonicalPosition, fallback)) {
+                camera.position.set(...worldPosition);
+                camera.upVector.set(...worldUp);
+                cameraUpRef.current = worldUp;
                 camera.setTarget(new BABYLON.Vector3(
-                  px + nx * LOOK, py + ny * LOOK, pz + nz * LOOK,
+                  worldPosition[0] + worldForward[0] * LOOK,
+                  worldPosition[1] + worldForward[1] * LOOK,
+                  worldPosition[2] + worldForward[2] * LOOK,
                 ));
                 camera.fov = d.sceneFov
                   ? cameraFovRadians(d.sceneFov, camera.fov)
@@ -3441,8 +4138,20 @@ const SplatViewer = forwardRef<SplatViewerHandle, Props>(function SplatViewer(
           } catch { /* best-effort */ }
 
           if (fallback) {
-            const [px, py, pz] = fallback.safePosition;
-            const [tx, ty, tz] = fallback.safeTarget;
+            const worldPosition = spatialNavigationRef.current
+              ? transformCanonicalPoint(
+                  fallback.safePosition,
+                  globalSceneTransformRef.current,
+                )
+              : fallback.safePosition;
+            const worldTarget = spatialNavigationRef.current
+              ? transformCanonicalPoint(
+                  fallback.safeTarget,
+                  globalSceneTransformRef.current,
+                )
+              : fallback.safeTarget;
+            const [px, py, pz] = worldPosition;
+            const [tx, ty, tz] = worldTarget;
             camera.position.set(px, py, pz);
             camera.setTarget(new BABYLON.Vector3(tx, ty, tz));
             camera.rotation.z = 0;
@@ -3455,6 +4164,30 @@ const SplatViewer = forwardRef<SplatViewerHandle, Props>(function SplatViewer(
         // ── Load Gaussian Splatting mesh ──
         const { GaussianSplattingMesh } = BABYLON;
         let gs: any = null;
+        const initializeSplatEditing = (
+          data: ArrayBuffer,
+          sh?: Uint8Array[],
+          shDegree = 0,
+        ) => {
+          const count = Math.floor(data.byteLength / 32);
+          originalSplatDataRef.current = {
+            buffer: data,
+            sh: sh?.length ? sh : undefined,
+            shDegree,
+          };
+          aliveSplatMaskRef.current = new Uint8Array(count);
+          aliveSplatMaskRef.current.fill(1);
+          selectedSplatMaskRef.current = new Uint8Array(count);
+          splatPruneHistoryRef.current = [];
+          setSplatSelectionRevision((value) => value + 1);
+          onSplatSelectionChangeRef.current?.({
+            total: count,
+            selected: 0,
+            remaining: count,
+            pruned: 0,
+            dirty: false,
+          });
+        };
 
         const isSogUrl = splatUrl.split("?")[0].toLowerCase().endsWith(".sog");
         const isSpzUrl = splatUrl.split("?")[0].toLowerCase().endsWith(".spz");
@@ -3561,12 +4294,16 @@ const SplatViewer = forwardRef<SplatViewerHandle, Props>(function SplatViewer(
           }
           if (disposed) return;
           fallbackSceneRef.current = computeSceneFrameFromSplatBuffer(parsedSOG.data);
+          if (fallbackSceneRef.current) {
+            onSceneFrameRef.current?.(fallbackSceneRef.current);
+          }
           splatBufferRef.current = parsedSOG.data;
 
           gs = new GaussianSplattingMesh("splat", null, scene);
           const sogSh = parsedSOG.sh && parsedSOG.sh.length ? parsedSOG.sh : undefined;
           const sogDegree = sogSh ? (parsedSOG.shDegree ?? 0) : 0;
           gs.updateData(parsedSOG.data, sogSh, { flipY: false }, undefined, sogDegree);
+          initializeSplatEditing(parsedSOG.data, sogSh, sogDegree);
           gs.alwaysSelectAsActiveMesh = true;
         } else if (isGZippedSpz || isNgspSpz || isSpzUrl) {
           // SPZ format: this is the current R&D-packed web format.
@@ -3598,6 +4335,9 @@ const SplatViewer = forwardRef<SplatViewerHandle, Props>(function SplatViewer(
 
           if (disposed) return;
           fallbackSceneRef.current = computeSceneFrameFromSplatBuffer(parsedSPZ.data);
+          if (fallbackSceneRef.current) {
+            onSceneFrameRef.current?.(fallbackSceneRef.current);
+          }
           splatBufferRef.current = parsedSPZ.data;
 
           gs = new GaussianSplattingMesh("splat", null, scene);
@@ -3608,20 +4348,44 @@ const SplatViewer = forwardRef<SplatViewerHandle, Props>(function SplatViewer(
             undefined,
             parsedSPZ.shDegree ?? 0,
           );
+          initializeSplatEditing(
+            parsedSPZ.data,
+            parsedSPZ.sh && parsedSPZ.sh.length ? parsedSPZ.sh : undefined,
+            parsedSPZ.shDegree ?? 0,
+          );
           gs.alwaysSelectAsActiveMesh = true;
         } else {
           // PLY/splat format
           setStatus(t("viewer.status.processing", lang));
-          const fullConv = cachedFull ?? (
-            await GaussianSplattingMesh.ConvertPLYWithSHToSplatAsync(rawBuffer) as { buffer: ArrayBuffer }
-          ).buffer;
+          const converted = cachedFull
+            ? { buffer: cachedFull, sh: undefined, shDegree: 0 }
+            : await GaussianSplattingMesh.ConvertPLYWithSHToSplatAsync(rawBuffer) as {
+                buffer: ArrayBuffer;
+                sh?: Uint8Array[];
+                shDegree?: number;
+              };
+          const fullConv = converted.buffer;
           if (disposed) return;
           fallbackSceneRef.current = computeSceneFrameFromSplatBuffer(fullConv);
+          if (fallbackSceneRef.current) {
+            onSceneFrameRef.current?.(fallbackSceneRef.current);
+          }
           splatBufferRef.current = fullConv;
           if (!cachedFull && splatId) void putCache(splatId, "full", fullConv, outputsVersion);
 
           gs = new GaussianSplattingMesh("splat", null, scene);
-          await gs.updateDataAsync(fullConv);
+          if (converted.sh?.length) {
+            gs.updateData(
+              fullConv,
+              converted.sh,
+              { flipY: false },
+              undefined,
+              converted.shDegree ?? 0,
+            );
+          } else {
+            await gs.updateDataAsync(fullConv);
+          }
+          initializeSplatEditing(fullConv, converted.sh, converted.shDegree ?? 0);
           if (disposed) return;
           gs.alwaysSelectAsActiveMesh = true;
         }
@@ -3676,9 +4440,14 @@ const SplatViewer = forwardRef<SplatViewerHandle, Props>(function SplatViewer(
     return () => {
       disposed = true;
       splatBufferRef.current = null;
+      originalSplatDataRef.current = null;
+      aliveSplatMaskRef.current = null;
+      selectedSplatMaskRef.current = null;
+      splatPruneHistoryRef.current = [];
       inspectionSampleRef.current = null;
       spatialRootRef.current = null;
       gsRef.current = null;
+      compositionMeshesRef.current = [];
       fallbackSceneRef.current = null;
       if (resizeRef.current) window.removeEventListener("resize", resizeRef.current);
       engineRef.current?.dispose();
@@ -3688,12 +4457,60 @@ const SplatViewer = forwardRef<SplatViewerHandle, Props>(function SplatViewer(
   // ── UI ─────────────────────────────────────────────────────────────────────
 
   return (
-    <div ref={rootRef} className={`relative w-full h-full bg-white select-none ${className ?? ""}`} tabIndex={0}>
+    <div
+      ref={rootRef}
+      className={`relative h-full w-full select-none bg-background ${className ?? ""}`}
+      tabIndex={0}
+    >
       <canvas
         ref={canvasRef}
+        tabIndex={0}
+        onPointerDown={(event) => event.currentTarget.focus()}
         className="w-full h-full block outline-none"
         style={{ touchAction: "none" }}
       />
+
+      {selectionGesture ? (
+        <svg
+          className="pointer-events-none absolute inset-0 z-20 h-full w-full overflow-visible"
+          aria-hidden="true"
+        >
+          {selectionGesture.tool === "box" && selectionGesture.points.length > 1 ? (
+            <rect
+              x={Math.min(selectionGesture.points[0].x, selectionGesture.points[1].x)}
+              y={Math.min(selectionGesture.points[0].y, selectionGesture.points[1].y)}
+              width={Math.abs(selectionGesture.points[1].x - selectionGesture.points[0].x)}
+              height={Math.abs(selectionGesture.points[1].y - selectionGesture.points[0].y)}
+              fill="rgba(249, 115, 22, 0.10)"
+              stroke="rgba(249, 115, 22, 0.96)"
+              strokeWidth="1.25"
+            />
+          ) : null}
+          {selectionGesture.tool !== "box" && selectionGesture.points.length > 1 ? (
+            <path
+              d={`${selectionGesture.points.map((point, index) => (
+                `${index ? "L" : "M"} ${point.x} ${point.y}`
+              )).join(" ")}${selectionGesture.tool === "lasso" ? " Z" : ""}`}
+              fill={selectionGesture.tool === "lasso" ? "rgba(249, 115, 22, 0.08)" : "none"}
+              stroke="rgba(249, 115, 22, 0.96)"
+              strokeWidth={selectionGesture.tool === "brush" ? Math.max(1, splatBrushRadius * 2) : 1.25}
+              strokeOpacity={selectionGesture.tool === "brush" ? 0.22 : 1}
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            />
+          ) : null}
+          {selectionGesture.tool === "brush" ? (
+            <circle
+              cx={selectionGesture.pointer.x}
+              cy={selectionGesture.pointer.y}
+              r={splatBrushRadius}
+              fill="rgba(249, 115, 22, 0.08)"
+              stroke="rgba(249, 115, 22, 0.98)"
+              strokeWidth="1.25"
+            />
+          ) : null}
+        </svg>
+      ) : null}
 
       {immersiveControls && ready && (
         <>
@@ -3743,7 +4560,9 @@ const SplatViewer = forwardRef<SplatViewerHandle, Props>(function SplatViewer(
       {/* Keep one loading surface mounted and cross-fade it into the first
           rendered frame. This avoids the page loader → viewer loader flash. */}
       <div
-        className={`absolute inset-0 z-10 flex flex-col items-center justify-center bg-background transition-opacity duration-500 ease-[var(--motion-ease-smooth)] ${
+        className={`absolute inset-0 z-10 flex flex-col items-center justify-center transition-opacity duration-500 ease-[var(--motion-ease-smooth)] ${
+          "bg-background text-foreground"
+        } ${
           ready ? "pointer-events-none opacity-0" : "opacity-100"
         }`}
         aria-hidden={ready}

@@ -91,6 +91,23 @@ export async function putCache(
   } catch { /* non-fatal */ }
 }
 
+/** Remove all private reconstruction data at an authentication boundary. */
+export async function clearSplatCache(): Promise<void> {
+  try {
+    const db = await openDB();
+    await new Promise<void>((resolve) => {
+      const tx = db.transaction(STORE, "readwrite");
+      tx.objectStore(STORE).clear();
+      tx.oncomplete = () => resolve();
+      tx.onerror = () => resolve();
+      tx.onabort = () => resolve();
+    });
+    db.close();
+  } catch {
+    // Private browsing and storage denial must not block logout.
+  }
+}
+
 async function evictIfNeeded(db: IDBDatabase, incomingBytes: number): Promise<void> {
   return new Promise((resolve) => {
     const tx = db.transaction(STORE, "readwrite");

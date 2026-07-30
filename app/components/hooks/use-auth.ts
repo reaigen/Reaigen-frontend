@@ -7,8 +7,14 @@ import {
   register as apiRegister,
   logout as apiLogout,
   getProfile,
+  resetPrivateApiState,
   type UserProfile,
 } from "../../lib/api/client";
+import {
+  AUTH_BOUNDARY_STORAGE_KEY,
+  broadcastAuthBoundary,
+  clearPrivateBrowserState,
+} from "../../lib/private-client-state";
 import {
   disableWebPushForUser,
   restoreWebPushForUser,
@@ -30,6 +36,7 @@ export type AuthState = {
     last_name: string;
     accept_privacy_policy: boolean;
     accept_terms: boolean;
+    preferred_language: string;
   }) => Promise<void>;
   logout: () => void;
   refreshProfile: () => Promise<UserProfile | null>;
@@ -83,13 +90,30 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       void disableWebPushForUser(expiredUser.id, {
         unregisterBackend: false,
       });
+      void clearPrivateBrowserState();
+      broadcastAuthBoundary("expired");
       setUser(null);
       if (typeof window !== "undefined" && window.location.pathname !== "/") {
-        window.location.href = "/";
+        window.location.replace("/");
       }
     };
     window.addEventListener("reai:unauthorized", handleUnauthorized);
     return () => window.removeEventListener("reai:unauthorized", handleUnauthorized);
+  }, []);
+
+  // HttpOnly auth cookies are shared by tabs. When one tab logs out or changes
+  // identity, every other tab must discard its mounted private state too.
+  React.useEffect(() => {
+    const handleAuthBoundary = (event: StorageEvent) => {
+      if (event.key !== AUTH_BOUNDARY_STORAGE_KEY || !event.newValue) return;
+      resetPrivateApiState();
+      setUser(null);
+      void clearPrivateBrowserState().finally(() => {
+        window.location.replace("/");
+      });
+    };
+    window.addEventListener("storage", handleAuthBoundary);
+    return () => window.removeEventListener("storage", handleAuthBoundary);
   }, []);
 
   // Silent refresh
@@ -110,9 +134,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, [user, refreshProfile]);
 
   const login = React.useCallback(async (email: string, password: string) => {
+    resetPrivateApiState();
     const result = await apiLogin(email, password);
+    // Invalidate anything that finished while the identity was changing.
+    resetPrivateApiState();
     if (result?.user) {
       setUser(result.user as UserProfile);
+      broadcastAuthBoundary("login");
       refreshProfile().catch(() => {});
       return;
     }
@@ -121,7 +149,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       if (attempt > 0) await new Promise((r) => setTimeout(r, 500));
       try {
         const profile = await getProfile();
-        if (profile) { setUser(profile); return; }
+        if (profile) {
+          setUser(profile);
+          broadcastAuthBoundary("login");
+          return;
+        }
       } catch (e) { lastErr = e; }
     }
     const detail = lastErr instanceof ApiError
@@ -140,20 +172,27 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       last_name: string;
       accept_privacy_policy: boolean;
       accept_terms: boolean;
+      preferred_language: string;
     }) => {
       await apiRegister(data);
+      resetPrivateApiState();
       await refreshProfile();
+      broadcastAuthBoundary("login");
     },
     [refreshProfile],
   );
 
   const logout = React.useCallback(async () => {
     const currentUser = userRef.current;
-    if (currentUser) {
-      await disableWebPushForUser(currentUser.id);
-    }
-    try { await apiLogout(); } catch {}
+    // Remove the old UI synchronously; network cleanup must never leave
+    // another account's content visible behind a slow logout request.
     setUser(null);
+    const privateCleanup = clearPrivateBrowserState();
+    const tasks: Promise<unknown>[] = [privateCleanup, apiLogout()];
+    if (currentUser) tasks.push(disableWebPushForUser(currentUser.id));
+    await Promise.allSettled(tasks);
+    broadcastAuthBoundary("logout");
+    window.location.replace("/");
   }, []);
 
   const value = React.useMemo<AuthState>(() => ({

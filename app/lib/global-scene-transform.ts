@@ -9,8 +9,34 @@ export const IDENTITY_GLOBAL_SCENE_TRANSFORM: GlobalSceneTransform = {
   coordinateSpace: "reaigen_y_up",
   rotationDeg: [0, 0, 0],
   translation: [0, 0, 0],
+  scale3: [1, 1, 1],
   scale: 1,
 };
+
+export const MIN_ABSOLUTE_SCENE_SCALE = 0.001;
+export const MAX_ABSOLUTE_SCENE_SCALE = 1000;
+
+/**
+ * Scale components may be negative to mirror content, but never zero because
+ * the presentation/canonical coordinate conversion must remain invertible.
+ */
+export function clampSceneScaleComponent(value: number, fallback = 1): number {
+  if (!Number.isFinite(value)) return fallback;
+  const clipped = Math.max(-MAX_ABSOLUTE_SCENE_SCALE, Math.min(MAX_ABSOLUTE_SCENE_SCALE, value));
+  if (Math.abs(clipped) >= MIN_ABSOLUTE_SCENE_SCALE) return clipped;
+  return clipped < 0 ? -MIN_ABSOLUTE_SCENE_SCALE : MIN_ABSOLUTE_SCENE_SCALE;
+}
+
+/** Positive legacy scalar retained for older API consumers. */
+export function sceneScaleMagnitude(scale3: Vec3): number {
+  return Math.cbrt(Math.abs(scale3[0] * scale3[1] * scale3[2]));
+}
+
+export function globalSceneScale3(transform: GlobalSceneTransform): Vec3 {
+  return transform.scale3
+    ? [...transform.scale3] as Vec3
+    : [transform.scale, transform.scale, transform.scale];
+}
 
 function finiteVec3(value: unknown, fallback: Vec3): Vec3 {
   if (
@@ -59,8 +85,7 @@ export function isSupportedUniversalSceneDescription(
     || !isFiniteNumberArray(root.translation, 3)
     || !isFiniteNumberArray(root.rotationQuaternion, 4)
     || !isFiniteNumberArray(root.scale, 3)
-    || root.scale.some((item) => item <= 0)
-    || Math.max(...root.scale) - Math.min(...root.scale) > 0.000001
+    || root.scale.some((item) => Math.abs(item) < MIN_ABSOLUTE_SCENE_SCALE)
     || Math.hypot(...root.rotationQuaternion) <= 0.000001
     || contentSpace?.splats !== "canonical"
     || contentSpace.cameras !== "canonical"
@@ -160,12 +185,17 @@ export function normalizeGlobalSceneTransform(value: unknown): GlobalSceneTransf
   const rawScale = typeof raw.scale === "number" && Number.isFinite(raw.scale)
     ? raw.scale
     : 1;
+  const scale3 = finiteVec3(
+    raw.scale3 ?? (Array.isArray(raw.scale) ? raw.scale : null),
+    [rawScale, rawScale, rawScale],
+  ).map((item) => clampSceneScaleComponent(item)) as Vec3;
   return {
     version: 1,
     coordinateSpace: "reaigen_y_up",
     rotationDeg: finiteVec3(raw.rotationDeg ?? raw.rotation_deg, [0, 0, 0]),
     translation: finiteVec3(raw.translation, [0, 0, 0]),
-    scale: rawScale > 0 ? rawScale : 1,
+    scale3,
+    scale: sceneScaleMagnitude(scale3),
   };
 }
 
@@ -189,6 +219,7 @@ export function composedRootTransformFromScene(
       // a display hint and must never become a second transform source.
       rotationDeg: quaternionToEditorDegrees(root.rotationQuaternion),
       translation: root.translation,
+      scale3: [...root.scale] as Vec3,
       scale: root.scale[0],
     });
   }
@@ -202,6 +233,7 @@ export function cloneGlobalSceneTransform(
     ...transform,
     rotationDeg: [...transform.rotationDeg] as Vec3,
     translation: [...transform.translation] as Vec3,
+    scale3: globalSceneScale3(transform),
   };
 }
 
@@ -211,7 +243,9 @@ export function globalSceneTransformsEqual(
   epsilon = 0.00001,
 ): boolean {
   return (
-    Math.abs(left.scale - right.scale) <= epsilon
+    globalSceneScale3(left).every((value, index) => (
+      Math.abs(value - globalSceneScale3(right)[index]) <= epsilon
+    ))
     && left.rotationDeg.every((value, index) => (
       Math.abs(value - right.rotationDeg[index]) <= epsilon
     ))
@@ -323,6 +357,9 @@ export function composeGlobalSceneTransform(
   authored: GlobalSceneTransform,
   delta: GlobalSceneTransform,
 ): GlobalSceneTransform {
+  const scale3 = globalSceneScale3(authored).map((value, index) => (
+    clampSceneScaleComponent(value * globalSceneScale3(delta)[index])
+  )) as Vec3;
   return {
     version: 1,
     coordinateSpace: "reaigen_y_up",
@@ -333,7 +370,8 @@ export function composeGlobalSceneTransform(
       globalSceneQuaternion(delta),
       globalSceneQuaternion(authored),
     )),
-    scale: Math.max(0.001, Math.min(1000, authored.scale * delta.scale)),
+    scale3,
+    scale: sceneScaleMagnitude(scale3),
   };
 }
 
@@ -346,6 +384,9 @@ export function relativeGlobalSceneTransform(
   authored: GlobalSceneTransform,
   preview: GlobalSceneTransform,
 ): GlobalSceneTransform {
+  const scale3 = globalSceneScale3(preview).map((value, index) => (
+    clampSceneScaleComponent(value / globalSceneScale3(authored)[index])
+  )) as Vec3;
   return {
     version: 1,
     coordinateSpace: "reaigen_y_up",
@@ -356,7 +397,8 @@ export function relativeGlobalSceneTransform(
       globalSceneQuaternion(preview),
       inverseQuaternion(globalSceneQuaternion(authored)),
     )),
-    scale: Math.max(0.001, Math.min(1000, preview.scale / authored.scale)),
+    scale3,
+    scale: sceneScaleMagnitude(scale3),
   };
 }
 
@@ -383,7 +425,8 @@ export function transformCanonicalPoint(
   point: Vec3,
   transform: GlobalSceneTransform,
 ): Vec3 {
-  const scaled = point.map((value) => value * transform.scale) as Vec3;
+  const scale3 = globalSceneScale3(transform);
+  const scaled = point.map((value, index) => value * scale3[index]) as Vec3;
   const rotated = rotateByQuaternion(scaled, globalSceneQuaternion(transform));
   return rotated.map(
     (value, index) => value + transform.translation[index],
@@ -396,7 +439,12 @@ export function transformCanonicalDirection(
   transform: GlobalSceneTransform,
 ): Vec3 {
   return normalizeDirection(
-    rotateByQuaternion(direction, globalSceneQuaternion(transform)),
+    rotateByQuaternion(
+      direction.map(
+        (value, index) => value * globalSceneScale3(transform)[index],
+      ) as Vec3,
+      globalSceneQuaternion(transform),
+    ),
     [0, 0, -1],
   );
 }
@@ -411,7 +459,8 @@ export function inversePresentationPoint(
   ) as Vec3;
   const [x, y, z, w] = globalSceneQuaternion(transform);
   const unrotated = rotateByQuaternion(translated, [-x, -y, -z, w]);
-  return unrotated.map((value) => value / transform.scale) as Vec3;
+  const scale3 = globalSceneScale3(transform);
+  return unrotated.map((value, index) => value / scale3[index]) as Vec3;
 }
 
 /** Presentation-world direction → canonical direction (`w = 0`). */
@@ -420,8 +469,10 @@ export function inversePresentationDirection(
   transform: GlobalSceneTransform,
 ): Vec3 {
   const [x, y, z, w] = globalSceneQuaternion(transform);
+  const unrotated = rotateByQuaternion(direction, [-x, -y, -z, w]);
+  const scale3 = globalSceneScale3(transform);
   return normalizeDirection(
-    rotateByQuaternion(direction, [-x, -y, -z, w]),
+    unrotated.map((value, index) => value / scale3[index]) as Vec3,
     [0, 0, -1],
   );
 }

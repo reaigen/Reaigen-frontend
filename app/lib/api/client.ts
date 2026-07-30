@@ -12,13 +12,27 @@ export class ApiError extends Error {
 
 const inFlight = new Map<string, Promise<unknown>>();
 const cache = new Map<string, { data: unknown; ts: number }>();
+let privateCacheGeneration = 0;
+
+/**
+ * Establish a hard identity boundary for private browser data.
+ *
+ * Clearing the maps is not enough: a request started by the previous account
+ * can resolve after logout and repopulate the cache. The generation prevents
+ * those late responses from being committed.
+ */
+export function resetPrivateApiState() {
+  privateCacheGeneration += 1;
+  cache.clear();
+  inFlight.clear();
+}
 
 /** Session expired (401): flush all cached data and signal the app to
  * re-authenticate. A single global event lets AuthProvider force a clean
  * logout + redirect to login, instead of leaving the user stranded on a
  * dead authenticated session (which is unsafe — stale data, failing actions). */
 function notifyUnauthorized() {
-  cache.clear();
+  resetPrivateApiState();
   if (typeof window !== "undefined") {
     window.dispatchEvent(new Event("reai:unauthorized"));
   }
@@ -47,6 +61,9 @@ async function fetchGetData(path: string, options: RequestInit): Promise<unknown
         ...options,
         credentials: "include",
         headers: { "Content-Type": "application/json", ...options.headers },
+        // Never let the browser HTTP cache answer an authenticated request.
+        // The session-aware in-memory cache above is the only permitted cache.
+        cache: "no-store",
       });
       if (!res.ok) {
         const body = await res.text();
@@ -101,8 +118,11 @@ async function request(path: string, options: RequestInit = {}) {
     const existing = inFlight.get(path);
     if (existing) return existing;
 
+    const requestGeneration = privateCacheGeneration;
     const promise = fetchGetData(path, options).then((data) => {
-      cache.set(path, { data, ts: Date.now() });
+      if (requestGeneration === privateCacheGeneration) {
+        cache.set(path, { data, ts: Date.now() });
+      }
       return data;
     });
 
@@ -141,6 +161,7 @@ async function abortableRequest(path: string, signal?: AbortSignal) {
     credentials: "include",
     headers: { "Content-Type": "application/json" },
     signal,
+    cache: "no-store",
   });
   if (!res.ok) {
     const body = await res.text();
@@ -166,6 +187,7 @@ async function requestWithTimeout(path: string, timeoutMs: number) {
 async function freshRequest(path: string) {
   cache.delete(path);
   inFlight.delete(path);
+  const requestGeneration = privateCacheGeneration;
   const res = await fetch(path, {
     credentials: "include",
     headers: { "Content-Type": "application/json" },
@@ -178,13 +200,16 @@ async function freshRequest(path: string) {
   }
   const text = await res.text();
   const data = text ? JSON.parse(text) : null;
-  cache.set(path, { data, ts: Date.now() });
+  if (requestGeneration === privateCacheGeneration) {
+    cache.set(path, { data, ts: Date.now() });
+  }
   return data;
 }
 
 // ─── Auth ─────────────────────────────────────────────────────────────────
 
 export async function login(email: string, password: string) {
+  resetPrivateApiState();
   return request("/api/auth/login/", {
     method: "POST",
     body: JSON.stringify({ email, password }),
@@ -200,6 +225,7 @@ export async function register(data: {
   last_name?: string;
   accept_privacy_policy: boolean;
   accept_terms: boolean;
+  preferred_language: string;
 }) {
   return request("/api/auth/register/", {
     method: "POST",
@@ -208,13 +234,63 @@ export async function register(data: {
 }
 
 export async function logout() {
-  return request("/api/auth/logout", { method: "POST" });
+  try {
+    return await request("/api/auth/logout", { method: "POST" });
+  } finally {
+    resetPrivateApiState();
+  }
 }
 
 export async function requestPasswordReset(email: string) {
-  return request("/api/auth/password-reset/request/", {
+  return request("/api/auth/password-reset/request/?app_name=reaigen", {
     method: "POST",
     body: JSON.stringify({ email }),
+  });
+}
+
+export async function validatePasswordReset(token: string) {
+  return request("/api/auth/password-reset/validate/?app_name=reaigen", {
+    method: "POST",
+    body: JSON.stringify({ token }),
+  });
+}
+
+export async function confirmPasswordReset(
+  token: string,
+  newPassword: string,
+  newPasswordConfirm: string,
+) {
+  return request("/api/auth/password-reset/confirm/?app_name=reaigen", {
+    method: "POST",
+    body: JSON.stringify({
+      token,
+      new_password: newPassword,
+      new_password_confirm: newPasswordConfirm,
+    }),
+  });
+}
+
+export async function requestPasswordResetSMS(phoneNumber: string) {
+  return request("/api/auth/password-reset/sms/request/?app_name=reaigen", {
+    method: "POST",
+    body: JSON.stringify({ phone_number: phoneNumber }),
+  });
+}
+
+export async function confirmPasswordResetSMS(
+  phoneNumber: string,
+  otpCode: string,
+  newPassword: string,
+  newPasswordConfirm: string,
+) {
+  return request("/api/auth/password-reset/sms/confirm/?app_name=reaigen", {
+    method: "POST",
+    body: JSON.stringify({
+      phone_number: phoneNumber,
+      otp_code: otpCode,
+      new_password: newPassword,
+      new_password_confirm: newPasswordConfirm,
+    }),
   });
 }
 
@@ -684,9 +760,16 @@ export async function unlinkSocialAccount(provider: string) {
 // ─── Email Verification ──────────────────────────────────────────────────
 
 export async function resendVerification(email: string) {
-  return request("/api/auth/resend-verification/", {
+  return request("/api/auth/resend-verification/?app_name=reaigen", {
     method: "POST",
     body: JSON.stringify({ email }),
+  });
+}
+
+export async function verifyEmail(token: string) {
+  return request("/api/auth/verify-email/?app_name=reaigen", {
+    method: "POST",
+    body: JSON.stringify({ token }),
   });
 }
 
@@ -874,6 +957,335 @@ export async function listDrafts(page = 1, pageSize = 100, search = ""): Promise
 
 export async function getDraft(draftId: number): Promise<DraftDetailItem> {
   return request(`/api/reaigen/drafts/${draftId}/`);
+}
+
+export interface WebSceneTransform {
+  translation: [number, number, number];
+  rotationDeg: [number, number, number];
+  scale: number;
+  scale3?: [number, number, number];
+}
+
+export interface WebTourWorkspaceNode {
+  id: string;
+  splat_id: number;
+  name: string;
+  prim_path: string;
+  visible: boolean;
+  transform: WebSceneTransform;
+  asset: {
+    splat_id: number;
+    status: string;
+    format: "ply" | "sog" | null;
+    url: string | null;
+    has_ply: boolean;
+    has_sog: boolean;
+    conversion: {
+      status: "running" | "completed" | "failed" | null;
+      error: string | null;
+    } | null;
+  };
+}
+
+export interface WebTourWorkspace {
+  tour_id: number;
+  draft_id: number;
+  name: string;
+  status: string;
+  revision: number;
+  nodes: WebTourWorkspaceNode[];
+  cameras: Array<Record<string, unknown>>;
+  usd: {
+    rootLayer?: string;
+    format?: "usda";
+    stageSha256?: string;
+    content?: string;
+    validation?: { valid?: boolean; validator?: string };
+  };
+  accepted_formats: Array<"ply" | "sog">;
+}
+
+export interface WebCreationAccess {
+  allowed: boolean;
+  feature: "web_scene_authoring";
+  accepted_formats: Array<"ply" | "sog">;
+  max_upload_size: number;
+  capabilities: {
+    drafts: boolean;
+    multi_splat: boolean;
+    node_transforms: boolean;
+    openusd_hierarchy: boolean;
+    cameras: boolean;
+    ply_to_sog: boolean;
+  };
+}
+
+export async function getWebCreationAccess(): Promise<WebCreationAccess> {
+  return request("/api/reaigen/web-creation/access/");
+}
+
+export async function hasWebCreationAccess(): Promise<boolean> {
+  try {
+    return (await getWebCreationAccess()).allowed;
+  } catch (error) {
+    if (error instanceof ApiError && (error.status === 401 || error.status === 403)) {
+      return false;
+    }
+    throw error;
+  }
+}
+
+export async function createWebDraft(
+  data: DraftUpdatePayload & { title: string },
+): Promise<DraftDetailItem> {
+  return request("/api/reaigen/web-creation/drafts/", {
+    method: "POST",
+    body: JSON.stringify(data),
+  });
+}
+
+export async function createWebTour(data: {
+  draft_id: number;
+  name?: string;
+}): Promise<WebTourWorkspace> {
+  return request("/api/reaigen/web-creation/tours/", {
+    method: "POST",
+    body: JSON.stringify(data),
+  });
+}
+
+export async function getWebTourWorkspace(tourId: number): Promise<WebTourWorkspace> {
+  return freshRequest(`/api/reaigen/web-creation/tours/${tourId}/`);
+}
+
+export async function saveWebTourWorkspace(
+  tourId: number,
+  data: {
+    base_revision: number;
+    name?: string;
+    nodes?: Array<Pick<WebTourWorkspaceNode, "id" | "name" | "visible" | "transform">>;
+    cameras?: Array<Record<string, unknown>>;
+  },
+): Promise<WebTourWorkspace> {
+  return request(`/api/reaigen/web-creation/tours/${tourId}/`, {
+    method: "PATCH",
+    body: JSON.stringify(data),
+  });
+}
+
+interface WebTourUploadInit {
+  splat_id: number;
+  tour_id: number;
+  upload_key: string;
+  upload_mode: "single" | "multipart";
+  upload_url?: string;
+  content_type: string;
+  required_headers?: Record<string, string>;
+  multipart?: {
+    upload_id: string;
+    part_size: number;
+    total_parts: number;
+    parts: Array<{ part_number: number; url: string }>;
+  };
+}
+
+async function putFileWithProgress(
+  url: string,
+  body: Blob,
+  headers: Record<string, string>,
+  onProgress?: (fraction: number) => void,
+): Promise<string | null> {
+  return new Promise((resolve, reject) => {
+    const xhr = new XMLHttpRequest();
+    xhr.open("PUT", url);
+    xhr.withCredentials = false;
+    xhr.timeout = 10 * 60 * 1000;
+    for (const [name, value] of Object.entries(headers)) {
+      // Browsers calculate Content-Length and forbid JavaScript from setting it.
+      if (name.toLowerCase() === "content-length") continue;
+      xhr.setRequestHeader(name, value);
+    }
+    xhr.upload.onprogress = (event) => {
+      if (event.lengthComputable) onProgress?.(event.loaded / event.total);
+    };
+    xhr.onerror = () => reject(new Error("The storage upload was interrupted."));
+    xhr.onabort = () => reject(new Error("The storage upload was cancelled."));
+    xhr.ontimeout = () => reject(new Error("The storage upload timed out."));
+    xhr.onload = () => {
+      if (xhr.status < 200 || xhr.status >= 300) {
+        reject(new ApiError(xhr.status, xhr.responseText));
+        return;
+      }
+      onProgress?.(1);
+      resolve(xhr.getResponseHeader("ETag"));
+    };
+    xhr.send(body);
+  });
+}
+
+async function putFileWithRetry(
+  url: string,
+  body: Blob,
+  headers: Record<string, string>,
+  onProgress?: (fraction: number) => void,
+): Promise<string | null> {
+  let lastError: unknown;
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    try {
+      return await putFileWithProgress(url, body, headers, onProgress);
+    } catch (error) {
+      lastError = error;
+      if (
+        error instanceof ApiError
+        && error.status >= 400
+        && error.status < 500
+      ) throw error;
+      if (attempt < 2) await pause(500 * (2 ** attempt));
+    }
+  }
+  throw lastError;
+}
+
+export async function uploadWebTourAsset(
+  tourId: number,
+  file: File,
+  onProgress?: (fraction: number) => void,
+): Promise<WebTourWorkspace> {
+  const initialized = await request(
+    `/api/reaigen/web-creation/tours/${tourId}/assets/`,
+    {
+      method: "POST",
+      body: JSON.stringify({ filename: file.name, file_size: file.size }),
+    },
+  ) as WebTourUploadInit;
+
+  try {
+    let confirmBody: Record<string, unknown> = {};
+    if (initialized.upload_mode === "single" && initialized.upload_url) {
+      await putFileWithRetry(
+        initialized.upload_url,
+        file,
+        initialized.required_headers ?? { "Content-Type": initialized.content_type },
+        onProgress,
+      );
+    } else if (initialized.multipart) {
+      const completedParts: Array<{ part_number: number; etag: string }> = [];
+      const { part_size: partSize, parts, upload_id: uploadId } = initialized.multipart;
+      let uploadedBytes = 0;
+      for (const part of parts) {
+        const start = (part.part_number - 1) * partSize;
+        const end = Math.min(file.size, start + partSize);
+        const blob = file.slice(start, end);
+        const etag = await putFileWithRetry(
+          part.url,
+          blob,
+          {},
+          (partFraction) => onProgress?.(
+            Math.min(1, (uploadedBytes + blob.size * partFraction) / file.size),
+          ),
+        );
+        if (!etag) throw new Error("Storage did not return an ETag for an uploaded part.");
+        completedParts.push({ part_number: part.part_number, etag });
+        uploadedBytes += blob.size;
+      }
+      confirmBody = { upload_id: uploadId, parts: completedParts };
+    } else {
+      throw new Error("The upload session is incomplete.");
+    }
+
+    return request(
+      `/api/reaigen/web-creation/tours/${tourId}/assets/${initialized.splat_id}/confirm/`,
+      {
+        method: "POST",
+        body: JSON.stringify(confirmBody),
+      },
+    );
+  } catch (error) {
+    void request(
+      `/api/reaigen/web-creation/tours/${tourId}/assets/${initialized.splat_id}/abort/`,
+      { method: "POST", body: "{}" },
+    ).catch(() => undefined);
+    throw error;
+  }
+}
+
+export async function replaceWebTourAsset(
+  tourId: number,
+  splatId: number,
+  file: File,
+  counts: { originalCount: number; remainingCount: number },
+  onProgress?: (fraction: number) => void,
+): Promise<WebTourWorkspace> {
+  const initialized = await request(
+    `/api/reaigen/web-creation/tours/${tourId}/assets/${splatId}/revision/`,
+    {
+      method: "POST",
+      body: JSON.stringify({
+        filename: file.name,
+        file_size: file.size,
+        original_count: counts.originalCount,
+        remaining_count: counts.remainingCount,
+      }),
+    },
+  ) as WebTourUploadInit;
+
+  try {
+    let confirmBody: Record<string, unknown> = {};
+    if (initialized.upload_mode === "single" && initialized.upload_url) {
+      await putFileWithRetry(
+        initialized.upload_url,
+        file,
+        initialized.required_headers ?? { "Content-Type": initialized.content_type },
+        onProgress,
+      );
+    } else if (initialized.multipart) {
+      const completedParts: Array<{ part_number: number; etag: string }> = [];
+      const { part_size: partSize, parts, upload_id: uploadId } = initialized.multipart;
+      let uploadedBytes = 0;
+      for (const part of parts) {
+        const start = (part.part_number - 1) * partSize;
+        const end = Math.min(file.size, start + partSize);
+        const blob = file.slice(start, end);
+        const etag = await putFileWithRetry(
+          part.url,
+          blob,
+          {},
+          (partFraction) => onProgress?.(
+            Math.min(1, (uploadedBytes + blob.size * partFraction) / file.size),
+          ),
+        );
+        if (!etag) throw new Error("Storage did not return an ETag for an uploaded part.");
+        completedParts.push({ part_number: part.part_number, etag });
+        uploadedBytes += blob.size;
+      }
+      confirmBody = { upload_id: uploadId, parts: completedParts };
+    } else {
+      throw new Error("The upload session is incomplete.");
+    }
+
+    return request(
+      `/api/reaigen/web-creation/tours/${tourId}/assets/${initialized.splat_id}/confirm/`,
+      {
+        method: "POST",
+        body: JSON.stringify(confirmBody),
+      },
+    );
+  } catch (error) {
+    void request(
+      `/api/reaigen/web-creation/tours/${tourId}/assets/${initialized.splat_id}/abort/`,
+      { method: "POST", body: "{}" },
+    ).catch(() => undefined);
+    throw error;
+  }
+}
+
+export async function getWebTourAssetStatus(
+  tourId: number,
+  splatId: number,
+): Promise<WebTourWorkspaceNode["asset"]> {
+  return freshRequest(
+    `/api/reaigen/web-creation/tours/${tourId}/assets/${splatId}/status/`,
+  );
 }
 
 /** Bypass the short detail cache after an editor or media mutation. */

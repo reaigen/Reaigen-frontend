@@ -17,6 +17,7 @@ import { listAllSplats } from "../lib/api/client";
 import { getUserLanguage, t } from "../lib/i18n";
 import type { SplatListItem } from "../lib/tour-types";
 import { Button } from "../lib/ui/button";
+import { WebCreateAction } from "../components/web-create-action";
 
 type TourState = "ready" | "processing" | "issues";
 
@@ -93,6 +94,7 @@ export default function ToursPage() {
         <PageHeader
           title={t("tours.title", lang)}
           description={t("tours.subtitle", lang)}
+          actions={<WebCreateAction lang={lang} labelKey="webCreate.tourAction" />}
           className={showToolbar ? "mb-6 md:mb-8 xl:mb-10" : "mb-6 md:mb-8"}
         />
 

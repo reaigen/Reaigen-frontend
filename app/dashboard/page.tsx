@@ -21,6 +21,7 @@ import { Button } from "../lib/ui/button";
 import { currentGalleryUploads } from "../lib/media";
 import { readDraftPageCache, writeDraftPageCache } from "../lib/resilient-draft-cache";
 import { resolveUnit, type UnitLookup } from "../lib/unit-catalog";
+import { WebCreateAction } from "../components/web-create-action";
 
 function compactNumber(value: string | number | null | undefined, lang?: string) {
   if (value == null || value === "") return null;
@@ -258,7 +259,12 @@ export default function DashboardPage() {
           eyebrow={user.first_name ? `${t("dashboard.welcome", lang)}, ${user.first_name}` : t("dashboard.welcome", lang)}
           title={t("dashboard.creationsTitle", lang)}
           description={t("dashboard.creationsSubtitle", lang)}
-          actions={<StatusPill>{totalCount} {t("dashboard.items", lang)}</StatusPill>}
+          actions={
+            <>
+              <StatusPill>{totalCount} {t("dashboard.items", lang)}</StatusPill>
+              <WebCreateAction lang={lang} />
+            </>
+          }
           className="mb-5 sm:mb-8"
         />
         {/* Search bar */}

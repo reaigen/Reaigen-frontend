@@ -110,6 +110,58 @@
   }
 
   /*
+   * Camera authoring inside the spatial workspace uses the same neutral,
+   * elevated material system as the outliner and inspector. Public immersive
+   * playback keeps its dark overlay treatment.
+   */
+  .camera-editor-workspace {
+    color: hsl(var(--foreground));
+  }
+
+  .camera-editor-workspace [class~="bg-black/70"],
+  .camera-editor-workspace [class~="bg-black/55"],
+  .camera-editor-workspace [class~="bg-black/45"] {
+    background-color: hsl(var(--card) / 0.9) !important;
+  }
+
+  .camera-editor-workspace [class~="text-white"],
+  .camera-editor-workspace [class~="text-white/90"],
+  .camera-editor-workspace [class~="text-white/85"],
+  .camera-editor-workspace [class~="text-white/80"],
+  .camera-editor-workspace [class~="text-white/75"],
+  .camera-editor-workspace [class~="text-white/70"],
+  .camera-editor-workspace [class~="text-white/65"],
+  .camera-editor-workspace [class~="text-white/60"],
+  .camera-editor-workspace [class~="text-white/55"],
+  .camera-editor-workspace [class~="text-white/50"],
+  .camera-editor-workspace [class~="text-white/45"],
+  .camera-editor-workspace [class~="text-white/40"] {
+    color: hsl(var(--foreground) / 0.72) !important;
+  }
+
+  .camera-editor-workspace [class~="border-white/15"],
+  .camera-editor-workspace [class~="border-white/10"],
+  .camera-editor-workspace [class~="border-white/[0.1]"],
+  .camera-editor-workspace [class~="border-white/[0.08]"],
+  .camera-editor-workspace [class~="border-white/[0.06]"] {
+    border-color: hsl(var(--border) / 0.68) !important;
+  }
+
+  .camera-editor-workspace [class~="bg-white/15"],
+  .camera-editor-workspace [class~="bg-white/10"],
+  .camera-editor-workspace [class~="bg-white/[0.12]"],
+  .camera-editor-workspace [class~="bg-white/[0.1]"],
+  .camera-editor-workspace [class~="bg-white/[0.06]"],
+  .camera-editor-workspace [class~="bg-white/[0.04]"],
+  .camera-editor-workspace [class~="bg-white/[0.03]"] {
+    background-color: hsl(var(--foreground) / 0.065) !important;
+  }
+
+  .camera-editor-workspace [class*="ring-white"] {
+    --tw-ring-color: hsl(var(--ring) / 0.35) !important;
+  }
+
+  /*
    * The media editor lives in a side panel, so viewport breakpoints can produce
    * four unusably narrow cards. Size its grid from the panel itself instead.
    */

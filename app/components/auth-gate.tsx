@@ -19,6 +19,7 @@ type RegisterData = {
   last_name: string;
   accept_privacy_policy: boolean;
   accept_terms: boolean;
+  preferred_language: string;
 };
 
 type AuthGateProps = {
@@ -248,6 +249,7 @@ function RegistrationCard({
         last_name: lastName.trim(),
         accept_privacy_policy: agreeToTerms,
         accept_terms: agreeToTerms,
+        preferred_language: lang,
       });
     } catch (err) {
       setError(getSafeApiErrorMessage(err, lang));
@@ -383,10 +385,6 @@ export function AuthGate({ open, onLogin, onRegister }: AuthGateProps) {
             )}
           </div>
 
-          <div className="mt-9 flex items-center gap-2 text-[11px] font-medium text-muted-foreground">
-            <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" aria-hidden="true" />
-            {t("auth.brand.secure", lang)}
-          </div>
         </div>
       </section>
     </div>

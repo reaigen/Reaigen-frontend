@@ -41,24 +41,8 @@ function noStoreHeaders(contentType: string) {
     "Cache-Control": "private, no-store, no-cache, max-age=0, must-revalidate",
     Pragma: "no-cache",
     Expires: "0",
+    Vary: "Cookie, Authorization",
   };
-}
-
-/** Allow caching for read-only list/detail endpoints (splats list, viewer data). */
-function cacheableHeaders(contentType: string, maxAge = 60) {
-  return {
-    "Content-Type": contentType,
-    "Cache-Control": `private, max-age=${maxAge}, stale-while-revalidate=${maxAge * 4}`,
-  };
-}
-
-/** Paths where GET responses can be briefly cached (private, short TTL). */
-const CACHEABLE_GET_PREFIXES = ["splats", "drafts", "shares"];
-
-function isCacheableGet(method: string, joined: string): boolean {
-  if (method !== "GET") return false;
-  // Only cache list / detail reads, not auth or mutation-like endpoints
-  return CACHEABLE_GET_PREFIXES.some((p) => joined.startsWith(p));
 }
 
 function sharePinCookieName(token: string): string {
@@ -203,7 +187,9 @@ async function proxy(
   let accessToken = req.cookies.get(ACCESS_COOKIE_NAME)?.value ?? null;
   const refreshToken = req.cookies.get(REFRESH_COOKIE_NAME)?.value ?? null;
 
-  const headers: Record<string, string> = {};
+  const headers: Record<string, string> = {
+    "X-Reaigen-Client": "web",
+  };
   const ct = req.headers.get("Content-Type");
   if (ct) headers["Content-Type"] = ct;
   if (accessToken) headers["Authorization"] = `Bearer ${accessToken}`;
@@ -259,10 +245,12 @@ async function proxy(
 
       const data = await res.text();
       const contentType = res.headers.get("Content-Type") ?? "application/json";
-      const useCache = res.ok && isCacheableGet(req.method, joined);
       const response = new NextResponse(data, {
         status: res.status,
-        headers: useCache ? cacheableHeaders(contentType) : noStoreHeaders(contentType),
+        // Authenticated responses must never enter the browser HTTP cache:
+        // private cache entries are keyed by URL, not by the identity stored
+        // in HttpOnly cookies, and can otherwise cross a logout/login boundary.
+        headers: noStoreHeaders(contentType),
       });
       preserveSharedVisitSession(
         response,

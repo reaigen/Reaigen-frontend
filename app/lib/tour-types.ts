@@ -14,6 +14,8 @@ export interface GlobalSceneTransform {
   coordinateSpace: "reaigen_y_up";
   rotationDeg: Vec3;
   translation: Vec3;
+  /** Optional non-uniform workspace scale; `scale` remains legacy-compatible. */
+  scale3?: Vec3;
   scale: number;
 }
 
@@ -616,6 +618,7 @@ export interface DraftTourAsset {
   source_splat_id: number | null;
   source_scan_bundle_id: number | null;
   status: string;
+  editor_workspace?: boolean;
   is_product_published: boolean;
   latest_delivery_version: DraftTourAssetDeliveryVersion | null;
   publication: DraftTourAssetPublicationState;
@@ -858,6 +861,26 @@ export interface SplatViewerPayload {
   representations: SceneDeliveryResolution["asset"][];
   collision_geometry?: TourViewerData["collision_geometry"];
   cameras: CameraData;
+  workspace?: {
+    revision: number;
+    cameras: SavedCamera[];
+    nodes: Array<{
+      id: string;
+      splat_id: number;
+      name: string;
+      visible: boolean;
+      transform: {
+        translation: Vec3;
+        rotationDeg: Vec3;
+        scale: number;
+        scale3?: Vec3;
+      };
+      asset: {
+        url: string | null;
+        format: "ply" | "sog" | null;
+      };
+    }>;
+  };
 }
 
 export interface SplatPackageFileRef {
