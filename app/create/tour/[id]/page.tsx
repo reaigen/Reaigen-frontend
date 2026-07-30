@@ -314,6 +314,12 @@ export default function WebTourEditorPage({
   const pruneCommitLockRef = useRef(false);
   const thumbnailCaptureRef = useRef<Promise<unknown>>(Promise.resolve());
   const pruneDialogCancelRef = useRef<HTMLButtonElement | null>(null);
+  const fileDragDepthRef = useRef(0);
+
+  const clearFileDrag = useCallback(() => {
+    fileDragDepthRef.current = 0;
+    setDragActive(false);
+  }, []);
 
   const requestClosePruneEditor = useCallback(() => {
     if (committingPrune) return;
@@ -337,6 +343,24 @@ export default function WebTourEditorPage({
     const timer = window.setTimeout(() => setPruneSaveNotice(null), 4500);
     return () => window.clearTimeout(timer);
   }, [pruneSaveNotice]);
+
+  useEffect(() => {
+    const clearOnVisibilityChange = () => {
+      if (document.visibilityState !== "visible") clearFileDrag();
+    };
+    window.addEventListener("pageshow", clearFileDrag);
+    window.addEventListener("pagehide", clearFileDrag);
+    window.addEventListener("blur", clearFileDrag);
+    window.addEventListener("dragend", clearFileDrag);
+    document.addEventListener("visibilitychange", clearOnVisibilityChange);
+    return () => {
+      window.removeEventListener("pageshow", clearFileDrag);
+      window.removeEventListener("pagehide", clearFileDrag);
+      window.removeEventListener("blur", clearFileDrag);
+      window.removeEventListener("dragend", clearFileDrag);
+      document.removeEventListener("visibilitychange", clearOnVisibilityChange);
+    };
+  }, [clearFileDrag]);
 
   useEffect(() => {
     if (!pruneConfirmation || committingPrune) return;
@@ -907,16 +931,31 @@ export default function WebTourEditorPage({
     <main
       className="relative h-[100dvh] w-screen overflow-hidden bg-background text-foreground"
       onDragEnter={(event) => {
+        if (uploading || !event.dataTransfer.types.includes("Files")) return;
         event.preventDefault();
-        if (!uploading) setDragActive(true);
+        fileDragDepthRef.current += 1;
+        setDragActive(true);
       }}
-      onDragOver={(event) => event.preventDefault()}
+      onDragOver={(event) => {
+        if (uploading || !event.dataTransfer.types.includes("Files")) return;
+        event.preventDefault();
+        event.dataTransfer.dropEffect = "copy";
+        if (fileDragDepthRef.current < 1) fileDragDepthRef.current = 1;
+        if (!dragActive) setDragActive(true);
+      }}
       onDragLeave={(event) => {
-        if (event.currentTarget === event.target) setDragActive(false);
+        if (!dragActive && !event.dataTransfer.types.includes("Files")) return;
+        event.preventDefault();
+        fileDragDepthRef.current = Math.max(0, fileDragDepthRef.current - 1);
+        if (fileDragDepthRef.current === 0) setDragActive(false);
       }}
       onDrop={(event) => {
+        if (
+          !event.dataTransfer.types.includes("Files")
+          && event.dataTransfer.files.length === 0
+        ) return;
         event.preventDefault();
-        setDragActive(false);
+        clearFileDrag();
         const file = event.dataTransfer.files[0];
         if (file && !uploading) void uploadFile(file);
       }}
