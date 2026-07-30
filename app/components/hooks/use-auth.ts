@@ -1,6 +1,7 @@
 "use client";
 
 import * as React from "react";
+import { useRouter } from "next/navigation";
 import {
   ApiError,
   login as apiLogin,
@@ -38,16 +39,18 @@ export type AuthState = {
     accept_terms: boolean;
     preferred_language: string;
   }) => Promise<void>;
-  logout: () => void;
+  logout: () => Promise<void>;
   refreshProfile: () => Promise<UserProfile | null>;
 };
 
 const AuthContext = React.createContext<AuthState | null>(null);
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
+  const router = useRouter();
   const [user, setUser] = React.useState<UserProfile | null>(null);
   const [isLoading, setIsLoading] = React.useState(true);
   const userRef = React.useRef<UserProfile | null>(null);
+  const logoutInFlightRef = React.useRef<Promise<void> | null>(null);
 
   React.useEffect(() => {
     userRef.current = user;
@@ -92,14 +95,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       });
       void clearPrivateBrowserState();
       broadcastAuthBoundary("expired");
+      setIsLoading(true);
       setUser(null);
-      if (typeof window !== "undefined" && window.location.pathname !== "/") {
-        window.location.replace("/");
-      }
+      router.replace("/");
+      window.requestAnimationFrame(() => setIsLoading(false));
     };
     window.addEventListener("reai:unauthorized", handleUnauthorized);
     return () => window.removeEventListener("reai:unauthorized", handleUnauthorized);
-  }, []);
+  }, [router]);
 
   // HttpOnly auth cookies are shared by tabs. When one tab logs out or changes
   // identity, every other tab must discard its mounted private state too.
@@ -107,14 +110,16 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     const handleAuthBoundary = (event: StorageEvent) => {
       if (event.key !== AUTH_BOUNDARY_STORAGE_KEY || !event.newValue) return;
       resetPrivateApiState();
+      setIsLoading(true);
       setUser(null);
+      router.replace("/");
       void clearPrivateBrowserState().finally(() => {
-        window.location.replace("/");
+        setIsLoading(false);
       });
     };
     window.addEventListener("storage", handleAuthBoundary);
     return () => window.removeEventListener("storage", handleAuthBoundary);
-  }, []);
+  }, [router]);
 
   // Silent refresh
   React.useEffect(() => {
@@ -183,17 +188,29 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   );
 
   const logout = React.useCallback(async () => {
-    const currentUser = userRef.current;
-    // Remove the old UI synchronously; network cleanup must never leave
-    // another account's content visible behind a slow logout request.
-    setUser(null);
-    const privateCleanup = clearPrivateBrowserState();
-    const tasks: Promise<unknown>[] = [privateCleanup, apiLogout()];
-    if (currentUser) tasks.push(disableWebPushForUser(currentUser.id));
-    await Promise.allSettled(tasks);
-    broadcastAuthBoundary("logout");
-    window.location.replace("/");
-  }, []);
+    if (logoutInFlightRef.current) return logoutInFlightRef.current;
+
+    const transition = (async () => {
+      const currentUser = userRef.current;
+      // Move to a neutral transition frame immediately, then keep that single
+      // frame mounted until cookies and private browser state are cleared.
+      // A second hard reload here caused the signed-out home to flash twice.
+      setIsLoading(true);
+      setUser(null);
+      router.replace("/");
+
+      const tasks: Promise<unknown>[] = [clearPrivateBrowserState(), apiLogout()];
+      if (currentUser) tasks.push(disableWebPushForUser(currentUser.id));
+      await Promise.allSettled(tasks);
+      broadcastAuthBoundary("logout");
+      setIsLoading(false);
+    })().finally(() => {
+      logoutInFlightRef.current = null;
+    });
+
+    logoutInFlightRef.current = transition;
+    return transition;
+  }, [router]);
 
   const value = React.useMemo<AuthState>(() => ({
     isAuthenticated: user !== null,

@@ -86,6 +86,8 @@ const COPY = {
     shareTitle: "Update active shares",
     shareHint: "Existing links move to this exact publication revision.",
     saveShort: "Publish",
+    saveChanges: "Save changes",
+    unpublish: "Unpublish",
     saved: "Tour delivery was published as a new immutable revision.",
     emptyTitle: "No virtual tour yet",
     empty: "Capture the property in the Reaigen iPhone or iPad app. The tour will appear here after its upload is validated.",
@@ -163,6 +165,8 @@ const COPY = {
     shareTitle: "Aktualizovať aktívne zdieľania",
     shareHint: "Existujúce odkazy prejdú na túto presnú verziu publikácie.",
     saveShort: "Zverejniť",
+    saveChanges: "Uložiť zmeny",
+    unpublish: "Zrušiť zverejnenie",
     saved: "Doručenie prehliadok bolo uložené ako nová nemenná verzia.",
     emptyTitle: "Zatiaľ bez virtuálnej prehliadky",
     empty: "Nehnuteľnosť nasnímajte v aplikácii Reaigen pre iPhone alebo iPad. Po overení nahrávania sa prehliadka zobrazí tu.",
@@ -556,6 +560,14 @@ export function DraftTourAssetsPanel({
   const remainingAssets = Math.max(0, orderedAssets.length - overviewAssets.length);
   const usdHealthy = payload?.publication?.usd.validation.valid === true;
   const changed = baseline !== selectionSignature(selections);
+  const selectedVisibleCount = Object.values(selections).filter(
+    (selection) => selection.web || selection.ios,
+  ).length;
+  const isUnpublishing = Boolean(
+    changed
+    && payload?.publication?.entries.length
+    && selectedVisibleCount === 0,
+  );
   const panelSummary = payload?.publication
     ? (usdHealthy ? text.usdHealthy : text.usdInvalid)
     : text.summary(
@@ -967,7 +979,11 @@ export function DraftTourAssetsPanel({
             disabled={!changed || saving || loading}
             onClick={() => { void save(); }}
           >
-            {text.saveShort}
+            {isUnpublishing
+              ? text.unpublish
+              : changed
+                ? text.saveChanges
+                : text.saveShort}
           </Button>
         )}
       >

@@ -1033,6 +1033,7 @@ const SplatViewer = forwardRef<SplatViewerHandle, Props>(function SplatViewer(
   } | null>(null);
   const cameraUpRef = useRef<Vec3>([0, 1, 0]);
   const canonicalTourDataRef = useRef<TourData | null>(null);
+  const loadedTourSourceRef = useRef<string | null>(null);
   const scrollVelocityRef = useRef(0);
   const progressRef = useRef(0);
   const pathScrubRef = useRef<{ active: boolean } | null>(null);
@@ -1401,15 +1402,48 @@ const SplatViewer = forwardRef<SplatViewerHandle, Props>(function SplatViewer(
     shots: data.shots,
   }), [globalSceneTransform.scale, transformSpatialDirection, transformSpatialPoint]);
 
-  const applyTourData = useCallback((data: TourData) => {
+  const applyTourData = useCallback((
+    data: TourData,
+    preserveViewport = false,
+  ) => {
     setTourData(data);
     onTourLoaded?.(data);
     canonicalTourDataRef.current = data;
     const worldPath = worldTourPath(data);
     pathDataRef.current = worldPath;
-    progressRef.current = data.arcLens?.[data.startIdx ?? 0] ?? 0;
 
     const shot0 = data.shots[0];
+    if (preserveViewport) {
+      const camera = cameraRef.current;
+      if (camera && worldPath.positions.length) {
+        let nearestIndex = 0;
+        let nearestDistanceSquared = Number.POSITIVE_INFINITY;
+        for (let index = 0; index < worldPath.positions.length; index += 1) {
+          const position = worldPath.positions[index];
+          const dx = position[0] - camera.position.x;
+          const dy = position[1] - camera.position.y;
+          const dz = position[2] - camera.position.z;
+          const distanceSquared = dx * dx + dy * dy + dz * dz;
+          if (distanceSquared < nearestDistanceSquared) {
+            nearestIndex = index;
+            nearestDistanceSquared = distanceSquared;
+          }
+        }
+        progressRef.current = worldPath.arcLens[nearestIndex]
+          ?? Math.max(0, Math.min(worldPath.totalArc, progressRef.current));
+      } else {
+        progressRef.current = Math.max(
+          0,
+          Math.min(worldPath.totalArc, progressRef.current),
+        );
+      }
+      shotIdxRef.current = Math.max(
+        0,
+        Math.min(shotIdxRef.current, data.shots.length - 1),
+      );
+      return;
+    }
+    progressRef.current = data.arcLens?.[data.startIdx ?? 0] ?? 0;
     const pos0 = worldPath.positions[shot0.startIdx];
     const fwd0 = worldPath.forwards[shot0.startIdx];
     const up0 = worldPath.ups[shot0.startIdx];
@@ -1574,15 +1608,13 @@ const SplatViewer = forwardRef<SplatViewerHandle, Props>(function SplatViewer(
   const goToPrev = useCallback(() => {
     const n = tourData?.shots.length ?? 0;
     if (!n) return;
-    if (shotIdxRef.current <= 0) return;
-    goToShot(shotIdxRef.current - 1);
+    goToShot((shotIdxRef.current - 1 + n) % n);
   }, [goToShot, tourData]);
 
   const goToNext = useCallback(() => {
     const n = tourData?.shots.length ?? 0;
     if (!n) return;
-    if (shotIdxRef.current >= n - 1) return;
-    goToShot(shotIdxRef.current + 1);
+    goToShot((shotIdxRef.current + 1) % n);
   }, [goToShot, tourData]);
 
   const getCurrentCamera = useCallback(() => {
@@ -2916,10 +2948,20 @@ const SplatViewer = forwardRef<SplatViewerHandle, Props>(function SplatViewer(
   useEffect(() => {
     const resolvedTourUrl = tourUrl;
     if (!ready) return;
+    const tourSource = resolvedTourUrl
+      ? `tour:${resolvedTourUrl}`
+      : camerasUrl
+        ? `cameras:${camerasUrl}`
+        : `splat-cameras:${splatId ?? "none"}`;
 
     let cancelled = false;
     let retryTimer: ReturnType<typeof setTimeout> | null = null;
     let usedSavedCameras = false;
+    const commitTourData = (data: TourData) => {
+      const preserveViewport = loadedTourSourceRef.current === tourSource;
+      applyTourData(data, preserveViewport);
+      loadedTourSourceRef.current = tourSource;
+    };
 
     const tryLoadSavedCameras = async () => {
       // Use directly-provided camera data first (avoids data: URL / fetch issues)
@@ -2928,7 +2970,7 @@ const SplatViewer = forwardRef<SplatViewerHandle, Props>(function SplatViewer(
         const savedTour = buildTourFromSavedCameras(initialCameras);
         if (!savedTour || cancelled) return false;
         usedSavedCameras = true;
-        applyTourData(savedTour);
+        commitTourData(savedTour);
         return true;
       }
       const camUrl = camerasUrl ?? (splatId ? `/api/reaigen/splats/${splatId}/cameras/` : null);
@@ -2940,7 +2982,7 @@ const SplatViewer = forwardRef<SplatViewerHandle, Props>(function SplatViewer(
         const savedTour = buildTourFromSavedCameras(cameraData);
         if (!savedTour || cancelled) return false;
         usedSavedCameras = true;
-        applyTourData(savedTour);
+        commitTourData(savedTour);
         return true;
       } catch {
         return false;
@@ -2971,7 +3013,7 @@ const SplatViewer = forwardRef<SplatViewerHandle, Props>(function SplatViewer(
                 }
                 data = { ...data, shots: fallbackShots };
               }
-              applyTourData(data);
+              commitTourData(data);
             }).catch(() => {});
             return;
           }
@@ -2993,7 +3035,7 @@ const SplatViewer = forwardRef<SplatViewerHandle, Props>(function SplatViewer(
             data = { ...data, shots: fallbackShots };
           }
 
-          applyTourData(data);
+          commitTourData(data);
         })
         .catch(() => {
           if (usedSavedCameras || cancelled) return;

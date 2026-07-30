@@ -110,7 +110,6 @@ export default function TourPage({
   const [viewer, setViewer] = useState<SplatViewerPayload | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [shotIdx, setShotIdx] = useState(0);
-  const [editorVersion, setEditorVersion] = useState(0);
   const [activeRenderUrl, setActiveRenderUrl] = useState<string | null>(null);
   const [viewerReady, setViewerReady] = useState(false);
   const [retryCount, setRetryCount] = useState(0);
@@ -420,7 +419,6 @@ export default function TourPage({
   return (
     <div className="relative h-[100dvh] w-screen overflow-hidden bg-white">
       <SplatViewer
-        key={editorVersion}
         ref={splatRef}
         splatUrl={activeRenderUrl ?? viewer.asset.url}
         splatId={resolvedSplatId}
@@ -498,7 +496,6 @@ export default function TourPage({
                 cameras: saved,
                 scene_description: saved.sceneDescription ?? current.scene_description,
               } : current);
-              setEditorVersion((v) => v + 1);
             }}
             lang={lang}
           />
