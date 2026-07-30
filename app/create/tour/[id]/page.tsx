@@ -1084,8 +1084,8 @@ export default function WebTourEditorPage({
         </div>
       )}
 
-      <header className="floating-panel floating-header pointer-events-none absolute inset-x-3 top-3 z-30 mx-auto flex max-w-[38rem] items-center justify-between gap-2 px-2">
-        <div className="pointer-events-auto flex min-w-0 items-center gap-1.5">
+      <header className="pointer-events-none absolute inset-x-3 top-3 z-30 flex items-start justify-between gap-2 sm:inset-x-4">
+        <div className="floating-panel pointer-events-auto flex h-11 min-w-0 items-center gap-1 p-1">
           <button
             type="button"
             onClick={() => {
@@ -1100,32 +1100,25 @@ export default function WebTourEditorPage({
           >
             <ArrowLeftIcon size={15} />
           </button>
-          <div className="min-w-0 border-l border-border/65 px-2.5 py-0.5">
-            <span className="flex min-w-0 items-center gap-1.5">
-              <span className="max-w-[8rem] truncate text-[12px] font-semibold sm:max-w-[13rem]">
-                {workspace.name}
-              </span>
-              <span className="shrink-0 text-[9px] tabular-nums text-muted-foreground">
-                r{workspace.revision}
-              </span>
-              {workspaceDirty || transformDirty || splatSelectionStats.dirty ? (
-                <span
-                  className="h-1.5 w-1.5 shrink-0 rounded-full bg-amber-500"
-                  title={splatSelectionStats.dirty
-                    ? t("webEditor.pruneUnsaved", lang)
-                    : t("spatialEditor.unsavedTransform", lang)}
-                />
-              ) : null}
+          <span className="mx-0.5 h-5 w-px shrink-0 bg-border/70" />
+          <span className="flex min-w-0 items-center gap-1.5 px-2 pr-2.5">
+            <span className="max-w-[7.5rem] truncate text-[11px] font-semibold sm:max-w-[12rem]">
+              {workspace.name}
             </span>
-            <span className="mt-0.5 hidden max-w-[13rem] truncate text-[9px] text-muted-foreground sm:block">
-              {workspace.usd.rootLayer ?? "workspace.usda"}
-            </span>
-          </div>
+            {workspaceDirty || transformDirty || splatSelectionStats.dirty ? (
+              <span
+                className="h-1.5 w-1.5 shrink-0 rounded-full bg-amber-500"
+                title={splatSelectionStats.dirty
+                  ? t("webEditor.pruneUnsaved", lang)
+                  : t("spatialEditor.unsavedTransform", lang)}
+              />
+            ) : null}
+          </span>
         </div>
-        <div className="pointer-events-auto flex shrink-0 items-center gap-1.5">
+        <div className="floating-panel pointer-events-auto flex h-11 shrink-0 items-center gap-0.5 p-1">
           <Button
             size="icon-sm"
-            variant="outline"
+            variant="ghost"
             onClick={() => fileInputRef.current?.click()}
             disabled={uploading}
             aria-label={t("webEditor.addSplat", lang)}
@@ -1136,7 +1129,7 @@ export default function WebTourEditorPage({
           {workspaceDirty || transformDirty ? (
             <Button
               size="icon-sm"
-              variant="outline"
+              variant="ghost"
               onClick={() => { void persistWorkspace(); }}
               loading={saving}
               aria-label={t("spatialEditor.applyTransform", lang)}
