@@ -735,7 +735,13 @@ export function DraftTourAssetsPanel({
   return (
     <section className="mt-6 overflow-hidden rounded-[1.5rem] border border-border/70 bg-card shadow-card sm:mt-8 sm:rounded-2xl">
       <header className="flex items-center gap-3 border-b border-border/60 px-4 py-4 sm:justify-between sm:px-5">
-        <div className="flex min-w-0 flex-1 items-center gap-3">
+        <button
+          type="button"
+          disabled={!payload?.assets.length}
+          onClick={() => setOpen(true)}
+          className="-m-1 flex min-w-0 flex-1 items-center gap-3 rounded-xl p-1 text-left transition-colors enabled:hover:bg-foreground/[0.035] disabled:cursor-default"
+          aria-label={payload?.assets.length ? text.manage : undefined}
+        >
           <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-foreground/[0.045] text-foreground/55">
             <TourIcon size={17} />
           </span>
@@ -750,20 +756,18 @@ export function DraftTourAssetsPanel({
               )}
             </p>
           </div>
-        </div>
+        </button>
         <div className="flex shrink-0 items-center gap-1.5">
           {payload?.assets.length ? (
             <Button
               type="button"
               variant="ghost"
               size="sm"
-              className="h-9 w-9 shrink-0 px-0 sm:w-auto sm:px-3"
+              className="hidden h-9 sm:inline-flex"
               onClick={() => setOpen(true)}
-              aria-label={text.manage}
-              title={text.manage}
             >
               <TourIcon size={14} />
-              <span className="hidden sm:inline">{text.manage}</span>
+              {text.manage}
             </Button>
           ) : null}
           {canCreateInWeb ? (

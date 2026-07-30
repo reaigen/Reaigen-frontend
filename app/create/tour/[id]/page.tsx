@@ -661,9 +661,17 @@ export default function WebTourEditorPage({
         ) return null;
         const thumbnailCamera = selectTourThumbnailCamera(current.cameras);
         if (!thumbnailCamera) return null;
-        const imageData = await viewerRef.current?.captureThumbnail(
-          thumbnailCamera.camera,
-        );
+        let imageData: string | null | undefined = null;
+        for (let attempt = 0; attempt < 3 && !imageData; attempt += 1) {
+          imageData = await viewerRef.current?.captureThumbnail(
+            thumbnailCamera.camera,
+          );
+          if (!imageData && attempt < 2) {
+            await new Promise<void>((resolve) => {
+              window.setTimeout(resolve, 240 * (attempt + 1));
+            });
+          }
+        }
         if (!imageData) return null;
         try {
           const updated = await saveWebTourThumbnail(
@@ -1027,7 +1035,15 @@ export default function WebTourEditorPage({
         <SplatViewer
           key={`${selected.id}:${selectedAssetUrl}:${viewerReloadKey}`}
           ref={viewerRef}
-          onReady={() => setViewerFailed(false)}
+          onReady={() => {
+            setViewerFailed(false);
+            // Backfill covers for tours authored before automatic camera
+            // thumbnails existed. The render is off-screen and never changes
+            // the interactive editor camera.
+            if (workspace.thumbnail_revision !== workspace.revision) {
+              void captureAutomaticThumbnail(workspace.revision);
+            }
+          }}
           splatUrl={selectedAssetUrl}
           splatId={selected.splat_id}
           outputsVersion={selected.asset.fingerprint}
@@ -1140,7 +1156,7 @@ export default function WebTourEditorPage({
       )}
 
       <header className="pointer-events-none absolute inset-x-3 top-3 z-30 flex items-start justify-between gap-2 sm:inset-x-4">
-        <div className="floating-panel pointer-events-auto flex h-11 min-w-0 items-center gap-1 p-1">
+        <div className="floating-panel pointer-events-auto flex h-11 min-w-0 flex-1 items-center gap-1 p-1 md:flex-none">
           <button
             type="button"
             onClick={() => {
@@ -1174,8 +1190,29 @@ export default function WebTourEditorPage({
               />
             ) : null}
           </span>
+          <span className="ml-auto flex shrink-0 items-center gap-0.5 md:hidden">
+            <Button
+              size="icon-sm"
+              variant="ghost"
+              onClick={() => fileInputRef.current?.click()}
+              disabled={uploading}
+              aria-label={t("webEditor.addSplat", lang)}
+              title={t("webEditor.addSplat", lang)}
+            >
+              <PlusIcon size={13} />
+            </Button>
+            <Button
+              size="sm"
+              onClick={() => { void finishTour(); }}
+              loading={saving}
+              title={t("webEditor.saveTour", lang)}
+            >
+              <CheckIcon size={13} />
+              {t("common.save", lang)}
+            </Button>
+          </span>
         </div>
-        <div className="floating-panel pointer-events-auto flex h-11 shrink-0 items-center gap-0.5 p-1">
+        <div className="floating-panel pointer-events-auto hidden h-11 shrink-0 items-center gap-0.5 p-1 md:flex">
           <Button
             size="icon-sm"
             variant="ghost"
@@ -1328,10 +1365,11 @@ export default function WebTourEditorPage({
             setInspectorOpen(false);
             setScenePanelOpen(true);
           }}
-          className="floating-panel floating-icon-button absolute left-3 top-20 z-20 text-foreground/60 shadow-control sm:left-4"
+          className="floating-panel floating-control absolute left-3 top-20 z-20 h-10 gap-2 px-3 text-foreground/60 shadow-control sm:left-4 md:h-[var(--floating-control)] md:w-[var(--floating-control)] md:px-0"
           aria-label={t("webEditor.sceneGraph", lang)}
         >
           <TourIcon size={14} />
+          <span className="text-[10px] md:hidden">{t("webEditor.sceneGraph", lang)}</span>
         </button>
       ) : null}
 
@@ -1523,10 +1561,11 @@ export default function WebTourEditorPage({
             setScenePanelOpen(false);
             setInspectorOpen(true);
           }}
-          className="floating-panel floating-icon-button absolute right-3 top-20 z-20 text-foreground/60 shadow-control sm:right-4"
+          className="floating-panel floating-control absolute right-3 top-20 z-20 h-10 gap-2 px-3 text-foreground/60 shadow-control sm:right-4 md:h-[var(--floating-control)] md:w-[var(--floating-control)] md:px-0"
           aria-label={t("spatialEditor.inspector", lang)}
         >
           <TechnicalIcon size={14} />
+          <span className="text-[10px] md:hidden">{t("spatialEditor.inspector", lang)}</span>
         </button>
       ) : null}
 
@@ -1699,7 +1738,7 @@ export default function WebTourEditorPage({
       ) : null}
 
       {selectedRenderable && !cameraEditorOpen ? (
-        <nav className="floating-toolbar absolute bottom-[calc(0.75rem+env(safe-area-inset-bottom,0px))] left-1/2 z-30 max-w-[calc(100vw-1rem)] -translate-x-1/2 md:hidden">
+        <nav className="floating-toolbar scrollbar-hide absolute bottom-[calc(0.75rem+env(safe-area-inset-bottom,0px))] left-1/2 z-30 max-w-[calc(100vw-1rem)] -translate-x-1/2 overflow-x-auto md:hidden">
           {([
             ["select", TechnicalIcon, "spatialEditor.selectTool"],
             ["move", MoveIcon, "spatialEditor.moveTool"],
@@ -1732,11 +1771,15 @@ export default function WebTourEditorPage({
           ))}
           <button
             type="button"
-            onClick={() => viewerRef.current?.frameScene()}
-            aria-label={t("spatialEditor.frame", lang)}
-            className="floating-icon-button text-foreground/55 active:bg-foreground/[0.08]"
+            onClick={() => setCameraMode((value) => value === "orbit" ? "fly" : "orbit")}
+            aria-label={t(cameraMode === "orbit" ? "spatialEditor.orbit" : "spatialEditor.fly", lang)}
+            aria-pressed={cameraMode === "orbit"}
+            className="floating-control min-w-0 gap-1.5 bg-card px-2.5 text-foreground/65 active:bg-foreground/[0.08]"
           >
-            <FrameIcon size={15} />
+            <OrbitIcon size={15} />
+            <span className="text-[9px] font-medium">
+              {t(cameraMode === "orbit" ? "spatialEditor.orbit" : "spatialEditor.fly", lang)}
+            </span>
           </button>
           <button
             type="button"

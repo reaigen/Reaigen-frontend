@@ -750,6 +750,8 @@ interface Anim {
   duration: number;
   fromPos: Vec3;
   toPos: Vec3;
+  fromForward: Vec3;
+  toForward: Vec3;
   fromAngle: number;
   toAngle: number;
   fromPitch: number;
@@ -770,6 +772,7 @@ interface Anim {
 const defaultAnim = (): Anim => ({
   active: false, elapsed: 0, duration: 1.5,
   fromPos: [0, 0, 0], toPos: [0, 0, 0],
+  fromForward: [0, 0, 1], toForward: [0, 0, 1],
   fromAngle: 0, toAngle: 0,
   fromPitch: 0, toPitch: 0,
   fromUp: [0, 1, 0], toUp: [0, 1, 0],
@@ -1681,6 +1684,8 @@ const SplatViewer = forwardRef<SplatViewerHandle, Props>(function SplatViewer(
     (anim as any).editorNav = false;
     anim.fromPos = cur;
     anim.toPos = [tPos[0], tPos[1], tPos[2]];
+    anim.fromForward = normalizeVec3([dx, dy, dz]);
+    anim.toForward = normalizeVec3(tFwd);
     anim.fromAngle = Math.atan2(dz / dlen, dx / dlen);
     anim.toAngle = Math.atan2(tFwd[2], tFwd[0]);
     anim.fromPitch = Math.asin(Math.max(-1, Math.min(1, dy / dlen)));
@@ -1830,6 +1835,8 @@ const SplatViewer = forwardRef<SplatViewerHandle, Props>(function SplatViewer(
     const cdy = target.y - cam.position.y;
     const cdz = target.z - cam.position.z;
     const clen = Math.hypot(cdx, cdy, cdz) || 1;
+    anim.fromForward = normalizeVec3([cdx, cdy, cdz]);
+    anim.toForward = normalizeVec3(fwd);
     anim.fromAngle = Math.atan2(cdz / clen, cdx / clen);
     anim.toAngle = Math.atan2(fwd[2], fwd[0]);
     anim.fromPitch = Math.asin(Math.max(-1, Math.min(1, cdy / clen)));
@@ -4343,24 +4350,43 @@ const SplatViewer = forwardRef<SplatViewerHandle, Props>(function SplatViewer(
           const pz = anim.fromPos[2] + (anim.toPos[2] - anim.fromPos[2]) * et;
           camera.position.set(px, py, pz);
 
-          // Angle-based look direction interpolation (avoids mirror-flip on opposing cameras)
-          const yaw = slerpAngle(anim.fromAngle, anim.toAngle, rotT);
-          const pitch = anim.fromPitch + (anim.toPitch - anim.fromPitch) * rotT;
-          const cosPitch = Math.cos(pitch);
-          const upX = anim.fromUp[0] + (anim.toUp[0] - anim.fromUp[0]) * rotT;
-          const upY = anim.fromUp[1] + (anim.toUp[1] - anim.fromUp[1]) * rotT;
-          const upZ = anim.fromUp[2] + (anim.toUp[2] - anim.fromUp[2]) * rotT;
-          const upLength = Math.hypot(upX, upY, upZ) || 1;
-          cameraUpRef.current = [upX / upLength, upY / upLength, upZ / upLength];
+          // Blend the complete authored camera basis. Yaw/pitch interpolation
+          // still has a visible seam for opposing cameras and cannot preserve
+          // camera roll. Quaternion slerp follows the shortest continuous
+          // orientation path, including across ±180°.
+          const fromOrientation = BABYLON.Quaternion.FromLookDirectionLH(
+            new BABYLON.Vector3(...anim.fromForward),
+            new BABYLON.Vector3(...anim.fromUp),
+          );
+          const toOrientation = BABYLON.Quaternion.FromLookDirectionLH(
+            new BABYLON.Vector3(...anim.toForward),
+            new BABYLON.Vector3(...anim.toUp),
+          );
+          const orientation = BABYLON.Quaternion.Slerp(
+            fromOrientation,
+            toOrientation,
+            rotT,
+          );
+          const orientationMatrix = BABYLON.Matrix.Identity();
+          orientation.toRotationMatrix(orientationMatrix);
+          const forward = BABYLON.Vector3.TransformNormal(
+            BABYLON.Vector3.Forward(),
+            orientationMatrix,
+          ).normalize();
+          const up = BABYLON.Vector3.TransformNormal(
+            BABYLON.Vector3.Up(),
+            orientationMatrix,
+          ).normalize();
+          cameraUpRef.current = [up.x, up.y, up.z];
           camera.upVector.set(
             cameraUpRef.current[0],
             cameraUpRef.current[1],
             cameraUpRef.current[2],
           );
           camera.setTarget(new BABYLON.Vector3(
-            px + Math.cos(yaw) * cosPitch * LOOK,
-            py + Math.sin(pitch) * LOOK,
-            pz + Math.sin(yaw) * cosPitch * LOOK,
+            px + forward.x * LOOK,
+            py + forward.y * LOOK,
+            pz + forward.z * LOOK,
           ));
           camera.fov = anim.fromFov + (anim.toFov - anim.fromFov) * et;
 
