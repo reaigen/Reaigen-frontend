@@ -754,7 +754,7 @@ export default function DraftPreviewPage({ params }: { params: Promise<{ id: str
             <ArrowLeftIcon size={15} />
             {t("common.back", lang)}
           </button>
-          <div className="flex items-center gap-2 lg:hidden">
+          <div className="flex items-center gap-2 md:hidden">
             <Button type="button" variant="ghost" size="icon" className="md:w-auto md:px-3" onClick={() => setMediaOpen(true)} aria-label={t("draft.media.manage", lang)} title={t("draft.media.manage", lang)}>
               <ImageIcon size={16} />
               <span className="hidden md:inline">{t("draft.media.manage", lang)}</span>
@@ -859,7 +859,7 @@ export default function DraftPreviewPage({ params }: { params: Promise<{ id: str
               </div>
             )}
 
-            <div className="mt-6 hidden flex-wrap items-center gap-2 border-t border-border/70 pt-5 lg:flex">
+            <div className="mt-6 hidden flex-wrap items-center gap-2 border-t border-border/70 pt-5 md:flex">
               {hasTour && (
                 <Button asChild size="sm">
                   <Link href={`/tour/${primarySplatId}?tourId=${shareableTour?.id}`}>
