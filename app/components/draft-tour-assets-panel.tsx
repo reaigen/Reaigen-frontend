@@ -63,8 +63,10 @@ const COPY = {
               : `Being prepared · ${total}`
     ),
     view: "Open tour",
+    viewShort: "Open",
+    previewShort: "Preview",
+    editorShort: "Editor",
     manage: "Manage tours",
-    manageShort: "Manage",
     more: (value: number) => `+${value} more in tour manager`,
     panelTitle: "Tours & delivery",
     panelDescription: "Publish one or more ready tours and choose the default clients see first.",
@@ -142,8 +144,10 @@ const COPY = {
               : `Pripravuje sa · ${total}`
     ),
     view: "Otvoriť prehliadku",
+    viewShort: "Otvoriť",
+    previewShort: "Náhľad",
+    editorShort: "Editor",
     manage: "Spravovať prehliadky",
-    manageShort: "Spravovať",
     more: (value: number) => `+${value} ďalších v správe prehliadok`,
     panelTitle: "Prehliadky a doručenie",
     panelDescription: "Zverejnite jednu alebo viac pripravených prehliadok a vyberte predvolenú pre klientov.",
@@ -729,9 +733,9 @@ export function DraftTourAssetsPanel({
   };
 
   return (
-    <section className="mt-8 overflow-hidden rounded-[1.5rem] border border-border/70 bg-card shadow-card sm:rounded-2xl">
-      <header className="flex flex-col gap-3 border-b border-border/60 px-4 py-4 sm:flex-row sm:items-center sm:justify-between sm:px-5">
-        <div className="flex min-w-0 items-center gap-3">
+    <section className="mt-6 overflow-hidden rounded-[1.5rem] border border-border/70 bg-card shadow-card sm:mt-8 sm:rounded-2xl">
+      <header className="flex items-center gap-3 border-b border-border/60 px-4 py-4 sm:justify-between sm:px-5">
+        <div className="flex min-w-0 flex-1 items-center gap-3">
           <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-foreground/[0.045] text-foreground/55">
             <TourIcon size={17} />
           </span>
@@ -747,17 +751,18 @@ export function DraftTourAssetsPanel({
             </p>
           </div>
         </div>
-        <div className="flex shrink-0 items-center gap-1.5 pl-12 sm:pl-0">
+        <div className="flex shrink-0 items-center gap-1.5">
           {payload?.assets.length ? (
             <Button
               type="button"
               variant="ghost"
               size="sm"
-              className="shrink-0"
+              className="h-9 w-9 shrink-0 px-0 sm:w-auto sm:px-3"
               onClick={() => setOpen(true)}
+              aria-label={text.manage}
+              title={text.manage}
             >
               <TourIcon size={14} />
-              <span className="sm:hidden">{text.manageShort}</span>
               <span className="hidden sm:inline">{text.manage}</span>
             </Button>
           ) : null}
@@ -766,13 +771,14 @@ export function DraftTourAssetsPanel({
               type="button"
               variant="outline"
               size="sm"
-              className="shrink-0"
+              className="h-9 w-9 shrink-0 px-0 sm:w-auto sm:px-3"
               loading={creatingInWeb}
               onClick={() => { void createInWeb(); }}
+              aria-label={t("webCreate.tourAction", lang)}
+              title={t("webCreate.tourAction", lang)}
             >
               <PlusIcon size={14} />
               <span className="hidden sm:inline">{t("webCreate.tourAction", lang)}</span>
-              <span className="sm:hidden">{t("common.add", lang)}</span>
             </Button>
           ) : null}
         </div>
@@ -822,7 +828,7 @@ export function DraftTourAssetsPanel({
             return (
               <article
                 key={asset.id}
-                className="grid grid-cols-[88px_minmax(0,1fr)] gap-3 p-4 sm:grid-cols-[108px_minmax(0,1fr)_auto] sm:items-center sm:gap-4 sm:px-5"
+                className="grid grid-cols-[76px_minmax(0,1fr)] gap-3 p-4 sm:grid-cols-[108px_minmax(0,1fr)_auto] sm:items-center sm:gap-4 sm:px-5"
               >
                 <div className="relative aspect-[16/10] overflow-hidden rounded-xl bg-surface-subtle ring-1 ring-inset ring-border/45">
                   {thumbnail ? (
@@ -840,8 +846,8 @@ export function DraftTourAssetsPanel({
                 </div>
 
                 <div className="min-w-0 self-center">
-                  <div className="flex min-w-0 flex-wrap items-center gap-x-1 gap-y-1">
-                    <h3 className="max-w-full truncate text-[13px] font-semibold sm:text-[14px]">{displayName}</h3>
+                  <div className="flex min-w-0 items-center gap-1">
+                    <h3 className="min-w-0 flex-1 truncate text-[13px] font-semibold sm:text-[14px]">{displayName}</h3>
                     <button
                       type="button"
                       aria-label={`${text.editName}: ${displayName}`}
@@ -854,23 +860,25 @@ export function DraftTourAssetsPanel({
                     >
                       <EditIcon size={12} />
                     </button>
-                    <StatusPill tone={state.tone} dot className="shrink-0">
-                      {state.label}
-                    </StatusPill>
                   </div>
                   <p className="truncate text-[10px] text-muted-foreground sm:text-[11px]">
                     {assetSubtitle(asset, lang)}
                   </p>
 
-                  {(selection?.isPrimary || selection?.web || selection?.ios) ? (
-                    <div className="mt-2 flex flex-wrap items-center gap-1.5">
-                      {selection?.isPrimary ? (
-                        <StatusPill tone="strong">{text.primaryBadge}</StatusPill>
-                      ) : null}
-                      {selection?.web ? <StatusPill>{text.web}</StatusPill> : null}
-                      {selection?.ios ? <StatusPill>{text.ios}</StatusPill> : null}
-                    </div>
-                  ) : null}
+                  <div className="mt-2 flex flex-wrap items-center gap-1.5">
+                    <StatusPill tone={state.tone} dot className="shrink-0">
+                      {state.label}
+                    </StatusPill>
+                    {(selection?.isPrimary || selection?.web || selection?.ios) ? (
+                      <>
+                        {selection?.isPrimary ? (
+                          <StatusPill tone="strong">{text.primaryBadge}</StatusPill>
+                        ) : null}
+                        {selection?.web ? <StatusPill>{text.web}</StatusPill> : null}
+                        {selection?.ios ? <StatusPill>{text.ios}</StatusPill> : null}
+                      </>
+                    ) : null}
+                  </div>
 
                   {state.hint ? (
                     <p className="mt-2 line-clamp-1 text-[10px] leading-relaxed text-muted-foreground sm:text-[11px]">
@@ -891,23 +899,45 @@ export function DraftTourAssetsPanel({
                 </div>
 
                 {(canOpen || canEdit) ? (
-                  <div className="col-span-2 flex flex-wrap items-center justify-end gap-1.5 sm:col-span-1 sm:flex-nowrap">
+                  <div className="col-span-2 grid grid-cols-2 gap-2 pt-1 sm:col-span-1 sm:flex sm:flex-nowrap sm:justify-end sm:pt-0">
                     {canEdit ? (
-                      <Button asChild variant="ghost" size="sm">
-                        <Link href={`/create/tour/${asset.id}`}>
+                      <Button
+                        asChild
+                        variant="outline"
+                        size="sm"
+                        className={cn(
+                          "order-2 w-full sm:order-1 sm:w-auto",
+                          !canOpen && "col-span-2",
+                        )}
+                      >
+                        <Link href={`/create/tour/${asset.id}`} aria-label={t("webCreate.openEditor", lang)}>
                           <EditIcon size={13} />
-                          {t("webCreate.openEditor", lang)}
+                          <span className="sm:hidden">{text.editorShort}</span>
+                          <span className="hidden sm:inline">{t("webCreate.openEditor", lang)}</span>
                         </Link>
                       </Button>
                     ) : null}
                     {canOpen && asset.source_splat_id ? (
-                      <Button asChild size="sm">
+                      <Button
+                        asChild
+                        size="sm"
+                        className={cn(
+                          "order-1 w-full sm:order-2 sm:w-auto",
+                          !canEdit && "col-span-2",
+                        )}
+                      >
                         <Link href={state.ready
                           ? `/tour/${asset.source_splat_id}?tourId=${asset.id}`
                           : `/tour/${asset.source_splat_id}`}
+                          aria-label={state.ready ? text.view : text.preview}
                         >
                           <PlayIcon size={13} />
-                          {state.ready ? text.view : text.preview}
+                          <span className="sm:hidden">
+                            {state.ready ? text.viewShort : text.previewShort}
+                          </span>
+                          <span className="hidden sm:inline">
+                            {state.ready ? text.view : text.preview}
+                          </span>
                         </Link>
                       </Button>
                     ) : null}
