@@ -2414,16 +2414,20 @@ const SplatViewer = forwardRef<SplatViewerHandle, Props>(function SplatViewer(
     const tuneHandle = (handle: any, color: any, alpha = 1) => {
       if (!handle) return;
       if (handle.coloredMaterial) {
-        handle.coloredMaterial.diffuseColor = color;
-        handle.coloredMaterial.emissiveColor = color.scale(0.18);
+        // Gizmos are authoring UI, not scene geometry. With lighting disabled,
+        // Babylon effectively left the old 18% emissive value as the visible
+        // axis colour, producing near-black handles over photographic splats.
+        // Drive the colour from the unlit emissive channel at full intensity.
+        handle.coloredMaterial.diffuseColor = B.Color3.Black();
+        handle.coloredMaterial.emissiveColor = color;
         handle.coloredMaterial.specularColor = B.Color3.Black();
         handle.coloredMaterial.disableLighting = true;
         handle.coloredMaterial.alpha = alpha;
       }
       if (handle.hoverMaterial) {
         const hover = B.Color3.Lerp(color, B.Color3.White(), 0.24);
-        handle.hoverMaterial.diffuseColor = hover;
-        handle.hoverMaterial.emissiveColor = hover.scale(0.22);
+        handle.hoverMaterial.diffuseColor = B.Color3.Black();
+        handle.hoverMaterial.emissiveColor = hover;
         handle.hoverMaterial.specularColor = B.Color3.Black();
         handle.hoverMaterial.disableLighting = true;
         handle.hoverMaterial.alpha = 1;
