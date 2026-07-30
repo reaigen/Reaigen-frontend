@@ -1068,7 +1068,9 @@ export async function saveWebTourWorkspace(
   data: {
     base_revision: number;
     name?: string;
-    nodes?: Array<Pick<WebTourWorkspaceNode, "id" | "name" | "visible" | "transform">>;
+    nodes?: Array<
+      Pick<WebTourWorkspaceNode, "id" | "name" | "visible" | "transform" | "prune">
+    >;
     cameras?: Array<Record<string, unknown>>;
   },
 ): Promise<WebTourWorkspace> {

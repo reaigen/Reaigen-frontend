@@ -31,7 +31,6 @@ import type { SplatViewerHandle } from "../../../components/splat-viewer";
 import {
   getWebTourAssetStatus,
   getWebTourWorkspace,
-  saveWebTourPruneMask,
   saveWebTourThumbnail,
   saveWebTourWorkspace,
   uploadWebTourAsset,
@@ -52,6 +51,7 @@ import {
   sceneScaleMagnitude,
 } from "../../../lib/global-scene-transform";
 import type {
+  SplatPruneMask,
   SplatSelectionOperation,
   SplatSelectionStats,
   SplatSelectionTool,
@@ -104,8 +104,6 @@ type LocalPreview = {
   url: string;
   sourceFormat: "ply" | "sog";
 };
-
-type PruneConfirmation = "save" | "discard" | null;
 
 function formatTransformValue(value: number): string {
   return Number(value.toFixed(4)).toString();
@@ -297,14 +295,13 @@ export default function WebTourEditorPage({
     pruned: 0,
     dirty: false,
   });
-  const [committingPrune, setCommittingPrune] = useState(false);
-  const [pruneConfirmation, setPruneConfirmation] = useState<PruneConfirmation>(null);
-  const [pruneSaveNotice, setPruneSaveNotice] = useState<string | null>(null);
+  const [pendingPruneMasks, setPendingPruneMasks] =
+    useState<Record<string, SplatPruneMask>>({});
   const [compactLayout, setCompactLayout] = useState(false);
   const [historyAvailability, setHistoryAvailability] = useState({ undo: false, redo: false });
   const [localPreviews, setLocalPreviews] = useState<Record<string, LocalPreview>>({});
   const localPreviewsRef = useRef<Record<string, LocalPreview>>({});
-  const persistWorkspaceRef = useRef<() => Promise<boolean>>(async () => false);
+  const saveEditorRef = useRef<(exitAfterSave: boolean) => Promise<boolean>>(async () => false);
   const undoTransformRef = useRef<() => void>(() => undefined);
   const redoTransformRef = useRef<() => void>(() => undefined);
   const transformUndoRef = useRef<Record<string, GlobalSceneTransform[]>>({});
@@ -313,9 +310,8 @@ export default function WebTourEditorPage({
   const workspaceRef = useRef<WebTourWorkspace | null>(null);
   const draftTransformRef = useRef<GlobalSceneTransform | null>(null);
   const selectedIdRef = useRef<string | null>(null);
-  const pruneCommitLockRef = useRef(false);
+  const pendingPruneMasksRef = useRef<Record<string, SplatPruneMask>>({});
   const thumbnailCaptureRef = useRef<Promise<unknown>>(Promise.resolve());
-  const pruneDialogCancelRef = useRef<HTMLButtonElement | null>(null);
   const fileDragDepthRef = useRef(0);
   const fileDragWatchdogRef = useRef<number | null>(null);
 
@@ -334,29 +330,6 @@ export default function WebTourEditorPage({
     }
     fileDragWatchdogRef.current = window.setTimeout(clearFileDrag, 650);
   }, [clearFileDrag]);
-
-  const requestClosePruneEditor = useCallback(() => {
-    if (committingPrune) return;
-    if (splatSelectionStats.dirty) {
-      setPruneConfirmation("discard");
-      return;
-    }
-    setPruneConfirmation(null);
-    setPruneEditorOpen(false);
-  }, [committingPrune, splatSelectionStats.dirty]);
-
-  const discardPruneChanges = useCallback(() => {
-    if (committingPrune) return;
-    viewerRef.current?.resetSplatPrune();
-    setPruneConfirmation(null);
-    setPruneEditorOpen(false);
-  }, [committingPrune]);
-
-  useEffect(() => {
-    if (!pruneSaveNotice) return;
-    const timer = window.setTimeout(() => setPruneSaveNotice(null), 4500);
-    return () => window.clearTimeout(timer);
-  }, [pruneSaveNotice]);
 
   useEffect(() => {
     clearFileDrag();
@@ -392,14 +365,6 @@ export default function WebTourEditorPage({
   }, [clearFileDrag]);
 
   useEffect(() => {
-    if (!pruneConfirmation || committingPrune) return;
-    const frame = window.requestAnimationFrame(() => {
-      pruneDialogCancelRef.current?.focus();
-    });
-    return () => window.cancelAnimationFrame(frame);
-  }, [committingPrune, pruneConfirmation]);
-
-  useEffect(() => {
     if (!isLoading && !isAuthenticated) router.replace("/");
   }, [isAuthenticated, isLoading, router]);
 
@@ -429,6 +394,10 @@ export default function WebTourEditorPage({
   const selectedAssetUrl = selected
     ? localPreviews[selected.id]?.url ?? selected.asset.url
     : null;
+  const selectedPruneMask = selected
+    ? pendingPruneMasks[selected.id] ?? selected.prune
+    : null;
+  const hasPendingPruneMasks = Object.keys(pendingPruneMasks).length > 0;
   const compositionAssets = useMemo(
     () => (workspace?.nodes ?? [])
       .filter((node) => (
@@ -441,9 +410,9 @@ export default function WebTourEditorPage({
         url: localPreviews[node.id]?.url ?? node.asset.url!,
         visible: node.visible,
         transform: runtimeTransform(node.transform),
-        pruneMask: node.prune,
+        pruneMask: pendingPruneMasks[node.id] ?? node.prune,
       })),
-    [localPreviews, selectedId, workspace],
+    [localPreviews, pendingPruneMasks, selectedId, workspace],
   );
   const selectedNodeId = selected?.id ?? null;
   const selectedTransform = selected?.transform ?? null;
@@ -453,6 +422,31 @@ export default function WebTourEditorPage({
     draftTransformRef.current = draftTransform;
     selectedIdRef.current = selectedId;
   }, [draftTransform, selectedId, workspace]);
+
+  useEffect(() => {
+    pendingPruneMasksRef.current = pendingPruneMasks;
+  }, [pendingPruneMasks]);
+
+  const stageCurrentPruneDraft = useCallback((closeEditor = true) => {
+    if (splatSelectionStats.dirty) {
+      if (!selected?.asset.fingerprint) return false;
+      const prune = viewerRef.current?.exportPruneMask(selected.asset.fingerprint);
+      if (!prune) return false;
+      const next = {
+        ...pendingPruneMasksRef.current,
+        [selected.id]: prune,
+      };
+      pendingPruneMasksRef.current = next;
+      setPendingPruneMasks(next);
+      viewerRef.current?.markSplatPruneSaved();
+    }
+    if (closeEditor) setPruneEditorOpen(false);
+    return true;
+  }, [selected, splatSelectionStats.dirty]);
+
+  const requestClosePruneEditor = useCallback(() => {
+    stageCurrentPruneDraft(true);
+  }, [stageCurrentPruneDraft]);
 
   useEffect(() => {
     if (!selectedTransform) {
@@ -495,7 +489,7 @@ export default function WebTourEditorPage({
       !workspaceDirty
       && !transformDirty
       && !splatSelectionStats.dirty
-      && !committingPrune
+      && !hasPendingPruneMasks
     ) return;
     const warnBeforeLeaving = (event: BeforeUnloadEvent) => {
       event.preventDefault();
@@ -503,7 +497,7 @@ export default function WebTourEditorPage({
     window.addEventListener("beforeunload", warnBeforeLeaving);
     return () => window.removeEventListener("beforeunload", warnBeforeLeaving);
   }, [
-    committingPrune,
+    hasPendingPruneMasks,
     splatSelectionStats.dirty,
     transformDirty,
     workspaceDirty,
@@ -545,11 +539,8 @@ export default function WebTourEditorPage({
       }
       if ((event.metaKey || event.ctrlKey) && key === "s") {
         event.preventDefault();
-        if (pruneEditorOpen && splatSelectionStats.dirty) {
-          setPruneConfirmation("save");
-        } else {
-          void persistWorkspaceRef.current();
-        }
+        stageCurrentPruneDraft(false);
+        void saveEditorRef.current(false);
         return;
       }
       if (key === "1") setTool("select");
@@ -560,11 +551,7 @@ export default function WebTourEditorPage({
       else if (key === "escape") {
         setTool("select");
         setCameraEditorOpen(false);
-        if (pruneConfirmation && !committingPrune) {
-          setPruneConfirmation(null);
-        } else if (pruneEditorOpen) {
-          requestClosePruneEditor();
-        }
+        if (pruneEditorOpen) requestClosePruneEditor();
       } else {
         return;
       }
@@ -573,11 +560,9 @@ export default function WebTourEditorPage({
     window.addEventListener("keydown", handleEditorShortcut);
     return () => window.removeEventListener("keydown", handleEditorShortcut);
   }, [
-    committingPrune,
-    pruneConfirmation,
     pruneEditorOpen,
     requestClosePruneEditor,
-    splatSelectionStats.dirty,
+    stageCurrentPruneDraft,
   ]);
 
   useEffect(() => {
@@ -648,15 +633,43 @@ export default function WebTourEditorPage({
       setError(t("webEditor.invalidFileSize", lang));
       return;
     }
+    if (!stageCurrentPruneDraft(true)) {
+      setError(t("webEditor.saveFailed", lang));
+      return;
+    }
+    const localWorkspace = workspaceRef.current;
+    const localSelectedId = selectedIdRef.current;
+    const localTransform = draftTransformRef.current;
+    const localNodes = new Map(
+      (localWorkspace?.nodes ?? []).map((node) => [
+        node.id,
+        node.id === localSelectedId && localTransform
+          ? { ...node, transform: workspaceTransform(localTransform) }
+          : node,
+      ]),
+    );
     setUploading(true);
     setError(null);
     setUploadName(file.name);
     setUploadProgress(0);
     try {
       const value = await uploadWebTourAsset(tourId, file, setUploadProgress);
-      setWorkspace(value);
+      const merged = {
+        ...value,
+        nodes: value.nodes.map((node) => {
+          const local = localNodes.get(node.id);
+          return local ? {
+            ...node,
+            name: local.name,
+            visible: local.visible,
+            transform: local.transform,
+          } : node;
+        }),
+      };
+      workspaceRef.current = merged;
+      setWorkspace(merged);
       setTransformDirty(false);
-      setWorkspaceDirty(false);
+      if (transformDirty) setWorkspaceDirty(true);
       const addedNode = value.nodes.at(-1);
       if (addedNode) {
         const preview: LocalPreview = {
@@ -692,6 +705,7 @@ export default function WebTourEditorPage({
 
   const selectNode = (nodeId: string) => {
     if (nodeId === selectedId) return;
+    stageCurrentPruneDraft(true);
     if (selectedId && draftTransform) {
       setWorkspace((current) => current ? {
         ...current,
@@ -708,31 +722,48 @@ export default function WebTourEditorPage({
     setInspectorOpen(true);
   };
 
-  const persistWorkspace = async (): Promise<boolean> => {
-    if (!workspace) return false;
+  const saveEditorEdits = async (exitAfterSave: boolean): Promise<boolean> => {
+    const currentWorkspace = workspaceRef.current ?? workspace;
+    if (!currentWorkspace || saving) return false;
     setSaving(true);
     setError(null);
     try {
-      const nodes = workspace.nodes.map((node) => ({
+      if (!stageCurrentPruneDraft(false)) {
+        throw new Error("The local prune draft could not be prepared.");
+      }
+      const pendingPrunes = pendingPruneMasksRef.current;
+      const hasChanges = (
+        workspaceDirty
+        || transformDirty
+        || Object.keys(pendingPrunes).length > 0
+      );
+      const nodes = currentWorkspace.nodes.map((node) => ({
         id: node.id,
         name: node.name,
         visible: node.visible,
         transform: node.id === selected?.id && draftTransform
           ? workspaceTransform(draftTransform)
           : node.transform,
+        prune: pendingPrunes[node.id] ?? node.prune ?? null,
       }));
-      const saved = await saveWebTourWorkspace(tourId, {
-        base_revision: workspace.revision,
-        name: workspace.name,
-        nodes,
-      });
+      const saved = hasChanges
+        ? await saveWebTourWorkspace(tourId, {
+            base_revision: currentWorkspace.revision,
+            name: currentWorkspace.name,
+            nodes,
+          })
+        : currentWorkspace;
       workspaceRef.current = saved;
       setWorkspace(saved);
       const savedSelected = saved.nodes.find((node) => node.id === selected?.id);
       if (savedSelected) setDraftTransform(runtimeTransform(savedSelected.transform));
+      pendingPruneMasksRef.current = {};
+      setPendingPruneMasks({});
+      viewerRef.current?.markSplatPruneSaved();
       setTransformDirty(false);
       setWorkspaceDirty(false);
       void captureAutomaticThumbnail(saved.revision);
+      if (exitAfterSave) router.push(`/draft/${saved.draft_id}`);
       return true;
     } catch {
       setError(t("webEditor.saveFailed", lang));
@@ -742,7 +773,7 @@ export default function WebTourEditorPage({
     }
   };
   useEffect(() => {
-    persistWorkspaceRef.current = persistWorkspace;
+    saveEditorRef.current = saveEditorEdits;
   });
 
   const resetTransform = (part: "translation" | "rotationDeg" | "scale" | "all") => {
@@ -825,67 +856,7 @@ export default function WebTourEditorPage({
   });
 
   const finishTour = async () => {
-    if (!workspace) return;
-    if (splatSelectionStats.dirty) {
-      setPruneEditorOpen(true);
-      setPruneConfirmation("save");
-      return;
-    }
-    const draftId = workspace.draft_id;
-    const saved = (workspaceDirty || transformDirty)
-      ? await persistWorkspace()
-      : true;
-    if (saved) {
-      if (!workspaceDirty && !transformDirty) {
-        await captureAutomaticThumbnail(workspace.revision);
-      }
-      router.push(`/draft/${draftId}`);
-    }
-  };
-
-  const commitPrunedAsset = async () => {
-    if (
-      !selected
-      || !splatSelectionStats.dirty
-      || splatSelectionStats.remaining < 1
-      || committingPrune
-      || pruneCommitLockRef.current
-    ) return;
-    pruneCommitLockRef.current = true;
-    setCommittingPrune(true);
-    setError(null);
-    try {
-      if (workspaceDirty || transformDirty) {
-        const workspaceSaved = await persistWorkspace();
-        if (!workspaceSaved) throw new Error("The workspace could not be saved.");
-      }
-      const currentWorkspace = workspaceRef.current;
-      const fingerprint = selected.asset.fingerprint;
-      if (!currentWorkspace || !fingerprint) {
-        throw new Error("The edited splat revision is unavailable.");
-      }
-      const prune = viewerRef.current?.exportPruneMask(fingerprint);
-      const saved = await saveWebTourPruneMask(
-        tourId,
-        selected.splat_id,
-        currentWorkspace.revision,
-        prune ?? null,
-      );
-      workspaceRef.current = saved;
-      setWorkspace(saved);
-      viewerRef.current?.markSplatPruneSaved();
-      setTransformDirty(false);
-      setWorkspaceDirty(false);
-      setPruneSaveNotice(t("webEditor.pruneSaved", lang));
-      setPruneConfirmation(null);
-      setPruneEditorOpen(false);
-      void captureAutomaticThumbnail(saved.revision);
-    } catch {
-      setError(t("webEditor.pruneSaveFailed", lang));
-    } finally {
-      pruneCommitLockRef.current = false;
-      setCommittingPrune(false);
-    }
+    await saveEditorEdits(true);
   };
 
   const saveWorkspaceCameras = async (cameraData: CameraData): Promise<CameraData> => {
@@ -911,7 +882,9 @@ export default function WebTourEditorPage({
     setWorkspace(saved);
     setTransformDirty(false);
     setWorkspaceDirty(false);
-    void captureAutomaticThumbnail(saved.revision);
+    if (!splatSelectionStats.dirty && !hasPendingPruneMasks) {
+      void captureAutomaticThumbnail(saved.revision);
+    }
     return {
       ...cameraData,
       cameras: saved.cameras as unknown as SavedCamera[],
@@ -982,6 +955,12 @@ export default function WebTourEditorPage({
           key={`${selected.id}:${selectedAssetUrl}`}
           ref={viewerRef}
           onReady={() => {
+            if (
+              workspaceDirty
+              || transformDirty
+              || splatSelectionStats.dirty
+              || hasPendingPruneMasks
+            ) return;
             const revision = workspaceRef.current?.revision;
             if (revision == null) return;
             window.setTimeout(() => {
@@ -991,7 +970,7 @@ export default function WebTourEditorPage({
           splatUrl={selectedAssetUrl}
           splatId={selected.splat_id}
           outputsVersion={selected.asset.fingerprint}
-          initialPruneMask={selected.prune}
+          initialPruneMask={selectedPruneMask}
           globalSceneTransform={draftTransform}
           spatialNavigation
           spatialTransformTool={tool}
@@ -1068,7 +1047,12 @@ export default function WebTourEditorPage({
             type="button"
             onClick={() => {
               if (
-                (workspaceDirty || transformDirty || splatSelectionStats.dirty)
+                (
+                  workspaceDirty
+                  || transformDirty
+                  || splatSelectionStats.dirty
+                  || hasPendingPruneMasks
+                )
                 && !window.confirm(t("webEditor.unsavedLeave", lang))
               ) return;
               router.push(`/draft/${workspace.draft_id}`);
@@ -1083,7 +1067,7 @@ export default function WebTourEditorPage({
             <span className="max-w-[7.5rem] truncate text-[11px] font-semibold sm:max-w-[12rem]">
               {workspace.name}
             </span>
-            {workspaceDirty || transformDirty || splatSelectionStats.dirty ? (
+            {workspaceDirty || transformDirty || splatSelectionStats.dirty || hasPendingPruneMasks ? (
               <span
                 className="h-1.5 w-1.5 shrink-0 rounded-full bg-amber-500"
                 title={splatSelectionStats.dirty
@@ -1104,18 +1088,6 @@ export default function WebTourEditorPage({
           >
             <PlusIcon size={13} />
           </Button>
-          {workspaceDirty || transformDirty ? (
-            <Button
-              size="icon-sm"
-              variant="ghost"
-              onClick={() => { void persistWorkspace(); }}
-              loading={saving}
-              aria-label={t("spatialEditor.applyTransform", lang)}
-              title={`${t("spatialEditor.applyTransform", lang)} · Ctrl/⌘ S`}
-            >
-              <CheckIcon size={13} />
-            </Button>
-          ) : null}
           <Button
             size="sm"
             onClick={() => { void finishTour(); }}
@@ -1596,130 +1568,16 @@ export default function WebTourEditorPage({
             <Button
               type="button"
               className="h-8 flex-[1.4] text-[9px]"
-              disabled={!splatSelectionStats.dirty || committingPrune}
-              onClick={() => setPruneConfirmation("save")}
+              onClick={() => stageCurrentPruneDraft(true)}
             >
               <CheckIcon size={12} />
-              {t("webEditor.savePruned", lang)}
+              {t("webEditor.keepPruneDraft", lang)}
             </Button>
           </div>
           <p className="mt-2 text-center text-[8px] leading-relaxed text-muted-foreground">
             {t("webEditor.prunePreviewOnly", lang)}
           </p>
         </section>
-      ) : null}
-
-      {pruneConfirmation ? (
-        <div
-          className="absolute inset-0 z-50 flex items-center justify-center bg-black/20 p-4 sm:p-6"
-          onMouseDown={(event) => {
-            if (
-              event.currentTarget === event.target
-              && !committingPrune
-            ) {
-              setPruneConfirmation(null);
-            }
-          }}
-        >
-          <section
-            role="alertdialog"
-            aria-modal="true"
-            aria-labelledby="prune-confirmation-title"
-            aria-describedby="prune-confirmation-description"
-            className="floating-panel w-full max-w-[28rem] !bg-card p-5 shadow-elevated sm:p-6"
-          >
-            <div className="flex items-start justify-between gap-4">
-              <div className="min-w-0">
-                <h2
-                  id="prune-confirmation-title"
-                  className="text-[16px] font-semibold leading-snug tracking-[-0.01em]"
-                >
-                  {t(
-                    pruneConfirmation === "save"
-                      ? "webEditor.savePrunedTitle"
-                      : "webEditor.discardPruneTitle",
-                    lang,
-                  )}
-                </h2>
-                <p
-                  id="prune-confirmation-description"
-                  className="mt-2 text-[11px] leading-relaxed text-muted-foreground"
-                >
-                  {t(
-                    pruneConfirmation === "save"
-                      ? "webEditor.savePrunedWarning"
-                      : "webEditor.discardPruneWarning",
-                    lang,
-                  )}
-                </p>
-              </div>
-              <button
-                type="button"
-                className="floating-icon-button-sm -mr-1 -mt-1 text-muted-foreground hover:bg-foreground/[0.06] hover:text-foreground disabled:opacity-35"
-                disabled={committingPrune}
-                onClick={() => setPruneConfirmation(null)}
-                aria-label={t("common.close", lang)}
-              >
-                <CloseIcon size={13} />
-              </button>
-            </div>
-
-            {pruneConfirmation === "save" ? (
-              <div className="mt-5 grid grid-cols-2 divide-x divide-border/65 rounded-2xl border border-border/65 bg-foreground/[0.025] py-3">
-                <div className="px-4">
-                  <div className="text-[15px] font-semibold tabular-nums">
-                    {splatSelectionStats.pruned.toLocaleString(lang)}
-                  </div>
-                  <div className="mt-0.5 text-[9px] text-muted-foreground">
-                    {t("webEditor.pointsRemoved", lang)}
-                  </div>
-                </div>
-                <div className="px-4">
-                  <div className="text-[15px] font-semibold tabular-nums">
-                    {splatSelectionStats.remaining.toLocaleString(lang)}
-                  </div>
-                  <div className="mt-0.5 text-[9px] text-muted-foreground">
-                    {t("webEditor.pointsRemain", lang)}
-                  </div>
-                </div>
-              </div>
-            ) : null}
-
-            <div className="mt-5 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
-              <Button
-                ref={pruneDialogCancelRef}
-                type="button"
-                variant="outline"
-                size="sm"
-                disabled={committingPrune}
-                onClick={() => setPruneConfirmation(null)}
-                className="sm:min-w-24"
-              >
-                {t("common.cancel", lang)}
-              </Button>
-              <Button
-                type="button"
-                size="sm"
-                loading={committingPrune}
-                onClick={() => {
-                  if (pruneConfirmation === "save") {
-                    void commitPrunedAsset();
-                  } else {
-                    discardPruneChanges();
-                  }
-                }}
-                className="sm:min-w-36"
-              >
-                {t(
-                  pruneConfirmation === "save"
-                    ? "webEditor.savePrunedConfirm"
-                    : "webEditor.discardPrune",
-                  lang,
-                )}
-              </Button>
-            </div>
-          </section>
-        </div>
       ) : null}
 
       <nav className="floating-toolbar scrollbar-hide absolute bottom-4 left-1/2 z-30 max-w-[calc(100vw-1rem)] -translate-x-1/2 overflow-x-auto">
@@ -1779,7 +1637,6 @@ export default function WebTourEditorPage({
             }
             setTool("select");
             setCameraEditorOpen(false);
-            setPruneConfirmation(null);
             setPruneEditorOpen(true);
             if (compactLayout) setScenePanelOpen(false);
           }}
@@ -1838,10 +1695,7 @@ export default function WebTourEditorPage({
           type="button"
           disabled={!selected || !selectedAssetUrl}
           onClick={() => {
-            if (pruneEditorOpen && splatSelectionStats.dirty) {
-              requestClosePruneEditor();
-              return;
-            }
+            if (pruneEditorOpen) requestClosePruneEditor();
             setCameraEditorOpen((value) => {
               const next = !value;
               if (next) {
@@ -1930,22 +1784,6 @@ export default function WebTourEditorPage({
         </div>
       ) : null}
 
-      {pruneSaveNotice ? (
-        <div
-          role="status"
-          className="floating-capsule absolute bottom-20 left-1/2 z-50 flex -translate-x-1/2 items-center gap-2 border-emerald-500/20 bg-emerald-50/95 px-4 text-[11px] font-medium text-emerald-800 shadow-control"
-        >
-          <CheckIcon size={13} />
-          {pruneSaveNotice}
-          <button
-            type="button"
-            onClick={() => setPruneSaveNotice(null)}
-            aria-label={t("common.dismiss", lang)}
-          >
-            <CloseIcon size={11} />
-          </button>
-        </div>
-      ) : null}
     </main>
   );
 }
