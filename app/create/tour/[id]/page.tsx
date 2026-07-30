@@ -95,6 +95,11 @@ function formatBytes(value: number, lang: string) {
   }).format(value / (value >= 1024 ** 3 ? 1024 ** 3 : 1024 ** 2));
 }
 
+function hasActualFileDrag(dataTransfer: DataTransfer): boolean {
+  if (dataTransfer.files.length > 0) return true;
+  return Array.from(dataTransfer.items).some((item) => item.kind === "file");
+}
+
 type LocalPreview = {
   url: string;
   sourceFormat: "ply" | "sog";
@@ -315,11 +320,23 @@ export default function WebTourEditorPage({
   const thumbnailCaptureRef = useRef<Promise<unknown>>(Promise.resolve());
   const pruneDialogCancelRef = useRef<HTMLButtonElement | null>(null);
   const fileDragDepthRef = useRef(0);
+  const fileDragWatchdogRef = useRef<number | null>(null);
 
   const clearFileDrag = useCallback(() => {
+    if (fileDragWatchdogRef.current != null) {
+      window.clearTimeout(fileDragWatchdogRef.current);
+      fileDragWatchdogRef.current = null;
+    }
     fileDragDepthRef.current = 0;
     setDragActive(false);
   }, []);
+
+  const armFileDragWatchdog = useCallback(() => {
+    if (fileDragWatchdogRef.current != null) {
+      window.clearTimeout(fileDragWatchdogRef.current);
+    }
+    fileDragWatchdogRef.current = window.setTimeout(clearFileDrag, 650);
+  }, [clearFileDrag]);
 
   const requestClosePruneEditor = useCallback(() => {
     if (committingPrune) return;
@@ -345,6 +362,7 @@ export default function WebTourEditorPage({
   }, [pruneSaveNotice]);
 
   useEffect(() => {
+    clearFileDrag();
     const clearOnVisibilityChange = () => {
       if (document.visibilityState !== "visible") clearFileDrag();
     };
@@ -359,6 +377,11 @@ export default function WebTourEditorPage({
       window.removeEventListener("blur", clearFileDrag);
       window.removeEventListener("dragend", clearFileDrag);
       document.removeEventListener("visibilitychange", clearOnVisibilityChange);
+      if (fileDragWatchdogRef.current != null) {
+        window.clearTimeout(fileDragWatchdogRef.current);
+        fileDragWatchdogRef.current = null;
+      }
+      fileDragDepthRef.current = 0;
     };
   }, [clearFileDrag]);
 
@@ -931,29 +954,38 @@ export default function WebTourEditorPage({
     <main
       className="relative h-[100dvh] w-screen overflow-hidden bg-background text-foreground"
       onDragEnter={(event) => {
-        if (uploading || !event.dataTransfer.types.includes("Files")) return;
+        if (uploading || !hasActualFileDrag(event.dataTransfer)) {
+          clearFileDrag();
+          return;
+        }
         event.preventDefault();
         fileDragDepthRef.current += 1;
         setDragActive(true);
+        armFileDragWatchdog();
       }}
       onDragOver={(event) => {
-        if (uploading || !event.dataTransfer.types.includes("Files")) return;
+        if (uploading || !hasActualFileDrag(event.dataTransfer)) {
+          clearFileDrag();
+          return;
+        }
         event.preventDefault();
         event.dataTransfer.dropEffect = "copy";
         if (fileDragDepthRef.current < 1) fileDragDepthRef.current = 1;
         if (!dragActive) setDragActive(true);
+        armFileDragWatchdog();
       }}
       onDragLeave={(event) => {
-        if (!dragActive && !event.dataTransfer.types.includes("Files")) return;
+        if (!dragActive && !hasActualFileDrag(event.dataTransfer)) return;
         event.preventDefault();
         fileDragDepthRef.current = Math.max(0, fileDragDepthRef.current - 1);
-        if (fileDragDepthRef.current === 0) setDragActive(false);
+        if (fileDragDepthRef.current === 0) {
+          clearFileDrag();
+        } else {
+          armFileDragWatchdog();
+        }
       }}
       onDrop={(event) => {
-        if (
-          !event.dataTransfer.types.includes("Files")
-          && event.dataTransfer.files.length === 0
-        ) return;
+        if (!hasActualFileDrag(event.dataTransfer)) return;
         event.preventDefault();
         clearFileDrag();
         const file = event.dataTransfer.files[0];
@@ -1903,7 +1935,17 @@ export default function WebTourEditorPage({
 
       {(dragActive || uploading) ? (
         <div className="absolute inset-0 z-50 flex items-center justify-center bg-background/82 p-6 backdrop-blur-md">
-          <div className="floating-panel w-full max-w-md p-7 text-center">
+          <div className="floating-panel relative w-full max-w-md p-7 text-center">
+            {!uploading ? (
+              <button
+                type="button"
+                className="floating-icon-button-sm absolute right-3 top-3 text-muted-foreground hover:bg-foreground/[0.06] hover:text-foreground"
+                onClick={clearFileDrag}
+                aria-label={t("common.close", lang)}
+              >
+                <CloseIcon size={13} />
+              </button>
+            ) : null}
             <UploadIcon size={26} className="mx-auto text-foreground/45" />
             <h2 className="mt-4 text-lg font-semibold">
               {uploading ? t("webEditor.uploading", lang) : t("webEditor.dropTitle", lang)}
