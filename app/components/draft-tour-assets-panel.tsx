@@ -30,6 +30,7 @@ import {
   ExternalLinkIcon,
   InfoIcon,
   PlayIcon,
+  PlusIcon,
   TrashIcon,
   TourIcon,
 } from "./icons";
@@ -733,72 +734,73 @@ export function DraftTourAssetsPanel({
   };
 
   return (
-    <section className="mt-8">
-      <div className="mb-3 flex items-end justify-between gap-3">
-        <div className="min-w-0">
-          <h2 className="flex items-center gap-2 text-[14px] font-semibold">
-            <TourIcon size={16} className="text-foreground/55" />
-            <span>{text.title}</span>
-          </h2>
-          <p className="ml-6 mt-1 truncate text-[11px] text-muted-foreground">
-            {text.summary(
-              visibleAssets.length,
-              readyAssets.length,
-              previewableAssets.length,
-              payload?.assets.length ?? 0,
-            )}
-          </p>
+    <section className="mt-8 overflow-hidden rounded-[1.5rem] border border-border/70 bg-card shadow-card sm:rounded-2xl">
+      <header className="flex flex-col gap-3 border-b border-border/60 px-4 py-4 sm:flex-row sm:items-center sm:justify-between sm:px-5">
+        <div className="flex min-w-0 items-center gap-3">
+          <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-foreground/[0.045] text-foreground/55">
+            <TourIcon size={17} />
+          </span>
+          <div className="min-w-0">
+            <h2 className="text-[14px] font-semibold">{text.title}</h2>
+            <p className="mt-0.5 truncate text-[11px] text-muted-foreground">
+              {text.summary(
+                visibleAssets.length,
+                readyAssets.length,
+                previewableAssets.length,
+                payload?.assets.length ?? 0,
+              )}
+            </p>
+          </div>
         </div>
-        <div className="flex shrink-0 items-center gap-2">
+        <div className="flex shrink-0 items-center gap-1.5 pl-12 sm:pl-0">
+          {payload?.assets.length ? (
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              className="shrink-0"
+              onClick={() => setOpen(true)}
+            >
+              <TourIcon size={14} />
+              <span className="sm:hidden">{text.manageShort}</span>
+              <span className="hidden sm:inline">{text.manage}</span>
+            </Button>
+          ) : null}
           {canCreateInWeb ? (
             <Button
               type="button"
+              variant="outline"
               size="sm"
               className="shrink-0"
               loading={creatingInWeb}
               onClick={() => { void createInWeb(); }}
             >
-              <TourIcon size={14} />
+              <PlusIcon size={14} />
               <span className="hidden sm:inline">{t("webCreate.tourAction", lang)}</span>
               <span className="sm:hidden">{t("common.add", lang)}</span>
             </Button>
           ) : null}
-          {payload?.assets.length ? (
-          <Button
-            type="button"
-            variant="outline"
-            size="sm"
-            className="shrink-0"
-            onClick={() => setOpen(true)}
-          >
-            <TourIcon size={14} />
-            <span className="sm:hidden">{text.manageShort}</span>
-            <span className="hidden sm:inline">{text.manage}</span>
-          </Button>
-          ) : null}
         </div>
-      </div>
+      </header>
 
       {loading && !payload ? (
-        <div className="overflow-hidden rounded-[1.5rem] border border-border/70 bg-card shadow-card sm:rounded-2xl">
+        <div className="divide-y divide-border/55">
           {Array.from({ length: 2 }).map((_, index) => (
             <div
               key={index}
-              className={cn(
-                "grid animate-pulse grid-cols-[88px_minmax(0,1fr)] gap-3 p-4 sm:grid-cols-[132px_minmax(0,1fr)] sm:gap-4",
-                index === 0 && "border-b border-border/55",
-              )}
+              className="grid animate-pulse grid-cols-[88px_minmax(0,1fr)] gap-3 p-4 sm:grid-cols-[108px_minmax(0,1fr)_180px] sm:items-center sm:gap-4 sm:px-5"
             >
               <div className="aspect-[16/10] rounded-xl bg-muted/55" />
               <div className="flex min-w-0 flex-col justify-center gap-2">
                 <div className="h-3 w-2/3 rounded bg-muted/60" />
                 <div className="h-2.5 w-1/2 rounded bg-muted/40" />
               </div>
+              <div className="hidden h-8 rounded-full bg-muted/40 sm:block" />
             </div>
           ))}
         </div>
       ) : error && !payload ? (
-        <div className="flex items-center gap-3 rounded-[1.5rem] border border-destructive/20 bg-card p-4 shadow-card sm:rounded-2xl">
+        <div className="flex items-center gap-3 p-4 sm:px-5">
           <InfoIcon size={18} className="shrink-0 text-destructive" />
           <p className="min-w-0 flex-1 text-[12px] text-muted-foreground">{error}</p>
           <Button type="button" variant="outline" size="sm" onClick={() => { void load(); }}>
@@ -806,7 +808,7 @@ export function DraftTourAssetsPanel({
           </Button>
         </div>
       ) : !payload?.assets.length ? (
-        <div className="flex items-start gap-3 rounded-[1.5rem] border border-dashed border-border bg-card p-5 sm:items-center sm:rounded-2xl">
+        <div className="flex items-start gap-3 p-5 sm:items-center">
           <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-foreground/[0.045] text-foreground/45">
             <TourIcon size={18} />
           </span>
@@ -816,21 +818,9 @@ export function DraftTourAssetsPanel({
               {text.empty}
             </p>
           </div>
-          {canCreateInWeb ? (
-            <Button
-              type="button"
-              size="sm"
-              className="shrink-0"
-              loading={creatingInWeb}
-              onClick={() => { void createInWeb(); }}
-            >
-              <TourIcon size={14} />
-              {t("webCreate.tourAction", lang)}
-            </Button>
-          ) : null}
         </div>
       ) : (
-        <div className="overflow-hidden rounded-[1.5rem] border border-border/70 bg-card shadow-card sm:rounded-2xl">
+        <div className="divide-y divide-border/55">
           {overviewAssets.map((asset, index) => {
             const selection = selections[asset.id];
             const state = assetStatus(asset, selection, text, lang);
@@ -844,13 +834,16 @@ export function DraftTourAssetsPanel({
                 ? splatsById.get(asset.source_splat_id)
                 : undefined,
             );
+            const canOpen = Boolean(
+              asset.source_splat_id && (state.ready || canPreview),
+            );
+            const canEdit = Boolean(
+              asset.editor_workspace || (canCreateInWeb && asset.source_splat_id),
+            );
             return (
               <article
                 key={asset.id}
-                className={cn(
-                  "grid grid-cols-[88px_minmax(0,1fr)] gap-3 p-4 sm:grid-cols-[132px_minmax(0,1fr)] sm:gap-4 sm:p-5",
-                  index < overviewAssets.length - 1 && "border-b border-border/55",
-                )}
+                className="grid grid-cols-[88px_minmax(0,1fr)] gap-3 p-4 sm:grid-cols-[108px_minmax(0,1fr)_auto] sm:items-center sm:gap-4 sm:px-5"
               >
                 <div className="relative aspect-[16/10] overflow-hidden rounded-xl bg-surface-subtle ring-1 ring-inset ring-border/45">
                   {thumbnail ? (
@@ -862,51 +855,46 @@ export function DraftTourAssetsPanel({
                     />
                   ) : (
                     <div className="absolute inset-0 flex items-center justify-center text-foreground/20">
-                      {state.ready ? <TourIcon size={28} /> : <ClockIcon size={24} />}
+                      {state.ready ? <TourIcon size={24} /> : <ClockIcon size={21} />}
                     </div>
                   )}
                 </div>
 
                 <div className="min-w-0 self-center">
-                  <div className="flex flex-wrap items-start justify-between gap-2">
-                    <div className="min-w-0">
-                      <div className="flex min-w-0 items-center gap-1">
-                        <h3 className="truncate text-[13px] font-semibold sm:text-[14px]">{displayName}</h3>
-                        <button
-                          type="button"
-                          aria-label={`${text.editName}: ${displayName}`}
-                          title={text.editName}
-                          className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-foreground/35 transition-colors hover:bg-foreground/[0.055] hover:text-foreground"
-                          onClick={() => {
-                            beginRename(asset);
-                            setOpen(true);
-                          }}
-                        >
-                          <EditIcon size={12} />
-                        </button>
-                      </div>
-                      <p className="mt-0.5 truncate text-[10px] text-muted-foreground sm:text-[11px]">
-                        {assetSubtitle(asset, lang)}
-                      </p>
-                    </div>
+                  <div className="flex min-w-0 flex-wrap items-center gap-x-1 gap-y-1">
+                    <h3 className="max-w-full truncate text-[13px] font-semibold sm:text-[14px]">{displayName}</h3>
+                    <button
+                      type="button"
+                      aria-label={`${text.editName}: ${displayName}`}
+                      title={text.editName}
+                      className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-foreground/35 transition-colors hover:bg-foreground/[0.055] hover:text-foreground"
+                      onClick={() => {
+                        beginRename(asset);
+                        setOpen(true);
+                      }}
+                    >
+                      <EditIcon size={12} />
+                    </button>
                     <StatusPill tone={state.tone} dot className="shrink-0">
                       {state.label}
                     </StatusPill>
                   </div>
+                  <p className="truncate text-[10px] text-muted-foreground sm:text-[11px]">
+                    {assetSubtitle(asset, lang)}
+                  </p>
 
-                  <div className="mt-2.5 flex flex-wrap items-center gap-1.5">
-                    {selection?.isPrimary ? (
-                      <StatusPill tone="strong">{text.primaryBadge}</StatusPill>
-                    ) : null}
-                    {selection?.web ? <StatusPill>{text.web}</StatusPill> : null}
-                    {selection?.ios ? <StatusPill>{text.ios}</StatusPill> : null}
-                    {state.ready && !state.visible ? (
-                      <span className="text-[10px] text-muted-foreground">{text.hidden}</span>
-                    ) : null}
-                  </div>
+                  {(selection?.isPrimary || selection?.web || selection?.ios) ? (
+                    <div className="mt-2 flex flex-wrap items-center gap-1.5">
+                      {selection?.isPrimary ? (
+                        <StatusPill tone="strong">{text.primaryBadge}</StatusPill>
+                      ) : null}
+                      {selection?.web ? <StatusPill>{text.web}</StatusPill> : null}
+                      {selection?.ios ? <StatusPill>{text.ios}</StatusPill> : null}
+                    </div>
+                  ) : null}
 
                   {state.hint ? (
-                    <p className="mt-2 line-clamp-2 text-[10px] leading-relaxed text-muted-foreground sm:text-[11px]">
+                    <p className="mt-2 line-clamp-1 text-[10px] leading-relaxed text-muted-foreground sm:text-[11px]">
                       {state.hint}
                     </p>
                   ) : null}
@@ -919,32 +907,33 @@ export function DraftTourAssetsPanel({
                           style={{ width: `${asset.lifecycle.progress_pct}%` }}
                         />
                       </div>
-                      <p className="mt-1 text-[9px] font-medium text-muted-foreground">
-                        {text.progress(asset.lifecycle.progress_pct)}
-                      </p>
                     </div>
                   ) : null}
-
-                  {asset.source_splat_id && (state.ready || canPreview) ? (
-                    <Button asChild variant="ghost" size="xs" className="mt-2 -ml-2">
-                      <Link href={state.ready
-                        ? `/tour/${asset.source_splat_id}?tourId=${asset.id}`
-                        : `/tour/${asset.source_splat_id}`}
-                      >
-                        <PlayIcon size={13} />
-                        {state.ready ? text.view : text.preview}
-                      </Link>
-                    </Button>
-                  ) : null}
-                  {asset.editor_workspace || (canCreateInWeb && asset.source_splat_id) ? (
-                    <Button asChild variant="outline" size="xs" className="mt-2">
-                      <Link href={`/create/tour/${asset.id}`}>
-                        <EditIcon size={13} />
-                        {t("webCreate.openEditor", lang)}
-                      </Link>
-                    </Button>
-                  ) : null}
                 </div>
+
+                {(canOpen || canEdit) ? (
+                  <div className="col-span-2 flex flex-wrap items-center justify-end gap-1.5 sm:col-span-1 sm:flex-nowrap">
+                    {canEdit ? (
+                      <Button asChild variant="ghost" size="sm">
+                        <Link href={`/create/tour/${asset.id}`}>
+                          <EditIcon size={13} />
+                          {t("webCreate.openEditor", lang)}
+                        </Link>
+                      </Button>
+                    ) : null}
+                    {canOpen && asset.source_splat_id ? (
+                      <Button asChild size="sm">
+                        <Link href={state.ready
+                          ? `/tour/${asset.source_splat_id}?tourId=${asset.id}`
+                          : `/tour/${asset.source_splat_id}`}
+                        >
+                          <PlayIcon size={13} />
+                          {state.ready ? text.view : text.preview}
+                        </Link>
+                      </Button>
+                    ) : null}
+                  </div>
+                ) : null}
               </article>
             );
           })}
@@ -952,7 +941,7 @@ export function DraftTourAssetsPanel({
             <button
               type="button"
               onClick={() => setOpen(true)}
-              className="flex w-full items-center justify-center border-t border-border/55 bg-surface-subtle px-4 py-3 text-[11px] font-semibold text-foreground/65 transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
+              className="flex w-full items-center justify-center bg-surface-subtle px-4 py-3 text-[11px] font-semibold text-foreground/65 transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
             >
               {text.more(remainingAssets)}
             </button>
