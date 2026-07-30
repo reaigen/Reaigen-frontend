@@ -4040,6 +4040,7 @@ const SplatViewer = forwardRef<SplatViewerHandle, Props>(function SplatViewer(
 
     async function init() {
       if (!canvasRef.current) return;
+      let viewerInitializing = true;
       try {
         setStatus(t("viewer.status.loadingEngine", lang));
         const BABYLON = await import("@babylonjs/core");
@@ -4274,7 +4275,6 @@ const SplatViewer = forwardRef<SplatViewerHandle, Props>(function SplatViewer(
         // perfectly still. Keep full cadence during loading, gestures, coast,
         // and camera flights; once idle, only refresh occasionally so overlays
         // stay responsive without holding the GPU at 60 fps.
-        let viewerInitializing = true;
         let lastIdleRenderAt = 0;
         let lastMotionAt = performance.now();
         engine.runRenderLoop(() => {
@@ -4721,6 +4721,7 @@ const SplatViewer = forwardRef<SplatViewerHandle, Props>(function SplatViewer(
 
       } catch (err: any) {
         if (!disposed) {
+          viewerInitializing = false;
           setStatus(t("viewer.status.error", lang));
           console.error("[REAI]", err);
           onError?.(err?.message);
@@ -4754,6 +4755,7 @@ const SplatViewer = forwardRef<SplatViewerHandle, Props>(function SplatViewer(
       ref={rootRef}
       className={`relative h-full w-full select-none bg-background ${className ?? ""}`}
       tabIndex={0}
+      aria-busy={!ready}
     >
       <canvas
         ref={canvasRef}
@@ -4853,8 +4855,8 @@ const SplatViewer = forwardRef<SplatViewerHandle, Props>(function SplatViewer(
       {/* Keep one loading surface mounted and cross-fade it into the first
           rendered frame. This avoids the page loader → viewer loader flash. */}
       <div
-        className={`absolute inset-0 z-10 flex flex-col items-center justify-center transition-opacity duration-500 ease-[var(--motion-ease-smooth)] ${
-          "bg-background text-foreground"
+        className={`absolute inset-0 flex flex-col items-center justify-center bg-background text-foreground transition-opacity duration-500 ease-[var(--motion-ease-smooth)] ${
+          spatialNavigation ? "z-40" : "z-10"
         } ${
           ready ? "pointer-events-none opacity-0" : "opacity-100"
         }`}
@@ -4882,7 +4884,13 @@ const SplatViewer = forwardRef<SplatViewerHandle, Props>(function SplatViewer(
               <span className="loading-progress-indeterminate" />
             )}
           </div>
-          <span className="min-h-5 text-[12px] text-muted-foreground">{status}</span>
+          <span
+            className="min-h-5 text-[12px] text-muted-foreground"
+            role="status"
+            aria-live="polite"
+          >
+            {status}
+          </span>
       </div>
     </div>
   );

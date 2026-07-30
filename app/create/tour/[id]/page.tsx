@@ -61,7 +61,39 @@ import { Button } from "../../../lib/ui/button";
 import { Input } from "../../../lib/ui/input";
 import { cn } from "../../../lib/utils";
 
-const SplatViewer = dynamic(() => import("../../../components/splat-viewer"), { ssr: false });
+function EditorViewportLoading() {
+  return (
+    <div
+      className="absolute inset-0 z-40 flex flex-col items-center justify-center bg-background text-foreground"
+      role="status"
+      aria-live="polite"
+      aria-label="Reaigen"
+    >
+      <span
+        className="mb-6 text-[28px] text-foreground/85"
+        style={{
+          fontFamily: "var(--font-brand), ui-serif, Georgia, serif",
+          fontWeight: 400,
+          letterSpacing: "0.01em",
+        }}
+      >
+        Reaigen
+      </span>
+      <div className="loading-progress-track mb-3 w-36">
+        <span className="loading-progress-indeterminate" />
+      </div>
+      <span className="min-h-5" aria-hidden="true" />
+    </div>
+  );
+}
+
+const SplatViewer = dynamic(
+  () => import("../../../components/splat-viewer"),
+  {
+    ssr: false,
+    loading: EditorViewportLoading,
+  },
+);
 
 function runtimeTransform(transform: WebSceneTransform): GlobalSceneTransform {
   const scale3 = transform.scale3 ?? [transform.scale, transform.scale, transform.scale];
@@ -270,10 +302,13 @@ export default function WebTourEditorPage({
   const [transformSpace, setTransformSpace] = useState<"world" | "local">("world");
   const [snapEnabled, setSnapEnabled] = useState(false);
   const [draftTransform, setDraftTransform] = useState<GlobalSceneTransform | null>(null);
+  const [draftTransformNodeId, setDraftTransformNodeId] = useState<string | null>(null);
   const [transformDirty, setTransformDirty] = useState(false);
   const [workspaceDirty, setWorkspaceDirty] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [viewerFailed, setViewerFailed] = useState(false);
+  const [viewerReloadKey, setViewerReloadKey] = useState(0);
   const [saving, setSaving] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [uploadName, setUploadName] = useState("");
@@ -417,6 +452,22 @@ export default function WebTourEditorPage({
   );
   const selectedNodeId = selected?.id ?? null;
   const selectedTransform = selected?.transform ?? null;
+  const viewportTransform = draftTransformNodeId === selectedNodeId
+    ? draftTransform
+    : selectedTransform
+      ? runtimeTransform(selectedTransform)
+      : null;
+  const selectedRenderable = Boolean(
+    selected
+    && selected.visible
+    && selectedAssetUrl
+    && viewportTransform,
+  );
+  const selectedAssetFailed = selected?.asset.conversion?.status === "failed";
+
+  useEffect(() => {
+    setViewerFailed(false);
+  }, [selectedAssetUrl, selectedNodeId]);
 
   useEffect(() => {
     workspaceRef.current = workspace;
@@ -452,16 +503,19 @@ export default function WebTourEditorPage({
   useEffect(() => {
     if (!selectedTransform) {
       setDraftTransform(null);
+      setDraftTransformNodeId(null);
       return;
     }
     setDraftTransform(runtimeTransform(selectedTransform));
+    setDraftTransformNodeId(selectedNodeId);
     setTransformDirty(false);
   }, [selectedNodeId]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     if (!selectedTransform || transformDirty) return;
     setDraftTransform(runtimeTransform(selectedTransform));
-  }, [selectedTransform, transformDirty]);
+    setDraftTransformNodeId(selectedNodeId);
+  }, [selectedNodeId, selectedTransform, transformDirty]);
 
   useEffect(() => {
     setHistoryAvailability({
@@ -956,11 +1010,12 @@ export default function WebTourEditorPage({
         if (file && !uploading) void uploadFile(file);
       }}
     >
-      {selectedAssetUrl && selected?.visible && draftTransform ? (
+      {selectedRenderable && selectedAssetUrl && selected && viewportTransform ? (
         <SplatViewer
-          key={`${selected.id}:${selectedAssetUrl}`}
+          key={`${selected.id}:${selectedAssetUrl}:${viewerReloadKey}`}
           ref={viewerRef}
           onReady={() => {
+            setViewerFailed(false);
             if (
               workspaceDirty
               || transformDirty
@@ -977,7 +1032,7 @@ export default function WebTourEditorPage({
           splatId={selected.splat_id}
           outputsVersion={selected.asset.fingerprint}
           initialPruneMask={selectedPruneMask}
-          globalSceneTransform={draftTransform}
+          globalSceneTransform={viewportTransform}
           spatialNavigation
           spatialTransformTool={tool}
           spatialTransformSpace={transformSpace}
@@ -1029,20 +1084,61 @@ export default function WebTourEditorPage({
           spatialCameraMode={cameraMode}
           onSpatialCameraModeChange={setCameraMode}
           lang={lang}
-          onError={() => setError(t("webEditor.assetLoadFailed", lang))}
+          onError={() => setViewerFailed(true)}
         />
       ) : (
         <div className="absolute inset-0 flex items-center justify-center bg-background">
           <div className="max-w-sm px-6 text-center">
-            <UploadIcon size={28} className="mx-auto text-foreground/30" />
-            <h1 className="mt-4 text-xl font-semibold">{t("webEditor.emptyTitle", lang)}</h1>
+            {selected && !selected.visible ? (
+              <EyeClosedIcon size={28} className="mx-auto text-foreground/30" />
+            ) : selected ? (
+              <TourIcon size={28} className="mx-auto text-foreground/30" />
+            ) : (
+              <UploadIcon size={28} className="mx-auto text-foreground/30" />
+            )}
+            <h1 className="mt-4 text-xl font-semibold">
+              {selected && !selected.visible
+                ? t("webEditor.hiddenTitle", lang)
+                : selectedAssetFailed
+                  ? t("webEditor.assetLoadFailed", lang)
+                  : selected
+                    ? t("webEditor.assetPreparing", lang)
+                    : t("webEditor.emptyTitle", lang)}
+            </h1>
             <p className="mt-2 text-[13px] leading-relaxed text-muted-foreground">
-              {t("webEditor.emptyDescription", lang)}
+              {selected && !selected.visible
+                ? t("webEditor.hiddenDescription", lang)
+                : selectedAssetFailed
+                  ? t("webEditor.assetFailedHint", lang)
+                  : selected
+                    ? t("webEditor.assetPreparingHint", lang)
+                    : t("webEditor.emptyDescription", lang)}
             </p>
-            <Button className="mt-5" onClick={() => fileInputRef.current?.click()}>
-              <PlusIcon size={14} />
-              {t("webEditor.addSplat", lang)}
-            </Button>
+            {selected && !selected.visible ? (
+              <Button
+                className="mt-5"
+                onClick={() => updateNode(selected.id, (node) => ({
+                  ...node,
+                  visible: true,
+                }))}
+              >
+                <EyeOpenIcon size={14} />
+                {t("common.show", lang)}
+              </Button>
+            ) : !selected || selectedAssetFailed ? (
+              <Button className="mt-5" onClick={() => fileInputRef.current?.click()}>
+                <PlusIcon size={14} />
+                {t("webEditor.addSplat", lang)}
+              </Button>
+            ) : (
+              <div
+                className="loading-progress-track mx-auto mt-5 w-28"
+                role="progressbar"
+                aria-label={t("webEditor.assetPreparing", lang)}
+              >
+                <span className="loading-progress-indeterminate" />
+              </div>
+            )}
           </div>
         </div>
       )}
@@ -1169,6 +1265,11 @@ export default function WebTourEditorPage({
                   type="button"
                   onClick={(event) => {
                     event.stopPropagation();
+                    if (node.id === selectedId && node.visible) {
+                      stageCurrentPruneDraft(true);
+                      setCameraEditorOpen(false);
+                      setTool("select");
+                    }
                     updateNode(node.id, (current) => ({ ...current, visible: !current.visible }));
                   }}
                   className="flex shrink-0 items-center justify-center rounded-md p-1"
@@ -1195,7 +1296,7 @@ export default function WebTourEditorPage({
             ))}
             <button
               type="button"
-              disabled={!selected || !selectedAssetUrl}
+              disabled={!selectedRenderable}
               onClick={() => {
                 setCameraEditorOpen(true);
                 if (compactLayout) setScenePanelOpen(false);
@@ -1586,6 +1687,7 @@ export default function WebTourEditorPage({
         </section>
       ) : null}
 
+      {selectedRenderable ? (
       <nav className="floating-toolbar scrollbar-hide absolute bottom-4 left-1/2 z-30 max-w-[calc(100vw-1rem)] -translate-x-1/2 overflow-x-auto">
         <button
           type="button"
@@ -1722,6 +1824,7 @@ export default function WebTourEditorPage({
           <CameraIcon size={14} />
         </button>
       </nav>
+      ) : null}
 
       <div className="floating-capsule pointer-events-none absolute bottom-4 right-3 z-20 hidden min-h-9 items-center gap-2 px-3 text-[9px] font-semibold shadow-control sm:flex sm:right-4">
         <span className="text-muted-foreground">Y up</span>
@@ -1730,7 +1833,7 @@ export default function WebTourEditorPage({
         <span className="text-[#2f8cff]">Z</span>
       </div>
 
-      {cameraEditorOpen && selected && selectedAssetUrl ? (
+      {cameraEditorOpen && selected && selected.visible && selectedAssetUrl ? (
         <CameraEditor
           splatId={selected.splat_id}
           viewerRef={viewerRef}
@@ -1776,6 +1879,50 @@ export default function WebTourEditorPage({
                 className="h-full rounded-full bg-foreground transition-[width]"
                 style={{ width: `${Math.max(2, uploadProgress * 100)}%` }}
               />
+            </div>
+          </div>
+        </div>
+      ) : null}
+
+      {viewerFailed ? (
+        <div className="absolute inset-0 z-50 flex items-center justify-center bg-background/72 p-6 backdrop-blur-sm">
+          <div
+            role="alert"
+            className="floating-panel w-full max-w-sm p-6 text-center shadow-elevated"
+          >
+            <p className="text-[13px] font-medium">
+              {t("webEditor.assetLoadFailed", lang)}
+            </p>
+            <div className="mt-5 flex justify-center gap-2">
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={() => {
+                  if (
+                    (
+                      workspaceDirty
+                      || transformDirty
+                      || splatSelectionStats.dirty
+                      || hasPendingPruneMasks
+                    )
+                    && !window.confirm(t("webEditor.unsavedLeave", lang))
+                  ) return;
+                  router.push(`/draft/${workspace.draft_id}`);
+                }}
+              >
+                {t("common.back", lang)}
+              </Button>
+              <Button
+                type="button"
+                size="sm"
+                onClick={() => {
+                  setViewerFailed(false);
+                  setViewerReloadKey((value) => value + 1);
+                }}
+              >
+                {t("common.tryAgain", lang)}
+              </Button>
             </div>
           </div>
         </div>
