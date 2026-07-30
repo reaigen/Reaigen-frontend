@@ -226,7 +226,6 @@ export default function WebTourEditorPage({
   const [cameraMode, setCameraMode] = useState<SpatialCameraMode>("orbit");
   const [scenePanelOpen, setScenePanelOpen] = useState(true);
   const [inspectorOpen, setInspectorOpen] = useState(true);
-  const [showNavigationHint, setShowNavigationHint] = useState(true);
   const [cameraEditorOpen, setCameraEditorOpen] = useState(false);
   const [pruneEditorOpen, setPruneEditorOpen] = useState(false);
   const [splatSelectionTool, setSplatSelectionTool] = useState<SplatSelectionTool>("brush");
@@ -402,12 +401,6 @@ export default function WebTourEditorPage({
       URL.revokeObjectURL(preview.url);
     });
   }, []);
-
-  useEffect(() => {
-    setShowNavigationHint(true);
-    const timer = window.setTimeout(() => setShowNavigationHint(false), 7000);
-    return () => window.clearTimeout(timer);
-  }, [cameraMode]);
 
   useEffect(() => {
     const media = window.matchMedia("(max-width: 767px)");
@@ -948,8 +941,8 @@ export default function WebTourEditorPage({
         </div>
       )}
 
-      <header className="floating-panel floating-header pointer-events-none absolute inset-x-3 top-3 z-30 mx-auto flex max-w-[48rem] items-center justify-between gap-3 px-2">
-        <div className="pointer-events-auto flex min-w-0 items-center gap-2">
+      <header className="floating-panel floating-header pointer-events-none absolute inset-x-3 top-3 z-30 mx-auto flex max-w-[38rem] items-center justify-between gap-2 px-2">
+        <div className="pointer-events-auto flex min-w-0 items-center gap-1.5">
           <button
             type="button"
             onClick={() => {
@@ -964,64 +957,59 @@ export default function WebTourEditorPage({
           >
             <ArrowLeftIcon size={15} />
           </button>
-          <div className="min-w-0 border-l border-border/70 px-3 py-1">
-            <span className="flex items-center gap-2">
-              <span className="truncate text-[12px] font-semibold sm:max-w-[18rem]">{workspace.name}</span>
-              <span className="rounded-full bg-foreground/[0.07] px-1.5 py-0.5 text-[8px] font-bold uppercase tracking-[0.1em] text-foreground/50">
-                {t("spatialEditor.rnd", lang)}
+          <div className="min-w-0 border-l border-border/65 px-2.5 py-0.5">
+            <span className="flex min-w-0 items-center gap-1.5">
+              <span className="max-w-[8rem] truncate text-[12px] font-semibold sm:max-w-[13rem]">
+                {workspace.name}
               </span>
+              <span className="shrink-0 text-[9px] tabular-nums text-muted-foreground">
+                r{workspace.revision}
+              </span>
+              {workspaceDirty || transformDirty || splatSelectionStats.dirty ? (
+                <span
+                  className="h-1.5 w-1.5 shrink-0 rounded-full bg-amber-500"
+                  title={splatSelectionStats.dirty
+                    ? t("webEditor.pruneUnsaved", lang)
+                    : t("spatialEditor.unsavedTransform", lang)}
+                />
+              ) : null}
             </span>
-            <span className="mt-0.5 block text-[9px] text-muted-foreground">
-              {workspace.usd.rootLayer ?? "workspace.usda"} · r{workspace.revision}
+            <span className="mt-0.5 hidden max-w-[13rem] truncate text-[9px] text-muted-foreground sm:block">
+              {workspace.usd.rootLayer ?? "workspace.usda"}
             </span>
           </div>
         </div>
-        <div className="pointer-events-auto flex items-center gap-2">
-          <span className={cn(
-            "hidden items-center gap-1.5 px-1 text-[10px] font-medium md:flex",
-            workspaceDirty || transformDirty || splatSelectionStats.dirty
-              ? "text-amber-700"
-              : "text-foreground/45",
-          )}>
-            <span className={cn(
-              "h-1.5 w-1.5 rounded-full",
-              workspaceDirty || transformDirty || splatSelectionStats.dirty
-                ? "bg-amber-500"
-                : "bg-emerald-500",
-            )} />
-            {splatSelectionStats.dirty
-              ? t("webEditor.pruneUnsaved", lang)
-              : workspaceDirty || transformDirty
-                ? t("spatialEditor.unsavedTransform", lang)
-                : t("spatialEditor.savedTransform", lang)}
-          </span>
+        <div className="pointer-events-auto flex shrink-0 items-center gap-1.5">
           <Button
-            size="sm"
+            size="icon-sm"
             variant="outline"
             onClick={() => fileInputRef.current?.click()}
             disabled={uploading}
+            aria-label={t("webEditor.addSplat", lang)}
+            title={t("webEditor.addSplat", lang)}
           >
             <PlusIcon size={13} />
-            <span className="hidden sm:inline">{t("webEditor.addSplat", lang)}</span>
           </Button>
-          <Button
-            size="sm"
-            variant="outline"
-            onClick={() => { void persistWorkspace(); }}
-            loading={saving}
-            disabled={!workspaceDirty && !transformDirty}
-            title={`${t("spatialEditor.applyTransform", lang)} · Ctrl/⌘ S`}
-          >
-            <CheckIcon size={13} />
-            <span className="hidden md:inline">{t("spatialEditor.applyTransform", lang)}</span>
-          </Button>
+          {workspaceDirty || transformDirty ? (
+            <Button
+              size="icon-sm"
+              variant="outline"
+              onClick={() => { void persistWorkspace(); }}
+              loading={saving}
+              aria-label={t("spatialEditor.applyTransform", lang)}
+              title={`${t("spatialEditor.applyTransform", lang)} · Ctrl/⌘ S`}
+            >
+              <CheckIcon size={13} />
+            </Button>
+          ) : null}
           <Button
             size="sm"
             onClick={() => { void finishTour(); }}
             loading={saving}
+            title={t("webEditor.saveTour", lang)}
           >
             <CheckIcon size={13} />
-            {t("webEditor.saveTour", lang)}
+            {t("common.save", lang)}
           </Button>
         </div>
       </header>
@@ -1037,21 +1025,6 @@ export default function WebTourEditorPage({
           if (file) void uploadFile(file);
         }}
       />
-
-      {selectedAssetUrl && (showNavigationHint || selected?.asset.conversion?.status === "running") ? (
-        <div className="pointer-events-none absolute left-1/2 top-20 z-20 flex -translate-x-1/2 flex-col items-center gap-1.5">
-          {showNavigationHint ? (
-          <div className="floating-capsule flex min-h-9 items-center px-4 text-[10px] font-medium text-foreground/55 shadow-control">
-            {t(cameraMode === "orbit" ? "webEditor.orbitHint" : "webEditor.flyHint", lang)}
-          </div>
-          ) : null}
-          {selected?.asset.conversion?.status === "running" ? (
-            <div className="floating-capsule flex min-h-8 items-center border-amber-500/20 bg-amber-50/95 px-3 text-[9px] font-medium text-amber-800 shadow-control">
-              {t("webEditor.convertingHint", lang)}
-            </div>
-          ) : null}
-        </div>
-      ) : null}
 
       <aside className={cn(
         "floating-panel absolute left-3 top-20 z-20 max-h-[calc(100dvh-10rem)] w-[min(17rem,calc(100vw-1.5rem))] overflow-hidden transition-transform sm:left-4",
