@@ -1003,6 +1003,8 @@ export interface WebTourWorkspace {
     validation?: { valid?: boolean; validator?: string };
   };
   accepted_formats: Array<"ply" | "sog">;
+  thumbnail_url: string | null;
+  thumbnail_revision: number | null;
 }
 
 export interface WebCreationAccess {
@@ -1071,6 +1073,22 @@ export async function saveWebTourWorkspace(
     method: "PATCH",
     body: JSON.stringify(data),
   });
+}
+
+export async function saveWebTourThumbnail(
+  tourId: number,
+  workspaceRevision: number,
+  imageData: string,
+): Promise<WebTourWorkspace> {
+  const workspace = await request(`/api/reaigen/web-creation/tours/${tourId}/thumbnail/`, {
+    method: "POST",
+    body: JSON.stringify({
+      workspace_revision: workspaceRevision,
+      image_data: imageData,
+    }),
+  });
+  invalidateCache(`/api/reaigen/splats/by-draft/${workspace.draft_id}/?all=true`);
+  return workspace;
 }
 
 interface WebTourUploadInit {

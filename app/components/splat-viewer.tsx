@@ -953,6 +953,7 @@ export interface SplatViewerHandle {
   undoSplatPrune: () => void;
   resetSplatPrune: () => void;
   exportPrunedPly: (filename?: string) => Promise<File | null>;
+  captureThumbnail: () => Promise<string | null>;
 }
 
 // ── Component ────────────────────────────────────────────────────────────────
@@ -2004,6 +2005,61 @@ const SplatViewer = forwardRef<SplatViewerHandle, Props>(function SplatViewer(
     });
   }, []);
 
+  const captureThumbnail = useCallback(async () => {
+    const engine = engineRef.current;
+    const camera = cameraRef.current;
+    const scene = sceneRef.current;
+    if (!engine || !camera || !scene || spatialGizmoManagerRef.current?.isDragging) {
+      return null;
+    }
+
+    const editorOverlayPrefixes = [
+      "reaigen-active-camera",
+      "reaigen-camera-",
+      "reaigen-gaussian-centers",
+      "reaigen-roomkit-",
+      "reaigen-splat-selection",
+      "reaigen-working-grid",
+    ];
+    const hidden: Array<{ mesh: any; enabled: boolean }> = (scene.meshes ?? [])
+      .filter((mesh: any) => editorOverlayPrefixes.some(
+        (prefix) => String(mesh.name ?? "").startsWith(prefix),
+      ))
+      .map((mesh: any) => ({ mesh, enabled: mesh.isEnabled?.() ?? true }));
+    hidden.forEach(({ mesh }) => mesh.setEnabled?.(false));
+
+    const gizmoManager = spatialGizmoManagerRef.current;
+    const attachedRoot = spatialRootRef.current;
+    if (gizmoManager) gizmoManager.attachToNode(null);
+    scene.render();
+    try {
+      const { CreateScreenshotUsingRenderTargetAsync } = await import(
+        "@babylonjs/core/Misc/screenshotTools.pure"
+      );
+      return await CreateScreenshotUsingRenderTargetAsync(
+        engine,
+        camera,
+        { width: 640, height: 400 },
+        "image/webp",
+        2,
+        true,
+        undefined,
+        false,
+        false,
+        true,
+        0.84,
+      );
+    } catch {
+      return null;
+    } finally {
+      hidden.forEach(({ mesh, enabled }) => mesh.setEnabled?.(enabled));
+      if (gizmoManager && attachedRoot && !attachedRoot.isDisposed?.()) {
+        gizmoManager.attachToNode(attachedRoot);
+      }
+      scene.render();
+    }
+  }, []);
+
   useImperativeHandle(ref, () => ({
     goToShot,
     goToPrev,
@@ -2023,6 +2079,7 @@ const SplatViewer = forwardRef<SplatViewerHandle, Props>(function SplatViewer(
     undoSplatPrune,
     resetSplatPrune,
     exportPrunedPly,
+    captureThumbnail,
   }), [
     goToShot,
     goToPrev,
@@ -2042,6 +2099,7 @@ const SplatViewer = forwardRef<SplatViewerHandle, Props>(function SplatViewer(
     undoSplatPrune,
     resetSplatPrune,
     exportPrunedPly,
+    captureThumbnail,
   ]);
 
   // ── Spatial inspection layers ──────────────────────────────────────────────

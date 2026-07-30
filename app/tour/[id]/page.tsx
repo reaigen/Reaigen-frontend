@@ -6,7 +6,9 @@ import { useAuth } from "../../components/hooks/use-auth";
 import {
   authorUsdSceneTransformOperation,
   getDraft,
+  getWebTourWorkspace,
   hasWebCreationAccess,
+  saveWebTourThumbnail,
   getSplatPackage,
   getSplatViewer,
   getSplatsByDraft,
@@ -131,6 +133,7 @@ export default function TourPage({
   const [globalTransformSaving, setGlobalTransformSaving] = useState(false);
   const [globalTransformError, setGlobalTransformError] = useState<string | null>(null);
   const splatRef = useRef<SplatViewerHandle | null>(null);
+  const thumbnailBackfillRef = useRef(false);
   const loadedCollisionSplatRef = useRef<number | null>(null);
   const resolvedSplatId = viewer?.splat_id ?? splatId;
   const viewerCameras = viewer?.cameras as CameraData | undefined;
@@ -163,6 +166,34 @@ export default function TourPage({
       })),
     [resolvedSplatId, viewer?.workspace?.nodes],
   );
+
+  const backfillAutomaticThumbnail = useCallback(async () => {
+    if (
+      thumbnailBackfillRef.current
+      || !spatialEditorAllowed
+      || !Number.isFinite(requestedTourId)
+    ) return;
+    thumbnailBackfillRef.current = true;
+    try {
+      const workspace = await getWebTourWorkspace(requestedTourId!);
+      if (workspace.thumbnail_revision === workspace.revision) return;
+      const imageData = await splatRef.current?.captureThumbnail();
+      if (!imageData) return;
+      await saveWebTourThumbnail(requestedTourId!, workspace.revision, imageData);
+    } catch {
+      // The tour remains usable if the derivative cannot be refreshed.
+    } finally {
+      thumbnailBackfillRef.current = false;
+    }
+  }, [requestedTourId, spatialEditorAllowed]);
+
+  useEffect(() => {
+    if (!viewerReady) return;
+    const timer = window.setTimeout(() => {
+      void backfillAutomaticThumbnail();
+    }, 500);
+    return () => window.clearTimeout(timer);
+  }, [backfillAutomaticThumbnail, viewerReady]);
 
   useEffect(() => {
     // Start downloading the renderer chunk while the viewer payload is still

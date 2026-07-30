@@ -32,6 +32,7 @@ import {
   getWebTourAssetStatus,
   getWebTourWorkspace,
   replaceWebTourAsset,
+  saveWebTourThumbnail,
   saveWebTourWorkspace,
   uploadWebTourAsset,
   type WebSceneTransform,
@@ -258,6 +259,7 @@ export default function WebTourEditorPage({
   const draftTransformRef = useRef<GlobalSceneTransform | null>(null);
   const selectedIdRef = useRef<string | null>(null);
   const pruneCommitLockRef = useRef(false);
+  const thumbnailCaptureRef = useRef<Promise<unknown>>(Promise.resolve());
 
   const requestClosePruneEditor = useCallback(() => {
     if (committingPrune) return;
@@ -490,6 +492,42 @@ export default function WebTourEditorPage({
 
   const lang = getUserLanguage(user?.localization);
 
+  const captureAutomaticThumbnail = useCallback((workspaceRevision: number) => {
+    const task = thumbnailCaptureRef.current
+      .catch(() => undefined)
+      .then(async () => {
+        const current = workspaceRef.current;
+        if (
+          !current
+          || current.revision !== workspaceRevision
+          || current.thumbnail_revision === workspaceRevision
+        ) return null;
+        const imageData = await viewerRef.current?.captureThumbnail();
+        if (!imageData) return null;
+        try {
+          const updated = await saveWebTourThumbnail(
+            tourId,
+            workspaceRevision,
+            imageData,
+          );
+          if (workspaceRef.current?.revision === updated.revision) {
+            workspaceRef.current = updated;
+            setWorkspace(updated);
+          }
+          return updated;
+        } catch {
+          // A cover is a best-effort derivative. Workspace saving must remain
+          // available if rendering or object storage is temporarily offline.
+          return null;
+        }
+      });
+    thumbnailCaptureRef.current = task.then(
+      () => undefined,
+      () => undefined,
+    );
+    return task;
+  }, [tourId]);
+
   const uploadFile = async (file: File) => {
     const extension = file.name.split(".").pop()?.toLowerCase();
     if (extension !== "ply" && extension !== "sog") {
@@ -578,11 +616,13 @@ export default function WebTourEditorPage({
         name: workspace.name,
         nodes,
       });
+      workspaceRef.current = saved;
       setWorkspace(saved);
       const savedSelected = saved.nodes.find((node) => node.id === selected?.id);
       if (savedSelected) setDraftTransform(runtimeTransform(savedSelected.transform));
       setTransformDirty(false);
       setWorkspaceDirty(false);
+      await captureAutomaticThumbnail(saved.revision);
       return true;
     } catch {
       setError(t("webEditor.saveFailed", lang));
@@ -685,7 +725,12 @@ export default function WebTourEditorPage({
     const saved = (workspaceDirty || transformDirty)
       ? await persistWorkspace()
       : true;
-    if (saved) router.push(`/draft/${draftId}`);
+    if (saved) {
+      if (!workspaceDirty && !transformDirty) {
+        await captureAutomaticThumbnail(workspace.revision);
+      }
+      router.push(`/draft/${draftId}`);
+    }
   };
 
   const commitPrunedAsset = async () => {
@@ -774,9 +819,11 @@ export default function WebTourEditorPage({
       nodes,
       cameras: cameraData.cameras as unknown as Array<Record<string, unknown>>,
     });
+    workspaceRef.current = saved;
     setWorkspace(saved);
     setTransformDirty(false);
     setWorkspaceDirty(false);
+    void captureAutomaticThumbnail(saved.revision);
     return {
       ...cameraData,
       cameras: saved.cameras as unknown as SavedCamera[],
@@ -822,6 +869,13 @@ export default function WebTourEditorPage({
         <SplatViewer
           key={`${selected.id}:${selectedAssetUrl}`}
           ref={viewerRef}
+          onReady={() => {
+            const revision = workspaceRef.current?.revision;
+            if (revision == null) return;
+            window.setTimeout(() => {
+              void captureAutomaticThumbnail(revision);
+            }, 700);
+          }}
           splatUrl={selectedAssetUrl}
           splatId={selected.splat_id}
           globalSceneTransform={draftTransform}
