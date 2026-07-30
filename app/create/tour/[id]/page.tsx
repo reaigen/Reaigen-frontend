@@ -366,16 +366,25 @@ export default function WebTourEditorPage({
     const clearOnVisibilityChange = () => {
       if (document.visibilityState !== "visible") clearFileDrag();
     };
+    const clearOnEscape = (event: KeyboardEvent) => {
+      if (event.key === "Escape") clearFileDrag();
+    };
     window.addEventListener("pageshow", clearFileDrag);
     window.addEventListener("pagehide", clearFileDrag);
     window.addEventListener("blur", clearFileDrag);
     window.addEventListener("dragend", clearFileDrag);
+    window.addEventListener("pointerdown", clearFileDrag, true);
+    window.addEventListener("pointerup", clearFileDrag, true);
+    window.addEventListener("keydown", clearOnEscape, true);
     document.addEventListener("visibilitychange", clearOnVisibilityChange);
     return () => {
       window.removeEventListener("pageshow", clearFileDrag);
       window.removeEventListener("pagehide", clearFileDrag);
       window.removeEventListener("blur", clearFileDrag);
       window.removeEventListener("dragend", clearFileDrag);
+      window.removeEventListener("pointerdown", clearFileDrag, true);
+      window.removeEventListener("pointerup", clearFileDrag, true);
+      window.removeEventListener("keydown", clearOnEscape, true);
       document.removeEventListener("visibilitychange", clearOnVisibilityChange);
       if (fileDragWatchdogRef.current != null) {
         window.clearTimeout(fileDragWatchdogRef.current);
@@ -1933,40 +1942,36 @@ export default function WebTourEditorPage({
         />
       ) : null}
 
-      {(dragActive || uploading) ? (
+      {dragActive && !uploading ? (
+        <div className="pointer-events-none absolute inset-3 z-40 rounded-[1.5rem] border-2 border-dashed border-foreground/25">
+          <div className="floating-capsule absolute left-1/2 top-20 flex min-h-10 w-max max-w-[calc(100vw-2rem)] -translate-x-1/2 items-center gap-2.5 !bg-card/95 px-4 shadow-elevated">
+            <UploadIcon size={15} className="shrink-0 text-foreground/50" />
+            <span className="truncate text-[11px] font-semibold">
+              {t("webEditor.dropTitle", lang)}
+            </span>
+            <span className="hidden text-[9px] text-muted-foreground sm:inline">
+              .PLY / .SOG · {formatBytes(10 * 1024 ** 3, lang)}
+            </span>
+          </div>
+        </div>
+      ) : null}
+
+      {uploading ? (
         <div className="absolute inset-0 z-50 flex items-center justify-center bg-background/82 p-6 backdrop-blur-md">
-          <div className="floating-panel relative w-full max-w-md p-7 text-center">
-            {!uploading ? (
-              <button
-                type="button"
-                className="floating-icon-button-sm absolute right-3 top-3 text-muted-foreground hover:bg-foreground/[0.06] hover:text-foreground"
-                onClick={clearFileDrag}
-                aria-label={t("common.close", lang)}
-              >
-                <CloseIcon size={13} />
-              </button>
-            ) : null}
+          <div className="floating-panel w-full max-w-md p-7 text-center">
             <UploadIcon size={26} className="mx-auto text-foreground/45" />
             <h2 className="mt-4 text-lg font-semibold">
-              {uploading ? t("webEditor.uploading", lang) : t("webEditor.dropTitle", lang)}
+              {t("webEditor.uploading", lang)}
             </h2>
             <p className="mt-2 truncate text-[12px] text-muted-foreground">
-              {uploading
-                ? `${uploadName} · ${Math.round(uploadProgress * 100)}%`
-                : t("webEditor.dropDescription", lang)}
+              {uploadName} · {Math.round(uploadProgress * 100)}%
             </p>
-            {uploading ? (
-              <div className="mt-4 h-1.5 overflow-hidden rounded-full bg-foreground/[0.08]">
-                <div
-                  className="h-full rounded-full bg-foreground transition-[width]"
-                  style={{ width: `${Math.max(2, uploadProgress * 100)}%` }}
-                />
-              </div>
-            ) : (
-              <p className="mt-4 text-[10px] text-muted-foreground">
-                .PLY / .SOG · {formatBytes(10 * 1024 ** 3, lang)}
-              </p>
-            )}
+            <div className="mt-4 h-1.5 overflow-hidden rounded-full bg-foreground/[0.08]">
+              <div
+                className="h-full rounded-full bg-foreground transition-[width]"
+                style={{ width: `${Math.max(2, uploadProgress * 100)}%` }}
+              />
+            </div>
           </div>
         </div>
       ) : null}
