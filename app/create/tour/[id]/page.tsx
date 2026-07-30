@@ -657,7 +657,10 @@ export default function WebTourEditorPage({
         if (
           !current
           || current.revision !== workspaceRevision
-          || current.thumbnail_revision === workspaceRevision
+          || (
+            current.thumbnail_revision === workspaceRevision
+            && current.thumbnail_renderer_version === 2
+          )
         ) return null;
         const thumbnailCamera = selectTourThumbnailCamera(current.cameras);
         if (!thumbnailCamera) return null;
@@ -1040,7 +1043,10 @@ export default function WebTourEditorPage({
             // Backfill covers for tours authored before automatic camera
             // thumbnails existed. The render is off-screen and never changes
             // the interactive editor camera.
-            if (workspace.thumbnail_revision !== workspace.revision) {
+            if (
+              workspace.thumbnail_revision !== workspace.revision
+              || workspace.thumbnail_renderer_version !== 2
+            ) {
               void captureAutomaticThumbnail(workspace.revision);
             }
           }}

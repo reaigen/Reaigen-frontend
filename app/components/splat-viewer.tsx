@@ -1140,6 +1140,7 @@ const SplatViewer = forwardRef<SplatViewerHandle, Props>(function SplatViewer(
   const onSplatSelectionChangeRef = useRef(onSplatSelectionChange);
   const inspectionSampleRef = useRef<SplatSample | null>(null);
   const resizeRef = useRef<(() => void) | null>(null);
+  const renderLoopRef = useRef<(() => void) | null>(null);
   const animRef = useRef<Anim>(defaultAnim());
   const shotIdxRef = useRef(0);
   const pathDataRef = useRef<{
@@ -2169,7 +2170,15 @@ const SplatViewer = forwardRef<SplatViewerHandle, Props>(function SplatViewer(
     const gizmoManager = spatialGizmoManagerRef.current;
     const attachedRoot = spatialRootRef.current;
     let renderCamera = camera;
-    let temporaryCamera: any = null;
+    const previousActiveCamera = scene.activeCamera;
+    const previousCamera = {
+      position: camera.position.clone(),
+      target: camera.getTarget().clone(),
+      up: camera.upVector.clone(),
+      fov: camera.fov,
+    };
+    const renderLoop = renderLoopRef.current;
+    let renderLoopPaused = false;
     if (gizmoManager) gizmoManager.attachToNode(null);
     try {
       if (savedCamera) {
@@ -2181,35 +2190,32 @@ const SplatViewer = forwardRef<SplatViewerHandle, Props>(function SplatViewer(
           transformSpatialDirection(savedCamera.up ?? [0, 1, 0]),
           [0, 1, 0],
         );
-        temporaryCamera = new B.FreeCamera(
-          "reaigen-tour-thumbnail-camera",
-          new B.Vector3(...position),
-          scene,
-        );
-        temporaryCamera.upVector.set(...up);
-        temporaryCamera.setTarget(new B.Vector3(
+        if (renderLoop) {
+          engine.stopRenderLoop(renderLoop);
+          renderLoopPaused = true;
+        }
+        scene.activeCamera = camera;
+        camera.upVector.set(...up);
+        camera.position.set(...position);
+        camera.setTarget(new B.Vector3(
           position[0] + forward[0],
           position[1] + forward[1],
           position[2] + forward[2],
         ));
-        temporaryCamera.fov = (
+        camera.fov = (
           typeof savedCamera.fov === "number" && Number.isFinite(savedCamera.fov)
             ? savedCamera.fov
             : camera.fov
         );
-        temporaryCamera.minZ = camera.minZ;
-        temporaryCamera.maxZ = camera.maxZ;
-        temporaryCamera.layerMask = camera.layerMask;
-        renderCamera = temporaryCamera;
+        renderCamera = camera;
       }
       const { CreateScreenshotUsingRenderTargetAsync } = await import(
         "@babylonjs/core/Misc/screenshotTools.pure"
       );
-      if (temporaryCamera) {
-        // The first RTT render creates/sorts Gaussian buffers for this camera.
-        // Discard it and capture the settled second RTT. Both passes remain
-        // off-screen; changing scene.activeCamera here would leak the temporary
-        // thumbnail pose into the interactive viewport/render loop.
+      if (savedCamera) {
+        // Gaussian splats sort only for the scene's active camera. Pause the
+        // visible render loop while the authored pose is active, warm its sort
+        // buffers, capture, then restore the editor camera before resuming.
         await CreateScreenshotUsingRenderTargetAsync(
           engine,
           renderCamera,
@@ -2253,12 +2259,19 @@ const SplatViewer = forwardRef<SplatViewerHandle, Props>(function SplatViewer(
     } catch {
       return null;
     } finally {
-      temporaryCamera?.dispose?.();
+      camera.position.copyFrom(previousCamera.position);
+      camera.upVector.copyFrom(previousCamera.up);
+      camera.setTarget(previousCamera.target);
+      camera.fov = previousCamera.fov;
+      scene.activeCamera = previousActiveCamera;
       hidden.forEach(({ mesh, enabled }) => mesh.setEnabled?.(enabled));
       if (gizmoManager && attachedRoot && !attachedRoot.isDisposed?.()) {
         gizmoManager.attachToNode(attachedRoot);
       }
       scene.render();
+      if (renderLoopPaused && renderLoop && !engine.isDisposed) {
+        engine.runRenderLoop(renderLoop);
+      }
     }
   }, [transformSpatialDirection, transformSpatialPoint]);
 
@@ -4412,7 +4425,7 @@ const SplatViewer = forwardRef<SplatViewerHandle, Props>(function SplatViewer(
         // stay responsive without holding the GPU at 60 fps.
         let lastIdleRenderAt = 0;
         let lastMotionAt = performance.now();
-        engine.runRenderLoop(() => {
+        const renderLoop = () => {
           const coast = immersiveCoastRef.current;
           const now = performance.now();
           const qualityMoving = viewerInitializing ||
@@ -4434,7 +4447,9 @@ const SplatViewer = forwardRef<SplatViewerHandle, Props>(function SplatViewer(
           if (!moving && now - lastIdleRenderAt < 500) return;
           lastIdleRenderAt = now;
           scene.render();
-        });
+        };
+        renderLoopRef.current = renderLoop;
+        engine.runRenderLoop(renderLoop);
         resizeRef.current = () => {
           engine.resize();
           immersiveRenderBurstUntilRef.current = performance.now() + 350;
@@ -4881,6 +4896,7 @@ const SplatViewer = forwardRef<SplatViewerHandle, Props>(function SplatViewer(
       gsRef.current = null;
       compositionMeshesRef.current = [];
       fallbackSceneRef.current = null;
+      renderLoopRef.current = null;
       if (resizeRef.current) window.removeEventListener("resize", resizeRef.current);
       engineRef.current?.dispose();
     };

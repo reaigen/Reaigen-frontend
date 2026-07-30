@@ -1009,6 +1009,7 @@ export interface WebTourWorkspace {
   thumbnail_url: string | null;
   thumbnail_revision: number | null;
   thumbnail_camera_id: string | null;
+  thumbnail_renderer_version?: number | null;
 }
 
 export interface WebCreationAccess {
@@ -1111,6 +1112,7 @@ export async function saveWebTourThumbnail(
       workspace_revision: workspaceRevision,
       image_data: imageData,
       camera_id: cameraId,
+      renderer_version: 2,
     }),
   });
   invalidateCache(`/api/reaigen/splats/by-draft/${workspace.draft_id}/?all=true`);
