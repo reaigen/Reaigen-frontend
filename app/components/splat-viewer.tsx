@@ -2180,6 +2180,8 @@ const SplatViewer = forwardRef<SplatViewerHandle, Props>(function SplatViewer(
       target: camera.getTarget().clone(),
       up: camera.upVector.clone(),
       fov: camera.fov,
+      direction: camera.cameraDirection?.clone?.(),
+      rotation: camera.cameraRotation?.clone?.(),
     };
     const renderLoop = renderLoopRef.current;
     let renderLoopPaused = false;
@@ -2267,10 +2269,38 @@ const SplatViewer = forwardRef<SplatViewerHandle, Props>(function SplatViewer(
       camera.upVector.copyFrom(previousCamera.up);
       camera.setTarget(previousCamera.target);
       camera.fov = previousCamera.fov;
+      if (previousCamera.direction && camera.cameraDirection?.copyFrom) {
+        camera.cameraDirection.copyFrom(previousCamera.direction);
+      }
+      if (previousCamera.rotation && camera.cameraRotation?.copyFrom) {
+        camera.cameraRotation.copyFrom(previousCamera.rotation);
+      }
       scene.activeCamera = previousActiveCamera;
       hidden.forEach(({ mesh, enabled }) => mesh.setEnabled?.(enabled));
       if (gizmoManager && attachedRoot && !attachedRoot.isDisposed?.()) {
         gizmoManager.attachToNode(attachedRoot);
+      }
+
+      // The thumbnail and the editor reuse Babylon's one Gaussian sort worker.
+      // Restoring only the camera pose is insufficient: a static editor camera
+      // may never request another sort, leaving the visible canvas sorted for
+      // the off-screen cover pose. Force and await the restored-camera sort
+      // before the interactive render loop resumes.
+      const gaussian = gsRef.current as any;
+      gaussian?.computeWorldMatrix?.(true);
+      gaussian?._postToWorker?.(true);
+      for (let attempt = 0; attempt < 120; attempt += 1) {
+        const restoredSort = gaussian?._cameraViewInfos?.get(camera.uniqueId);
+        if (
+          !gaussian
+          || (
+            restoredSort?.splatIndexBufferSet
+            && restoredSort.sortAppliedId === restoredSort.sortRequestId
+          )
+        ) break;
+        await new Promise<void>((resolve) => {
+          window.setTimeout(resolve, 16);
+        });
       }
       scene.render();
       if (renderLoopPaused && renderLoop && !engine.isDisposed) {

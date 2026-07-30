@@ -1047,18 +1047,11 @@ export default function WebTourEditorPage({
         <SplatViewer
           key={`${selected.id}:${selectedAssetUrl}:${viewerReloadKey}`}
           ref={viewerRef}
-          onReady={() => {
-            setViewerFailed(false);
-            // Backfill covers for tours authored before automatic camera
-            // thumbnails existed. The render is off-screen and never changes
-            // the interactive editor camera.
-            if (
-              workspace.thumbnail_revision !== workspace.revision
-              || workspace.thumbnail_renderer_version !== 2
-            ) {
-              void captureAutomaticThumbnail(workspace.revision);
-            }
-          }}
+          // Loading a scene must be a read-only operation. Cover rendering is
+          // scheduled after an explicit workspace/camera save; doing it here
+          // moved the live Gaussian sort to a hidden camera immediately after
+          // the first frame and could leave an otherwise healthy scene blank.
+          onReady={() => setViewerFailed(false)}
           splatUrl={selectedAssetUrl}
           splatId={selected.splat_id}
           outputsVersion={selected.asset.fingerprint}
