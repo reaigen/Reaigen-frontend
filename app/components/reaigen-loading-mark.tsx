@@ -26,15 +26,13 @@ export function ReaigenLoadingMark({
       >
         <span className="block h-full w-1/2 animate-[shimmer-bar_1.2s_ease-in-out_infinite] rounded-full bg-foreground/40" />
       </div>
-      {status ? (
-        <span
-          className="min-h-5 text-[12px] text-muted-foreground"
-          role="status"
-          aria-live="polite"
-        >
-          {status}
-        </span>
-      ) : null}
+      <span
+        className="h-5 w-[min(16rem,calc(100vw-2rem))] truncate text-center text-[12px] text-muted-foreground"
+        role="status"
+        aria-live="polite"
+      >
+        {status || "\u00A0"}
+      </span>
     </div>
   );
 }

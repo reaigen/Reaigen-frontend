@@ -70,7 +70,7 @@ function EditorViewportLoading() {
       aria-live="polite"
       aria-label="Reaigen"
     >
-      <ReaigenLoadingMark className="animate-fade-in" />
+      <ReaigenLoadingMark />
     </div>
   );
 }
