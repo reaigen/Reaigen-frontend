@@ -733,8 +733,8 @@ export function DraftTourAssetsPanel({
   };
 
   return (
-    <section className="mt-6 overflow-hidden rounded-[1.5rem] border border-border/70 bg-card shadow-card sm:mt-8 sm:rounded-2xl">
-      <header className="flex items-center gap-3 border-b border-border/60 px-4 py-4 sm:justify-between sm:px-5">
+    <section className="mt-5 overflow-hidden rounded-[1.5rem] border border-border/70 bg-card shadow-card sm:mt-8 sm:rounded-2xl">
+      <header className="flex items-center gap-3 border-b border-border/60 px-3.5 py-3 sm:justify-between sm:px-5 sm:py-4">
         <button
           type="button"
           disabled={!payload?.assets.length}
@@ -742,7 +742,7 @@ export function DraftTourAssetsPanel({
           className="-m-1 flex min-w-0 flex-1 items-center gap-3 rounded-xl p-1 text-left transition-colors enabled:hover:bg-foreground/[0.035] disabled:cursor-default"
           aria-label={payload?.assets.length ? text.manage : undefined}
         >
-          <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-foreground/[0.045] text-foreground/55">
+          <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-foreground/[0.045] text-foreground/55 sm:h-9 sm:w-9">
             <TourIcon size={17} />
           </span>
           <div className="min-w-0">
@@ -832,7 +832,7 @@ export function DraftTourAssetsPanel({
             return (
               <article
                 key={asset.id}
-                className="grid grid-cols-[76px_minmax(0,1fr)] gap-3 p-4 sm:grid-cols-[108px_minmax(0,1fr)_auto] sm:items-center sm:gap-4 sm:px-5"
+                className="grid grid-cols-[82px_minmax(0,1fr)] gap-3 p-3.5 sm:grid-cols-[108px_minmax(0,1fr)_auto] sm:items-center sm:gap-4 sm:px-5 sm:py-4"
               >
                 <div className="relative aspect-[16/10] overflow-hidden rounded-xl bg-surface-subtle ring-1 ring-inset ring-border/45">
                   {thumbnail ? (
@@ -869,7 +869,7 @@ export function DraftTourAssetsPanel({
                     {assetSubtitle(asset, lang)}
                   </p>
 
-                  <div className="mt-2 flex flex-wrap items-center gap-1.5">
+                  <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
                     <StatusPill tone={state.tone} dot className="shrink-0">
                       {state.label}
                     </StatusPill>
@@ -903,7 +903,7 @@ export function DraftTourAssetsPanel({
                 </div>
 
                 {(canOpen || canEdit) ? (
-                  <div className="col-span-2 grid grid-cols-2 gap-2 pt-1 sm:col-span-1 sm:flex sm:flex-nowrap sm:justify-end sm:pt-0">
+                  <div className="col-span-2 grid grid-cols-2 gap-2 sm:col-span-1 sm:flex sm:flex-nowrap sm:justify-end sm:pt-0">
                     {canEdit ? (
                       <Button
                         asChild

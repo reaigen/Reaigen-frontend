@@ -739,7 +739,7 @@ export default function DraftPreviewPage({ params }: { params: Promise<{ id: str
         writeDraftDetailCache(user.id, draftId, updatedDraft);
       }}
     >
-      <div className="relative mx-auto w-full max-w-[980px] pb-28 md:pb-12">
+      <div className="relative mx-auto w-full max-w-[980px] pb-24 md:pb-12">
         {usingCachedDraft && (
           <DraftCacheNotice
             lang={lang}
@@ -749,32 +749,11 @@ export default function DraftPreviewPage({ params }: { params: Promise<{ id: str
           />
         )}
         {/* Creation toolbar */}
-        <div className="mb-5 flex items-center justify-between gap-3 md:mb-6">
+        <div className="mb-4 flex items-center justify-between gap-3 md:mb-6">
           <button type="button" onClick={() => router.push("/dashboard")} className="floating-control -ml-2 inline-flex items-center gap-1.5 px-3 text-[13px] font-medium text-muted-foreground transition-colors hover:bg-foreground/[0.04] hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2">
             <ArrowLeftIcon size={15} />
             {t("common.back", lang)}
           </button>
-          <div className="flex items-center gap-2 md:hidden">
-            <Button type="button" variant="ghost" size="icon" className="md:w-auto md:px-3" onClick={() => setMediaOpen(true)} aria-label={t("draft.media.manage", lang)} title={t("draft.media.manage", lang)}>
-              <ImageIcon size={16} />
-              <span className="hidden md:inline">{t("draft.media.manage", lang)}</span>
-            </Button>
-            <Button type="button" variant="ghost" size="icon" className="md:w-auto md:px-3" onClick={() => setVersionsOpen(true)} aria-label={t("draft.versions.title", lang)} title={t("draft.versions.title", lang)}>
-              <VersionsIcon size={16} />
-              <span className="hidden md:inline">{t("draft.versions.title", lang)}</span>
-            </Button>
-            <Button type="button" variant="outline" size="sm" className="hidden md:inline-flex" onClick={() => setEditorOpen(true)}>
-              <EditIcon size={14} /> {t("shareDialog.edit", lang)}
-            </Button>
-            <Button type="button" variant="outline" size="sm" onClick={() => router.push(`/draft/${draftId}/sharing`)} className="hidden md:inline-flex">
-              <ShareIcon size={14} /> {t("draft.share", lang)}
-            </Button>
-            {hasTour && (
-              <Button asChild size="sm" className="hidden md:inline-flex">
-                <Link href={`/tour/${primarySplatId}?tourId=${shareableTour?.id}`}><TourIcon size={14} /> {t("draft.viewTour", lang)}</Link>
-              </Button>
-            )}
-          </div>
         </div>
 
         {/* Media and property summary — one continuous workspace at every width. */}
@@ -825,7 +804,7 @@ export default function DraftPreviewPage({ params }: { params: Promise<{ id: str
               {hasTour ? <StatusPill tone="strong">{t("dashboard.tourReady", lang)}</StatusPill> : null}
             </div>
 
-            <h1 className="mt-3 text-[26px] font-semibold leading-[1.08] tracking-[-0.03em] sm:text-[30px] lg:text-[34px]">
+            <h1 className="mt-3 text-[28px] font-semibold leading-[1.08] tracking-[-0.03em] sm:text-[30px] lg:text-[34px]">
               {draft.title || t("dashboard.untitled", lang)}
             </h1>
             {address && (
@@ -835,13 +814,36 @@ export default function DraftPreviewPage({ params }: { params: Promise<{ id: str
               </p>
             )}
             {price && (
-              <p className="mt-4 text-[22px] font-semibold tracking-[-0.025em] tabular-nums">
+              <p className="mt-3 text-[22px] font-semibold tracking-[-0.025em] tabular-nums sm:mt-4">
                 {price}
                 {showOrigPrice && (
                   <span className="ml-2 text-[12px] font-normal tracking-normal text-muted-foreground tabular-nums">{origPrice}</span>
                 )}
               </p>
             )}
+
+            <div className="mt-5 grid grid-cols-2 overflow-hidden rounded-2xl border border-border/70 bg-card p-1 shadow-control md:hidden">
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                className="h-10 min-w-0 rounded-xl px-2"
+                onClick={() => setMediaOpen(true)}
+              >
+                <ImageIcon size={15} />
+                <span className="truncate">{t("draft.media.gallery", lang)}</span>
+              </Button>
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                className="h-10 min-w-0 rounded-xl border-l border-border/70 px-2"
+                onClick={() => setVersionsOpen(true)}
+              >
+                <VersionsIcon size={15} />
+                <span className="truncate">{t("draft.versions.short", lang)}</span>
+              </Button>
+            </div>
 
             {facts.length > 0 && (
               <div className="mt-5 grid grid-cols-2 gap-2.5 border-t border-border/70 pt-5 sm:grid-cols-3">
@@ -1020,21 +1022,27 @@ export default function DraftPreviewPage({ params }: { params: Promise<{ id: str
       />
 
       {/* Sticky mobile action bar */}
-      <div className="fixed inset-x-0 bottom-0 z-40 flex gap-2 border-t border-border bg-card/95 px-3 pb-[max(0.625rem,env(safe-area-inset-bottom))] pt-2.5 backdrop-blur-xl md:hidden">
-        <Button type="button" variant="outline" size="sm" className="h-11 flex-1" onClick={() => setEditorOpen(true)}>
+      <div className="pointer-events-none fixed inset-x-0 bottom-0 z-40 px-3 pb-[max(0.625rem,env(safe-area-inset-bottom))] md:hidden">
+        <div className={cn(
+          "pointer-events-auto mx-auto grid max-w-md gap-1 rounded-[1.35rem] border border-border/80 bg-card/95 p-1.5 shadow-floating backdrop-blur-xl",
+          hasTour ? "grid-cols-[0.9fr_0.9fr_1.2fr]" : "grid-cols-2",
+        )}>
+        <Button type="button" variant="ghost" size="sm" className="h-11 min-w-0 rounded-2xl px-2" onClick={() => setEditorOpen(true)}>
           <EditIcon size={15} /> {t("shareDialog.edit", lang)}
         </Button>
-        <Button type="button" variant="outline" size="icon-sm" className="h-11 w-11 shrink-0" onClick={() => router.push(`/draft/${draftId}/sharing`)} aria-label={t("draft.share", lang)}>
+        <Button type="button" variant="ghost" size="sm" className="h-11 min-w-0 rounded-2xl px-2" onClick={() => router.push(`/draft/${draftId}/sharing`)} aria-label={t("draft.share", lang)}>
           <ShareIcon size={15} />
+          <span className="truncate">{t("draft.share", lang)}</span>
         </Button>
         {hasTour && (
-          <Button asChild variant="default" size="sm" className="h-11 flex-1">
+          <Button asChild variant="default" size="sm" className="h-11 min-w-0 rounded-2xl px-2">
             <Link href={`/tour/${primarySplatId}?tourId=${shareableTour?.id}`}>
               <TourIcon size={15} />
-              {t("draft.viewTour", lang)}
+              <span className="truncate">{t("draft.viewTourShort", lang)}</span>
             </Link>
           </Button>
         )}
+        </div>
       </div>
     </AppShell>
   );
