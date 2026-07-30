@@ -536,12 +536,6 @@ export function DraftTourAssetsPanel({
     )) ?? [],
     [payload?.assets, splatsById],
   );
-  const thumbnailsBySplatId = React.useMemo(() => new Map(
-    [...splatsById].flatMap(([splatId, splat]) => {
-      const thumbnail = splat.signed_outputs?.thumbnail ?? splat.thumbnail_url;
-      return thumbnail ? [[splatId, thumbnail] as const] : [];
-    }),
-  ), [splatsById]);
   const orderedAssets = React.useMemo(() => (
     [...(payload?.assets ?? [])].sort((left, right) => {
       const leftSelection = selections[left.id];
@@ -812,9 +806,7 @@ export function DraftTourAssetsPanel({
             const selection = selections[asset.id];
             const state = assetStatus(asset, selection, text, lang);
             const displayName = assetDisplayName(asset, lang);
-            const thumbnail = asset.source_splat_id
-              ? thumbnailsBySplatId.get(asset.source_splat_id)
-              : null;
+            const thumbnail = asset.thumbnail_url;
             const canPreview = canPreviewOnWeb(
               asset,
               asset.source_splat_id
@@ -1003,9 +995,7 @@ export function DraftTourAssetsPanel({
                   const selection = selections[asset.id];
                   const state = assetStatus(asset, selection, text, lang);
                   const displayName = assetDisplayName(asset, lang);
-                  const thumbnail = asset.source_splat_id
-                    ? thumbnailsBySplatId.get(asset.source_splat_id)
-                    : null;
+                  const thumbnail = asset.thumbnail_url;
                   const canPreview = canPreviewOnWeb(
                     asset,
                     asset.source_splat_id

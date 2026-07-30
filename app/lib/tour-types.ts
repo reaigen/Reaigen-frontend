@@ -619,6 +619,7 @@ export interface DraftTourAsset {
   renovation_of_asset_id: string | null;
   source_splat_id: number | null;
   source_scan_bundle_id: number | null;
+  thumbnail_url: string | null;
   status: string;
   editor_workspace?: boolean;
   is_product_published: boolean;

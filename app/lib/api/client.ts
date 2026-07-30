@@ -1008,6 +1008,7 @@ export interface WebTourWorkspace {
   accepted_formats: Array<"ply" | "sog">;
   thumbnail_url: string | null;
   thumbnail_revision: number | null;
+  thumbnail_camera_id: string | null;
 }
 
 export interface WebCreationAccess {
@@ -1102,12 +1103,14 @@ export async function saveWebTourThumbnail(
   tourId: number,
   workspaceRevision: number,
   imageData: string,
+  cameraId: string,
 ): Promise<WebTourWorkspace> {
   const workspace = await request(`/api/reaigen/web-creation/tours/${tourId}/thumbnail/`, {
     method: "POST",
     body: JSON.stringify({
       workspace_revision: workspaceRevision,
       image_data: imageData,
+      camera_id: cameraId,
     }),
   });
   invalidateCache(`/api/reaigen/splats/by-draft/${workspace.draft_id}/?all=true`);

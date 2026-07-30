@@ -131,10 +131,7 @@ export default function SharingPage({ params }: { params: Promise<{ id: string }
   const shareableTour = selectShareableTour(tourAssets, legacyPrimarySplatId);
   const hasTour = Boolean(shareableTour);
   const primarySplatId = shareableTour?.source_splat_id ?? undefined;
-  const primarySplat = splatData?.splats.find(
-    (splat) => (splat.splat_id ?? splat.id) === primarySplatId,
-  ) ?? legacyPrimarySplat;
-  const thumbUrl = primarySplat?.signed_outputs?.thumbnail ?? primarySplat?.thumbnail_url ?? null;
+  const thumbUrl = shareableTour?.thumbnail_url ?? null;
   const fpUrl = floorplan?.composite_url ?? null;
   const hasPhotos = currentGalleryUploads(draft?.raw_uploads ?? [], "image").length > 0;
   const hasFloorplan = !!fpUrl || (draft?.draft_data ?? []).some(

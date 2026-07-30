@@ -9,6 +9,7 @@ import type {
   CameraData,
   GlobalSceneTransform,
   RoomKitCageWall,
+  SavedCamera,
   SpatialCameraMode,
   SpatialCameraSample,
   SpatialTransformTool,
@@ -996,7 +997,7 @@ export interface SplatViewerHandle {
   exportPruneMask: (baseAssetFingerprint: string) => SplatPruneMask | null;
   markSplatPruneSaved: () => void;
   exportPrunedPly: (filename?: string) => Promise<File | null>;
-  captureThumbnail: () => Promise<string | null>;
+  captureThumbnail: (camera?: SavedCamera | null) => Promise<string | null>;
 }
 
 // ── Component ────────────────────────────────────────────────────────────────
@@ -2065,11 +2066,12 @@ const SplatViewer = forwardRef<SplatViewerHandle, Props>(function SplatViewer(
     });
   }, []);
 
-  const captureThumbnail = useCallback(async () => {
+  const captureThumbnail = useCallback(async (savedCamera?: SavedCamera | null) => {
     const engine = engineRef.current;
     const camera = cameraRef.current;
     const scene = sceneRef.current;
-    if (!engine || !camera || !scene || spatialGizmoManagerRef.current?.isDragging) {
+    const B = babylonRef.current;
+    if (!engine || !camera || !scene || !B || spatialGizmoManagerRef.current?.isDragging) {
       return null;
     }
 
@@ -2090,15 +2092,49 @@ const SplatViewer = forwardRef<SplatViewerHandle, Props>(function SplatViewer(
 
     const gizmoManager = spatialGizmoManagerRef.current;
     const attachedRoot = spatialRootRef.current;
+    const originalActiveCamera = scene.activeCamera;
+    let renderCamera = camera;
+    let temporaryCamera: any = null;
     if (gizmoManager) gizmoManager.attachToNode(null);
-    scene.render();
     try {
+      if (savedCamera) {
+        const position = transformSpatialPoint(savedCamera.position);
+        const forward = normalizeVec3(
+          transformSpatialDirection(savedCamera.forward),
+        );
+        const up = normalizeVec3(
+          transformSpatialDirection(savedCamera.up ?? [0, 1, 0]),
+          [0, 1, 0],
+        );
+        temporaryCamera = new B.FreeCamera(
+          "reaigen-tour-thumbnail-camera",
+          new B.Vector3(...position),
+          scene,
+        );
+        temporaryCamera.upVector.set(...up);
+        temporaryCamera.setTarget(new B.Vector3(
+          position[0] + forward[0],
+          position[1] + forward[1],
+          position[2] + forward[2],
+        ));
+        temporaryCamera.fov = (
+          typeof savedCamera.fov === "number" && Number.isFinite(savedCamera.fov)
+            ? savedCamera.fov
+            : camera.fov
+        );
+        temporaryCamera.minZ = camera.minZ;
+        temporaryCamera.maxZ = camera.maxZ;
+        temporaryCamera.layerMask = camera.layerMask;
+        renderCamera = temporaryCamera;
+        scene.activeCamera = temporaryCamera;
+      }
+      scene.render();
       const { CreateScreenshotUsingRenderTargetAsync } = await import(
         "@babylonjs/core/Misc/screenshotTools.pure"
       );
       return await CreateScreenshotUsingRenderTargetAsync(
         engine,
-        camera,
+        renderCamera,
         { width: 640, height: 400 },
         "image/webp",
         2,
@@ -2112,13 +2148,15 @@ const SplatViewer = forwardRef<SplatViewerHandle, Props>(function SplatViewer(
     } catch {
       return null;
     } finally {
+      scene.activeCamera = originalActiveCamera;
+      temporaryCamera?.dispose?.();
       hidden.forEach(({ mesh, enabled }) => mesh.setEnabled?.(enabled));
       if (gizmoManager && attachedRoot && !attachedRoot.isDisposed?.()) {
         gizmoManager.attachToNode(attachedRoot);
       }
       scene.render();
     }
-  }, []);
+  }, [transformSpatialDirection, transformSpatialPoint]);
 
   useImperativeHandle(ref, () => ({
     goToShot,

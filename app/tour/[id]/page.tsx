@@ -14,6 +14,7 @@ import {
   getSplatsByDraft,
 } from "../../lib/api/client";
 import { isApiNotFound } from "../../lib/api/error-message";
+import { selectTourThumbnailCamera } from "../../lib/tour-thumbnail-camera";
 import type {
   CameraData,
   DraftDetailItem,
@@ -181,9 +182,18 @@ export default function TourPage({
     try {
       const workspace = await getWebTourWorkspace(requestedTourId!);
       if (workspace.thumbnail_revision === workspace.revision) return;
-      const imageData = await splatRef.current?.captureThumbnail();
+      const thumbnailCamera = selectTourThumbnailCamera(workspace.cameras);
+      if (!thumbnailCamera) return;
+      const imageData = await splatRef.current?.captureThumbnail(
+        thumbnailCamera.camera,
+      );
       if (!imageData) return;
-      await saveWebTourThumbnail(requestedTourId!, workspace.revision, imageData);
+      await saveWebTourThumbnail(
+        requestedTourId!,
+        workspace.revision,
+        imageData,
+        thumbnailCamera.cameraId,
+      );
     } catch {
       // The tour remains usable if the derivative cannot be refreshed.
     } finally {

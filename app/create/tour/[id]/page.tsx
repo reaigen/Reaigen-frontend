@@ -50,6 +50,7 @@ import {
   clampSceneScaleComponent,
   sceneScaleMagnitude,
 } from "../../../lib/global-scene-transform";
+import { selectTourThumbnailCamera } from "../../../lib/tour-thumbnail-camera";
 import type {
   SplatPruneMask,
   SplatSelectionOperation,
@@ -597,13 +598,18 @@ export default function WebTourEditorPage({
           || current.revision !== workspaceRevision
           || current.thumbnail_revision === workspaceRevision
         ) return null;
-        const imageData = await viewerRef.current?.captureThumbnail();
+        const thumbnailCamera = selectTourThumbnailCamera(current.cameras);
+        if (!thumbnailCamera) return null;
+        const imageData = await viewerRef.current?.captureThumbnail(
+          thumbnailCamera.camera,
+        );
         if (!imageData) return null;
         try {
           const updated = await saveWebTourThumbnail(
             tourId,
             workspaceRevision,
             imageData,
+            thumbnailCamera.cameraId,
           );
           if (workspaceRef.current?.revision === updated.revision) {
             workspaceRef.current = updated;

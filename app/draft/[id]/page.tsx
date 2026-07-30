@@ -712,14 +712,10 @@ export default function DraftPreviewPage({ params }: { params: Promise<{ id: str
     : null;
   const shareableTour = selectShareableTour(tourAssets, legacyPrimarySplatId);
   const primarySplatId = shareableTour?.source_splat_id ?? undefined;
-  const primarySplat = splatData?.splats.find(
-    (splat) => (splat.splat_id ?? splat.id) === primarySplatId,
-  ) ?? legacyPrimarySplat;
   const hasTour = Boolean(
     shareableTour,
   );
-  const thumbUrl = primarySplat?.signed_outputs?.thumbnail ?? primarySplat?.thumbnail_url ?? null;
-  const hasMedia = images.length > 0 || videos.length > 0 || !!thumbUrl;
+  const hasMedia = images.length > 0 || videos.length > 0;
   const hasFloorplan = !!(
     draft.floorplan_id ||
     draft.draft_data?.some((d) => d.data_key === "captured_room_json" || d.data_key === "wall_graph_json")
@@ -785,12 +781,11 @@ export default function DraftPreviewPage({ params }: { params: Promise<{ id: str
         <div className="space-y-6 lg:space-y-8">
           {hasMedia && (
             <div className="min-w-0 space-y-4">
-              {(images.length > 0 || thumbUrl) && (
+              {images.length > 0 && (
                 <div className="detail-hero-frame overflow-hidden rounded-[1.5rem] shadow-card ring-1 ring-border/75 sm:rounded-2xl">
                   <DraftImageGallery
                     images={images}
                     alt={draft.title}
-                    fallbackUrl={thumbUrl}
                     lang={lang}
                     onActiveImageChange={setActiveImageId}
                     onManage={() => setMediaOpen(true)}
