@@ -418,36 +418,18 @@ function getFeatureChips(d: DraftDetailItem, lang: string): string[] {
 function DraftPreviewSkeleton({ lang }: { lang: string }) {
   return (
     <div
-      className="mx-auto w-full max-w-[980px] pb-28 md:pb-12"
+      className="mx-auto flex min-h-[62dvh] w-full max-w-[980px] items-center justify-center"
       role="status"
       aria-label={t("draft.media.loading", lang)}
       aria-busy="true"
     >
-      <div className="mb-5 flex min-h-11 items-center justify-between gap-3 md:mb-6 md:min-h-9">
-        <div className="h-4 w-16 rounded-full bg-muted/75" />
-        <div className="flex gap-2 lg:hidden">
-          <div className="h-11 w-11 rounded-full bg-muted/75 md:h-9 md:w-24" />
-          <div className="h-11 w-11 rounded-full bg-muted/75 md:h-9 md:w-24" />
+      <div className="flex w-40 flex-col items-center gap-3">
+        <div className="loading-progress-track w-full">
+          <span className="loading-progress-indeterminate" />
         </div>
-      </div>
-      <div className="space-y-6 lg:space-y-8">
-        <div className="min-w-0 space-y-4">
-          <div className="aspect-[16/10] w-full overflow-hidden rounded-[1.5rem] bg-muted/65 shadow-card ring-1 ring-border/60 sm:rounded-2xl md:aspect-video">
-            <div className="h-full w-full animate-pulse bg-gradient-to-br from-muted/45 via-muted/80 to-muted/50 motion-reduce:animate-none" />
-          </div>
-          <div className="space-y-3">
-            <div className="flex gap-2">
-              <div className="h-7 w-28 rounded-full bg-muted/75" />
-              <div className="h-7 w-32 rounded-full bg-muted/60" />
-            </div>
-            <div className="h-9 w-3/5 max-w-xl rounded-xl bg-muted/75" />
-            <div className="h-4 w-48 rounded-full bg-muted/55" />
-          </div>
-        </div>
-        <div className="grid gap-4 sm:grid-cols-2">
-          <div className="h-28 rounded-[1.5rem] border border-border/60 bg-card sm:rounded-2xl" />
-          <div className="h-28 rounded-[1.5rem] border border-border/60 bg-card sm:rounded-2xl" />
-        </div>
+        <span className="text-[11px] font-medium text-muted-foreground">
+          {t("common.loading", lang)}
+        </span>
       </div>
     </div>
   );
@@ -526,6 +508,7 @@ export default function DraftPreviewPage({ params }: { params: Promise<{ id: str
   const [versionsOpen, setVersionsOpen] = useState(false);
   const [mediaOpen, setMediaOpen] = useState(false);
   const [usingCachedDraft, setUsingCachedDraft] = useState(false);
+  const [initialLoadComplete, setInitialLoadComplete] = useState(false);
   const [retryAttempt, setRetryAttempt] = useState(0);
   const [reloadNonce, setReloadNonce] = useState(0);
   const [manualRefreshPending, setManualRefreshPending] = useState(false);
@@ -562,6 +545,7 @@ export default function DraftPreviewPage({ params }: { params: Promise<{ id: str
       setUsingCachedDraft(false);
       setRetryAttempt(0);
       setManualRefreshPending(false);
+      setInitialLoadComplete(true);
       if (user?.id) writeDraftDetailCache(user.id, draftId, d);
       // Trigger description translation if not yet available and user's lang ≠ en
       if (d.description && lang !== "en" && d.translation_status !== "completed") {
@@ -588,6 +572,7 @@ export default function DraftPreviewPage({ params }: { params: Promise<{ id: str
     }).catch((err) => {
       if (!active) return;
       setManualRefreshPending(false);
+      setInitialLoadComplete(true);
       if (isApiNotFound(err)) {
         setUsingCachedDraft(false);
         setError("notFound");
@@ -645,7 +630,7 @@ export default function DraftPreviewPage({ params }: { params: Promise<{ id: str
     return () => window.removeEventListener("reai-media-updated", refreshMedia);
   }, [draftId]);
 
-  if (isLoading || (!draft && !error)) {
+  if (isLoading || !initialLoadComplete || (!draft && !error)) {
     if (!user) return <PageLoading />;
     return (
       <AppShell user={user} onLogout={logout} hideMobileNav>
@@ -893,6 +878,8 @@ export default function DraftPreviewPage({ params }: { params: Promise<{ id: str
           draftId={draftId}
           lang={lang}
           splats={splatData?.splats}
+          initialPayload={tourAssets}
+          onPayloadChanged={setTourAssets}
           onPrimaryChanged={(activeSplatId) => setSplatData((current) => (
             current ? { ...current, parent_splat_id: activeSplatId } : current
           ))}

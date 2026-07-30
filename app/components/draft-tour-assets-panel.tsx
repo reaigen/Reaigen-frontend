@@ -48,6 +48,19 @@ interface Selection {
   sortOrder: number;
 }
 
+function selectionsFromPayload(payload: DraftTourAssetsPayload | null) {
+  if (!payload) return {};
+  return Object.fromEntries(payload.assets.map((asset, index) => [
+    asset.id,
+    {
+      web: asset.publication.targets.includes("web"),
+      ios: asset.publication.targets.includes("ios"),
+      isPrimary: asset.publication.is_primary,
+      sortOrder: asset.publication.sort_order ?? payload.assets.length + index,
+    } satisfies Selection,
+  ]));
+}
+
 const COPY = {
   en: {
     title: "Virtual tours",
@@ -431,20 +444,30 @@ export function DraftTourAssetsPanel({
   draftId,
   lang,
   splats = [],
+  initialPayload = null,
+  onPayloadChanged,
   onPrimaryChanged,
 }: {
   draftId: number;
   lang: string;
   splats?: DraftSplatVersion[];
+  initialPayload?: DraftTourAssetsPayload | null;
+  onPayloadChanged?: (payload: DraftTourAssetsPayload) => void;
   onPrimaryChanged?: (splatId: number | null) => void;
 }) {
   const text = copyFor(lang);
   const router = useRouter();
   const [open, setOpen] = React.useState(false);
-  const [payload, setPayload] = React.useState<DraftTourAssetsPayload | null>(null);
-  const [selections, setSelections] = React.useState<Record<number, Selection>>({});
-  const [baseline, setBaseline] = React.useState("");
-  const [loading, setLoading] = React.useState(true);
+  const [payload, setPayload] = React.useState<DraftTourAssetsPayload | null>(
+    initialPayload,
+  );
+  const [selections, setSelections] = React.useState<Record<number, Selection>>(
+    () => selectionsFromPayload(initialPayload),
+  );
+  const [baseline, setBaseline] = React.useState(
+    () => selectionSignature(selectionsFromPayload(initialPayload)),
+  );
+  const [loading, setLoading] = React.useState(!initialPayload);
   const [saving, setSaving] = React.useState(false);
   const [editingNameId, setEditingNameId] = React.useState<number | null>(null);
   const [nameDraft, setNameDraft] = React.useState("");
@@ -456,6 +479,7 @@ export function DraftTourAssetsPanel({
   const [error, setError] = React.useState<string | null>(null);
   const [notice, setNotice] = React.useState<string | null>(null);
   const [canCreateInWeb, setCanCreateInWeb] = React.useState(false);
+  const [createAccessLoading, setCreateAccessLoading] = React.useState(true);
   const [creatingInWeb, setCreatingInWeb] = React.useState(false);
 
   React.useEffect(() => {
@@ -466,6 +490,9 @@ export function DraftTourAssetsPanel({
       })
       .catch(() => {
         if (active) setCanCreateInWeb(false);
+      })
+      .finally(() => {
+        if (active) setCreateAccessLoading(false);
       });
     return () => { active = false; };
   }, []);
@@ -483,19 +510,18 @@ export function DraftTourAssetsPanel({
   }, [draftId, lang, router]);
 
   const applyPayload = React.useCallback((next: DraftTourAssetsPayload) => {
-    const mapped = Object.fromEntries(next.assets.map((asset, index) => [
-      asset.id,
-      {
-        web: asset.publication.targets.includes("web"),
-        ios: asset.publication.targets.includes("ios"),
-        isPrimary: asset.publication.is_primary,
-        sortOrder: asset.publication.sort_order ?? next.assets.length + index,
-      } satisfies Selection,
-    ]));
+    const mapped = selectionsFromPayload(next);
     setPayload(next);
     setSelections(mapped);
     setBaseline(selectionSignature(mapped));
-  }, []);
+    onPayloadChanged?.(next);
+  }, [onPayloadChanged]);
+
+  React.useEffect(() => {
+    if (!initialPayload) return;
+    applyPayload(initialPayload);
+    setLoading(false);
+  }, [applyPayload, initialPayload]);
 
   const load = React.useCallback(async () => {
     setLoading(true);
@@ -510,8 +536,9 @@ export function DraftTourAssetsPanel({
   }, [applyPayload, draftId, lang]);
 
   React.useEffect(() => {
+    if (initialPayload) return;
     void load();
-  }, [load]);
+  }, [initialPayload, load]);
 
   React.useEffect(() => {
     if (open) void load();
@@ -770,7 +797,12 @@ export function DraftTourAssetsPanel({
               {text.manage}
             </Button>
           ) : null}
-          {canCreateInWeb ? (
+          {createAccessLoading ? (
+            <span
+              aria-hidden="true"
+              className="h-9 w-9 shrink-0 animate-pulse rounded-full bg-foreground/[0.055] motion-reduce:animate-none sm:w-32"
+            />
+          ) : canCreateInWeb ? (
             <Button
               type="button"
               variant="outline"
@@ -789,7 +821,10 @@ export function DraftTourAssetsPanel({
       </header>
 
       {loading && !payload ? (
-        <CollectionLoading label={t("common.loading", lang)} className="min-h-28 pt-7" />
+        <CollectionLoading
+          label={t("common.loading", lang)}
+          className="min-h-36 pt-10 sm:min-h-[6.25rem] sm:pt-6"
+        />
       ) : error && !payload ? (
         <div className="flex items-center gap-3 p-4 sm:px-5">
           <InfoIcon size={18} className="shrink-0 text-destructive" />
@@ -902,9 +937,14 @@ export function DraftTourAssetsPanel({
                   ) : null}
                 </div>
 
-                {(canOpen || canEdit) ? (
+                {(canOpen || canEdit || createAccessLoading) ? (
                   <div className="col-span-2 grid grid-cols-2 gap-2 sm:col-span-1 sm:flex sm:flex-nowrap sm:justify-end sm:pt-0">
-                    {canEdit ? (
+                    {createAccessLoading ? (
+                      <span
+                        aria-hidden="true"
+                        className="col-span-2 h-9 w-full animate-pulse rounded-full bg-foreground/[0.055] motion-reduce:animate-none sm:w-32"
+                      />
+                    ) : canEdit ? (
                       <Button
                         asChild
                         variant="outline"
@@ -921,7 +961,7 @@ export function DraftTourAssetsPanel({
                         </Link>
                       </Button>
                     ) : null}
-                    {canOpen && asset.source_splat_id ? (
+                    {!createAccessLoading && canOpen && asset.source_splat_id ? (
                       <Button
                         asChild
                         size="sm"
