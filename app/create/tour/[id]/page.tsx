@@ -243,7 +243,7 @@ function TransformNumberField({
           const direction: 1 | -1 = event.key === "ArrowUp" ? 1 : -1;
           increment(direction, multiplier);
         }}
-        className="h-9 rounded-xl border-border/65 bg-card pl-6 pr-2 text-right text-[11px] tabular-nums shadow-control hover:cursor-ns-resize"
+        className="h-8 rounded-lg border-border/75 bg-background/75 py-1 pl-5 pr-2 text-right text-[11px] tabular-nums shadow-none hover:cursor-ns-resize hover:border-foreground/25 focus-visible:border-foreground/35 focus-visible:ring-1"
         aria-label={`${label} ${axis}`}
       />
     </label>
@@ -1090,13 +1090,13 @@ export default function WebTourEditorPage({
       />
 
       <aside className={cn(
-        "floating-panel absolute left-3 top-20 z-20 max-h-[calc(100dvh-10rem)] w-[min(17rem,calc(100vw-1.5rem))] overflow-hidden transition-transform sm:left-4",
+        "floating-panel absolute left-3 top-20 z-20 max-h-[calc(100dvh-10rem)] w-[min(16.5rem,calc(100vw-1.5rem))] overflow-hidden transition-transform sm:left-4",
         !scenePanelOpen && "-translate-x-[calc(100%+1rem)]",
       )}>
-        <div className="flex items-center justify-between border-b border-border/65 px-4 py-3">
+        <div className="flex items-center justify-between border-b border-border/65 px-3 py-2.5">
           <span>
-            <span className="block text-[12px] font-semibold">{t("webEditor.sceneGraph", lang)}</span>
-            <span className="block text-[9px] text-muted-foreground">
+            <span className="block text-[10px] font-semibold">{t("webEditor.sceneGraph", lang)}</span>
+            <span className="block text-[8px] text-muted-foreground">
               {workspace.nodes.length} {t("webEditor.nodes", lang)}
             </span>
           </span>
@@ -1120,19 +1120,19 @@ export default function WebTourEditorPage({
           </span>
         </div>
         <div className="max-h-[calc(100dvh-14rem)] overflow-y-auto p-2">
-          <div className="flex items-center gap-2 rounded-[1rem] bg-foreground/[0.045] px-3 py-2.5 text-[11px] font-semibold">
+          <div className="flex items-center gap-2 border-b border-border/50 px-2 py-2 text-[10px] font-semibold">
             <TourIcon size={12} />
             /World
-            <span className="ml-auto text-[9px] font-normal text-muted-foreground">USD</span>
+            <span className="ml-auto text-[8px] font-normal text-muted-foreground">USD</span>
           </div>
-          <div className="ml-4 border-l border-foreground/[0.1] pl-2 pt-1">
+          <div className="ml-3 border-l border-foreground/[0.1] pl-1.5 pt-1">
             {workspace.nodes.map((node) => (
               <div
                 key={node.id}
                 className={cn(
-                  "group flex w-full items-center gap-2 rounded-xl px-2.5 py-2.5 text-left transition-colors",
+                  "group flex w-full items-center gap-1.5 rounded-md px-2 py-2 text-left transition-colors",
                   node.id === selectedId
-                    ? "bg-foreground text-background"
+                    ? "bg-foreground/[0.09] text-foreground"
                     : "text-foreground/65 hover:bg-foreground/[0.06] hover:text-foreground",
                 )}
               >
@@ -1150,7 +1150,7 @@ export default function WebTourEditorPage({
                 <button
                   type="button"
                   onClick={() => selectNode(node.id)}
-                  className="min-w-0 flex-1 truncate text-left text-[11px] font-medium"
+                  className="min-w-0 flex-1 truncate text-left text-[10px] font-medium"
                 >
                   {node.name}
                 </button>
@@ -1172,15 +1172,15 @@ export default function WebTourEditorPage({
                 if (compactLayout) setScenePanelOpen(false);
               }}
               className={cn(
-                "mt-1 flex w-full items-center gap-2 rounded-xl px-3 py-2.5 text-left text-[11px] font-medium transition-colors disabled:opacity-40",
+                "mt-1 flex w-full items-center gap-2 rounded-md px-2 py-2 text-left text-[10px] font-medium transition-colors disabled:opacity-40",
                 cameraEditorOpen
-                  ? "bg-foreground text-background"
+                  ? "bg-foreground/[0.09] text-foreground"
                   : "text-foreground/65 hover:bg-foreground/[0.06] hover:text-foreground",
               )}
             >
               <CameraIcon size={13} />
               <span className="min-w-0 flex-1">{t("webEditor.cameras", lang)}</span>
-              <span className="rounded-full bg-foreground/[0.07] px-2 py-0.5 text-[9px] tabular-nums">
+              <span className="rounded-md bg-foreground/[0.055] px-1.5 py-0.5 text-[8px] tabular-nums">
                 {workspace.cameras.length}
               </span>
             </button>
@@ -1200,16 +1200,18 @@ export default function WebTourEditorPage({
       ) : null}
 
       {selected && draftTransform && inspectorOpen && !cameraEditorOpen && (!compactLayout || !scenePanelOpen) ? (
-        <section className="floating-panel absolute right-3 top-20 z-20 max-h-[calc(100dvh-10rem)] w-[min(20rem,calc(100vw-1.5rem))] overflow-y-auto p-3 sm:right-4">
-          <div className="flex items-center justify-between gap-3">
+        <section className="floating-panel absolute right-3 top-20 z-20 max-h-[calc(100dvh-10rem)] w-[min(19.5rem,calc(100vw-1.5rem))] overflow-y-auto p-3 sm:right-4">
+          <div className="flex items-center justify-between gap-3 border-b border-border/60 pb-2.5">
             <span className="min-w-0">
-              <span className="block text-[10px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">
+              <span className="block text-[9px] font-semibold uppercase tracking-[0.11em] text-foreground/55">
                 {t("spatialEditor.inspector", lang)}
               </span>
-              <span className="block truncate font-mono text-[9px] text-muted-foreground">{selected.prim_path}</span>
+              <span className="mt-0.5 block truncate font-mono text-[8px] text-muted-foreground">
+                {selected.prim_path}
+              </span>
             </span>
             <span className="flex items-center gap-1">
-              <span className="rounded-full bg-foreground/[0.06] px-2 py-1 text-[9px] uppercase tracking-[0.08em] text-foreground/45">
+              <span className="rounded-md bg-foreground/[0.055] px-2 py-1 text-[8px] font-medium uppercase tracking-[0.08em] text-foreground/45">
                 {selected.asset.format ?? "…"}
               </span>
               <button
@@ -1228,19 +1230,19 @@ export default function WebTourEditorPage({
               const name = event.target.value;
               updateNode(selected.id, (node) => ({ ...node, name }));
             }}
-            className="mt-3 h-10 rounded-xl border-border/70 bg-card px-3 text-[12px] font-semibold shadow-control"
+            className="mt-2.5 h-9 rounded-lg border-border/75 bg-background/75 px-3 text-[11px] font-semibold shadow-none focus-visible:ring-1"
             aria-label={t("webEditor.sceneGraph", lang)}
           />
-          <div className="mt-2 grid grid-cols-2 rounded-xl bg-foreground/[0.045] p-1">
+          <div className="mt-2 grid grid-cols-2 rounded-lg border border-border/60 bg-foreground/[0.025] p-0.5">
             {(["world", "local"] as const).map((space) => (
               <button
                 key={space}
                 type="button"
                 onClick={() => setTransformSpace(space)}
                 className={cn(
-                  "h-8 rounded-lg text-[10px] font-medium transition-colors",
+                  "h-7 rounded-md text-[9px] font-medium transition-colors",
                   transformSpace === space
-                    ? "bg-card text-foreground shadow-control"
+                    ? "bg-card text-foreground shadow-sm"
                     : "text-muted-foreground hover:text-foreground",
                 )}
               >
@@ -1253,34 +1255,34 @@ export default function WebTourEditorPage({
             onClick={() => setSnapEnabled((value) => !value)}
             aria-pressed={snapEnabled}
             className={cn(
-              "mt-2 flex h-9 w-full items-center justify-between rounded-xl px-3 text-[10px] font-medium transition-colors",
+              "mt-1.5 flex h-8 w-full items-center justify-between rounded-lg border px-2.5 text-[9px] font-medium transition-colors",
               snapEnabled
                 ? "bg-foreground text-background"
-                : "bg-foreground/[0.045] text-muted-foreground hover:text-foreground",
+                : "border-border/60 bg-transparent text-muted-foreground hover:bg-foreground/[0.035] hover:text-foreground",
             )}
           >
             <span>{t("spatialEditor.snap", lang)}</span>
-            <span className="font-mono text-[9px] opacity-65">
+            <span className="font-mono text-[8px] opacity-65">
               {tool === "rotate" ? "5°" : tool === "scale" ? "0.05×" : "0.10 m"}
             </span>
           </button>
-          <div className="mt-3 space-y-3">
+          <div className="mt-2.5 overflow-hidden rounded-xl border border-border/65 bg-card/55">
             {([
               ["translation", t("spatialEditor.position", lang), draftTransform.translation, 0.05],
               ["rotationDeg", t("spatialEditor.rotation", lang), draftTransform.rotationDeg, 1],
             ] as const).map(([key, label, values, step]) => (
-              <div key={key} className="rounded-[1rem] bg-foreground/[0.035] p-2.5">
-                <div className="mb-2 flex items-center justify-between">
-                  <span className="text-[10px] font-semibold">{label}</span>
+              <div key={key} className="border-b border-border/55 p-2.5">
+                <div className="mb-1.5 flex items-center justify-between">
+                  <span className="text-[9px] font-semibold">{label}</span>
                   <button
                     type="button"
                     onClick={() => resetTransform(key)}
-                    className="rounded-full px-2 py-1 text-[9px] font-medium text-muted-foreground hover:bg-foreground/[0.06] hover:text-foreground"
+                    className="rounded-md px-1.5 py-0.5 text-[8px] font-medium text-muted-foreground hover:bg-foreground/[0.05] hover:text-foreground"
                   >
                     {t("spatialEditor.reset", lang)}
                   </button>
                 </div>
-                <div className="grid grid-cols-3 gap-1.5">
+                <div className="grid grid-cols-3 gap-1">
                   {values.map((value, index) => {
                     const axis = ["X", "Y", "Z"][index];
                     return (
@@ -1304,18 +1306,18 @@ export default function WebTourEditorPage({
                 </div>
               </div>
             ))}
-            <div className="rounded-[1rem] bg-foreground/[0.035] p-2.5">
-              <div className="mb-2 flex items-center justify-between">
-                <span className="text-[10px] font-semibold">{t("spatialEditor.scale", lang)}</span>
+            <div className="border-b border-border/55 p-2.5">
+              <div className="mb-1.5 flex items-center justify-between">
+                <span className="text-[9px] font-semibold">{t("spatialEditor.scale", lang)}</span>
                 <button
                   type="button"
                   onClick={() => resetTransform("scale")}
-                  className="rounded-full px-2 py-1 text-[9px] font-medium text-muted-foreground hover:bg-foreground/[0.06] hover:text-foreground"
+                  className="rounded-md px-1.5 py-0.5 text-[8px] font-medium text-muted-foreground hover:bg-foreground/[0.05] hover:text-foreground"
                 >
                   {t("spatialEditor.reset", lang)}
                 </button>
               </div>
-              <div className="grid grid-cols-3 gap-1.5">
+              <div className="grid grid-cols-3 gap-1">
                 {(draftTransform.scale3 ?? [
                   draftTransform.scale,
                   draftTransform.scale,
@@ -1351,16 +1353,25 @@ export default function WebTourEditorPage({
                 })}
               </div>
             </div>
-            <div className="flex items-center justify-between gap-2 border-t border-border/60 px-1 pt-3">
+            <div className="flex items-center justify-between gap-2 px-2.5 py-2">
               <button
                 type="button"
                 onClick={() => resetTransform("all")}
-                className="text-[10px] font-medium text-muted-foreground hover:text-foreground"
+                className="text-[8px] font-medium text-muted-foreground hover:text-foreground"
               >
                 {t("spatialEditor.resetAll", lang)}
               </button>
-              <span className="text-[9px] text-muted-foreground">
-                {workspaceDirty || transformDirty ? t("spatialEditor.unsavedTransform", lang) : t("spatialEditor.savedTransform", lang)}
+              <span className={cn(
+                "flex items-center gap-1.5 text-[8px]",
+                workspaceDirty || transformDirty ? "text-amber-700" : "text-muted-foreground",
+              )}>
+                <span className={cn(
+                  "h-1.5 w-1.5 rounded-full",
+                  workspaceDirty || transformDirty ? "bg-amber-500" : "bg-emerald-500",
+                )} />
+                {workspaceDirty || transformDirty
+                  ? t("spatialEditor.unsavedTransform", lang)
+                  : t("spatialEditor.savedTransform", lang)}
               </span>
             </div>
           </div>
