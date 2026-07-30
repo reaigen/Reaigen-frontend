@@ -1014,20 +1014,7 @@ export default function WebTourEditorPage({
         <SplatViewer
           key={`${selected.id}:${selectedAssetUrl}:${viewerReloadKey}`}
           ref={viewerRef}
-          onReady={() => {
-            setViewerFailed(false);
-            if (
-              workspaceDirty
-              || transformDirty
-              || splatSelectionStats.dirty
-              || hasPendingPruneMasks
-            ) return;
-            const revision = workspaceRef.current?.revision;
-            if (revision == null) return;
-            window.setTimeout(() => {
-              void captureAutomaticThumbnail(revision);
-            }, 700);
-          }}
+          onReady={() => setViewerFailed(false)}
           splatUrl={selectedAssetUrl}
           splatId={selected.splat_id}
           outputsVersion={selected.asset.fingerprint}
@@ -1049,35 +1036,31 @@ export default function WebTourEditorPage({
           onSplatSelectionChange={setSplatSelectionStats}
           onSceneFrame={(frame) => {
             if (
-              !selectedId
-              || autoGroundedNodesRef.current.has(selectedId)
-            ) return;
-            autoGroundedNodesRef.current.add(selectedId);
-            setDraftTransform((current) => {
-              if (!current) return current;
-              const isFreshIdentityTransform = (
-                current.translation.every((value) => Math.abs(value) < 1e-6)
-                && current.rotationDeg.every((value) => Math.abs(value) < 1e-6)
-                && Math.abs(current.scale - 1) < 1e-6
-                && (current.scale3 ?? [1, 1, 1]).every(
-                  (value) => Math.abs(value - 1) < 1e-6,
-                )
-              );
-              if (!isFreshIdentityTransform || Math.abs(frame.floorY) < 0.005) {
-                return current;
-              }
-              setTransformDirty(true);
-              setWorkspaceDirty(true);
-              window.requestAnimationFrame(() => {
-                window.requestAnimationFrame(() => {
-                  viewerRef.current?.frameScene(true);
-                });
-              });
-              return {
-                ...current,
-                translation: [0, Number((-frame.floorY).toFixed(4)), 0],
-              };
-            });
+              autoGroundedNodesRef.current.has(selected.id)
+            ) return undefined;
+            autoGroundedNodesRef.current.add(selected.id);
+            const current = viewportTransform;
+            const isFreshIdentityTransform = (
+              current.translation.every((value) => Math.abs(value) < 1e-6)
+              && current.rotationDeg.every((value) => Math.abs(value) < 1e-6)
+              && Math.abs(current.scale - 1) < 1e-6
+              && (current.scale3 ?? [1, 1, 1]).every(
+                (value) => Math.abs(value - 1) < 1e-6,
+              )
+            );
+            if (!isFreshIdentityTransform || Math.abs(frame.floorY) < 0.005) {
+              return undefined;
+            }
+            const groundedTransform: GlobalSceneTransform = {
+              ...current,
+              translation: [0, Number((-frame.floorY).toFixed(4)), 0],
+            };
+            draftTransformRef.current = groundedTransform;
+            setDraftTransformNodeId(selected.id);
+            setDraftTransform(groundedTransform);
+            setTransformDirty(true);
+            setWorkspaceDirty(true);
+            return groundedTransform;
           }}
           compositionAssets={compositionAssets}
           showSpatialGrid={showGrid}

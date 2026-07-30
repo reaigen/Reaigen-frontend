@@ -1019,7 +1019,11 @@ interface Props {
   onSpatialTransformStart?: () => void;
   onSpatialTransformEnd?: () => void;
   onSpatialTransformChange?: (transform: GlobalSceneTransform) => void;
-  onSceneFrame?: (frame: SceneFrame) => void;
+  /**
+   * Called as soon as canonical bounds are available. Returning a transform
+   * applies it synchronously before the first splat sort and visible frame.
+   */
+  onSceneFrame?: (frame: SceneFrame) => GlobalSceneTransform | void;
   onInspectionStats?: (stats: SplatInspectionStats | null) => void;
   spatialNavigation?: boolean;
   spatialCameraMode?: SpatialCameraMode;
@@ -2150,7 +2154,6 @@ const SplatViewer = forwardRef<SplatViewerHandle, Props>(function SplatViewer(
 
     const gizmoManager = spatialGizmoManagerRef.current;
     const attachedRoot = spatialRootRef.current;
-    const originalActiveCamera = scene.activeCamera;
     let renderCamera = camera;
     let temporaryCamera: any = null;
     if (gizmoManager) gizmoManager.attachToNode(null);
@@ -2184,12 +2187,42 @@ const SplatViewer = forwardRef<SplatViewerHandle, Props>(function SplatViewer(
         temporaryCamera.maxZ = camera.maxZ;
         temporaryCamera.layerMask = camera.layerMask;
         renderCamera = temporaryCamera;
-        scene.activeCamera = temporaryCamera;
       }
-      scene.render();
       const { CreateScreenshotUsingRenderTargetAsync } = await import(
         "@babylonjs/core/Misc/screenshotTools.pure"
       );
+      if (temporaryCamera) {
+        // The first RTT render creates/sorts Gaussian buffers for this camera.
+        // Discard it and capture the settled second RTT. Both passes remain
+        // off-screen; changing scene.activeCamera here would leak the temporary
+        // thumbnail pose into the interactive viewport/render loop.
+        await CreateScreenshotUsingRenderTargetAsync(
+          engine,
+          renderCamera,
+          { width: 640, height: 400 },
+          "image/webp",
+          1,
+          false,
+          undefined,
+          false,
+          false,
+          true,
+          0.84,
+        );
+        const gaussian = gsRef.current as any;
+        for (let attempt = 0; attempt < 120; attempt += 1) {
+          const cameraSort = gaussian?._cameraViewInfos?.get(
+            renderCamera.uniqueId,
+          );
+          if (
+            cameraSort?.splatIndexBufferSet
+            && cameraSort.sortAppliedId === cameraSort.sortRequestId
+          ) break;
+          await new Promise<void>((resolve) => {
+            window.setTimeout(resolve, 16);
+          });
+        }
+      }
       return await CreateScreenshotUsingRenderTargetAsync(
         engine,
         renderCamera,
@@ -2206,7 +2239,6 @@ const SplatViewer = forwardRef<SplatViewerHandle, Props>(function SplatViewer(
     } catch {
       return null;
     } finally {
-      scene.activeCamera = originalActiveCamera;
       temporaryCamera?.dispose?.();
       hidden.forEach(({ mesh, enabled }) => mesh.setEnabled?.(enabled));
       if (gizmoManager && attachedRoot && !attachedRoot.isDisposed?.()) {
@@ -4442,6 +4474,18 @@ const SplatViewer = forwardRef<SplatViewerHandle, Props>(function SplatViewer(
           mesh.parent = primaryRoot;
           return mesh;
         };
+        const publishSceneFrame = (frame: SceneFrame | null) => {
+          if (!frame) return;
+          fallbackSceneRef.current = frame;
+          const resolvedTransform = onSceneFrameRef.current?.(frame);
+          if (!resolvedTransform) return;
+          globalSceneTransformRef.current = resolvedTransform;
+          applyGaussianRootTransform(
+            BABYLON,
+            primaryRoot,
+            resolvedTransform,
+          );
+        };
         const initializeSplatEditing = (
           data: ArrayBuffer,
           sh?: Uint8Array[],
@@ -4580,10 +4624,7 @@ const SplatViewer = forwardRef<SplatViewerHandle, Props>(function SplatViewer(
           const sogSh = parsedSOG.sh && parsedSOG.sh.length ? parsedSOG.sh : undefined;
           const sogDegree = sogSh ? (parsedSOG.shDegree ?? 0) : 0;
           const renderData = initializeSplatEditing(parsedSOG.data, sogSh, sogDegree);
-          fallbackSceneRef.current = computeSceneFrameFromSplatBuffer(renderData.buffer);
-          if (fallbackSceneRef.current) {
-            onSceneFrameRef.current?.(fallbackSceneRef.current);
-          }
+          publishSceneFrame(computeSceneFrameFromSplatBuffer(renderData.buffer));
           splatBufferRef.current = renderData.buffer;
 
           gs = createPrimaryGaussian();
@@ -4628,10 +4669,7 @@ const SplatViewer = forwardRef<SplatViewerHandle, Props>(function SplatViewer(
             parsedSPZ.sh && parsedSPZ.sh.length ? parsedSPZ.sh : undefined,
             parsedSPZ.shDegree ?? 0,
           );
-          fallbackSceneRef.current = computeSceneFrameFromSplatBuffer(renderData.buffer);
-          if (fallbackSceneRef.current) {
-            onSceneFrameRef.current?.(fallbackSceneRef.current);
-          }
+          publishSceneFrame(computeSceneFrameFromSplatBuffer(renderData.buffer));
           splatBufferRef.current = renderData.buffer;
 
           gs = createPrimaryGaussian();
@@ -4659,10 +4697,7 @@ const SplatViewer = forwardRef<SplatViewerHandle, Props>(function SplatViewer(
             converted.sh,
             converted.shDegree ?? 0,
           );
-          fallbackSceneRef.current = computeSceneFrameFromSplatBuffer(renderData.buffer);
-          if (fallbackSceneRef.current) {
-            onSceneFrameRef.current?.(fallbackSceneRef.current);
-          }
+          publishSceneFrame(computeSceneFrameFromSplatBuffer(renderData.buffer));
           splatBufferRef.current = renderData.buffer;
           if (!cachedFull && splatId) void putCache(splatId, "full", fullConv, outputsVersion);
 
