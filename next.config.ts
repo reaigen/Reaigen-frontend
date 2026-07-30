@@ -71,6 +71,10 @@ const nextConfig: NextConfig = {
         ],
       },
       ...[
+        "/",
+        "/forgot-password",
+        "/reset-password",
+        "/verify-email",
         "/dashboard/:path*",
         "/draft/:path*",
         "/tour/:path*",
