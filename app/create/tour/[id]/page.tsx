@@ -584,6 +584,15 @@ export default function WebTourEditorPage({
   }, []);
 
   useEffect(() => {
+    // Non-uniform scale is authored as TRS, so its axes are necessarily local.
+    // Reflect that constraint in the control instead of showing World while
+    // Babylon correctly falls back to Local.
+    if (tool === "scale" && transformSpace !== "local") {
+      setTransformSpace("local");
+    }
+  }, [tool, transformSpace]);
+
+  useEffect(() => {
     const handleEditorShortcut = (event: KeyboardEvent) => {
       const target = event.target as HTMLElement | null;
       if (
@@ -1419,12 +1428,16 @@ export default function WebTourEditorPage({
               <button
                 key={space}
                 type="button"
+                disabled={tool === "scale" && space === "world"}
+                aria-pressed={transformSpace === space}
                 onClick={() => setTransformSpace(space)}
                 className={cn(
                   "h-7 rounded-md text-[9px] font-medium transition-colors",
                   transformSpace === space
                     ? "bg-card text-foreground shadow-sm"
                     : "text-muted-foreground hover:text-foreground",
+                  tool === "scale" && space === "world"
+                    && "cursor-not-allowed opacity-35 hover:text-muted-foreground",
                 )}
               >
                 {t(space === "world" ? "spatialEditor.worldSpace" : "spatialEditor.localSpace", lang)}

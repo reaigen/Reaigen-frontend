@@ -2426,16 +2426,36 @@ const SplatViewer = forwardRef<SplatViewerHandle, Props>(function SplatViewer(
     manager.enableAutoPicking = false;
     manager.clearGizmoOnEmptyPointerEvent = false;
     manager.scaleRatio = gizmoScale;
-    if (B.GizmoCoordinatesMode?.World != null) {
-      manager.coordinatesMode = spatialTransformSpace === "local"
-        ? B.GizmoCoordinatesMode.Local
-        : B.GizmoCoordinatesMode.World;
-    }
 
     manager.positionGizmoEnabled = spatialTransformTool === "move";
     manager.rotationGizmoEnabled = spatialTransformTool === "rotate";
     manager.scaleGizmoEnabled = spatialTransformTool === "scale";
     manager.attachToNode(root);
+
+    // GizmoManager does not propagate a coordinate mode to gizmos that do
+    // not exist yet. Apply it only after the active gizmo is constructed and
+    // attached; setting it before the `*GizmoEnabled` flags silently left
+    // every newly-created handle in Babylon's default local space.
+    if (B.GizmoCoordinatesMode?.World != null) {
+      const coordinatesMode = (
+        spatialTransformTool === "scale" || spatialTransformSpace === "local"
+      )
+        ? B.GizmoCoordinatesMode.Local
+        : B.GizmoCoordinatesMode.World;
+      manager.coordinatesMode = coordinatesMode;
+      if (manager.gizmos.positionGizmo) {
+        manager.gizmos.positionGizmo.coordinatesMode = coordinatesMode;
+      }
+      if (manager.gizmos.rotationGizmo) {
+        manager.gizmos.rotationGizmo.coordinatesMode = coordinatesMode;
+      }
+      // Babylon intentionally supports scale only in local coordinates:
+      // global non-uniform scaling of a rotated node requires a shear matrix,
+      // which is outside the saved TRS scene representation.
+      if (manager.gizmos.scaleGizmo) {
+        manager.gizmos.scaleGizmo.coordinatesMode = B.GizmoCoordinatesMode.Local;
+      }
+    }
 
     const palette = {
       x: B.Color3.FromHexString("#F2384A"),
