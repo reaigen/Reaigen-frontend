@@ -18,6 +18,7 @@ import { getUserLanguage, t } from "../lib/i18n";
 import type { SplatListItem } from "../lib/tour-types";
 import { Button } from "../lib/ui/button";
 import { WebCreateAction } from "../components/web-create-action";
+import { CollectionLoading } from "../components/collection-loading";
 
 type TourState = "ready" | "processing" | "issues";
 
@@ -116,17 +117,7 @@ export default function ToursPage() {
 
         <div className="min-w-0">
           {loading ? (
-          <div className="grid grid-cols-1 gap-5 md:grid-cols-2 md:gap-6 xl:gap-5 2xl:grid-cols-3">
-            {Array.from({ length: 6 }).map((_, index) => (
-              <CollectionCard key={index} loading>
-                <div className="aspect-[16/10] bg-muted/45" />
-                <div className="flex h-14 items-center justify-between px-4">
-                  <div className="h-3 w-1/2 rounded bg-muted/55" />
-                  <div className="h-3 w-14 rounded bg-muted/40" />
-                </div>
-              </CollectionCard>
-            ))}
-          </div>
+          <CollectionLoading label={t("common.loading", lang)} className="min-h-48" />
             ) : error ? (
           <CollectionState
             kind="error"
@@ -147,10 +138,7 @@ export default function ToursPage() {
               const ready = tourState(item) === "ready";
               const href = ready ? `/tour/${item.id}` : `/draft/${item.source_draft}`;
               return (
-                <CollectionCard
-                  key={item.id}
-                  revealIndex={index}
-                >
+                <CollectionCard key={item.id}>
                   <Link href={href} prefetch={ready} className="block focus-visible:outline-none">
                   <div className="relative aspect-[16/10] overflow-hidden bg-[#d8d2c8]">
                     {item.thumbnail_url ? (

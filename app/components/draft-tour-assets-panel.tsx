@@ -20,6 +20,7 @@ import type {
   DraftTourPublicationSelection,
 } from "../lib/tour-types";
 import { Button } from "../lib/ui/button";
+import { CollectionLoading } from "./collection-loading";
 import { Switch } from "../lib/ui/switch";
 import { cn } from "../lib/utils";
 import {
@@ -784,21 +785,7 @@ export function DraftTourAssetsPanel({
       </header>
 
       {loading && !payload ? (
-        <div className="divide-y divide-border/55">
-          {Array.from({ length: 2 }).map((_, index) => (
-            <div
-              key={index}
-              className="grid animate-pulse grid-cols-[88px_minmax(0,1fr)] gap-3 p-4 sm:grid-cols-[108px_minmax(0,1fr)_180px] sm:items-center sm:gap-4 sm:px-5"
-            >
-              <div className="aspect-[16/10] rounded-xl bg-muted/55" />
-              <div className="flex min-w-0 flex-col justify-center gap-2">
-                <div className="h-3 w-2/3 rounded bg-muted/60" />
-                <div className="h-2.5 w-1/2 rounded bg-muted/40" />
-              </div>
-              <div className="hidden h-8 rounded-full bg-muted/40 sm:block" />
-            </div>
-          ))}
-        </div>
+        <CollectionLoading label={t("common.loading", lang)} className="min-h-28 pt-7" />
       ) : error && !payload ? (
         <div className="flex items-center gap-3 p-4 sm:px-5">
           <InfoIcon size={18} className="shrink-0 text-destructive" />

@@ -28,6 +28,7 @@ import {
   type ShareStats,
 } from "../lib/share-ui";
 import { PageLoading } from "../components/page-loading";
+import { CollectionLoading } from "../components/collection-loading";
 import { PageHeader } from "../components/page-header";
 import { SidePanel } from "../components/side-panel";
 import { SearchField } from "../components/search-field";
@@ -394,19 +395,7 @@ export default function SharesPage() {
 
         {/* Content */}
         {loading ? (
-          <div className="space-y-2">
-            {Array.from({ length: 4 }).map((_, i) => (
-              <div key={i} className="animate-pulse rounded-xl border border-border/50 bg-surface px-4 py-3.5 shadow-card">
-                <div className="flex items-center gap-3">
-                  <div className="flex-1 space-y-1.5">
-                    <div className="h-3.5 w-1/3 rounded bg-muted/40" />
-                    <div className="h-2.5 w-2/5 rounded bg-muted/25" />
-                  </div>
-                  <div className="h-5 w-14 rounded-full bg-muted/30" />
-                </div>
-              </div>
-            ))}
-          </div>
+          <CollectionLoading label={t("common.loading", lang)} />
         ) : loadError ? (
           <CollectionState
             kind="error"

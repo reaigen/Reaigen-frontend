@@ -22,6 +22,7 @@ import { currentGalleryUploads } from "../lib/media";
 import { readDraftPageCache, writeDraftPageCache } from "../lib/resilient-draft-cache";
 import { resolveUnit, type UnitLookup } from "../lib/unit-catalog";
 import { WebCreateAction } from "../components/web-create-action";
+import { CollectionLoading } from "../components/collection-loading";
 
 function compactNumber(value: string | number | null | undefined, lang?: string) {
   if (value == null || value === "") return null;
@@ -88,6 +89,18 @@ export default function DashboardPage() {
   const abortRef = React.useRef<AbortController | null>(null);
   const sentinelRef = React.useRef<HTMLDivElement>(null);
   const draftsSettledRef = React.useRef(false);
+
+  // Restore this user's last successful page before paint. The live request
+  // still refreshes it immediately, but returning to the dashboard no longer
+  // swaps a grid of fake cards for real cards.
+  React.useLayoutEffect(() => {
+    if (!user?.id) return;
+    const cached = readDraftPageCache(user.id);
+    if (!cached?.results.length) return;
+    setDrafts(cached.results);
+    setHasMore(!!cached.next);
+    setTotalCount(cached.count);
+  }, [user?.id]);
 
   React.useEffect(() => {
     if (!isLoading && !isAuthenticated) router.replace("/");
@@ -294,13 +307,7 @@ export default function DashboardPage() {
 
         {/* Cards */}
         {draftsLoading && drafts.length === 0 ? (
-          <div className={`grid grid-cols-1 gap-7 ${gridCols === 2 ? "md:grid-cols-2" : "mx-auto max-w-2xl"}`}>
-            {Array.from({ length: gridCols === 2 ? 4 : 3 }).map((_, i) => (
-              <CollectionCard key={i} loading>
-                <div className="aspect-[16/10] bg-muted/45" />
-              </CollectionCard>
-            ))}
-          </div>
+          <CollectionLoading label={t("common.loading", lang)} className="min-h-48" />
         ) : draftsError ? (
           <CollectionState
             kind="error"
@@ -338,10 +345,7 @@ export default function DashboardPage() {
                     : null;
 
               return (
-                <CollectionCard
-                  key={draft.id}
-                  revealIndex={idx}
-                >
+                <CollectionCard key={draft.id}>
                   <Link
                     href={`/draft/${draft.id}`}
                     className="block focus-visible:outline-none"
@@ -404,13 +408,7 @@ export default function DashboardPage() {
           </div>
           {hasMore && <div ref={sentinelRef} className="h-px" />}
           {loadingMore && (
-            <div className={`grid grid-cols-1 gap-7 pt-7 ${gridCols === 2 ? "md:grid-cols-2" : "mx-auto max-w-2xl"}`}>
-              {Array.from({ length: gridCols === 2 ? 2 : 1 }).map((_, i) => (
-                <CollectionCard key={i} loading>
-                  <div className="aspect-[16/10] bg-muted/45" />
-                </CollectionCard>
-              ))}
-            </div>
+            <CollectionLoading label={t("common.loading", lang)} className="min-h-20 pt-7" />
           )}
           </>
         )}
