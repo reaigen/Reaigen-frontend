@@ -3374,8 +3374,16 @@ const SplatViewer = forwardRef<SplatViewerHandle, Props>(function SplatViewer(
     const pressed = new Set<string>();
     let previousPinchDistance: number | null = null;
     let previousCentroid: { x: number; y: number } | null = null;
+    let touchPoints = new Map<number, { x: number; y: number }>();
+    let previousTouchPinchDistance: number | null = null;
+    let previousTouchCentroid: { x: number; y: number } | null = null;
+    let touchCameraGesture = false;
     let flyYaw = 0;
     let flyPitch = 0;
+    const nativeTouchNavigation = (
+      compactTouch
+      && splatSelectionTool === "none"
+    );
 
     const syncFlyAngles = () => {
       const target = camera.getTarget();
@@ -3399,8 +3407,29 @@ const SplatViewer = forwardRef<SplatViewerHandle, Props>(function SplatViewer(
       if (values.length < 2) return null;
       return Math.hypot(values[0].x - values[1].x, values[0].y - values[1].y);
     };
+    const touchValues = () => [...touchPoints.values()];
+    const touchCentroid = () => {
+      const values = touchValues();
+      if (!values.length) return null;
+      return {
+        x: values.reduce((sum, value) => sum + value.x, 0) / values.length,
+        y: values.reduce((sum, value) => sum + value.y, 0) / values.length,
+      };
+    };
+    const touchPinchDistance = () => {
+      const values = touchValues();
+      if (values.length < 2) return null;
+      return Math.hypot(values[0].x - values[1].x, values[0].y - values[1].y);
+    };
     const markMoving = () => {
       immersiveRenderBurstUntilRef.current = performance.now() + 350;
+    };
+    const interruptCameraAnimation = () => {
+      if (animRef.current.active || animRef.current.holdActive) {
+        animRef.current.active = false;
+        animRef.current.holdActive = false;
+        syncSpatialOrbitToCamera();
+      }
     };
     const panOrbit = (dx: number, dy: number) => {
       const pose = spatialOrbitRef.current;
@@ -3453,13 +3482,13 @@ const SplatViewer = forwardRef<SplatViewerHandle, Props>(function SplatViewer(
 
     const handlePointerDown = (event: PointerEvent) => {
       if (event.pointerType === "mouse" && ![0, 1, 2].includes(event.button)) return;
+      // Phones use the native TouchEvent path below. It is not dependent on
+      // pointer capture, which mobile Chromium/WebKit can transfer to a
+      // Babylon gizmo and never return to the camera gesture.
+      if (nativeTouchNavigation && event.pointerType === "touch") return;
       const gizmoManager = spatialGizmoManagerRef.current;
       if (gizmoManager?.isHovered || gizmoManager?.isDragging) return;
-      if (animRef.current.active || animRef.current.holdActive) {
-        animRef.current.active = false;
-        animRef.current.holdActive = false;
-        syncSpatialOrbitToCamera();
-      }
+      interruptCameraAnimation();
       const action: EditorPointer["action"] = event.pointerType !== "mouse"
         ? ((event.pointerType === "pen" && (event.buttons & 2) !== 0) ? "pan" : "orbit")
         : event.button === 1
@@ -3537,11 +3566,132 @@ const SplatViewer = forwardRef<SplatViewerHandle, Props>(function SplatViewer(
     };
 
     const finishPointer = (event: PointerEvent) => {
+      if (!pointers.has(event.pointerId)) return;
       pointers.delete(event.pointerId);
       previousPinchDistance = pinchDistance();
       previousCentroid = pointerCentroid();
       try { canvas.releasePointerCapture(event.pointerId); } catch { /* best effort */ }
       if (!pointers.size) canvas.style.cursor = spatialCameraMode === "orbit" ? "grab" : "crosshair";
+      event.preventDefault();
+    };
+
+    const readTouches = (touches: TouchList) => {
+      touchPoints = new Map(
+        Array.from(touches).map((touch) => [
+          touch.identifier,
+          { x: touch.clientX, y: touch.clientY },
+        ]),
+      );
+    };
+    const resetTouchBaseline = (touches: TouchList) => {
+      readTouches(touches);
+      previousTouchCentroid = touchCentroid();
+      previousTouchPinchDistance = touchPinchDistance();
+    };
+    const handleTouchStart = (event: TouchEvent) => {
+      if (!nativeTouchNavigation) return;
+      if (touchPoints.size === 0) {
+        // Babylon receives the preceding pointerdown first. If it started a
+        // transform drag, leave the full gesture to the gizmo; otherwise the
+        // same touch belongs to camera navigation even while a transform tool
+        // is selected.
+        touchCameraGesture = !spatialGizmoManagerRef.current?.isDragging;
+      }
+      if (!touchCameraGesture) return;
+      interruptCameraAnimation();
+      syncFlyAngles();
+      resetTouchBaseline(event.touches);
+      event.preventDefault();
+    };
+    const handleTouchMove = (event: TouchEvent) => {
+      if (!nativeTouchNavigation || !touchCameraGesture || event.touches.length < 1) return;
+      if (spatialGizmoManagerRef.current?.isDragging) {
+        touchCameraGesture = false;
+        touchPoints.clear();
+        return;
+      }
+      const priorPoints = touchPoints;
+      readTouches(event.touches);
+
+      if (touchPoints.size >= 2) {
+        const nextCentroid = touchCentroid();
+        const nextDistance = touchPinchDistance();
+        if (spatialCameraMode === "orbit") {
+          if (nextCentroid && previousTouchCentroid) {
+            panOrbit(
+              nextCentroid.x - previousTouchCentroid.x,
+              nextCentroid.y - previousTouchCentroid.y,
+            );
+          }
+          if (nextDistance && previousTouchPinchDistance) {
+            dollyOrbit(Math.log(previousTouchPinchDistance / nextDistance));
+          }
+        } else {
+          if (nextCentroid && previousTouchCentroid) {
+            panFly(
+              nextCentroid.x - previousTouchCentroid.x,
+              nextCentroid.y - previousTouchCentroid.y,
+            );
+          }
+          if (nextDistance && previousTouchPinchDistance) {
+            const sceneRadius = fallbackSceneRef.current?.radius ?? 2;
+            const shortestSide = Math.max(
+              240,
+              Math.min(canvas.clientWidth, canvas.clientHeight),
+            );
+            moveFly(
+              (nextDistance - previousTouchPinchDistance)
+              * sceneRadius
+              * 1.6
+              / shortestSide,
+            );
+          }
+        }
+        previousTouchCentroid = nextCentroid;
+        previousTouchPinchDistance = nextDistance;
+        event.preventDefault();
+        return;
+      }
+
+      const touch = Array.from(event.touches)[0];
+      const previous = priorPoints.get(touch.identifier);
+      if (!previous) {
+        resetTouchBaseline(event.touches);
+        event.preventDefault();
+        return;
+      }
+      const dx = touch.clientX - previous.x;
+      const dy = touch.clientY - previous.y;
+      if (spatialCameraMode === "orbit") {
+        const pose = spatialOrbitRef.current;
+        pose.yaw -= dx * 0.006;
+        pose.pitch = Math.max(
+          -Math.PI * 0.485,
+          Math.min(Math.PI * 0.485, pose.pitch + dy * 0.006),
+        );
+        applySpatialOrbitPose();
+      } else {
+        flyYaw -= dx * 0.0045;
+        flyPitch = Math.max(
+          -Math.PI * 0.485,
+          Math.min(Math.PI * 0.485, flyPitch - dy * 0.0045),
+        );
+        const cosPitch = Math.cos(flyPitch);
+        camera.setTarget(camera.position.add(new B.Vector3(
+          Math.cos(flyYaw) * cosPitch,
+          Math.sin(flyPitch),
+          Math.sin(flyYaw) * cosPitch,
+        )));
+        markMoving();
+      }
+      previousTouchCentroid = touchCentroid();
+      previousTouchPinchDistance = null;
+      event.preventDefault();
+    };
+    const handleTouchEnd = (event: TouchEvent) => {
+      if (!nativeTouchNavigation || !touchCameraGesture) return;
+      resetTouchBaseline(event.touches);
+      if (event.touches.length === 0) touchCameraGesture = false;
       event.preventDefault();
     };
 
@@ -3632,6 +3782,11 @@ const SplatViewer = forwardRef<SplatViewerHandle, Props>(function SplatViewer(
     canvas.addEventListener("pointermove", handlePointerMove);
     canvas.addEventListener("pointerup", finishPointer);
     canvas.addEventListener("pointercancel", finishPointer);
+    canvas.addEventListener("lostpointercapture", finishPointer);
+    canvas.addEventListener("touchstart", handleTouchStart, { passive: false });
+    canvas.addEventListener("touchmove", handleTouchMove, { passive: false });
+    canvas.addEventListener("touchend", handleTouchEnd, { passive: false });
+    canvas.addEventListener("touchcancel", handleTouchEnd, { passive: false });
     canvas.addEventListener("wheel", handleWheel, { passive: false });
     canvas.addEventListener("contextmenu", handleContextMenu);
     window.addEventListener("keydown", handleKeyDown);
@@ -3639,6 +3794,7 @@ const SplatViewer = forwardRef<SplatViewerHandle, Props>(function SplatViewer(
 
     return () => {
       pointers.clear();
+      touchPoints.clear();
       pressed.clear();
       spatialOrbitRef.current.enabled = false;
       canvas.style.cursor = "";
@@ -3646,6 +3802,11 @@ const SplatViewer = forwardRef<SplatViewerHandle, Props>(function SplatViewer(
       canvas.removeEventListener("pointermove", handlePointerMove);
       canvas.removeEventListener("pointerup", finishPointer);
       canvas.removeEventListener("pointercancel", finishPointer);
+      canvas.removeEventListener("lostpointercapture", finishPointer);
+      canvas.removeEventListener("touchstart", handleTouchStart);
+      canvas.removeEventListener("touchmove", handleTouchMove);
+      canvas.removeEventListener("touchend", handleTouchEnd);
+      canvas.removeEventListener("touchcancel", handleTouchEnd);
       canvas.removeEventListener("wheel", handleWheel);
       canvas.removeEventListener("contextmenu", handleContextMenu);
       window.removeEventListener("keydown", handleKeyDown);
@@ -3655,12 +3816,14 @@ const SplatViewer = forwardRef<SplatViewerHandle, Props>(function SplatViewer(
     };
   }, [
     applySpatialOrbitPose,
+    compactTouch,
     frameScene,
     immersiveControls,
     onSpatialCameraModeChange,
     ready,
     spatialCameraMode,
     spatialNavigation,
+    splatSelectionTool,
     syncSpatialOrbitToCamera,
   ]);
 
@@ -4914,9 +5077,16 @@ const SplatViewer = forwardRef<SplatViewerHandle, Props>(function SplatViewer(
       <canvas
         ref={canvasRef}
         tabIndex={0}
-        onPointerDown={(event) => event.currentTarget.focus()}
+        onPointerDown={(event) => {
+          // Keyboard focus is useful for desktop shortcuts, but focusing a
+          // canvas during a phone touch can cancel the gesture before its
+          // first move on mobile Chromium.
+          if (event.pointerType !== "touch") {
+            event.currentTarget.focus();
+          }
+        }}
         className="w-full h-full block outline-none"
-        style={{ touchAction: "none" }}
+        style={{ touchAction: "none", overscrollBehavior: "none" }}
       />
 
       {selectionGesture ? (
