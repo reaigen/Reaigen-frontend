@@ -799,11 +799,63 @@ const defaultImmersivePose = (): ImmersivePose => ({
   fov: 0.66,
 });
 
+function applyGaussianRootTransform(
+  BABYLON: any,
+  root: any,
+  transform: GlobalSceneTransform,
+) {
+  const [x, y, z] = transform.rotationDeg;
+  const [tx, ty, tz] = transform.translation;
+  root.position.set(tx, ty, tz);
+  root.scaling.set(...globalSceneScale3(transform));
+  root.rotationQuaternion = BABYLON.Quaternion.RotationYawPitchRoll(
+    y * Math.PI / 180,
+    x * Math.PI / 180,
+    z * Math.PI / 180,
+  );
+  root.computeWorldMatrix(true);
+}
+
+async function settleHiddenGaussian(
+  scene: any,
+  mesh: any,
+  cancelled: () => boolean,
+) {
+  // Babylon intentionally excludes camera drift from its pre-first-render
+  // readiness check. The mesh may therefore be "ready" for the bootstrap
+  // camera even though the editor has just restored the saved camera. Force
+  // one final worker sort for the actual world matrix and active camera.
+  mesh.computeWorldMatrix?.(true);
+  mesh._postToWorker?.(true);
+  let readyForReveal = false;
+  for (let attempt = 0; attempt < 300; attempt += 1) {
+    if (cancelled()) return false;
+    if (mesh.isReady?.()) {
+      readyForReveal = true;
+      break;
+    }
+    await new Promise<void>((resolve) => window.setTimeout(resolve, 100));
+  }
+  if (!readyForReveal) {
+    throw new Error("Splat did not settle for the active camera");
+  }
+
+  if (cancelled()) return false;
+  await new Promise<void>((resolve) => {
+    window.requestAnimationFrame(() => resolve());
+  });
+  if (cancelled()) return false;
+  mesh.visibility = 1;
+  scene.render();
+  return true;
+}
+
 async function loadCompositionGaussian(
   BABYLON: any,
   scene: any,
   url: string,
   name: string,
+  parent: any,
   pruneMask?: SplatPruneMask | null,
 ): Promise<any> {
   const response = await fetch(url, { cache: "force-cache" });
@@ -815,6 +867,12 @@ async function loadCompositionGaussian(
     || (bytes.length >= 2 && bytes[0] === 0x50 && bytes[1] === 0x4b);
   const { GaussianSplattingMesh } = BABYLON;
   const mesh = new GaussianSplattingMesh(name, null, scene);
+  // Gaussian data and its sort textures can become renderable before the
+  // upload has completed. Attach the USD transform root immediately and keep
+  // every intermediate frame fully transparent.
+  mesh.parent = parent;
+  mesh.visibility = 0;
+  mesh.alwaysSelectAsActiveMesh = true;
 
   if (isSog) {
     const { ParseSogMeta } = await import("@babylonjs/loaders/SPLAT/sog");
@@ -2222,17 +2280,8 @@ const SplatViewer = forwardRef<SplatViewerHandle, Props>(function SplatViewer(
     // Backend output, RoomKit geometry and captured camera poses share the
     // canonical identity/Y-up space. The saved transform moves that complete
     // coordinate system into the tour's presentation space.
-    const [x, y, z] = globalSceneTransform.rotationDeg;
-    const [tx, ty, tz] = globalSceneTransform.translation;
-    root.position.set(tx, ty, tz);
-    root.scaling.set(...globalSceneScale3(globalSceneTransform));
-    root.rotationQuaternion = B.Quaternion.RotationYawPitchRoll(
-      y * Math.PI / 180,
-      x * Math.PI / 180,
-      z * Math.PI / 180,
-    );
+    applyGaussianRootTransform(B, root, globalSceneTransform);
     gs.parent = root;
-    root.computeWorldMatrix(true);
     scene.render();
   }, [globalSceneTransform, ready]);
 
@@ -2245,38 +2294,33 @@ const SplatViewer = forwardRef<SplatViewerHandle, Props>(function SplatViewer(
     const scene = sceneRef.current;
     if (!B || !scene) return;
     let disposed = false;
+    const loaded: any[] = [];
 
     const load = async () => {
-      const loaded: any[] = [];
       for (const asset of compositionAssets) {
         if (disposed || !asset.visible || !asset.url) continue;
+        const root = new B.TransformNode(`splat-composition-root-${asset.id}`, scene);
+        applyGaussianRootTransform(B, root, asset.transform);
         try {
           const mesh = await loadCompositionGaussian(
             B,
             scene,
             asset.url,
             `splat-composition-${asset.id}`,
+            root,
             asset.pruneMask,
           );
           if (disposed) {
-            mesh.dispose?.(false, true);
+            root.dispose?.(false, true);
             break;
           }
-          const root = new B.TransformNode(`splat-composition-root-${asset.id}`, scene);
-          const [x, y, z] = asset.transform.rotationDeg;
-          const [tx, ty, tz] = asset.transform.translation;
-          root.position.set(tx, ty, tz);
-          root.scaling.set(...globalSceneScale3(asset.transform));
-          root.rotationQuaternion = B.Quaternion.RotationYawPitchRoll(
-            y * Math.PI / 180,
-            x * Math.PI / 180,
-            z * Math.PI / 180,
-          );
-          mesh.parent = root;
-          root.computeWorldMatrix(true);
+          if (!await settleHiddenGaussian(scene, mesh, () => disposed)) {
+            root.dispose?.(false, true);
+            break;
+          }
           loaded.push({ root, mesh });
-          scene.render();
         } catch (error) {
+          root.dispose?.(false, true);
           console.warn(`[REAI] Could not load composition node ${asset.id}:`, error);
         }
       }
@@ -2286,7 +2330,10 @@ const SplatViewer = forwardRef<SplatViewerHandle, Props>(function SplatViewer(
 
     return () => {
       disposed = true;
-      for (const item of compositionMeshesRef.current) item.root?.dispose?.(false, true);
+      // `compositionMeshesRef` is only published after the whole batch has
+      // loaded. Dispose the in-flight batch directly so interrupted effects
+      // cannot leave duplicate splats rendering behind the next batch.
+      for (const item of loaded) item.root?.dispose?.(false, true);
       compositionMeshesRef.current = [];
     };
   }, [compositionAssets, ready]);
@@ -4378,6 +4425,23 @@ const SplatViewer = forwardRef<SplatViewerHandle, Props>(function SplatViewer(
         // ── Load Gaussian Splatting mesh ──
         const { GaussianSplattingMesh } = BABYLON;
         let gs: any = null;
+        const primaryRoot = new BABYLON.TransformNode(
+          "reaigen-spatial-root",
+          scene,
+        );
+        applyGaussianRootTransform(
+          BABYLON,
+          primaryRoot,
+          globalSceneTransformRef.current,
+        );
+        spatialRootRef.current = primaryRoot;
+        const createPrimaryGaussian = () => {
+          const mesh = new GaussianSplattingMesh("splat", null, scene);
+          mesh.visibility = 0;
+          mesh.alwaysSelectAsActiveMesh = true;
+          mesh.parent = primaryRoot;
+          return mesh;
+        };
         const initializeSplatEditing = (
           data: ArrayBuffer,
           sh?: Uint8Array[],
@@ -4522,7 +4586,7 @@ const SplatViewer = forwardRef<SplatViewerHandle, Props>(function SplatViewer(
           }
           splatBufferRef.current = renderData.buffer;
 
-          gs = new GaussianSplattingMesh("splat", null, scene);
+          gs = createPrimaryGaussian();
           gs.updateData(
             renderData.buffer,
             renderData.sh,
@@ -4530,7 +4594,6 @@ const SplatViewer = forwardRef<SplatViewerHandle, Props>(function SplatViewer(
             undefined,
             renderData.sh?.length ? (renderData.shDegree ?? 0) : 0,
           );
-          gs.alwaysSelectAsActiveMesh = true;
         } else if (isGZippedSpz || isNgspSpz || isSpzUrl) {
           // SPZ format: this is the current R&D-packed web format.
           setStatus(t("viewer.status.processing", lang));
@@ -4571,7 +4634,7 @@ const SplatViewer = forwardRef<SplatViewerHandle, Props>(function SplatViewer(
           }
           splatBufferRef.current = renderData.buffer;
 
-          gs = new GaussianSplattingMesh("splat", null, scene);
+          gs = createPrimaryGaussian();
           gs.updateData(
             renderData.buffer,
             renderData.sh,
@@ -4579,7 +4642,6 @@ const SplatViewer = forwardRef<SplatViewerHandle, Props>(function SplatViewer(
             undefined,
             renderData.sh?.length ? (renderData.shDegree ?? 0) : 0,
           );
-          gs.alwaysSelectAsActiveMesh = true;
         } else {
           // PLY/splat format
           setStatus(t("viewer.status.processing", lang));
@@ -4604,7 +4666,7 @@ const SplatViewer = forwardRef<SplatViewerHandle, Props>(function SplatViewer(
           splatBufferRef.current = renderData.buffer;
           if (!cachedFull && splatId) void putCache(splatId, "full", fullConv, outputsVersion);
 
-          gs = new GaussianSplattingMesh("splat", null, scene);
+          gs = createPrimaryGaussian();
           if (renderData.sh?.length) {
             gs.updateData(
               renderData.buffer,
@@ -4617,7 +4679,6 @@ const SplatViewer = forwardRef<SplatViewerHandle, Props>(function SplatViewer(
             await gs.updateDataAsync(renderData.buffer);
           }
           if (disposed) return;
-          gs.alwaysSelectAsActiveMesh = true;
         }
         gsRef.current = gs;
 
@@ -4644,6 +4705,7 @@ const SplatViewer = forwardRef<SplatViewerHandle, Props>(function SplatViewer(
         }
 
         await placeCamera();
+        if (!await settleHiddenGaussian(scene, gs, () => disposed)) return;
         if (immersiveControls) {
           const target = camera.getTarget();
           setImmersiveBase(
