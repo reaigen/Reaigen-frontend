@@ -179,7 +179,7 @@ export default function CameraEditor({ splatId, viewerRef, activeShotIdx, initia
       viewerRef.current?.navigateToCamera(
         shots[0].position,
         shots[0].forward,
-        true,
+        false,
         shots[0].fov,
         shots[0].up,
       );
@@ -370,7 +370,7 @@ export default function CameraEditor({ splatId, viewerRef, activeShotIdx, initia
     viewerRef.current?.navigateToCamera(
       shots[targetIdx].position,
       shots[targetIdx].forward,
-      true,
+      false,
       shots[targetIdx].fov,
       shots[targetIdx].up,
     );

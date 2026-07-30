@@ -750,6 +750,7 @@ interface Anim {
   duration: number;
   fromPos: Vec3;
   toPos: Vec3;
+  pathHandle: number;
   fromForward: Vec3;
   toForward: Vec3;
   fromAngle: number;
@@ -772,6 +773,7 @@ interface Anim {
 const defaultAnim = (): Anim => ({
   active: false, elapsed: 0, duration: 1.5,
   fromPos: [0, 0, 0], toPos: [0, 0, 0],
+  pathHandle: 0,
   fromForward: [0, 0, 1], toForward: [0, 0, 1],
   fromAngle: 0, toAngle: 0,
   fromPitch: 0, toPitch: 0,
@@ -1705,9 +1707,10 @@ const SplatViewer = forwardRef<SplatViewerHandle, Props>(function SplatViewer(
       tPos[2] - cur[2],
     );
     const yawDistance = Math.abs(slerpAngle(anim.fromAngle, anim.toAngle, 1) - anim.fromAngle);
+    anim.pathHandle = instant ? 0 : distance * 0.2;
     anim.duration = instant
       ? 0.001
-      : Math.max(0.5, Math.min(1.25, 0.38 + distance * 0.12 + yawDistance * 0.16));
+      : Math.max(0.8, Math.min(1.8, 0.62 + distance * 0.14 + yawDistance * 0.2));
     anim.active = true;
     (anim as any).exactForward = useExactForward;
 
@@ -1850,18 +1853,19 @@ const SplatViewer = forwardRef<SplatViewerHandle, Props>(function SplatViewer(
     anim.fromFov = cam.fov;
     anim.toFov = targetFov;
     anim.elapsed = 0;
-    // Camera-to-camera travel is deliberately short and distance-aware.
     // Re-targeting starts from the currently rendered pose, so repeated
-    // selections never queue stale animations.
+    // selections never queue stale animations. The path handle creates a
+    // restrained DCC-style camera trajectory rather than a positional cut.
     const dist = Math.hypot(
       pos[0] - cam.position.x,
       pos[1] - cam.position.y,
       pos[2] - cam.position.z,
     );
     const yawDistance = Math.abs(slerpAngle(anim.fromAngle, anim.toAngle, 1) - anim.fromAngle);
+    anim.pathHandle = dist * 0.2;
     anim.duration = Math.max(
-      0.34,
-      Math.min(0.9, 0.28 + dist * 0.12 + yawDistance * 0.12),
+      0.8,
+      Math.min(1.8, 0.62 + dist * 0.14 + yawDistance * 0.2),
     );
     anim.active = true;
     anim.holdActive = false;
@@ -4521,9 +4525,33 @@ const SplatViewer = forwardRef<SplatViewerHandle, Props>(function SplatViewer(
           // Keep position, orientation and FOV on one timing curve. A leading
           // rotation felt like the trajectory briefly changed direction.
           const rotT = et;
-          const px = anim.fromPos[0] + (anim.toPos[0] - anim.fromPos[0]) * et;
-          const py = anim.fromPos[1] + (anim.toPos[1] - anim.fromPos[1]) * et;
-          const pz = anim.fromPos[2] + (anim.toPos[2] - anim.fromPos[2]) * et;
+          const oneMinusT = 1 - et;
+          const pathStartWeight = oneMinusT * oneMinusT * oneMinusT;
+          const pathStartHandleWeight = 3 * oneMinusT * oneMinusT * et;
+          const pathEndHandleWeight = 3 * oneMinusT * et * et;
+          const pathEndWeight = et * et * et;
+          const startHandle: Vec3 = [
+            anim.fromPos[0] + anim.fromForward[0] * anim.pathHandle,
+            anim.fromPos[1] + anim.fromForward[1] * anim.pathHandle,
+            anim.fromPos[2] + anim.fromForward[2] * anim.pathHandle,
+          ];
+          const endHandle: Vec3 = [
+            anim.toPos[0] - anim.toForward[0] * anim.pathHandle,
+            anim.toPos[1] - anim.toForward[1] * anim.pathHandle,
+            anim.toPos[2] - anim.toForward[2] * anim.pathHandle,
+          ];
+          const px = anim.fromPos[0] * pathStartWeight
+            + startHandle[0] * pathStartHandleWeight
+            + endHandle[0] * pathEndHandleWeight
+            + anim.toPos[0] * pathEndWeight;
+          const py = anim.fromPos[1] * pathStartWeight
+            + startHandle[1] * pathStartHandleWeight
+            + endHandle[1] * pathEndHandleWeight
+            + anim.toPos[1] * pathEndWeight;
+          const pz = anim.fromPos[2] * pathStartWeight
+            + startHandle[2] * pathStartHandleWeight
+            + endHandle[2] * pathEndHandleWeight
+            + anim.toPos[2] * pathEndWeight;
           camera.position.set(px, py, pz);
 
           // Blend the complete authored camera basis. Yaw/pitch interpolation
