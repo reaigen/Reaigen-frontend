@@ -859,16 +859,16 @@ export default function DraftPreviewPage({ params }: { params: Promise<{ id: str
               </div>
             )}
 
-            <div className="mt-6 hidden flex-wrap items-center gap-3 border-t border-border/70 pt-5 md:flex">
-              {hasTour && (
-                <Button asChild size="sm">
-                  <Link href={`/tour/${primarySplatId}?tourId=${shareableTour?.id}`}>
-                    <TourIcon size={15} />
-                    {t("draft.viewTour", lang)}
-                  </Link>
-                </Button>
-              )}
-              <div className="inline-flex max-w-full items-center rounded-full border border-border/70 bg-card p-1 shadow-control">
+            <div className="mt-6 hidden border-t border-border/70 pt-5 md:flex">
+              <div className="inline-flex max-w-full items-center overflow-x-auto rounded-full border border-border/70 bg-card p-1 shadow-control">
+                {hasTour && (
+                  <Button asChild size="sm" className="shrink-0">
+                    <Link href={`/tour/${primarySplatId}?tourId=${shareableTour?.id}`}>
+                      <TourIcon size={15} />
+                      {t("draft.viewTour", lang)}
+                    </Link>
+                  </Button>
+                )}
                 <Button type="button" variant="ghost" size="sm" onClick={() => setMediaOpen(true)}>
                   <ImageIcon size={15} /> {t("draft.media.manage", lang)}
                 </Button>
