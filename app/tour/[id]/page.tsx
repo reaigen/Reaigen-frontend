@@ -140,6 +140,9 @@ export default function TourPage({
   const preferSavedCameras = !!viewerCameras?.cameras?.length || viewer?.format !== "sog";
   const preferredRenderUrl = viewer ? pickRenderableUrl(viewer) : null;
   const fallbackRenderUrl = viewer ? pickFallbackRenderableUrl(viewer) : null;
+  const activePruneMask = viewer?.prune_mask ?? viewer?.workspace?.nodes.find(
+    (node) => node.splat_id === resolvedSplatId,
+  )?.prune;
   const workspaceComposition = useMemo(
     () => (viewer?.workspace?.nodes ?? [])
       .filter((node) => (
@@ -151,6 +154,7 @@ export default function TourPage({
         id: node.id,
         url: node.asset.url!,
         visible: node.visible,
+        pruneMask: node.prune,
         transform: {
           version: 1 as const,
           coordinateSpace: "reaigen_y_up" as const,
@@ -455,6 +459,7 @@ export default function TourPage({
         splatId={resolvedSplatId}
         initialCameras={viewerCameras}
         outputsVersion={viewer.asset.fingerprint}
+        initialPruneMask={activePruneMask}
         preferSavedCameras={preferSavedCameras}
         onReady={() => setViewerReady(true)}
         onError={() => {

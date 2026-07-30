@@ -11,6 +11,17 @@ export interface SplatSelectionStats {
   dirty: boolean;
 }
 
+export interface SplatPruneMask {
+  schema: "com.reaigen.splat-prune-mask";
+  version: 1;
+  encoding: "removed-bitset-base64";
+  point_count: number;
+  removed_count: number;
+  base_asset_fingerprint: string;
+  data: string;
+  mask_sha256?: string;
+}
+
 export interface PackedSplatData {
   buffer: ArrayBuffer;
   sh?: Uint8Array[];
@@ -24,6 +35,84 @@ export function countMask(mask: Uint8Array): number {
   let count = 0;
   for (let index = 0; index < mask.length; index += 1) count += mask[index] ? 1 : 0;
   return count;
+}
+
+function bytesToBase64(bytes: Uint8Array): string {
+  let binary = "";
+  const chunkSize = 0x8000;
+  for (let offset = 0; offset < bytes.length; offset += chunkSize) {
+    binary += String.fromCharCode(...bytes.subarray(offset, offset + chunkSize));
+  }
+  return btoa(binary);
+}
+
+function base64ToBytes(value: string): Uint8Array {
+  const binary = atob(value);
+  const bytes = new Uint8Array(binary.length);
+  for (let index = 0; index < binary.length; index += 1) {
+    bytes[index] = binary.charCodeAt(index);
+  }
+  return bytes;
+}
+
+export function encodeSplatPruneMask(
+  alive: Uint8Array,
+  baseAssetFingerprint: string,
+): SplatPruneMask | null {
+  const removedCount = alive.length - countMask(alive);
+  if (removedCount < 1) return null;
+  const removed = new Uint8Array(Math.ceil(alive.length / 8));
+  for (let index = 0; index < alive.length; index += 1) {
+    if (!alive[index]) removed[index >> 3] |= 1 << (index & 7);
+  }
+  return {
+    schema: "com.reaigen.splat-prune-mask",
+    version: 1,
+    encoding: "removed-bitset-base64",
+    point_count: alive.length,
+    removed_count: removedCount,
+    base_asset_fingerprint: baseAssetFingerprint,
+    data: bytesToBase64(removed),
+  };
+}
+
+export function decodeSplatPruneMask(
+  value: SplatPruneMask | null | undefined,
+  pointCount: number,
+): Uint8Array | null {
+  if (
+    !value
+    || value.schema !== "com.reaigen.splat-prune-mask"
+    || value.version !== 1
+    || value.encoding !== "removed-bitset-base64"
+    || value.point_count !== pointCount
+  ) return null;
+  try {
+    const removed = base64ToBytes(value.data);
+    if (removed.length !== Math.ceil(pointCount / 8)) return null;
+    const alive = new Uint8Array(pointCount);
+    let removedCount = 0;
+    for (let index = 0; index < pointCount; index += 1) {
+      const isRemoved = Boolean(removed[index >> 3] & (1 << (index & 7)));
+      alive[index] = isRemoved ? 0 : 1;
+      if (isRemoved) removedCount += 1;
+    }
+    return removedCount === value.removed_count ? alive : null;
+  } catch {
+    return null;
+  }
+}
+
+export function splatMasksEqual(
+  left: Uint8Array | null,
+  right: Uint8Array | null,
+): boolean {
+  if (left === right) return true;
+  if (!left || !right || left.length !== right.length) return false;
+  for (let index = 0; index < left.length; index += 1) {
+    if (left[index] !== right[index]) return false;
+  }
+  return true;
 }
 
 export function filterPackedSplats(

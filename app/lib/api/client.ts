@@ -944,6 +944,7 @@ export async function acceptAppContentDocument(data: {
 // ─── Splat Viewer & Tour ──────────────────────────────────────────────────
 
 import type { SplatViewerPayload, SplatPackagePayload, SplatSceneResponse, SceneDeliveryResolution, SceneDeliverySummary, SceneDeliveryTargetProfile, SceneRefinementSummary, VirtualTourViewerPayload, CameraData, GlobalSceneTransform, UsdStageTransformEditResponse, TourViewerData, SplatListItem, ShareData, SharedDraftData, SplatsByDraftPayload, DraftListingItem, DraftDetailItem, DraftUpload, DraftTourAssetsPayload, DraftTourPublicationSelection } from "../tour-types";
+import type { SplatPruneMask } from "../splat-editing";
 
 export async function listSplats(page = 1, pageSize = 20, search = ""): Promise<{ results: SplatListItem[]; count: number; next: string | null }> {
   const q = search ? `&search=${encodeURIComponent(search)}` : "";
@@ -973,11 +974,13 @@ export interface WebTourWorkspaceNode {
   prim_path: string;
   visible: boolean;
   transform: WebSceneTransform;
+  prune?: SplatPruneMask | null;
   asset: {
     splat_id: number;
     status: string;
     format: "ply" | "sog" | null;
     url: string | null;
+    fingerprint: string;
     has_ply: boolean;
     has_sog: boolean;
     conversion: {
@@ -1073,6 +1076,24 @@ export async function saveWebTourWorkspace(
     method: "PATCH",
     body: JSON.stringify(data),
   });
+}
+
+export async function saveWebTourPruneMask(
+  tourId: number,
+  splatId: number,
+  baseRevision: number,
+  prune: SplatPruneMask | null,
+): Promise<WebTourWorkspace> {
+  return request(
+    `/api/reaigen/web-creation/tours/${tourId}/assets/${splatId}/prune/`,
+    {
+      method: "POST",
+      body: JSON.stringify({
+        base_revision: baseRevision,
+        prune,
+      }),
+    },
+  );
 }
 
 export async function saveWebTourThumbnail(

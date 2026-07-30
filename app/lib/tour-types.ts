@@ -1,3 +1,5 @@
+import type { SplatPruneMask } from "./splat-editing";
+
 export type Vec3 = [number, number, number];
 export type SpatialViewMode = "surface" | "centers";
 export type SpatialCameraMode = "orbit" | "fly";
@@ -686,6 +688,7 @@ export interface TourViewerData {
   signed_outputs: Record<string, string>;
   metadata: Record<string, unknown>;
   outputs_updated_at: string | null;
+  prune_mask?: SplatPruneMask | null;
   scene_description?: UniversalSceneDescription | null;
   collision_geometry?: {
     format: "roomplan-json";
@@ -854,6 +857,7 @@ export interface SplatViewerPayload {
   signed_outputs: Record<string, string>;
   metadata: Record<string, unknown>;
   outputs_updated_at: string | null;
+  prune_mask?: SplatPruneMask | null;
   scene_description?: UniversalSceneDescription | null;
   /** Exact published OpenUSD graph version used to resolve this runtime. */
   scene_delivery: SceneDeliverySummary;
@@ -869,6 +873,7 @@ export interface SplatViewerPayload {
       splat_id: number;
       name: string;
       visible: boolean;
+      prune?: SplatPruneMask | null;
       transform: {
         translation: Vec3;
         rotationDeg: Vec3;
@@ -878,6 +883,7 @@ export interface SplatViewerPayload {
       asset: {
         url: string | null;
         format: "ply" | "sog" | null;
+        fingerprint?: string;
       };
     }>;
   };

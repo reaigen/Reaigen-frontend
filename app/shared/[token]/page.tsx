@@ -501,6 +501,7 @@ export default function SharedPage({ params }: { params: Promise<{ token: string
           splatUrl={activeRenderUrl ?? pickRenderableUrl(tourViewerData)}
           tourUrl={tourViewerData.tour_url ?? undefined}
           initialCameras={tourViewerData.cameras as CameraData ?? undefined}
+          initialPruneMask={tourViewerData.prune_mask}
           preferSavedCameras={!!tourViewerData.cameras?.cameras?.length}
           globalSceneTransform={globalSceneTransform}
           roomKitCage={roomKitCage}

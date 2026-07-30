@@ -31,7 +31,7 @@ import type { SplatViewerHandle } from "../../../components/splat-viewer";
 import {
   getWebTourAssetStatus,
   getWebTourWorkspace,
-  replaceWebTourAsset,
+  saveWebTourPruneMask,
   saveWebTourThumbnail,
   saveWebTourWorkspace,
   uploadWebTourAsset,
@@ -106,7 +106,6 @@ type LocalPreview = {
 };
 
 type PruneConfirmation = "save" | "discard" | null;
-type PruneSaveStage = "idle" | "exporting" | "uploading" | "finalizing";
 
 function formatTransformValue(value: number): string {
   return Number(value.toFixed(4)).toString();
@@ -299,9 +298,7 @@ export default function WebTourEditorPage({
     dirty: false,
   });
   const [committingPrune, setCommittingPrune] = useState(false);
-  const [pruneUploadProgress, setPruneUploadProgress] = useState(0);
   const [pruneConfirmation, setPruneConfirmation] = useState<PruneConfirmation>(null);
-  const [pruneSaveStage, setPruneSaveStage] = useState<PruneSaveStage>("idle");
   const [pruneSaveNotice, setPruneSaveNotice] = useState<string | null>(null);
   const [compactLayout, setCompactLayout] = useState(false);
   const [historyAvailability, setHistoryAvailability] = useState({ undo: false, redo: false });
@@ -444,6 +441,7 @@ export default function WebTourEditorPage({
         url: localPreviews[node.id]?.url ?? node.asset.url!,
         visible: node.visible,
         transform: runtimeTransform(node.transform),
+        pruneMask: node.prune,
       })),
     [localPreviews, selectedId, workspace],
   );
@@ -734,7 +732,7 @@ export default function WebTourEditorPage({
       if (savedSelected) setDraftTransform(runtimeTransform(savedSelected.transform));
       setTransformDirty(false);
       setWorkspaceDirty(false);
-      await captureAutomaticThumbnail(saved.revision);
+      void captureAutomaticThumbnail(saved.revision);
       return true;
     } catch {
       setError(t("webEditor.saveFailed", lang));
@@ -855,57 +853,35 @@ export default function WebTourEditorPage({
     ) return;
     pruneCommitLockRef.current = true;
     setCommittingPrune(true);
-    setPruneSaveStage("exporting");
-    setPruneUploadProgress(0.04);
     setError(null);
     try {
-      const baseName = selected.name.replace(/\.(ply|sog)$/i, "").trim() || "scene";
-      const file = await viewerRef.current?.exportPrunedPly(`${baseName}-edited.ply`);
-      if (!file) throw new Error("The edited splat is unavailable.");
-      setPruneSaveStage("uploading");
-      setPruneUploadProgress(0.08);
-      const saved = await replaceWebTourAsset(
+      if (workspaceDirty || transformDirty) {
+        const workspaceSaved = await persistWorkspace();
+        if (!workspaceSaved) throw new Error("The workspace could not be saved.");
+      }
+      const currentWorkspace = workspaceRef.current;
+      const fingerprint = selected.asset.fingerprint;
+      if (!currentWorkspace || !fingerprint) {
+        throw new Error("The edited splat revision is unavailable.");
+      }
+      const prune = viewerRef.current?.exportPruneMask(fingerprint);
+      const saved = await saveWebTourPruneMask(
         tourId,
         selected.splat_id,
-        file,
-        {
-          originalCount: splatSelectionStats.total,
-          remainingCount: splatSelectionStats.remaining,
-        },
-        (fraction) => {
-          setPruneUploadProgress(0.08 + Math.min(1, fraction) * 0.84);
-          if (fraction >= 1) setPruneSaveStage("finalizing");
-        },
+        currentWorkspace.revision,
+        prune ?? null,
       );
-      setPruneSaveStage("finalizing");
-      setPruneUploadProgress(0.96);
+      workspaceRef.current = saved;
       setWorkspace(saved);
-      const preview: LocalPreview = {
-        url: URL.createObjectURL(file),
-        sourceFormat: "ply",
-      };
-      setLocalPreviews((current) => {
-        const previous = current[selected.id];
-        if (previous) URL.revokeObjectURL(previous.url);
-        return { ...current, [selected.id]: preview };
-      });
+      viewerRef.current?.markSplatPruneSaved();
       setTransformDirty(false);
       setWorkspaceDirty(false);
-      setPruneUploadProgress(1);
       setPruneSaveNotice(t("webEditor.pruneSaved", lang));
       setPruneConfirmation(null);
       setPruneEditorOpen(false);
-      setSplatSelectionStats({
-        total: splatSelectionStats.remaining,
-        selected: 0,
-        remaining: splatSelectionStats.remaining,
-        pruned: 0,
-        dirty: false,
-      });
+      void captureAutomaticThumbnail(saved.revision);
     } catch {
       setError(t("webEditor.pruneSaveFailed", lang));
-      setPruneSaveStage("idle");
-      setPruneUploadProgress(0);
     } finally {
       pruneCommitLockRef.current = false;
       setCommittingPrune(false);
@@ -1014,6 +990,8 @@ export default function WebTourEditorPage({
           }}
           splatUrl={selectedAssetUrl}
           splatId={selected.splat_id}
+          outputsVersion={selected.asset.fingerprint}
+          initialPruneMask={selected.prune}
           globalSceneTransform={draftTransform}
           spatialNavigation
           spatialTransformTool={tool}
@@ -1703,32 +1681,6 @@ export default function WebTourEditorPage({
                   <div className="mt-0.5 text-[9px] text-muted-foreground">
                     {t("webEditor.pointsRemain", lang)}
                   </div>
-                </div>
-              </div>
-            ) : null}
-
-            {committingPrune ? (
-              <div className="mt-5" aria-live="polite">
-                <div className="flex items-center justify-between text-[10px] font-medium">
-                  <span>
-                    {t(
-                      pruneSaveStage === "exporting"
-                        ? "webEditor.pruneExporting"
-                        : pruneSaveStage === "finalizing"
-                          ? "webEditor.pruneFinalizing"
-                          : "webEditor.pruneUploading",
-                      lang,
-                    )}
-                  </span>
-                  <span className="tabular-nums">
-                    {Math.round(pruneUploadProgress * 100)}%
-                  </span>
-                </div>
-                <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-foreground/[0.08]">
-                  <div
-                    className="h-full rounded-full bg-foreground transition-[width] duration-200"
-                    style={{ width: `${Math.max(4, pruneUploadProgress * 100)}%` }}
-                  />
                 </div>
               </div>
             ) : null}

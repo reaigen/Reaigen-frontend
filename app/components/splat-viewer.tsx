@@ -31,11 +31,15 @@ import {
 import { resolveRoomKitMovement } from "@/app/lib/spatial-editor-data";
 import {
   countMask,
+  decodeSplatPruneMask,
   distanceToPolyline,
+  encodeSplatPruneMask,
   filterPackedSplats,
   packedSplatsToPly,
   pointInsidePolygon,
+  splatMasksEqual,
   type PackedSplatData,
+  type SplatPruneMask,
   type SplatSelectionOperation,
   type SplatSelectionStats,
   type SplatSelectionTool,
@@ -799,6 +803,7 @@ async function loadCompositionGaussian(
   scene: any,
   url: string,
   name: string,
+  pruneMask?: SplatPruneMask | null,
 ): Promise<any> {
   const response = await fetch(url, { cache: "force-cache" });
   if (!response.ok) throw new Error(`Download ${response.status}`);
@@ -861,18 +866,52 @@ async function loadCompositionGaussian(
       parsed = await ParseSogMeta(new Map(Object.entries(zipData)), "", scene);
     }
     const sh = parsed.sh?.length ? parsed.sh : undefined;
+    const alive = decodeSplatPruneMask(
+      pruneMask,
+      Math.floor(parsed.data.byteLength / 32),
+    );
+    const renderData = alive
+      ? filterPackedSplats(
+          { buffer: parsed.data, sh, shDegree: parsed.shDegree ?? 0 },
+          alive,
+        )
+      : { buffer: parsed.data, sh, shDegree: parsed.shDegree ?? 0 };
     mesh.updateData(
-      parsed.data,
-      sh,
+      renderData.buffer,
+      renderData.sh,
       { flipY: false },
       undefined,
-      sh ? (parsed.shDegree ?? 0) : 0,
+      renderData.sh?.length ? (renderData.shDegree ?? 0) : 0,
     );
   } else {
     const converted = (
       await GaussianSplattingMesh.ConvertPLYWithSHToSplatAsync(rawBuffer)
-    ) as { buffer: ArrayBuffer };
-    await mesh.updateDataAsync(converted.buffer);
+    ) as { buffer: ArrayBuffer; sh?: Uint8Array[]; shDegree?: number };
+    const alive = decodeSplatPruneMask(
+      pruneMask,
+      Math.floor(converted.buffer.byteLength / 32),
+    );
+    const renderData = alive
+      ? filterPackedSplats(
+          {
+            buffer: converted.buffer,
+            sh: converted.sh,
+            shDegree: converted.shDegree ?? 0,
+          },
+          alive,
+        )
+      : converted;
+    if (renderData.sh?.length) {
+      mesh.updateData(
+        renderData.buffer,
+        renderData.sh,
+        { flipY: false },
+        undefined,
+        renderData.shDegree ?? 0,
+      );
+    } else {
+      await mesh.updateDataAsync(renderData.buffer);
+    }
   }
   mesh.alwaysSelectAsActiveMesh = true;
   if (mesh.material) mesh.material.backFaceCulling = false;
@@ -886,6 +925,7 @@ export interface SplatCompositionAsset {
   url: string;
   visible: boolean;
   transform: GlobalSceneTransform;
+  pruneMask?: SplatPruneMask | null;
 }
 
 interface Props {
@@ -899,6 +939,7 @@ interface Props {
   readOnly?: boolean;
   /** outputs_updated_at from backend — used as cache version key */
   outputsVersion?: string | null;
+  initialPruneMask?: SplatPruneMask | null;
   className?: string;
   onShotChange?: (idx: number, shot: TourShot | null) => void;
   onReady?: () => void;
@@ -952,6 +993,8 @@ export interface SplatViewerHandle {
   pruneUnselectedSplats: () => void;
   undoSplatPrune: () => void;
   resetSplatPrune: () => void;
+  exportPruneMask: (baseAssetFingerprint: string) => SplatPruneMask | null;
+  markSplatPruneSaved: () => void;
   exportPrunedPly: (filename?: string) => Promise<File | null>;
   captureThumbnail: () => Promise<string | null>;
 }
@@ -968,6 +1011,7 @@ const SplatViewer = forwardRef<SplatViewerHandle, Props>(function SplatViewer(
     preferSavedCameras,
     readOnly,
     outputsVersion,
+    initialPruneMask,
     className,
     onShotChange,
     onReady,
@@ -1020,6 +1064,7 @@ const SplatViewer = forwardRef<SplatViewerHandle, Props>(function SplatViewer(
   const splatBufferRef = useRef<ArrayBuffer | null>(null);
   const originalSplatDataRef = useRef<PackedSplatData | null>(null);
   const aliveSplatMaskRef = useRef<Uint8Array | null>(null);
+  const savedSplatMaskRef = useRef<Uint8Array | null>(null);
   const selectedSplatMaskRef = useRef<Uint8Array | null>(null);
   const splatPruneHistoryRef = useRef<Uint8Array[]>([]);
   const selectionOverlayRef = useRef<any>(null);
@@ -1906,7 +1951,7 @@ const SplatViewer = forwardRef<SplatViewerHandle, Props>(function SplatViewer(
       selected: selectedCount,
       remaining,
       pruned: alive.length - remaining,
-      dirty: remaining !== alive.length,
+      dirty: !splatMasksEqual(alive, savedSplatMaskRef.current),
     });
   }, []);
 
@@ -1986,12 +2031,27 @@ const SplatViewer = forwardRef<SplatViewerHandle, Props>(function SplatViewer(
 
   const resetSplatPrune = useCallback(() => {
     const alive = aliveSplatMaskRef.current;
-    if (!alive) return;
-    alive.fill(1);
+    const saved = savedSplatMaskRef.current;
+    if (!alive || !saved || alive.length !== saved.length) return;
+    alive.set(saved);
     selectedSplatMaskRef.current?.fill(0);
     splatPruneHistoryRef.current = [];
     refreshPrunedSplatMesh();
   }, [refreshPrunedSplatMesh]);
+
+  const exportPruneMask = useCallback((baseAssetFingerprint: string) => {
+    const alive = aliveSplatMaskRef.current;
+    if (!alive) return null;
+    return encodeSplatPruneMask(alive, baseAssetFingerprint);
+  }, []);
+
+  const markSplatPruneSaved = useCallback(() => {
+    const alive = aliveSplatMaskRef.current;
+    if (!alive) return;
+    savedSplatMaskRef.current = alive.slice();
+    splatPruneHistoryRef.current = [];
+    publishSplatSelectionStats();
+  }, [publishSplatSelectionStats]);
 
   const exportPrunedPly = useCallback(async (filename = "reaigen-pruned.ply") => {
     const source = originalSplatDataRef.current;
@@ -2078,6 +2138,8 @@ const SplatViewer = forwardRef<SplatViewerHandle, Props>(function SplatViewer(
     pruneUnselectedSplats,
     undoSplatPrune,
     resetSplatPrune,
+    exportPruneMask,
+    markSplatPruneSaved,
     exportPrunedPly,
     captureThumbnail,
   }), [
@@ -2098,6 +2160,8 @@ const SplatViewer = forwardRef<SplatViewerHandle, Props>(function SplatViewer(
     pruneUnselectedSplats,
     undoSplatPrune,
     resetSplatPrune,
+    exportPruneMask,
+    markSplatPruneSaved,
     exportPrunedPly,
     captureThumbnail,
   ]);
@@ -2154,6 +2218,7 @@ const SplatViewer = forwardRef<SplatViewerHandle, Props>(function SplatViewer(
             scene,
             asset.url,
             `splat-composition-${asset.id}`,
+            asset.pruneMask,
           );
           if (disposed) {
             mesh.dispose?.(false, true);
@@ -4279,25 +4344,31 @@ const SplatViewer = forwardRef<SplatViewerHandle, Props>(function SplatViewer(
           data: ArrayBuffer,
           sh?: Uint8Array[],
           shDegree = 0,
-        ) => {
+        ): PackedSplatData => {
           const count = Math.floor(data.byteLength / 32);
-          originalSplatDataRef.current = {
+          const source = {
             buffer: data,
             sh: sh?.length ? sh : undefined,
             shDegree,
           };
-          aliveSplatMaskRef.current = new Uint8Array(count);
-          aliveSplatMaskRef.current.fill(1);
+          originalSplatDataRef.current = source;
+          const savedAlive = decodeSplatPruneMask(initialPruneMask, count);
+          aliveSplatMaskRef.current = savedAlive ?? new Uint8Array(count).fill(1);
+          savedSplatMaskRef.current = aliveSplatMaskRef.current.slice();
           selectedSplatMaskRef.current = new Uint8Array(count);
           splatPruneHistoryRef.current = [];
           setSplatSelectionRevision((value) => value + 1);
+          const remaining = countMask(aliveSplatMaskRef.current);
           onSplatSelectionChangeRef.current?.({
             total: count,
             selected: 0,
-            remaining: count,
-            pruned: 0,
+            remaining,
+            pruned: count - remaining,
             dirty: false,
           });
+          return remaining === count
+            ? source
+            : filterPackedSplats(source, aliveSplatMaskRef.current);
         };
 
         const isSogUrl = splatUrl.split("?")[0].toLowerCase().endsWith(".sog");
@@ -4404,17 +4475,23 @@ const SplatViewer = forwardRef<SplatViewerHandle, Props>(function SplatViewer(
             parsedSOG = await ParseSogMeta(files, "", scene);
           }
           if (disposed) return;
-          fallbackSceneRef.current = computeSceneFrameFromSplatBuffer(parsedSOG.data);
+          const sogSh = parsedSOG.sh && parsedSOG.sh.length ? parsedSOG.sh : undefined;
+          const sogDegree = sogSh ? (parsedSOG.shDegree ?? 0) : 0;
+          const renderData = initializeSplatEditing(parsedSOG.data, sogSh, sogDegree);
+          fallbackSceneRef.current = computeSceneFrameFromSplatBuffer(renderData.buffer);
           if (fallbackSceneRef.current) {
             onSceneFrameRef.current?.(fallbackSceneRef.current);
           }
-          splatBufferRef.current = parsedSOG.data;
+          splatBufferRef.current = renderData.buffer;
 
           gs = new GaussianSplattingMesh("splat", null, scene);
-          const sogSh = parsedSOG.sh && parsedSOG.sh.length ? parsedSOG.sh : undefined;
-          const sogDegree = sogSh ? (parsedSOG.shDegree ?? 0) : 0;
-          gs.updateData(parsedSOG.data, sogSh, { flipY: false }, undefined, sogDegree);
-          initializeSplatEditing(parsedSOG.data, sogSh, sogDegree);
+          gs.updateData(
+            renderData.buffer,
+            renderData.sh,
+            { flipY: false },
+            undefined,
+            renderData.sh?.length ? (renderData.shDegree ?? 0) : 0,
+          );
           gs.alwaysSelectAsActiveMesh = true;
         } else if (isGZippedSpz || isNgspSpz || isSpzUrl) {
           // SPZ format: this is the current R&D-packed web format.
@@ -4445,24 +4522,24 @@ const SplatViewer = forwardRef<SplatViewerHandle, Props>(function SplatViewer(
           }
 
           if (disposed) return;
-          fallbackSceneRef.current = computeSceneFrameFromSplatBuffer(parsedSPZ.data);
+          const renderData = initializeSplatEditing(
+            parsedSPZ.data,
+            parsedSPZ.sh && parsedSPZ.sh.length ? parsedSPZ.sh : undefined,
+            parsedSPZ.shDegree ?? 0,
+          );
+          fallbackSceneRef.current = computeSceneFrameFromSplatBuffer(renderData.buffer);
           if (fallbackSceneRef.current) {
             onSceneFrameRef.current?.(fallbackSceneRef.current);
           }
-          splatBufferRef.current = parsedSPZ.data;
+          splatBufferRef.current = renderData.buffer;
 
           gs = new GaussianSplattingMesh("splat", null, scene);
           gs.updateData(
-            parsedSPZ.data,
-            parsedSPZ.sh && parsedSPZ.sh.length ? parsedSPZ.sh : undefined,
+            renderData.buffer,
+            renderData.sh,
             { flipY: false },
             undefined,
-            parsedSPZ.shDegree ?? 0,
-          );
-          initializeSplatEditing(
-            parsedSPZ.data,
-            parsedSPZ.sh && parsedSPZ.sh.length ? parsedSPZ.sh : undefined,
-            parsedSPZ.shDegree ?? 0,
+            renderData.sh?.length ? (renderData.shDegree ?? 0) : 0,
           );
           gs.alwaysSelectAsActiveMesh = true;
         } else {
@@ -4477,26 +4554,30 @@ const SplatViewer = forwardRef<SplatViewerHandle, Props>(function SplatViewer(
               };
           const fullConv = converted.buffer;
           if (disposed) return;
-          fallbackSceneRef.current = computeSceneFrameFromSplatBuffer(fullConv);
+          const renderData = initializeSplatEditing(
+            fullConv,
+            converted.sh,
+            converted.shDegree ?? 0,
+          );
+          fallbackSceneRef.current = computeSceneFrameFromSplatBuffer(renderData.buffer);
           if (fallbackSceneRef.current) {
             onSceneFrameRef.current?.(fallbackSceneRef.current);
           }
-          splatBufferRef.current = fullConv;
+          splatBufferRef.current = renderData.buffer;
           if (!cachedFull && splatId) void putCache(splatId, "full", fullConv, outputsVersion);
 
           gs = new GaussianSplattingMesh("splat", null, scene);
-          if (converted.sh?.length) {
+          if (renderData.sh?.length) {
             gs.updateData(
-              fullConv,
-              converted.sh,
+              renderData.buffer,
+              renderData.sh,
               { flipY: false },
               undefined,
-              converted.shDegree ?? 0,
+              renderData.shDegree ?? 0,
             );
           } else {
-            await gs.updateDataAsync(fullConv);
+            await gs.updateDataAsync(renderData.buffer);
           }
-          initializeSplatEditing(fullConv, converted.sh, converted.shDegree ?? 0);
           if (disposed) return;
           gs.alwaysSelectAsActiveMesh = true;
         }
@@ -4553,6 +4634,7 @@ const SplatViewer = forwardRef<SplatViewerHandle, Props>(function SplatViewer(
       splatBufferRef.current = null;
       originalSplatDataRef.current = null;
       aliveSplatMaskRef.current = null;
+      savedSplatMaskRef.current = null;
       selectedSplatMaskRef.current = null;
       splatPruneHistoryRef.current = [];
       inspectionSampleRef.current = null;
