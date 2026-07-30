@@ -92,22 +92,28 @@ export default function TourPage({
   const { isAuthenticated, isLoading, user } = useAuth();
   const router = useRouter();
   const [spatialEditorAllowed, setSpatialEditorAllowed] = useState(false);
+  const [spatialAccessLoading, setSpatialAccessLoading] = useState(true);
 
   useEffect(() => {
     if (!isAuthenticated) {
       setSpatialEditorAllowed(false);
+      if (!isLoading) setSpatialAccessLoading(false);
       return;
     }
     let active = true;
+    setSpatialAccessLoading(true);
     void hasWebCreationAccess()
       .then((allowed) => {
         if (active) setSpatialEditorAllowed(allowed);
       })
       .catch(() => {
         if (active) setSpatialEditorAllowed(false);
+      })
+      .finally(() => {
+        if (active) setSpatialAccessLoading(false);
       });
     return () => { active = false; };
-  }, [isAuthenticated]);
+  }, [isAuthenticated, isLoading]);
   const lang = getUserLanguage(user?.localization);
 
   const [viewer, setViewer] = useState<SplatViewerPayload | null>(null);
@@ -416,7 +422,7 @@ export default function TourPage({
     }
   }, [requestedTourId, resolvedSplatId]);
 
-  if (isLoading || (!viewer && !error)) {
+  if (isLoading || spatialAccessLoading || (!viewer && !error)) {
     return <PageLoading />;
   }
 

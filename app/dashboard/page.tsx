@@ -72,7 +72,9 @@ export default function DashboardPage() {
   const pageRef = React.useRef(1);
 
   const [tourStates, setTourStates] = React.useState<Record<number, DashboardTourState>>({});
+  const [tourStatesSettled, setTourStatesSettled] = React.useState(false);
   const [unitCatalog, setUnitCatalog] = React.useState<UnitLookup[]>([]);
+  const [unitCatalogSettled, setUnitCatalogSettled] = React.useState(false);
   const [searchInput, setSearchInput] = React.useState("");
   const [searchQuery, setSearchQuery] = React.useState("");
   const [gridCols, setGridCols] = React.useState<1 | 2>(2);
@@ -137,17 +139,20 @@ export default function DashboardPage() {
   React.useEffect(() => {
     if (!isAuthenticated) return;
     let active = true;
-    void listAllSplats().then((splats) => {
-      if (!active) return;
-      const map: Record<number, DashboardTourState> = {};
-      for (const splat of splats) {
-        const state = getTourState(splat);
-        if (!map[splat.source_draft] || (state === "ready" && map[splat.source_draft] !== "ready")) {
-          map[splat.source_draft] = state;
+    void listAllSplats()
+      .then((splats) => {
+        if (!active) return;
+        const map: Record<number, DashboardTourState> = {};
+        for (const splat of splats) {
+          const state = getTourState(splat);
+          if (!map[splat.source_draft] || (state === "ready" && map[splat.source_draft] !== "ready")) {
+            map[splat.source_draft] = state;
+          }
         }
-      }
-      setTourStates(map);
-    }).catch(() => undefined);
+        setTourStates(map);
+      })
+      .catch(() => undefined)
+      .finally(() => { if (active) setTourStatesSettled(true); });
     return () => { active = false; };
   }, [isAuthenticated]);
 
@@ -156,7 +161,8 @@ export default function DashboardPage() {
     let active = true;
     void listUnits("CURRENCY")
       .then((units) => { if (active) setUnitCatalog(units); })
-      .catch(() => { if (active) setUnitCatalog([]); });
+      .catch(() => { if (active) setUnitCatalog([]); })
+      .finally(() => { if (active) setUnitCatalogSettled(true); });
     return () => { active = false; };
   }, [isAuthenticated]);
 
@@ -259,7 +265,13 @@ export default function DashboardPage() {
     return () => { clearInterval(id); document.removeEventListener("visibilitychange", onVisible); };
   }, [isAuthenticated, searchQuery, drafts]);
 
-  if (isLoading || !user) {
+  if (
+    isLoading
+    || !user
+    || draftsLoading
+    || !tourStatesSettled
+    || !unitCatalogSettled
+  ) {
     return <PageLoading />;
   }
 

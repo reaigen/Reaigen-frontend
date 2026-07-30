@@ -273,6 +273,7 @@ export default function SharesPage() {
   const [drafts, setDrafts] = React.useState<DraftListingItem[]>([]);
   const [splatsByDraft, setSplatsByDraft] = React.useState<Record<number, { title: string; splatId: number; thumbnail: string | null }>>({});
   const [loading, setLoading] = React.useState(true);
+  const [initialLoadComplete, setInitialLoadComplete] = React.useState(false);
   const [loadError, setLoadError] = React.useState(false);
   const [filter, setFilter] = React.useState<"all" | "active" | "inactive">("active");
   const [query, setQuery] = React.useState("");
@@ -306,6 +307,7 @@ export default function SharesPage() {
       setSplatsByDraft(map);
     }
     setLoading(false);
+    setInitialLoadComplete(true);
   }, []);
 
   React.useEffect(() => {
@@ -329,7 +331,7 @@ export default function SharesPage() {
     }
   }, []);
 
-  if (isLoading || !user) {
+  if (isLoading || !user || !initialLoadComplete) {
     return <PageLoading />;
   }
 

@@ -89,39 +89,51 @@ export default function SharingPage({ params }: { params: Promise<{ id: string }
 
   useEffect(() => {
     if (!isAuthenticated || isNaN(draftId)) return;
+    let active = true;
     setLoading(true);
-    Promise.all([
-      getDraft(draftId),
-      getSplatsByDraft(draftId).catch(() => null),
-      getDraftTourAssets(draftId).catch(() => null),
-      listShares().catch(() => [] as ShareData[]),
-      listUnits().catch(() => []),
-    ]).then(([d, s, fetchedTourAssets, allShares, fetchedUnits]) => {
-      setDraft(d);
-      setSplatData(s);
-      setTourAssets(fetchedTourAssets);
-      setUnitCatalog(fetchedUnits);
-      const draftShares = (allShares as ShareData[]).filter(
-        (sh) => sh.draft === draftId && sh.status !== "revoked"
-      );
-      setShares(draftShares);
-      if (d.floorplan_id) getFloorplan(d.floorplan_id).then(setFloorplan).catch(() => {});
+    setError(null);
+    void (async () => {
+      try {
+        const [d, s, fetchedTourAssets, allShares, fetchedUnits] = await Promise.all([
+          getDraft(draftId),
+          getSplatsByDraft(draftId).catch(() => null),
+          getDraftTourAssets(draftId).catch(() => null),
+          listShares().catch(() => [] as ShareData[]),
+          listUnits().catch(() => []),
+        ]);
+        const fetchedFloorplan = d.floorplan_id
+          ? await getFloorplan(d.floorplan_id).catch(() => null)
+          : null;
+        if (!active) return;
+        setDraft(d);
+        setSplatData(s);
+        setTourAssets(fetchedTourAssets);
+        setUnitCatalog(fetchedUnits);
+        setFloorplan(fetchedFloorplan);
+        const draftShares = (allShares as ShareData[]).filter(
+          (sh) => sh.draft === draftId && sh.status !== "revoked"
+        );
+        setShares(draftShares);
 
-      const preferredSplat = primaryShareSplat(s);
-      const preferredSplatId = preferredSplat
-        ? (preferredSplat.splat_id ?? preferredSplat.id)
-        : null;
-      const hasSplat = Boolean(
-        selectShareableTour(fetchedTourAssets, preferredSplatId),
-      );
-      const hasPhotos = currentGalleryUploads(d.raw_uploads ?? [], "image").length > 0;
-      const hasFp = !!d.floorplan_id || (d.draft_data ?? []).some(
-        (e: { data_key: string }) => e.data_key === "captured_room_json" || e.data_key === "wall_graph_json"
-      );
-      setScope(defaultContentScope(hasSplat, hasPhotos, hasFp));
-    }).catch((err) => {
-      setError(getSafeApiErrorMessage(err, lang) || "Failed to load");
-    }).finally(() => setLoading(false));
+        const preferredSplat = primaryShareSplat(s);
+        const preferredSplatId = preferredSplat
+          ? (preferredSplat.splat_id ?? preferredSplat.id)
+          : null;
+        const hasSplat = Boolean(
+          selectShareableTour(fetchedTourAssets, preferredSplatId),
+        );
+        const hasPhotos = currentGalleryUploads(d.raw_uploads ?? [], "image").length > 0;
+        const hasFp = !!d.floorplan_id || (d.draft_data ?? []).some(
+          (e: { data_key: string }) => e.data_key === "captured_room_json" || e.data_key === "wall_graph_json"
+        );
+        setScope(defaultContentScope(hasSplat, hasPhotos, hasFp));
+      } catch (err) {
+        if (active) setError(getSafeApiErrorMessage(err, lang) || "Failed to load");
+      } finally {
+        if (active) setLoading(false);
+      }
+    })();
+    return () => { active = false; };
   }, [isAuthenticated, draftId, lang]);
 
   const legacyPrimarySplat = primaryShareSplat(splatData);

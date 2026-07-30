@@ -56,6 +56,7 @@ export default function ToursPage() {
   const router = useRouter();
   const [items, setItems] = React.useState<SplatListItem[]>([]);
   const [loading, setLoading] = React.useState(true);
+  const [initialLoadComplete, setInitialLoadComplete] = React.useState(false);
   const [error, setError] = React.useState(false);
   const [query, setQuery] = React.useState("");
 
@@ -68,6 +69,7 @@ export default function ToursPage() {
       setError(true);
     } finally {
       setLoading(false);
+      setInitialLoadComplete(true);
     }
   }, []);
 
@@ -79,7 +81,7 @@ export default function ToursPage() {
     if (isAuthenticated) void load();
   }, [isAuthenticated, load]);
 
-  if (isLoading || !user) return <PageLoading />;
+  if (isLoading || !user || !initialLoadComplete) return <PageLoading />;
 
   const lang = getUserLanguage(user.localization);
   const normalizedQuery = query.trim().toLowerCase();
