@@ -259,6 +259,7 @@ export default function WebTourEditorPage({
   const selectedIdRef = useRef<string | null>(null);
   const pruneCommitLockRef = useRef(false);
   const thumbnailCaptureRef = useRef<Promise<unknown>>(Promise.resolve());
+  const pruneDialogCancelRef = useRef<HTMLButtonElement | null>(null);
 
   const requestClosePruneEditor = useCallback(() => {
     if (committingPrune) return;
@@ -282,6 +283,14 @@ export default function WebTourEditorPage({
     const timer = window.setTimeout(() => setPruneSaveNotice(null), 4500);
     return () => window.clearTimeout(timer);
   }, [pruneSaveNotice]);
+
+  useEffect(() => {
+    if (!pruneConfirmation || committingPrune) return;
+    const frame = window.requestAnimationFrame(() => {
+      pruneDialogCancelRef.current?.focus();
+    });
+    return () => window.cancelAnimationFrame(frame);
+  }, [committingPrune, pruneConfirmation]);
 
   useEffect(() => {
     if (!isLoading && !isAuthenticated) router.replace("/");
@@ -1334,107 +1343,6 @@ export default function WebTourEditorPage({
             </button>
           </div>
 
-          {pruneConfirmation ? (
-            <div
-              role="alertdialog"
-              aria-modal="true"
-              aria-labelledby="prune-confirmation-title"
-              className="absolute inset-0 z-10 flex flex-col justify-center bg-card/98 p-4 backdrop-blur-sm"
-            >
-              <p
-                id="prune-confirmation-title"
-                className="text-[13px] font-semibold"
-              >
-                {t(
-                  pruneConfirmation === "save"
-                    ? "webEditor.savePrunedTitle"
-                    : "webEditor.discardPruneTitle",
-                  lang,
-                )}
-              </p>
-              {pruneConfirmation === "save" ? (
-                <>
-                  <p className="mt-1 text-[11px] leading-relaxed text-muted-foreground">
-                    {splatSelectionStats.pruned.toLocaleString(lang)}{" "}
-                    {t("webEditor.pointsRemoved", lang)} ·{" "}
-                    {splatSelectionStats.remaining.toLocaleString(lang)}{" "}
-                    {t("webEditor.pointsRemain", lang)} ·{" "}
-                    {splatSelectionStats.total > 0
-                      ? Math.round(
-                          (splatSelectionStats.pruned / splatSelectionStats.total) * 100,
-                        )
-                      : 0}
-                    %
-                  </p>
-                  <p className="mt-3 rounded-xl border border-amber-500/20 bg-amber-500/[0.08] p-3 text-[10px] leading-relaxed text-amber-800">
-                    {t("webEditor.savePrunedWarning", lang)}
-                  </p>
-                </>
-              ) : (
-                <p className="mt-2 text-[11px] leading-relaxed text-muted-foreground">
-                  {t("webEditor.discardPruneWarning", lang)}
-                </p>
-              )}
-
-              {committingPrune ? (
-                <div className="mt-4" aria-live="polite">
-                  <div className="flex items-center justify-between text-[10px] font-medium">
-                    <span>
-                      {t(
-                        pruneSaveStage === "exporting"
-                          ? "webEditor.pruneExporting"
-                          : pruneSaveStage === "finalizing"
-                            ? "webEditor.pruneFinalizing"
-                            : "webEditor.pruneUploading",
-                        lang,
-                      )}
-                    </span>
-                    <span className="tabular-nums">
-                      {Math.round(pruneUploadProgress * 100)}%
-                    </span>
-                  </div>
-                  <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-foreground/[0.08]">
-                    <div
-                      className="h-full rounded-full bg-foreground transition-[width] duration-200"
-                      style={{ width: `${Math.max(4, pruneUploadProgress * 100)}%` }}
-                    />
-                  </div>
-                </div>
-              ) : null}
-
-              <div className="mt-4 grid grid-cols-2 gap-2">
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="sm"
-                  disabled={committingPrune}
-                  onClick={() => setPruneConfirmation(null)}
-                >
-                  {t("common.cancel", lang)}
-                </Button>
-                <Button
-                  type="button"
-                  size="sm"
-                  loading={committingPrune}
-                  onClick={() => {
-                    if (pruneConfirmation === "save") {
-                      void commitPrunedAsset();
-                    } else {
-                      discardPruneChanges();
-                    }
-                  }}
-                >
-                  {t(
-                    pruneConfirmation === "save"
-                      ? "webEditor.savePrunedConfirm"
-                      : "webEditor.discardPrune",
-                    lang,
-                  )}
-                </Button>
-              </div>
-            </div>
-          ) : null}
-
           <div className="mt-3 grid grid-cols-3 gap-1">
             {([
               ["brush", t("webEditor.brush", lang)],
@@ -1583,6 +1491,145 @@ export default function WebTourEditorPage({
             {t("webEditor.prunePreviewOnly", lang)}
           </p>
         </section>
+      ) : null}
+
+      {pruneConfirmation ? (
+        <div
+          className="absolute inset-0 z-50 flex items-center justify-center bg-black/20 p-4 sm:p-6"
+          onMouseDown={(event) => {
+            if (
+              event.currentTarget === event.target
+              && !committingPrune
+            ) {
+              setPruneConfirmation(null);
+            }
+          }}
+        >
+          <section
+            role="alertdialog"
+            aria-modal="true"
+            aria-labelledby="prune-confirmation-title"
+            aria-describedby="prune-confirmation-description"
+            className="floating-panel w-full max-w-[28rem] !bg-card p-5 shadow-elevated sm:p-6"
+          >
+            <div className="flex items-start justify-between gap-4">
+              <div className="min-w-0">
+                <h2
+                  id="prune-confirmation-title"
+                  className="text-[16px] font-semibold leading-snug tracking-[-0.01em]"
+                >
+                  {t(
+                    pruneConfirmation === "save"
+                      ? "webEditor.savePrunedTitle"
+                      : "webEditor.discardPruneTitle",
+                    lang,
+                  )}
+                </h2>
+                <p
+                  id="prune-confirmation-description"
+                  className="mt-2 text-[11px] leading-relaxed text-muted-foreground"
+                >
+                  {t(
+                    pruneConfirmation === "save"
+                      ? "webEditor.savePrunedWarning"
+                      : "webEditor.discardPruneWarning",
+                    lang,
+                  )}
+                </p>
+              </div>
+              <button
+                type="button"
+                className="floating-icon-button-sm -mr-1 -mt-1 text-muted-foreground hover:bg-foreground/[0.06] hover:text-foreground disabled:opacity-35"
+                disabled={committingPrune}
+                onClick={() => setPruneConfirmation(null)}
+                aria-label={t("common.close", lang)}
+              >
+                <CloseIcon size={13} />
+              </button>
+            </div>
+
+            {pruneConfirmation === "save" ? (
+              <div className="mt-5 grid grid-cols-2 divide-x divide-border/65 rounded-2xl border border-border/65 bg-foreground/[0.025] py-3">
+                <div className="px-4">
+                  <div className="text-[15px] font-semibold tabular-nums">
+                    {splatSelectionStats.pruned.toLocaleString(lang)}
+                  </div>
+                  <div className="mt-0.5 text-[9px] text-muted-foreground">
+                    {t("webEditor.pointsRemoved", lang)}
+                  </div>
+                </div>
+                <div className="px-4">
+                  <div className="text-[15px] font-semibold tabular-nums">
+                    {splatSelectionStats.remaining.toLocaleString(lang)}
+                  </div>
+                  <div className="mt-0.5 text-[9px] text-muted-foreground">
+                    {t("webEditor.pointsRemain", lang)}
+                  </div>
+                </div>
+              </div>
+            ) : null}
+
+            {committingPrune ? (
+              <div className="mt-5" aria-live="polite">
+                <div className="flex items-center justify-between text-[10px] font-medium">
+                  <span>
+                    {t(
+                      pruneSaveStage === "exporting"
+                        ? "webEditor.pruneExporting"
+                        : pruneSaveStage === "finalizing"
+                          ? "webEditor.pruneFinalizing"
+                          : "webEditor.pruneUploading",
+                      lang,
+                    )}
+                  </span>
+                  <span className="tabular-nums">
+                    {Math.round(pruneUploadProgress * 100)}%
+                  </span>
+                </div>
+                <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-foreground/[0.08]">
+                  <div
+                    className="h-full rounded-full bg-foreground transition-[width] duration-200"
+                    style={{ width: `${Math.max(4, pruneUploadProgress * 100)}%` }}
+                  />
+                </div>
+              </div>
+            ) : null}
+
+            <div className="mt-5 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+              <Button
+                ref={pruneDialogCancelRef}
+                type="button"
+                variant="outline"
+                size="sm"
+                disabled={committingPrune}
+                onClick={() => setPruneConfirmation(null)}
+                className="sm:min-w-24"
+              >
+                {t("common.cancel", lang)}
+              </Button>
+              <Button
+                type="button"
+                size="sm"
+                loading={committingPrune}
+                onClick={() => {
+                  if (pruneConfirmation === "save") {
+                    void commitPrunedAsset();
+                  } else {
+                    discardPruneChanges();
+                  }
+                }}
+                className="sm:min-w-36"
+              >
+                {t(
+                  pruneConfirmation === "save"
+                    ? "webEditor.savePrunedConfirm"
+                    : "webEditor.discardPrune",
+                  lang,
+                )}
+              </Button>
+            </div>
+          </section>
+        </div>
       ) : null}
 
       <nav className="floating-toolbar scrollbar-hide absolute bottom-4 left-1/2 z-30 max-w-[calc(100vw-1rem)] -translate-x-1/2 overflow-x-auto">
