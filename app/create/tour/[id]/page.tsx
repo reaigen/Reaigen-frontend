@@ -316,8 +316,8 @@ export default function WebTourEditorPage({
   const [dragActive, setDragActive] = useState(false);
   const [showGrid, setShowGrid] = useState(true);
   const [cameraMode, setCameraMode] = useState<SpatialCameraMode>("orbit");
-  const [scenePanelOpen, setScenePanelOpen] = useState(true);
-  const [inspectorOpen, setInspectorOpen] = useState(true);
+  const [scenePanelOpen, setScenePanelOpen] = useState(false);
+  const [inspectorOpen, setInspectorOpen] = useState(false);
   const [cameraEditorOpen, setCameraEditorOpen] = useState(false);
   const [pruneEditorOpen, setPruneEditorOpen] = useState(false);
   const [splatSelectionTool, setSplatSelectionTool] = useState<SplatSelectionTool>("brush");
@@ -570,7 +570,14 @@ export default function WebTourEditorPage({
 
   useEffect(() => {
     const media = window.matchMedia("(max-width: 767px)");
-    const syncLayout = () => setCompactLayout(media.matches);
+    const syncLayout = () => {
+      const compact = media.matches;
+      setCompactLayout(compact);
+      // Desktop starts with both authoring sidebars available. Phone starts
+      // with a clean viewport and opens one intentional sheet at a time.
+      setScenePanelOpen(!compact);
+      setInspectorOpen(!compact);
+    };
     syncLayout();
     media.addEventListener("change", syncLayout);
     return () => media.removeEventListener("change", syncLayout);
@@ -764,7 +771,13 @@ export default function WebTourEditorPage({
   };
 
   const selectNode = (nodeId: string) => {
-    if (nodeId === selectedId) return;
+    if (nodeId === selectedId) {
+      if (compactLayout) {
+        setScenePanelOpen(false);
+        setInspectorOpen(true);
+      }
+      return;
+    }
     stageCurrentPruneDraft(true);
     if (selectedId && draftTransform) {
       setWorkspace((current) => current ? {
@@ -1198,9 +1211,11 @@ export default function WebTourEditorPage({
       />
 
       <aside className={cn(
-        "floating-panel absolute left-3 top-20 z-20 max-h-[calc(100dvh-10rem)] w-[min(16.5rem,calc(100vw-1.5rem))] overflow-hidden transition-transform sm:left-4",
-        !scenePanelOpen && "-translate-x-[calc(100%+1rem)]",
+        "floating-panel absolute inset-x-3 bottom-[calc(5.25rem+env(safe-area-inset-bottom,0px))] z-30 max-h-[45dvh] overflow-hidden transition-[transform,opacity] duration-200 md:inset-x-auto md:bottom-auto md:left-4 md:top-20 md:z-20 md:max-h-[calc(100dvh-10rem)] md:w-[16.5rem]",
+        !scenePanelOpen
+          && "pointer-events-none translate-y-[calc(100%+6rem)] opacity-0 md:translate-y-0 md:-translate-x-[calc(100%+1rem)] md:opacity-100",
       )}>
+        <div aria-hidden="true" className="mx-auto mt-2 h-1 w-9 rounded-full bg-foreground/15 md:hidden" />
         <div className="flex items-center justify-between border-b border-border/65 px-3 py-2.5">
           <span>
             <span className="block text-[10px] font-semibold">{t("webEditor.sceneGraph", lang)}</span>
@@ -1227,7 +1242,7 @@ export default function WebTourEditorPage({
             </button>
           </span>
         </div>
-        <div className="max-h-[calc(100dvh-14rem)] overflow-y-auto p-2">
+        <div className="max-h-[calc(45dvh-3.75rem)] overflow-y-auto p-2 md:max-h-[calc(100dvh-14rem)]">
           <div className="flex items-center gap-2 border-b border-border/50 px-2 py-2 text-[10px] font-semibold">
             <TourIcon size={12} />
             /World
@@ -1282,7 +1297,10 @@ export default function WebTourEditorPage({
               disabled={!selectedRenderable}
               onClick={() => {
                 setCameraEditorOpen(true);
-                if (compactLayout) setScenePanelOpen(false);
+                if (compactLayout) {
+                  setScenePanelOpen(false);
+                  setInspectorOpen(false);
+                }
               }}
               className={cn(
                 "mt-1 flex w-full items-center gap-2 rounded-md px-2 py-2 text-left text-[10px] font-medium transition-colors disabled:opacity-40",
@@ -1301,10 +1319,15 @@ export default function WebTourEditorPage({
         </div>
       </aside>
 
-      {!scenePanelOpen ? (
+      {!scenePanelOpen && (!compactLayout || !inspectorOpen) ? (
         <button
           type="button"
-          onClick={() => setScenePanelOpen(true)}
+          onClick={() => {
+            if (pruneEditorOpen) requestClosePruneEditor();
+            setCameraEditorOpen(false);
+            setInspectorOpen(false);
+            setScenePanelOpen(true);
+          }}
           className="floating-panel floating-icon-button absolute left-3 top-20 z-20 text-foreground/60 shadow-control sm:left-4"
           aria-label={t("webEditor.sceneGraph", lang)}
         >
@@ -1313,7 +1336,8 @@ export default function WebTourEditorPage({
       ) : null}
 
       {selected && draftTransform && inspectorOpen && !cameraEditorOpen && (!compactLayout || !scenePanelOpen) ? (
-        <section className="floating-panel absolute right-3 top-20 z-20 max-h-[calc(100dvh-10rem)] w-[min(19.5rem,calc(100vw-1.5rem))] overflow-y-auto p-3 sm:right-4">
+        <section className="floating-panel absolute inset-x-3 bottom-[calc(5.25rem+env(safe-area-inset-bottom,0px))] z-30 max-h-[56dvh] overflow-y-auto p-3 md:inset-x-auto md:bottom-auto md:right-4 md:top-20 md:z-20 md:max-h-[calc(100dvh-10rem)] md:w-[19.5rem]">
+          <div aria-hidden="true" className="mx-auto mb-2 h-1 w-9 rounded-full bg-foreground/15 md:hidden" />
           <div className="flex items-center justify-between gap-3 border-b border-border/60 pb-2.5">
             <span className="min-w-0">
               <span className="block text-[9px] font-semibold uppercase tracking-[0.11em] text-foreground/55">
@@ -1491,10 +1515,14 @@ export default function WebTourEditorPage({
         </section>
       ) : null}
 
-      {selected && !inspectorOpen && !cameraEditorOpen ? (
+      {selected && !inspectorOpen && !cameraEditorOpen && (!compactLayout || !scenePanelOpen) ? (
         <button
           type="button"
-          onClick={() => setInspectorOpen(true)}
+          onClick={() => {
+            if (pruneEditorOpen) requestClosePruneEditor();
+            setScenePanelOpen(false);
+            setInspectorOpen(true);
+          }}
           className="floating-panel floating-icon-button absolute right-3 top-20 z-20 text-foreground/60 shadow-control sm:right-4"
           aria-label={t("spatialEditor.inspector", lang)}
         >
@@ -1670,8 +1698,64 @@ export default function WebTourEditorPage({
         </section>
       ) : null}
 
+      {selectedRenderable && !cameraEditorOpen ? (
+        <nav className="floating-toolbar absolute bottom-[calc(0.75rem+env(safe-area-inset-bottom,0px))] left-1/2 z-30 max-w-[calc(100vw-1rem)] -translate-x-1/2 md:hidden">
+          {([
+            ["select", TechnicalIcon, "spatialEditor.selectTool"],
+            ["move", MoveIcon, "spatialEditor.moveTool"],
+            ["rotate", RotateIcon, "spatialEditor.rotateTool"],
+            ["scale", ScaleIcon, "spatialEditor.scale"],
+          ] as const).map(([value, Icon, label]) => (
+            <button
+              key={value}
+              type="button"
+              onClick={() => {
+                if (pruneEditorOpen) requestClosePruneEditor();
+                setCameraEditorOpen(false);
+                setScenePanelOpen(false);
+                setInspectorOpen(false);
+                setTool(value);
+              }}
+              aria-label={t(label, lang)}
+              aria-pressed={tool === value}
+              className={cn(
+                tool === value
+                  ? "floating-control min-w-0 gap-1.5 bg-foreground px-3 text-background"
+                  : "floating-icon-button text-foreground/55 active:bg-foreground/[0.08]",
+              )}
+            >
+              <Icon size={15} />
+              {tool === value ? (
+                <span className="text-[10px] font-medium">{t(label, lang)}</span>
+              ) : null}
+            </button>
+          ))}
+          <button
+            type="button"
+            onClick={() => viewerRef.current?.frameScene()}
+            aria-label={t("spatialEditor.frame", lang)}
+            className="floating-icon-button text-foreground/55 active:bg-foreground/[0.08]"
+          >
+            <FrameIcon size={15} />
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              if (pruneEditorOpen) requestClosePruneEditor();
+              setScenePanelOpen(false);
+              setInspectorOpen(false);
+              setCameraEditorOpen(true);
+            }}
+            aria-label={t("webEditor.cameras", lang)}
+            className="floating-icon-button text-foreground/55 active:bg-foreground/[0.08]"
+          >
+            <CameraIcon size={15} />
+          </button>
+        </nav>
+      ) : null}
+
       {selectedRenderable ? (
-      <nav className="floating-toolbar scrollbar-hide absolute bottom-4 left-1/2 z-30 max-w-[calc(100vw-1rem)] -translate-x-1/2 overflow-x-auto">
+      <nav className="floating-toolbar scrollbar-hide absolute bottom-4 left-1/2 z-30 hidden max-w-[calc(100vw-1rem)] -translate-x-1/2 overflow-x-auto md:flex">
         <button
           type="button"
           onClick={undoTransform}
@@ -1729,7 +1813,10 @@ export default function WebTourEditorPage({
             setTool("select");
             setCameraEditorOpen(false);
             setPruneEditorOpen(true);
-            if (compactLayout) setScenePanelOpen(false);
+            if (compactLayout) {
+              setScenePanelOpen(false);
+              setInspectorOpen(false);
+            }
           }}
           title={t("webEditor.splatEditing", lang)}
           className={cn(
@@ -1791,7 +1878,10 @@ export default function WebTourEditorPage({
               const next = !value;
               if (next) {
                 setPruneEditorOpen(false);
-                if (compactLayout) setScenePanelOpen(false);
+                if (compactLayout) {
+                  setScenePanelOpen(false);
+                  setInspectorOpen(false);
+                }
               }
               return next;
             });

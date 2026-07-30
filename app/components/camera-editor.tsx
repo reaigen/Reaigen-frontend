@@ -160,9 +160,16 @@ export default function CameraEditor({ splatId, viewerRef, activeShotIdx, initia
     setSelectedIdx(idx);
     setPreviewIdx(idx);
     if (preview) setMode("preview");
-    // Camera selection in an authoring tool is a cut, not a queued flight.
-    // The next pointer movement can therefore take control immediately.
-    viewerRef.current?.navigateToCamera(shot.position, shot.forward, true, shot.fov, shot.up);
+    // Editing a camera remains an exact cut. Preview arrows and camera dots
+    // are presentation navigation, so they travel from the currently rendered
+    // pose instead of snapping between saved shots.
+    viewerRef.current?.navigateToCamera(
+      shot.position,
+      shot.forward,
+      !preview,
+      shot.fov,
+      shot.up,
+    );
     if (!preview) setTransientMessage(`${t("cameraEditor.viewing", lang)} ${idx + 1}`, 1000);
   }, [lang, setTransientMessage, shots, viewerRef]);
 

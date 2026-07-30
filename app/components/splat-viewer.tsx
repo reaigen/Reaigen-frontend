@@ -754,6 +754,8 @@ interface Anim {
   toAngle: number;
   fromPitch: number;
   toPitch: number;
+  fromUp: Vec3;
+  toUp: Vec3;
   fromFov: number;
   toFov: number;
   holdActive: boolean;
@@ -770,6 +772,7 @@ const defaultAnim = (): Anim => ({
   fromPos: [0, 0, 0], toPos: [0, 0, 0],
   fromAngle: 0, toAngle: 0,
   fromPitch: 0, toPitch: 0,
+  fromUp: [0, 1, 0], toUp: [0, 1, 0],
   fromFov: 0.66, toFov: 0.66,
   holdActive: false, holdElapsed: 0, holdDuration: 4.5,
   holdPos: [0, 0, 0], holdAngle: 0, holdPanAmt: 0, holdBaseFov: 0.66,
@@ -1663,8 +1666,6 @@ const SplatViewer = forwardRef<SplatViewerHandle, Props>(function SplatViewer(
     const useExactForward = isSavedCameraTour(data);
 
     const cam = cameraRef.current;
-    cameraUpRef.current = [...tUp] as Vec3;
-    cam.upVector.set(tUp[0], tUp[1], tUp[2]);
     freeModeRef.current = false;
     cam.detachControl();
     if (immersiveControls) setImmersiveBase(tPos, tFwd, shot.fov, tUp);
@@ -1684,6 +1685,11 @@ const SplatViewer = forwardRef<SplatViewerHandle, Props>(function SplatViewer(
     anim.toAngle = Math.atan2(tFwd[2], tFwd[0]);
     anim.fromPitch = Math.asin(Math.max(-1, Math.min(1, dy / dlen)));
     anim.toPitch = Math.asin(Math.max(-1, Math.min(1, tFwd[1])));
+    anim.fromUp = normalizeVec3(
+      [cam.upVector.x, cam.upVector.y, cam.upVector.z],
+      [0, 1, 0],
+    );
+    anim.toUp = normalizeVec3(tUp, [0, 1, 0]);
     anim.fromFov = cam.fov;
     anim.toFov = shot.fov;
     anim.elapsed = 0;
@@ -1790,8 +1796,6 @@ const SplatViewer = forwardRef<SplatViewerHandle, Props>(function SplatViewer(
     scrollVelocityRef.current = 0;
     freeModeRef.current = false;
     cam.detachControl();
-    cameraUpRef.current = [...up] as Vec3;
-    cam.upVector.set(up[0], up[1], up[2]);
     if (immersiveControls) setImmersiveBase(pos, fwd, targetFov, up);
 
     const toTarget: Vec3 = [
@@ -1801,6 +1805,8 @@ const SplatViewer = forwardRef<SplatViewerHandle, Props>(function SplatViewer(
     ];
 
     if (instant) {
+      cameraUpRef.current = [...up] as Vec3;
+      cam.upVector.set(up[0], up[1], up[2]);
       cam.position.set(pos[0], pos[1], pos[2]);
       cam.setTarget(new B.Vector3(toTarget[0], toTarget[1], toTarget[2]));
       cam.fov = targetFov;
@@ -1828,6 +1834,11 @@ const SplatViewer = forwardRef<SplatViewerHandle, Props>(function SplatViewer(
     anim.toAngle = Math.atan2(fwd[2], fwd[0]);
     anim.fromPitch = Math.asin(Math.max(-1, Math.min(1, cdy / clen)));
     anim.toPitch = Math.asin(Math.max(-1, Math.min(1, fwd[1])));
+    anim.fromUp = normalizeVec3(
+      [cam.upVector.x, cam.upVector.y, cam.upVector.z],
+      [0, 1, 0],
+    );
+    anim.toUp = normalizeVec3(up, [0, 1, 0]);
     anim.fromFov = cam.fov;
     anim.toFov = targetFov;
     anim.elapsed = 0;
@@ -1859,8 +1870,6 @@ const SplatViewer = forwardRef<SplatViewerHandle, Props>(function SplatViewer(
     const camera = cameraRef.current;
     if (!camera) return;
     const worldUp = transformSpatialDirection(up);
-    cameraUpRef.current = [...worldUp] as Vec3;
-    camera.upVector.set(worldUp[0], worldUp[1], worldUp[2]);
     spatialOrbitRef.current.enabled = false;
     navigateToWorldCamera(
       transformSpatialPoint(pos),
@@ -1967,8 +1976,6 @@ const SplatViewer = forwardRef<SplatViewerHandle, Props>(function SplatViewer(
     const position = transformSpatialPoint(sample.position);
     const forward = transformSpatialDirection(sample.forward);
     const up = transformSpatialDirection(sample.up);
-    cameraUpRef.current = [...up] as Vec3;
-    camera.upVector.set(up[0], up[1], up[2]);
     spatialOrbitRef.current.enabled = false;
     navigateToWorldCamera(position, forward, instant, sample.fov, up);
   }, [navigateToWorldCamera, transformSpatialDirection, transformSpatialPoint]);
@@ -3409,6 +3416,20 @@ const SplatViewer = forwardRef<SplatViewerHandle, Props>(function SplatViewer(
       camera.setTarget(camera.position.add(forward));
       markMoving();
     };
+    const panFly = (dx: number, dy: number) => {
+      const target = camera.getTarget();
+      const forward = target.subtract(camera.position).normalize();
+      const authoredUp = camera.upVector?.clone?.() ?? B.Vector3.Up();
+      const right = B.Vector3.Cross(authoredUp, forward).normalize();
+      const up = B.Vector3.Cross(forward, right).normalize();
+      const sceneRadius = fallbackSceneRef.current?.radius ?? 2;
+      const viewportHeight = Math.max(1, canvas.clientHeight);
+      const scale = 2 * sceneRadius * Math.tan(camera.fov * 0.5) / viewportHeight;
+      const movement = right.scale(-dx * scale).add(up.scale(dy * scale));
+      camera.position.addInPlace(movement);
+      camera.setTarget(target.add(movement));
+      markMoving();
+    };
 
     const handlePointerDown = (event: PointerEvent) => {
       if (event.pointerType === "mouse" && ![0, 1, 2].includes(event.button)) return;
@@ -3440,14 +3461,27 @@ const SplatViewer = forwardRef<SplatViewerHandle, Props>(function SplatViewer(
       if (!previous) return;
       pointers.set(event.pointerId, { ...previous, x: event.clientX, y: event.clientY });
 
-      if (pointers.size >= 2 && spatialCameraMode === "orbit") {
+      if (pointers.size >= 2) {
         const nextCentroid = pointerCentroid();
         const nextDistance = pinchDistance();
-        if (nextCentroid && previousCentroid) {
-          panOrbit(nextCentroid.x - previousCentroid.x, nextCentroid.y - previousCentroid.y);
-        }
-        if (nextDistance && previousPinchDistance) {
-          dollyOrbit(Math.log(previousPinchDistance / nextDistance));
+        if (spatialCameraMode === "orbit") {
+          if (nextCentroid && previousCentroid) {
+            panOrbit(nextCentroid.x - previousCentroid.x, nextCentroid.y - previousCentroid.y);
+          }
+          if (nextDistance && previousPinchDistance) {
+            dollyOrbit(Math.log(previousPinchDistance / nextDistance));
+          }
+        } else {
+          // Touch fly mode mirrors a DCC track/dolly gesture: two-finger drag
+          // tracks in the camera plane, while pinch moves forward/backward.
+          if (nextCentroid && previousCentroid) {
+            panFly(nextCentroid.x - previousCentroid.x, nextCentroid.y - previousCentroid.y);
+          }
+          if (nextDistance && previousPinchDistance) {
+            const sceneRadius = fallbackSceneRef.current?.radius ?? 2;
+            const shortestSide = Math.max(240, Math.min(canvas.clientWidth, canvas.clientHeight));
+            moveFly((nextDistance - previousPinchDistance) * sceneRadius * 1.6 / shortestSide);
+          }
         }
         previousCentroid = nextCentroid;
         previousPinchDistance = nextDistance;
@@ -3921,6 +3955,24 @@ const SplatViewer = forwardRef<SplatViewerHandle, Props>(function SplatViewer(
     const handlePointerDown = (event: PointerEvent) => {
       if (event.pointerType === "mouse" && event.button !== 0) return;
       if (!immersivePoseRef.current.enabled) return;
+      if (animRef.current.active) {
+        const cam = cameraRef.current;
+        if (cam) {
+          const target = cam.getTarget();
+          setImmersiveBase(
+            [cam.position.x, cam.position.y, cam.position.z],
+            [
+              target.x - cam.position.x,
+              target.y - cam.position.y,
+              target.z - cam.position.z,
+            ],
+            cam.fov,
+            [cam.upVector.x, cam.upVector.y, cam.upVector.z],
+          );
+        }
+        animRef.current.active = false;
+        animRef.current.holdActive = false;
+      }
       immersiveCoastRef.current = { yaw: 0, pitch: 0 };
       immersivePointersActiveRef.current = true;
       if (pointers.size === 0) {
@@ -4038,7 +4090,14 @@ const SplatViewer = forwardRef<SplatViewerHandle, Props>(function SplatViewer(
       canvas.removeEventListener("pointercancel", handlePointerCancel);
       canvas.removeEventListener("wheel", handleWheel);
     };
-  }, [applyImmersivePose, immersiveControls, ready, resetImmersiveView, spatialNavigation]);
+  }, [
+    applyImmersivePose,
+    immersiveControls,
+    ready,
+    resetImmersiveView,
+    setImmersiveBase,
+    spatialNavigation,
+  ]);
 
   useEffect(() => {
     if (!immersiveControls || spatialNavigation || !ready) {
@@ -4099,9 +4158,13 @@ const SplatViewer = forwardRef<SplatViewerHandle, Props>(function SplatViewer(
         const authoringDpr = compactTouch ? Math.min(dpr, 1.5) : Math.min(dpr, 2.5);
         const viewingDpr = Math.min(dpr, 1.5);
         const restingHardwareScale = 1 / (spatialNavigation ? authoringDpr : viewingDpr);
-        const motionHardwareScale = spatialNavigation
+        // A touch camera transition must not resize the WebGL backbuffer at
+        // take-off and again on arrival. Besides softening the image, that
+        // resize reads as a viewport jump on mobile browsers. Keep one stable
+        // DPR for touch; desktop viewing may retain its subtle motion budget.
+        const motionHardwareScale = spatialNavigation || compactTouch
           ? restingHardwareScale
-          : 1 / Math.min(dpr, compactTouch ? 1 : 1.2);
+          : 1 / Math.min(dpr, 1.2);
         let activeHardwareScale = restingHardwareScale;
         const applyHardwareScale = (next: number) => {
           if (Math.abs(activeHardwareScale - next) < 0.01) return;
@@ -4284,6 +4347,16 @@ const SplatViewer = forwardRef<SplatViewerHandle, Props>(function SplatViewer(
           const yaw = slerpAngle(anim.fromAngle, anim.toAngle, rotT);
           const pitch = anim.fromPitch + (anim.toPitch - anim.fromPitch) * rotT;
           const cosPitch = Math.cos(pitch);
+          const upX = anim.fromUp[0] + (anim.toUp[0] - anim.fromUp[0]) * rotT;
+          const upY = anim.fromUp[1] + (anim.toUp[1] - anim.fromUp[1]) * rotT;
+          const upZ = anim.fromUp[2] + (anim.toUp[2] - anim.fromUp[2]) * rotT;
+          const upLength = Math.hypot(upX, upY, upZ) || 1;
+          cameraUpRef.current = [upX / upLength, upY / upLength, upZ / upLength];
+          camera.upVector.set(
+            cameraUpRef.current[0],
+            cameraUpRef.current[1],
+            cameraUpRef.current[2],
+          );
           camera.setTarget(new BABYLON.Vector3(
             px + Math.cos(yaw) * cosPitch * LOOK,
             py + Math.sin(pitch) * LOOK,
@@ -4846,7 +4919,7 @@ const SplatViewer = forwardRef<SplatViewerHandle, Props>(function SplatViewer(
         </svg>
       ) : null}
 
-      {immersiveControls && ready && (
+      {immersiveControls && !spatialNavigation && ready && (
         <>
           <div
             className={`pointer-events-none absolute inset-x-0 top-[42%] z-10 flex justify-center px-6 transition-all duration-500 md:hidden ${showGestureHint ? "translate-y-0 opacity-100" : "translate-y-2 opacity-0"}`}
