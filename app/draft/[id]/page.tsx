@@ -859,7 +859,7 @@ export default function DraftPreviewPage({ params }: { params: Promise<{ id: str
               </div>
             )}
 
-            <div className="mt-6 hidden flex-wrap items-center gap-2 border-t border-border/70 pt-5 md:flex">
+            <div className="mt-6 hidden flex-wrap items-center gap-3 border-t border-border/70 pt-5 md:flex">
               {hasTour && (
                 <Button asChild size="sm">
                   <Link href={`/tour/${primarySplatId}?tourId=${shareableTour?.id}`}>
@@ -868,18 +868,21 @@ export default function DraftPreviewPage({ params }: { params: Promise<{ id: str
                   </Link>
                 </Button>
               )}
-              <Button type="button" variant="outline" size="sm" onClick={() => setMediaOpen(true)}>
-                <ImageIcon size={15} /> {t("draft.media.manage", lang)}
-              </Button>
-              <Button type="button" variant="outline" size="sm" onClick={() => setEditorOpen(true)}>
-                <EditIcon size={14} /> {t("shareDialog.edit", lang)}
-              </Button>
-              <Button type="button" variant="outline" size="sm" onClick={() => router.push(`/draft/${draftId}/sharing`)}>
-                <ShareIcon size={14} /> {t("draft.share", lang)}
-              </Button>
-              <Button type="button" variant="ghost" size="sm" onClick={() => setVersionsOpen(true)}>
-                <VersionsIcon size={15} /> {t("draft.versions.title", lang)}
-              </Button>
+              <div className="inline-flex max-w-full items-center rounded-full border border-border/70 bg-card p-1 shadow-control">
+                <Button type="button" variant="ghost" size="sm" onClick={() => setMediaOpen(true)}>
+                  <ImageIcon size={15} /> {t("draft.media.manage", lang)}
+                </Button>
+                <Button type="button" variant="ghost" size="sm" onClick={() => setEditorOpen(true)}>
+                  <EditIcon size={14} /> {t("shareDialog.edit", lang)}
+                </Button>
+                <Button type="button" variant="ghost" size="sm" onClick={() => router.push(`/draft/${draftId}/sharing`)}>
+                  <ShareIcon size={14} /> {t("draft.share", lang)}
+                </Button>
+                <span aria-hidden="true" className="mx-1 h-5 w-px bg-border/80" />
+                <Button type="button" variant="ghost" size="sm" onClick={() => setVersionsOpen(true)}>
+                  <VersionsIcon size={15} /> {t("draft.versions.title", lang)}
+                </Button>
+              </div>
             </div>
           </section>
         </div>
