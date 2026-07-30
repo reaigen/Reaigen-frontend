@@ -2913,7 +2913,7 @@ export async function getDraftShare(draftId: number): Promise<ShareData | null> 
 
 export async function createSplatShare(
   splatId: number,
-  opts?: { share_type?: string; pin?: string; expires_in_hours?: number; max_access_count?: number; field_names?: string[]; data_features?: string[] | null },
+  opts?: { share_type?: string; pin?: string; expires_in_hours?: number; max_access_count?: number; field_names?: string[]; data_features?: string[] | null; tour_id?: number },
 ): Promise<ShareData> {
   return request(`/api/reaigen/splats/${splatId}/share/`, {
     method: "POST",

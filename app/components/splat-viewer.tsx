@@ -1796,6 +1796,11 @@ const SplatViewer = forwardRef<SplatViewerHandle, Props>(function SplatViewer(
     const B = babylonRef.current;
     const pose = spatialOrbitRef.current;
     if (!camera || !B || !pose.enabled) return;
+    // The advanced editor owns the camera pose directly. Keep Babylon's
+    // detached FreeCamera input inertia from modifying it between pointer
+    // events, and retain quaternion orientation across the ±180° yaw seam.
+    camera.cameraDirection.set(0, 0, 0);
+    camera.cameraRotation.set(0, 0);
     const cosPitch = Math.cos(pose.pitch);
     camera.position.set(
       pose.target[0] + pose.radius * cosPitch * Math.cos(pose.yaw),
@@ -3066,6 +3071,8 @@ const SplatViewer = forwardRef<SplatViewerHandle, Props>(function SplatViewer(
     scrollVelocityRef.current = 0;
     freeModeRef.current = true;
     camera.detachControl();
+    camera.cameraDirection.set(0, 0, 0);
+    camera.cameraRotation.set(0, 0);
     canvas.focus({ preventScroll: true });
 
     if (spatialCameraMode === "orbit") {
@@ -3876,6 +3883,10 @@ const SplatViewer = forwardRef<SplatViewerHandle, Props>(function SplatViewer(
           : new BABYLON.Color4(1, 1, 1, 1);
 
         const camera = new BABYLON.FreeCamera("cam", BABYLON.Vector3.Zero(), scene);
+        // Quaternion-backed orientation avoids the Euler decomposition seam
+        // where an orbit crossing ±180° could flip to an equivalent but
+        // visibly discontinuous pitch/roll representation.
+        camera.rotationQuaternion = BABYLON.Quaternion.Identity();
         camera.minZ = 0.1;
         camera.maxZ = 100;
         camera.fov = 0.66;

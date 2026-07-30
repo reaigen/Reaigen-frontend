@@ -8,6 +8,7 @@ import { Button } from "../../../lib/ui/button";
 import {
   getDraft,
   getSplatsByDraft,
+  getDraftTourAssets,
   getFloorplan,
   listShares,
   createDraftShare,
@@ -18,7 +19,7 @@ import {
 import type { FloorplanDetail } from "../../../lib/api/client";
 import { getSafeApiErrorMessage } from "../../../lib/api/error-message";
 import { getUserLanguage, t } from "../../../lib/i18n";
-import type { DraftDetailItem, ShareData, SplatsByDraftPayload } from "../../../lib/tour-types";
+import type { DraftDetailItem, DraftTourAssetsPayload, ShareData, SplatsByDraftPayload } from "../../../lib/tour-types";
 import { SharePreview } from "../../../components/sharing/share-preview";
 import { ShareCreateForm, defaultContentScope, type ShareFormData } from "../../../components/sharing/share-create-form";
 import { ShareLinkCard } from "../../../components/sharing/share-link-card";
@@ -27,25 +28,13 @@ import { PageLoading } from "../../../components/page-loading";
 import { copyToClipboard, shareUrl } from "../../../lib/share-ui";
 import type { UnitLookup } from "../../../lib/unit-catalog";
 import { currentGalleryUploads } from "../../../lib/media";
+import { selectShareableTour } from "../../../lib/tour-sharing";
 
 function primaryShareSplat(data: SplatsByDraftPayload | null) {
   if (!data?.splats.length) return null;
   return data.parent_splat_id
     ? data.splats.find((splat) => (splat.splat_id ?? splat.id) === data.parent_splat_id) ?? data.splats[0]
     : data.splats[0];
-}
-
-function isShareableTour(data: SplatsByDraftPayload | null) {
-  const splat = primaryShareSplat(data);
-  return Boolean(splat && splat.status === "completed" && (
-    splat.has_sog
-    || splat.has_splat
-    || splat.has_ply
-    || splat.url
-    || splat.format
-    || splat.available_formats?.length
-    || Object.keys(splat.signed_outputs ?? {}).length
-  ));
 }
 
 function scopeFromShare(
@@ -78,6 +67,7 @@ export default function SharingPage({ params }: { params: Promise<{ id: string }
 
   const [draft, setDraft] = useState<DraftDetailItem | null>(null);
   const [splatData, setSplatData] = useState<SplatsByDraftPayload | null>(null);
+  const [tourAssets, setTourAssets] = useState<DraftTourAssetsPayload | null>(null);
   const [floorplan, setFloorplan] = useState<FloorplanDetail | null>(null);
   const [shares, setShares] = useState<ShareData[]>([]);
   const [unitCatalog, setUnitCatalog] = useState<UnitLookup[]>([]);
@@ -103,11 +93,13 @@ export default function SharingPage({ params }: { params: Promise<{ id: string }
     Promise.all([
       getDraft(draftId),
       getSplatsByDraft(draftId).catch(() => null),
+      getDraftTourAssets(draftId).catch(() => null),
       listShares().catch(() => [] as ShareData[]),
       listUnits().catch(() => []),
-    ]).then(([d, s, allShares, fetchedUnits]) => {
+    ]).then(([d, s, fetchedTourAssets, allShares, fetchedUnits]) => {
       setDraft(d);
       setSplatData(s);
+      setTourAssets(fetchedTourAssets);
       setUnitCatalog(fetchedUnits);
       const draftShares = (allShares as ShareData[]).filter(
         (sh) => sh.draft === draftId && sh.status !== "revoked"
@@ -115,7 +107,13 @@ export default function SharingPage({ params }: { params: Promise<{ id: string }
       setShares(draftShares);
       if (d.floorplan_id) getFloorplan(d.floorplan_id).then(setFloorplan).catch(() => {});
 
-      const hasSplat = isShareableTour(s);
+      const preferredSplat = primaryShareSplat(s);
+      const preferredSplatId = preferredSplat
+        ? (preferredSplat.splat_id ?? preferredSplat.id)
+        : null;
+      const hasSplat = Boolean(
+        selectShareableTour(fetchedTourAssets, preferredSplatId),
+      );
       const hasPhotos = currentGalleryUploads(d.raw_uploads ?? [], "image").length > 0;
       const hasFp = !!d.floorplan_id || (d.draft_data ?? []).some(
         (e: { data_key: string }) => e.data_key === "captured_room_json" || e.data_key === "wall_graph_json"
@@ -126,9 +124,16 @@ export default function SharingPage({ params }: { params: Promise<{ id: string }
     }).finally(() => setLoading(false));
   }, [isAuthenticated, draftId, lang]);
 
-  const primarySplat = primaryShareSplat(splatData);
-  const hasTour = isShareableTour(splatData);
-  const primarySplatId = primarySplat ? (primarySplat.splat_id ?? primarySplat.id) : undefined;
+  const legacyPrimarySplat = primaryShareSplat(splatData);
+  const legacyPrimarySplatId = legacyPrimarySplat
+    ? (legacyPrimarySplat.splat_id ?? legacyPrimarySplat.id)
+    : null;
+  const shareableTour = selectShareableTour(tourAssets, legacyPrimarySplatId);
+  const hasTour = Boolean(shareableTour);
+  const primarySplatId = shareableTour?.source_splat_id ?? undefined;
+  const primarySplat = splatData?.splats.find(
+    (splat) => (splat.splat_id ?? splat.id) === primarySplatId,
+  ) ?? legacyPrimarySplat;
   const thumbUrl = primarySplat?.signed_outputs?.thumbnail ?? primarySplat?.thumbnail_url ?? null;
   const fpUrl = floorplan?.composite_url ?? null;
   const hasPhotos = currentGalleryUploads(draft?.raw_uploads ?? [], "image").length > 0;
@@ -163,7 +168,10 @@ export default function SharingPage({ params }: { params: Promise<{ id: string }
         return;
       }
       const s = scope?.tour && primarySplatId
-        ? await createSplatShare(primarySplatId, formData)
+        ? await createSplatShare(primarySplatId, {
+            ...formData,
+            tour_id: shareableTour?.id,
+          })
         : await createDraftShare(draftId, formData);
       setShares((prev) => [s, ...prev]);
       setScope(defaultContentScope(hasTour, hasPhotos, hasFloorplan));
@@ -182,7 +190,7 @@ export default function SharingPage({ params }: { params: Promise<{ id: string }
     } finally {
       setSaving(false);
     }
-  }, [editingShare, scope?.tour, primarySplatId, draftId, lang, hasTour, hasPhotos, hasFloorplan]);
+  }, [editingShare, scope?.tour, primarySplatId, shareableTour?.id, draftId, lang, hasTour, hasPhotos, hasFloorplan]);
 
   const cancelEdit = useCallback(() => {
     setEditingShare(null);

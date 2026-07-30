@@ -6,7 +6,7 @@ import Link from "next/link";
 import { useAuth } from "../../components/hooks/use-auth";
 import { AppShell } from "../../components/app-shell";
 import { Button } from "../../lib/ui/button";
-import { getDraft, getSplatsByDraft, listUnits, refreshDraft, translateDraftDescription } from "../../lib/api/client";
+import { getDraft, getDraftTourAssets, getSplatsByDraft, listUnits, refreshDraft, translateDraftDescription } from "../../lib/api/client";
 import { isApiNotFound } from "../../lib/api/error-message";
 import { getUserLanguage, t } from "../../lib/i18n";
 import { currentGalleryUploads } from "../../lib/media";
@@ -14,7 +14,7 @@ import { readDraftDetailCache, writeDraftDetailCache } from "../../lib/resilient
 import { DraftImageGallery } from "../../components/draft-image-gallery";
 import { DraftCacheNotice } from "../../components/draft-cache-notice";
 import FloorplanViewer from "../../components/floorplan-viewer";
-import type { DraftDetailItem, DraftUpload, SplatsByDraftPayload } from "../../lib/tour-types";
+import type { DraftDetailItem, DraftTourAssetsPayload, DraftUpload, SplatsByDraftPayload } from "../../lib/tour-types";
 import { baseUnitForCategory, resolveUnit, unitLabel, type UnitLookup } from "../../lib/unit-catalog";
 import { PageLoading } from "../../components/page-loading";
 import { cn } from "../../lib/utils";
@@ -38,6 +38,7 @@ import {
   VersionsIcon,
 } from "../../components/icons";
 import { StatusPill } from "../../components/status-pill";
+import { selectShareableTour } from "../../lib/tour-sharing";
 
 // ── Formatting ────────────────────────────────────────────────────────────
 
@@ -515,6 +516,7 @@ export default function DraftPreviewPage({ params }: { params: Promise<{ id: str
 
   const [draft, setDraft] = useState<DraftDetailItem | null>(null);
   const [splatData, setSplatData] = useState<SplatsByDraftPayload | null>(null);
+  const [tourAssets, setTourAssets] = useState<DraftTourAssetsPayload | null>(null);
   const [unitCatalog, setUnitCatalog] = useState<UnitLookup[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [detailsExpanded, setDetailsExpanded] = useState(false);
@@ -549,11 +551,13 @@ export default function DraftPreviewPage({ params }: { params: Promise<{ id: str
     Promise.all([
       getDraft(draftId),
       getSplatsByDraft(draftId).catch(() => null),
+      getDraftTourAssets(draftId).catch(() => null),
       listUnits().catch(() => []),
-    ]).then(([d, s, fetchedUnits]) => {
+    ]).then(([d, s, fetchedTourAssets, fetchedUnits]) => {
       if (!active) return;
       setDraft(d);
       setSplatData(s);
+      setTourAssets(fetchedTourAssets);
       setUnitCatalog(fetchedUnits);
       setUsingCachedDraft(false);
       setRetryAttempt(0);
@@ -700,13 +704,20 @@ export default function DraftPreviewPage({ params }: { params: Promise<{ id: str
   const description = rawDesc ? stripFormatting(rawDesc) : null;
   const offerType = sec(draft, "taxonomy", "offer_type");
 
-  const primarySplat = splatData?.parent_splat_id
+  const legacyPrimarySplat = splatData?.parent_splat_id
     ? splatData.splats.find((s) => (s.splat_id ?? s.id) === splatData.parent_splat_id) ?? splatData.splats[0]
     : splatData?.splats[0];
-  const hasTour = !!primarySplat && primarySplat.status === "completed" && Boolean(
-    primarySplat.has_sog || primarySplat.has_splat || primarySplat.has_ply || primarySplat.url || primarySplat.format || primarySplat.available_formats?.length || Object.keys(primarySplat.signed_outputs ?? {}).length,
+  const legacyPrimarySplatId = legacyPrimarySplat
+    ? (legacyPrimarySplat.splat_id ?? legacyPrimarySplat.id)
+    : null;
+  const shareableTour = selectShareableTour(tourAssets, legacyPrimarySplatId);
+  const primarySplatId = shareableTour?.source_splat_id ?? undefined;
+  const primarySplat = splatData?.splats.find(
+    (splat) => (splat.splat_id ?? splat.id) === primarySplatId,
+  ) ?? legacyPrimarySplat;
+  const hasTour = Boolean(
+    shareableTour,
   );
-  const primarySplatId = primarySplat ? (primarySplat.splat_id ?? primarySplat.id) : undefined;
   const thumbUrl = primarySplat?.signed_outputs?.thumbnail ?? primarySplat?.thumbnail_url ?? null;
   const hasMedia = images.length > 0 || videos.length > 0 || !!thumbUrl;
   const hasFloorplan = !!(
@@ -764,7 +775,7 @@ export default function DraftPreviewPage({ params }: { params: Promise<{ id: str
             </Button>
             {hasTour && (
               <Button asChild size="sm" className="hidden md:inline-flex">
-                <Link href={`/tour/${primarySplatId}`}><TourIcon size={14} /> {t("draft.viewTour", lang)}</Link>
+                <Link href={`/tour/${primarySplatId}?tourId=${shareableTour?.id}`}><TourIcon size={14} /> {t("draft.viewTour", lang)}</Link>
               </Button>
             )}
           </div>
@@ -856,7 +867,7 @@ export default function DraftPreviewPage({ params }: { params: Promise<{ id: str
             <div className="mt-6 hidden flex-wrap items-center gap-2 border-t border-border/70 pt-5 lg:flex">
               {hasTour && (
                 <Button asChild size="sm">
-                  <Link href={`/tour/${primarySplatId}`}><TourIcon size={15} /> {t("draft.viewTour", lang)}</Link>
+                  <Link href={`/tour/${primarySplatId}?tourId=${shareableTour?.id}`}><TourIcon size={15} /> {t("draft.viewTour", lang)}</Link>
                 </Button>
               )}
               <Button type="button" variant="outline" size="sm" onClick={() => setMediaOpen(true)}>
@@ -1017,7 +1028,7 @@ export default function DraftPreviewPage({ params }: { params: Promise<{ id: str
         </Button>
         {hasTour && (
           <Button asChild variant="default" size="sm" className="h-11 flex-1">
-            <Link href={`/tour/${primarySplatId}`}>
+            <Link href={`/tour/${primarySplatId}?tourId=${shareableTour?.id}`}>
               <TourIcon size={15} />
               {t("draft.viewTour", lang)}
             </Link>
