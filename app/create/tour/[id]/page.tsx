@@ -126,10 +126,19 @@ function TransformNumberField({
 }) {
   const [text, setText] = useState(() => formatTransformValue(value));
   const focusedRef = useRef(false);
+  const wheelAccumulatorRef = useRef(0);
+  const wheelGestureActiveRef = useRef(false);
+  const wheelGestureTimerRef = useRef<number | null>(null);
 
   useEffect(() => {
     if (!focusedRef.current) setText(formatTransformValue(value));
   }, [value]);
+
+  useEffect(() => () => {
+    if (wheelGestureTimerRef.current != null) {
+      window.clearTimeout(wheelGestureTimerRef.current);
+    }
+  }, []);
 
   const commit = (raw: string, settle: boolean) => {
     const trimmed = raw.trim();
@@ -141,6 +150,16 @@ function TransformNumberField({
     const next = normalize(numericValue);
     onChange(next);
     if (settle || next !== numericValue) setText(formatTransformValue(next));
+  };
+
+  const increment = (direction: 1 | -1, multiplier: number, count = 1) => {
+    const parsed = Number(text);
+    const base = Number.isFinite(parsed) ? parsed : value;
+    const next = normalize(Number(
+      (base + direction * step * multiplier * count).toFixed(6),
+    ));
+    setText(formatTransformValue(next));
+    onChange(next);
   };
 
   return (
@@ -169,6 +188,45 @@ function TransformNumberField({
           focusedRef.current = false;
           commit(event.currentTarget.value, true);
         }}
+        onWheel={(event) => {
+          event.preventDefault();
+          event.stopPropagation();
+
+          const rawDelta = event.deltaY !== 0 ? event.deltaY : event.deltaX;
+          if (rawDelta === 0) return;
+          const previous = wheelAccumulatorRef.current;
+          if (previous !== 0 && Math.sign(previous) !== Math.sign(rawDelta)) {
+            wheelAccumulatorRef.current = 0;
+          }
+          // A mouse-wheel notch is commonly ±100 while a trackpad emits many
+          // small deltas. Cap each event and accumulate to make both devices
+          // produce one deliberate DCC-style parameter step.
+          wheelAccumulatorRef.current += Math.sign(rawDelta) * Math.min(
+            Math.abs(rawDelta),
+            24,
+          );
+          if (wheelGestureTimerRef.current != null) {
+            window.clearTimeout(wheelGestureTimerRef.current);
+          }
+          wheelGestureTimerRef.current = window.setTimeout(() => {
+            wheelGestureActiveRef.current = false;
+            wheelAccumulatorRef.current = 0;
+            wheelGestureTimerRef.current = null;
+          }, 280);
+          const stepCount = Math.floor(Math.abs(wheelAccumulatorRef.current) / 24);
+          if (stepCount < 1) return;
+
+          if (!wheelGestureActiveRef.current) {
+            onBegin();
+            wheelGestureActiveRef.current = true;
+          }
+          const direction: 1 | -1 = wheelAccumulatorRef.current < 0 ? 1 : -1;
+          wheelAccumulatorRef.current -= Math.sign(
+            wheelAccumulatorRef.current,
+          ) * stepCount * 24;
+          const multiplier = event.shiftKey ? 10 : event.altKey ? 0.1 : 1;
+          increment(direction, multiplier, stepCount);
+        }}
         onKeyDown={(event) => {
           if (event.key === "Escape") {
             setText(formatTransformValue(value));
@@ -181,15 +239,11 @@ function TransformNumberField({
           }
           if (event.key !== "ArrowUp" && event.key !== "ArrowDown") return;
           event.preventDefault();
-          const parsed = Number(text);
-          const base = Number.isFinite(parsed) ? parsed : value;
           const multiplier = event.shiftKey ? 10 : event.altKey ? 0.1 : 1;
-          const direction = event.key === "ArrowUp" ? 1 : -1;
-          const next = normalize(base + direction * step * multiplier);
-          setText(formatTransformValue(next));
-          onChange(next);
+          const direction: 1 | -1 = event.key === "ArrowUp" ? 1 : -1;
+          increment(direction, multiplier);
         }}
-        className="h-9 rounded-xl border-border/65 bg-card pl-6 pr-2 text-right text-[11px] tabular-nums shadow-control"
+        className="h-9 rounded-xl border-border/65 bg-card pl-6 pr-2 text-right text-[11px] tabular-nums shadow-control hover:cursor-ns-resize"
         aria-label={`${label} ${axis}`}
       />
     </label>
