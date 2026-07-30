@@ -415,26 +415,6 @@ function getFeatureChips(d: DraftDetailItem, lang: string): string[] {
 
 // ── Page ──────────────────────────────────────────────────────────────────
 
-function DraftPreviewSkeleton({ lang }: { lang: string }) {
-  return (
-    <div
-      className="mx-auto flex min-h-[62dvh] w-full max-w-[980px] items-center justify-center"
-      role="status"
-      aria-label={t("draft.media.loading", lang)}
-      aria-busy="true"
-    >
-      <div className="flex w-40 flex-col items-center gap-3">
-        <div className="loading-progress-track w-full">
-          <span className="loading-progress-indeterminate" />
-        </div>
-        <span className="text-[11px] font-medium text-muted-foreground">
-          {t("common.loading", lang)}
-        </span>
-      </div>
-    </div>
-  );
-}
-
 function ExpandableDescription({ text, lang }: { text: string; lang: string }) {
   const textRef = useRef<HTMLDivElement>(null);
   const [expanded, setExpanded] = useState(false);
@@ -631,12 +611,7 @@ export default function DraftPreviewPage({ params }: { params: Promise<{ id: str
   }, [draftId]);
 
   if (isLoading || !initialLoadComplete || (!draft && !error)) {
-    if (!user) return <PageLoading />;
-    return (
-      <AppShell user={user} onLogout={logout} hideMobileNav>
-        <DraftPreviewSkeleton lang={lang} />
-      </AppShell>
-    );
+    return <PageLoading />;
   }
 
   if (error) {

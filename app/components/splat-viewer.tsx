@@ -5,6 +5,7 @@ import { AllocateShBuffers } from "@babylonjs/core/Meshes/GaussianSplatting/gaus
 import { cameraFovRadians, normalizeCameraData } from "@/app/lib/camera-coordinates";
 import { getCache, putCache } from "@/app/lib/splat-cache";
 import { t } from "@/app/lib/i18n";
+import { ReaigenLoadingMark } from "@/app/components/reaigen-loading-mark";
 import type {
   CameraData,
   GlobalSceneTransform,
@@ -1192,7 +1193,6 @@ const SplatViewer = forwardRef<SplatViewerHandle, Props>(function SplatViewer(
   }, [onSplatSelectionChange]);
 
   const [status, setStatus] = useState(() => t("viewer.status.loading", lang));
-  const [downloadPct, setDownloadPct] = useState(0);
   const [splatSelectionRevision, setSplatSelectionRevision] = useState(0);
   const [selectionGesture, setSelectionGesture] = useState<{
     tool: Exclude<SplatSelectionTool, "none">;
@@ -4900,7 +4900,6 @@ const SplatViewer = forwardRef<SplatViewerHandle, Props>(function SplatViewer(
           // repeat opens fast without risking a stale reconstruction.
           const resp = await fetch(splatUrl, { cache: "force-cache" });
           if (!resp.ok) throw new Error(`Download ${resp.status}`);
-          const total = parseInt(resp.headers.get("content-length") || "0", 10);
           const reader = resp.body!.getReader();
           const chunks: Uint8Array[] = [];
           let received = 0;
@@ -4909,7 +4908,6 @@ const SplatViewer = forwardRef<SplatViewerHandle, Props>(function SplatViewer(
             if (done) break;
             chunks.push(value);
             received += value.length;
-            if (total > 0) setDownloadPct(Math.round((received / total) * 100));
           }
           rawBuffer = new ArrayBuffer(received);
           const u8 = new Uint8Array(rawBuffer);
@@ -5264,35 +5262,7 @@ const SplatViewer = forwardRef<SplatViewerHandle, Props>(function SplatViewer(
         }`}
         aria-hidden={ready}
       >
-          <span
-            className="mb-6 text-[28px] text-foreground/85"
-            style={{ fontFamily: "var(--font-brand), ui-serif, Georgia, serif", fontWeight: 400, letterSpacing: "0.01em" }}
-          >
-            Reaigen
-          </span>
-          <div
-            className="loading-progress-track mb-3 w-36"
-            role="progressbar"
-            aria-valuemin={0}
-            aria-valuemax={100}
-            aria-valuenow={downloadPct > 0 ? downloadPct : undefined}
-          >
-            {downloadPct > 0 ? (
-              <div
-                className="h-full rounded-full bg-foreground/55 transition-[width] duration-300 ease-[var(--motion-ease-smooth)]"
-                style={{ width: `${Math.min(100, downloadPct)}%` }}
-              />
-            ) : (
-              <span className="loading-progress-indeterminate" />
-            )}
-          </div>
-          <span
-            className="min-h-5 text-[12px] text-muted-foreground"
-            role="status"
-            aria-live="polite"
-          >
-            {status}
-          </span>
+        <ReaigenLoadingMark status={status} />
       </div>
     </div>
   );

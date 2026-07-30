@@ -27,6 +27,7 @@ import {
   VersionsIcon,
 } from "../../../components/icons";
 import { PageLoading } from "../../../components/page-loading";
+import { ReaigenLoadingMark } from "../../../components/reaigen-loading-mark";
 import type { SplatViewerHandle } from "../../../components/splat-viewer";
 import {
   getWebTourAssetStatus,
@@ -64,25 +65,12 @@ import { cn } from "../../../lib/utils";
 function EditorViewportLoading() {
   return (
     <div
-      className="absolute inset-0 z-40 flex flex-col items-center justify-center bg-background text-foreground"
+      className="absolute inset-0 z-40 flex items-center justify-center bg-background text-foreground"
       role="status"
       aria-live="polite"
       aria-label="Reaigen"
     >
-      <span
-        className="mb-6 text-[28px] text-foreground/85"
-        style={{
-          fontFamily: "var(--font-brand), ui-serif, Georgia, serif",
-          fontWeight: 400,
-          letterSpacing: "0.01em",
-        }}
-      >
-        Reaigen
-      </span>
-      <div className="loading-progress-track mb-3 w-36">
-        <span className="loading-progress-indeterminate" />
-      </div>
-      <span className="min-h-5" aria-hidden="true" />
+      <ReaigenLoadingMark className="animate-fade-in" />
     </div>
   );
 }
