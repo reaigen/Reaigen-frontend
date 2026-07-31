@@ -63,6 +63,7 @@ export default function CameraEditor({ splatId, viewerRef, activeShotIdx, initia
   const clearMessageTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const autoSaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const editGenerationRef = useRef(0);
+  const initialPreviewPoseAppliedRef = useRef(false);
 
   // Camera coordinates returned by SplatViewer are already canonical. Keep the
   // prop for API compatibility with other editor surfaces, but never apply the
@@ -72,6 +73,7 @@ export default function CameraEditor({ splatId, viewerRef, activeShotIdx, initia
   // Load existing saved cameras on mount. New camera payloads use identity
   // scene space; historical edited payloads are migrated once on read.
   useEffect(() => {
+    initialPreviewPoseAppliedRef.current = false;
     let active = true;
     const applyCameraData = (rawData: CameraData) => {
       if (!active) return;
@@ -175,16 +177,20 @@ export default function CameraEditor({ splatId, viewerRef, activeShotIdx, initia
 
   useEffect(() => {
     if (!loaded || !shots.length) return;
-    if (defaultMode === "preview" && selectedIdx === 0) {
+    if (
+      defaultMode === "preview"
+      && !initialPreviewPoseAppliedRef.current
+    ) {
+      initialPreviewPoseAppliedRef.current = true;
       viewerRef.current?.navigateToCamera(
         shots[0].position,
         shots[0].forward,
-        false,
+        true,
         shots[0].fov,
         shots[0].up,
       );
     }
-  }, [defaultMode, loaded, selectedIdx, shots, viewerRef]);
+  }, [defaultMode, loaded, shots, viewerRef]);
 
   // ── Edit mode actions ──────────────────────────────────────────────────────
 

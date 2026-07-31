@@ -787,6 +787,7 @@ async function parseVkgsSogMeta(
 interface Anim {
   active: boolean;
   elapsed: number;
+  startedAt: number;
   duration: number;
   fromPos: Vec3;
   toPos: Vec3;
@@ -811,7 +812,7 @@ interface Anim {
 }
 
 const defaultAnim = (): Anim => ({
-  active: false, elapsed: 0, duration: 1.5,
+  active: false, elapsed: 0, startedAt: 0, duration: 1.5,
   fromPos: [0, 0, 0], toPos: [0, 0, 0],
   pathHandle: 0,
   fromForward: [0, 0, 1], toForward: [0, 0, 1],
@@ -1740,6 +1741,7 @@ const SplatViewer = forwardRef<SplatViewerHandle, Props>(function SplatViewer(
     anim.fromFov = cam.fov;
     anim.toFov = shot.fov;
     anim.elapsed = 0;
+    anim.startedAt = performance.now();
     const distance = Math.hypot(
       tPos[0] - cur[0],
       tPos[1] - cur[1],
@@ -1892,6 +1894,7 @@ const SplatViewer = forwardRef<SplatViewerHandle, Props>(function SplatViewer(
     anim.fromFov = cam.fov;
     anim.toFov = targetFov;
     anim.elapsed = 0;
+    anim.startedAt = performance.now();
     // Re-targeting starts from the currently rendered pose, so repeated
     // selections never queue stale animations. The path handle creates a
     // restrained DCC-style camera trajectory rather than a positional cut.
@@ -4515,6 +4518,32 @@ const SplatViewer = forwardRef<SplatViewerHandle, Props>(function SplatViewer(
 
         // ── Render loop ──
         let prevT = performance.now();
+        const cameraFlightSortThresholds = new Map<any, number>();
+        const cameraFlightMeshes = () => [
+          gsRef.current,
+          ...compositionMeshesRef.current.map((item) => item.mesh),
+        ].filter(Boolean);
+        const lockCameraFlightSorting = () => {
+          for (const mesh of cameraFlightMeshes()) {
+            if (cameraFlightSortThresholds.has(mesh)) continue;
+            cameraFlightSortThresholds.set(
+              mesh,
+              Number(mesh.viewUpdateThreshold ?? 0.0001),
+            );
+            // Babylon's asynchronous sorter can finish several poses behind a
+            // moving camera. Keep the last coherent ordering throughout the
+            // flight instead of applying stale results that make the scene
+            // appear to jiggle around the camera.
+            mesh.viewUpdateThreshold = Number.POSITIVE_INFINITY;
+          }
+        };
+        const releaseCameraFlightSorting = () => {
+          for (const [mesh, threshold] of cameraFlightSortThresholds) {
+            mesh.viewUpdateThreshold = threshold;
+            mesh._postToWorker?.(true);
+          }
+          cameraFlightSortThresholds.clear();
+        };
         scene.registerBeforeRender(() => {
           const now = performance.now();
           const dt = Math.min((now - prevT) / 1000, 0.05);
@@ -4525,6 +4554,11 @@ const SplatViewer = forwardRef<SplatViewerHandle, Props>(function SplatViewer(
           }
 
           const anim = animRef.current;
+          if (anim.active) {
+            lockCameraFlightSorting();
+          } else if (cameraFlightSortThresholds.size) {
+            releaseCameraFlightSorting();
+          }
 
           if (!anim.active) {
             if (immersiveControls && immersivePoseRef.current.enabled) {
@@ -4618,7 +4652,14 @@ const SplatViewer = forwardRef<SplatViewerHandle, Props>(function SplatViewer(
           }
 
           // Travel animation
-          anim.elapsed = Math.min(anim.elapsed + dt, anim.duration);
+          // A trajectory is timed by the presentation clock, not by capped
+          // render deltas. High-density splats can occasionally make a frame
+          // exceed 50 ms on mobile; accumulating the capped control delta made
+          // a short flight stall for seconds and look like pose jitter.
+          anim.elapsed = Math.min(
+            Math.max(0, (now - anim.startedAt) / 1000),
+            anim.duration,
+          );
           const rawT = anim.elapsed / anim.duration;
           const et = quintic(rawT);
           // Keep position, orientation and FOV on one timing curve. A leading
@@ -4695,11 +4736,11 @@ const SplatViewer = forwardRef<SplatViewerHandle, Props>(function SplatViewer(
 
           if (anim.elapsed >= anim.duration) {
             anim.active = false;
+            releaseCameraFlightSorting();
             // Camera flights must keep their original continuous interpolation.
             // Give Babylon's asynchronous depth worker time to catch the final
             // pose instead of idling immediately and exposing a late sort jump.
             immersiveRenderBurstUntilRef.current = performance.now() + 350;
-            gsRef.current?._postToWorker?.(true);
             if ((anim as any).editorNav) {
               (anim as any).editorNav = false;
               if (!immersiveControls && !spatialNavigationRef.current && canvasRef.current) {
