@@ -6,6 +6,7 @@ import { useAuth } from "../../components/hooks/use-auth";
 import {
   authorUsdSceneTransformOperation,
   getDraft,
+  getDraftTourAssets,
   getWebTourWorkspace,
   hasWebCreationAccess,
   saveWebTourThumbnail,
@@ -254,11 +255,36 @@ export default function TourPage({
         if (!data.draft_id) return data;
 
         try {
-          const byDraft = await getSplatsByDraft(data.draft_id);
+          const [byDraft, tourAssets] = await Promise.all([
+            getSplatsByDraft(data.draft_id),
+            getDraftTourAssets(data.draft_id),
+          ]);
           const canonicalSplatId = byDraft.parent_splat_id;
-          if (canonicalSplatId && canonicalSplatId !== data.splat_id) {
-            router.replace(`/tour/${canonicalSplatId}`);
-            return await getSplatViewer(canonicalSplatId);
+          const resolvedCanonicalSplatId = canonicalSplatId ?? data.splat_id;
+          const matchingTour = tourAssets.assets
+            .filter((asset) => (
+              asset.source_splat_id === resolvedCanonicalSplatId
+              && asset.lifecycle?.can_preview !== false
+            ))
+            .sort((left, right) => (
+              Number(right.publication.is_primary)
+              - Number(left.publication.is_primary)
+              || Number(right.is_product_published)
+              - Number(left.is_product_published)
+              || right.id - left.id
+            ))[0];
+          if (matchingTour) {
+            router.replace(
+              `/tour/${resolvedCanonicalSplatId}?tourId=${matchingTour.id}`,
+            );
+            return await getSplatViewer(resolvedCanonicalSplatId, {
+              fresh: true,
+              tourId: matchingTour.id,
+            });
+          }
+          if (resolvedCanonicalSplatId !== data.splat_id) {
+            router.replace(`/tour/${resolvedCanonicalSplatId}`);
+            return await getSplatViewer(resolvedCanonicalSplatId);
           }
         } catch {
           // Best-effort canonicalization; fall back to the explicit splat route.
