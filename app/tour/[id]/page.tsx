@@ -9,6 +9,7 @@ import {
   getWebTourWorkspace,
   hasWebCreationAccess,
   saveWebTourThumbnail,
+  saveWebTourWorkspace,
   getSplatPackage,
   getSplatViewer,
   getSplatsByDraft,
@@ -348,11 +349,87 @@ export default function TourPage({
     [globalSceneTransform, savedGlobalSceneTransform],
   );
 
+  const applyViewerSnapshot = useCallback((current: SplatViewerPayload) => {
+    const transform = composedRootTransformFromScene(current.scene_description);
+    setGlobalSceneTransform(transform);
+    setSavedGlobalSceneTransform(cloneGlobalSceneTransform(transform));
+    setGlobalTransformError(null);
+    setViewer(current);
+  }, []);
+
+  const saveTourCameras = useCallback(async (
+    cameraData: CameraData,
+  ): Promise<CameraData> => {
+    if (!Number.isFinite(requestedTourId)) {
+      throw new Error("Tour workspace is unavailable");
+    }
+    const workspace = await getWebTourWorkspace(requestedTourId!);
+    await saveWebTourWorkspace(requestedTourId!, {
+      base_revision: workspace.revision,
+      name: workspace.name,
+      nodes: workspace.nodes.map((node) => ({
+        id: node.id,
+        name: node.name,
+        visible: node.visible,
+        transform: node.transform,
+        prune: node.prune,
+      })),
+      cameras: cameraData.cameras as unknown as Array<Record<string, unknown>>,
+    });
+    const current = await getSplatViewer(resolvedSplatId, {
+      fresh: true,
+      tourId: requestedTourId,
+    });
+    applyViewerSnapshot(current);
+    return current.cameras;
+  }, [
+    applyViewerSnapshot,
+    requestedTourId,
+    resolvedSplatId,
+  ]);
+
   const persistGlobalTransform = useCallback(async () => {
     if (!globalTransformDirty) return true;
     setGlobalTransformSaving(true);
     setGlobalTransformError(null);
     try {
+      if (Number.isFinite(requestedTourId)) {
+        const workspace = await getWebTourWorkspace(requestedTourId!);
+        const sourceNode = workspace.nodes.find(
+          (node) => node.splat_id === resolvedSplatId,
+        );
+        if (!sourceNode) throw new Error("Tour source node is unavailable");
+        const scale3 = globalSceneTransform.scale3 ?? [
+          globalSceneTransform.scale,
+          globalSceneTransform.scale,
+          globalSceneTransform.scale,
+        ];
+        await saveWebTourWorkspace(requestedTourId!, {
+          base_revision: workspace.revision,
+          name: workspace.name,
+          nodes: workspace.nodes.map((node) => ({
+            id: node.id,
+            name: node.name,
+            visible: node.visible,
+            transform: node.splat_id === resolvedSplatId
+              ? {
+                  translation: [...globalSceneTransform.translation],
+                  rotationDeg: [...globalSceneTransform.rotationDeg],
+                  scale3: [...scale3],
+                  scale: globalSceneTransform.scale,
+                }
+              : node.transform,
+            prune: node.prune,
+          })),
+          cameras: workspace.cameras,
+        });
+        const current = await getSplatViewer(resolvedSplatId, {
+          fresh: true,
+          tourId: requestedTourId,
+        });
+        applyViewerSnapshot(current);
+        return true;
+      }
       const response = await authorUsdSceneTransformOperation(
         resolvedSplatId,
         editorTransformDelta,
@@ -379,9 +456,12 @@ export default function TourPage({
       setGlobalTransformSaving(false);
     }
   }, [
+    applyViewerSnapshot,
     editorTransformDelta,
+    globalSceneTransform,
     globalTransformDirty,
     lang,
+    requestedTourId,
     resolvedSplatId,
     viewer?.scene_description?.stage?.revision,
     viewer?.scene_description?.usdStage?.stageSha256,
@@ -542,6 +622,11 @@ export default function TourPage({
             activeShotIdx={shotIdx}
             initialCameras={viewerCameras}
             defaultMode="edit"
+            saveHandler={
+              Number.isFinite(requestedTourId)
+                ? saveTourCameras
+                : undefined
+            }
             onSaved={(saved) => {
               setViewer((current) => current ? {
                 ...current,
