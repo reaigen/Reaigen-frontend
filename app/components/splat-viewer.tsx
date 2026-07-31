@@ -95,6 +95,39 @@ const TILT_Y = LOOK * Math.tan(5 * Math.PI / 180);
 const SH_C0 = 0.28209479177387814;
 const DEFAULT_IMMERSIVE_FOV = 85 * Math.PI / 180;
 
+/**
+ * Resolve a stable WebGL pixel density for the complete viewer session.
+ *
+ * Babylon's hardware scaling level is the inverse of this value. Delivery
+ * viewers need materially more than the old 1.5× cap on Retina/HiDPI screens,
+ * but an uncapped devicePixelRatio can allocate a prohibitively large
+ * backbuffer on tablets and 4K/5K displays. The pixel budget keeps the result
+ * predictable without changing resolution while a camera is moving.
+ */
+function viewerRenderDpr(
+  deviceDpr: number,
+  viewportWidth: number,
+  viewportHeight: number,
+  compactTouch: boolean,
+  authoring: boolean,
+): number {
+  const safeDeviceDpr = Number.isFinite(deviceDpr)
+    ? Math.max(1, deviceDpr)
+    : 1;
+  const cssPixels = Math.max(
+    1,
+    Math.max(1, viewportWidth) * Math.max(1, viewportHeight),
+  );
+  const maxDpr = authoring
+    ? (compactTouch ? 1.75 : 2.5)
+    : (compactTouch ? 2.25 : 2.5);
+  const pixelBudget = authoring
+    ? (compactTouch ? 3_000_000 : 8_000_000)
+    : (compactTouch ? 3_500_000 : 9_000_000);
+  const budgetDpr = Math.sqrt(pixelBudget / cssPixels);
+  return Math.max(1, Math.min(safeDeviceDpr, maxDpr, budgetDpr));
+}
+
 function buildFallbackShots(data: TourData, lang: string): TourShot[] {
   const n = data.positions?.length ?? 0;
   if (n < 2) return [];
@@ -4388,31 +4421,37 @@ const SplatViewer = forwardRef<SplatViewerHandle, Props>(function SplatViewer(
         engineRef.current = engine;
 
         // Babylon's hardware scale is inverse resolution: 0.5 renders at 2×
-        // CSS pixels, while values above 1 blur below CSS resolution. The old
-        // formula was reversed and could make a desktop editor look like a
-        // 720p stream. Authoring now stays Retina-crisp, including in motion.
-        const dpr = typeof window !== "undefined" ? window.devicePixelRatio || 1 : 1;
-        const authoringDpr = compactTouch ? Math.min(dpr, 1.5) : Math.min(dpr, 2.5);
-        const viewingDpr = Math.min(dpr, 1.5);
-        const restingHardwareScale = 1 / (spatialNavigation ? authoringDpr : viewingDpr);
-        // A touch camera transition must not resize the WebGL backbuffer at
-        // take-off and again on arrival. Besides softening the image, that
-        // resize reads as a viewport jump on mobile browsers. Keep one stable
-        // DPR for touch; desktop viewing may retain its subtle motion budget.
-        const motionHardwareScale = spatialNavigation || compactTouch
-          ? restingHardwareScale
-          : 1 / Math.min(dpr, 1.2);
-        let activeHardwareScale = restingHardwareScale;
+        // CSS pixels. Keep one stable, pixel-budgeted backbuffer for loading,
+        // camera travel and rest. Changing this during a trajectory both
+        // softened the delivered image and forced an expensive WebGL resize.
+        const resolveHardwareScale = () => {
+          const dpr = typeof window !== "undefined"
+            ? window.devicePixelRatio || 1
+            : 1;
+          const renderDpr = viewerRenderDpr(
+            dpr,
+            canvas.clientWidth,
+            canvas.clientHeight,
+            compactTouch,
+            spatialNavigation,
+          );
+          canvas.dataset.renderDpr = renderDpr.toFixed(3);
+          canvas.dataset.renderProfile = spatialNavigation
+            ? "authoring"
+            : "delivery";
+          return 1 / renderDpr;
+        };
+        let activeHardwareScale = resolveHardwareScale();
         const applyHardwareScale = (next: number) => {
-          if (Math.abs(activeHardwareScale - next) < 0.01) return;
+          if (Math.abs(activeHardwareScale - next) < 0.005) return false;
           activeHardwareScale = next;
           engine.setHardwareScalingLevel(next);
-          engine.resize();
+          return true;
         };
-        engine.setHardwareScalingLevel(restingHardwareScale);
+        engine.setHardwareScalingLevel(activeHardwareScale);
         // The engine is created before the DPR override. Force allocation of
-        // the native-resolution backbuffer immediately; otherwise it can stay
-        // at its initial CSS-pixel size until the first window resize.
+        // the high-density backbuffer immediately; otherwise it can remain at
+        // its initial CSS-pixel size until the first window resize.
         engine.resize(true);
 
         engine.onContextLostObservable.add(() => console.warn("[REAI] WebGL context lost"));
@@ -4660,27 +4699,14 @@ const SplatViewer = forwardRef<SplatViewerHandle, Props>(function SplatViewer(
           }
         });
 
-        // Mobile Gaussian rendering is expensive even when the camera is
-        // perfectly still. Keep full cadence during loading, gestures, coast,
-        // and camera flights; once idle, only refresh occasionally so overlays
-        // stay responsive without holding the GPU at 60 fps.
+        // Gaussian rendering is expensive even when the camera is perfectly
+        // still. Keep full cadence during loading, gestures, coast, and camera
+        // flights; once an immersive viewer is idle, only refresh occasionally
+        // so overlays stay responsive without holding the GPU at 60 fps.
         let lastIdleRenderAt = 0;
-        let lastMotionAt = performance.now();
         const renderLoop = () => {
           const coast = immersiveCoastRef.current;
           const now = performance.now();
-          const qualityMoving = viewerInitializing ||
-            animRef.current.active ||
-            immersivePointersActiveRef.current ||
-            now < immersiveRenderBurstUntilRef.current ||
-            Math.abs(coast.yaw) >= 0.04 ||
-            Math.abs(coast.pitch) >= 0.04;
-          if (qualityMoving) lastMotionAt = now;
-          applyHardwareScale(
-            qualityMoving || now - lastMotionAt < 180
-              ? motionHardwareScale
-              : restingHardwareScale,
-          );
           const moving = viewerInitializing || !immersiveControls ||
             animRef.current.active || immersivePointersActiveRef.current ||
             now < immersiveRenderBurstUntilRef.current ||
@@ -4692,7 +4718,8 @@ const SplatViewer = forwardRef<SplatViewerHandle, Props>(function SplatViewer(
         renderLoopRef.current = renderLoop;
         engine.runRenderLoop(renderLoop);
         resizeRef.current = () => {
-          engine.resize();
+          applyHardwareScale(resolveHardwareScale());
+          engine.resize(true);
           immersiveRenderBurstUntilRef.current = performance.now() + 350;
         };
         window.addEventListener("resize", resizeRef.current);
@@ -5080,6 +5107,11 @@ const SplatViewer = forwardRef<SplatViewerHandle, Props>(function SplatViewer(
         const mat = gs.material as any;
         if (mat) {
           mat.backFaceCulling = false;
+          // Set this on the concrete material as well as the Babylon default.
+          // It prevents a loader-created material from silently falling back
+          // to the softer 0.3px point-spread function.
+          mat.kernelSize = 0.15;
+          mat.compensation = true;
         }
 
         let meshReady = false;
