@@ -63,7 +63,6 @@ export default function CameraEditor({ splatId, viewerRef, activeShotIdx, initia
   const clearMessageTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const autoSaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const editGenerationRef = useRef(0);
-  const initialPreviewPoseAppliedRef = useRef(false);
 
   // Camera coordinates returned by SplatViewer are already canonical. Keep the
   // prop for API compatibility with other editor surfaces, but never apply the
@@ -73,7 +72,6 @@ export default function CameraEditor({ splatId, viewerRef, activeShotIdx, initia
   // Load existing saved cameras on mount. New camera payloads use identity
   // scene space; historical edited payloads are migrated once on read.
   useEffect(() => {
-    initialPreviewPoseAppliedRef.current = false;
     let active = true;
     const applyCameraData = (rawData: CameraData) => {
       if (!active) return;
@@ -162,13 +160,13 @@ export default function CameraEditor({ splatId, viewerRef, activeShotIdx, initia
     setSelectedIdx(idx);
     setPreviewIdx(idx);
     if (preview) setMode("preview");
-    // Editing a camera remains an exact cut. Preview arrows and camera dots
-    // are presentation navigation, so they travel from the currently rendered
-    // pose instead of snapping between saved shots.
+    // Every explicit camera switch uses the authored trajectory. Camera
+    // editing still captures the exact resulting pose, but navigation itself
+    // must never cut between saved cameras.
     viewerRef.current?.navigateToCamera(
       shot.position,
       shot.forward,
-      !preview,
+      false,
       shot.fov,
       shot.up,
     );
@@ -177,20 +175,16 @@ export default function CameraEditor({ splatId, viewerRef, activeShotIdx, initia
 
   useEffect(() => {
     if (!loaded || !shots.length) return;
-    if (
-      defaultMode === "preview"
-      && !initialPreviewPoseAppliedRef.current
-    ) {
-      initialPreviewPoseAppliedRef.current = true;
+    if (defaultMode === "preview" && selectedIdx === 0) {
       viewerRef.current?.navigateToCamera(
         shots[0].position,
         shots[0].forward,
-        true,
+        false,
         shots[0].fov,
         shots[0].up,
       );
     }
-  }, [defaultMode, loaded, shots, viewerRef]);
+  }, [defaultMode, loaded, selectedIdx, shots, viewerRef]);
 
   // ── Edit mode actions ──────────────────────────────────────────────────────
 

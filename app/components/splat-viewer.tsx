@@ -787,7 +787,6 @@ async function parseVkgsSogMeta(
 interface Anim {
   active: boolean;
   elapsed: number;
-  startedAt: number;
   duration: number;
   fromPos: Vec3;
   toPos: Vec3;
@@ -812,7 +811,7 @@ interface Anim {
 }
 
 const defaultAnim = (): Anim => ({
-  active: false, elapsed: 0, startedAt: 0, duration: 1.5,
+  active: false, elapsed: 0, duration: 1.5,
   fromPos: [0, 0, 0], toPos: [0, 0, 0],
   pathHandle: 0,
   fromForward: [0, 0, 1], toForward: [0, 0, 1],
@@ -1741,7 +1740,6 @@ const SplatViewer = forwardRef<SplatViewerHandle, Props>(function SplatViewer(
     anim.fromFov = cam.fov;
     anim.toFov = shot.fov;
     anim.elapsed = 0;
-    anim.startedAt = performance.now();
     const distance = Math.hypot(
       tPos[0] - cur[0],
       tPos[1] - cur[1],
@@ -1894,7 +1892,6 @@ const SplatViewer = forwardRef<SplatViewerHandle, Props>(function SplatViewer(
     anim.fromFov = cam.fov;
     anim.toFov = targetFov;
     anim.elapsed = 0;
-    anim.startedAt = performance.now();
     // Re-targeting starts from the currently rendered pose, so repeated
     // selections never queue stale animations. The path handle creates a
     // restrained DCC-style camera trajectory rather than a positional cut.
@@ -4434,39 +4431,24 @@ const SplatViewer = forwardRef<SplatViewerHandle, Props>(function SplatViewer(
         engineRef.current = engine;
 
         // Babylon's hardware scale is inverse resolution: 0.5 renders at 2×
-        // CSS pixels. Keep a sharp, pixel-budgeted delivery buffer at rest and
-        // a bounded motion buffer for camera travel on fill-rate-limited
-        // devices. CSS size and camera projection remain unchanged.
-        type RenderDensityProfile = "rest" | "motion";
-        let activeRenderDensityProfile: RenderDensityProfile = "rest";
-        let qualityRestoreAt = 0;
-        const resolveHardwareScale = (
-          profile: RenderDensityProfile = activeRenderDensityProfile,
-        ) => {
+        // CSS pixels. Keep one stable, pixel-budgeted backbuffer for loading,
+        // camera travel and rest. Camera trajectories must never resize the
+        // viewport or switch render profiles mid-flight.
+        const resolveHardwareScale = () => {
           const dpr = typeof window !== "undefined"
             ? window.devicePixelRatio || 1
             : 1;
-          const restingDpr = viewerRenderDpr(
+          const renderDpr = viewerRenderDpr(
             dpr,
             canvas.clientWidth,
             canvas.clientHeight,
             compactTouch,
             spatialNavigationRef.current,
           );
-          // Camera travel is fill-rate bound on mobile Gaussian scenes. Keep
-          // the sharp delivery buffer at rest, but render motion at the
-          // previously proven density so the trajectory has enough frames to
-          // read as continuous movement instead of disconnected poses.
-          const renderDpr = (
-            profile === "motion"
-            && !spatialNavigationRef.current
-          )
-            ? Math.min(restingDpr, compactTouch ? 1.5 : 1.6)
-            : restingDpr;
           canvas.dataset.renderDpr = renderDpr.toFixed(3);
           canvas.dataset.renderProfile = spatialNavigationRef.current
             ? "authoring"
-            : `delivery-${profile}`;
+            : "delivery";
           return 1 / renderDpr;
         };
         let activeHardwareScale = resolveHardwareScale();
@@ -4636,14 +4618,7 @@ const SplatViewer = forwardRef<SplatViewerHandle, Props>(function SplatViewer(
           }
 
           // Travel animation
-          // A trajectory is timed by the presentation clock, not by capped
-          // render deltas. High-density splats can occasionally make a frame
-          // exceed 50 ms on mobile; accumulating the capped control delta made
-          // a short flight stall for seconds and look like pose jitter.
-          anim.elapsed = Math.min(
-            Math.max(0, (now - anim.startedAt) / 1000),
-            anim.duration,
-          );
+          anim.elapsed = Math.min(anim.elapsed + dt, anim.duration);
           const rawT = anim.elapsed / anim.duration;
           const et = quintic(rawT);
           // Keep position, orientation and FOV on one timing curve. A leading
@@ -4720,12 +4695,6 @@ const SplatViewer = forwardRef<SplatViewerHandle, Props>(function SplatViewer(
 
           if (anim.elapsed >= anim.duration) {
             anim.active = false;
-            qualityRestoreAt = performance.now() + 220;
-            // Camera flights must keep their original continuous interpolation.
-            // Give Babylon's asynchronous depth worker time to catch the final
-            // pose instead of idling immediately and exposing a late sort jump.
-            immersiveRenderBurstUntilRef.current = performance.now() + 350;
-            gsRef.current?._postToWorker?.(true);
             if ((anim as any).editorNav) {
               (anim as any).editorNav = false;
               if (!immersiveControls && !spatialNavigationRef.current && canvasRef.current) {
@@ -4748,20 +4717,6 @@ const SplatViewer = forwardRef<SplatViewerHandle, Props>(function SplatViewer(
         const renderLoop = () => {
           const coast = immersiveCoastRef.current;
           const now = performance.now();
-          const targetRenderDensityProfile: RenderDensityProfile = (
-            !spatialNavigationRef.current
-            && (animRef.current.active || now < qualityRestoreAt)
-          )
-            ? "motion"
-            : "rest";
-          if (targetRenderDensityProfile !== activeRenderDensityProfile) {
-            activeRenderDensityProfile = targetRenderDensityProfile;
-            if (applyHardwareScale(resolveHardwareScale())) {
-              engine.resize(true);
-              canvas.dataset.renderSize =
-                `${engine.getRenderWidth()}x${engine.getRenderHeight()}`;
-            }
-          }
           if (
             layoutResizePending
             && !animRef.current.active
