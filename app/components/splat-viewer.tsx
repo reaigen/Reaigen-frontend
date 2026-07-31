@@ -94,6 +94,12 @@ const LOOK = 5;
 const TILT_Y = LOOK * Math.tan(5 * Math.PI / 180);
 const SH_C0 = 0.28209479177387814;
 const DEFAULT_IMMERSIVE_FOV = 85 * Math.PI / 180;
+// Spinoff's accepted deterministic profile uses a 0.3 physical-pixel Mip
+// sigma. Babylon adds the supplied value directly to the 2D covariance, so
+// its equivalent material parameter is sigma squared rather than sigma.
+const GAUSSIAN_MIP_SIGMA_PIXELS = 0.3;
+const GAUSSIAN_MIP_VARIANCE =
+  GAUSSIAN_MIP_SIGMA_PIXELS * GAUSSIAN_MIP_SIGMA_PIXELS;
 
 /**
  * Resolve a stable WebGL pixel density for the complete viewer session.
@@ -4402,6 +4408,10 @@ const SplatViewer = forwardRef<SplatViewerHandle, Props>(function SplatViewer(
 
   useEffect(() => {
     let disposed = false;
+    let layoutResizeObserver: ResizeObserver | null = null;
+    let layoutResizePending = false;
+    let lastCanvasCssWidth = 0;
+    let lastCanvasCssHeight = 0;
 
     async function init() {
       if (!canvasRef.current) return;
@@ -4494,10 +4504,10 @@ const SplatViewer = forwardRef<SplatViewerHandle, Props>(function SplatViewer(
         // VKGS-tier: no post-process pipeline. Engine-level antialias:true
         // provides clean splat silhouettes without colour transforms or blits.
 
-        // VKGS-tier: Mip-Splatting screen-space kernel — fixed at 0.15 for
-        // crisp rendering that matches vk_gaussian_splatting reference.
+        // Match Spinoff's accepted deterministic Mip profile. Babylon's
+        // material expects variance, not the user-facing pixel sigma.
         const { GaussianSplattingMaterial } = BABYLON;
-        GaussianSplattingMaterial.KernelSize = 0.15;
+        GaussianSplattingMaterial.KernelSize = GAUSSIAN_MIP_VARIANCE;
         GaussianSplattingMaterial.Compensation = true;
 
         // Reduce per-frame work
@@ -4685,6 +4695,11 @@ const SplatViewer = forwardRef<SplatViewerHandle, Props>(function SplatViewer(
 
           if (anim.elapsed >= anim.duration) {
             anim.active = false;
+            // Camera flights must keep their original continuous interpolation.
+            // Give Babylon's asynchronous depth worker time to catch the final
+            // pose instead of idling immediately and exposing a late sort jump.
+            immersiveRenderBurstUntilRef.current = performance.now() + 350;
+            gsRef.current?._postToWorker?.(true);
             if ((anim as any).editorNav) {
               (anim as any).editorNav = false;
               if (!immersiveControls && !spatialNavigationRef.current && canvasRef.current) {
@@ -4707,6 +4722,14 @@ const SplatViewer = forwardRef<SplatViewerHandle, Props>(function SplatViewer(
         const renderLoop = () => {
           const coast = immersiveCoastRef.current;
           const now = performance.now();
+          if (
+            layoutResizePending
+            && !animRef.current.active
+            && !immersivePointersActiveRef.current
+          ) {
+            layoutResizePending = false;
+            resizeRef.current?.();
+          }
           const moving = viewerInitializing || !immersiveControls ||
             animRef.current.active || immersivePointersActiveRef.current ||
             now < immersiveRenderBurstUntilRef.current ||
@@ -4718,11 +4741,35 @@ const SplatViewer = forwardRef<SplatViewerHandle, Props>(function SplatViewer(
         renderLoopRef.current = renderLoop;
         engine.runRenderLoop(renderLoop);
         resizeRef.current = () => {
-          applyHardwareScale(resolveHardwareScale());
+          const cssWidth = Math.max(1, Math.round(canvas.clientWidth));
+          const cssHeight = Math.max(1, Math.round(canvas.clientHeight));
+          const scaleChanged = applyHardwareScale(resolveHardwareScale());
+          if (
+            !scaleChanged
+            && cssWidth === lastCanvasCssWidth
+            && cssHeight === lastCanvasCssHeight
+          ) {
+            return;
+          }
+          lastCanvasCssWidth = cssWidth;
+          lastCanvasCssHeight = cssHeight;
           engine.resize(true);
+          canvas.dataset.renderSize =
+            `${engine.getRenderWidth()}x${engine.getRenderHeight()}`;
           immersiveRenderBurstUntilRef.current = performance.now() + 350;
         };
         window.addEventListener("resize", resizeRef.current);
+        // Editor drawers and responsive controls can resize the viewport
+        // without emitting a window resize. Keep the physical backbuffer
+        // matched to the canvas, but never resize it in a second animation
+        // frame while a camera trajectory is running.
+        if (typeof ResizeObserver !== "undefined") {
+          layoutResizeObserver = new ResizeObserver(() => {
+            if (!disposed) layoutResizePending = true;
+          });
+          layoutResizeObserver.observe(canvas);
+        }
+        resizeRef.current();
 
         // ── Place camera from COLMAP data ──
         async function placeCamera() {
@@ -5107,10 +5154,9 @@ const SplatViewer = forwardRef<SplatViewerHandle, Props>(function SplatViewer(
         const mat = gs.material as any;
         if (mat) {
           mat.backFaceCulling = false;
-          // Set this on the concrete material as well as the Babylon default.
-          // It prevents a loader-created material from silently falling back
-          // to the softer 0.3px point-spread function.
-          mat.kernelSize = 0.15;
+          // Set this on the concrete material as well as the Babylon default
+          // so a loader-created material cannot restore its softer default.
+          mat.kernelSize = GAUSSIAN_MIP_VARIANCE;
           mat.compensation = true;
         }
 
@@ -5169,6 +5215,7 @@ const SplatViewer = forwardRef<SplatViewerHandle, Props>(function SplatViewer(
       fallbackSceneRef.current = null;
       renderLoopRef.current = null;
       if (resizeRef.current) window.removeEventListener("resize", resizeRef.current);
+      layoutResizeObserver?.disconnect();
       engineRef.current?.dispose();
     };
   }, [splatUrl, splatId, camerasUrl]); // eslint-disable-line react-hooks/exhaustive-deps
