@@ -4434,24 +4434,39 @@ const SplatViewer = forwardRef<SplatViewerHandle, Props>(function SplatViewer(
         engineRef.current = engine;
 
         // Babylon's hardware scale is inverse resolution: 0.5 renders at 2×
-        // CSS pixels. Keep one stable, pixel-budgeted backbuffer for loading,
-        // camera travel and rest. Changing this during a trajectory both
-        // softened the delivered image and forced an expensive WebGL resize.
-        const resolveHardwareScale = () => {
+        // CSS pixels. Keep a sharp, pixel-budgeted delivery buffer at rest and
+        // a bounded motion buffer for camera travel on fill-rate-limited
+        // devices. CSS size and camera projection remain unchanged.
+        type RenderDensityProfile = "rest" | "motion";
+        let activeRenderDensityProfile: RenderDensityProfile = "rest";
+        let qualityRestoreAt = 0;
+        const resolveHardwareScale = (
+          profile: RenderDensityProfile = activeRenderDensityProfile,
+        ) => {
           const dpr = typeof window !== "undefined"
             ? window.devicePixelRatio || 1
             : 1;
-          const renderDpr = viewerRenderDpr(
+          const restingDpr = viewerRenderDpr(
             dpr,
             canvas.clientWidth,
             canvas.clientHeight,
             compactTouch,
-            spatialNavigation,
+            spatialNavigationRef.current,
           );
+          // Camera travel is fill-rate bound on mobile Gaussian scenes. Keep
+          // the sharp delivery buffer at rest, but render motion at the
+          // previously proven density so the trajectory has enough frames to
+          // read as continuous movement instead of disconnected poses.
+          const renderDpr = (
+            profile === "motion"
+            && !spatialNavigationRef.current
+          )
+            ? Math.min(restingDpr, compactTouch ? 1.5 : 1.6)
+            : restingDpr;
           canvas.dataset.renderDpr = renderDpr.toFixed(3);
-          canvas.dataset.renderProfile = spatialNavigation
+          canvas.dataset.renderProfile = spatialNavigationRef.current
             ? "authoring"
-            : "delivery";
+            : `delivery-${profile}`;
           return 1 / renderDpr;
         };
         let activeHardwareScale = resolveHardwareScale();
@@ -4518,32 +4533,6 @@ const SplatViewer = forwardRef<SplatViewerHandle, Props>(function SplatViewer(
 
         // ── Render loop ──
         let prevT = performance.now();
-        const cameraFlightSortThresholds = new Map<any, number>();
-        const cameraFlightMeshes = () => [
-          gsRef.current,
-          ...compositionMeshesRef.current.map((item) => item.mesh),
-        ].filter(Boolean);
-        const lockCameraFlightSorting = () => {
-          for (const mesh of cameraFlightMeshes()) {
-            if (cameraFlightSortThresholds.has(mesh)) continue;
-            cameraFlightSortThresholds.set(
-              mesh,
-              Number(mesh.viewUpdateThreshold ?? 0.0001),
-            );
-            // Babylon's asynchronous sorter can finish several poses behind a
-            // moving camera. Keep the last coherent ordering throughout the
-            // flight instead of applying stale results that make the scene
-            // appear to jiggle around the camera.
-            mesh.viewUpdateThreshold = Number.POSITIVE_INFINITY;
-          }
-        };
-        const releaseCameraFlightSorting = () => {
-          for (const [mesh, threshold] of cameraFlightSortThresholds) {
-            mesh.viewUpdateThreshold = threshold;
-            mesh._postToWorker?.(true);
-          }
-          cameraFlightSortThresholds.clear();
-        };
         scene.registerBeforeRender(() => {
           const now = performance.now();
           const dt = Math.min((now - prevT) / 1000, 0.05);
@@ -4554,11 +4543,6 @@ const SplatViewer = forwardRef<SplatViewerHandle, Props>(function SplatViewer(
           }
 
           const anim = animRef.current;
-          if (anim.active) {
-            lockCameraFlightSorting();
-          } else if (cameraFlightSortThresholds.size) {
-            releaseCameraFlightSorting();
-          }
 
           if (!anim.active) {
             if (immersiveControls && immersivePoseRef.current.enabled) {
@@ -4736,11 +4720,12 @@ const SplatViewer = forwardRef<SplatViewerHandle, Props>(function SplatViewer(
 
           if (anim.elapsed >= anim.duration) {
             anim.active = false;
-            releaseCameraFlightSorting();
+            qualityRestoreAt = performance.now() + 220;
             // Camera flights must keep their original continuous interpolation.
             // Give Babylon's asynchronous depth worker time to catch the final
             // pose instead of idling immediately and exposing a late sort jump.
             immersiveRenderBurstUntilRef.current = performance.now() + 350;
+            gsRef.current?._postToWorker?.(true);
             if ((anim as any).editorNav) {
               (anim as any).editorNav = false;
               if (!immersiveControls && !spatialNavigationRef.current && canvasRef.current) {
@@ -4763,6 +4748,20 @@ const SplatViewer = forwardRef<SplatViewerHandle, Props>(function SplatViewer(
         const renderLoop = () => {
           const coast = immersiveCoastRef.current;
           const now = performance.now();
+          const targetRenderDensityProfile: RenderDensityProfile = (
+            !spatialNavigationRef.current
+            && (animRef.current.active || now < qualityRestoreAt)
+          )
+            ? "motion"
+            : "rest";
+          if (targetRenderDensityProfile !== activeRenderDensityProfile) {
+            activeRenderDensityProfile = targetRenderDensityProfile;
+            if (applyHardwareScale(resolveHardwareScale())) {
+              engine.resize(true);
+              canvas.dataset.renderSize =
+                `${engine.getRenderWidth()}x${engine.getRenderHeight()}`;
+            }
+          }
           if (
             layoutResizePending
             && !animRef.current.active
