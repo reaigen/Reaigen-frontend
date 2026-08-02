@@ -22,7 +22,6 @@ import type {
   TourViewerData,
   TourData,
   RoomData,
-  CameraData,
   SharedDraftData,
   SharedTourSummary,
   RoomKitCageWall,
@@ -181,9 +180,41 @@ export default function SharedPage({ params }: { params: Promise<{ token: string
   const [switchingTourId, setSwitchingTourId] = useState<number | null>(null);
   const [tourSwitchError, setTourSwitchError] = useState<string | null>(null);
   const splatRef = useRef<SplatViewerHandle | null>(null);
+  const resolvedSplatId = tourViewerData?.splat_id;
   const globalSceneTransform = useMemo(
     () => composedRootTransformFromScene(tourViewerData?.scene_description),
     [tourViewerData?.scene_description],
+  );
+  const activePruneMask = tourViewerData?.prune_mask
+    ?? tourViewerData?.workspace?.nodes.find(
+      (node) => node.splat_id === resolvedSplatId,
+    )?.prune;
+  const workspaceComposition = useMemo(
+    () => (tourViewerData?.workspace?.nodes ?? [])
+      .filter((node) => (
+        node.splat_id !== resolvedSplatId
+        && node.visible
+        && Boolean(node.asset.url)
+      ))
+      .map((node) => ({
+        id: node.id,
+        url: node.asset.url!,
+        visible: node.visible,
+        pruneMask: node.prune,
+        transform: {
+          version: 1 as const,
+          coordinateSpace: "reaigen_y_up" as const,
+          translation: node.transform.translation,
+          rotationDeg: node.transform.rotationDeg,
+          scale3: node.transform.scale3 ?? [
+            node.transform.scale,
+            node.transform.scale,
+            node.transform.scale,
+          ],
+          scale: node.transform.scale,
+        },
+      })),
+    [resolvedSplatId, tourViewerData?.workspace?.nodes],
   );
   const availableTours = useMemo(
     () => tourViewerData?.available_tours ?? draftData?.tours ?? [],
@@ -499,12 +530,15 @@ export default function SharedPage({ params }: { params: Promise<{ token: string
         <SplatViewer
           ref={splatRef}
           splatUrl={activeRenderUrl ?? pickRenderableUrl(tourViewerData)}
+          splatId={resolvedSplatId}
           tourUrl={tourViewerData.tour_url ?? undefined}
-          initialCameras={tourViewerData.cameras as CameraData ?? undefined}
-          initialPruneMask={tourViewerData.prune_mask}
+          initialCameras={tourViewerData.cameras ?? undefined}
+          outputsVersion={tourViewerData.outputs_updated_at}
+          initialPruneMask={activePruneMask}
           preferSavedCameras={!!tourViewerData.cameras?.cameras?.length}
           globalSceneTransform={globalSceneTransform}
           roomKitCage={roomKitCage}
+          compositionAssets={workspaceComposition}
           readOnly
           onReady={() => setViewerReady(true)}
           onError={() => {
@@ -568,7 +602,7 @@ export default function SharedPage({ params }: { params: Promise<{ token: string
           <TourControls shots={tourMeta.shots} currentIdx={shotIdx} onGoToShot={(i) => splatRef.current?.goToShot(i)} onPrev={() => splatRef.current?.goToPrev()} onNext={() => splatRef.current?.goToNext()} lang={lang} />
         )}
 
-        {tourViewerData.floorplan_url && tourViewerData.rooms.length > 0 && (
+        {tourViewerData.floorplan_url && (
           <FloorplanNav
             floorplanUrl={tourViewerData.floorplan_url}
             rooms={tourViewerData.rooms}

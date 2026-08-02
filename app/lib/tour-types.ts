@@ -514,6 +514,48 @@ export interface CameraData {
   cached?: boolean;
 }
 
+/** Frozen OpenUSD workspace delivered with an owner or public tour viewer. */
+export interface TourWorkspacePayload {
+  schema?: string;
+  version?: number;
+  revision: number;
+  cameras: SavedCamera[];
+  nodes: Array<{
+    id: string;
+    splat_id: number;
+    name: string;
+    prim_path?: string;
+    visible: boolean;
+    prune?: SplatPruneMask | null;
+    transform: {
+      translation: Vec3;
+      rotationDeg: Vec3;
+      scale: number;
+      scale3?: Vec3;
+    };
+    asset: {
+      splat_id?: number;
+      url: string | null;
+      format: "ply" | "sog" | null;
+      fingerprint?: string;
+    };
+  }>;
+  usd?: {
+    rootLayer?: string;
+    format?: "usda";
+    stageSha256?: string;
+    validation?: { valid?: boolean; validator?: string };
+  } | null;
+  delivery?: {
+    workspace_revision?: number;
+    workspace_stage_sha256?: string;
+    scene_revision?: number;
+    scene_stage_sha256?: string;
+    tour_delivery_version?: number;
+    immutable?: boolean;
+  } | null;
+}
+
 export interface SharedFloorplanRoom {
   id: number;
   label: string;
@@ -702,6 +744,7 @@ export interface TourViewerData {
   rooms: RoomData[];
   room_splats: RoomSplatData[];
   cameras: CameraData | null;
+  workspace?: TourWorkspacePayload;
   draft_data?: SharedDraftData | null;
   tour_id?: number;
   tour_asset_id?: string;
@@ -866,28 +909,7 @@ export interface SplatViewerPayload {
   representations: SceneDeliveryResolution["asset"][];
   collision_geometry?: TourViewerData["collision_geometry"];
   cameras: CameraData;
-  workspace?: {
-    revision: number;
-    cameras: SavedCamera[];
-    nodes: Array<{
-      id: string;
-      splat_id: number;
-      name: string;
-      visible: boolean;
-      prune?: SplatPruneMask | null;
-      transform: {
-        translation: Vec3;
-        rotationDeg: Vec3;
-        scale: number;
-        scale3?: Vec3;
-      };
-      asset: {
-        url: string | null;
-        format: "ply" | "sog" | null;
-        fingerprint?: string;
-      };
-    }>;
-  };
+  workspace?: TourWorkspacePayload;
 }
 
 export interface SplatPackageFileRef {

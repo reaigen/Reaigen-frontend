@@ -146,7 +146,7 @@ export default function SharingPage({ params }: { params: Promise<{ id: string }
   const thumbUrl = shareableTour?.thumbnail_url ?? null;
   const fpUrl = floorplan?.composite_url ?? null;
   const hasPhotos = currentGalleryUploads(draft?.raw_uploads ?? [], "image").length > 0;
-  const hasFloorplan = !!fpUrl || (draft?.draft_data ?? []).some(
+  const hasFloorplan = !!draft?.floorplan_id || !!fpUrl || (draft?.draft_data ?? []).some(
     (e) => e.data_key === "captured_room_json" || e.data_key === "wall_graph_json"
   );
 

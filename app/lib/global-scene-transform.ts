@@ -102,6 +102,9 @@ export function isSupportedUniversalSceneDescription(
     const stage = scene.stage;
     const policy = scene.spatialPolicy;
     const composition = scene.composition;
+    const compositionRoles = Array.isArray(composition?.layers)
+      ? composition.layers.map((layer) => layer.role)
+      : [];
     const requiredAffectedPrims = [
       "/Reaigen/World/GaussianSplat",
       "/Reaigen/Architecture/RoomKit",
@@ -134,10 +137,13 @@ export function isSupportedUniversalSceneDescription(
       || !composition
       || composition.strengthOrder !== "weak-to-strong"
       || !Array.isArray(composition.layers)
-      || composition.layers.length !== 4
+      || composition.layers.length < 4
       || composition.layers.some((layer) => !layer.immutable)
-      || composition.layers.map((layer) => layer.role).join(",")
-        !== "capture,reconstruction,authoring,presentation"
+      || compositionRoles[0] !== "capture"
+      || compositionRoles[1] !== "reconstruction"
+      || compositionRoles.at(-2) !== "authoring"
+      || compositionRoles.at(-1) !== "presentation"
+      || compositionRoles.slice(2, -2).some((role) => role !== "architecture")
     ) {
       return false;
     }
