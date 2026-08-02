@@ -361,10 +361,10 @@ export function AdvancedTourEditor({
         || target?.tagName === "SELECT"
       ) return;
       const toolByKey: Partial<Record<string, SpatialTransformTool>> = {
-        q: "select",
-        w: "move",
-        e: "rotate",
-        r: "scale",
+        "1": "select",
+        "2": "move",
+        "3": "rotate",
+        "4": "scale",
       };
       if (toolByKey[key]) {
         event.preventDefault();
@@ -705,28 +705,28 @@ export function AdvancedTourEditor({
           <ModeButton
             icon={<OrbitIcon size={15} />}
             label={t("spatialEditor.freeView", lang)}
-            shortcut="Q"
+            shortcut="1"
             active={transformTool === "select"}
             onClick={() => onTransformToolChange("select")}
           />
           <ModeButton
             icon={<MoveIcon size={15} />}
             label={t("spatialEditor.moveTool", lang)}
-            shortcut="W"
+            shortcut="2"
             active={transformTool === "move"}
             onClick={() => onTransformToolChange("move")}
           />
           <ModeButton
             icon={<RotateIcon size={15} />}
             label={t("spatialEditor.rotateTool", lang)}
-            shortcut="E"
+            shortcut="3"
             active={transformTool === "rotate"}
             onClick={() => onTransformToolChange("rotate")}
           />
           <ModeButton
             icon={<ScaleIcon size={15} />}
             label={t("spatialEditor.scale", lang)}
-            shortcut="R"
+            shortcut="4"
             active={transformTool === "scale"}
             onClick={() => onTransformToolChange("scale")}
           />

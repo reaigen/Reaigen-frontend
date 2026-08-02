@@ -31,6 +31,7 @@ import {
   transformCanonicalPoint,
 } from "@/app/lib/global-scene-transform";
 import { resolveRoomKitMovement } from "@/app/lib/spatial-editor-data";
+import { cameraMovementKey, cameraWalkDirection } from "@/app/lib/camera-navigation";
 import {
   countMask,
   decodeSplatPruneMask,
@@ -135,16 +136,6 @@ function editorUpWithRoll(rawForward: Vec3, roll: number): Vec3 {
     stableUp[1] * cosine - right[1] * sine,
     stableUp[2] * cosine - right[2] * sine,
   ], stableUp);
-}
-
-function editorWalkBasis(rawForward: Vec3): { forward: Vec3; right: Vec3 } {
-  const planarForward = normalizeVec3(
-    [rawForward[0], 0, rawForward[2]],
-    [0, 0, 1],
-  );
-  // Y-up left-handed viewport: up × forward points screen-right.
-  const right = normalizeVec3(crossVec3([0, 1, 0], planarForward), [1, 0, 0]);
-  return { forward: planarForward, right };
 }
 
 function normalizedEditorDegrees(radians: number): number {
@@ -895,6 +886,7 @@ const defaultAnim = (): Anim => ({
 interface ImmersivePose {
   enabled: boolean;
   basePosition: Vec3;
+  walkOffset: Vec3;
   baseForward: Vec3;
   baseUp: Vec3;
   yawOffset: number;
@@ -907,6 +899,7 @@ interface ImmersivePose {
 const defaultImmersivePose = (): ImmersivePose => ({
   enabled: false,
   basePosition: [0, 0, 0],
+  walkOffset: [0, 0, 0],
   baseForward: [0, 0, 1],
   baseUp: [0, 1, 0],
   yawOffset: 0,
@@ -1364,6 +1357,7 @@ const SplatViewer = forwardRef<SplatViewerHandle, Props>(function SplatViewer(
     immersivePoseRef.current = {
       enabled: true,
       basePosition: [pos[0], pos[1], pos[2]],
+      walkOffset: [0, 0, 0],
       baseForward: forward,
       baseUp: up,
       yawOffset: 0,
@@ -1436,16 +1430,21 @@ const SplatViewer = forwardRef<SplatViewerHandle, Props>(function SplatViewer(
       forward[1] - pose.baseUp[1] * vertical,
       forward[2] - pose.baseUp[2] * vertical,
     ], pose.baseForward);
-    let px = pose.basePosition[0] + planarForward[0] * pose.dolly;
-    let py = pose.basePosition[1] + planarForward[1] * pose.dolly;
-    let pz = pose.basePosition[2] + planarForward[2] * pose.dolly;
+    let px = pose.basePosition[0] + pose.walkOffset[0] + planarForward[0] * pose.dolly;
+    let py = pose.basePosition[1] + pose.walkOffset[1] + planarForward[1] * pose.dolly;
+    let pz = pose.basePosition[2] + pose.walkOffset[2] + planarForward[2] * pose.dolly;
 
     // Collision is authored in canonical capture space. Resolve the world-space
     // movement through the inverse USD root, then compose the accepted point
     // back to presentation space. This keeps RoomKit, cameras and Gaussians
     // coincident after any global translation/rotation/scale.
     const frame = fallbackSceneRef.current;
-    if ((roomKitCage.length || frame) && Math.abs(pose.dolly) > 1e-5) {
+    const requestedMovement = Math.hypot(
+      px - cam.position.x,
+      py - cam.position.y,
+      pz - cam.position.z,
+    );
+    if ((roomKitCage.length || frame) && requestedMovement > 1e-5) {
       const canonicalStart = inversePresentationPoint(
         [cam.position.x, cam.position.y, cam.position.z],
         globalSceneTransform,
@@ -1484,6 +1483,14 @@ const SplatViewer = forwardRef<SplatViewerHandle, Props>(function SplatViewer(
       }
       const resolved = transformCanonicalPoint(canonicalTarget, globalSceneTransform);
       [px, py, pz] = resolved;
+      // Keep the walk origin at the accepted collision-safe position. Without
+      // this, every subsequent frame retries the rejected point and produces a
+      // visible vibration while a movement key is held against a wall.
+      pose.walkOffset = [
+        px - pose.basePosition[0] - planarForward[0] * pose.dolly,
+        py - pose.basePosition[1] - planarForward[1] * pose.dolly,
+        pz - pose.basePosition[2] - planarForward[2] * pose.dolly,
+      ];
     }
 
     cam.position.set(px, py, pz);
@@ -1503,6 +1510,7 @@ const SplatViewer = forwardRef<SplatViewerHandle, Props>(function SplatViewer(
     pose.yawOffset = 0;
     pose.pitchOffset = 0;
     pose.dolly = 0;
+    pose.walkOffset = [0, 0, 0];
     immersiveCoastRef.current = { yaw: 0, pitch: 0 };
     immersiveRenderBurstUntilRef.current = performance.now() + 350;
     animRef.current.holdActive = false;
@@ -3917,7 +3925,8 @@ const SplatViewer = forwardRef<SplatViewerHandle, Props>(function SplatViewer(
         || target?.tagName === "TEXTAREA"
         || target?.tagName === "SELECT"
       ) return;
-      const key = event.key.toLowerCase();
+      const movementKey = cameraMovementKey(event);
+      const key = movementKey ?? event.key.toLowerCase();
       if (key === "f") {
         event.preventDefault();
         frameScene();
@@ -3926,6 +3935,12 @@ const SplatViewer = forwardRef<SplatViewerHandle, Props>(function SplatViewer(
       if (key === "v") {
         event.preventDefault();
         onSpatialCameraModeChange?.(spatialCameraMode === "orbit" ? "fly" : "orbit");
+        return;
+      }
+      if (movementKey) {
+        interruptCameraAnimation();
+        pressed.add(movementKey);
+        event.preventDefault();
         return;
       }
       if (spatialCameraMode === "orbit") {
@@ -3952,14 +3967,10 @@ const SplatViewer = forwardRef<SplatViewerHandle, Props>(function SplatViewer(
         event.preventDefault();
         return;
       }
-      if (["w", "a", "s", "d", "q", "e"].includes(key)) {
-        interruptCameraAnimation();
-        pressed.add(key);
-        event.preventDefault();
-      }
     };
     const handleKeyUp = (event: KeyboardEvent) => {
-      pressed.delete(event.key.toLowerCase());
+      const key = cameraMovementKey(event);
+      if (key) pressed.delete(key);
     };
     const clearPressed = () => pressed.clear();
     const handleVisibilityChange = () => {
@@ -3968,29 +3979,34 @@ const SplatViewer = forwardRef<SplatViewerHandle, Props>(function SplatViewer(
     const handleContextMenu = (event: MouseEvent) => event.preventDefault();
 
     const movementObserver = scene.onBeforeRenderObservable.add(() => {
-      if (spatialCameraMode !== "fly" || !pressed.size) return;
+      if (!pressed.size) return;
       const target = camera.getTarget();
       const forward = target.subtract(camera.position).normalize();
-      const basis = editorWalkBasis([forward.x, forward.y, forward.z]);
-      const horizontalForward = new B.Vector3(...basis.forward);
-      const right = new B.Vector3(...basis.right);
+      const direction = cameraWalkDirection(
+        [forward.x, forward.y, forward.z],
+        [0, 1, 0],
+        pressed,
+      );
       const seconds = Math.min(0.05, engineRef.current?.getDeltaTime?.() / 1000 || 1 / 60);
       const speed = Math.max(0.35, Math.min(4, (fallbackSceneRef.current?.radius ?? 2) * 0.75));
-      const movement = B.Vector3.Zero();
-      if (pressed.has("w")) movement.addInPlace(horizontalForward);
-      if (pressed.has("s")) movement.subtractInPlace(horizontalForward);
-      if (pressed.has("d")) movement.addInPlace(right);
-      if (pressed.has("a")) movement.subtractInPlace(right);
-      if (pressed.has("e")) movement.y += 1;
-      if (pressed.has("q")) movement.y -= 1;
-      if (movement.lengthSquared() > 0) {
-        movement.normalize().scaleInPlace(speed * seconds);
-        const up = camera.upVector.clone();
-        camera.position.addInPlace(movement);
-        camera.upVector.copyFrom(up);
-        camera.setTarget(target.add(movement));
-        camera.upVector.copyFrom(up);
-        markMoving();
+      if (Math.hypot(...direction) > 1e-6) {
+        const movement = new B.Vector3(...direction).scaleInPlace(speed * seconds);
+        if (spatialCameraMode === "orbit") {
+          const pose = spatialOrbitRef.current;
+          pose.target = [
+            pose.target[0] + movement.x,
+            pose.target[1] + movement.y,
+            pose.target[2] + movement.z,
+          ];
+          applySpatialOrbitPose();
+        } else {
+          const up = camera.upVector.clone();
+          camera.position.addInPlace(movement);
+          camera.upVector.copyFrom(up);
+          camera.setTarget(target.add(movement));
+          camera.upVector.copyFrom(up);
+          markMoving();
+        }
       }
     });
 
@@ -4268,44 +4284,138 @@ const SplatViewer = forwardRef<SplatViewerHandle, Props>(function SplatViewer(
   // ── Keyboard navigation ────────────────────────────────────────────────────
 
   useEffect(() => {
-    // In readOnly (shared tour), disable all keyboard navigation
-    // so guests preview using only the on-screen controls
-    if (readOnly || spatialNavigation) return;
+    if (spatialNavigation || !ready) return;
 
-    const MOVE_KEYS = new Set(["w", "a", "s", "d", "q", "e"]);
-    const handleKey = (e: KeyboardEvent) => {
-      const tag = (e.target as HTMLElement)?.tagName;
-      if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT") return;
+    const scene = sceneRef.current;
+    const camera = cameraRef.current;
+    const B = babylonRef.current;
+    if (!scene || !camera || !B) return;
+
+    const pressed = new Set<string>();
+    const isTypingTarget = (target: EventTarget | null) => {
+      const element = target as HTMLElement | null;
+      return Boolean(
+        element?.isContentEditable
+        || element?.tagName === "INPUT"
+        || element?.tagName === "TEXTAREA"
+        || element?.tagName === "SELECT",
+      );
+    };
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (isTypingTarget(event.target)) return;
 
       // Arrow keys navigate between shots
-      if (e.key === "ArrowLeft" || e.key === "ArrowUp") {
-        e.preventDefault();
-        e.stopPropagation();
+      if (event.key === "ArrowLeft" || event.key === "ArrowUp") {
+        event.preventDefault();
+        event.stopPropagation();
+        if (event.repeat) return;
         goToPrev();
         return;
       }
-      if (e.key === "ArrowRight" || e.key === "ArrowDown") {
-        e.preventDefault();
-        e.stopPropagation();
+      if (event.key === "ArrowRight" || event.key === "ArrowDown") {
+        event.preventDefault();
+        event.stopPropagation();
+        if (event.repeat) return;
         goToNext();
         return;
       }
 
-      // WASD + Q/E = scene movement (free camera)
-      if (MOVE_KEYS.has(e.key.toLowerCase())) {
-        e.preventDefault();
-        e.stopPropagation();
+      const key = cameraMovementKey(event);
+      if (key) {
+        event.preventDefault();
+        event.stopPropagation();
         if (!freeModeRef.current) enableFreeCamera();
+        pressed.add(key);
+        // Wake an idle shared viewer before its next throttled render. The
+        // movement observer then extends this burst on every rendered frame.
+        immersiveRenderBurstUntilRef.current = performance.now() + 350;
+        if (immersiveControls) {
+          setImmersiveAdjusted(true);
+          setShowGestureHint(false);
+        }
         return;
       }
-      if (e.key === "Escape") {
-        e.preventDefault();
+      if (event.key === "Escape") {
+        event.preventDefault();
         enableFreeCamera();
       }
     };
-    window.addEventListener("keydown", handleKey);
-    return () => window.removeEventListener("keydown", handleKey);
-  }, [readOnly, spatialNavigation, enableFreeCamera, goToPrev, goToNext]);
+    const handleKeyUp = (event: KeyboardEvent) => {
+      const key = cameraMovementKey(event);
+      if (key) pressed.delete(key);
+    };
+    const clearPressed = () => pressed.clear();
+    const handleVisibilityChange = () => {
+      if (document.visibilityState !== "visible") clearPressed();
+    };
+
+    const movementObserver = scene.onBeforeRenderObservable.add(() => {
+      if (!pressed.size) return;
+      const target = camera.getTarget();
+      const forward = normalizeVec3([
+        target.x - camera.position.x,
+        target.y - camera.position.y,
+        target.z - camera.position.z,
+      ]);
+      const pose = immersivePoseRef.current;
+      const up = normalizeVec3(
+        immersiveControls && pose.enabled
+          ? pose.baseUp
+          : [camera.upVector.x, camera.upVector.y, camera.upVector.z],
+        [0, 1, 0],
+      );
+      const direction = cameraWalkDirection(forward, up, pressed, pose.baseForward);
+      if (Math.hypot(...direction) < 1e-6) return;
+      const seconds = Math.min(0.05, engineRef.current?.getDeltaTime?.() / 1000 || 1 / 60);
+      const transformedRadius = (fallbackSceneRef.current?.radius ?? 2)
+        * sceneScaleMagnitude(globalSceneScale3(globalSceneTransformRef.current));
+      const speed = Math.max(0.35, Math.min(4, transformedRadius * 0.75));
+      const step = speed * seconds;
+      const delta: Vec3 = [direction[0] * step, direction[1] * step, direction[2] * step];
+
+      animRef.current.active = false;
+      animRef.current.holdActive = false;
+      immersiveRenderBurstUntilRef.current = performance.now() + 350;
+      if (immersiveControls && pose.enabled) {
+        pose.walkOffset = [
+          pose.walkOffset[0] + delta[0],
+          pose.walkOffset[1] + delta[1],
+          pose.walkOffset[2] + delta[2],
+        ];
+        applyImmersivePose();
+        return;
+      }
+
+      const movementVector = new B.Vector3(...delta);
+      const authoredUp = camera.upVector.clone();
+      camera.position.addInPlace(movementVector);
+      camera.upVector.copyFrom(authoredUp);
+      camera.setTarget(target.add(movementVector));
+      camera.upVector.copyFrom(authoredUp);
+      cameraUpRef.current = [authoredUp.x, authoredUp.y, authoredUp.z];
+    });
+
+    window.addEventListener("keydown", handleKeyDown);
+    window.addEventListener("keyup", handleKeyUp);
+    window.addEventListener("blur", clearPressed);
+    document.addEventListener("visibilitychange", handleVisibilityChange);
+    return () => {
+      pressed.clear();
+      window.removeEventListener("keydown", handleKeyDown);
+      window.removeEventListener("keyup", handleKeyUp);
+      window.removeEventListener("blur", clearPressed);
+      document.removeEventListener("visibilitychange", handleVisibilityChange);
+      scene.onBeforeRenderObservable.remove(movementObserver);
+    };
+  }, [
+    applyImmersivePose,
+    enableFreeCamera,
+    goToNext,
+    goToPrev,
+    immersiveControls,
+    ready,
+    spatialNavigation,
+  ]);
 
   // ── Scroll navigation ─────────────────────────────────────────────────────
 
@@ -4616,12 +4726,15 @@ const SplatViewer = forwardRef<SplatViewerHandle, Props>(function SplatViewer(
         camera.speed = 0.3;
         camera.upVector = new BABYLON.Vector3(0, 1, 0);
         if (!immersiveControls) camera.attachControl(canvas, true);
-        camera.keysUp = [87];       // W only
-        camera.keysDown = [83];      // S only
-        camera.keysLeft = [65];      // A only
-        camera.keysRight = [68];     // D only
-        camera.keysUpward = [69];    // E
-        camera.keysDownward = [81];  // Q
+        // Camera translation is handled by the frame-based navigation effect.
+        // Empty Babylon's focus-sensitive keyboard map to prevent double-speed
+        // movement when its canvas input and the app input are both active.
+        camera.keysUp = [];
+        camera.keysDown = [];
+        camera.keysLeft = [];
+        camera.keysRight = [];
+        camera.keysUpward = [];
+        camera.keysDownward = [];
         cameraRef.current = camera;
         camera.onViewMatrixChangedObservable.add(() => {
           if (!animRef.current.active) {
