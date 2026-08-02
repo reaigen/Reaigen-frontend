@@ -10,10 +10,15 @@ import type {
  */
 export function isTourReadyToShare(asset: DraftTourAsset): boolean {
   if (asset.source_splat_id == null) return false;
-  if (asset.lifecycle) return asset.lifecycle.can_publish;
+  if (asset.lifecycle) {
+    return asset.lifecycle.can_publish || (
+      asset.lifecycle.can_preview
+      && asset.lifecycle.preview_targets.includes("web")
+    );
+  }
   return Boolean(
-    asset.is_product_published
-      && asset.latest_delivery_version?.is_published,
+    asset.latest_delivery_version
+      && asset.latest_delivery_version.publication_status !== "failed",
   );
 }
 

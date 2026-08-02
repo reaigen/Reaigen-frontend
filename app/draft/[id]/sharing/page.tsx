@@ -155,7 +155,14 @@ export default function SharingPage({ params }: { params: Promise<{ id: string }
     setSaving(true);
     try {
       if (editingShare) {
-        const updatePayload: Parameters<typeof updateShare>[1] = { ...formData };
+        const updatePayload: Parameters<typeof updateShare>[1] & {
+          tour_id?: number;
+        } = {
+          ...formData,
+          ...(scope?.tour && shareableTour?.id
+            ? { tour_id: shareableTour.id }
+            : {}),
+        };
         // The preset value 0 means "Never" in the UI. Django intentionally
         // accepts only positive expires_in_hours values, but exposes the
         // nullable expires_at field for clearing an existing expiry.

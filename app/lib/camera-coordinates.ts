@@ -6,14 +6,19 @@ export const CAMERA_COORDINATE_SPACE = "y-up-identity";
 /** Camera payloads use radians for per-camera/FOV-Y values, while scene FOV
  * is exposed to editors in degrees. Accept either representation at read time. */
 export function cameraFovRadians(value: unknown, fallback = 0.66): number {
-  const numeric = Number(value);
+  let numeric = Number(value);
   if (!Number.isFinite(numeric) || numeric <= 0) return fallback;
+  // Older workspace delivery code applied radians -> degrees to values that
+  // were already degrees (85 became ~4870). Undo that legacy extra conversion
+  // before accepting the normal radians-or-degrees transport contract.
+  if (numeric > 180) numeric = numeric * Math.PI / 180;
   return numeric > Math.PI ? numeric * Math.PI / 180 : numeric;
 }
 
 export function cameraFovDegrees(value: unknown, fallback = 65): number {
-  const numeric = Number(value);
+  let numeric = Number(value);
   if (!Number.isFinite(numeric) || numeric <= 0) return fallback;
+  if (numeric > 180) numeric = numeric * Math.PI / 180;
   return numeric <= Math.PI ? numeric * 180 / Math.PI : numeric;
 }
 
