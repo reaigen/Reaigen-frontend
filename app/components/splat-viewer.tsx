@@ -31,7 +31,12 @@ import {
   transformCanonicalPoint,
 } from "@/app/lib/global-scene-transform";
 import { resolveRoomKitMovement } from "@/app/lib/spatial-editor-data";
-import { cameraMovementKey, cameraWalkDirection } from "@/app/lib/camera-navigation";
+import {
+  boundedAngularVelocity,
+  cameraMovementKey,
+  cameraTouchPanDelta,
+  cameraWalkDirection,
+} from "@/app/lib/camera-navigation";
 import {
   countMask,
   decodeSplatPruneMask,
@@ -4444,19 +4449,28 @@ const SplatViewer = forwardRef<SplatViewerHandle, Props>(function SplatViewer(
 
     cameraRef.current?.detachControl();
 
-    const pointers = new Map<number, { x: number; y: number }>();
+    const pointers = new Map<number, { x: number; y: number; pointerType: string }>();
     let lastPinchDistance: number | null = null;
+    let lastCentroid: { x: number; y: number } | null = null;
     let pointerDownAt = 0;
     let pointerDownX = 0;
     let pointerDownY = 0;
     let gestureMoved = false;
-    let lastTapAt = 0;
+    let lastTap: { at: number; x: number; y: number } | null = null;
     let lastMoveAt = 0;
 
     const distanceBetweenPointers = () => {
       const values = [...pointers.values()];
       if (values.length < 2) return null;
       return Math.hypot(values[0].x - values[1].x, values[0].y - values[1].y);
+    };
+    const pointerCentroid = () => {
+      const values = [...pointers.values()];
+      if (!values.length) return null;
+      return {
+        x: values.reduce((sum, pointer) => sum + pointer.x, 0) / values.length,
+        y: values.reduce((sum, pointer) => sum + pointer.y, 0) / values.length,
+      };
     };
 
     const markAdjusted = () => {
@@ -4469,6 +4483,13 @@ const SplatViewer = forwardRef<SplatViewerHandle, Props>(function SplatViewer(
     const handlePointerDown = (event: PointerEvent) => {
       if (event.pointerType === "mouse" && event.button !== 0) return;
       if (!immersivePoseRef.current.enabled) return;
+      // The navigation contract is deliberately one- or two-pointer. Ignore
+      // extra contacts instead of letting their changing centroid kick the
+      // camera when a palm or third finger touches the screen.
+      if (!pointers.has(event.pointerId) && pointers.size >= 2) {
+        event.preventDefault();
+        return;
+      }
       if (animRef.current.active) {
         const cam = cameraRef.current;
         if (cam) {
@@ -4498,8 +4519,13 @@ const SplatViewer = forwardRef<SplatViewerHandle, Props>(function SplatViewer(
       } else {
         gestureMoved = true;
       }
-      pointers.set(event.pointerId, { x: event.clientX, y: event.clientY });
+      pointers.set(event.pointerId, {
+        x: event.clientX,
+        y: event.clientY,
+        pointerType: event.pointerType,
+      });
       lastPinchDistance = distanceBetweenPointers();
+      lastCentroid = pointerCentroid();
       try { canvas.setPointerCapture(event.pointerId); } catch { /* best effort */ }
       event.preventDefault();
     };
@@ -4507,22 +4533,58 @@ const SplatViewer = forwardRef<SplatViewerHandle, Props>(function SplatViewer(
     const handlePointerMove = (event: PointerEvent) => {
       const previous = pointers.get(event.pointerId);
       if (!previous) return;
-      pointers.set(event.pointerId, { x: event.clientX, y: event.clientY });
+      pointers.set(event.pointerId, {
+        x: event.clientX,
+        y: event.clientY,
+        pointerType: previous.pointerType,
+      });
       if (animRef.current.active || !immersivePoseRef.current.enabled) return;
 
       const pose = immersivePoseRef.current;
       if (pointers.size >= 2) {
         immersiveCoastRef.current = { yaw: 0, pitch: 0 };
+        const nextCentroid = pointerCentroid();
         const nextDistance = distanceBetweenPointers();
+        const shortestSide = Math.max(240, Math.min(canvas.clientWidth, canvas.clientHeight));
+        let adjusted = false;
+        if (nextCentroid && lastCentroid) {
+          const centroidDx = nextCentroid.x - lastCentroid.x;
+          const centroidDy = nextCentroid.y - lastCentroid.y;
+          const cam = cameraRef.current;
+          if (cam && (Math.abs(centroidDx) > 0.01 || Math.abs(centroidDy) > 0.01)) {
+            const target = cam.getTarget();
+            const pan = cameraTouchPanDelta(
+              [
+                target.x - cam.position.x,
+                target.y - cam.position.y,
+                target.z - cam.position.z,
+              ],
+              [cam.upVector.x, cam.upVector.y, cam.upVector.z],
+              centroidDx,
+              centroidDy,
+              pose.maxDolly * 1.35 / shortestSide,
+            );
+            pose.walkOffset = [
+              pose.walkOffset[0] + pan[0],
+              pose.walkOffset[1] + pan[1],
+              pose.walkOffset[2] + pan[2],
+            ];
+            adjusted = true;
+          }
+        }
         if (nextDistance != null && lastPinchDistance != null) {
-          const shortestSide = Math.max(240, Math.min(canvas.clientWidth, canvas.clientHeight));
           const distanceDelta = nextDistance - lastPinchDistance;
           pose.dolly = Math.max(
             -pose.maxDolly * 0.6,
             Math.min(pose.maxDolly, pose.dolly + distanceDelta * pose.maxDolly * 1.7 / shortestSide),
           );
-          if (Math.abs(distanceDelta) > 0.25) markAdjusted();
+          if (Math.abs(distanceDelta) > 0.01) adjusted = true;
         }
+        if (adjusted) {
+          gestureMoved = true;
+          markAdjusted();
+        }
+        lastCentroid = nextCentroid;
         lastPinchDistance = nextDistance;
       } else {
         const dx = event.clientX - previous.x;
@@ -4540,10 +4602,15 @@ const SplatViewer = forwardRef<SplatViewerHandle, Props>(function SplatViewer(
           gestureMoved = true;
         }
         if (Math.abs(dx) > 0.1 || Math.abs(dy) > 0.1) markAdjusted();
-        immersiveCoastRef.current = {
-          yaw: (-dx * sensitivity) / elapsedSeconds,
-          pitch: (-dy * sensitivity) / elapsedSeconds,
-        };
+        // Finger navigation is direct manipulation: the camera must stop on
+        // release. Retain a small, bounded coast only for mouse/pen dragging.
+        immersiveCoastRef.current = previous.pointerType === "touch"
+          ? { yaw: 0, pitch: 0 }
+          : {
+              yaw: boundedAngularVelocity(-dx * sensitivity, elapsedSeconds),
+              pitch: boundedAngularVelocity(-dy * sensitivity, elapsedSeconds),
+            };
+        lastCentroid = pointerCentroid();
         lastMoveAt = now;
       }
 
@@ -4552,26 +4619,49 @@ const SplatViewer = forwardRef<SplatViewerHandle, Props>(function SplatViewer(
     };
 
     const finishPointer = (event: PointerEvent, allowTap: boolean) => {
+      const finishedPointer = pointers.get(event.pointerId);
+      if (!finishedPointer) return;
       const wasOnlyPointer = pointers.size === 1 && pointers.has(event.pointerId);
       pointers.delete(event.pointerId);
       immersivePointersActiveRef.current = pointers.size > 0;
       lastPinchDistance = distanceBetweenPointers();
+      lastCentroid = pointerCentroid();
       try { canvas.releasePointerCapture(event.pointerId); } catch { /* best effort */ }
+      if (finishedPointer.pointerType === "touch" || !allowTap) {
+        immersiveCoastRef.current = { yaw: 0, pitch: 0 };
+      }
 
       const now = performance.now();
       const isTap = allowTap && wasOnlyPointer && !gestureMoved && now - pointerDownAt < 280;
       if (isTap) {
-        if (now - lastTapAt < 360) {
+        const repeatedNearbyTap = lastTap
+          && now - lastTap.at < 360
+          && Math.hypot(event.clientX - lastTap.x, event.clientY - lastTap.y) < 36;
+        if (repeatedNearbyTap) {
           resetImmersiveView();
           setShowGestureHint(false);
-          lastTapAt = 0;
+          lastTap = null;
         } else {
-          lastTapAt = now;
+          lastTap = { at: now, x: event.clientX, y: event.clientY };
         }
       }
       if (!pointers.size) lastMoveAt = 0;
-      event.preventDefault();
+      if (event.cancelable) event.preventDefault();
     };
+
+    const cancelAllPointers = () => {
+      pointers.clear();
+      lastPinchDistance = null;
+      lastCentroid = null;
+      lastMoveAt = 0;
+      gestureMoved = false;
+      immersivePointersActiveRef.current = false;
+      immersiveCoastRef.current = { yaw: 0, pitch: 0 };
+    };
+    const handleVisibilityChange = () => {
+      if (document.visibilityState !== "visible") cancelAllPointers();
+    };
+    const handleContextMenu = (event: MouseEvent) => event.preventDefault();
 
     const handleWheel = (event: WheelEvent) => {
       const pose = immersivePoseRef.current;
@@ -4593,16 +4683,25 @@ const SplatViewer = forwardRef<SplatViewerHandle, Props>(function SplatViewer(
     canvas.addEventListener("pointermove", handlePointerMove, { passive: false });
     canvas.addEventListener("pointerup", handlePointerUp, { passive: false });
     canvas.addEventListener("pointercancel", handlePointerCancel, { passive: false });
+    canvas.addEventListener("lostpointercapture", handlePointerCancel, { passive: false });
     canvas.addEventListener("wheel", handleWheel, { passive: false });
+    canvas.addEventListener("contextmenu", handleContextMenu);
+    window.addEventListener("blur", cancelAllPointers);
+    window.addEventListener("pagehide", cancelAllPointers);
+    document.addEventListener("visibilitychange", handleVisibilityChange);
 
     return () => {
-      immersivePointersActiveRef.current = false;
-      immersiveCoastRef.current = { yaw: 0, pitch: 0 };
+      cancelAllPointers();
       canvas.removeEventListener("pointerdown", handlePointerDown);
       canvas.removeEventListener("pointermove", handlePointerMove);
       canvas.removeEventListener("pointerup", handlePointerUp);
       canvas.removeEventListener("pointercancel", handlePointerCancel);
+      canvas.removeEventListener("lostpointercapture", handlePointerCancel);
       canvas.removeEventListener("wheel", handleWheel);
+      canvas.removeEventListener("contextmenu", handleContextMenu);
+      window.removeEventListener("blur", cancelAllPointers);
+      window.removeEventListener("pagehide", cancelAllPointers);
+      document.removeEventListener("visibilitychange", handleVisibilityChange);
     };
   }, [
     applyImmersivePose,

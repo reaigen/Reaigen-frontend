@@ -1,7 +1,12 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { cameraMovementKey, cameraWalkDirection } from "./camera-navigation.ts";
+import {
+  boundedAngularVelocity,
+  cameraMovementKey,
+  cameraTouchPanDelta,
+  cameraWalkDirection,
+} from "./camera-navigation.ts";
 
 const closeTo = (actual, expected) => {
   assert.equal(actual.length, expected.length);
@@ -31,4 +36,17 @@ test("opposing movement keys cancel without drift", () => {
     cameraWalkDirection([0, 0, 1], [0, 1, 0], new Set(["w", "s", "a", "d", "q", "e"])),
     [0, 0, 0],
   );
+});
+
+test("two-pointer pan follows the camera plane without changing depth", () => {
+  closeTo(
+    cameraTouchPanDelta([0, 0, 1], [0, 1, 0], 20, -10, 0.01),
+    [-0.2, -0.1, 0],
+  );
+});
+
+test("optional coast velocity is bounded and rejects invalid timing", () => {
+  assert.equal(boundedAngularVelocity(0.8, 0.01), 2.4);
+  assert.equal(boundedAngularVelocity(-0.8, 0.01), -2.4);
+  assert.equal(boundedAngularVelocity(0.2, 0), 0);
 });

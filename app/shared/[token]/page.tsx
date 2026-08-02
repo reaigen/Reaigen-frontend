@@ -525,8 +525,8 @@ export default function SharedPage({ params }: { params: Promise<{ token: string
       ) : null}
 
       {tourOpen && tourViewerData && (
-        <div className="fixed inset-0 z-[9999] bg-white">
-          <div className="relative h-full w-full overflow-hidden bg-black">
+        <div className="fixed inset-0 z-[9999] h-[100dvh] w-screen overflow-hidden overscroll-none bg-white">
+          <div className="relative h-full w-full overflow-hidden overscroll-none bg-black">
         <SplatViewer
           ref={splatRef}
           splatUrl={activeRenderUrl ?? pickRenderableUrl(tourViewerData)}

@@ -89,3 +89,46 @@ export function cameraWalkDirection(
     ? [movement[0] / length, movement[1] / length, movement[2] / length]
     : [0, 0, 0];
 }
+
+/** Camera-plane translation for a two-pointer track gesture. */
+export function cameraTouchPanDelta(
+  rawForward: Vec3,
+  rawUp: Vec3,
+  deltaX: number,
+  deltaY: number,
+  worldUnitsPerPixel: number,
+): Vec3 {
+  if (
+    !Number.isFinite(deltaX)
+    || !Number.isFinite(deltaY)
+    || !Number.isFinite(worldUnitsPerPixel)
+    || worldUnitsPerPixel <= 0
+  ) return [0, 0, 0];
+
+  const forward = normalized(rawForward, [0, 0, 1]);
+  const authoredUp = normalized(rawUp, [0, 1, 0]);
+  const right = normalized(cross(authoredUp, forward), [1, 0, 0]);
+  const screenUp = normalized(cross(forward, right), authoredUp);
+  return [
+    (-right[0] * deltaX + screenUp[0] * deltaY) * worldUnitsPerPixel,
+    (-right[1] * deltaX + screenUp[1] * deltaY) * worldUnitsPerPixel,
+    (-right[2] * deltaX + screenUp[2] * deltaY) * worldUnitsPerPixel,
+  ];
+}
+
+/** Bound optional mouse/pen coast so a sparse move event cannot cause a spin. */
+export function boundedAngularVelocity(
+  deltaRadians: number,
+  elapsedSeconds: number,
+  maxRadiansPerSecond = 2.4,
+): number {
+  if (
+    !Number.isFinite(deltaRadians)
+    || !Number.isFinite(elapsedSeconds)
+    || !Number.isFinite(maxRadiansPerSecond)
+    || elapsedSeconds <= 0
+    || maxRadiansPerSecond <= 0
+  ) return 0;
+  const velocity = deltaRadians / elapsedSeconds;
+  return Math.max(-maxRadiansPerSecond, Math.min(maxRadiansPerSecond, velocity));
+}
