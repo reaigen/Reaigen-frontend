@@ -79,6 +79,74 @@ function normalizeVec3(value: Vec3, fallback: Vec3 = [0, 0, 1]): Vec3 {
   return [value[0] / length, value[1] / length, value[2] / length];
 }
 
+function dotVec3(left: Vec3, right: Vec3): number {
+  return left[0] * right[0] + left[1] * right[1] + left[2] * right[2];
+}
+
+function crossVec3(left: Vec3, right: Vec3): Vec3 {
+  return [
+    left[1] * right[2] - left[2] * right[1],
+    left[2] * right[0] - left[0] * right[2],
+    left[0] * right[1] - left[1] * right[0],
+  ];
+}
+
+/** Stable horizon frame used by DCC navigation without discarding camera roll. */
+function editorStableUp(rawForward: Vec3): Vec3 {
+  const forward = normalizeVec3(rawForward);
+  const worldUp: Vec3 = [0, 1, 0];
+  const vertical = dotVec3(worldUp, forward);
+  const projected: Vec3 = [
+    worldUp[0] - forward[0] * vertical,
+    worldUp[1] - forward[1] * vertical,
+    worldUp[2] - forward[2] * vertical,
+  ];
+  if (Math.hypot(...projected) >= 1e-5) return normalizeVec3(projected, worldUp);
+  const fallback: Vec3 = Math.abs(forward[2]) < 0.9 ? [0, 0, 1] : [1, 0, 0];
+  const fallbackDot = dotVec3(fallback, forward);
+  return normalizeVec3([
+    fallback[0] - forward[0] * fallbackDot,
+    fallback[1] - forward[1] * fallbackDot,
+    fallback[2] - forward[2] * fallbackDot,
+  ], worldUp);
+}
+
+function editorCameraRoll(rawForward: Vec3, rawUp: Vec3): number {
+  const forward = normalizeVec3(rawForward);
+  const stableUp = editorStableUp(forward);
+  const right = normalizeVec3(crossVec3(stableUp, forward), [1, 0, 0]);
+  const upAlongForward = dotVec3(rawUp, forward);
+  const authoredUp = normalizeVec3([
+    rawUp[0] - forward[0] * upAlongForward,
+    rawUp[1] - forward[1] * upAlongForward,
+    rawUp[2] - forward[2] * upAlongForward,
+  ], stableUp);
+  return Math.atan2(-dotVec3(authoredUp, right), dotVec3(authoredUp, stableUp));
+}
+
+function editorUpWithRoll(rawForward: Vec3, roll: number): Vec3 {
+  const forward = normalizeVec3(rawForward);
+  const stableUp = editorStableUp(forward);
+  const right = normalizeVec3(crossVec3(stableUp, forward), [1, 0, 0]);
+  const cosine = Math.cos(roll);
+  const sine = Math.sin(roll);
+  return normalizeVec3([
+    stableUp[0] * cosine - right[0] * sine,
+    stableUp[1] * cosine - right[1] * sine,
+    stableUp[2] * cosine - right[2] * sine,
+  ], stableUp);
+}
+
+function editorWalkBasis(rawForward: Vec3): { forward: Vec3; right: Vec3 } {
+  const planarForward = normalizeVec3(
+    [rawForward[0], 0, rawForward[2]],
+    [0, 0, 1],
+  );
+  // Y-up left-handed viewport: up × forward points screen-right.
+  const right = normalizeVec3(crossVec3([0, 1, 0], planarForward), [1, 0, 0]);
+  return { forward: planarForward, right };
+}
+
 function normalizedEditorDegrees(radians: number): number {
   if (!Number.isFinite(radians)) return 0;
   const degrees = radians * 180 / Math.PI;
@@ -182,6 +250,7 @@ interface EditorOrbitPose {
   radius: number;
   yaw: number;
   pitch: number;
+  roll: number;
 }
 
 const EMPTY_ROOM_KIT_CAGE: RoomKitCageWall[] = [];
@@ -1208,6 +1277,7 @@ const SplatViewer = forwardRef<SplatViewerHandle, Props>(function SplatViewer(
     radius: 4,
     yaw: Math.PI / 4,
     pitch: 22 * Math.PI / 180,
+    roll: 0,
   });
 
   useEffect(() => {
@@ -1824,6 +1894,10 @@ const SplatViewer = forwardRef<SplatViewerHandle, Props>(function SplatViewer(
       radius,
       yaw: Math.atan2(offset.z, offset.x),
       pitch: Math.asin(Math.max(-1, Math.min(1, offset.y / radius))),
+      roll: editorCameraRoll(
+        [forward.x, forward.y, forward.z],
+        [cam.upVector.x, cam.upVector.y, cam.upVector.z],
+      ),
     };
   }, []);
 
@@ -1976,9 +2050,16 @@ const SplatViewer = forwardRef<SplatViewerHandle, Props>(function SplatViewer(
       pose.target[1] + pose.radius * Math.sin(pose.pitch),
       pose.target[2] + pose.radius * cosPitch * Math.sin(pose.yaw),
     );
-    camera.upVector.set(0, 1, 0);
+    const forward = normalizeVec3([
+      pose.target[0] - camera.position.x,
+      pose.target[1] - camera.position.y,
+      pose.target[2] - camera.position.z,
+    ]);
+    const up = editorUpWithRoll(forward, pose.roll);
+    camera.upVector.set(...up);
+    cameraUpRef.current = up;
     camera.setTarget(new B.Vector3(pose.target[0], pose.target[1], pose.target[2]));
-    camera.rotation.z = 0;
+    camera.upVector.set(...up);
     immersiveRenderBurstUntilRef.current = performance.now() + 350;
   }, []);
 
@@ -1997,6 +2078,7 @@ const SplatViewer = forwardRef<SplatViewerHandle, Props>(function SplatViewer(
     pose.radius = framed.radius;
     pose.yaw = framed.yaw;
     pose.pitch = framed.pitch;
+    pose.roll = 0;
     if (instant) {
       camera.position.set(...framed.position);
       camera.upVector.set(0, 1, 0);
@@ -3452,6 +3534,10 @@ const SplatViewer = forwardRef<SplatViewerHandle, Props>(function SplatViewer(
           radius,
           yaw: Math.atan2(dz, dx),
           pitch: Math.asin(Math.max(-1, Math.min(1, dy / radius))),
+          roll: editorCameraRoll(
+            [target.x - camera.position.x, target.y - camera.position.y, target.z - camera.position.z],
+            [camera.upVector.x, camera.upVector.y, camera.upVector.z],
+          ),
         };
       }
     } else {
@@ -3473,6 +3559,7 @@ const SplatViewer = forwardRef<SplatViewerHandle, Props>(function SplatViewer(
     let touchCameraGesture = false;
     let flyYaw = 0;
     let flyPitch = 0;
+    let flyRoll = 0;
     const nativeTouchNavigation = (
       compactTouch
       && splatSelectionTool === "none"
@@ -3483,6 +3570,10 @@ const SplatViewer = forwardRef<SplatViewerHandle, Props>(function SplatViewer(
       const forward = target.subtract(camera.position).normalize();
       flyYaw = Math.atan2(forward.z, forward.x);
       flyPitch = Math.asin(Math.max(-1, Math.min(1, forward.y)));
+      flyRoll = editorCameraRoll(
+        [forward.x, forward.y, forward.z],
+        [camera.upVector.x, camera.upVector.y, camera.upVector.z],
+      );
     };
     syncFlyAngles();
 
@@ -3516,6 +3607,22 @@ const SplatViewer = forwardRef<SplatViewerHandle, Props>(function SplatViewer(
     };
     const markMoving = () => {
       immersiveRenderBurstUntilRef.current = performance.now() + 350;
+    };
+    const applyFlyAngles = () => {
+      const cosPitch = Math.cos(flyPitch);
+      const forward: Vec3 = [
+        Math.cos(flyYaw) * cosPitch,
+        Math.sin(flyPitch),
+        Math.sin(flyYaw) * cosPitch,
+      ];
+      const up = editorUpWithRoll(forward, flyRoll);
+      camera.upVector.set(...up);
+      camera.setTarget(camera.position.add(new B.Vector3(...forward)));
+      // Babylon's setTarget recomposes the view matrix. Restore the authored
+      // roll explicitly so repeated look/move events cannot drift it.
+      camera.upVector.set(...up);
+      cameraUpRef.current = up;
+      markMoving();
     };
     const interruptCameraAnimation = () => {
       if (animRef.current.active || animRef.current.holdActive) {
@@ -3554,8 +3661,12 @@ const SplatViewer = forwardRef<SplatViewerHandle, Props>(function SplatViewer(
     const moveFly = (amount: number) => {
       const target = camera.getTarget();
       const forward = target.subtract(camera.position).normalize();
-      camera.position.addInPlace(forward.scale(amount));
-      camera.setTarget(camera.position.add(forward));
+      const up = camera.upVector.clone();
+      const movement = forward.scale(amount);
+      camera.position.addInPlace(movement);
+      camera.upVector.copyFrom(up);
+      camera.setTarget(target.add(movement));
+      camera.upVector.copyFrom(up);
       markMoving();
     };
     const panFly = (dx: number, dy: number) => {
@@ -3569,7 +3680,9 @@ const SplatViewer = forwardRef<SplatViewerHandle, Props>(function SplatViewer(
       const scale = 2 * sceneRadius * Math.tan(camera.fov * 0.5) / viewportHeight;
       const movement = right.scale(-dx * scale).add(up.scale(dy * scale));
       camera.position.addInPlace(movement);
+      camera.upVector.copyFrom(authoredUp);
       camera.setTarget(target.add(movement));
+      camera.upVector.copyFrom(authoredUp);
       markMoving();
     };
 
@@ -3647,13 +3760,7 @@ const SplatViewer = forwardRef<SplatViewerHandle, Props>(function SplatViewer(
       } else {
         flyYaw -= dx * 0.0045;
         flyPitch = Math.max(-Math.PI * 0.485, Math.min(Math.PI * 0.485, flyPitch - dy * 0.0045));
-        const cosPitch = Math.cos(flyPitch);
-        camera.setTarget(camera.position.add(new B.Vector3(
-          Math.cos(flyYaw) * cosPitch,
-          Math.sin(flyPitch),
-          Math.sin(flyYaw) * cosPitch,
-        )));
-        markMoving();
+        applyFlyAngles();
       }
       event.preventDefault();
     };
@@ -3769,13 +3876,7 @@ const SplatViewer = forwardRef<SplatViewerHandle, Props>(function SplatViewer(
           -Math.PI * 0.485,
           Math.min(Math.PI * 0.485, flyPitch - dy * 0.0045),
         );
-        const cosPitch = Math.cos(flyPitch);
-        camera.setTarget(camera.position.add(new B.Vector3(
-          Math.cos(flyYaw) * cosPitch,
-          Math.sin(flyPitch),
-          Math.sin(flyYaw) * cosPitch,
-        )));
-        markMoving();
+        applyFlyAngles();
       }
       previousTouchCentroid = touchCentroid();
       previousTouchPinchDistance = null;
@@ -3790,6 +3891,7 @@ const SplatViewer = forwardRef<SplatViewerHandle, Props>(function SplatViewer(
 
     const handleWheel = (event: WheelEvent) => {
       if (spatialGizmoManagerRef.current?.isDragging) return;
+      interruptCameraAnimation();
       const deltaPixels = event.deltaY * (
         event.deltaMode === WheelEvent.DOM_DELTA_LINE
           ? 16
@@ -3828,16 +3930,30 @@ const SplatViewer = forwardRef<SplatViewerHandle, Props>(function SplatViewer(
       }
       if (spatialCameraMode === "orbit") {
         const panStep = 24;
-        if (event.key === "ArrowLeft") panOrbit(panStep, 0);
-        else if (event.key === "ArrowRight") panOrbit(-panStep, 0);
-        else if (event.key === "ArrowUp") panOrbit(0, panStep);
-        else if (key === "+" || key === "=") dollyOrbit(-0.12);
-        else if (key === "-" || key === "_") dollyOrbit(0.12);
-        else return;
+        if (event.key === "ArrowLeft") {
+          interruptCameraAnimation();
+          panOrbit(panStep, 0);
+        } else if (event.key === "ArrowRight") {
+          interruptCameraAnimation();
+          panOrbit(-panStep, 0);
+        } else if (event.key === "ArrowUp") {
+          interruptCameraAnimation();
+          panOrbit(0, panStep);
+        } else if (event.key === "ArrowDown") {
+          interruptCameraAnimation();
+          panOrbit(0, -panStep);
+        } else if (key === "+" || key === "=") {
+          interruptCameraAnimation();
+          dollyOrbit(-0.12);
+        } else if (key === "-" || key === "_") {
+          interruptCameraAnimation();
+          dollyOrbit(0.12);
+        } else return;
         event.preventDefault();
         return;
       }
       if (["w", "a", "s", "d", "q", "e"].includes(key)) {
+        interruptCameraAnimation();
         pressed.add(key);
         event.preventDefault();
       }
@@ -3845,14 +3961,19 @@ const SplatViewer = forwardRef<SplatViewerHandle, Props>(function SplatViewer(
     const handleKeyUp = (event: KeyboardEvent) => {
       pressed.delete(event.key.toLowerCase());
     };
+    const clearPressed = () => pressed.clear();
+    const handleVisibilityChange = () => {
+      if (document.visibilityState !== "visible") clearPressed();
+    };
     const handleContextMenu = (event: MouseEvent) => event.preventDefault();
 
     const movementObserver = scene.onBeforeRenderObservable.add(() => {
       if (spatialCameraMode !== "fly" || !pressed.size) return;
       const target = camera.getTarget();
       const forward = target.subtract(camera.position).normalize();
-      const horizontalForward = new B.Vector3(forward.x, 0, forward.z).normalize();
-      const right = B.Vector3.Cross(horizontalForward, B.Vector3.Up()).normalize();
+      const basis = editorWalkBasis([forward.x, forward.y, forward.z]);
+      const horizontalForward = new B.Vector3(...basis.forward);
+      const right = new B.Vector3(...basis.right);
       const seconds = Math.min(0.05, engineRef.current?.getDeltaTime?.() / 1000 || 1 / 60);
       const speed = Math.max(0.35, Math.min(4, (fallbackSceneRef.current?.radius ?? 2) * 0.75));
       const movement = B.Vector3.Zero();
@@ -3864,8 +3985,11 @@ const SplatViewer = forwardRef<SplatViewerHandle, Props>(function SplatViewer(
       if (pressed.has("q")) movement.y -= 1;
       if (movement.lengthSquared() > 0) {
         movement.normalize().scaleInPlace(speed * seconds);
+        const up = camera.upVector.clone();
         camera.position.addInPlace(movement);
-        camera.setTarget(camera.position.add(forward));
+        camera.upVector.copyFrom(up);
+        camera.setTarget(target.add(movement));
+        camera.upVector.copyFrom(up);
         markMoving();
       }
     });
@@ -3884,6 +4008,8 @@ const SplatViewer = forwardRef<SplatViewerHandle, Props>(function SplatViewer(
     canvas.addEventListener("contextmenu", handleContextMenu);
     window.addEventListener("keydown", handleKeyDown);
     window.addEventListener("keyup", handleKeyUp);
+    window.addEventListener("blur", clearPressed);
+    document.addEventListener("visibilitychange", handleVisibilityChange);
 
     return () => {
       pointers.clear();
@@ -3904,6 +4030,8 @@ const SplatViewer = forwardRef<SplatViewerHandle, Props>(function SplatViewer(
       canvas.removeEventListener("contextmenu", handleContextMenu);
       window.removeEventListener("keydown", handleKeyDown);
       window.removeEventListener("keyup", handleKeyUp);
+      window.removeEventListener("blur", clearPressed);
+      document.removeEventListener("visibilitychange", handleVisibilityChange);
       scene.onBeforeRenderObservable.remove(movementObserver);
       if (!immersiveControls) camera.attachControl(canvas, true);
     };
@@ -4790,6 +4918,7 @@ const SplatViewer = forwardRef<SplatViewerHandle, Props>(function SplatViewer(
               radius: framed.radius,
               yaw: framed.yaw,
               pitch: framed.pitch,
+              roll: 0,
             };
             return;
           }
