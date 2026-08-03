@@ -45,6 +45,13 @@ function noStoreHeaders(contentType: string) {
   };
 }
 
+function proxyResponseBody(status: number, data: string): string | null {
+  // Fetch forbids response bodies for these statuses. Passing even an empty
+  // string makes NextResponse throw, which used to turn a successful Django
+  // DELETE (204) into a misleading 502 at the browser boundary.
+  return status === 204 || status === 205 || status === 304 ? null : data;
+}
+
 function sharePinCookieName(token: string): string {
   return `${SHARE_PIN_COOKIE_PREFIX}${createHash("sha256").update(token).digest("hex").slice(0, 24)}`;
 }
@@ -222,7 +229,7 @@ async function proxy(
 
           const data = await res.text();
           const contentType = res.headers.get("Content-Type") ?? "application/json";
-          const response = new NextResponse(data, {
+          const response = new NextResponse(proxyResponseBody(res.status, data), {
             status: res.status,
             headers: noStoreHeaders(contentType),
           });
@@ -245,7 +252,7 @@ async function proxy(
 
       const data = await res.text();
       const contentType = res.headers.get("Content-Type") ?? "application/json";
-      const response = new NextResponse(data, {
+      const response = new NextResponse(proxyResponseBody(res.status, data), {
         status: res.status,
         // Authenticated responses must never enter the browser HTTP cache:
         // private cache entries are keyed by URL, not by the identity stored
