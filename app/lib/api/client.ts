@@ -2815,13 +2815,15 @@ export async function authorUsdSceneTransformOperation(
 
 export async function getSharedTourViewer(token: string, tourId?: number): Promise<TourViewerData> {
   const query = tourId == null ? "" : `?tour_id=${encodeURIComponent(tourId)}`;
-  return request(`/api/reaigen/shared/${encodeURIComponent(token)}/tour-viewer/${query}`);
+  // Public access can be edited, paused, or revoked at any moment. Never let
+  // the in-memory GET cache keep an older permission set alive.
+  return freshRequest(`/api/reaigen/shared/${encodeURIComponent(token)}/tour-viewer/${query}`);
 }
 
 export async function getSharedDraftData(token: string): Promise<SharedDraftData | null> {
   // Errors propagate so callers can react to gating responses
   // (requires_pin / requires_auth / expired / paused).
-  const raw = await request(`/api/reaigen/shared/${encodeURIComponent(token)}/`);
+  const raw = await freshRequest(`/api/reaigen/shared/${encodeURIComponent(token)}/`);
   if (!raw) return null;
   // Map backend response to frontend SharedDraftData format
   // Backend uses: raw_uploads[].file_url, draft_data[].data_key/data_value, area_unit_display

@@ -72,6 +72,7 @@ function ShareRow({
   const isActive = share.status === "active";
   const isPaused = share.status === "paused";
   const isLive = isActive || isPaused;
+  const canRevoke = share.status !== "revoked";
   const cfg = STATUS_CONFIG[share.status] ?? STATUS_CONFIG.revoked;
   const expiry = expiryLabel(share.expires_at, lang);
   const analyticsItems: AnalyticsGridItem[] = stats
@@ -218,12 +219,14 @@ function ShareRow({
 
           {/* Actions bar */}
           {actionError && <p role="alert" className="text-[11px] text-destructive">{t("common.requestFailed", lang)}</p>}
-          {isLive && (
+          {canRevoke && (
             <div className="flex flex-wrap items-center gap-2 border-t border-border/40 pt-2">
-              <Button type="button" variant="outline" size="sm" onClick={(e) => { e.stopPropagation(); onEdit(); }}
-                className="h-8 px-3.5 text-[12px] text-foreground/80 hover:text-foreground">
-                {t("shares.editSettings", lang)}
-              </Button>
+              {isLive && (
+                <Button type="button" variant="outline" size="sm" onClick={(e) => { e.stopPropagation(); onEdit(); }}
+                  className="h-8 px-3.5 text-[12px] text-foreground/80 hover:text-foreground">
+                  {t("shares.editSettings", lang)}
+                </Button>
+              )}
               {isActive && (
                 <Button type="button" variant="outline" size="sm" onClick={handlePause} disabled={actionLoading}
                   className="h-8 px-3.5 text-[12px] text-foreground/60 hover:text-foreground">

@@ -45,7 +45,16 @@ function scopeFromShare(
     share.fields.filter((field) => field.is_visible).map((field) => field.field_name),
   );
   if (visibleFields.size === 0) {
-    return defaultContentScope(capabilities.tour, capabilities.photos, capabilities.floorplan);
+    // Empty or legacy field sets are displayed fail-closed. Showing the
+    // default bundle here would make an old/restricted link look broader than
+    // it is and could publish extra content when the owner presses Save.
+    return {
+      tour: false,
+      photos: false,
+      floorplan: false,
+      details: false,
+      selectedFields: new Set(["title"]),
+    };
   }
   visibleFields.add("title");
   const structuralFields = new Set(["title", "tour", "uploads", "floorplan"]);
@@ -98,7 +107,9 @@ export default function SharingPage({ params }: { params: Promise<{ id: string }
           getDraft(draftId),
           getSplatsByDraft(draftId).catch(() => null),
           getDraftTourAssets(draftId).catch(() => null),
-          listShares().catch(() => [] as ShareData[]),
+          // Sharing state is access control, so always revalidate it instead
+          // of accepting the ordinary short-lived application cache.
+          listShares({ fresh: true }).catch(() => [] as ShareData[]),
           listUnits().catch(() => []),
         ]);
         const fetchedFloorplan = d.floorplan_id
