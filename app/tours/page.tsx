@@ -7,7 +7,7 @@ import { AppShell } from "../components/app-shell";
 import { CollectionCard } from "../components/collection-card";
 import { CollectionState } from "../components/collection-state";
 import { useAuth } from "../components/hooks/use-auth";
-import { ArrowRightIcon, InfoIcon, MainTourIcon, PlayIcon, TourIcon } from "../components/icons";
+import { ArrowRightIcon, InfoIcon, MainTourIcon, PlayIcon } from "../components/icons";
 import { PageHeader } from "../components/page-header";
 import { PageLoading } from "../components/page-loading";
 import { StatusPill } from "../components/status-pill";
@@ -160,7 +160,7 @@ export default function ToursPage() {
           />
             ) : items.length === 0 ? (
           <CollectionState
-            icon={<TourIcon size={20} />}
+            icon={<MainTourIcon size={20} />}
             title={searchQuery ? t("tours.emptyFiltered", lang) : t("tours.empty", lang)}
             description={t("tours.emptyHint", lang)}
             action={searchQuery ? <Button type="button" variant="outline" size="sm" onClick={() => setQuery("")}>{t("dashboard.clearSearch", lang)}</Button> : undefined}

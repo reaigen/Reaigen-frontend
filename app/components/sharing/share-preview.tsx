@@ -5,6 +5,7 @@ import type { DraftDetailItem, DraftUpload } from "../../lib/tour-types";
 import { currentGalleryUploads } from "../../lib/media";
 import { resolveUnit, unitLabel, type UnitLookup } from "../../lib/unit-catalog";
 import { PropertyFactTile } from "../property-fact-tile";
+import { MainTourIcon, PlayIcon } from "../icons";
 import type { ContentScope } from "./content-scope-selector";
 
 interface SharePreviewProps {
@@ -110,14 +111,14 @@ export function SharePreview({ draft, scope, hasTour, hasFloorplan, thumbUrl, un
             {tourIncluded && (
               <div className="absolute inset-0 flex items-center justify-center">
                 <div className="floating-icon-button flex items-center justify-center border border-white/15 bg-black/65 text-white shadow-sm backdrop-blur-md">
-                  <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><polygon points="10,8 16,12 10,16"/></svg>
+                  <PlayIcon size={16} />
                 </div>
               </div>
             )}
             {tourIncluded && (
               <div className="glass-chip floating-status absolute left-2.5 top-2.5 flex items-center gap-1 text-[10px]">
-                <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/></svg>
-                3D
+                <MainTourIcon size={11} />
+                {t("sharing.scopeTour", lang)}
               </div>
             )}
             {(showTitle || showPrice) && (
@@ -140,7 +141,7 @@ export function SharePreview({ draft, scope, hasTour, hasFloorplan, thumbUrl, un
         )}
 
         {/* Property info */}
-        <div className="space-y-2 bg-card/35 px-4 py-3.5 sm:px-5">
+        <div className="space-y-2 bg-card px-4 py-3.5 sm:px-5">
           {showTitle && !hasHero && (
             <div>
               <h3 className="text-[14px] font-semibold leading-tight">{draft.title || t("dashboard.untitled", lang)}</h3>

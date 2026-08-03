@@ -22,10 +22,11 @@ import { getUserLanguage, t } from "../../../lib/i18n";
 import type { DraftDetailItem, DraftTourAssetsPayload, ShareData, SplatsByDraftPayload } from "../../../lib/tour-types";
 import { SharePreview } from "../../../components/sharing/share-preview";
 import { ShareCreateForm, defaultContentScope, type ShareFormData } from "../../../components/sharing/share-create-form";
-import { ShareLinkCard } from "../../../components/sharing/share-link-card";
 import type { ContentScope } from "../../../components/sharing/content-scope-selector";
 import { PageLoading } from "../../../components/page-loading";
 import { CollectionLoading } from "../../../components/collection-loading";
+import { PageHeader } from "../../../components/page-header";
+import { ShareManagementPanel, ShareManagementTile } from "../../../components/share-management-card";
 import { copyToClipboard, shareUrl } from "../../../lib/share-ui";
 import type { UnitLookup } from "../../../lib/unit-catalog";
 import { currentGalleryUploads } from "../../../lib/media";
@@ -86,6 +87,7 @@ export default function SharingPage({ params }: { params: Promise<{ id: string }
 
   const [scope, setScope] = useState<ContentScope | null>(null);
   const [editingShare, setEditingShare] = useState<ShareData | null>(null);
+  const [selectedShareId, setSelectedShareId] = useState<number | null>(null);
   const [formError, setFormError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [notice, setNotice] = useState<"copied" | "saved" | null>(null);
@@ -236,6 +238,7 @@ export default function SharingPage({ params }: { params: Promise<{ id: string }
   const handleShareUpdate = useCallback((shareId: number, updated: ShareData | null) => {
     if (!updated) {
       setShares((p) => p.filter((s) => s.id !== shareId));
+      setSelectedShareId((current) => current === shareId ? null : current);
     } else {
       setShares((p) => p.map((s) => s.id === shareId ? updated : s));
     }
@@ -261,7 +264,7 @@ export default function SharingPage({ params }: { params: Promise<{ id: string }
   if (!draft) {
     return (
       <AppShell user={user} onLogout={logout}>
-        <div className="mx-auto flex min-h-[65vh] w-full max-w-[1320px] items-center justify-center pb-8 md:pb-10">
+        <div className="mx-auto flex min-h-[65vh] w-full max-w-[1180px] items-center justify-center pb-8 md:pb-10">
           <CollectionLoading label={t("common.loading", lang)} className="min-h-0 p-0" />
         </div>
       </AppShell>
@@ -269,11 +272,14 @@ export default function SharingPage({ params }: { params: Promise<{ id: string }
   }
 
   const title = draft.title || t("dashboard.untitled", lang);
+  const selectedShare = selectedShareId == null
+    ? null
+    : shares.find((share) => share.id === selectedShareId) ?? null;
 
   return (
     <AppShell user={user} onLogout={logout}>
-      <div className="mx-auto w-full max-w-[1320px] pb-8 md:pb-10">
-        <header className="mb-5 md:mb-6">
+      <div className="mx-auto w-full max-w-[1180px] pb-8 md:pb-10">
+        <div className="mb-5 sm:mb-8">
           <button
             type="button"
             onClick={() => router.push(`/draft/${draftId}`)}
@@ -282,18 +288,15 @@ export default function SharingPage({ params }: { params: Promise<{ id: string }
             <ArrowLeftIcon size={15} />
             {t("common.back", lang)}
           </button>
-          <div className="mt-3 flex flex-col gap-1 sm:flex-row sm:items-baseline sm:gap-3">
-            <h1 className="text-[28px] font-semibold leading-none tracking-[-0.035em] sm:text-[32px]">
-              {t("sharing.pageTitle", lang)}
-            </h1>
-            <p className="truncate text-[13px] text-muted-foreground sm:max-w-[55vw]">
-              {title}
-            </p>
-          </div>
-        </header>
+          <PageHeader
+            title={t("sharing.pageTitle", lang)}
+            description={title}
+            className="mt-3"
+          />
+        </div>
 
         {/* Two-panel layout */}
-        <div className="relative grid grid-cols-1 gap-6 lg:grid-cols-[minmax(0,0.96fr)_minmax(29rem,1.04fr)] lg:items-start lg:gap-6">
+        <div className="relative grid grid-cols-1 gap-6 lg:grid-cols-[minmax(0,1.08fr)_minmax(27rem,0.92fr)] lg:items-start lg:gap-6">
           {/* Copy banner — absolutely positioned so it never shifts the layout */}
           {notice && (
             <div className="floating-capsule absolute inset-x-0 top-0 z-30 flex items-center gap-2 border border-foreground/15 bg-card/95 px-4 shadow-elevated backdrop-blur-xl animate-fade-in">
@@ -353,7 +356,7 @@ export default function SharingPage({ params }: { params: Promise<{ id: string }
 
             {/* Active links */}
             {shares.length > 0 && (
-              <div className="space-y-2">
+              <div className="space-y-2.5">
                 <div className="flex items-center gap-2 px-1">
                   <h2 className="text-[13px] font-semibold text-foreground/70">
                     {t("sharing.activeLinks", lang)}
@@ -362,21 +365,18 @@ export default function SharingPage({ params }: { params: Promise<{ id: string }
                     {shares.length}
                   </span>
                 </div>
-                {shares.map((share) => (
-                  <ShareLinkCard
-                    key={share.id}
-                    share={share}
-                    lang={lang}
-                    dateFormat={user.localization?.date_format}
-                    onUpdate={(updated) => handleShareUpdate(share.id, updated)}
-                    onEdit={() => {
-                      setEditingShare(share);
-                      setFormError(null);
-                      setScope(scopeFromShare(share, { tour: hasTour, photos: hasPhotos, floorplan: hasFloorplan }));
-                      requestAnimationFrame(() => formRef.current?.scrollIntoView({ behavior: "smooth", block: "start" }));
-                    }}
-                  />
-                ))}
+                <div className="-mx-1 flex gap-2 overflow-x-auto px-1 pb-2 scrollbar-hide" aria-label={t("sharing.activeLinks", lang)}>
+                  {shares.map((share) => (
+                    <ShareManagementTile
+                      key={share.id}
+                      share={share}
+                      title={share.title || t("sharing.linkLabel", lang)}
+                      lang={lang}
+                      dateFormat={user.localization?.date_format}
+                      onManage={() => setSelectedShareId(share.id)}
+                    />
+                  ))}
+                </div>
               </div>
             )}
           </div>
@@ -399,6 +399,29 @@ export default function SharingPage({ params }: { params: Promise<{ id: string }
           </div>
         </div>
       </div>
+
+      <ShareManagementPanel
+        open={selectedShare != null}
+        onOpenChange={(open) => {
+          if (!open) setSelectedShareId(null);
+        }}
+        share={selectedShare}
+        title={selectedShare?.title || title}
+        tourLink={`/draft/${draftId}`}
+        lang={lang}
+        dateFormat={user.localization?.date_format}
+        onUpdate={(updated) => {
+          if (selectedShare) handleShareUpdate(selectedShare.id, updated);
+        }}
+        onEdit={() => {
+          if (!selectedShare) return;
+          setEditingShare(selectedShare);
+          setFormError(null);
+          setScope(scopeFromShare(selectedShare, { tour: hasTour, photos: hasPhotos, floorplan: hasFloorplan }));
+          setSelectedShareId(null);
+          requestAnimationFrame(() => formRef.current?.scrollIntoView({ behavior: "smooth", block: "start" }));
+        }}
+      />
     </AppShell>
   );
 }

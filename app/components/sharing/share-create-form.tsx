@@ -85,54 +85,56 @@ export function ShareCreateForm({
   };
 
   return (
-    <div className="space-y-3">
-      {error && <p role="alert" className="rounded-2xl border border-destructive/25 bg-destructive/[0.035] px-4 py-3 text-[12px] text-destructive">{error}</p>}
+    <div>
+      {error && <p role="alert" className="mb-3 rounded-2xl border border-destructive/25 bg-destructive/[0.035] px-4 py-3 text-[12px] text-destructive">{error}</p>}
 
-      <section className="floating-panel p-4 sm:p-5">
-        <ContentScopeSelector
-          scope={scope}
-          onChange={onScopeChange}
-          hasTour={hasTour}
-          hasPhotos={hasPhotos}
-          hasFloorplan={hasFloorplan}
-          lang={lang}
-        />
-      </section>
+      <div className="floating-panel divide-y divide-border/50 overflow-clip">
+        <section className="p-4 sm:p-5">
+          <ContentScopeSelector
+            scope={scope}
+            onChange={onScopeChange}
+            hasTour={hasTour}
+            hasPhotos={hasPhotos}
+            hasFloorplan={hasFloorplan}
+            lang={lang}
+          />
+        </section>
 
-      <section className="floating-panel p-4 sm:p-5">
-        <PrivacyLevelSelector
-          level={privacyLevel}
-          pin={pin}
-          onLevelChange={setPrivacyLevel}
-          onPinChange={setPin}
-          lang={lang}
-        />
-      </section>
+        <section className="p-4 sm:p-5">
+          <PrivacyLevelSelector
+            level={privacyLevel}
+            pin={pin}
+            onLevelChange={setPrivacyLevel}
+            onPinChange={setPin}
+            lang={lang}
+          />
+        </section>
 
-      <section className="floating-panel p-4 sm:p-5">
-        <LifetimeSelector
-          hours={lifetimeHours}
-          onHoursChange={setLifetimeHours}
-          currentExpiry={initialShare?.expires_at}
-          lang={lang}
-        />
-      </section>
+        <section className="p-4 sm:p-5">
+          <LifetimeSelector
+            hours={lifetimeHours}
+            onHoursChange={setLifetimeHours}
+            currentExpiry={initialShare?.expires_at}
+            lang={lang}
+          />
+        </section>
 
-      <div className="floating-toolbar sticky bottom-[calc(4rem+env(safe-area-inset-bottom,0px))] z-20 -mx-1 md:static md:mx-0">
-        {initialShare && onCancelEdit ? (
-          <Button type="button" variant="ghost" className="floating-control h-auto flex-1 text-[13px] font-semibold" onClick={onCancelEdit} disabled={saving}>
-            {t("common.cancel", lang)}
+        <div className="sticky bottom-[calc(4rem+env(safe-area-inset-bottom,0px))] z-20 flex gap-2 bg-card/95 p-3 backdrop-blur-xl md:static">
+          {initialShare && onCancelEdit ? (
+            <Button type="button" variant="ghost" className="flex-1 text-[13px] font-semibold" onClick={onCancelEdit} disabled={saving}>
+              {t("common.cancel", lang)}
+            </Button>
+          ) : null}
+          <Button
+            type="button"
+            className="flex-1 text-[13px] font-semibold"
+            onClick={handleSubmit}
+            disabled={saving || !pinValid}
+            loading={saving}
+          >
+            {t(initialShare ? "shareDialog.save" : "sharing.createAndCopy", lang)}
           </Button>
-        ) : null}
-        <Button
-          type="button"
-          className="floating-control h-auto flex-1 text-[13px] font-semibold shadow-sm"
-          onClick={handleSubmit}
-          disabled={saving || !pinValid}
-          loading={saving}
-        >
-          {t(initialShare ? "shareDialog.save" : "sharing.createAndCopy", lang)}
-        </Button>
+        </div>
       </div>
     </div>
   );

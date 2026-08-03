@@ -404,7 +404,7 @@ function AppShellFrame({
       aria-expanded={reaiOpen}
       className="group inline-flex h-11 items-center justify-center gap-2 rounded-2xl border border-border bg-card px-3.5 text-[12px] font-semibold text-foreground/80 transition-colors hover:bg-accent hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 md:h-[58px] md:w-16 md:flex-col md:gap-1 md:border-transparent md:bg-transparent md:px-0 min-[1728px]:h-12 min-[1728px]:w-full min-[1728px]:flex-row min-[1728px]:justify-start min-[1728px]:gap-3 min-[1728px]:border-border min-[1728px]:bg-card min-[1728px]:px-3.5"
     >
-      <AgentIcon size={21} strokeWidth={1.75} className="text-foreground/75 transition-colors group-hover:text-foreground" />
+      <AgentIcon size={21} strokeWidth={1.95} className="text-foreground/75 transition-colors group-hover:text-foreground" />
       <span className="md:text-[10px] md:leading-none min-[1728px]:text-[13px] min-[1728px]:leading-normal">{t("reai.title", lang)}</span>
     </button>
   ) : null;
@@ -489,7 +489,7 @@ function AppShellFrame({
                     : "font-medium text-muted-foreground hover:bg-accent/80 hover:text-foreground"
                 )}
               >
-                <Icon size={22} strokeWidth={active ? 2.2 : 1.7} className={cn("shrink-0", active ? "text-foreground" : "text-foreground/55")} />
+                <Icon size={22} strokeWidth={active ? 2.25 : 1.9} className={cn("shrink-0", active ? "text-foreground" : "text-foreground/55")} />
                 <span className="max-w-full truncate min-[1728px]:block">{item.label}</span>
               </Link>
             );
@@ -659,7 +659,7 @@ function AppShellFrame({
                     : "text-foreground/55 hover:text-foreground"
                 )}
               >
-                <Icon size={23} strokeWidth={active ? 2.25 : 1.75} />
+                <Icon size={23} strokeWidth={active ? 2.3 : 1.9} />
                 <span className="max-w-full truncate px-1">{item.label}</span>
               </Link>
             );

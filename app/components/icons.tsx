@@ -74,11 +74,7 @@ export const LinkIcon = fromRadix(Link2Icon, "LinkIcon");
 export const SettingsIcon = fromRadix(GearIcon, "SettingsIcon");
 export const SearchIcon = fromRadix(MagnifyingGlassIcon, "SearchIcon");
 
-/**
- * Primary workspace navigation uses a roomier 24px optical grid than the
- * compact Radix action glyphs. The rounded, single-weight outlines stay clear
- * in both the desktop rail and the mobile tab bar.
- */
+/** Primary workspace glyphs use one bold 24px optical grid. */
 export function MainHomeIcon({
   size = 18,
   width,
@@ -99,8 +95,8 @@ export function MainHomeIcon({
       aria-hidden={props["aria-hidden"] ?? true}
       {...props}
     >
-      <path d="m3.5 10.25 8.5-7 8.5 7" />
-      <path d="M5.25 9.1v10.15c0 .69.56 1.25 1.25 1.25h3.05v-6.15h4.9v6.15h3.05c.69 0 1.25-.56 1.25-1.25V9.1" />
+      <path d="m3.25 11.15 7.95-6.9a1.25 1.25 0 0 1 1.6 0l7.95 6.9" />
+      <path d="M5.25 9.85v8.4a2 2 0 0 0 2 2H9.5v-5.5h5v5.5h2.25a2 2 0 0 0 2-2v-8.4" />
     </svg>
   );
 }
@@ -125,8 +121,11 @@ export function MainTourIcon({
       aria-hidden={props["aria-hidden"] ?? true}
       {...props}
     >
-      <path d="m12 3.25 8 4.35v8.8l-8 4.35-8-4.35V7.6l8-4.35Z" />
-      <path d="m4.35 7.8 7.65 4.15 7.65-4.15M12 11.95v8.35" />
+      <path d="M19.7 8.4C18.25 5.85 15.35 4.25 12 4.25c-3.95 0-7.3 2.25-8.45 5.4" />
+      <path d="m16.35 8.25 3.55.4.35-3.55" />
+      <path d="M4.3 15.6c1.45 2.55 4.35 4.15 7.7 4.15 3.95 0 7.3-2.25 8.45-5.4" />
+      <path d="m7.65 15.75-3.55-.4-.35 3.55" />
+      <circle cx="12" cy="12" r="2.35" />
     </svg>
   );
 }
@@ -151,8 +150,8 @@ export function AgentIcon({
       aria-hidden={props["aria-hidden"] ?? true}
       {...props}
     >
-      <path d="M6.25 4.25h11.5a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2h-6.9l-4.6 3.5v-3.5a2 2 0 0 1-2-2v-8a2 2 0 0 1 2-2Z" />
-      <path d="M12 7.05c.36 1.72 1.23 2.59 2.95 2.95-1.72.36-2.59 1.23-2.95 2.95-.36-1.72-1.23-2.59-2.95-2.95 1.72-.36 2.59-1.23 2.95-2.95Z" />
+      <path d="M12 3.25c.42 4.92 2.83 7.33 7.75 7.75-4.92.42-7.33 2.83-7.75 7.75-.42-4.92-2.83-7.33-7.75-7.75 4.92-.42 7.33-2.83 7.75-7.75Z" />
+      <circle cx="18.75" cy="4.5" r="1" fill="currentColor" stroke="none" />
     </svg>
   );
 }
