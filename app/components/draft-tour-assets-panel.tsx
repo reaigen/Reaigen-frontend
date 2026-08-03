@@ -21,7 +21,6 @@ import type {
 } from "../lib/tour-types";
 import { Button } from "../lib/ui/button";
 import { CollectionLoading } from "./collection-loading";
-import { LoadingDots } from "./loading-dots";
 import { Switch } from "../lib/ui/switch";
 import { cn } from "../lib/utils";
 import {
@@ -1052,7 +1051,7 @@ export function DraftTourAssetsPanel({
 
             {loading ? (
               <div className="flex justify-center py-14">
-                <LoadingDots label={t("common.loading", lang)} className="text-foreground/45" />
+                <span className="h-5 w-5 animate-spin rounded-full border-2 border-foreground/15 border-t-foreground/60" />
               </div>
             ) : !payload?.assets.length ? (
               <div className="rounded-2xl border border-dashed border-border p-7 text-center">

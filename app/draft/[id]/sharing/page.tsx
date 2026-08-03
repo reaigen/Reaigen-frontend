@@ -260,14 +260,8 @@ export default function SharingPage({ params }: { params: Promise<{ id: string }
   if (!draft) {
     return (
       <AppShell user={user} onLogout={logout}>
-        <div className="mx-auto w-full max-w-[1320px] pb-8 md:pb-10">
-          <div className="h-9 w-44 rounded-full bg-foreground/[0.055]" aria-hidden="true" />
-          <div className="mt-7 grid grid-cols-1 gap-6 lg:grid-cols-2">
-            <div className="min-h-[24rem] rounded-[1.5rem] border border-border/60 bg-card" />
-            <div className="flex min-h-[24rem] items-center justify-center rounded-[1.5rem] border border-border/60 bg-card">
-              <CollectionLoading label={t("common.loading", lang)} className="min-h-0 p-0" />
-            </div>
-          </div>
+        <div className="mx-auto flex min-h-[65vh] w-full max-w-[1320px] items-center justify-center pb-8 md:pb-10">
+          <CollectionLoading label={t("common.loading", lang)} className="min-h-0 p-0" />
         </div>
       </AppShell>
     );
@@ -352,9 +346,7 @@ export default function SharingPage({ params }: { params: Promise<{ id: string }
                   onCancelEdit={cancelEdit}
                 />
               ) : (
-                <div className="flex min-h-72 items-center justify-center rounded-[1.5rem] border border-border/60 bg-card">
-                  <CollectionLoading label={t("common.loading", lang)} className="min-h-0 p-0" />
-                </div>
+                <CollectionLoading label={t("common.loading", lang)} className="min-h-72 items-center p-0" />
               )}
             </div>
 
@@ -401,9 +393,7 @@ export default function SharingPage({ params }: { params: Promise<{ id: string }
                   units={unitCatalog}
                   lang={lang}
                 />
-              ) : (
-                <div className="min-h-[28rem] rounded-[1.5rem] border border-border/60 bg-card" aria-hidden="true" />
-              )}
+              ) : null}
             </div>
           </div>
         </div>

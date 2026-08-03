@@ -1,5 +1,4 @@
 import { cn } from "../lib/utils";
-import { LoadingDots } from "./loading-dots";
 
 export function CollectionLoading({
   label,
@@ -18,7 +17,10 @@ export function CollectionLoading({
       aria-busy="true"
       aria-label={label}
     >
-      <LoadingDots label={label} className="text-foreground/45" />
+      <div className="loading-progress-track w-24" aria-hidden="true">
+        <span className="loading-progress-indeterminate" />
+      </div>
+      <span className="sr-only">{label}</span>
     </div>
   );
 }

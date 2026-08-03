@@ -27,7 +27,6 @@ import {
   VersionsIcon,
 } from "../../../components/icons";
 import { PageLoading } from "../../../components/page-loading";
-import { LoadingDots } from "../../../components/loading-dots";
 import { ReaigenLoadingMark } from "../../../components/reaigen-loading-mark";
 import type { SplatViewerHandle } from "../../../components/splat-viewer";
 import {
@@ -1153,10 +1152,13 @@ export default function WebTourEditorPage({
                 {t("webEditor.addSplat", lang)}
               </Button>
             ) : (
-              <LoadingDots
-                label={t("webEditor.assetPreparing", lang)}
-                className="mt-5 text-foreground/45"
-              />
+              <div
+                className="loading-progress-track mx-auto mt-5 w-28"
+                role="progressbar"
+                aria-label={t("webEditor.assetPreparing", lang)}
+              >
+                <span className="loading-progress-indeterminate" />
+              </div>
             )}
           </div>
         </div>

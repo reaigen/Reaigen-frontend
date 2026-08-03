@@ -615,11 +615,8 @@ export default function DraftPreviewPage({ params }: { params: Promise<{ id: str
   if (!draft && !error) {
     return (
       <AppShell user={user} onLogout={logout} hideMobileNav>
-        <div className="mx-auto w-full max-w-[1180px] pb-28 md:pb-10">
-          <div className="h-9 w-36 rounded-full bg-foreground/[0.055]" aria-hidden="true" />
-          <div className="mt-6 min-h-[55vh] overflow-hidden rounded-[1.75rem] border border-border/60 bg-card">
-            <CollectionLoading label={t("common.loading", lang)} className="min-h-[55vh] items-center p-0" />
-          </div>
+        <div className="mx-auto flex min-h-[65vh] w-full max-w-[1180px] items-center justify-center pb-28 md:pb-10">
+          <CollectionLoading label={t("common.loading", lang)} className="min-h-0 p-0" />
         </div>
       </AppShell>
     );

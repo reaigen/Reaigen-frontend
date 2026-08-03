@@ -39,7 +39,6 @@ import {
   VersionsIcon,
 } from "./icons";
 import { SidePanel } from "./side-panel";
-import { LoadingDots } from "./loading-dots";
 import { StatusPill } from "./status-pill";
 
 type VersionTab = "tour" | "listing" | "media";
@@ -199,9 +198,13 @@ function mediaOperationLabels(version: MediaVersion, lang: string) {
 
 function Working({ lang }: { lang: string }) {
   return (
-    <div className="flex justify-center py-14 text-muted-foreground">
-      <LoadingDots label={t("reai.working", lang)} className="text-foreground/45" />
-    </div>
+    <p className="flex items-center justify-center gap-2 py-14 text-center text-[12px] text-muted-foreground" role="status" aria-live="polite">
+      <svg className="h-4 w-4 animate-spin" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" aria-hidden="true">
+        <circle className="opacity-20" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="3" />
+        <path className="opacity-70" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+      </svg>
+      {t("reai.working", lang)}
+    </p>
   );
 }
 
@@ -697,7 +700,7 @@ export function DraftVersionManager({
               </p>
               {mediaNotice ? (
                 <div className="floating-capsule mb-4 flex items-center gap-3 px-3.5 text-[11px] text-foreground/70" role="status" aria-live="polite">
-                  <LoadingDots size="xs" decorative className="shrink-0" />
+                  <span className="h-4 w-4 shrink-0 animate-spin rounded-full border-2 border-foreground/15 border-t-foreground/65" aria-hidden="true" />
                   <span>{mediaNotice}</span>
                 </div>
               ) : null}

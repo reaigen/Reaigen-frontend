@@ -405,38 +405,23 @@
     user-select: none;
   }
 
-  .loading-dots {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    gap: 0.28rem;
-    min-height: 0.75rem;
-  }
-
-  .loading-dot {
-    width: 0.375rem;
-    height: 0.375rem;
+  .loading-progress-track {
+    position: relative;
+    height: 0.1875rem;
+    overflow: hidden;
     border-radius: 9999px;
-    background: currentColor;
-    opacity: 0.24;
-    transform: translate3d(0, 0, 0) scale(0.78);
-    animation: loadingDot 1.35s cubic-bezier(0.45, 0, 0.55, 1) infinite;
-    animation-delay: calc(var(--loading-dot-index) * 120ms);
+    background: hsl(var(--foreground) / 0.1);
+  }
+
+  .loading-progress-indeterminate {
+    position: absolute;
+    inset-block: 0;
+    left: 0;
+    width: 38%;
+    border-radius: inherit;
+    background: hsl(var(--foreground) / 0.52);
+    animation: loadingProgressSmooth 1.35s cubic-bezier(0.45, 0, 0.55, 1) infinite;
     will-change: transform, opacity;
-  }
-
-  .loading-dots-xs {
-    gap: 0.2rem;
-  }
-
-  .loading-dots-xs .loading-dot {
-    width: 0.25rem;
-    height: 0.25rem;
-  }
-
-  .loading-dots-sm .loading-dot {
-    width: 0.3125rem;
-    height: 0.3125rem;
   }
 }
 
@@ -496,10 +481,16 @@
   0% { background-position: 200% 0; }
   100% { background-position: -200% 0; }
 }
-@keyframes loadingDot {
-  0%, 100% { opacity: 0.24; transform: translate3d(0, 0, 0) scale(0.78); }
-  38% { opacity: 0.78; transform: translate3d(0, -0.16rem, 0) scale(1); }
-  68% { opacity: 0.34; transform: translate3d(0, 0, 0) scale(0.84); }
+@keyframes shimmer-bar {
+  0% { transform: translateX(-100%); }
+  100% { transform: translateX(200%); }
+}
+@keyframes loadingProgressSmooth {
+  0% { opacity: 0; transform: translate3d(-125%, 0, 0); }
+  14% { opacity: 0.55; }
+  24%, 76% { opacity: 1; }
+  88% { opacity: 0.55; }
+  100% { opacity: 0; transform: translate3d(365%, 0, 0); }
 }
 
 input:-webkit-autofill,
@@ -516,5 +507,12 @@ input:-webkit-autofill:active {
   *, *::before, *::after {
     animation-duration: 0.01ms !important;
     transition-duration: 0.01ms !important;
+  }
+
+  .loading-progress-indeterminate {
+    left: 31%;
+    animation: none !important;
+    opacity: 0.45;
+    transform: none;
   }
 }

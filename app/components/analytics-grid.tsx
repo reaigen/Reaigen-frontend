@@ -1,6 +1,5 @@
 import * as React from "react";
 import { cn } from "../lib/utils";
-import { LoadingDots } from "./loading-dots";
 
 export interface AnalyticsGridItem {
   label: string;
@@ -19,7 +18,7 @@ export function AnalyticsGrid({
   if (loading) {
     return (
       <div className={cn("flex min-h-16 items-center justify-center rounded-lg bg-surface-subtle", className)} role="status">
-        <LoadingDots label="Loading analytics" size="sm" className="text-foreground/45" />
+        <span className="h-4 w-4 animate-spin rounded-full border-2 border-foreground/10 border-t-foreground/50" aria-hidden="true" />
       </div>
     );
   }
