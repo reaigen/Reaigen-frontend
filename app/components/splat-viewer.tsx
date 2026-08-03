@@ -4371,8 +4371,9 @@ const SplatViewer = forwardRef<SplatViewerHandle, Props>(function SplatViewer(
       );
       const direction = cameraWalkDirection(forward, up, pressed, pose.baseForward);
       if (Math.hypot(...direction) < 1e-6) return;
-      const seconds = cameraMovementFrameSeconds(
-        engineRef.current?.getDeltaTime?.() ?? Number.NaN,
+      const seconds = Math.min(
+        0.05,
+        engineRef.current?.getDeltaTime?.() / 1000 || 1 / 60,
       );
       const transformedRadius = (fallbackSceneRef.current?.radius ?? 2)
         * sceneScaleMagnitude(globalSceneScale3(globalSceneTransformRef.current));
