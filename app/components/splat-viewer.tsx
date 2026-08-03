@@ -33,8 +33,10 @@ import {
 import { resolveRoomKitMovement } from "@/app/lib/spatial-editor-data";
 import {
   boundedAngularVelocity,
+  cameraMovementFrameSeconds,
   cameraMovementKey,
   cameraMovementTargetIsEditable,
+  cameraRenderIsActive,
   cameraTouchPanDelta,
   cameraWalkDirection,
 } from "@/app/lib/camera-navigation";
@@ -3726,6 +3728,10 @@ const SplatViewer = forwardRef<SplatViewerHandle, Props>(function SplatViewer(
     };
 
     const handlePointerMove = (event: PointerEvent) => {
+      // Wake the otherwise idle authoring viewport before Babylon resolves
+      // hover or drag state. This keeps gizmos and camera gestures immediate
+      // without rendering a million-splat scene continuously at rest.
+      markMoving();
       const previous = pointers.get(event.pointerId);
       if (!previous) return;
       pointers.set(event.pointerId, { ...previous, x: event.clientX, y: event.clientY });
@@ -3940,6 +3946,10 @@ const SplatViewer = forwardRef<SplatViewerHandle, Props>(function SplatViewer(
       if (movementKey) {
         interruptCameraAnimation();
         pressed.add(movementKey);
+        // The spatial render loop sleeps at rest. Wake it in the key event so
+        // the next animation frame advances the camera instead of waiting for
+        // the editor's idle refresh.
+        markMoving();
         event.preventDefault();
         return;
       }
@@ -3987,7 +3997,9 @@ const SplatViewer = forwardRef<SplatViewerHandle, Props>(function SplatViewer(
         [0, 1, 0],
         pressed,
       );
-      const seconds = Math.min(0.05, engineRef.current?.getDeltaTime?.() / 1000 || 1 / 60);
+      const seconds = cameraMovementFrameSeconds(
+        engineRef.current?.getDeltaTime?.() ?? Number.NaN,
+      );
       const speed = Math.max(0.35, Math.min(4, (fallbackSceneRef.current?.radius ?? 2) * 0.75));
       if (Math.hypot(...direction) > 1e-6) {
         const movement = new B.Vector3(...direction).scaleInPlace(speed * seconds);
@@ -4359,7 +4371,9 @@ const SplatViewer = forwardRef<SplatViewerHandle, Props>(function SplatViewer(
       );
       const direction = cameraWalkDirection(forward, up, pressed, pose.baseForward);
       if (Math.hypot(...direction) < 1e-6) return;
-      const seconds = Math.min(0.05, engineRef.current?.getDeltaTime?.() / 1000 || 1 / 60);
+      const seconds = cameraMovementFrameSeconds(
+        engineRef.current?.getDeltaTime?.() ?? Number.NaN,
+      );
       const transformedRadius = (fallbackSceneRef.current?.radius ?? 2)
         * sceneScaleMagnitude(globalSceneScale3(globalSceneTransformRef.current));
       const speed = Math.max(0.35, Math.min(4, transformedRadius * 0.75));
@@ -5053,10 +5067,16 @@ const SplatViewer = forwardRef<SplatViewerHandle, Props>(function SplatViewer(
             layoutResizePending = false;
             resizeRef.current?.();
           }
-          const moving = viewerInitializing || !immersiveControls ||
-            animRef.current.active || immersivePointersActiveRef.current ||
-            now < immersiveRenderBurstUntilRef.current ||
-            Math.abs(coast.yaw) >= 0.04 || Math.abs(coast.pitch) >= 0.04;
+          const moving = cameraRenderIsActive({
+            viewerInitializing,
+            immersiveControls,
+            spatialNavigation: spatialNavigationRef.current,
+            animationActive: animRef.current.active,
+            pointersActive: immersivePointersActiveRef.current,
+            renderBurstActive: now < immersiveRenderBurstUntilRef.current,
+            coastYaw: coast.yaw,
+            coastPitch: coast.pitch,
+          });
           if (!moving && now - lastIdleRenderAt < 500) return;
           lastIdleRenderAt = now;
           scene.render();

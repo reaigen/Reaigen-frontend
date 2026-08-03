@@ -3,6 +3,17 @@ import type { Vec3 } from "./tour-types";
 export type CameraMovementKey = "w" | "a" | "s" | "d" | "q" | "e";
 export type SavedCameraNavigationIntent = "edit" | "preview" | "initial";
 
+export interface CameraRenderActivity {
+  viewerInitializing: boolean;
+  immersiveControls: boolean;
+  spatialNavigation: boolean;
+  animationActive: boolean;
+  pointersActive: boolean;
+  renderBurstActive: boolean;
+  coastYaw: number;
+  coastPitch: number;
+}
+
 const MOVEMENT_KEYS = new Set<CameraMovementKey>(["w", "a", "s", "d", "q", "e"]);
 const EDITABLE_INPUT_TYPES = new Set([
   "date",
@@ -83,6 +94,32 @@ export function cameraMovementTargetIsEditable(target: EventTarget | null): bool
   if (element.tagName !== "INPUT") return false;
   const inputType = String((element as HTMLInputElement).type || "text").toLowerCase();
   return EDITABLE_INPUT_TYPES.has(inputType);
+}
+
+/**
+ * Keep authored movement tied to wall-clock time on dense scenes. The former
+ * 50 ms cap made a 15 fps one-million-splat viewport move 25% slower than the
+ * same scene at 60 fps, which felt like keyboard input latency. A 100 ms cap
+ * preserves pace down to 10 fps while still preventing a background-tab jump.
+ */
+export function cameraMovementFrameSeconds(deltaMilliseconds: number): number {
+  if (!Number.isFinite(deltaMilliseconds) || deltaMilliseconds <= 0) return 1 / 60;
+  return Math.min(0.1, deltaMilliseconds / 1000);
+}
+
+/**
+ * A spatial editor owns its camera and can sleep between interactions. A
+ * normal Babylon free-camera viewer must keep rendering because Babylon owns
+ * its input state; immersive viewers already use explicit activity bursts.
+ */
+export function cameraRenderIsActive(activity: CameraRenderActivity): boolean {
+  return activity.viewerInitializing
+    || (!activity.immersiveControls && !activity.spatialNavigation)
+    || activity.animationActive
+    || activity.pointersActive
+    || activity.renderBurstActive
+    || Math.abs(activity.coastYaw) >= 0.04
+    || Math.abs(activity.coastPitch) >= 0.04;
 }
 
 /** Resolve physical WASD/QE keys even when the active keyboard layout differs. */

@@ -3,8 +3,10 @@ import test from "node:test";
 
 import {
   boundedAngularVelocity,
+  cameraMovementFrameSeconds,
   cameraMovementTargetIsEditable,
   cameraMovementKey,
+  cameraRenderIsActive,
   cameraTouchPanDelta,
   cameraWalkDirection,
   savedCameraNavigationIsInstant,
@@ -33,6 +35,33 @@ test("camera controls do not strand WASD focus while text fields keep their keys
   assert.equal(cameraMovementTargetIsEditable({ tagName: "INPUT", type: "text" }), true);
   assert.equal(cameraMovementTargetIsEditable({ tagName: "TEXTAREA" }), true);
   assert.equal(cameraMovementTargetIsEditable({ tagName: "DIV", isContentEditable: true }), true);
+});
+
+test("dense scenes preserve WASD pace without accepting background-tab jumps", () => {
+  assert.equal(cameraMovementFrameSeconds(16), 0.016);
+  assert.equal(cameraMovementFrameSeconds(80), 0.08);
+  assert.equal(cameraMovementFrameSeconds(500), 0.1);
+  assert.equal(cameraMovementFrameSeconds(Number.NaN), 1 / 60);
+});
+
+test("the spatial editor sleeps only while idle and wakes for input", () => {
+  const idleEditor = {
+    viewerInitializing: false,
+    immersiveControls: false,
+    spatialNavigation: true,
+    animationActive: false,
+    pointersActive: false,
+    renderBurstActive: false,
+    coastYaw: 0,
+    coastPitch: 0,
+  };
+  assert.equal(cameraRenderIsActive(idleEditor), false);
+  assert.equal(cameraRenderIsActive({ ...idleEditor, renderBurstActive: true }), true);
+  assert.equal(cameraRenderIsActive({ ...idleEditor, animationActive: true }), true);
+  assert.equal(
+    cameraRenderIsActive({ ...idleEditor, spatialNavigation: false }),
+    true,
+  );
 });
 
 test("WASD stays in the ground plane and diagonal speed is normalized", () => {
