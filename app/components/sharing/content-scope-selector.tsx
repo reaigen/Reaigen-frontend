@@ -8,6 +8,7 @@ import {
   SHARE_FIELD_GROUPS,
   type ShareBundleName,
 } from "../../lib/tour-types";
+import { cn } from "../../lib/utils";
 import { ArrowRightIcon, CheckIcon, FloorplanIcon, ImageIcon, LockIcon, MainTourIcon } from "../icons";
 import { SidePanel } from "../side-panel";
 
@@ -28,6 +29,7 @@ interface ContentScopeSelectorProps {
   hasPhotos: boolean;
   hasFloorplan: boolean;
   lang: string;
+  layout?: "default" | "workspace";
 }
 
 // ── Bundle detection ───────────────────────────────────────────────────
@@ -51,7 +53,15 @@ const BUNDLE_OPTIONS: { name: ShareBundleName; labelKey: LocaleKey }[] = [
 
 // ── Component ──────────────────────────────────────────────────────────
 
-export function ContentScopeSelector({ scope, onChange, hasTour, hasPhotos, hasFloorplan, lang }: ContentScopeSelectorProps) {
+export function ContentScopeSelector({
+  scope,
+  onChange,
+  hasTour,
+  hasPhotos,
+  hasFloorplan,
+  lang,
+  layout = "default",
+}: ContentScopeSelectorProps) {
   const [detailsExpanded, setDetailsExpanded] = React.useState(false);
   const unavailableFields = new Set<string>();
   if (!hasTour) unavailableFields.add("tour");
@@ -82,6 +92,43 @@ export function ContentScopeSelector({ scope, onChange, hasTour, hasPhotos, hasF
     { key: "details", icon: <ListBulletIcon width={16} height={16} aria-hidden="true" />, labelKey: "sharing.scopeDetails", available: true },
     { key: "floorplan", icon: <FloorplanIcon size={16} />, labelKey: "sharing.scopeFloorplan", available: hasFloorplan },
   ];
+  const fieldGroups = (
+    <div className={cn(
+      "grid gap-5",
+      layout === "workspace" && "sm:grid-cols-2 lg:grid-cols-3",
+    )}>
+      {SHARE_FIELD_GROUPS.map((group) => (
+        <section key={group.key}>
+          <h4 className="mb-2 text-[11px] font-semibold uppercase tracking-[0.045em] text-muted-foreground">
+            {t(`shareDialog.fieldGroup.${group.key}` as LocaleKey, lang)}
+          </h4>
+          <div className="grid grid-cols-2 gap-2">
+            {group.fields.map((field) => {
+              const isTitle = field === "title";
+              const checked = isTitle || scope.selectedFields.has(field);
+              return (
+                <button
+                  key={field}
+                  type="button"
+                  disabled={isTitle}
+                  aria-pressed={checked}
+                  onClick={() => handleFieldToggle(field, !checked)}
+                  className={`flex min-h-11 min-w-0 items-center justify-between gap-2 rounded-xl border px-3 text-left text-[12px] font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ${
+                    checked
+                      ? "border-foreground bg-foreground text-background"
+                      : "border-border/70 bg-card text-foreground/65 hover:border-foreground/20 hover:text-foreground"
+                  } ${isTitle ? "cursor-default opacity-65" : ""}`}
+                >
+                  <span className="truncate">{t(`shareDialog.field.${field}` as LocaleKey, lang)}</span>
+                  {isTitle ? <LockIcon size={11} /> : checked ? <CheckIcon size={11} /> : null}
+                </button>
+              );
+            })}
+          </div>
+        </section>
+      ))}
+    </div>
+  );
 
   return (
     <div className="space-y-3.5">
@@ -89,7 +136,7 @@ export function ContentScopeSelector({ scope, onChange, hasTour, hasPhotos, hasF
         {t("sharing.whatToShare", lang)}
       </h3>
 
-      <div className="grid grid-cols-2 gap-2">
+      <div className={cn("grid grid-cols-2 gap-2", layout === "workspace" && "sm:grid-cols-4")}>
         {cards.map((card) => {
           const active = card.available && scope[card.key];
           return (
@@ -146,61 +193,38 @@ export function ContentScopeSelector({ scope, onChange, hasTour, hasPhotos, hasF
           <button
             type="button"
             aria-expanded={detailsExpanded}
-            aria-haspopup="dialog"
+            aria-haspopup={layout === "default" ? "dialog" : undefined}
             onClick={() => setDetailsExpanded((v) => !v)}
             className="floating-control pen-touch-target flex w-full items-center justify-between px-3.5 text-[11px] font-semibold text-foreground/55 transition-colors hover:bg-foreground/[0.04] hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
           >
             <span>{t("shareDialog.customizeFields", lang)}</span>
             <span className="flex items-center gap-2">
               {!activeBundle ? <span className="rounded-full bg-secondary px-2 py-0.5 text-[10px] font-semibold">{t("shareDialog.bundle.custom", lang)}</span> : null}
-              <ArrowRightIcon size={12} />
+              <ArrowRightIcon size={12} className={cn("transition-transform", detailsExpanded && "rotate-90")} />
             </span>
           </button>
         </div>
       )}
 
-      <SidePanel
-        open={detailsExpanded}
-        onOpenChange={setDetailsExpanded}
-        title={t("shareDialog.customizeFields", lang)}
-        description={t("sharing.scopeDetails", lang)}
-        headerMode="editor"
-        closeIcon="back"
-        lang={lang}
-      >
-        <div className="space-y-6">
-          {SHARE_FIELD_GROUPS.map((group) => (
-            <section key={group.key}>
-              <h4 className="mb-2 text-[11px] font-semibold uppercase tracking-[0.045em] text-muted-foreground">
-                {t(`shareDialog.fieldGroup.${group.key}` as LocaleKey, lang)}
-              </h4>
-              <div className="grid grid-cols-2 gap-2">
-                {group.fields.map((field) => {
-                  const isTitle = field === "title";
-                  const checked = isTitle || scope.selectedFields.has(field);
-                  return (
-                    <button
-                      key={field}
-                      type="button"
-                      disabled={isTitle}
-                      aria-pressed={checked}
-                      onClick={() => handleFieldToggle(field, !checked)}
-                      className={`flex min-h-11 min-w-0 items-center justify-between gap-2 rounded-xl border px-3 text-left text-[12px] font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ${
-                        checked
-                          ? "border-foreground bg-foreground text-background"
-                          : "border-border/70 bg-card text-foreground/65 hover:border-foreground/20 hover:text-foreground"
-                      } ${isTitle ? "cursor-default opacity-65" : ""}`}
-                    >
-                      <span className="truncate">{t(`shareDialog.field.${field}` as LocaleKey, lang)}</span>
-                      {isTitle ? <LockIcon size={11} /> : checked ? <CheckIcon size={11} /> : null}
-                    </button>
-                  );
-                })}
-              </div>
-            </section>
-          ))}
+      {layout === "workspace" && detailsExpanded ? (
+        <div className="animate-fade-in border-t border-border/50 pt-4">
+          {fieldGroups}
         </div>
-      </SidePanel>
+      ) : null}
+
+      {layout === "default" ? (
+        <SidePanel
+          open={detailsExpanded}
+          onOpenChange={setDetailsExpanded}
+          title={t("shareDialog.customizeFields", lang)}
+          description={t("sharing.scopeDetails", lang)}
+          headerMode="editor"
+          closeIcon="back"
+          lang={lang}
+        >
+          <div className="space-y-6">{fieldGroups}</div>
+        </SidePanel>
+      ) : null}
     </div>
   );
 }

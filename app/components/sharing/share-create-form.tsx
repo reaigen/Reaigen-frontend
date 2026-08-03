@@ -4,6 +4,7 @@ import * as React from "react";
 import { Button } from "../../lib/ui/button";
 import { t } from "../../lib/i18n";
 import { SHARE_BUNDLES, type ShareData } from "../../lib/tour-types";
+import { cn } from "../../lib/utils";
 import { ContentScopeSelector, type ContentScope } from "./content-scope-selector";
 import { PrivacyLevelSelector, type PrivacyLevel } from "./privacy-level-selector";
 import { LifetimeSelector } from "./lifetime-selector";
@@ -20,6 +21,8 @@ interface ShareCreateFormProps {
   error: string | null;
   initialShare?: ShareData | null;
   onCancelEdit?: () => void;
+  layout?: "stacked" | "workspace";
+  stickyActions?: boolean;
 }
 
 export interface ShareFormData {
@@ -41,6 +44,8 @@ export function ShareCreateForm({
   error,
   initialShare = null,
   onCancelEdit,
+  layout = "stacked",
+  stickyActions = true,
 }: ShareCreateFormProps) {
   const [privacyLevel, setPrivacyLevel] = React.useState<PrivacyLevel>("open");
   const [pin, setPin] = React.useState("");
@@ -88,8 +93,13 @@ export function ShareCreateForm({
     <div>
       {error && <p role="alert" className="mb-3 rounded-2xl border border-destructive/25 bg-destructive/[0.035] px-4 py-3 text-[12px] text-destructive">{error}</p>}
 
-      <div className="floating-panel divide-y divide-border/50 overflow-clip">
-        <section className="p-4 sm:p-5">
+      <div className={cn(
+        "floating-panel overflow-clip",
+        layout === "workspace"
+          ? "md:grid md:grid-cols-6"
+          : "divide-y divide-border/50",
+      )}>
+        <section className={cn("p-4 sm:p-5", layout === "workspace" && "border-b border-border/50 md:col-span-6")}>
           <ContentScopeSelector
             scope={scope}
             onChange={onScopeChange}
@@ -97,10 +107,11 @@ export function ShareCreateForm({
             hasPhotos={hasPhotos}
             hasFloorplan={hasFloorplan}
             lang={lang}
+            layout={layout === "workspace" ? "workspace" : "default"}
           />
         </section>
 
-        <section className="p-4 sm:p-5">
+        <section className={cn("p-4 sm:p-5", layout === "workspace" && "border-b border-border/50 md:col-span-3 md:border-b-0 md:border-r")}>
           <PrivacyLevelSelector
             level={privacyLevel}
             pin={pin}
@@ -110,7 +121,7 @@ export function ShareCreateForm({
           />
         </section>
 
-        <section className="p-4 sm:p-5">
+        <section className={cn("p-4 sm:p-5", layout === "workspace" && "md:col-span-3")}>
           <LifetimeSelector
             hours={lifetimeHours}
             onHoursChange={setLifetimeHours}
@@ -119,7 +130,13 @@ export function ShareCreateForm({
           />
         </section>
 
-        <div className="sticky bottom-[calc(4rem+env(safe-area-inset-bottom,0px))] z-20 flex gap-2 bg-card/95 p-3 backdrop-blur-xl md:static">
+        <div className={cn(
+          "z-20 flex gap-2 bg-card/95 p-3 backdrop-blur-xl",
+          layout === "workspace" && "border-t border-border/50 md:col-span-6",
+          stickyActions
+            ? "sticky bottom-[calc(4rem+env(safe-area-inset-bottom,0px))] md:static"
+            : "static",
+        )}>
           {initialShare && onCancelEdit ? (
             <Button type="button" variant="ghost" className="flex-1 text-[13px] font-semibold" onClick={onCancelEdit} disabled={saving}>
               {t("common.cancel", lang)}
