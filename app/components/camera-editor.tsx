@@ -6,7 +6,7 @@ import { ArrowLeftIcon, ArrowRightIcon, CheckIcon, ChevronDownIcon, PlayIcon } f
 import { Button } from "@/app/lib/ui/button";
 import { saveCameras, getCameras } from "@/app/lib/api/client";
 import { getSafeApiErrorMessage } from "@/app/lib/api/error-message";
-import { savedCameraNavigationIsInstant, stableCameraUp } from "@/app/lib/camera-navigation";
+import { savedCameraNavigationIsInstant, stableCameraReferenceUp } from "@/app/lib/camera-navigation";
 import { cameraFovDegrees, cameraFovRadians, markIdentityCamera, normalizeCameraData } from "@/app/lib/camera-coordinates";
 import { t } from "@/app/lib/i18n";
 import type { CameraData, GlobalSceneTransform, Vec3 } from "@/app/lib/tour-types";
@@ -51,7 +51,7 @@ function cameraPayload(shots: CameraShot[], sceneFov: number): CameraData {
       id: shot.id,
       position: [...shot.position],
       forward: [...shot.forward],
-      up: stableCameraUp(shot.forward, shot.up),
+      up: stableCameraReferenceUp(shot.up),
       fov: shot.fov,
       label: shot.label,
       kind: shot.kind,
@@ -104,7 +104,7 @@ export default function CameraEditor({ splatId, viewerRef, activeShotIdx, initia
           id: c.id ?? newCameraId(),
           position: c.position,
           forward: c.forward,
-          up: stableCameraUp(c.forward, c.up ?? [0, 1, 0]),
+          up: stableCameraReferenceUp(c.up ?? [0, 1, 0]),
           // A shot's captured lens is authoritative. sceneFov is only a
           // fallback for historical payloads that did not store per-shot FOV.
           fov: cameraFovRadians(c.fov ?? data.fovY ?? data.sceneFov, currentViewportFov),

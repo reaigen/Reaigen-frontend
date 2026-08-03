@@ -88,6 +88,26 @@ export function stableCameraUp(
   return [0, 1, 0];
 }
 
+/**
+ * Return a finite unit reference-up axis without turning it into a camera
+ * basis vector. Babylon camera `upVector` is a horizon reference and is not
+ * required to be perpendicular to the look direction. Projecting it before
+ * persistence changes its meaning and can turn ordinary pitch into roll when
+ * the saved camera is transformed back into presentation space.
+ */
+export function stableCameraReferenceUp(
+  rawUp: Vec3,
+  rawFallbackUp?: Vec3,
+): Vec3 {
+  const fallback = normalized(rawFallbackUp ?? [0, 1, 0], [0, 1, 0]);
+  const up = normalized(rawUp, fallback);
+  if (!rawFallbackUp || dot(up, fallback) >= 0) return up;
+  // Up and -up describe opposite camera banks. When an active horizon is
+  // available, retain its hemisphere so legacy data cannot trigger a 180°
+  // roll. Calls without a fallback preserve canonical scene-space axes.
+  return [-up[0], -up[1], -up[2]];
+}
+
 function projectedForward(rawForward: Vec3, up: Vec3, fallbackForward: Vec3): Vec3 {
   const project = (value: Vec3): Vec3 => {
     const vertical = dot(value, up);
@@ -119,7 +139,8 @@ export function savedCameraNavigationIsInstant(intent: SavedCameraNavigationInte
  * Position stays on the direct segment between authored cameras. Orientation
  * follows the shortest yaw path with linear pitch, avoiding the Bezier arcs
  * and quaternion basis flips that previously produced invented transforms and
- * rolls. The destination camera's up axis keeps the horizon stable.
+ * rolls. Reference-up axes remain reference axes (rather than being projected
+ * into a per-camera basis), which keeps pitched cameras level.
  */
 export function stableCameraPreviewPose(
   fromPosition: Vec3,
@@ -161,7 +182,13 @@ export function stableCameraPreviewPose(
     Math.sin(yaw) * cosPitch,
   ], toForward);
 
-  const up = stableCameraUp(forward, rawToUp, rawFromUp);
+  const fromUp = stableCameraReferenceUp(rawFromUp);
+  const toUp = stableCameraReferenceUp(rawToUp, fromUp);
+  const up = stableCameraReferenceUp([
+    fromUp[0] + (toUp[0] - fromUp[0]) * t,
+    fromUp[1] + (toUp[1] - fromUp[1]) * t,
+    fromUp[2] + (toUp[2] - fromUp[2]) * t,
+  ], t < 0.5 ? fromUp : toUp);
 
   return {
     position: [

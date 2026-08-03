@@ -40,8 +40,8 @@ import {
   cameraRenderIsActive,
   cameraTouchPanDelta,
   cameraWalkDirection,
-  stableCameraUp,
   stableCameraPreviewPose,
+  stableCameraReferenceUp,
 } from "@/app/lib/camera-navigation";
 import {
   countMask,
@@ -89,64 +89,6 @@ function normalizeVec3(value: Vec3, fallback: Vec3 = [0, 0, 1]): Vec3 {
   const length = Math.hypot(value[0], value[1], value[2]);
   if (!Number.isFinite(length) || length < 1e-6) return fallback;
   return [value[0] / length, value[1] / length, value[2] / length];
-}
-
-function dotVec3(left: Vec3, right: Vec3): number {
-  return left[0] * right[0] + left[1] * right[1] + left[2] * right[2];
-}
-
-function crossVec3(left: Vec3, right: Vec3): Vec3 {
-  return [
-    left[1] * right[2] - left[2] * right[1],
-    left[2] * right[0] - left[0] * right[2],
-    left[0] * right[1] - left[1] * right[0],
-  ];
-}
-
-/** Stable horizon frame used by DCC navigation without discarding camera roll. */
-function editorStableUp(rawForward: Vec3): Vec3 {
-  const forward = normalizeVec3(rawForward);
-  const worldUp: Vec3 = [0, 1, 0];
-  const vertical = dotVec3(worldUp, forward);
-  const projected: Vec3 = [
-    worldUp[0] - forward[0] * vertical,
-    worldUp[1] - forward[1] * vertical,
-    worldUp[2] - forward[2] * vertical,
-  ];
-  if (Math.hypot(...projected) >= 1e-5) return normalizeVec3(projected, worldUp);
-  const fallback: Vec3 = Math.abs(forward[2]) < 0.9 ? [0, 0, 1] : [1, 0, 0];
-  const fallbackDot = dotVec3(fallback, forward);
-  return normalizeVec3([
-    fallback[0] - forward[0] * fallbackDot,
-    fallback[1] - forward[1] * fallbackDot,
-    fallback[2] - forward[2] * fallbackDot,
-  ], worldUp);
-}
-
-function editorCameraRoll(rawForward: Vec3, rawUp: Vec3): number {
-  const forward = normalizeVec3(rawForward);
-  const stableUp = editorStableUp(forward);
-  const right = normalizeVec3(crossVec3(stableUp, forward), [1, 0, 0]);
-  const upAlongForward = dotVec3(rawUp, forward);
-  const authoredUp = normalizeVec3([
-    rawUp[0] - forward[0] * upAlongForward,
-    rawUp[1] - forward[1] * upAlongForward,
-    rawUp[2] - forward[2] * upAlongForward,
-  ], stableUp);
-  return Math.atan2(-dotVec3(authoredUp, right), dotVec3(authoredUp, stableUp));
-}
-
-function editorUpWithRoll(rawForward: Vec3, roll: number): Vec3 {
-  const forward = normalizeVec3(rawForward);
-  const stableUp = editorStableUp(forward);
-  const right = normalizeVec3(crossVec3(stableUp, forward), [1, 0, 0]);
-  const cosine = Math.cos(roll);
-  const sine = Math.sin(roll);
-  return normalizeVec3([
-    stableUp[0] * cosine - right[0] * sine,
-    stableUp[1] * cosine - right[1] * sine,
-    stableUp[2] * cosine - right[2] * sine,
-  ], stableUp);
 }
 
 function normalizedEditorDegrees(radians: number): number {
@@ -252,7 +194,6 @@ interface EditorOrbitPose {
   radius: number;
   yaw: number;
   pitch: number;
-  roll: number;
 }
 
 const EMPTY_ROOM_KIT_CAGE: RoomKitCageWall[] = [];
@@ -1279,7 +1220,6 @@ const SplatViewer = forwardRef<SplatViewerHandle, Props>(function SplatViewer(
     radius: 4,
     yaw: Math.PI / 4,
     pitch: 22 * Math.PI / 180,
-    roll: 0,
   });
 
   useEffect(() => {
@@ -1564,7 +1504,7 @@ const SplatViewer = forwardRef<SplatViewerHandle, Props>(function SplatViewer(
     up: Vec3 = [0, 1, 0],
   ) => {
     const forward = normalizeVec3(fwd);
-    const cameraUp = stableCameraUp(forward, up, cameraUpRef.current);
+    const cameraUp = stableCameraReferenceUp(up, cameraUpRef.current);
     cameraUpRef.current = cameraUp;
     cam.upVector.set(...cameraUp);
     cam.position.set(pos[0], pos[1], pos[2]);
@@ -1799,7 +1739,7 @@ const SplatViewer = forwardRef<SplatViewerHandle, Props>(function SplatViewer(
     const tFwd = worldPath.forwards[shot.startIdx];
     const tUp = worldPath.ups[shot.startIdx];
     const targetForward = normalizeVec3(tFwd);
-    const targetUp = stableCameraUp(targetForward, tUp, cameraUpRef.current);
+    const targetUp = stableCameraReferenceUp(tUp, cameraUpRef.current);
     const useExactForward = isSavedCameraTour(data);
 
     const cam = cameraRef.current;
@@ -1882,14 +1822,11 @@ const SplatViewer = forwardRef<SplatViewerHandle, Props>(function SplatViewer(
     const dz = target.z - cam.position.z;
     const len = Math.hypot(dx, dy, dz) || 1;
     const worldForward: Vec3 = [dx / len, dy / len, dz / len];
-    const worldUp = stableCameraUp(
-      worldForward,
-      [cam.upVector.x, cam.upVector.y, cam.upVector.z],
-      cameraUpRef.current,
-    );
+    // The editor authors yaw and pitch, not camera bank. Persist the canonical
+    // form of presentation Y-up instead of a per-camera projected basis.
+    const worldUp: Vec3 = [0, 1, 0];
     const canonicalForward = inverseTransformSpatialDirection(worldForward);
-    const canonicalUp = stableCameraUp(
-      canonicalForward,
+    const canonicalUp = stableCameraReferenceUp(
       inverseTransformSpatialDirection(worldUp),
     );
     return {
@@ -1924,10 +1861,6 @@ const SplatViewer = forwardRef<SplatViewerHandle, Props>(function SplatViewer(
       radius,
       yaw: Math.atan2(offset.z, offset.x),
       pitch: Math.asin(Math.max(-1, Math.min(1, offset.y / radius))),
-      roll: editorCameraRoll(
-        [forward.x, forward.y, forward.z],
-        [cam.upVector.x, cam.upVector.y, cam.upVector.z],
-      ),
     };
   }, []);
 
@@ -1943,7 +1876,7 @@ const SplatViewer = forwardRef<SplatViewerHandle, Props>(function SplatViewer(
     if (!cam || !B) return;
     const targetFov = typeof fov === "number" && Number.isFinite(fov) ? fov : cam.fov;
     const targetForward = normalizeVec3(fwd);
-    const targetUp = stableCameraUp(targetForward, up, cameraUpRef.current);
+    const targetUp = stableCameraReferenceUp(up, cameraUpRef.current);
 
     // Stop everything — no hold phase, no scroll, no path scrub
     pathScrubRef.current = null;
@@ -2026,8 +1959,7 @@ const SplatViewer = forwardRef<SplatViewerHandle, Props>(function SplatViewer(
     const camera = cameraRef.current;
     if (!camera) return;
     const worldForward = transformSpatialDirection(fwd);
-    const worldUp = stableCameraUp(
-      worldForward,
+    const worldUp = stableCameraReferenceUp(
       transformSpatialDirection(up),
       cameraUpRef.current,
     );
@@ -2086,12 +2018,9 @@ const SplatViewer = forwardRef<SplatViewerHandle, Props>(function SplatViewer(
       pose.target[1] + pose.radius * Math.sin(pose.pitch),
       pose.target[2] + pose.radius * cosPitch * Math.sin(pose.yaw),
     );
-    const forward = normalizeVec3([
-      pose.target[0] - camera.position.x,
-      pose.target[1] - camera.position.y,
-      pose.target[2] - camera.position.z,
-    ]);
-    const up = editorUpWithRoll(forward, pose.roll);
+    // DCC orbit navigation has no roll gesture. Keep the presentation horizon
+    // locked to Y-up so orbiting through ±180° cannot accumulate bank.
+    const up: Vec3 = [0, 1, 0];
     camera.upVector.set(...up);
     cameraUpRef.current = up;
     camera.setTarget(new B.Vector3(pose.target[0], pose.target[1], pose.target[2]));
@@ -2114,7 +2043,6 @@ const SplatViewer = forwardRef<SplatViewerHandle, Props>(function SplatViewer(
     pose.radius = framed.radius;
     pose.yaw = framed.yaw;
     pose.pitch = framed.pitch;
-    pose.roll = 0;
     if (instant) {
       camera.position.set(...framed.position);
       camera.upVector.set(0, 1, 0);
@@ -3576,10 +3504,6 @@ const SplatViewer = forwardRef<SplatViewerHandle, Props>(function SplatViewer(
           radius,
           yaw: Math.atan2(dz, dx),
           pitch: Math.asin(Math.max(-1, Math.min(1, dy / radius))),
-          roll: editorCameraRoll(
-            [target.x - camera.position.x, target.y - camera.position.y, target.z - camera.position.z],
-            [camera.upVector.x, camera.upVector.y, camera.upVector.z],
-          ),
         };
       }
     } else {
@@ -3601,7 +3525,6 @@ const SplatViewer = forwardRef<SplatViewerHandle, Props>(function SplatViewer(
     let touchCameraGesture = false;
     let flyYaw = 0;
     let flyPitch = 0;
-    let flyRoll = 0;
     const nativeTouchNavigation = (
       compactTouch
       && splatSelectionTool === "none"
@@ -3612,10 +3535,6 @@ const SplatViewer = forwardRef<SplatViewerHandle, Props>(function SplatViewer(
       const forward = target.subtract(camera.position).normalize();
       flyYaw = Math.atan2(forward.z, forward.x);
       flyPitch = Math.asin(Math.max(-1, Math.min(1, forward.y)));
-      flyRoll = editorCameraRoll(
-        [forward.x, forward.y, forward.z],
-        [camera.upVector.x, camera.upVector.y, camera.upVector.z],
-      );
     };
     syncFlyAngles();
 
@@ -3657,11 +3576,13 @@ const SplatViewer = forwardRef<SplatViewerHandle, Props>(function SplatViewer(
         Math.sin(flyPitch),
         Math.sin(flyYaw) * cosPitch,
       ];
-      const up = editorUpWithRoll(forward, flyRoll);
+      // Fly navigation authors yaw and pitch only. Reassert Y-up on every
+      // pointer update so a previous camera or quaternion cannot leak roll.
+      const up: Vec3 = [0, 1, 0];
       camera.upVector.set(...up);
       camera.setTarget(camera.position.add(new B.Vector3(...forward)));
-      // Babylon's setTarget recomposes the view matrix. Restore the authored
-      // roll explicitly so repeated look/move events cannot drift it.
+      // Babylon's setTarget recomposes the view matrix. Restore the reference
+      // axis explicitly so repeated look/move events cannot accumulate bank.
       camera.upVector.set(...up);
       cameraUpRef.current = up;
       markMoving();
@@ -5050,7 +4971,7 @@ const SplatViewer = forwardRef<SplatViewerHandle, Props>(function SplatViewer(
             // never mutate or approximate the camera that will be edited or
             // delivered after the flight.
             const finalForward = normalizeVec3(anim.toForward);
-            const finalUp = stableCameraUp(finalForward, anim.toUp, anim.fromUp);
+            const finalUp = stableCameraReferenceUp(anim.toUp, anim.fromUp);
             camera.position.set(...anim.toPos);
             cameraUpRef.current = finalUp;
             camera.upVector.set(...finalUp);
@@ -5181,7 +5102,6 @@ const SplatViewer = forwardRef<SplatViewerHandle, Props>(function SplatViewer(
               radius: framed.radius,
               yaw: framed.yaw,
               pitch: framed.pitch,
-              roll: 0,
             };
             return;
           }

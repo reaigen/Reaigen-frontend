@@ -11,9 +11,11 @@ import {
   cameraTouchPanDelta,
   cameraWalkDirection,
   savedCameraNavigationIsInstant,
-  stableCameraUp,
   stableCameraPreviewPose,
+  stableCameraReferenceUp,
+  stableCameraUp,
 } from "./camera-navigation.ts";
+import { transformCanonicalDirection } from "./global-scene-transform.ts";
 
 const closeTo = (actual, expected) => {
   assert.equal(actual.length, expected.length);
@@ -86,14 +88,55 @@ test("camera preview crosses the yaw seam without a full spin", () => {
   assert.ok(Math.abs(pose.forward[2]) < 1e-9);
 });
 
-test("legacy non-orthogonal camera axes are repaired before preview and capture", () => {
+test("saved reference-up axes preserve pitch semantics instead of becoming roll", () => {
   const forward = [-0.6628051253128631, -0.05041730962092538, -0.7470926721294942];
-  const malformedUp = [0.8455272099351238, -0.022288584508139295, -0.5334669214299502];
-  const up = stableCameraUp(forward, malformedUp);
+  const referenceUp = [0.8455272099351238, -0.022288584508139295, -0.5334669214299502];
+  const persistedUp = stableCameraReferenceUp(referenceUp);
+  const referenceLength = Math.hypot(...referenceUp);
+  closeTo(persistedUp, referenceUp.map((value) => value / referenceLength));
+  assert.ok(Math.abs(
+    forward[0] * persistedUp[0]
+    + forward[1] * persistedUp[1]
+    + forward[2] * persistedUp[2]
+  ) > 0.1);
+
+  // Projection remains available for calculations that need an orthonormal
+  // basis, but it is deliberately not what gets persisted as camera upVector.
+  const up = stableCameraUp(forward, persistedUp);
   assert.ok(Math.abs(
     forward[0] * up[0] + forward[1] * up[1] + forward[2] * up[2]
   ) < 1e-9);
   assert.ok(Math.abs(Math.hypot(...up) - 1) < 1e-9);
+
+  const worldReferenceUp = transformCanonicalDirection(persistedUp, {
+    translation: [0, 0, 0],
+    rotationDeg: [147.76, 88.84, -88.49],
+    scale: 1,
+    scale3: [1, 1, 1],
+  });
+  assert.ok(Math.hypot(worldReferenceUp[0], worldReferenceUp[2]) < 1e-7);
+  assert.ok(Math.abs(worldReferenceUp[1] - 1) < 1e-9);
+});
+
+test("pitched Dr Johnson preview keeps a level Y-up horizon without roll", () => {
+  const fromForward = [0.9830839934765457, -0.160746834558497, 0.08778563065576496];
+  const toForward = [-0.9204352786692244, -0.30216543116480454, -0.24798175334103745];
+  for (const progress of [0, 0.1, 0.25, 0.5, 0.75, 0.9, 1]) {
+    const pose = stableCameraPreviewPose(
+      [0, 0, 0],
+      [1, 2, 3],
+      fromForward,
+      toForward,
+      [0, 1, 0],
+      [0, 1, 0],
+      progress,
+    );
+    closeTo(pose.up, [0, 1, 0]);
+    closeTo(
+      stableCameraUp(pose.forward, pose.up),
+      stableCameraUp(pose.forward, [0, 1, 0]),
+    );
+  }
 });
 
 test("camera controls do not strand WASD focus while text fields keep their keys", () => {
