@@ -1958,14 +1958,26 @@ const SplatViewer = forwardRef<SplatViewerHandle, Props>(function SplatViewer(
   ) => {
     const camera = cameraRef.current;
     if (!camera) return;
-    const worldForward = transformSpatialDirection(fwd);
+    // Tour cameras already live in the viewer's world space. Applying the
+    // authored scene transform to them again flips/rotates the saved pose.
+    // Only the spatial editor keeps cameras in canonical scene coordinates.
+    const usesCanonicalSceneSpace = spatialNavigationRef.current;
+    const worldPosition = usesCanonicalSceneSpace
+      ? transformSpatialPoint(pos)
+      : pos;
+    const worldForward = usesCanonicalSceneSpace
+      ? transformSpatialDirection(fwd)
+      : normalizeVec3(fwd);
+    const candidateUp = usesCanonicalSceneSpace
+      ? transformSpatialDirection(up)
+      : normalizeVec3(up, [0, 1, 0]);
     const worldUp = stableCameraReferenceUp(
-      transformSpatialDirection(up),
+      candidateUp,
       cameraUpRef.current,
     );
     spatialOrbitRef.current.enabled = false;
     navigateToWorldCamera(
-      transformSpatialPoint(pos),
+      worldPosition,
       worldForward,
       instant,
       fov,
