@@ -6,6 +6,7 @@ import { ArrowLeftIcon, ArrowRightIcon, CheckIcon, ChevronDownIcon, PlayIcon } f
 import { Button } from "@/app/lib/ui/button";
 import { saveCameras, getCameras } from "@/app/lib/api/client";
 import { getSafeApiErrorMessage } from "@/app/lib/api/error-message";
+import { savedCameraNavigationIsInstant } from "@/app/lib/camera-navigation";
 import { cameraFovDegrees, cameraFovRadians, markIdentityCamera, normalizeCameraData } from "@/app/lib/camera-coordinates";
 import { t } from "@/app/lib/i18n";
 import type { CameraData, GlobalSceneTransform, Vec3 } from "@/app/lib/tour-types";
@@ -36,13 +37,32 @@ interface Props {
   initialCameras?: CameraData | null;
   defaultMode?: "edit" | "preview";
   onSaved?: (saved: CameraData) => void;
+  /** Stage camera edits in the owning workspace before the debounced save. */
+  onChange?: (data: CameraData) => void;
   saveHandler?: (data: CameraData) => Promise<CameraData>;
   sceneTransform?: GlobalSceneTransform;
   appearance?: "overlay" | "workspace";
   lang?: string;
 }
 
-export default function CameraEditor({ splatId, viewerRef, activeShotIdx, initialCameras, defaultMode = "edit", onSaved, saveHandler, sceneTransform, appearance = "overlay", lang = "en" }: Props) {
+function cameraPayload(shots: CameraShot[], sceneFov: number): CameraData {
+  return {
+    cameras: shots.map((shot) => markIdentityCamera({
+      id: shot.id,
+      position: [...shot.position],
+      forward: [...shot.forward],
+      up: [...shot.up],
+      fov: shot.fov,
+      label: shot.label,
+      kind: shot.kind,
+      role: shot.role,
+    })),
+    fovY: shots[0]?.fov ?? cameraFovRadians(sceneFov, 0.66),
+    sceneFov,
+  };
+}
+
+export default function CameraEditor({ splatId, viewerRef, activeShotIdx, initialCameras, defaultMode = "edit", onSaved, onChange, saveHandler, sceneTransform, appearance = "overlay", lang = "en" }: Props) {
   const [shots, setShots] = useState<CameraShot[]>([]);
   const [mode, setMode] = useState<"edit" | "preview">(defaultMode);
   const [previewIdx, setPreviewIdx] = useState(0);
@@ -59,10 +79,12 @@ export default function CameraEditor({ splatId, viewerRef, activeShotIdx, initia
   // exposes camera count, navigation, capture, and preview; users expand the
   // full editor only when they intentionally start editing.
   const [isCollapsed, setIsCollapsed] = useState(true);
+  const shotsRef = useRef<CameraShot[]>([]);
   const previewTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const clearMessageTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const autoSaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const editGenerationRef = useRef(0);
+  const initialPreviewPoseAppliedRef = useRef(false);
 
   // Camera coordinates returned by SplatViewer are already canonical. Keep the
   // prop for API compatibility with other editor surfaces, but never apply the
@@ -72,6 +94,7 @@ export default function CameraEditor({ splatId, viewerRef, activeShotIdx, initia
   // Load existing saved cameras on mount. New camera payloads use identity
   // scene space; historical edited payloads are migrated once on read.
   useEffect(() => {
+    initialPreviewPoseAppliedRef.current = false;
     let active = true;
     const applyCameraData = (rawData: CameraData) => {
       if (!active) return;
@@ -89,6 +112,7 @@ export default function CameraEditor({ splatId, viewerRef, activeShotIdx, initia
           kind: "authored" as const,
           role: (c.role === "hero" || c.role === "transition" ? c.role : "tour") as CameraShot["role"],
         }));
+      shotsRef.current = loadedShots;
       setShots(loadedShots);
       setDirty(false);
       editGenerationRef.current += 1;
@@ -160,13 +184,14 @@ export default function CameraEditor({ splatId, viewerRef, activeShotIdx, initia
     setSelectedIdx(idx);
     setPreviewIdx(idx);
     if (preview) setMode("preview");
-    // Every explicit camera switch uses the authored trajectory. Camera
-    // editing still captures the exact resulting pose, but navigation itself
-    // must never cut between saved cameras.
+    // Camera editing is an exact look-through operation. Preview navigation is
+    // the only place where a presentation flight belongs; otherwise Update
+    // could capture and persist a half-finished trajectory instead of the
+    // authored camera pose.
     viewerRef.current?.navigateToCamera(
       shot.position,
       shot.forward,
-      false,
+      savedCameraNavigationIsInstant(preview ? "preview" : "edit"),
       shot.fov,
       shot.up,
     );
@@ -175,64 +200,70 @@ export default function CameraEditor({ splatId, viewerRef, activeShotIdx, initia
 
   useEffect(() => {
     if (!loaded || !shots.length) return;
-    if (defaultMode === "preview" && selectedIdx === 0) {
+    if (
+      defaultMode === "preview"
+      && !initialPreviewPoseAppliedRef.current
+    ) {
+      initialPreviewPoseAppliedRef.current = true;
       viewerRef.current?.navigateToCamera(
         shots[0].position,
         shots[0].forward,
-        false,
+        savedCameraNavigationIsInstant("initial"),
         shots[0].fov,
         shots[0].up,
       );
     }
-  }, [defaultMode, loaded, selectedIdx, shots, viewerRef]);
+  }, [defaultMode, loaded, shots, viewerRef]);
 
   // ── Edit mode actions ──────────────────────────────────────────────────────
 
   const addShot = useCallback(() => {
     const cam = viewerRef.current?.getCurrentCamera();
     if (!cam) return;
-    setShots((prev) => {
-      const next = [
-        ...prev,
-        {
-          id: newCameraId(),
-          position: [...cam.position] as Vec3,
-          forward: [...cam.forward] as Vec3,
-          up: [...cam.up] as Vec3,
-          fov: cam.fov,
-          label: `${t("cameraEditor.camera", lang)} ${prev.length + 1}`,
-          kind: "authored" as const,
-          role: "tour" as const,
-        },
-      ];
-      const nextIdx = next.length - 1;
-      setSelectedIdx(nextIdx);
-      setPreviewIdx(nextIdx);
-      return next;
-    });
+    const currentShots = shotsRef.current;
+    const next = [
+      ...currentShots,
+      {
+        id: newCameraId(),
+        position: [...cam.position] as Vec3,
+        forward: [...cam.forward] as Vec3,
+        up: [...cam.up] as Vec3,
+        fov: cam.fov,
+        label: `${t("cameraEditor.camera", lang)} ${currentShots.length + 1}`,
+        kind: "authored" as const,
+        role: "tour" as const,
+      },
+    ];
+    const nextIdx = next.length - 1;
+    shotsRef.current = next;
+    setShots(next);
+    setSelectedIdx(nextIdx);
+    setPreviewIdx(nextIdx);
+    onChange?.(cameraPayload(next, sceneFov));
     editGenerationRef.current += 1;
     setDirty(true);
     setMode("edit");
     setIsCollapsed(false);
     setTransientMessage(t("cameraEditor.messageCaptured", lang));
-  }, [viewerRef, setTransientMessage, lang]);
+  }, [lang, onChange, sceneFov, setTransientMessage, viewerRef]);
 
   const [updatedIdx, setUpdatedIdx] = useState<number | null>(null);
 
   const updateShot = useCallback((idx: number) => {
     const cam = viewerRef.current?.getCurrentCamera();
     if (!cam) return;
-    setShots((prev) =>
-      prev.map((s, i) =>
-        i === idx ? {
-          ...s,
-          position: [...cam.position] as Vec3,
-          forward: [...cam.forward] as Vec3,
-          up: [...cam.up] as Vec3,
-          fov: cam.fov,
-        } : s
-      )
+    const next = shotsRef.current.map((shot, i) =>
+      i === idx ? {
+        ...shot,
+        position: [...cam.position] as Vec3,
+        forward: [...cam.forward] as Vec3,
+        up: [...cam.up] as Vec3,
+        fov: cam.fov,
+      } : shot
     );
+    shotsRef.current = next;
+    setShots(next);
+    onChange?.(cameraPayload(next, sceneFov));
     editGenerationRef.current += 1;
     setDirty(true);
     setUpdatedIdx(idx);
@@ -240,50 +271,55 @@ export default function CameraEditor({ splatId, viewerRef, activeShotIdx, initia
     setPreviewIdx(idx);
     setTimeout(() => setUpdatedIdx(null), 1500);
     setTransientMessage(t("cameraEditor.messageUpdated", lang));
-  }, [viewerRef, setTransientMessage, lang]);
+  }, [lang, onChange, sceneFov, setTransientMessage, viewerRef]);
 
   const removeShot = useCallback((idx: number) => {
-    setShots((prev) => {
-      const next = prev.filter((_, i) => i !== idx).map((s, i) => ({ ...s, label: `${t("cameraEditor.camera", lang)} ${i + 1}` }));
-      if (!next.length) {
-        setSelectedIdx(null);
-        setPreviewIdx(0);
-        setMode("edit");
-        setLooping(false);
-      } else {
-        const nextIdx = Math.max(0, Math.min(idx, next.length - 1));
-        setSelectedIdx(nextIdx);
-        setPreviewIdx(nextIdx);
-      }
-      return next;
-    });
+    const next = shotsRef.current
+      .filter((_, i) => i !== idx)
+      .map((shot, i) => ({ ...shot, label: `${t("cameraEditor.camera", lang)} ${i + 1}` }));
+    shotsRef.current = next;
+    setShots(next);
+    if (!next.length) {
+      setSelectedIdx(null);
+      setPreviewIdx(0);
+      setMode("edit");
+      setLooping(false);
+    } else {
+      const nextIdx = Math.max(0, Math.min(idx, next.length - 1));
+      setSelectedIdx(nextIdx);
+      setPreviewIdx(nextIdx);
+    }
+    onChange?.(cameraPayload(next, sceneFov));
     editGenerationRef.current += 1;
     setDirty(true);
     setTransientMessage(t("cameraEditor.messageRemoved", lang));
-  }, [setTransientMessage, lang]);
+  }, [lang, onChange, sceneFov, setTransientMessage]);
 
   const moveShot = useCallback((idx: number, dir: -1 | 1) => {
+    const currentShots = shotsRef.current;
     const target = idx + dir;
-    if (target < 0 || target >= shots.length) return;
-    setShots((prev) => {
-      const next = [...prev];
-      if (target < 0 || target >= next.length) return prev;
-      [next[idx], next[target]] = [next[target], next[idx]];
-      if (selectedIdx === idx) setSelectedIdx(target);
-      else if (selectedIdx === target) setSelectedIdx(idx);
-      if (previewIdx === idx) setPreviewIdx(target);
-      else if (previewIdx === target) setPreviewIdx(idx);
-      // Renumber labels after reorder
-      return next.map((s, i) => ({ ...s, label: `${t("cameraEditor.camera", lang)} ${i + 1}` }));
-    });
+    if (target < 0 || target >= currentShots.length) return;
+    const reordered = [...currentShots];
+    [reordered[idx], reordered[target]] = [reordered[target], reordered[idx]];
+    const next = reordered.map((shot, i) => ({
+      ...shot,
+      label: `${t("cameraEditor.camera", lang)} ${i + 1}`,
+    }));
+    shotsRef.current = next;
+    setShots(next);
+    if (selectedIdx === idx) setSelectedIdx(target);
+    else if (selectedIdx === target) setSelectedIdx(idx);
+    if (previewIdx === idx) setPreviewIdx(target);
+    else if (previewIdx === target) setPreviewIdx(idx);
+    onChange?.(cameraPayload(next, sceneFov));
     editGenerationRef.current += 1;
     setDirty(true);
     setTransientMessage(t("cameraEditor.messageOrderUpdated", lang), 1400);
-  }, [previewIdx, selectedIdx, setTransientMessage, shots.length, lang]);
+  }, [lang, onChange, previewIdx, sceneFov, selectedIdx, setTransientMessage]);
 
   const handleSave = useCallback(async (announce = true) => {
     const generation = editGenerationRef.current;
-    const snapshot = shots.map((shot) => ({
+    const snapshot = shotsRef.current.map((shot) => ({
       ...shot,
       position: [...shot.position] as Vec3,
       forward: [...shot.forward] as Vec3,
@@ -293,20 +329,7 @@ export default function CameraEditor({ splatId, viewerRef, activeShotIdx, initia
     setIsError(false);
     if (announce) setMessage(null);
     try {
-      const payload: CameraData = {
-        cameras: snapshot.map((s) => markIdentityCamera({
-          id: s.id,
-          position: [...s.position],
-          forward: [...s.forward],
-          up: [...s.up],
-          fov: s.fov,
-          label: s.label,
-          kind: s.kind,
-          role: s.role,
-        })),
-        fovY: snapshot[0]?.fov ?? cameraFovRadians(sceneFov, 0.66),
-        sceneFov,
-      };
+      const payload = cameraPayload(snapshot, sceneFov);
       const saved = saveHandler
         ? await saveHandler(payload)
         : await saveCameras(splatId, {
@@ -318,10 +341,14 @@ export default function CameraEditor({ splatId, viewerRef, activeShotIdx, initia
         editGenerationRef.current === generation
         && saved.cameras?.length === snapshot.length
       ) {
-        setShots((current) => current.map((shot, index) => ({
-          ...shot,
-          id: saved.cameras[index]?.id ?? shot.id,
-        })));
+        setShots((current) => {
+          const next = current.map((shot, index) => ({
+            ...shot,
+            id: saved.cameras[index]?.id ?? shot.id,
+          }));
+          shotsRef.current = next;
+          return next;
+        });
       }
       if (editGenerationRef.current === generation) setDirty(false);
       if (announce) setTransientMessage(t("cameraEditor.messageSaved", lang));
@@ -332,7 +359,7 @@ export default function CameraEditor({ splatId, viewerRef, activeShotIdx, initia
     } finally {
       setSaving(false);
     }
-  }, [shots, splatId, sceneFov, sceneRevision, setTransientMessage, onSaved, saveHandler, lang]);
+  }, [splatId, sceneFov, sceneRevision, setTransientMessage, onSaved, saveHandler, lang]);
 
   // Camera edits are workspace edits. Persist them automatically so collapsing
   // or closing the panel cannot silently discard a captured shot.
@@ -354,11 +381,14 @@ export default function CameraEditor({ splatId, viewerRef, activeShotIdx, initia
   const handleSceneFovChange = useCallback((value: number) => {
     setSceneFov(value);
     const radians = cameraFovRadians(value, 0.66);
-    setShots((current) => current.map((shot) => ({ ...shot, fov: radians })));
+    const next = shotsRef.current.map((shot) => ({ ...shot, fov: radians }));
+    shotsRef.current = next;
+    setShots(next);
+    onChange?.(cameraPayload(next, value));
     editGenerationRef.current += 1;
     setDirty(true);
     viewerRef.current?.setFov(value);
-  }, [viewerRef]);
+  }, [onChange, viewerRef]);
 
   // ── Preview mode ───────────────────────────────────────────────────────────
 

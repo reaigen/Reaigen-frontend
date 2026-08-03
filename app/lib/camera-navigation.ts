@@ -1,6 +1,7 @@
 import type { Vec3 } from "./tour-types";
 
 export type CameraMovementKey = "w" | "a" | "s" | "d" | "q" | "e";
+export type SavedCameraNavigationIntent = "edit" | "preview" | "initial";
 
 const MOVEMENT_KEYS = new Set<CameraMovementKey>(["w", "a", "s", "d", "q", "e"]);
 const PHYSICAL_MOVEMENT_KEYS: Record<string, CameraMovementKey> = {
@@ -46,6 +47,14 @@ function projectedForward(rawForward: Vec3, up: Vec3, fallbackForward: Vec3): Ve
   if (Math.hypot(...fallback) > 1e-6) return normalized(fallback, [0, 0, 1]);
   const axis: Vec3 = Math.abs(up[2]) < 0.9 ? [0, 0, 1] : [1, 0, 0];
   return normalized(project(axis), [0, 0, 1]);
+}
+
+/**
+ * Editing recalls the authored camera exactly. Only presentation preview
+ * transitions are allowed to animate between saved cameras.
+ */
+export function savedCameraNavigationIsInstant(intent: SavedCameraNavigationIntent): boolean {
+  return intent !== "preview";
 }
 
 /** Resolve physical WASD/QE keys even when the active keyboard layout differs. */

@@ -832,6 +832,7 @@ export default function WebTourEditorPage({
             base_revision: currentWorkspace.revision,
             name: currentWorkspace.name,
             nodes,
+            cameras: currentWorkspace.cameras as unknown as Array<Record<string, unknown>>,
           })
         : currentWorkspace;
       workspaceRef.current = saved;
@@ -939,6 +940,18 @@ export default function WebTourEditorPage({
   const finishTour = async () => {
     await saveEditorEdits(true);
   };
+
+  const stageWorkspaceCameras = useCallback((cameraData: CameraData) => {
+    const current = workspaceRef.current;
+    if (!current) return;
+    const next: WebTourWorkspace = {
+      ...current,
+      cameras: (cameraData.cameras ?? []) as unknown as Array<Record<string, unknown>>,
+    };
+    workspaceRef.current = next;
+    setWorkspace(next);
+    setWorkspaceDirty(true);
+  }, []);
 
   const saveWorkspaceCameras = async (cameraData: CameraData): Promise<CameraData> => {
     const currentWorkspace = workspaceRef.current;
@@ -1949,21 +1962,24 @@ export default function WebTourEditorPage({
         <span className="text-[#2f8cff]">Z</span>
       </div>
 
-      {cameraEditorOpen && selected && selected.visible && selectedAssetUrl ? (
-        <CameraEditor
-          splatId={selected.splat_id}
-          viewerRef={viewerRef}
-          initialCameras={{
-            cameras: workspace.cameras as unknown as SavedCamera[],
-            sceneRevision: workspace.revision,
-            source: "web-tour-workspace",
-          }}
-          sceneTransform={draftTransform ?? undefined}
-          saveHandler={saveWorkspaceCameras}
-          appearance="workspace"
-          defaultMode="edit"
-          lang={lang}
-        />
+      {selected && selectedAssetUrl ? (
+        <div className={cameraEditorOpen && selected.visible ? undefined : "hidden"}>
+          <CameraEditor
+            splatId={selected.splat_id}
+            viewerRef={viewerRef}
+            initialCameras={{
+              cameras: workspace.cameras as unknown as SavedCamera[],
+              sceneRevision: workspace.revision,
+              source: "web-tour-workspace",
+            }}
+            sceneTransform={draftTransform ?? undefined}
+            onChange={stageWorkspaceCameras}
+            saveHandler={saveWorkspaceCameras}
+            appearance="workspace"
+            defaultMode="edit"
+            lang={lang}
+          />
+        </div>
       ) : null}
 
       {dragActive && !uploading ? (

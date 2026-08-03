@@ -6,6 +6,7 @@ import {
   cameraMovementKey,
   cameraTouchPanDelta,
   cameraWalkDirection,
+  savedCameraNavigationIsInstant,
 } from "./camera-navigation.ts";
 
 const closeTo = (actual, expected) => {
@@ -17,6 +18,12 @@ test("physical navigation keys win over the active keyboard layout", () => {
   assert.equal(cameraMovementKey({ code: "KeyW", key: "z" }), "w");
   assert.equal(cameraMovementKey({ code: "", key: "A" }), "a");
   assert.equal(cameraMovementKey({ code: "Digit1", key: "1" }), null);
+});
+
+test("camera editing recalls exact poses while previews animate", () => {
+  assert.equal(savedCameraNavigationIsInstant("edit"), true);
+  assert.equal(savedCameraNavigationIsInstant("initial"), true);
+  assert.equal(savedCameraNavigationIsInstant("preview"), false);
 });
 
 test("WASD stays in the ground plane and diagonal speed is normalized", () => {
