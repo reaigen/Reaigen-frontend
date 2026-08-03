@@ -408,7 +408,7 @@ export default function DashboardPage() {
                   </Link>
 
                   <Link
-                    href={`/draft/${draft.id}/sharing`}
+                    href={`/draft/${draft.id}?sharing=1`}
                     prefetch
                     className="floating-icon-button-sm absolute right-3 top-3 z-10 flex items-center justify-center border border-white/15 bg-black/45 text-white/80 shadow-sm backdrop-blur-md transition-[background-color,color,opacity,transform] hover:scale-105 hover:bg-black/70 hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white focus-visible:ring-offset-2 focus-visible:ring-offset-black md:opacity-0 md:group-hover:opacity-100 md:group-focus-within:opacity-100"
                     aria-label={t("draft.share", lang)}

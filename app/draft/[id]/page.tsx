@@ -23,6 +23,7 @@ import { DraftEditor } from "../../components/draft-editor";
 import { DraftVersionManager } from "../../components/draft-version-manager";
 import { DraftMediaManager } from "../../components/draft-media-manager";
 import { DraftTourAssetsPanel } from "../../components/draft-tour-assets-panel";
+import { DraftSharingPanel } from "../../components/draft-sharing-panel";
 import {
   ArrowLeftIcon,
   DocumentIcon,
@@ -470,12 +471,22 @@ function ExpandableDescription({ text, lang }: { text: string; lang: string }) {
   );
 }
 
-export default function DraftPreviewPage({ params }: { params: Promise<{ id: string }> }) {
+export default function DraftPreviewPage({
+  params,
+  searchParams,
+}: {
+  params: Promise<{ id: string }>;
+  searchParams: Promise<{ sharing?: string | string[] }>;
+}) {
   const { id } = use(params);
+  const query = use(searchParams);
   const draftId = parseInt(id, 10);
   const { isAuthenticated, isLoading, user, logout } = useAuth();
   const router = useRouter();
   const lang = getUserLanguage(user?.localization);
+  const sharingRequested = Array.isArray(query.sharing)
+    ? query.sharing.includes("1")
+    : query.sharing === "1";
 
   const [draft, setDraft] = useState<DraftDetailItem | null>(null);
   const [splatData, setSplatData] = useState<SplatsByDraftPayload | null>(null);
@@ -488,6 +499,7 @@ export default function DraftPreviewPage({ params }: { params: Promise<{ id: str
   const [editorOpen, setEditorOpen] = useState(false);
   const [versionsOpen, setVersionsOpen] = useState(false);
   const [mediaOpen, setMediaOpen] = useState(false);
+  const [sharingOpen, setSharingOpen] = useState(sharingRequested);
   const [usingCachedDraft, setUsingCachedDraft] = useState(false);
   const [retryAttempt, setRetryAttempt] = useState(0);
   const [reloadNonce, setReloadNonce] = useState(0);
@@ -501,6 +513,17 @@ export default function DraftPreviewPage({ params }: { params: Promise<{ id: str
   useEffect(() => {
     if (!isLoading && !isAuthenticated) router.replace("/");
   }, [isLoading, isAuthenticated, router]);
+
+  useEffect(() => {
+    if (sharingRequested) setSharingOpen(true);
+  }, [sharingRequested]);
+
+  const handleSharingOpenChange = (nextOpen: boolean) => {
+    setSharingOpen(nextOpen);
+    if (!nextOpen && sharingRequested) {
+      window.history.replaceState(window.history.state, "", `/draft/${draftId}`);
+    }
+  };
 
   useEffect(() => {
     if (!isAuthenticated || isNaN(draftId)) return;
@@ -845,10 +868,8 @@ export default function DraftPreviewPage({ params }: { params: Promise<{ id: str
                 <Button type="button" variant="ghost" size="sm" onClick={() => setEditorOpen(true)}>
                   <EditIcon size={14} /> {t("shareDialog.edit", lang)}
                 </Button>
-                <Button asChild variant="ghost" size="sm">
-                  <Link href={`/draft/${draftId}/sharing`} prefetch>
-                    <ShareIcon size={14} /> {t("draft.share", lang)}
-                  </Link>
+                <Button type="button" variant="ghost" size="sm" onClick={() => setSharingOpen(true)}>
+                  <ShareIcon size={14} /> {t("draft.share", lang)}
                 </Button>
                 <span aria-hidden="true" className="mx-1 h-5 w-px bg-border/80" />
                 <Button type="button" variant="ghost" size="sm" onClick={() => setVersionsOpen(true)}>
@@ -975,6 +996,16 @@ export default function DraftPreviewPage({ params }: { params: Promise<{ id: str
       </div>
 
       <DraftEditor open={editorOpen} onOpenChange={setEditorOpen} draft={draft} units={unitCatalog} lang={lang} onSaved={setDraft} />
+      <DraftSharingPanel
+        open={sharingOpen}
+        onOpenChange={handleSharingOpenChange}
+        draftId={draftId}
+        draft={draft}
+        splatData={splatData}
+        tourAssets={tourAssets}
+        lang={lang}
+        dateFormat={user.localization?.date_format ?? undefined}
+      />
       <DraftMediaManager
         open={mediaOpen}
         onOpenChange={setMediaOpen}
@@ -1002,11 +1033,16 @@ export default function DraftPreviewPage({ params }: { params: Promise<{ id: str
         <Button type="button" variant="ghost" size="sm" className="h-11 min-w-0 rounded-2xl px-2" onClick={() => setEditorOpen(true)}>
           <EditIcon size={15} /> {t("shareDialog.edit", lang)}
         </Button>
-        <Button asChild variant="ghost" size="sm" className="h-11 min-w-0 rounded-2xl px-2">
-          <Link href={`/draft/${draftId}/sharing`} prefetch aria-label={t("draft.share", lang)}>
-            <ShareIcon size={15} />
-            <span className="truncate">{t("draft.share", lang)}</span>
-          </Link>
+        <Button
+          type="button"
+          variant="ghost"
+          size="sm"
+          className="h-11 min-w-0 rounded-2xl px-2"
+          aria-label={t("draft.share", lang)}
+          onClick={() => setSharingOpen(true)}
+        >
+          <ShareIcon size={15} />
+          <span className="truncate">{t("draft.share", lang)}</span>
         </Button>
         {hasTour && (
           <Button asChild variant="default" size="sm" className="h-11 min-w-0 rounded-2xl px-2">

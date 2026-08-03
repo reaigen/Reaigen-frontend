@@ -11,7 +11,7 @@ import { cn } from "../lib/utils";
 import { t, getUserLanguage } from "../lib/i18n";
 import { AppContentMessages } from "./content-documents";
 import { ReaiAgentCard } from "./reai-agent-card";
-import { AgentIcon, CloseIcon, LinkIcon, MainHomeIcon, MainTourIcon, SettingsIcon } from "./icons";
+import { AgentIcon, CloseIcon, MainHomeIcon, MainTourIcon, SettingsIcon } from "./icons";
 
 function getInitials(user: UserProfile): string {
   const f = user.first_name?.[0] ?? "";
@@ -184,7 +184,6 @@ function AppShellFrame({
   const NAV_ITEMS = [
     { href: "/dashboard", label: t("nav.dashboard", lang), icon: MainHomeIcon },
     { href: "/tours", label: t("nav.tours", lang), icon: MainTourIcon },
-    { href: "/shares", label: t("nav.shares", lang), icon: LinkIcon },
   ];
   const reaiContext = pathname.startsWith("/settings") ? "settings" : (reaiDraftId ? "draft" : "creator");
   const reaiContextLabel = reaiContext === "settings"
@@ -643,7 +642,7 @@ function AppShellFrame({
       {/* ── Mobile bottom tab bar ────────────────────────────────── */}
       {!hideMobileNav && (
       <nav className="fixed inset-x-0 bottom-0 z-40 border-t border-border bg-card/95 pb-safe text-foreground backdrop-blur-xl md:hidden">
-        <div className="grid h-16 grid-cols-3 px-4">
+        <div className="grid h-16 grid-cols-2 px-4">
           {NAV_ITEMS.map((item) => {
             const active = pathname === item.href || pathname.startsWith(item.href + "/") || (item.href === "/dashboard" && pathname.startsWith("/draft/"));
             const Icon = item.icon;

@@ -8,7 +8,6 @@ import { useAuth } from "./hooks/use-auth";
 function isWorkspacePath(pathname: string): boolean {
   return pathname === "/dashboard"
     || pathname === "/tours"
-    || pathname === "/shares"
     || pathname === "/settings"
     || pathname === "/create"
     || pathname.startsWith("/draft/");
