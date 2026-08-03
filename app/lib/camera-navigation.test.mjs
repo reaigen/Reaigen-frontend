@@ -3,6 +3,7 @@ import test from "node:test";
 
 import {
   boundedAngularVelocity,
+  cameraMovementTargetIsEditable,
   cameraMovementKey,
   cameraTouchPanDelta,
   cameraWalkDirection,
@@ -24,6 +25,14 @@ test("camera editing recalls exact poses while previews animate", () => {
   assert.equal(savedCameraNavigationIsInstant("edit"), true);
   assert.equal(savedCameraNavigationIsInstant("initial"), true);
   assert.equal(savedCameraNavigationIsInstant("preview"), false);
+});
+
+test("camera controls do not strand WASD focus while text fields keep their keys", () => {
+  assert.equal(cameraMovementTargetIsEditable({ tagName: "INPUT", type: "range" }), false);
+  assert.equal(cameraMovementTargetIsEditable({ tagName: "BUTTON" }), false);
+  assert.equal(cameraMovementTargetIsEditable({ tagName: "INPUT", type: "text" }), true);
+  assert.equal(cameraMovementTargetIsEditable({ tagName: "TEXTAREA" }), true);
+  assert.equal(cameraMovementTargetIsEditable({ tagName: "DIV", isContentEditable: true }), true);
 });
 
 test("WASD stays in the ground plane and diagonal speed is normalized", () => {

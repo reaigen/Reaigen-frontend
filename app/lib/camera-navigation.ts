@@ -4,6 +4,20 @@ export type CameraMovementKey = "w" | "a" | "s" | "d" | "q" | "e";
 export type SavedCameraNavigationIntent = "edit" | "preview" | "initial";
 
 const MOVEMENT_KEYS = new Set<CameraMovementKey>(["w", "a", "s", "d", "q", "e"]);
+const EDITABLE_INPUT_TYPES = new Set([
+  "date",
+  "datetime-local",
+  "email",
+  "month",
+  "number",
+  "password",
+  "search",
+  "tel",
+  "text",
+  "time",
+  "url",
+  "week",
+]);
 const PHYSICAL_MOVEMENT_KEYS: Record<string, CameraMovementKey> = {
   KeyW: "w",
   KeyA: "a",
@@ -55,6 +69,20 @@ function projectedForward(rawForward: Vec3, up: Vec3, fallbackForward: Vec3): Ve
  */
 export function savedCameraNavigationIsInstant(intent: SavedCameraNavigationIntent): boolean {
   return intent !== "preview";
+}
+
+/**
+ * Text-entry controls own letter keys. Non-text controls such as the camera
+ * FOV range must not strand DCC navigation just because they retain focus.
+ */
+export function cameraMovementTargetIsEditable(target: EventTarget | null): boolean {
+  const element = target as HTMLElement | null;
+  if (!element) return false;
+  if (element.isContentEditable) return true;
+  if (element.tagName === "TEXTAREA" || element.tagName === "SELECT") return true;
+  if (element.tagName !== "INPUT") return false;
+  const inputType = String((element as HTMLInputElement).type || "text").toLowerCase();
+  return EDITABLE_INPUT_TYPES.has(inputType);
 }
 
 /** Resolve physical WASD/QE keys even when the active keyboard layout differs. */

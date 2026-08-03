@@ -34,6 +34,7 @@ import { resolveRoomKitMovement } from "@/app/lib/spatial-editor-data";
 import {
   boundedAngularVelocity,
   cameraMovementKey,
+  cameraMovementTargetIsEditable,
   cameraTouchPanDelta,
   cameraWalkDirection,
 } from "@/app/lib/camera-navigation";
@@ -3923,13 +3924,7 @@ const SplatViewer = forwardRef<SplatViewerHandle, Props>(function SplatViewer(
     };
 
     const handleKeyDown = (event: KeyboardEvent) => {
-      const target = event.target as HTMLElement | null;
-      if (
-        target?.isContentEditable
-        || target?.tagName === "INPUT"
-        || target?.tagName === "TEXTAREA"
-        || target?.tagName === "SELECT"
-      ) return;
+      if (cameraMovementTargetIsEditable(event.target)) return;
       const movementKey = cameraMovementKey(event);
       const key = movementKey ?? event.key.toLowerCase();
       if (key === "f") {
@@ -4027,8 +4022,10 @@ const SplatViewer = forwardRef<SplatViewerHandle, Props>(function SplatViewer(
     canvas.addEventListener("touchcancel", handleTouchEnd, { passive: false });
     canvas.addEventListener("wheel", handleWheel, { passive: false });
     canvas.addEventListener("contextmenu", handleContextMenu);
-    window.addEventListener("keydown", handleKeyDown);
-    window.addEventListener("keyup", handleKeyUp);
+    // Capture keeps viewport navigation alive when an editor overlay owns
+    // focus or stops bubbling. Editable text controls are still excluded.
+    window.addEventListener("keydown", handleKeyDown, true);
+    window.addEventListener("keyup", handleKeyUp, true);
     window.addEventListener("blur", clearPressed);
     document.addEventListener("visibilitychange", handleVisibilityChange);
 
@@ -4049,8 +4046,8 @@ const SplatViewer = forwardRef<SplatViewerHandle, Props>(function SplatViewer(
       canvas.removeEventListener("touchcancel", handleTouchEnd);
       canvas.removeEventListener("wheel", handleWheel);
       canvas.removeEventListener("contextmenu", handleContextMenu);
-      window.removeEventListener("keydown", handleKeyDown);
-      window.removeEventListener("keyup", handleKeyUp);
+      window.removeEventListener("keydown", handleKeyDown, true);
+      window.removeEventListener("keyup", handleKeyUp, true);
       window.removeEventListener("blur", clearPressed);
       document.removeEventListener("visibilitychange", handleVisibilityChange);
       scene.onBeforeRenderObservable.remove(movementObserver);
@@ -4297,17 +4294,8 @@ const SplatViewer = forwardRef<SplatViewerHandle, Props>(function SplatViewer(
     if (!scene || !camera || !B) return;
 
     const pressed = new Set<string>();
-    const isTypingTarget = (target: EventTarget | null) => {
-      const element = target as HTMLElement | null;
-      return Boolean(
-        element?.isContentEditable
-        || element?.tagName === "INPUT"
-        || element?.tagName === "TEXTAREA"
-        || element?.tagName === "SELECT",
-      );
-    };
     const handleKeyDown = (event: KeyboardEvent) => {
-      if (isTypingTarget(event.target)) return;
+      if (cameraMovementTargetIsEditable(event.target)) return;
 
       // Arrow keys navigate between shots
       if (event.key === "ArrowLeft" || event.key === "ArrowUp") {
@@ -4400,14 +4388,14 @@ const SplatViewer = forwardRef<SplatViewerHandle, Props>(function SplatViewer(
       cameraUpRef.current = [authoredUp.x, authoredUp.y, authoredUp.z];
     });
 
-    window.addEventListener("keydown", handleKeyDown);
-    window.addEventListener("keyup", handleKeyUp);
+    window.addEventListener("keydown", handleKeyDown, true);
+    window.addEventListener("keyup", handleKeyUp, true);
     window.addEventListener("blur", clearPressed);
     document.addEventListener("visibilitychange", handleVisibilityChange);
     return () => {
       pressed.clear();
-      window.removeEventListener("keydown", handleKeyDown);
-      window.removeEventListener("keyup", handleKeyUp);
+      window.removeEventListener("keydown", handleKeyDown, true);
+      window.removeEventListener("keyup", handleKeyUp, true);
       window.removeEventListener("blur", clearPressed);
       document.removeEventListener("visibilitychange", handleVisibilityChange);
       scene.onBeforeRenderObservable.remove(movementObserver);
