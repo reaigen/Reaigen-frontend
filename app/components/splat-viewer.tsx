@@ -1958,26 +1958,14 @@ const SplatViewer = forwardRef<SplatViewerHandle, Props>(function SplatViewer(
   ) => {
     const camera = cameraRef.current;
     if (!camera) return;
-    // Tour cameras already live in the viewer's world space. Applying the
-    // authored scene transform to them again flips/rotates the saved pose.
-    // Only the spatial editor keeps cameras in canonical scene coordinates.
-    const usesCanonicalSceneSpace = spatialNavigationRef.current;
-    const worldPosition = usesCanonicalSceneSpace
-      ? transformSpatialPoint(pos)
-      : pos;
-    const worldForward = usesCanonicalSceneSpace
-      ? transformSpatialDirection(fwd)
-      : normalizeVec3(fwd);
-    const candidateUp = usesCanonicalSceneSpace
-      ? transformSpatialDirection(up)
-      : normalizeVec3(up, [0, 1, 0]);
+    const worldForward = transformSpatialDirection(fwd);
     const worldUp = stableCameraReferenceUp(
-      candidateUp,
+      transformSpatialDirection(up),
       cameraUpRef.current,
     );
     spatialOrbitRef.current.enabled = false;
     navigateToWorldCamera(
-      worldPosition,
+      transformSpatialPoint(pos),
       worldForward,
       instant,
       fov,
@@ -5103,6 +5091,7 @@ const SplatViewer = forwardRef<SplatViewerHandle, Props>(function SplatViewer(
             );
             camera.position.set(...framed.position);
             camera.upVector.set(0, 1, 0);
+            cameraUpRef.current = [0, 1, 0];
             camera.setTarget(new BABYLON.Vector3(...framed.target));
             camera.rotation.z = 0;
             camera.fov = 60 * Math.PI / 180;
@@ -5153,15 +5142,21 @@ const SplatViewer = forwardRef<SplatViewerHandle, Props>(function SplatViewer(
                 [0, 1, 0],
               );
               const editorTransform = globalSceneTransformRef.current;
-              const worldPosition = spatialNavigationRef.current
-                ? transformCanonicalPoint(canonicalPosition, editorTransform)
-                : canonicalPosition;
-              const worldForward = spatialNavigationRef.current
-                ? transformCanonicalDirection(canonicalForward, editorTransform)
-                : canonicalForward;
-              const worldUp = spatialNavigationRef.current
-                ? transformCanonicalDirection(canonicalUp, editorTransform)
-                : canonicalUp;
+              // Geometry and every authored camera share canonical scene
+              // space. Initialize both tour and editor cameras in presentation
+              // space so horizon stabilization never compares unlike axes.
+              const worldPosition = transformCanonicalPoint(
+                canonicalPosition,
+                editorTransform,
+              );
+              const worldForward = transformCanonicalDirection(
+                canonicalForward,
+                editorTransform,
+              );
+              const worldUp = transformCanonicalDirection(
+                canonicalUp,
+                editorTransform,
+              );
               const allowCameraPose =
                 !assetSplatId || !splatId || assetSplatId === splatId || !!initialCameras?.cameras?.length;
               if (allowCameraPose && shouldUseCameraPose(canonicalPosition, fallback)) {
@@ -5183,21 +5178,19 @@ const SplatViewer = forwardRef<SplatViewerHandle, Props>(function SplatViewer(
           } catch { /* best-effort */ }
 
           if (fallback) {
-            const worldPosition = spatialNavigationRef.current
-              ? transformCanonicalPoint(
-                  fallback.safePosition,
-                  globalSceneTransformRef.current,
-                )
-              : fallback.safePosition;
-            const worldTarget = spatialNavigationRef.current
-              ? transformCanonicalPoint(
-                  fallback.safeTarget,
-                  globalSceneTransformRef.current,
-                )
-              : fallback.safeTarget;
+            const worldPosition = transformCanonicalPoint(
+              fallback.safePosition,
+              globalSceneTransformRef.current,
+            );
+            const worldTarget = transformCanonicalPoint(
+              fallback.safeTarget,
+              globalSceneTransformRef.current,
+            );
             const [px, py, pz] = worldPosition;
             const [tx, ty, tz] = worldTarget;
             camera.position.set(px, py, pz);
+            camera.upVector.set(0, 1, 0);
+            cameraUpRef.current = [0, 1, 0];
             camera.setTarget(new BABYLON.Vector3(tx, ty, tz));
             camera.rotation.z = 0;
             camera.fov = DEFAULT_IMMERSIVE_FOV;

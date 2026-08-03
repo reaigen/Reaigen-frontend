@@ -116,6 +116,17 @@ test("saved reference-up axes preserve pitch semantics instead of becoming roll"
   });
   assert.ok(Math.hypot(worldReferenceUp[0], worldReferenceUp[2]) < 1e-7);
   assert.ok(Math.abs(worldReferenceUp[1] - 1) < 1e-9);
+  // Initialization and later preview recalls must compare up axes in the
+  // same presentation space. Otherwise this canonical vector's small negative
+  // Y component can incorrectly select the upside-down world hemisphere.
+  const initializedWorldUp = stableCameraReferenceUp(worldReferenceUp);
+  const recalledWorldUp = stableCameraReferenceUp(
+    worldReferenceUp,
+    initializedWorldUp,
+  );
+  closeTo(initializedWorldUp, worldReferenceUp);
+  closeTo(recalledWorldUp, worldReferenceUp);
+  assert.ok(recalledWorldUp[1] > 0.999999);
 });
 
 test("pitched Dr Johnson preview keeps a level Y-up horizon without roll", () => {
