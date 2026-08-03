@@ -25,20 +25,42 @@ export function viewerRenderDpr(
   );
 
   let maxDpr: number;
+  let minDpr: number;
   let pixelBudget: number;
   if (authoring) {
+    minDpr = 1;
     maxDpr = compactTouch ? 1.75 : 2.5;
     pixelBudget = compactTouch ? 3_000_000 : 8_000_000;
   } else if (profile === "balanced") {
-    maxDpr = compactTouch ? 1.75 : 2;
-    pixelBudget = compactTouch ? 2_250_000 : 4_500_000;
+    // Gaussian playback is fill-rate heavy. A native Retina backbuffer can
+    // cost more than the sort itself, while the surrounding HTML controls do
+    // not benefit from rendering the WebGL scene at the same density. Keep a
+    // stable session density (no resolution jumps during camera travel), but
+    // give playback enough GPU headroom to sustain an even cadence.
+    minDpr = compactTouch ? 0.9 : 0.8;
+    maxDpr = 1.6;
+    pixelBudget = compactTouch ? 1_500_000 : 3_200_000;
   } else {
+    minDpr = 1;
     maxDpr = compactTouch ? 2.25 : 2.5;
     pixelBudget = compactTouch ? 3_500_000 : 9_000_000;
   }
 
   const budgetDpr = Math.sqrt(pixelBudget / cssPixels);
-  return Math.max(1, Math.min(safeDeviceDpr, maxDpr, budgetDpr));
+  return Math.max(minDpr, Math.min(safeDeviceDpr, maxDpr, budgetDpr));
+}
+
+/**
+ * Ignore sub-pixel camera jitter before asking Babylon's depth-sort worker for
+ * another million-splat ordering pass. Authoring keeps Babylon's exact default
+ * so transform work remains precise; delivery can tolerate a few millimetres
+ * between sorts without a visible change in the scene.
+ */
+export function viewerSortUpdateThreshold(
+  authoring: boolean,
+  profile: ViewerPerformanceProfile = "quality",
+): number {
+  return !authoring && profile === "balanced" ? 0.0025 : 0.0001;
 }
 
 /**

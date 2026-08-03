@@ -4,6 +4,7 @@ import test from "node:test";
 import {
   nextViewerMotionFrameTimestamp,
   viewerRenderDpr,
+  viewerSortUpdateThreshold,
 } from "./viewer-performance.ts";
 
 test("balanced shared tours bound a Retina MacBook backbuffer", () => {
@@ -11,13 +12,18 @@ test("balanced shared tours bound a Retina MacBook backbuffer", () => {
   const balanced = viewerRenderDpr(2, 1512, 982, false, false, "balanced");
 
   assert.equal(quality, 2);
-  assert.ok(balanced > 1.7 && balanced < 1.75);
-  assert.ok(1512 * 982 * balanced * balanced <= 4_500_001);
+  assert.ok(balanced > 1.46 && balanced < 1.48);
+  assert.ok(1512 * 982 * balanced * balanced <= 3_200_001);
 });
 
 test("balanced touch delivery stays crisp without using phone DPR 3", () => {
   const balanced = viewerRenderDpr(3, 393, 852, true, false, "balanced");
-  assert.equal(balanced, 1.75);
+  assert.equal(balanced, 1.6);
+});
+
+test("balanced delivery can render below native density on a true 4K canvas", () => {
+  const balanced = viewerRenderDpr(1, 3840, 2160, false, false, "balanced");
+  assert.equal(balanced, 0.8);
 });
 
 test("authoring keeps its precision budget regardless of delivery profile", () => {
@@ -48,4 +54,10 @@ test("quality motion remains uncapped and balanced recovers after a stall", () =
   assert.equal(nextViewerMotionFrameTimestamp(10, 18, "quality"), 18);
   assert.equal(nextViewerMotionFrameTimestamp(10, 18, "balanced"), null);
   assert.equal(nextViewerMotionFrameTimestamp(10, 500, "balanced"), 500);
+});
+
+test("balanced playback ignores tiny sort jitter without weakening authoring", () => {
+  assert.equal(viewerSortUpdateThreshold(false, "balanced"), 0.0025);
+  assert.equal(viewerSortUpdateThreshold(false, "quality"), 0.0001);
+  assert.equal(viewerSortUpdateThreshold(true, "balanced"), 0.0001);
 });

@@ -24,7 +24,7 @@ vector to presentation `+Y`. Initial placement now enters presentation space
 before preview/tour stabilization runs. The regression is covered by
 `app/lib/camera-navigation.test.mjs`.
 
-## Public shared-tour performance
+## Web tour performance
 
 - Prefer the published SOG representation. PLY is an error fallback only.
 - Do not start a readiness timer while the tour overlay is closed. For Dr
@@ -34,12 +34,17 @@ before preview/tour stabilization runs. The regression is covered by
   scene asset until the recipient opens the tour.
 - Hide the still-mounted property document while WebGL is active. This retains
   React state without paying its layout/paint cost behind the full-screen tour.
-- Shared tours use the stable `balanced` performance profile: HTML controls
-  remain native-resolution, the WebGL backbuffer is bounded to 4.5 million
-  desktop pixels (2.25 million on compact touch), and motion rendering is
-  capped at 60 fps on high-refresh displays.
+- Owner playback and shared tours use the stable `balanced` performance
+  profile. HTML controls remain native-resolution, while the WebGL backbuffer
+  is bounded to 3.2 million desktop pixels (1.5 million on compact touch) and
+  motion rendering is capped at 60 fps on high-refresh displays. The authoring
+  editor retains its precision-oriented profile.
 - Do not resize the WebGL backbuffer during camera travel. A session gets one
   stable pixel density so transforms and pointer interaction remain coherent.
+- Delivery ignores sub-pixel camera jitter before requesting another Gaussian
+  depth sort. Authoring keeps Babylon's exact default sort threshold.
+- Never replace a compact SOG just because decoding crossed a wall-clock
+  timeout. Fall back to PLY only after an actual SOG load or decode error.
 
 The density and motion scheduler are covered by
 `app/lib/viewer-performance.test.mjs`.

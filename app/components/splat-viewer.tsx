@@ -46,6 +46,7 @@ import {
 import {
   nextViewerMotionFrameTimestamp,
   viewerRenderDpr,
+  viewerSortUpdateThreshold,
   type ViewerPerformanceProfile,
 } from "@/app/lib/viewer-performance";
 import {
@@ -889,6 +890,7 @@ async function loadCompositionGaussian(
   name: string,
   parent: any,
   pruneMask?: SplatPruneMask | null,
+  sortUpdateThreshold = 0.0001,
 ): Promise<any> {
   const response = await fetch(url, { cache: "force-cache" });
   if (!response.ok) throw new Error(`Download ${response.status}`);
@@ -899,6 +901,7 @@ async function loadCompositionGaussian(
     || (bytes.length >= 2 && bytes[0] === 0x50 && bytes[1] === 0x4b);
   const { GaussianSplattingMesh } = BABYLON;
   const mesh = new GaussianSplattingMesh(name, null, scene);
+  mesh.viewUpdateThreshold = sortUpdateThreshold;
   // Gaussian data and its sort textures can become renderable before the
   // upload has completed. Attach the USD transform root immediately and keep
   // every intermediate frame fully transparent.
@@ -1007,6 +1010,29 @@ async function loadCompositionGaussian(
   mesh.alwaysSelectAsActiveMesh = true;
   if (mesh.material) mesh.material.backFaceCulling = false;
   return mesh;
+}
+
+function deferSplatCacheWrite(
+  splatId: number,
+  kind: "source" | "full",
+  buffer: ArrayBuffer,
+  outputsVersion?: string | null,
+) {
+  // IndexedDB cloning and compression can briefly compete with SOG parsing and
+  // the first Gaussian sort. Cache after the browser has presented the scene
+  // instead of adding storage work to the critical startup path.
+  const write = () => { void putCache(splatId, kind, buffer, outputsVersion); };
+  const idleWindow = window as Window & {
+    requestIdleCallback?: (
+      callback: () => void,
+      options?: { timeout: number },
+    ) => number;
+  };
+  if (idleWindow.requestIdleCallback) {
+    idleWindow.requestIdleCallback(write, { timeout: 8_000 });
+  } else {
+    window.setTimeout(write, 1_500);
+  }
 }
 
 // ── Props & Handle ───────────────────────────────────────────────────────────
@@ -2067,6 +2093,17 @@ const SplatViewer = forwardRef<SplatViewerHandle, Props>(function SplatViewer(
     spatialNavigationRef.current = spatialNavigation;
   }, [spatialNavigation]);
 
+  useEffect(() => {
+    const threshold = viewerSortUpdateThreshold(
+      spatialNavigation,
+      performanceProfile,
+    );
+    if (gsRef.current) gsRef.current.viewUpdateThreshold = threshold;
+    for (const item of compositionMeshesRef.current) {
+      if (item.mesh) item.mesh.viewUpdateThreshold = threshold;
+    }
+  }, [performanceProfile, ready, spatialNavigation]);
+
   const setFov = useCallback((degrees: number) => {
     const cam = cameraRef.current;
     if (!cam) return;
@@ -2462,6 +2499,7 @@ const SplatViewer = forwardRef<SplatViewerHandle, Props>(function SplatViewer(
             `splat-composition-${asset.id}`,
             root,
             asset.pruneMask,
+            viewerSortUpdateThreshold(spatialNavigation, performanceProfile),
           );
           if (disposed) {
             root.dispose?.(false, true);
@@ -2489,7 +2527,10 @@ const SplatViewer = forwardRef<SplatViewerHandle, Props>(function SplatViewer(
       for (const item of loaded) item.root?.dispose?.(false, true);
       compositionMeshesRef.current = [];
     };
-  }, [compositionAssets, ready]);
+    // Changing between playback and authoring only adjusts the existing mesh
+    // threshold in the effect above. It must not dispose and download every
+    // composition node again when the editor opens or closes.
+  }, [compositionAssets, ready]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     spatialGizmoManagerRef.current?.dispose?.();
@@ -4798,7 +4839,7 @@ const SplatViewer = forwardRef<SplatViewerHandle, Props>(function SplatViewer(
         let prevT = performance.now();
         scene.registerBeforeRender(() => {
           const now = performance.now();
-          const dt = Math.min((now - prevT) / 1000, 0.05);
+          const dt = cameraMovementFrameSeconds(now - prevT);
           prevT = now;
           if (!spatialNavigationRef.current) {
             const up = cameraUpRef.current;
@@ -5201,6 +5242,10 @@ const SplatViewer = forwardRef<SplatViewerHandle, Props>(function SplatViewer(
         spatialRootRef.current = primaryRoot;
         const createPrimaryGaussian = () => {
           const mesh = new GaussianSplattingMesh("splat", null, scene);
+          mesh.viewUpdateThreshold = viewerSortUpdateThreshold(
+            spatialNavigationRef.current,
+            performanceProfile,
+          );
           mesh.visibility = 0;
           mesh.alwaysSelectAsActiveMesh = true;
           mesh.parent = primaryRoot;
@@ -5229,8 +5274,19 @@ const SplatViewer = forwardRef<SplatViewerHandle, Props>(function SplatViewer(
             sh: sh?.length ? sh : undefined,
             shDegree,
           };
-          originalSplatDataRef.current = source;
           const savedAlive = decodeSplatPruneMask(initialPruneMask, count);
+          if (readOnly) {
+            // Public playback never edits points. Avoid retaining the source
+            // twice and allocating three million-entry masks solely to render
+            // an already-frozen tour delivery.
+            originalSplatDataRef.current = null;
+            aliveSplatMaskRef.current = null;
+            savedSplatMaskRef.current = null;
+            selectedSplatMaskRef.current = null;
+            splatPruneHistoryRef.current = [];
+            return savedAlive ? filterPackedSplats(source, savedAlive) : source;
+          }
+          originalSplatDataRef.current = source;
           aliveSplatMaskRef.current = savedAlive ?? new Uint8Array(count).fill(1);
           savedSplatMaskRef.current = aliveSplatMaskRef.current.slice();
           selectedSplatMaskRef.current = new Uint8Array(count);
@@ -5273,22 +5329,10 @@ const SplatViewer = forwardRef<SplatViewerHandle, Props>(function SplatViewer(
           // repeat opens fast without risking a stale reconstruction.
           const resp = await fetch(splatUrl, { cache: "force-cache" });
           if (!resp.ok) throw new Error(`Download ${resp.status}`);
-          const reader = resp.body!.getReader();
-          const chunks: Uint8Array[] = [];
-          let received = 0;
-          while (true) {
-            const { done, value } = await reader.read();
-            if (done) break;
-            chunks.push(value);
-            received += value.length;
-          }
-          rawBuffer = new ArrayBuffer(received);
-          const u8 = new Uint8Array(rawBuffer);
-          let off2 = 0;
-          for (const c of chunks) { u8.set(c, off2); off2 += c.length; }
+          rawBuffer = await resp.arrayBuffer();
           if (disposed) return;
           if (sourceCacheEligible && splatId) {
-            void putCache(splatId, "source", rawBuffer, outputsVersion);
+            deferSplatCacheWrite(splatId, "source", rawBuffer, outputsVersion);
           }
         }
 
@@ -5429,7 +5473,9 @@ const SplatViewer = forwardRef<SplatViewerHandle, Props>(function SplatViewer(
           );
           publishSceneFrame(computeSceneFrameFromSplatBuffer(renderData.buffer));
           splatBufferRef.current = renderData.buffer;
-          if (!cachedFull && splatId) void putCache(splatId, "full", fullConv, outputsVersion);
+          if (!cachedFull && splatId) {
+            deferSplatCacheWrite(splatId, "full", fullConv, outputsVersion);
+          }
 
           gs = createPrimaryGaussian();
           if (renderData.sh?.length) {

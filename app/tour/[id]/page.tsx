@@ -45,7 +45,6 @@ import {
 } from "../../lib/global-scene-transform";
 
 const SplatViewer = dynamic(() => import("../../components/splat-viewer"), { ssr: false });
-const SOG_READY_TIMEOUT_MS = 15000;
 
 function pickRenderableUrl(viewer: SplatViewerPayload): string {
   return viewer.asset.url;
@@ -120,7 +119,6 @@ export default function TourPage({
   const [error, setError] = useState<string | null>(null);
   const [shotIdx, setShotIdx] = useState(0);
   const [activeRenderUrl, setActiveRenderUrl] = useState<string | null>(null);
-  const [viewerReady, setViewerReady] = useState(false);
   const [retryCount, setRetryCount] = useState(0);
   const [draft, setDraft] = useState<DraftDetailItem | null>(null);
   const [advancedOpen, setAdvancedOpen] = useState(false);
@@ -188,21 +186,7 @@ export default function TourPage({
 
   useEffect(() => {
     setActiveRenderUrl(preferredRenderUrl);
-    setViewerReady(false);
   }, [preferredRenderUrl]);
-
-  useEffect(() => {
-    if (!activeRenderUrl) return;
-    if (viewerReady) return;
-    if (!fallbackRenderUrl || activeRenderUrl === fallbackRenderUrl) return;
-    if (!activeRenderUrl.split("?")[0].toLowerCase().endsWith(".sog")) return;
-
-    const timer = window.setTimeout(() => {
-      setActiveRenderUrl(fallbackRenderUrl);
-    }, SOG_READY_TIMEOUT_MS);
-
-    return () => window.clearTimeout(timer);
-  }, [activeRenderUrl, fallbackRenderUrl, viewerReady]);
 
   useEffect(() => {
     if (!isLoading && !isAuthenticated) router.replace("/");
@@ -546,10 +530,9 @@ export default function TourPage({
         outputsVersion={viewer.asset.fingerprint}
         initialPruneMask={activePruneMask}
         preferSavedCameras={preferSavedCameras}
-        onReady={() => setViewerReady(true)}
+        performanceProfile="balanced"
         onError={() => {
           if (fallbackRenderUrl && activeRenderUrl !== fallbackRenderUrl) {
-            setViewerReady(false);
             setActiveRenderUrl(fallbackRenderUrl);
           }
         }}
