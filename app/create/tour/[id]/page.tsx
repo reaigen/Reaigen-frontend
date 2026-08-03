@@ -1976,7 +1976,8 @@ export default function WebTourEditorPage({
             onChange={stageWorkspaceCameras}
             saveHandler={saveWorkspaceCameras}
             appearance="workspace"
-            defaultMode="edit"
+            defaultMode="preview"
+            isOpen={cameraEditorOpen && selected.visible}
             lang={lang}
           />
         </div>

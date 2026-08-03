@@ -36,6 +36,8 @@ interface Props {
   /** Already-loaded viewer cameras; avoids a duplicate request in the studio. */
   initialCameras?: CameraData | null;
   defaultMode?: "edit" | "preview";
+  /** Whether the owning camera surface is currently visible to the user. */
+  isOpen?: boolean;
   onSaved?: (saved: CameraData) => void;
   /** Stage camera edits in the owning workspace before the debounced save. */
   onChange?: (data: CameraData) => void;
@@ -62,7 +64,7 @@ function cameraPayload(shots: CameraShot[], sceneFov: number): CameraData {
   };
 }
 
-export default function CameraEditor({ splatId, viewerRef, activeShotIdx, initialCameras, defaultMode = "edit", onSaved, onChange, saveHandler, sceneTransform, appearance = "overlay", lang = "en" }: Props) {
+export default function CameraEditor({ splatId, viewerRef, activeShotIdx, initialCameras, defaultMode = "preview", isOpen = true, onSaved, onChange, saveHandler, sceneTransform, appearance = "overlay", lang = "en" }: Props) {
   const [shots, setShots] = useState<CameraShot[]>([]);
   const [mode, setMode] = useState<"edit" | "preview">(defaultMode);
   const [previewIdx, setPreviewIdx] = useState(0);
@@ -84,7 +86,7 @@ export default function CameraEditor({ splatId, viewerRef, activeShotIdx, initia
   const clearMessageTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const autoSaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const editGenerationRef = useRef(0);
-  const initialPreviewPoseAppliedRef = useRef(false);
+  const wasOpenRef = useRef(false);
 
   // Camera coordinates returned by SplatViewer are already canonical. Keep the
   // prop for API compatibility with other editor surfaces, but never apply the
@@ -94,7 +96,6 @@ export default function CameraEditor({ splatId, viewerRef, activeShotIdx, initia
   // Load existing saved cameras on mount. New camera payloads use identity
   // scene space; historical edited payloads are migrated once on read.
   useEffect(() => {
-    initialPreviewPoseAppliedRef.current = false;
     let active = true;
     const applyCameraData = (rawData: CameraData) => {
       if (!active) return;
@@ -116,7 +117,7 @@ export default function CameraEditor({ splatId, viewerRef, activeShotIdx, initia
       setShots(loadedShots);
       setDirty(false);
       editGenerationRef.current += 1;
-      setSelectedIdx(defaultMode === "preview" && loadedShots.length ? 0 : null);
+      setSelectedIdx(loadedShots.length ? 0 : null);
       if (loadedShots.length) {
         setPreviewIdx(0);
         // Start in preview mode — fly to first shot but don't auto-loop
@@ -198,22 +199,54 @@ export default function CameraEditor({ splatId, viewerRef, activeShotIdx, initia
     if (!preview) setTransientMessage(`${t("cameraEditor.viewing", lang)} ${idx + 1}`, 1000);
   }, [lang, setTransientMessage, shots, viewerRef]);
 
+  // Treat each panel access as a fresh camera-review session. The advanced
+  // editor keeps this component mounted while the camera panel is hidden, so
+  // mount-time defaults alone cannot restore Preview when the user reopens it.
+  // Entering Edit remains an explicit action via stopPreview().
   useEffect(() => {
-    if (!loaded || !shots.length) return;
-    if (
-      defaultMode === "preview"
-      && !initialPreviewPoseAppliedRef.current
-    ) {
-      initialPreviewPoseAppliedRef.current = true;
-      viewerRef.current?.navigateToCamera(
-        shots[0].position,
-        shots[0].forward,
-        savedCameraNavigationIsInstant("initial"),
-        shots[0].fov,
-        shots[0].up,
-      );
+    if (!isOpen) {
+      wasOpenRef.current = false;
+      setLooping(false);
+      if (previewTimerRef.current) {
+        clearTimeout(previewTimerRef.current);
+        previewTimerRef.current = null;
+      }
+      viewerRef.current?.enableFreeCamera();
+      return;
     }
-  }, [defaultMode, loaded, shots, viewerRef]);
+    if (!loaded || wasOpenRef.current) return;
+    wasOpenRef.current = true;
+
+    const currentShots = shotsRef.current;
+    if (!currentShots.length) {
+      setMode("edit");
+      setSelectedIdx(null);
+      setPreviewIdx(0);
+      viewerRef.current?.enableFreeCamera();
+      return;
+    }
+
+    const targetIdx = selectedIdx != null && selectedIdx < currentShots.length
+      ? selectedIdx
+      : 0;
+    setSelectedIdx(targetIdx);
+    setPreviewIdx(targetIdx);
+    setLooping(false);
+    setMode(defaultMode);
+    if (defaultMode === "preview") {
+      setIsCollapsed(true);
+      const shot = currentShots[targetIdx];
+      viewerRef.current?.navigateToCamera(
+        shot.position,
+        shot.forward,
+        savedCameraNavigationIsInstant("initial"),
+        shot.fov,
+        shot.up,
+      );
+    } else {
+      viewerRef.current?.enableFreeCamera();
+    }
+  }, [defaultMode, isOpen, loaded, selectedIdx, viewerRef]);
 
   // ── Edit mode actions ──────────────────────────────────────────────────────
 

@@ -1431,6 +1431,13 @@ interface DraftPhotoUploadSession {
   createdAt: number;
 }
 
+export interface DraftPhotoUploadOptions {
+  /** Add the upload to an existing image history instead of creating a new gallery item. */
+  logicalAssetId?: string;
+  /** Existing active version replaced by this upload. Must belong to logicalAssetId. */
+  supersedesId?: number;
+}
+
 const draftPhotoUploadSessions = new Map<string, DraftPhotoUploadSession>();
 
 /**
@@ -1442,6 +1449,7 @@ export async function uploadDraftPhoto(
   draftId: number,
   file: File,
   sortOrder: number,
+  options: DraftPhotoUploadOptions = {},
 ): Promise<DraftUpload> {
   const extension = file.name.split(".").pop()?.toLowerCase() ?? "";
   const inferredTypes: Record<string, string> = {
@@ -1456,7 +1464,14 @@ export async function uploadDraftPhoto(
     bmp: "image/bmp",
   };
   const contentType = file.type || inferredTypes[extension] || "application/octet-stream";
-  const sessionKey = `${draftId}:${file.name}:${file.size}:${file.lastModified}`;
+  const sessionKey = [
+    draftId,
+    options.logicalAssetId ?? "new",
+    options.supersedesId ?? "none",
+    file.name,
+    file.size,
+    file.lastModified,
+  ].join(":");
   let uploadSession = draftPhotoUploadSessions.get(sessionKey);
   if (uploadSession && Date.now() - uploadSession.createdAt > 5 * 60 * 60 * 1000) {
     draftPhotoUploadSessions.delete(sessionKey);
@@ -1473,6 +1488,7 @@ export async function uploadDraftPhoto(
           filename: file.name,
           content_type: contentType,
           file_size: file.size,
+          ...(options.logicalAssetId ? { logical_asset_id: options.logicalAssetId } : {}),
         }),
       }) as Promise<DraftMediaPresignResponse>,
     ]);
@@ -1515,6 +1531,8 @@ export async function uploadDraftPhoto(
       content_type: uploadSession.contentType,
       sort_order: uploadSession.sortOrder,
       role: "photo",
+      ...(options.logicalAssetId ? { logical_asset_id: options.logicalAssetId } : {}),
+      ...(options.supersedesId ? { supersedes: options.supersedesId } : {}),
     }),
   });
   draftPhotoUploadSessions.delete(sessionKey);
@@ -2000,8 +2018,14 @@ export async function manageAgentMediaVersion(
 
 export async function getMediaVersions(
   draftId: number,
+  options: { fresh?: boolean } = {},
 ): Promise<{ draft_id: number; groups: MediaVersionGroup[]; physical_delete_available: false }> {
-  return request(`/api/reaigen/tools/drafts/${draftId}/media-versions/`);
+  const path = `/api/reaigen/tools/drafts/${draftId}/media-versions/`;
+  if (options.fresh) {
+    cache.delete(path);
+    inFlight.delete(path);
+  }
+  return request(path);
 }
 
 export async function manageMediaVersion(

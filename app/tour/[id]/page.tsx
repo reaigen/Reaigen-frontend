@@ -610,7 +610,7 @@ export default function TourPage({
             viewerRef={splatRef}
             activeShotIdx={shotIdx}
             initialCameras={viewerCameras}
-            defaultMode="edit"
+            defaultMode="preview"
             saveHandler={
               Number.isFinite(requestedTourId)
                 ? saveTourCameras

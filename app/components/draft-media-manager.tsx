@@ -14,6 +14,7 @@ import {
   updateDraftGallery,
   uploadDraftPhoto,
   type MediaVersionGroup,
+  type ReaiImageEditOperations,
 } from "../lib/api/client";
 import { getSafeApiErrorMessage } from "../lib/api/error-message";
 import { formatDate, t, type LocaleKey } from "../lib/i18n";
@@ -26,6 +27,7 @@ import {
   ArrowRightIcon,
   CheckIcon,
   DragHandleIcon,
+  EditIcon,
   EyeClosedIcon,
   EyeOpenIcon,
   ImageIcon,
@@ -34,6 +36,7 @@ import {
   VersionsIcon,
   VideoIcon,
 } from "./icons";
+import { DraftImageEditor } from "./draft-image-editor";
 import { SidePanel } from "./side-panel";
 import { StatusPill } from "./status-pill";
 import {
@@ -46,7 +49,7 @@ import {
 
 type MediaFilter = "gallery" | "hidden";
 type MediaKind = "image" | "video";
-type MediaManagerView = "gallery" | "versions";
+type MediaManagerView = "gallery" | "versions" | "editor";
 type ConfirmAction = { kind: "hide"; groupId: string } | null;
 
 interface MediaGroup {
@@ -271,9 +274,11 @@ export function DraftMediaManager({
   onChanged?: () => void | Promise<void>;
 }) {
   const fileInputRef = React.useRef<HTMLInputElement>(null);
+  const versionFileInputRef = React.useRef<HTMLInputElement>(null);
   const contentRef = React.useRef<HTMLDivElement>(null);
   const uploadDragDepth = React.useRef(0);
   const loadSequence = React.useRef(0);
+  const panelOpenRef = React.useRef(open);
   const versionRefreshTimers = React.useRef<number[]>([]);
   const pointerReorder = React.useRef<PointerReorderSession | null>(null);
   const pendingUrls = React.useRef(new Set<string>());
@@ -301,12 +306,17 @@ export function DraftMediaManager({
   const [versionNotice, setVersionNotice] = React.useState<string | null>(null);
   const [uploadDropActive, setUploadDropActive] = React.useState(false);
   const [undoOrderIds, setUndoOrderIds] = React.useState<string[] | null>(null);
+  const [versionUploadTargetId, setVersionUploadTargetId] = React.useState<string | null>(null);
+  const [replacingId, setReplacingId] = React.useState<string | null>(null);
+  const [editingId, setEditingId] = React.useState<string | null>(null);
+  const [notice, setNotice] = React.useState<string | null>(null);
 
   const groups = React.useMemo(() => buildMediaGroups(uploads), [uploads]);
   const visibleGroups = React.useMemo(() => groups.filter((group) => group.visible), [groups]);
   const hiddenGroups = React.useMemo(() => groups.filter((group) => !group.visible), [groups]);
   const filteredGroups = filter === "gallery" ? visibleGroups : hiddenGroups;
   const selected = filteredGroups.find((group) => group.id === selectedId) ?? filteredGroups[0] ?? null;
+  const editingGroup = groups.find((group) => group.id === editingId) ?? null;
   const activeReorderIds = reorderIds.length ? reorderIds : visibleGroups.map((group) => group.id);
   const reorderSelectedIndex = selected ? activeReorderIds.indexOf(selected.id) : -1;
   const confirmGroup = confirmAction ? groups.find((group) => group.id === confirmAction.groupId) ?? null : null;
@@ -350,7 +360,7 @@ export function DraftMediaManager({
     setError(null);
     setErrorCanRetryLoad(false);
     try {
-      const versionRequest = getMediaVersions(draft.id).then((result) => result.groups);
+      const versionRequest = getMediaVersions(draft.id, { fresh: true }).then((result) => result.groups);
       const allUploads = await listDraftUploads(draft.id, { includeDeleted: true, fresh: true });
       if (sequence !== loadSequence.current) return;
       setVersionActionsAvailable(null);
@@ -389,6 +399,10 @@ export function DraftMediaManager({
   }, [applyVersionGroups, draft.id, lang]);
 
   React.useEffect(() => {
+    panelOpenRef.current = open;
+  }, [open]);
+
+  React.useEffect(() => {
     hasLoadedMedia.current = false;
     setUploads([]);
     setSelectedId(null);
@@ -416,6 +430,10 @@ export function DraftMediaManager({
     setUploadDropActive(false);
     uploadDragDepth.current = 0;
     setUndoOrderIds(null);
+    setVersionUploadTargetId(null);
+    setReplacingId(null);
+    setEditingId(null);
+    setNotice(null);
     void loadMedia();
   }, [loadMedia, open]);
 
@@ -766,6 +784,55 @@ export function DraftMediaManager({
     void uploadFiles(chosen);
   }, [uploadFiles]);
 
+  const requestVersionUpload = React.useCallback((group: MediaGroup) => {
+    if (busy || group.kind !== "image" || !group.active.logical_asset_id) return;
+    setSelectedId(group.id);
+    setVersionUploadTargetId(group.id);
+    setNotice(null);
+    setError(null);
+    window.requestAnimationFrame(() => versionFileInputRef.current?.click());
+  }, [busy]);
+
+  const handleVersionFile = React.useCallback(async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0] ?? null;
+    event.target.value = "";
+    const target = groups.find((group) => group.id === versionUploadTargetId) ?? null;
+    setVersionUploadTargetId(null);
+    if (!file || !target || !target.active.logical_asset_id) return;
+    if (!isPhotoFile(file)) {
+      setError(t("draft.media.photosOnly", lang));
+      setErrorCanRetryLoad(false);
+      return;
+    }
+    if (file.size > MAX_BROWSER_PHOTO_BYTES) {
+      setError(t("draft.media.fileTooLarge", lang));
+      setErrorCanRetryLoad(false);
+      return;
+    }
+
+    setBusy(true);
+    setReplacingId(target.id);
+    setError(null);
+    setNotice(null);
+    setErrorCanRetryLoad(false);
+    try {
+      await uploadDraftPhoto(draft.id, file, target.active.sort_order ?? 0, {
+        logicalAssetId: target.active.logical_asset_id,
+        supersedesId: target.active.id,
+      });
+      await loadMedia(false);
+      setSelectedId(target.id);
+      setNotice(t("draft.media.versionUploaded", lang));
+      await notifyChanged();
+    } catch (nextError) {
+      setError(getSafeApiErrorMessage(nextError, lang, "draft.media.uploadFailed"));
+      setErrorCanRetryLoad(false);
+    } finally {
+      setReplacingId(null);
+      setBusy(false);
+    }
+  }, [draft.id, groups, lang, loadMedia, notifyChanged, versionUploadTargetId]);
+
   const retryPending = React.useCallback(async (item: PendingUpload) => {
     setBusy(true);
     setError(null);
@@ -799,7 +866,85 @@ export function DraftMediaManager({
     setConfirmAction(null);
     setVersionCandidate(null);
     setVersionCreateRequest(null);
+    if (nextView !== "editor") setEditingId(null);
     window.requestAnimationFrame(() => contentRef.current?.scrollTo({ top: 0, behavior: "smooth" }));
+  };
+
+  const openImageEditor = (group: MediaGroup) => {
+    if (busy || group.kind !== "image") return;
+    setSelectedId(group.id);
+    setEditingId(group.id);
+    setError(null);
+    setNotice(null);
+    switchView("editor");
+  };
+
+  const watchEditedVersion = (
+    logicalAssetId: string,
+    previousVersionIds: Set<number>,
+  ) => {
+    const delays = [1200, 2200, 3600, 5600, 8200] as const;
+    const check = async (index: number) => {
+      if (!panelOpenRef.current) return;
+      try {
+        const result = await getMediaVersions(draft.id, { fresh: true });
+        if (!panelOpenRef.current) return;
+        applyVersionGroups(result.groups);
+        const group = result.groups.find((candidate) => candidate.logical_asset_id === logicalAssetId);
+        const created = group?.versions
+          .filter((version) => !previousVersionIds.has(version.id))
+          .sort((left, right) => right.version - left.version || right.id - left.id)[0];
+        if (created) {
+          versionRefreshTimers.current.forEach((timer) => window.clearTimeout(timer));
+          versionRefreshTimers.current = [];
+          setSelectedVersionIds((current) => ({ ...current, [logicalAssetId]: created.id }));
+          setVersionNotice(null);
+          await loadMedia(false);
+          await notifyChanged();
+          return;
+        }
+      } catch {
+        // Keep polling through a transient media-version read failure. The
+        // normal error surface remains available if the final refresh fails.
+      }
+
+      const nextIndex = index + 1;
+      if (nextIndex >= delays.length) {
+        setVersionNotice(null);
+        return;
+      }
+      const timer = window.setTimeout(() => { void check(nextIndex); }, delays[nextIndex]);
+      versionRefreshTimers.current = [timer];
+    };
+    const timer = window.setTimeout(() => { void check(0); }, delays[0]);
+    versionRefreshTimers.current = [timer];
+  };
+
+  const saveEditedVersion = async (operations: ReaiImageEditOperations) => {
+    if (!editingGroup) return;
+    const logicalAssetId = editingGroup.active.logical_asset_id;
+    const previousVersionIds = new Set(editingGroup.versions.map((version) => version.id));
+    setVersionBusy(true);
+    setError(null);
+    setVersionNotice(t("reai.mediaCreating", lang));
+    setErrorCanRetryLoad(false);
+    versionRefreshTimers.current.forEach((timer) => window.clearTimeout(timer));
+    versionRefreshTimers.current = [];
+    try {
+      await editDraftImage(draft.id, editingGroup.active.id, operations);
+      setEditingId(null);
+      setView("versions");
+      await loadMedia(false);
+      await notifyChanged();
+      if (logicalAssetId) watchEditedVersion(logicalAssetId, previousVersionIds);
+      else setVersionNotice(null);
+    } catch (nextError) {
+      setVersionNotice(null);
+      setError(getSafeApiErrorMessage(nextError, lang));
+      setErrorCanRetryLoad(false);
+    } finally {
+      setVersionBusy(false);
+    }
   };
 
   const applyVersionAction = async () => {
@@ -903,14 +1048,14 @@ export function DraftMediaManager({
     <SidePanel
       open={open}
       onOpenChange={onOpenChange}
-      title={t(view === "gallery" ? "draft.media.title" : "reai.mediaVersions", lang)}
+      title={t(view === "gallery" ? "draft.media.title" : view === "editor" ? "draft.media.editPhoto" : "reai.mediaVersions", lang)}
       description={draft.title || t("dashboard.untitled", lang)}
       headerMode="editor"
       className="sm:max-w-[920px]"
       contentClassName="media-manager-workspace"
       contentRef={contentRef}
-      closeIcon={view === "versions" ? "back" : "close"}
-      onBack={view === "versions" ? () => switchView("gallery") : undefined}
+      closeIcon={view === "gallery" ? "close" : "back"}
+      onBack={view === "gallery" ? undefined : () => switchView("gallery")}
       lang={lang}
       headerAction={view === "gallery" ? (
         <Button type="button" variant="outline" size="sm" className="floating-control h-auto border-border/65 !bg-card/75 px-3 backdrop-blur-xl" onClick={requestUpload} disabled={busy}>
@@ -927,6 +1072,43 @@ export function DraftMediaManager({
         className="sr-only"
         onChange={(event) => void handleFiles(event)}
       />
+      <input
+        ref={versionFileInputRef}
+        type="file"
+        accept="image/jpeg,image/png,image/webp,image/heic,image/heif,image/tiff,image/bmp"
+        className="sr-only"
+        onChange={(event) => void handleVersionFile(event)}
+      />
+
+      {view === "editor" ? (
+        editingGroup ? (
+          <>
+            {error ? (
+              <div role="alert" className="floating-panel-shape mb-4 flex items-start justify-between gap-3 border border-red-500/20 bg-red-500/[0.055] px-4 py-3 text-[11px] leading-relaxed text-red-800">
+                <span>{error}</span>
+                <Button type="button" variant="ghost" size="xs" onClick={() => setError(null)} className="shrink-0 text-red-900 hover:bg-red-500/10 hover:text-red-900">
+                  {t("common.dismiss", lang)}
+                </Button>
+              </div>
+            ) : null}
+            <DraftImageEditor
+              upload={editingGroup.active}
+              label={mediaGroupLabel(editingGroup.kind, Math.max(0, groups.findIndex((group) => group.id === editingGroup.id)), lang)}
+              lang={lang}
+              busy={versionBusy}
+              onCancel={() => switchView("gallery")}
+              onSave={saveEditedVersion}
+            />
+          </>
+        ) : (
+          <div className="floating-panel-shape border border-dashed border-border/70 bg-card px-6 py-14 text-center">
+            <ImageIcon size={23} className="mx-auto text-foreground/25" />
+            <Button type="button" variant="outline" size="sm" className="mt-4" onClick={() => switchView("gallery")}>
+              {t("common.back", lang)}
+            </Button>
+          </div>
+        )
+      ) : null}
 
       {view === "versions" ? (
         <div className="relative">
@@ -1065,6 +1247,17 @@ export function DraftMediaManager({
               {t(errorCanRetryLoad ? "common.tryAgain" : "common.dismiss", lang)}
             </Button>
           )}
+        </div>
+      ) : null}
+      {notice ? (
+        <div role="status" aria-live="polite" className="floating-panel-shape mb-4 flex items-center justify-between gap-3 border border-emerald-600/15 bg-emerald-500/[0.055] px-4 py-3 text-[11px] text-foreground/75">
+          <span className="inline-flex min-w-0 items-center gap-2">
+            <CheckIcon size={14} className="shrink-0 text-emerald-700" />
+            <span>{notice}</span>
+          </span>
+          <Button type="button" variant="ghost" size="xs" onClick={() => setNotice(null)} className="shrink-0">
+            {t("common.dismiss", lang)}
+          </Button>
         </div>
       ) : null}
 
@@ -1479,6 +1672,26 @@ export function DraftMediaManager({
                           <Button
                             type="button"
                             size="sm"
+                            variant="secondary"
+                            onClick={() => openImageEditor(group)}
+                            disabled={busy}
+                            className="min-h-10 w-full px-2 text-[10px]"
+                          >
+                            <EditIcon size={13} /> {t("draft.media.editPhoto", lang)}
+                          </Button>
+                          <Button
+                            type="button"
+                            size="sm"
+                            variant="secondary"
+                            onClick={() => requestVersionUpload(group)}
+                            disabled={galleryActionDisabled}
+                            className="min-h-10 w-full px-2 text-[10px]"
+                          >
+                            <UploadIcon size={13} /> {t("draft.media.uploadVersion", lang)}
+                          </Button>
+                          <Button
+                            type="button"
+                            size="sm"
                             variant={isCover ? "default" : "secondary"}
                             onClick={() => void makeCover(group)}
                             disabled={busy || isCover}
@@ -1560,6 +1773,7 @@ export function DraftMediaManager({
                   >
                     <MediaVisual upload={selected.active} alt={selectedLabel} className="object-contain" />
                   </motion.div>
+                  {replacingId === selected.id ? <LoadingMark label={t("draft.media.uploadingVersion", lang)} /> : null}
                   {selected.id === coverId ? (
                     <StatusPill tone="strong" className="absolute left-3 top-3 border-white/15 bg-black/55 text-[9px] text-white backdrop-blur-xl">
                       <StarIcon size={11} /> {t("draft.media.cover", lang)}
@@ -1587,11 +1801,21 @@ export function DraftMediaManager({
                       {t("draft.media.primaryPhotoHint", lang)}
                     </p>
                   ) : null}
+                  {selected.kind === "image" ? (
+                    <div className="mt-4 grid grid-cols-2 gap-2">
+                      <Button type="button" variant="secondary" className="w-full px-2.5 text-[10px]" onClick={() => openImageEditor(selected)} disabled={busy}>
+                        <EditIcon size={14} /> {t("draft.media.editPhoto", lang)}
+                      </Button>
+                      <Button type="button" variant="secondary" className="w-full px-2.5 text-[10px]" onClick={() => requestVersionUpload(selected)} disabled={busy || !selected.active.logical_asset_id} title={t("draft.media.uploadVersionHint", lang)}>
+                        <UploadIcon size={14} /> {t("draft.media.uploadVersion", lang)}
+                      </Button>
+                    </div>
+                  ) : null}
                   <Button
                     type="button"
                     variant="secondary"
                     onClick={() => switchView("versions")}
-                    className="mt-4 w-full justify-between !bg-card/65 px-3.5 text-left backdrop-blur-xl hover:!bg-card/85"
+                    className="mt-2 w-full justify-between !bg-card/65 px-3.5 text-left backdrop-blur-xl hover:!bg-card/85"
                   >
                     <span className="inline-flex items-center gap-1.5 text-[10px] font-medium text-muted-foreground">
                       <VersionsIcon size={13} /> {t("draft.media.versions", lang)}
