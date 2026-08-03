@@ -47,6 +47,7 @@ import {
   type ShareFormData,
 } from "./sharing/share-create-form";
 import type { ContentScope } from "./sharing/content-scope-selector";
+import { SidePanel } from "./side-panel";
 import { StatusPill } from "./status-pill";
 
 const LINKS_TIMEOUT_MS = 10_000;
@@ -220,7 +221,7 @@ export const DraftSharingDock = React.forwardRef<HTMLElement, DraftSharingDockPr
     setStats(null);
     setActionError(false);
     setConfirmRevoke(false);
-    if (!open || creating || selectedShareId == null) return;
+    if (!open || selectedShareId == null) return;
     let current = true;
     void getShareAnalytics(selectedShareId)
       .then((response) => {
@@ -230,7 +231,7 @@ export const DraftSharingDock = React.forwardRef<HTMLElement, DraftSharingDockPr
         if (current) setActionError(true);
       });
     return () => { current = false; };
-  }, [creating, open, selectedShareId]);
+  }, [open, selectedShareId]);
 
   React.useEffect(() => () => {
     requestIdRef.current += 1;
@@ -277,8 +278,8 @@ export const DraftSharingDock = React.forwardRef<HTMLElement, DraftSharingDockPr
     setEditingShare(null);
     setFormError(null);
     setCopyFailedUrl(null);
-    if (shares.length) setCreating(false);
-  }, [shares.length]);
+    setCreating(false);
+  }, []);
 
   const editSelectedShare = React.useCallback(() => {
     if (!selectedShare) return;
@@ -411,11 +412,12 @@ export const DraftSharingDock = React.forwardRef<HTMLElement, DraftSharingDockPr
   ] : [];
 
   return (
-    <section
-      ref={forwardedRef}
-      aria-labelledby="draft-sharing-title"
-      className="mt-8 scroll-mt-5 border-y border-border/70 py-5 animate-fade-in sm:py-6"
-    >
+    <>
+      <section
+        ref={forwardedRef}
+        aria-labelledby="draft-sharing-title"
+        className="mt-8 scroll-mt-5 border-y border-border/70 py-5 animate-fade-in sm:py-6"
+      >
       <header className="flex items-start justify-between gap-4">
         <div className="min-w-0">
           <h2
@@ -448,7 +450,10 @@ export const DraftSharingDock = React.forwardRef<HTMLElement, DraftSharingDockPr
             variant="ghost"
             size="icon-sm"
             aria-label={t("common.close", lang)}
-            onClick={() => onOpenChange(false)}
+            onClick={() => {
+              cancelCreate();
+              onOpenChange(false);
+            }}
           >
             <CloseIcon size={15} />
           </Button>
@@ -473,7 +478,7 @@ export const DraftSharingDock = React.forwardRef<HTMLElement, DraftSharingDockPr
       {shares.length ? (
         <nav className="mt-5 flex items-center gap-2 overflow-x-auto pb-1 scrollbar-hide" aria-label={t("shares.title", lang)}>
           {shares.map((share, index) => {
-            const selected = !creating && share.id === selectedShareId;
+            const selected = share.id === selectedShareId;
             return (
               <button
                 key={share.id}
@@ -514,39 +519,7 @@ export const DraftSharingDock = React.forwardRef<HTMLElement, DraftSharingDockPr
         </div>
       ) : null}
 
-      {creating ? (
-        <div className="mt-5 space-y-4">
-          <div className="flex items-center justify-between gap-3">
-            <div>
-              <h3 className="text-[14px] font-semibold">
-                {t(editingShare ? "shares.editSettings" : "sharing.createNewLink", lang)}
-              </h3>
-              <p className="mt-0.5 text-[11px] text-muted-foreground">{draft.title || t("dashboard.untitled", lang)}</p>
-            </div>
-            {shares.length ? (
-              <Button type="button" variant="ghost" size="sm" onClick={cancelCreate}>
-                {t("common.cancel", lang)}
-              </Button>
-            ) : null}
-          </div>
-          <ShareCreateForm
-            key={`${editingShare?.id ?? "new"}-${formVersion}`}
-            scope={scope}
-            onScopeChange={setScope}
-            hasTour={hasTour}
-            hasPhotos={hasPhotos}
-            hasFloorplan={hasFloorplan}
-            lang={lang}
-            onSubmit={handleSubmit}
-            saving={saving}
-            error={formError}
-            initialShare={editingShare}
-            onCancelEdit={editingShare ? cancelCreate : undefined}
-            layout="workspace"
-            stickyActions={false}
-          />
-        </div>
-      ) : selectedShare ? (
+      {selectedShare ? (
         <div className="mt-4 overflow-hidden rounded-2xl border border-border/70 bg-card shadow-control">
           <div className="flex min-w-0 items-start justify-between gap-4 p-4 sm:p-5">
             <div className="min-w-0">
@@ -649,6 +622,41 @@ export const DraftSharingDock = React.forwardRef<HTMLElement, DraftSharingDockPr
           </Button>
         </div>
       ) : null}
-    </section>
+      </section>
+
+      <SidePanel
+        open={creating}
+        onOpenChange={(nextOpen) => {
+          if (nextOpen) setCreating(true);
+          else cancelCreate();
+        }}
+        title={t(editingShare ? "shares.editSettings" : "sharing.createNewLink", lang)}
+        description={draft.title || t("dashboard.untitled", lang)}
+        headerMode="editor"
+        closeIcon="back"
+        className="sm:max-w-[580px]"
+        contentClassName="px-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] pt-3 sm:px-4"
+        lang={lang}
+      >
+        <ShareCreateForm
+          key={`${editingShare?.id ?? "new"}-${formVersion}`}
+          scope={scope}
+          onScopeChange={setScope}
+          hasTour={hasTour}
+          hasPhotos={hasPhotos}
+          hasFloorplan={hasFloorplan}
+          lang={lang}
+          onSubmit={handleSubmit}
+          saving={saving}
+          error={formError}
+          initialShare={editingShare}
+          onCancelEdit={editingShare ? cancelCreate : undefined}
+          layout="stacked"
+          detailsMode="inline"
+          stickyActions
+          stickyActionsAtPanelEdge
+        />
+      </SidePanel>
+    </>
   );
 });

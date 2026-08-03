@@ -30,6 +30,7 @@ interface ContentScopeSelectorProps {
   hasFloorplan: boolean;
   lang: string;
   layout?: "default" | "workspace";
+  detailsMode?: "panel" | "inline";
 }
 
 // ── Bundle detection ───────────────────────────────────────────────────
@@ -61,6 +62,7 @@ export function ContentScopeSelector({
   hasFloorplan,
   lang,
   layout = "default",
+  detailsMode = "panel",
 }: ContentScopeSelectorProps) {
   const [detailsExpanded, setDetailsExpanded] = React.useState(false);
   const unavailableFields = new Set<string>();
@@ -193,7 +195,7 @@ export function ContentScopeSelector({
           <button
             type="button"
             aria-expanded={detailsExpanded}
-            aria-haspopup={layout === "default" ? "dialog" : undefined}
+            aria-haspopup={detailsMode === "panel" ? "dialog" : undefined}
             onClick={() => setDetailsExpanded((v) => !v)}
             className="floating-control pen-touch-target flex w-full items-center justify-between px-3.5 text-[11px] font-semibold text-foreground/55 transition-colors hover:bg-foreground/[0.04] hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
           >
@@ -206,13 +208,13 @@ export function ContentScopeSelector({
         </div>
       )}
 
-      {layout === "workspace" && detailsExpanded ? (
+      {detailsMode === "inline" && detailsExpanded ? (
         <div className="animate-fade-in border-t border-border/50 pt-4">
           {fieldGroups}
         </div>
       ) : null}
 
-      {layout === "default" ? (
+      {detailsMode === "panel" ? (
         <SidePanel
           open={detailsExpanded}
           onOpenChange={setDetailsExpanded}

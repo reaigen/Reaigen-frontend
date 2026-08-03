@@ -22,7 +22,9 @@ interface ShareCreateFormProps {
   initialShare?: ShareData | null;
   onCancelEdit?: () => void;
   layout?: "stacked" | "workspace";
+  detailsMode?: "panel" | "inline";
   stickyActions?: boolean;
+  stickyActionsAtPanelEdge?: boolean;
 }
 
 export interface ShareFormData {
@@ -45,7 +47,9 @@ export function ShareCreateForm({
   initialShare = null,
   onCancelEdit,
   layout = "stacked",
+  detailsMode = "panel",
   stickyActions = true,
+  stickyActionsAtPanelEdge = false,
 }: ShareCreateFormProps) {
   const [privacyLevel, setPrivacyLevel] = React.useState<PrivacyLevel>("open");
   const [pin, setPin] = React.useState("");
@@ -108,6 +112,7 @@ export function ShareCreateForm({
             hasFloorplan={hasFloorplan}
             lang={lang}
             layout={layout === "workspace" ? "workspace" : "default"}
+            detailsMode={layout === "workspace" ? "inline" : detailsMode}
           />
         </section>
 
@@ -134,7 +139,9 @@ export function ShareCreateForm({
           "z-20 flex gap-2 bg-card/95 p-3 backdrop-blur-xl",
           layout === "workspace" && "border-t border-border/50 md:col-span-6",
           stickyActions
-            ? "sticky bottom-[calc(4rem+env(safe-area-inset-bottom,0px))] md:static"
+            ? stickyActionsAtPanelEdge
+              ? "sticky bottom-0"
+              : "sticky bottom-[calc(4rem+env(safe-area-inset-bottom,0px))] md:static"
             : "static",
         )}>
           {initialShare && onCancelEdit ? (
