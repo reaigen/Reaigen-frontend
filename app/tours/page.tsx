@@ -7,7 +7,7 @@ import { AppShell } from "../components/app-shell";
 import { CollectionCard } from "../components/collection-card";
 import { CollectionState } from "../components/collection-state";
 import { useAuth } from "../components/hooks/use-auth";
-import { ArrowRightIcon, InfoIcon, PlayIcon, TourIcon } from "../components/icons";
+import { ArrowRightIcon, InfoIcon, MainTourIcon, PlayIcon, TourIcon } from "../components/icons";
 import { PageHeader } from "../components/page-header";
 import { PageLoading } from "../components/page-loading";
 import { StatusPill } from "../components/status-pill";
@@ -177,11 +177,11 @@ export default function ToursPage() {
               return (
                 <CollectionCard key={item.id}>
                   <Link href={href} prefetch={ready} className="block focus-visible:outline-none">
-                  <div className="relative aspect-[16/10] overflow-hidden bg-[#d8d2c8]">
+                  <div className="relative aspect-[16/10] overflow-hidden bg-surface-subtle">
                     {item.thumbnail_url ? (
                       <Thumbnail src={item.thumbnail_url} alt={item.title} className="absolute inset-0 h-full w-full object-cover transition-transform duration-500 ease-out group-hover:scale-[1.03]" priority={index < 4} />
                     ) : (
-                      <div className="absolute inset-0 flex items-center justify-center bg-gradient-to-br from-[#ded8ce] to-[#aaa194] text-black/15"><TourIcon size={40} /></div>
+                      <div className="absolute inset-0 flex items-center justify-center bg-gradient-to-br from-muted/60 via-muted to-foreground/10 text-foreground/20"><MainTourIcon size={42} strokeWidth={1.35} /></div>
                     )}
                     <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/5 to-black/15" aria-hidden="true" />
                     <StatusPill tone={statusTone(item)} dot className="absolute left-3 top-3 border-white/15 bg-black/55 text-white/90 shadow-sm backdrop-blur-md">

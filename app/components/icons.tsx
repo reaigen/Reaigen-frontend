@@ -74,6 +74,89 @@ export const LinkIcon = fromRadix(Link2Icon, "LinkIcon");
 export const SettingsIcon = fromRadix(GearIcon, "SettingsIcon");
 export const SearchIcon = fromRadix(MagnifyingGlassIcon, "SearchIcon");
 
+/**
+ * Primary workspace navigation uses a roomier 24px optical grid than the
+ * compact Radix action glyphs. The rounded, single-weight outlines stay clear
+ * in both the desktop rail and the mobile tab bar.
+ */
+export function MainHomeIcon({
+  size = 18,
+  width,
+  height,
+  strokeWidth = 1.8,
+  ...props
+}: IconProps) {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      width={width ?? size}
+      height={height ?? size}
+      fill="none"
+      stroke="currentColor"
+      strokeWidth={strokeWidth}
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden={props["aria-hidden"] ?? true}
+      {...props}
+    >
+      <path d="m3.5 10.25 8.5-7 8.5 7" />
+      <path d="M5.25 9.1v10.15c0 .69.56 1.25 1.25 1.25h3.05v-6.15h4.9v6.15h3.05c.69 0 1.25-.56 1.25-1.25V9.1" />
+    </svg>
+  );
+}
+
+export function MainTourIcon({
+  size = 18,
+  width,
+  height,
+  strokeWidth = 1.8,
+  ...props
+}: IconProps) {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      width={width ?? size}
+      height={height ?? size}
+      fill="none"
+      stroke="currentColor"
+      strokeWidth={strokeWidth}
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden={props["aria-hidden"] ?? true}
+      {...props}
+    >
+      <path d="m12 3.25 8 4.35v8.8l-8 4.35-8-4.35V7.6l8-4.35Z" />
+      <path d="m4.35 7.8 7.65 4.15 7.65-4.15M12 11.95v8.35" />
+    </svg>
+  );
+}
+
+export function AgentIcon({
+  size = 18,
+  width,
+  height,
+  strokeWidth = 1.8,
+  ...props
+}: IconProps) {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      width={width ?? size}
+      height={height ?? size}
+      fill="none"
+      stroke="currentColor"
+      strokeWidth={strokeWidth}
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden={props["aria-hidden"] ?? true}
+      {...props}
+    >
+      <path d="M6.25 4.25h11.5a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2h-6.9l-4.6 3.5v-3.5a2 2 0 0 1-2-2v-8a2 2 0 0 1 2-2Z" />
+      <path d="M12 7.05c.36 1.72 1.23 2.59 2.95 2.95-1.72.36-2.59 1.23-2.95 2.95-.36-1.72-1.23-2.59-2.95-2.95 1.72-.36 2.59-1.23 2.95-2.95Z" />
+    </svg>
+  );
+}
+
 // Property and editor semantics.
 export const LayoutIcon = fromRadix(DashboardIcon, "LayoutIcon");
 export const RulerIcon = fromRadix(RulerSquareIcon, "RulerIcon");

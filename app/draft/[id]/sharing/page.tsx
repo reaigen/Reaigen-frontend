@@ -30,6 +30,7 @@ import { copyToClipboard, shareUrl } from "../../../lib/share-ui";
 import type { UnitLookup } from "../../../lib/unit-catalog";
 import { currentGalleryUploads } from "../../../lib/media";
 import { selectShareableTour } from "../../../lib/tour-sharing";
+import { ArrowLeftIcon } from "../../../components/icons";
 
 function primaryShareSplat(data: SplatsByDraftPayload | null) {
   if (!data?.splats.length) return null;
@@ -278,7 +279,7 @@ export default function SharingPage({ params }: { params: Promise<{ id: string }
             onClick={() => router.push(`/draft/${draftId}`)}
             className="floating-control -ml-2 inline-flex items-center gap-1.5 px-3 text-[13px] text-muted-foreground transition-colors hover:bg-foreground/[0.04] hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
           >
-            <svg aria-hidden="true" width="15" height="15" viewBox="0 0 16 16" fill="none"><path d="M10 12L6 8L10 4" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/></svg>
+            <ArrowLeftIcon size={15} />
             {t("common.back", lang)}
           </button>
           <div className="mt-3 flex flex-col gap-1 sm:flex-row sm:items-baseline sm:gap-3">

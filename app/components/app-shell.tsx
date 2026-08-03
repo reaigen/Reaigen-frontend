@@ -11,7 +11,7 @@ import { cn } from "../lib/utils";
 import { t, getUserLanguage } from "../lib/i18n";
 import { AppContentMessages } from "./content-documents";
 import { ReaiAgentCard } from "./reai-agent-card";
-import { CloseIcon, HomeIcon, LinkIcon, SettingsIcon, TourIcon, SparklesIcon } from "./icons";
+import { AgentIcon, CloseIcon, LinkIcon, MainHomeIcon, MainTourIcon, SettingsIcon } from "./icons";
 
 function getInitials(user: UserProfile): string {
   const f = user.first_name?.[0] ?? "";
@@ -182,8 +182,8 @@ function AppShellFrame({
   const avatarUrl = user.profile?.avatar_thumbnail_url ?? user.profile?.avatar_url;
 
   const NAV_ITEMS = [
-    { href: "/dashboard", label: t("nav.dashboard", lang), icon: HomeIcon },
-    { href: "/tours", label: t("nav.tours", lang), icon: TourIcon },
+    { href: "/dashboard", label: t("nav.dashboard", lang), icon: MainHomeIcon },
+    { href: "/tours", label: t("nav.tours", lang), icon: MainTourIcon },
     { href: "/shares", label: t("nav.shares", lang), icon: LinkIcon },
   ];
   const reaiContext = pathname.startsWith("/settings") ? "settings" : (reaiDraftId ? "draft" : "creator");
@@ -404,7 +404,7 @@ function AppShellFrame({
       aria-expanded={reaiOpen}
       className="group inline-flex h-11 items-center justify-center gap-2 rounded-2xl border border-border bg-card px-3.5 text-[12px] font-semibold text-foreground/80 transition-colors hover:bg-accent hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 md:h-[58px] md:w-16 md:flex-col md:gap-1 md:border-transparent md:bg-transparent md:px-0 min-[1728px]:h-12 min-[1728px]:w-full min-[1728px]:flex-row min-[1728px]:justify-start min-[1728px]:gap-3 min-[1728px]:border-border min-[1728px]:bg-card min-[1728px]:px-3.5"
     >
-      <SparklesIcon size={19} className="text-foreground/75 transition-colors group-hover:text-foreground" />
+      <AgentIcon size={21} strokeWidth={1.75} className="text-foreground/75 transition-colors group-hover:text-foreground" />
       <span className="md:text-[10px] md:leading-none min-[1728px]:text-[13px] min-[1728px]:leading-normal">{t("reai.title", lang)}</span>
     </button>
   ) : null;
@@ -766,7 +766,7 @@ function AppShellFrame({
             <div className="flex h-14 shrink-0 items-center justify-between border-b border-border bg-card px-4 pt-safe">
               <div className="flex min-w-0 items-center gap-2.5">
                 <span className="flex h-8 w-8 shrink-0 items-center justify-center text-foreground">
-                  <SparklesIcon size={19} />
+                  <AgentIcon size={20} strokeWidth={1.8} />
                 </span>
                 <h2 id="reai-panel-title" className="flex min-w-0 items-baseline gap-2 leading-tight">
                   <span className="shrink-0 text-[15px] font-semibold">{t("reai.title", lang)}</span>
