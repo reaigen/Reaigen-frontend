@@ -13,6 +13,7 @@ const BACKEND_URL =
 const SHARE_PIN_COOKIE_PREFIX = "reaigen_share_pin_";
 const SHARE_SESSION_COOKIE_PREFIX = "reaigen_share_session_";
 const DJANGO_SESSION_COOKIE_NAME = "sessionid";
+const SHARE_PIN_HEADER_NAME = "X-Reaigen-Share-Pin-Token";
 const SHARE_PIN_COOKIE_MAX_AGE = 60 * 60 * 12; // 12 hours
 
 function backendCandidates(): string[] {
@@ -186,9 +187,14 @@ async function proxy(
   const slash = joined.endsWith("/") ? "" : "/";
   const targetUrlSearchParams = new URLSearchParams(req.nextUrl.searchParams);
   const sharedContentToken = getSharedContentToken(joined);
-  if (sharedContentToken && !targetUrlSearchParams.has("pin_token")) {
-    const pinToken = req.cookies.get(sharePinCookieName(sharedContentToken))?.value ?? null;
-    if (pinToken) targetUrlSearchParams.set("pin_token", pinToken);
+  let sharePinToken: string | null = null;
+  if (sharedContentToken) {
+    // Query strings are routinely captured by access logs. Normalize legacy
+    // callers and the HttpOnly cookie into a private backend header instead.
+    sharePinToken = targetUrlSearchParams.get("pin_token")
+      ?? req.cookies.get(sharePinCookieName(sharedContentToken))?.value
+      ?? null;
+    targetUrlSearchParams.delete("pin_token");
   }
   const qs = targetUrlSearchParams.size > 0 ? `?${targetUrlSearchParams.toString()}` : "";
   let accessToken = req.cookies.get(ACCESS_COOKIE_NAME)?.value ?? null;
@@ -200,6 +206,7 @@ async function proxy(
   const ct = req.headers.get("Content-Type");
   if (ct) headers["Content-Type"] = ct;
   if (accessToken) headers["Authorization"] = `Bearer ${accessToken}`;
+  if (sharePinToken) headers[SHARE_PIN_HEADER_NAME] = sharePinToken;
   if (sharedContentToken) {
     const sharedSession = req.cookies.get(
       shareSessionCookieName(sharedContentToken),
