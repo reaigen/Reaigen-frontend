@@ -35,7 +35,6 @@ import {
   boundedAngularVelocity,
   cameraMovementFrameSeconds,
   cameraMovementKey,
-  cameraMovementShouldActivateControls,
   cameraMovementTargetIsEditable,
   cameraNavigationShouldRestorePointerControls,
   cameraRenderIsActive,
@@ -3537,6 +3536,12 @@ const SplatViewer = forwardRef<SplatViewerHandle, Props>(function SplatViewer(
     camera.detachControl();
     camera.cameraDirection.set(0, 0, 0);
     camera.cameraRotation.set(0, 0);
+    if (!camera.rotationQuaternion) {
+      const target = camera.getTarget();
+      const forward = target.subtract(camera.position).normalize();
+      const up = camera.upVector.clone().normalize();
+      camera.rotationQuaternion = B.Quaternion.FromLookDirectionLH(forward, up);
+    }
     canvas.focus({ preventScroll: true });
 
     if (spatialCameraMode === "orbit") {
@@ -4065,7 +4070,16 @@ const SplatViewer = forwardRef<SplatViewerHandle, Props>(function SplatViewer(
       window.removeEventListener("blur", clearPressed);
       document.removeEventListener("visibilitychange", handleVisibilityChange);
       scene.onBeforeRenderObservable.remove(movementObserver);
-      if (!immersiveControls) camera.attachControl(canvas, true);
+      if (!immersiveControls) {
+        // The normal tour viewer goes back to Babylon's native Euler
+        // FreeCamera. Quaternion ownership is scoped to the detached spatial
+        // editor so mouse pan/tilt cannot be stranded by editor orientation.
+        if (camera.rotationQuaternion) {
+          camera.rotation.copyFrom(camera.rotationQuaternion.toEulerAngles());
+          camera.rotationQuaternion = null;
+        }
+        camera.attachControl(canvas, true);
+      }
     };
   }, [
     applySpatialOrbitPose,
@@ -4307,6 +4321,11 @@ const SplatViewer = forwardRef<SplatViewerHandle, Props>(function SplatViewer(
     const B = babylonRef.current;
     if (!scene || !camera || !B) return;
 
+    // The authenticated desktop viewer used Babylon's native FreeCamera
+    // keyboard input before the August 2 regression. Keep that proven path
+    // for desktop mouse/WASD, and reserve the explicit movement observer for
+    // immersive/shared controls where Babylon is intentionally detached.
+    const nativeDesktopControls = !immersiveControls;
     const pressed = new Set<string>();
     const handleKeyDown = (event: KeyboardEvent) => {
       if (cameraMovementTargetIsEditable(event.target)) return;
@@ -4331,13 +4350,8 @@ const SplatViewer = forwardRef<SplatViewerHandle, Props>(function SplatViewer(
       if (key) {
         event.preventDefault();
         event.stopPropagation();
-        // Reassert control ownership on the first key in a chord. Saved-shot
-        // navigation detaches Babylon while it flies; a stale free-mode flag
-        // must never leave WASD waiting on that detached input lifecycle.
-        if (cameraMovementShouldActivateControls(
-          pressed.has(key),
-          freeModeRef.current,
-        )) enableFreeCamera();
+        if (!freeModeRef.current) enableFreeCamera();
+        if (nativeDesktopControls) return;
         pressed.add(key);
         // Wake an idle shared viewer before its next throttled render. The
         // movement observer then extends this burst on every rendered frame.
@@ -4411,14 +4425,18 @@ const SplatViewer = forwardRef<SplatViewerHandle, Props>(function SplatViewer(
       cameraUpRef.current = [authoredUp.x, authoredUp.y, authoredUp.z];
     });
 
-    window.addEventListener("keydown", handleKeyDown, true);
-    window.addEventListener("keyup", handleKeyUp, true);
+    // Babylon registered its native desktop keyboard listener before this
+    // effect. Use the same bubbling lifecycle as the known-good July viewer;
+    // immersive overlays retain capture because they own movement themselves.
+    const keyboardCapture = !nativeDesktopControls;
+    window.addEventListener("keydown", handleKeyDown, keyboardCapture);
+    window.addEventListener("keyup", handleKeyUp, keyboardCapture);
     window.addEventListener("blur", clearPressed);
     document.addEventListener("visibilitychange", handleVisibilityChange);
     return () => {
       pressed.clear();
-      window.removeEventListener("keydown", handleKeyDown, true);
-      window.removeEventListener("keyup", handleKeyUp, true);
+      window.removeEventListener("keydown", handleKeyDown, keyboardCapture);
+      window.removeEventListener("keyup", handleKeyUp, keyboardCapture);
       window.removeEventListener("blur", clearPressed);
       document.removeEventListener("visibilitychange", handleVisibilityChange);
       scene.onBeforeRenderObservable.remove(movementObserver);
@@ -4825,10 +4843,6 @@ const SplatViewer = forwardRef<SplatViewerHandle, Props>(function SplatViewer(
           : new BABYLON.Color4(1, 1, 1, 1);
 
         const camera = new BABYLON.FreeCamera("cam", BABYLON.Vector3.Zero(), scene);
-        // Quaternion-backed orientation avoids the Euler decomposition seam
-        // where an orbit crossing ±180° could flip to an equivalent but
-        // visibly discontinuous pitch/roll representation.
-        camera.rotationQuaternion = BABYLON.Quaternion.Identity();
         camera.minZ = 0.1;
         camera.maxZ = 100;
         camera.fov = 0.66;
@@ -4836,15 +4850,15 @@ const SplatViewer = forwardRef<SplatViewerHandle, Props>(function SplatViewer(
         camera.speed = 0.3;
         camera.upVector = new BABYLON.Vector3(0, 1, 0);
         if (!immersiveControls) camera.attachControl(canvas, true);
-        // Camera translation is handled by the frame-based navigation effect.
-        // Empty Babylon's focus-sensitive keyboard map to prevent double-speed
-        // movement when its canvas input and the app input are both active.
-        camera.keysUp = [];
-        camera.keysDown = [];
-        camera.keysLeft = [];
-        camera.keysRight = [];
-        camera.keysUpward = [];
-        camera.keysDownward = [];
+        // Restore the native FreeCamera bindings used by the known-good July
+        // tour viewer. Spatial and immersive modes detach Babylon and keep
+        // their dedicated transform-aware movement implementations.
+        camera.keysUp = [87];       // W only
+        camera.keysDown = [83];     // S only
+        camera.keysLeft = [65];     // A only
+        camera.keysRight = [68];    // D only
+        camera.keysUpward = [69];   // E
+        camera.keysDownward = [81]; // Q
         cameraRef.current = camera;
         camera.onViewMatrixChangedObservable.add(() => {
           if (!animRef.current.active) {
