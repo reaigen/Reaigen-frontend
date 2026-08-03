@@ -2091,6 +2091,25 @@ const SplatViewer = forwardRef<SplatViewerHandle, Props>(function SplatViewer(
 
   useEffect(() => {
     spatialNavigationRef.current = spatialNavigation;
+    let frame = 0;
+    const applyModeDensityWhenStill = () => {
+      const anim = animRef.current;
+      const coast = immersiveCoastRef.current;
+      const cameraStill = !anim.active
+        && !anim.holdActive
+        && Math.abs(scrollVelocityRef.current) <= 0.001
+        && !immersivePointersActiveRef.current
+        && Math.abs(coast.yaw) < 0.04
+        && Math.abs(coast.pitch) < 0.04;
+      if (!cameraStill) {
+        frame = window.requestAnimationFrame(applyModeDensityWhenStill);
+        return;
+      }
+      resizeRef.current?.();
+      immersiveRenderBurstUntilRef.current = performance.now() + 350;
+    };
+    frame = window.requestAnimationFrame(applyModeDensityWhenStill);
+    return () => window.cancelAnimationFrame(frame);
   }, [spatialNavigation]);
 
   useEffect(() => {
