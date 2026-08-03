@@ -44,6 +44,11 @@ import {
   stableCameraReferenceUp,
 } from "@/app/lib/camera-navigation";
 import {
+  nextViewerMotionFrameTimestamp,
+  viewerRenderDpr,
+  type ViewerPerformanceProfile,
+} from "@/app/lib/viewer-performance";
+import {
   countMask,
   decodeSplatPruneMask,
   distanceToPolyline,
@@ -112,39 +117,6 @@ const DEFAULT_IMMERSIVE_FOV = 85 * Math.PI / 180;
 const GAUSSIAN_MIP_SIGMA_PIXELS = 0.3;
 const GAUSSIAN_MIP_VARIANCE =
   GAUSSIAN_MIP_SIGMA_PIXELS * GAUSSIAN_MIP_SIGMA_PIXELS;
-
-/**
- * Resolve a stable WebGL pixel density for the complete viewer session.
- *
- * Babylon's hardware scaling level is the inverse of this value. Delivery
- * viewers need materially more than the old 1.5× cap on Retina/HiDPI screens,
- * but an uncapped devicePixelRatio can allocate a prohibitively large
- * backbuffer on tablets and 4K/5K displays. The pixel budget keeps the result
- * predictable without changing resolution while a camera is moving.
- */
-function viewerRenderDpr(
-  deviceDpr: number,
-  viewportWidth: number,
-  viewportHeight: number,
-  compactTouch: boolean,
-  authoring: boolean,
-): number {
-  const safeDeviceDpr = Number.isFinite(deviceDpr)
-    ? Math.max(1, deviceDpr)
-    : 1;
-  const cssPixels = Math.max(
-    1,
-    Math.max(1, viewportWidth) * Math.max(1, viewportHeight),
-  );
-  const maxDpr = authoring
-    ? (compactTouch ? 1.75 : 2.5)
-    : (compactTouch ? 2.25 : 2.5);
-  const pixelBudget = authoring
-    ? (compactTouch ? 3_000_000 : 8_000_000)
-    : (compactTouch ? 3_500_000 : 9_000_000);
-  const budgetDpr = Math.sqrt(pixelBudget / cssPixels);
-  return Math.max(1, Math.min(safeDeviceDpr, maxDpr, budgetDpr));
-}
 
 function buildFallbackShots(data: TourData, lang: string): TourShot[] {
   const n = data.positions?.length ?? 0;
@@ -1056,6 +1028,8 @@ interface Props {
   initialCameras?: CameraData | null;
   preferSavedCameras?: boolean;
   readOnly?: boolean;
+  /** Stable WebGL budget/cadence; public shared tours use balanced. */
+  performanceProfile?: ViewerPerformanceProfile;
   /** outputs_updated_at from backend — used as cache version key */
   outputsVersion?: string | null;
   initialPruneMask?: SplatPruneMask | null;
@@ -1133,6 +1107,7 @@ const SplatViewer = forwardRef<SplatViewerHandle, Props>(function SplatViewer(
     initialCameras,
     preferSavedCameras,
     readOnly,
+    performanceProfile = "quality",
     outputsVersion,
     initialPruneMask,
     className,
@@ -4750,11 +4725,12 @@ const SplatViewer = forwardRef<SplatViewerHandle, Props>(function SplatViewer(
             canvas.clientHeight,
             compactTouch,
             spatialNavigationRef.current,
+            performanceProfile,
           );
           canvas.dataset.renderDpr = renderDpr.toFixed(3);
           canvas.dataset.renderProfile = spatialNavigationRef.current
             ? "authoring"
-            : "delivery";
+            : `delivery-${performanceProfile}`;
           return 1 / renderDpr;
         };
         let activeHardwareScale = resolveHardwareScale();
@@ -5016,10 +4992,11 @@ const SplatViewer = forwardRef<SplatViewerHandle, Props>(function SplatViewer(
         });
 
         // Gaussian rendering is expensive even when the camera is perfectly
-        // still. Keep full cadence during loading, gestures, coast, and camera
-        // flights; once an immersive viewer is idle, only refresh occasionally
-        // so overlays stay responsive without holding the GPU at 60 fps.
+        // still. Keep motion continuous, cap balanced public delivery at
+        // 60 fps on high-refresh panels, and refresh an idle immersive viewer
+        // only occasionally so HTML overlays retain main-thread headroom.
         let lastIdleRenderAt = 0;
+        let lastMotionRenderAt: number | null = null;
         const renderLoop = () => {
           const coast = immersiveCoastRef.current;
           const now = performance.now();
@@ -5041,8 +5018,18 @@ const SplatViewer = forwardRef<SplatViewerHandle, Props>(function SplatViewer(
             coastYaw: coast.yaw,
             coastPitch: coast.pitch,
           });
-          if (!moving && now - lastIdleRenderAt < 500) return;
-          lastIdleRenderAt = now;
+          if (moving) {
+            const nextMotionTimestamp = nextViewerMotionFrameTimestamp(
+              lastMotionRenderAt,
+              now,
+              performanceProfile,
+            );
+            if (nextMotionTimestamp == null) return;
+            lastMotionRenderAt = nextMotionTimestamp;
+          } else {
+            if (now - lastIdleRenderAt < 500) return;
+            lastIdleRenderAt = now;
+          }
           scene.render();
         };
         renderLoopRef.current = renderLoop;

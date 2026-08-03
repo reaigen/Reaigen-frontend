@@ -11,6 +11,7 @@ import FloorplanViewer from "./floorplan-viewer";
 import { DraftImageGallery } from "./draft-image-gallery";
 import type { SharedDraftData, RoomData, SharedTourSummary } from "../lib/tour-types";
 import { resolveUnit, unitLabel, type UnitLookup } from "../lib/unit-catalog";
+import { ReaigenWordmark } from "./reaigen-wordmark";
 
 // ── Helpers ────────────────────────────────────────────────────────────
 
@@ -170,9 +171,7 @@ export function SharedDraftView({ draftData, lang, hasTour, tours, onOpenTour, f
     <div className="min-h-screen bg-background">
       {/* Branded header */}
       <header className="border-b border-border/40 px-5 py-3.5 sm:px-8">
-        <span className="text-[20px] text-foreground/80" style={{ fontFamily: "var(--font-brand), ui-serif, Georgia, serif", fontWeight: 400, letterSpacing: "0.02em" }}>
-          Reaigen
-        </span>
+        <ReaigenWordmark className="text-[20px] text-foreground/80" />
       </header>
 
       <main className="mx-auto max-w-2xl px-5 py-8 sm:px-8 animate-fade-in">
@@ -331,7 +330,7 @@ export function SharedDraftView({ draftData, lang, hasTour, tours, onOpenTour, f
             return (
               <>
                 {before}
-                <span className="text-foreground/60" style={{ fontFamily: "var(--font-brand), ui-serif, Georgia, serif" }}>Reaigen</span>
+                <ReaigenWordmark className="text-foreground/60" />
                 {after}
               </>
             );

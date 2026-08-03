@@ -144,10 +144,13 @@ UX contract:
 
 Behavior contract:
 
-- `CameraEditor` captures `position`, `forward`, `up`, and `fov` from `SplatViewerHandle.getCurrentCamera()`.
-- Look-through and preview navigation call `SplatViewerHandle.navigateToCamera(position, forward, true, fov)`.
-- Save persists ordered cameras through `PATCH /api/reaigen/splats/{id}/cameras/`.
+- `CameraEditor` captures canonical `position`, `forward`, `up`, and `fov` from `SplatViewerHandle.getCurrentCamera()`.
+- Look-through and preview navigation pass the complete saved basis to `SplatViewerHandle.navigateToCamera(...)`; edit recall is instant and preview recall may animate.
+- `SplatViewer` applies the scene root transform to the complete camera basis exactly once for presentation, then inverses it on capture.
+- Save persists ordered cameras through the owning tour workspace when available, with the splat camera endpoint retained for compatible surfaces.
 - Camera order is meaningful because shared playback follows the saved order.
+
+See [`docs/tour-viewer-runtime.md`](docs/tour-viewer-runtime.md) for the camera-space and shared-delivery performance invariants.
 
 ---
 

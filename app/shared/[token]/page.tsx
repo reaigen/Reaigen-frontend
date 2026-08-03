@@ -39,12 +39,11 @@ import type { SplatViewerHandle } from "../../components/splat-viewer";
 import type { UnitLookup } from "../../lib/unit-catalog";
 import { composedRootTransformFromScene } from "../../lib/global-scene-transform";
 import { parseRoomKitCage } from "../../lib/spatial-editor-data";
+import { ReaigenWordmark } from "../../components/reaigen-wordmark";
 
 const SplatViewer = dynamic(() => import("../../components/splat-viewer"), { ssr: false });
 
 // ── Splat URL selection ────────────────────────────────────────────────
-
-const SOG_READY_TIMEOUT_MS = 15000;
 
 function sharedTourDisplayName(tour: SharedTourSummary, lang: string) {
   const generated = tour.name_is_custom === false
@@ -128,12 +127,7 @@ function classifyError(msg: string, lang: string): { kind: SharedErrorKind; mess
 
 function Brand() {
   return (
-    <span
-      className="text-[22px] text-foreground/80"
-      style={{ fontFamily: "var(--font-brand), ui-serif, Georgia, serif", fontWeight: 400, letterSpacing: "0.02em" }}
-    >
-      Reaigen
-    </span>
+    <ReaigenWordmark className="text-[22px] text-foreground/80" />
   );
 }
 
@@ -174,7 +168,6 @@ export default function SharedPage({ params }: { params: Promise<{ token: string
   const [shotIdx, setShotIdx] = useState(0);
   const [activeRoomId, setActiveRoomId] = useState<number | null>(null);
   const [activeRenderUrl, setActiveRenderUrl] = useState<string | null>(null);
-  const [viewerReady, setViewerReady] = useState(false);
   const [tourPanel, setTourPanel] = useState<"property" | "floorplan" | null>(null);
   const [roomKitCage, setRoomKitCage] = useState<RoomKitCageWall[]>([]);
   const [switchingTourId, setSwitchingTourId] = useState<number | null>(null);
@@ -220,6 +213,30 @@ export default function SharedPage({ params }: { params: Promise<{ token: string
     () => tourViewerData?.available_tours ?? draftData?.tours ?? [],
     [draftData?.tours, tourViewerData?.available_tours],
   );
+
+  useEffect(() => {
+    if (!hasTour) return;
+    let cancelled = false;
+    const warmRenderer = () => {
+      if (!cancelled) void import("../../components/splat-viewer");
+    };
+    const idleWindow = window as Window & {
+      requestIdleCallback?: (callback: () => void) => number;
+      cancelIdleCallback?: (id: number) => void;
+    };
+    if (idleWindow.requestIdleCallback) {
+      const idleId = idleWindow.requestIdleCallback(warmRenderer);
+      return () => {
+        cancelled = true;
+        idleWindow.cancelIdleCallback?.(idleId);
+      };
+    }
+    const timer = window.setTimeout(warmRenderer, 400);
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timer);
+    };
+  }, [hasTour]);
 
   useEffect(() => {
     const source = tourViewerData?.collision_geometry?.url;
@@ -340,17 +357,7 @@ export default function SharedPage({ params }: { params: Promise<{ token: string
 
   useEffect(() => {
     setActiveRenderUrl(tourViewerData ? pickRenderableUrl(tourViewerData) : null);
-    setViewerReady(false);
   }, [tourViewerData]);
-
-  useEffect(() => {
-    if (!tourViewerData || !activeRenderUrl || viewerReady) return;
-    const fallbackUrl = pickFallbackRenderableUrl(tourViewerData);
-    if (!fallbackUrl || activeRenderUrl === fallbackUrl) return;
-    if (!activeRenderUrl.split("?")[0].toLowerCase().endsWith(".sog")) return;
-    const timer = window.setTimeout(() => setActiveRenderUrl(fallbackUrl), SOG_READY_TIMEOUT_MS);
-    return () => window.clearTimeout(timer);
-  }, [activeRenderUrl, tourViewerData, viewerReady]);
 
   // ── PIN verification ──────────────────────────────────────────────
 
@@ -394,12 +401,19 @@ export default function SharedPage({ params }: { params: Promise<{ token: string
   const handleOpenTour = useCallback(async (tourId?: number) => {
     setTourSwitchError(null);
     if (tourId == null || tourViewerData?.tour_id === tourId) {
+      if (tourViewerData) {
+        // Each mount starts from the compact delivery representation. PLY is
+        // an explicit error fallback, never a timeout fallback while someone
+        // is still reading the property page.
+        setActiveRenderUrl(pickRenderableUrl(tourViewerData));
+      }
       setTourOpen(true);
       return;
     }
     setSwitchingTourId(tourId);
     try {
       const next = await getSharedTourViewer(token, tourId);
+      setActiveRenderUrl(pickRenderableUrl(next));
       setTourViewerData(next);
       setTourMeta(null);
       setShotIdx(0);
@@ -413,7 +427,7 @@ export default function SharedPage({ params }: { params: Promise<{ token: string
     } finally {
       setSwitchingTourId(null);
     }
-  }, [lang, token, tourViewerData?.tour_id]);
+  }, [lang, token, tourViewerData]);
 
   // ── Render ────────────────────────────────────────────────────────
 
@@ -497,16 +511,18 @@ export default function SharedPage({ params }: { params: Promise<{ token: string
   return (
     <>
       {draftData && (
-        <SharedDraftView
-          draftData={draftData}
-          lang={lang}
-          hasTour={hasTour}
-          tours={availableTours}
-          onOpenTour={(tourId) => { void handleOpenTour(tourId); }}
-          floorplanUrl={tourViewerData?.floorplan_url}
-          rooms={tourViewerData?.rooms}
-          units={unitCatalog}
-        />
+        <div hidden={tourOpen} aria-hidden={tourOpen ? true : undefined}>
+          <SharedDraftView
+            draftData={draftData}
+            lang={lang}
+            hasTour={hasTour}
+            tours={availableTours}
+            onOpenTour={(tourId) => { void handleOpenTour(tourId); }}
+            floorplanUrl={tourViewerData?.floorplan_url}
+            rooms={tourViewerData?.rooms}
+            units={unitCatalog}
+          />
+        </div>
       )}
       {tourSwitchError && !tourOpen ? (
         <div
@@ -540,11 +556,10 @@ export default function SharedPage({ params }: { params: Promise<{ token: string
           roomKitCage={roomKitCage}
           compositionAssets={workspaceComposition}
           readOnly
-          onReady={() => setViewerReady(true)}
+          performanceProfile="balanced"
           onError={() => {
             const fallbackUrl = pickFallbackRenderableUrl(tourViewerData);
             if (fallbackUrl && activeRenderUrl !== fallbackUrl) {
-              setViewerReady(false);
               setActiveRenderUrl(fallbackUrl);
             }
           }}
@@ -559,7 +574,10 @@ export default function SharedPage({ params }: { params: Promise<{ token: string
         {/* Close button — back to property card */}
         <button
           type="button"
-        onClick={() => { setTourPanel(null); setTourOpen(false); }}
+          onClick={() => {
+            setTourPanel(null);
+            setTourOpen(false);
+          }}
           className="floating-control absolute left-3 top-[calc(0.75rem+env(safe-area-inset-top,0px))] z-20 flex items-center gap-1.5 border border-white/10 bg-black/40 px-3 text-[11px] font-medium text-white/70 backdrop-blur-xl transition-colors hover:bg-black/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/70 sm:left-4 sm:top-[calc(1rem+env(safe-area-inset-top,0px))]"
         >
           <svg aria-hidden="true" width="12" height="12" viewBox="0 0 16 16" fill="none"><path d="M10 12L6 8l4-4" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/></svg>
@@ -568,7 +586,7 @@ export default function SharedPage({ params }: { params: Promise<{ token: string
 
         {/* Branding */}
         <div className="absolute right-3 top-[calc(0.75rem+env(safe-area-inset-top,0px))] z-20 animate-fade-in sm:right-4 sm:top-[calc(1rem+env(safe-area-inset-top,0px))]">
-          <span className="floating-status flex items-center bg-black/20 text-[13px] text-white/50 backdrop-blur-sm" style={{ fontFamily: "var(--font-brand), ui-serif, Georgia, serif", fontWeight: 400 }}>Reaigen</span>
+          <ReaigenWordmark className="floating-status flex items-center bg-black/20 text-[13px] text-white/60 backdrop-blur-sm" />
         </div>
 
         {availableTours.length > 1 && (

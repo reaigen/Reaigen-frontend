@@ -1,4 +1,5 @@
 import { cn } from "../lib/utils";
+import { ReaigenWordmark } from "./reaigen-wordmark";
 
 export function ReaigenLoadingMark({
   status,
@@ -9,16 +10,7 @@ export function ReaigenLoadingMark({
 }) {
   return (
     <div className={cn("flex flex-col items-center gap-4", className)}>
-      <span
-        className="text-[29px] text-foreground/80"
-        style={{
-          fontFamily: "var(--font-brand), ui-serif, Georgia, serif",
-          fontWeight: 400,
-          letterSpacing: "0.01em",
-        }}
-      >
-        Reaigen
-      </span>
+      <ReaigenWordmark className="text-[29px] text-foreground/80" />
       <div
         className="h-[3px] w-16 overflow-hidden rounded-full bg-foreground/10"
         role="progressbar"
