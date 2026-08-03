@@ -14,6 +14,12 @@ export interface CameraRenderActivity {
   coastPitch: number;
 }
 
+export interface StableCameraPreviewPose {
+  position: Vec3;
+  forward: Vec3;
+  up: Vec3;
+}
+
 const MOVEMENT_KEYS = new Set<CameraMovementKey>(["w", "a", "s", "d", "q", "e"]);
 const EDITABLE_INPUT_TYPES = new Set([
   "date",
@@ -57,6 +63,31 @@ function cross(left: Vec3, right: Vec3): Vec3 {
   ];
 }
 
+/** Return a finite unit up axis perpendicular to the camera forward axis. */
+export function stableCameraUp(
+  rawForward: Vec3,
+  rawUp: Vec3,
+  rawFallbackUp: Vec3 = [0, 1, 0],
+): Vec3 {
+  const forward = normalized(rawForward, [0, 0, 1]);
+  const project = (candidate: Vec3): Vec3 => {
+    const unit = normalized(candidate, [0, 1, 0]);
+    const alongForward = dot(unit, forward);
+    return [
+      unit[0] - forward[0] * alongForward,
+      unit[1] - forward[1] * alongForward,
+      unit[2] - forward[2] * alongForward,
+    ];
+  };
+  for (const candidate of [rawUp, rawFallbackUp, [0, 1, 0] as Vec3, [0, 0, 1] as Vec3, [1, 0, 0] as Vec3]) {
+    const projected = project(candidate);
+    if (Math.hypot(...projected) > 1e-6) {
+      return normalized(projected, [0, 1, 0]);
+    }
+  }
+  return [0, 1, 0];
+}
+
 function projectedForward(rawForward: Vec3, up: Vec3, fallbackForward: Vec3): Vec3 {
   const project = (value: Vec3): Vec3 => {
     const vertical = dot(value, up);
@@ -80,6 +111,67 @@ function projectedForward(rawForward: Vec3, up: Vec3, fallbackForward: Vec3): Ve
  */
 export function savedCameraNavigationIsInstant(intent: SavedCameraNavigationIntent): boolean {
   return intent !== "preview";
+}
+
+/**
+ * Deterministic saved-camera preview interpolation.
+ *
+ * Position stays on the direct segment between authored cameras. Orientation
+ * follows the shortest yaw path with linear pitch, avoiding the Bezier arcs
+ * and quaternion basis flips that previously produced invented transforms and
+ * rolls. The destination camera's up axis keeps the horizon stable.
+ */
+export function stableCameraPreviewPose(
+  fromPosition: Vec3,
+  toPosition: Vec3,
+  rawFromForward: Vec3,
+  rawToForward: Vec3,
+  rawFromUp: Vec3,
+  rawToUp: Vec3,
+  progress: number,
+): StableCameraPreviewPose {
+  const t = Number.isFinite(progress)
+    ? Math.max(0, Math.min(1, progress))
+    : 0;
+  const fromForward = normalized(rawFromForward, [0, 0, 1]);
+  const toForward = normalized(rawToForward, fromForward);
+  const fromHorizontal = Math.hypot(fromForward[0], fromForward[2]);
+  const toHorizontal = Math.hypot(toForward[0], toForward[2]);
+  const fallbackYaw = fromHorizontal > 1e-6
+    ? Math.atan2(fromForward[2], fromForward[0])
+    : (toHorizontal > 1e-6 ? Math.atan2(toForward[2], toForward[0]) : 0);
+  const fromYaw = fromHorizontal > 1e-6
+    ? Math.atan2(fromForward[2], fromForward[0])
+    : fallbackYaw;
+  const toYaw = toHorizontal > 1e-6
+    ? Math.atan2(toForward[2], toForward[0])
+    : fallbackYaw;
+  const yawDelta = Math.atan2(
+    Math.sin(toYaw - fromYaw),
+    Math.cos(toYaw - fromYaw),
+  );
+  const yaw = fromYaw + yawDelta * t;
+  const fromPitch = Math.asin(Math.max(-1, Math.min(1, fromForward[1])));
+  const toPitch = Math.asin(Math.max(-1, Math.min(1, toForward[1])));
+  const pitch = fromPitch + (toPitch - fromPitch) * t;
+  const cosPitch = Math.cos(pitch);
+  const forward = normalized([
+    Math.cos(yaw) * cosPitch,
+    Math.sin(pitch),
+    Math.sin(yaw) * cosPitch,
+  ], toForward);
+
+  const up = stableCameraUp(forward, rawToUp, rawFromUp);
+
+  return {
+    position: [
+      fromPosition[0] + (toPosition[0] - fromPosition[0]) * t,
+      fromPosition[1] + (toPosition[1] - fromPosition[1]) * t,
+      fromPosition[2] + (toPosition[2] - fromPosition[2]) * t,
+    ],
+    forward,
+    up,
+  };
 }
 
 /**

@@ -40,6 +40,8 @@ import {
   cameraRenderIsActive,
   cameraTouchPanDelta,
   cameraWalkDirection,
+  stableCameraUp,
+  stableCameraPreviewPose,
 } from "@/app/lib/camera-navigation";
 import {
   countMask,
@@ -859,7 +861,6 @@ interface Anim {
   duration: number;
   fromPos: Vec3;
   toPos: Vec3;
-  pathHandle: number;
   fromForward: Vec3;
   toForward: Vec3;
   fromAngle: number;
@@ -882,7 +883,6 @@ interface Anim {
 const defaultAnim = (): Anim => ({
   active: false, elapsed: 0, duration: 1.5,
   fromPos: [0, 0, 0], toPos: [0, 0, 0],
-  pathHandle: 0,
   fromForward: [0, 0, 1], toForward: [0, 0, 1],
   fromAngle: 0, toAngle: 0,
   fromPitch: 0, toPitch: 0,
@@ -1563,22 +1563,25 @@ const SplatViewer = forwardRef<SplatViewerHandle, Props>(function SplatViewer(
     fov?: number,
     up: Vec3 = [0, 1, 0],
   ) => {
-    cameraUpRef.current = [...up] as Vec3;
-    cam.upVector.set(up[0], up[1], up[2]);
+    const forward = normalizeVec3(fwd);
+    const cameraUp = stableCameraUp(forward, up, cameraUpRef.current);
+    cameraUpRef.current = cameraUp;
+    cam.upVector.set(...cameraUp);
     cam.position.set(pos[0], pos[1], pos[2]);
     if (exactForward) {
       cam.setTarget(new B.Vector3(
-        pos[0] + fwd[0] * LOOK,
-        pos[1] + fwd[1] * LOOK,
-        pos[2] + fwd[2] * LOOK,
+        pos[0] + forward[0] * LOOK,
+        pos[1] + forward[1] * LOOK,
+        pos[2] + forward[2] * LOOK,
       ));
     } else {
       cam.setTarget(new B.Vector3(
-        pos[0] + fwd[0] * LOOK,
+        pos[0] + forward[0] * LOOK,
         pos[1] - TILT_Y,
-        pos[2] + fwd[2] * LOOK,
+        pos[2] + forward[2] * LOOK,
       ));
     }
+    cam.upVector.set(...cameraUp);
     if (typeof fov === "number" && Number.isFinite(fov)) cam.fov = fov;
   }, []);
 
@@ -1795,12 +1798,14 @@ const SplatViewer = forwardRef<SplatViewerHandle, Props>(function SplatViewer(
     const tPos = worldPath.positions[shot.startIdx];
     const tFwd = worldPath.forwards[shot.startIdx];
     const tUp = worldPath.ups[shot.startIdx];
+    const targetForward = normalizeVec3(tFwd);
+    const targetUp = stableCameraUp(targetForward, tUp, cameraUpRef.current);
     const useExactForward = isSavedCameraTour(data);
 
     const cam = cameraRef.current;
     freeModeRef.current = false;
     cam.detachControl();
-    if (immersiveControls) setImmersiveBase(tPos, tFwd, shot.fov, tUp);
+    if (immersiveControls) setImmersiveBase(tPos, targetForward, shot.fov, targetUp);
 
     const cur: Vec3 = [cam.position.x, cam.position.y, cam.position.z];
     const target = cam.getTarget();
@@ -1814,16 +1819,16 @@ const SplatViewer = forwardRef<SplatViewerHandle, Props>(function SplatViewer(
     anim.fromPos = cur;
     anim.toPos = [tPos[0], tPos[1], tPos[2]];
     anim.fromForward = normalizeVec3([dx, dy, dz]);
-    anim.toForward = normalizeVec3(tFwd);
+    anim.toForward = targetForward;
     anim.fromAngle = Math.atan2(dz / dlen, dx / dlen);
-    anim.toAngle = Math.atan2(tFwd[2], tFwd[0]);
+    anim.toAngle = Math.atan2(targetForward[2], targetForward[0]);
     anim.fromPitch = Math.asin(Math.max(-1, Math.min(1, dy / dlen)));
-    anim.toPitch = Math.asin(Math.max(-1, Math.min(1, tFwd[1])));
+    anim.toPitch = Math.asin(Math.max(-1, Math.min(1, targetForward[1])));
     anim.fromUp = normalizeVec3(
       [cam.upVector.x, cam.upVector.y, cam.upVector.z],
       [0, 1, 0],
     );
-    anim.toUp = normalizeVec3(tUp, [0, 1, 0]);
+    anim.toUp = targetUp;
     anim.fromFov = cam.fov;
     anim.toFov = shot.fov;
     anim.elapsed = 0;
@@ -1833,10 +1838,9 @@ const SplatViewer = forwardRef<SplatViewerHandle, Props>(function SplatViewer(
       tPos[2] - cur[2],
     );
     const yawDistance = Math.abs(slerpAngle(anim.fromAngle, anim.toAngle, 1) - anim.fromAngle);
-    anim.pathHandle = instant ? 0 : distance * 0.2;
     anim.duration = instant
       ? 0.001
-      : Math.max(0.8, Math.min(1.8, 0.62 + distance * 0.14 + yawDistance * 0.2));
+      : Math.max(0.5, Math.min(1.25, 0.38 + distance * 0.12 + yawDistance * 0.16));
     anim.active = true;
     (anim as any).exactForward = useExactForward;
 
@@ -1878,11 +1882,20 @@ const SplatViewer = forwardRef<SplatViewerHandle, Props>(function SplatViewer(
     const dz = target.z - cam.position.z;
     const len = Math.hypot(dx, dy, dz) || 1;
     const worldForward: Vec3 = [dx / len, dy / len, dz / len];
-    const worldUp: Vec3 = [cam.upVector.x, cam.upVector.y, cam.upVector.z];
+    const worldUp = stableCameraUp(
+      worldForward,
+      [cam.upVector.x, cam.upVector.y, cam.upVector.z],
+      cameraUpRef.current,
+    );
+    const canonicalForward = inverseTransformSpatialDirection(worldForward);
+    const canonicalUp = stableCameraUp(
+      canonicalForward,
+      inverseTransformSpatialDirection(worldUp),
+    );
     return {
       position: inverseTransformSpatialPoint(worldPos),
-      forward: inverseTransformSpatialDirection(worldForward),
-      up: inverseTransformSpatialDirection(worldUp),
+      forward: canonicalForward,
+      up: canonicalUp,
       fov: cam.fov,
     };
   }, [inverseTransformSpatialDirection, inverseTransformSpatialPoint]);
@@ -1929,25 +1942,28 @@ const SplatViewer = forwardRef<SplatViewerHandle, Props>(function SplatViewer(
     const B = babylonRef.current;
     if (!cam || !B) return;
     const targetFov = typeof fov === "number" && Number.isFinite(fov) ? fov : cam.fov;
+    const targetForward = normalizeVec3(fwd);
+    const targetUp = stableCameraUp(targetForward, up, cameraUpRef.current);
 
     // Stop everything — no hold phase, no scroll, no path scrub
     pathScrubRef.current = null;
     scrollVelocityRef.current = 0;
     freeModeRef.current = false;
     cam.detachControl();
-    if (immersiveControls) setImmersiveBase(pos, fwd, targetFov, up);
+    if (immersiveControls) setImmersiveBase(pos, targetForward, targetFov, targetUp);
 
     const toTarget: Vec3 = [
-      pos[0] + fwd[0] * LOOK,
-      pos[1] + fwd[1] * LOOK,
-      pos[2] + fwd[2] * LOOK,
+      pos[0] + targetForward[0] * LOOK,
+      pos[1] + targetForward[1] * LOOK,
+      pos[2] + targetForward[2] * LOOK,
     ];
 
     if (instant) {
-      cameraUpRef.current = [...up] as Vec3;
-      cam.upVector.set(up[0], up[1], up[2]);
+      cameraUpRef.current = targetUp;
+      cam.upVector.set(...targetUp);
       cam.position.set(pos[0], pos[1], pos[2]);
       cam.setTarget(new B.Vector3(toTarget[0], toTarget[1], toTarget[2]));
+      cam.upVector.set(...targetUp);
       cam.fov = targetFov;
       immersiveRenderBurstUntilRef.current = performance.now() + 220;
       animRef.current.active = false;
@@ -1970,32 +1986,30 @@ const SplatViewer = forwardRef<SplatViewerHandle, Props>(function SplatViewer(
     const cdz = target.z - cam.position.z;
     const clen = Math.hypot(cdx, cdy, cdz) || 1;
     anim.fromForward = normalizeVec3([cdx, cdy, cdz]);
-    anim.toForward = normalizeVec3(fwd);
+    anim.toForward = targetForward;
     anim.fromAngle = Math.atan2(cdz / clen, cdx / clen);
-    anim.toAngle = Math.atan2(fwd[2], fwd[0]);
+    anim.toAngle = Math.atan2(targetForward[2], targetForward[0]);
     anim.fromPitch = Math.asin(Math.max(-1, Math.min(1, cdy / clen)));
-    anim.toPitch = Math.asin(Math.max(-1, Math.min(1, fwd[1])));
+    anim.toPitch = Math.asin(Math.max(-1, Math.min(1, targetForward[1])));
     anim.fromUp = normalizeVec3(
       [cam.upVector.x, cam.upVector.y, cam.upVector.z],
       [0, 1, 0],
     );
-    anim.toUp = normalizeVec3(up, [0, 1, 0]);
+    anim.toUp = targetUp;
     anim.fromFov = cam.fov;
     anim.toFov = targetFov;
     anim.elapsed = 0;
     // Re-targeting starts from the currently rendered pose, so repeated
-    // selections never queue stale animations. The path handle creates a
-    // restrained DCC-style camera trajectory rather than a positional cut.
+    // selections never queue stale animations.
     const dist = Math.hypot(
       pos[0] - cam.position.x,
       pos[1] - cam.position.y,
       pos[2] - cam.position.z,
     );
     const yawDistance = Math.abs(slerpAngle(anim.fromAngle, anim.toAngle, 1) - anim.fromAngle);
-    anim.pathHandle = dist * 0.2;
     anim.duration = Math.max(
-      0.8,
-      Math.min(1.8, 0.62 + dist * 0.14 + yawDistance * 0.2),
+      0.34,
+      Math.min(0.9, 0.28 + dist * 0.12 + yawDistance * 0.12),
     );
     anim.active = true;
     anim.holdActive = false;
@@ -2011,11 +2025,16 @@ const SplatViewer = forwardRef<SplatViewerHandle, Props>(function SplatViewer(
   ) => {
     const camera = cameraRef.current;
     if (!camera) return;
-    const worldUp = transformSpatialDirection(up);
+    const worldForward = transformSpatialDirection(fwd);
+    const worldUp = stableCameraUp(
+      worldForward,
+      transformSpatialDirection(up),
+      cameraUpRef.current,
+    );
     spatialOrbitRef.current.enabled = false;
     navigateToWorldCamera(
       transformSpatialPoint(pos),
-      transformSpatialDirection(fwd),
+      worldForward,
       instant,
       fov,
       worldUp,
@@ -5001,77 +5020,47 @@ const SplatViewer = forwardRef<SplatViewerHandle, Props>(function SplatViewer(
           const et = quintic(rawT);
           // Keep position, orientation and FOV on one timing curve. A leading
           // rotation felt like the trajectory briefly changed direction.
-          const rotT = et;
-          const oneMinusT = 1 - et;
-          const pathStartWeight = oneMinusT * oneMinusT * oneMinusT;
-          const pathStartHandleWeight = 3 * oneMinusT * oneMinusT * et;
-          const pathEndHandleWeight = 3 * oneMinusT * et * et;
-          const pathEndWeight = et * et * et;
-          const startHandle: Vec3 = [
-            anim.fromPos[0] + anim.fromForward[0] * anim.pathHandle,
-            anim.fromPos[1] + anim.fromForward[1] * anim.pathHandle,
-            anim.fromPos[2] + anim.fromForward[2] * anim.pathHandle,
-          ];
-          const endHandle: Vec3 = [
-            anim.toPos[0] - anim.toForward[0] * anim.pathHandle,
-            anim.toPos[1] - anim.toForward[1] * anim.pathHandle,
-            anim.toPos[2] - anim.toForward[2] * anim.pathHandle,
-          ];
-          const px = anim.fromPos[0] * pathStartWeight
-            + startHandle[0] * pathStartHandleWeight
-            + endHandle[0] * pathEndHandleWeight
-            + anim.toPos[0] * pathEndWeight;
-          const py = anim.fromPos[1] * pathStartWeight
-            + startHandle[1] * pathStartHandleWeight
-            + endHandle[1] * pathEndHandleWeight
-            + anim.toPos[1] * pathEndWeight;
-          const pz = anim.fromPos[2] * pathStartWeight
-            + startHandle[2] * pathStartHandleWeight
-            + endHandle[2] * pathEndHandleWeight
-            + anim.toPos[2] * pathEndWeight;
+          const previewPose = stableCameraPreviewPose(
+            anim.fromPos,
+            anim.toPos,
+            anim.fromForward,
+            anim.toForward,
+            anim.fromUp,
+            anim.toUp,
+            et,
+          );
+          const [px, py, pz] = previewPose.position;
           camera.position.set(px, py, pz);
-
-          // Blend the complete authored camera basis. Yaw/pitch interpolation
-          // still has a visible seam for opposing cameras and cannot preserve
-          // camera roll. Quaternion slerp follows the shortest continuous
-          // orientation path, including across ±180°.
-          const fromOrientation = BABYLON.Quaternion.FromLookDirectionLH(
-            new BABYLON.Vector3(...anim.fromForward),
-            new BABYLON.Vector3(...anim.fromUp),
-          );
-          const toOrientation = BABYLON.Quaternion.FromLookDirectionLH(
-            new BABYLON.Vector3(...anim.toForward),
-            new BABYLON.Vector3(...anim.toUp),
-          );
-          const orientation = BABYLON.Quaternion.Slerp(
-            fromOrientation,
-            toOrientation,
-            rotT,
-          );
-          const orientationMatrix = BABYLON.Matrix.Identity();
-          orientation.toRotationMatrix(orientationMatrix);
-          const forward = BABYLON.Vector3.TransformNormal(
-            BABYLON.Vector3.Forward(),
-            orientationMatrix,
-          ).normalize();
-          const up = BABYLON.Vector3.TransformNormal(
-            BABYLON.Vector3.Up(),
-            orientationMatrix,
-          ).normalize();
-          cameraUpRef.current = [up.x, up.y, up.z];
+          cameraUpRef.current = previewPose.up;
           camera.upVector.set(
             cameraUpRef.current[0],
             cameraUpRef.current[1],
             cameraUpRef.current[2],
           );
           camera.setTarget(new BABYLON.Vector3(
-            px + forward.x * LOOK,
-            py + forward.y * LOOK,
-            pz + forward.z * LOOK,
+            px + previewPose.forward[0] * LOOK,
+            py + previewPose.forward[1] * LOOK,
+            pz + previewPose.forward[2] * LOOK,
           ));
+          camera.upVector.set(...previewPose.up);
           camera.fov = anim.fromFov + (anim.toFov - anim.fromFov) * et;
 
           if (anim.elapsed >= anim.duration) {
+            // Finish on the exact authored values. Preview interpolation must
+            // never mutate or approximate the camera that will be edited or
+            // delivered after the flight.
+            const finalForward = normalizeVec3(anim.toForward);
+            const finalUp = stableCameraUp(finalForward, anim.toUp, anim.fromUp);
+            camera.position.set(...anim.toPos);
+            cameraUpRef.current = finalUp;
+            camera.upVector.set(...finalUp);
+            camera.setTarget(new BABYLON.Vector3(
+              anim.toPos[0] + finalForward[0] * LOOK,
+              anim.toPos[1] + finalForward[1] * LOOK,
+              anim.toPos[2] + finalForward[2] * LOOK,
+            ));
+            camera.upVector.set(...finalUp);
+            camera.fov = anim.toFov;
             anim.active = false;
             if ((anim as any).editorNav) {
               (anim as any).editorNav = false;

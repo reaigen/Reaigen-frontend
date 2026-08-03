@@ -11,6 +11,8 @@ import {
   cameraTouchPanDelta,
   cameraWalkDirection,
   savedCameraNavigationIsInstant,
+  stableCameraUp,
+  stableCameraPreviewPose,
 } from "./camera-navigation.ts";
 
 const closeTo = (actual, expected) => {
@@ -28,6 +30,70 @@ test("camera editing recalls exact poses while previews animate", () => {
   assert.equal(savedCameraNavigationIsInstant("edit"), true);
   assert.equal(savedCameraNavigationIsInstant("initial"), true);
   assert.equal(savedCameraNavigationIsInstant("preview"), false);
+});
+
+test("camera preview stays on the authored segment and lands exactly", () => {
+  const fromPosition = [1, 2, 3];
+  const toPosition = [9, 6, -5];
+  const fromForward = [0, 0, 1];
+  const toForward = [1, 0, 0];
+  const midpoint = stableCameraPreviewPose(
+    fromPosition,
+    toPosition,
+    fromForward,
+    toForward,
+    [0, 1, 0],
+    [0, 1, 0],
+    0.5,
+  );
+  closeTo(midpoint.position, [5, 4, -1]);
+  assert.ok(midpoint.position.every((value, axis) => (
+    value >= Math.min(fromPosition[axis], toPosition[axis])
+    && value <= Math.max(fromPosition[axis], toPosition[axis])
+  )));
+  assert.ok(Math.abs(
+    midpoint.forward[0] * midpoint.up[0]
+    + midpoint.forward[1] * midpoint.up[1]
+    + midpoint.forward[2] * midpoint.up[2]
+  ) < 1e-9);
+
+  const destination = stableCameraPreviewPose(
+    fromPosition,
+    toPosition,
+    fromForward,
+    toForward,
+    [0, 1, 0],
+    [0, 1, 0],
+    1,
+  );
+  closeTo(destination.position, toPosition);
+  closeTo(destination.forward, toForward);
+  closeTo(destination.up, [0, 1, 0]);
+});
+
+test("camera preview crosses the yaw seam without a full spin", () => {
+  const angle = 179 * Math.PI / 180;
+  const pose = stableCameraPreviewPose(
+    [0, 0, 0],
+    [0, 0, 0],
+    [Math.cos(angle), 0, Math.sin(angle)],
+    [Math.cos(-angle), 0, Math.sin(-angle)],
+    [0, 1, 0],
+    [0, 1, 0],
+    0.5,
+  );
+  assert.ok(pose.forward[0] < -0.999);
+  assert.ok(Math.abs(pose.forward[2]) < 1e-9);
+});
+
+test("legacy non-orthogonal camera axes are repaired before preview and capture", () => {
+  const forward = [-0.6628051253128631, -0.05041730962092538, -0.7470926721294942];
+  const malformedUp = [0.8455272099351238, -0.022288584508139295, -0.5334669214299502];
+  const up = stableCameraUp(forward, malformedUp);
+  assert.ok(Math.abs(
+    forward[0] * up[0] + forward[1] * up[1] + forward[2] * up[2]
+  ) < 1e-9);
+  assert.ok(Math.abs(Math.hypot(...up) - 1) < 1e-9);
 });
 
 test("camera controls do not strand WASD focus while text fields keep their keys", () => {
