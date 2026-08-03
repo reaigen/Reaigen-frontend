@@ -7,7 +7,7 @@ import { AppShell } from "../components/app-shell";
 import { CollectionCard } from "../components/collection-card";
 import { CollectionState } from "../components/collection-state";
 import { useAuth } from "../components/hooks/use-auth";
-import { ArrowRightIcon, InfoIcon, MainTourIcon, PlayIcon } from "../components/icons";
+import { InfoIcon, MainTourIcon, PlayIcon } from "../components/icons";
 import { PageHeader } from "../components/page-header";
 import { PageLoading } from "../components/page-loading";
 import { StatusPill } from "../components/status-pill";
@@ -19,6 +19,7 @@ import type { SplatListItem } from "../lib/tour-types";
 import { Button } from "../lib/ui/button";
 import { WebCreateAction } from "../components/web-create-action";
 import { CollectionLoading } from "../components/collection-loading";
+import { GridLayoutToggle } from "../components/grid-layout-toggle";
 
 const TOURS_PAGE_SIZE = 24;
 
@@ -63,8 +64,19 @@ export default function ToursPage() {
   const [error, setError] = React.useState(false);
   const [query, setQuery] = React.useState("");
   const [searchQuery, setSearchQuery] = React.useState("");
+  const [gridCols, setGridCols] = React.useState<1 | 2>(2);
   const pageRef = React.useRef(1);
   const requestRef = React.useRef(0);
+
+  React.useLayoutEffect(() => {
+    const cached = localStorage.getItem("reaigen:gridCols");
+    if (cached === "1") setGridCols(1);
+  }, []);
+
+  const handleGridCols = React.useCallback((cols: 1 | 2) => {
+    setGridCols(cols);
+    localStorage.setItem("reaigen:gridCols", String(cols));
+  }, []);
 
   const load = React.useCallback(async () => {
     const requestId = ++requestRef.current;
@@ -134,18 +146,17 @@ export default function ToursPage() {
           className="mb-5 sm:mb-8"
         />
 
-        <div className="mb-5 min-w-0 sm:mb-7">
-          <div className="flex w-full min-w-0 items-center gap-3 rounded-full border border-border/80 bg-card px-4 py-0.5 shadow-control md:max-w-[340px] md:rounded-none md:border-x-0 md:border-t-0 md:bg-transparent md:px-0 md:pb-2 md:pt-0 md:shadow-none">
-            <SearchField
-              value={query}
-              onChange={setQuery}
-              onClear={() => setQuery("")}
-              placeholder={t("tours.search", lang)}
-              clearLabel={t("dashboard.clearSearch", lang)}
-              className="flex-1"
-              appearance="toolbar"
-            />
-          </div>
+        <div className="mb-5 flex min-w-0 items-center gap-3 rounded-full border border-border/80 bg-card px-4 py-0.5 shadow-control sm:mb-7 md:rounded-none md:border-x-0 md:border-t-0 md:bg-transparent md:px-0 md:pb-2 md:pt-0 md:shadow-none">
+          <SearchField
+            value={query}
+            onChange={setQuery}
+            onClear={() => setQuery("")}
+            placeholder={t("tours.search", lang)}
+            clearLabel={t("dashboard.clearSearch", lang)}
+            className="flex-1"
+            appearance="toolbar"
+          />
+          <GridLayoutToggle value={gridCols} onChange={handleGridCols} lang={lang} />
         </div>
 
         <div className="min-w-0">
@@ -167,7 +178,7 @@ export default function ToursPage() {
           />
             ) : (
           <>
-          <div className="grid grid-cols-1 gap-5 md:grid-cols-2 md:gap-6 xl:gap-5 2xl:grid-cols-3">
+          <div className={`grid grid-cols-1 gap-7 ${gridCols === 2 ? "md:grid-cols-2" : "mx-auto max-w-2xl"}`}>
             {items.map((item, index) => {
               const ready = tourState(item) === "ready";
               const href = ready ? `/tour/${item.id}` : `/draft/${item.source_draft}`;
@@ -195,17 +206,6 @@ export default function ToursPage() {
                         {t("tours.updated", lang)} {formatUpdated(item.updated_at, lang)}
                       </p>
                     </div>
-                  </div>
-                  <div className="flex h-12 items-center justify-between gap-4 border-t border-border/70 bg-card px-4">
-                    <p className="min-w-0 truncate text-[12px] font-medium text-foreground/60">
-                      {item.delivery_versions_count && item.delivery_versions_count > 1
-                        ? `${item.delivery_versions_count} ${t("tours.versions", lang)}`
-                        : statusLabel(item, lang)}
-                    </p>
-                    <span className="inline-flex shrink-0 items-center gap-1.5 text-[12px] font-semibold text-foreground/70 transition-colors group-hover:text-foreground">
-                      {ready ? t("tours.open", lang) : t("tours.openCreation", lang)}
-                      <ArrowRightIcon size={14} className="transition-transform duration-200 group-hover:translate-x-0.5" />
-                    </span>
                   </div>
                   </Link>
                 </CollectionCard>

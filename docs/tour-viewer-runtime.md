@@ -36,7 +36,7 @@ before preview/tour stabilization runs. The regression is covered by
   React state without paying its layout/paint cost behind the full-screen tour.
 - Owner playback and shared tours use the stable `balanced` performance
   profile. HTML controls remain native-resolution, while the WebGL backbuffer
-  is bounded to 3.2 million desktop pixels (1.5 million on compact touch) and
+  is bounded to 4.5 million desktop pixels (2.25 million on compact touch) and
   motion rendering is capped at 60 fps on high-refresh displays. The authoring
   editor retains its precision-oriented profile.
 - Do not resize the WebGL backbuffer during camera travel. A session gets one
