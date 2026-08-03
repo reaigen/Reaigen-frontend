@@ -23,8 +23,7 @@ import { DraftEditor } from "../../components/draft-editor";
 import { DraftVersionManager } from "../../components/draft-version-manager";
 import { DraftMediaManager } from "../../components/draft-media-manager";
 import { DraftTourAssetsPanel } from "../../components/draft-tour-assets-panel";
-import { DraftSharingWorkspace } from "../../components/draft-sharing-workspace";
-import { SegmentedControl } from "../../components/segmented-control";
+import { DraftSharingDock } from "../../components/draft-sharing-dock";
 import {
   ArrowLeftIcon,
   DocumentIcon,
@@ -500,14 +499,12 @@ export default function DraftPreviewPage({
   const [editorOpen, setEditorOpen] = useState(false);
   const [versionsOpen, setVersionsOpen] = useState(false);
   const [mediaOpen, setMediaOpen] = useState(false);
-  const [workspaceView, setWorkspaceView] = useState<"post" | "sharing">(
-    sharingRequested ? "sharing" : "post",
-  );
+  const [sharingOpen, setSharingOpen] = useState(sharingRequested);
   const [usingCachedDraft, setUsingCachedDraft] = useState(false);
   const [retryAttempt, setRetryAttempt] = useState(0);
   const [reloadNonce, setReloadNonce] = useState(0);
   const [manualRefreshPending, setManualRefreshPending] = useState(false);
-  const workspaceTopRef = useRef<HTMLDivElement | null>(null);
+  const sharingDockRef = useRef<HTMLElement | null>(null);
 
   const refreshListing = () => {
     setManualRefreshPending(true);
@@ -519,18 +516,20 @@ export default function DraftPreviewPage({
   }, [isLoading, isAuthenticated, router]);
 
   useEffect(() => {
-    if (sharingRequested) setWorkspaceView("sharing");
+    if (sharingRequested) setSharingOpen(true);
   }, [sharingRequested]);
 
-  const switchWorkspace = (nextView: "post" | "sharing") => {
-    setWorkspaceView(nextView);
-    const nextUrl = nextView === "sharing"
+  const handleSharingOpenChange = (nextOpen: boolean) => {
+    setSharingOpen(nextOpen);
+    const nextUrl = nextOpen
       ? `/draft/${draftId}?sharing=1`
       : `/draft/${draftId}`;
     window.history.replaceState(window.history.state, "", nextUrl);
-    window.requestAnimationFrame(() => {
-      workspaceTopRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
-    });
+    if (nextOpen) {
+      window.setTimeout(() => {
+        sharingDockRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+      }, 0);
+    }
   };
 
   useEffect(() => {
@@ -748,26 +747,15 @@ export default function DraftPreviewPage({
           />
         )}
         {/* Creation toolbar */}
-        <div ref={workspaceTopRef} className="mb-4 flex items-center justify-between gap-3 scroll-mt-3 md:mb-6">
+        <div className="mb-4 flex items-center justify-between gap-3 md:mb-6">
           <button type="button" onClick={() => router.push("/dashboard")} className="floating-control -ml-2 inline-flex items-center gap-1.5 px-3 text-[13px] font-medium text-muted-foreground transition-colors hover:bg-foreground/[0.04] hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2">
             <ArrowLeftIcon size={15} />
             {t("common.back", lang)}
           </button>
-          <SegmentedControl
-            value={workspaceView}
-            onChange={switchWorkspace}
-            ariaLabel={t("sharing.pageTitle", lang)}
-            itemClassName="h-9 px-2.5 text-[11px] sm:px-3"
-            options={[
-              { value: "post", label: t("nav.creation", lang), icon: <DocumentIcon size={13} /> },
-              { value: "sharing", label: t("sharing.pageTitle", lang), icon: <ShareIcon size={13} /> },
-            ]}
-          />
         </div>
 
-        <div className={cn(workspaceView !== "post" && "hidden")} aria-hidden={workspaceView !== "post"}>
-          {/* Media and property summary — one continuous workspace at every width. */}
-          <div className="space-y-6 lg:space-y-8">
+        {/* Media and property summary — one continuous workspace at every width. */}
+        <div className="space-y-6 lg:space-y-8">
           {hasMedia && (
             <div className="min-w-0 space-y-4">
               {images.length > 0 && (
@@ -887,7 +875,7 @@ export default function DraftPreviewPage({
                 <Button type="button" variant="ghost" size="sm" onClick={() => setEditorOpen(true)}>
                   <EditIcon size={14} /> {t("shareDialog.edit", lang)}
                 </Button>
-                <Button type="button" variant="ghost" size="sm" onClick={() => switchWorkspace("sharing")}>
+                <Button type="button" variant="ghost" size="sm" onClick={() => handleSharingOpenChange(true)}>
                   <ShareIcon size={14} /> {t("draft.share", lang)}
                 </Button>
                 <span aria-hidden="true" className="mx-1 h-5 w-px bg-border/80" />
@@ -897,9 +885,21 @@ export default function DraftPreviewPage({
               </div>
             </div>
           </section>
-          </div>
+        </div>
 
-          <DraftTourAssetsPanel
+        <DraftSharingDock
+          ref={sharingDockRef}
+          open={sharingOpen}
+          onOpenChange={handleSharingOpenChange}
+          draftId={draftId}
+          draft={draft}
+          splatData={splatData}
+          tourAssets={tourAssets}
+          lang={lang}
+          dateFormat={user.localization?.date_format}
+        />
+
+        <DraftTourAssetsPanel
           draftId={draftId}
           lang={lang}
           splats={splatData?.splats}
@@ -910,7 +910,7 @@ export default function DraftPreviewPage({
           ))}
         />
 
-          {(hasNarrative || hasSupportingDetails) && (
+        {(hasNarrative || hasSupportingDetails) && (
           <div className="mt-8 space-y-7 lg:mt-10">
             {hasNarrative && (
               <div className="min-w-0 space-y-7">
@@ -1010,21 +1010,7 @@ export default function DraftPreviewPage({
               </div>
             )}
           </div>
-          )}
-        </div>
-
-        <div className={cn(workspaceView !== "sharing" && "hidden")} aria-hidden={workspaceView !== "sharing"}>
-          <DraftSharingWorkspace
-            key={draftId}
-            active={workspaceView === "sharing"}
-            draftId={draftId}
-            draft={draft}
-            splatData={splatData}
-            tourAssets={tourAssets}
-            lang={lang}
-            dateFormat={user.localization?.date_format}
-          />
-        </div>
+        )}
 
       </div>
 
@@ -1048,7 +1034,6 @@ export default function DraftPreviewPage({
       />
 
       {/* Sticky mobile action bar */}
-      {workspaceView === "post" ? (
       <div className="pointer-events-none fixed inset-x-0 bottom-0 z-40 px-3 pb-[max(0.625rem,env(safe-area-inset-bottom))] md:hidden">
         <div className={cn(
           "pointer-events-auto mx-auto grid max-w-md gap-1 rounded-[1.35rem] border border-border/80 bg-card/95 p-1.5 shadow-floating backdrop-blur-xl",
@@ -1063,7 +1048,7 @@ export default function DraftPreviewPage({
           size="sm"
           className="h-11 min-w-0 rounded-2xl px-2"
           aria-label={t("draft.share", lang)}
-          onClick={() => switchWorkspace("sharing")}
+          onClick={() => handleSharingOpenChange(true)}
         >
           <ShareIcon size={15} />
           <span className="truncate">{t("draft.share", lang)}</span>
@@ -1078,7 +1063,6 @@ export default function DraftPreviewPage({
         )}
         </div>
       </div>
-      ) : null}
     </AppShell>
   );
 }

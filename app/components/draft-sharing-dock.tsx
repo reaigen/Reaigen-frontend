@@ -33,16 +33,14 @@ import type {
 import { Button } from "../lib/ui/button";
 import { AnalyticsGrid, type AnalyticsGridItem } from "./analytics-grid";
 import {
-  ArrowLeftIcon,
   CheckIcon,
   ClockIcon,
+  CloseIcon,
   CopyIcon,
   ExternalLinkIcon,
-  LinkIcon,
   LockIcon,
   PlusIcon,
 } from "./icons";
-import { SegmentedControl } from "./segmented-control";
 import {
   ShareCreateForm,
   defaultContentScope,
@@ -51,7 +49,7 @@ import {
 import type { ContentScope } from "./sharing/content-scope-selector";
 import { StatusPill } from "./status-pill";
 
-type WorkspaceMode = "links" | "create" | "manage";
+const LINKS_TIMEOUT_MS = 10_000;
 
 function primaryShareSplat(data: SplatsByDraftPayload | null) {
   if (!data?.splats.length) return null;
@@ -91,87 +89,46 @@ function scopeFromShare(
   };
 }
 
-function ShareLinkCard({
-  share,
-  lang,
-  dateFormat,
-  copied,
-  onCopy,
-  onManage,
-}: {
-  share: ShareData;
-  lang: string;
-  dateFormat?: string | null;
-  copied: boolean;
-  onCopy: () => void;
-  onManage: () => void;
-}) {
-  const status = STATUS_CONFIG[share.status] ?? STATUS_CONFIG.revoked;
-  const expiry = expiryLabel(share.expires_at, lang);
-  const title = share.title || t("sharing.linkLabel", lang);
-  const isActive = share.status === "active";
-
-  return (
-    <article className="flex min-w-0 flex-col rounded-2xl border border-border/70 bg-card p-4 shadow-control">
-      <div className="flex min-w-0 items-start justify-between gap-3">
-        <div className="min-w-0">
-          <h3 className="truncate text-[13px] font-semibold text-foreground/90">{title}</h3>
-          <p className="mt-1 truncate text-[10px] text-muted-foreground">
-            {formatDate(share.created_at, dateFormat, lang)} · {share.access_count} {share.access_count === 1 ? t("shares.viewSingular", lang) : t("shares.viewPlural", lang)}
-          </p>
-        </div>
-        <StatusPill tone={status.tone} dot className="shrink-0">
-          {t(status.labelKey, lang)}
-        </StatusPill>
-      </div>
-
-      <div className="mt-3 flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1 text-[10px] text-foreground/45">
-        <span className="truncate">{fieldSummaryLabel(share, lang)}</span>
-        {share.requires_pin ? (
-          <span className="inline-flex items-center gap-1"><LockIcon size={11} /> {t("shares.pinProtected", lang)}</span>
-        ) : null}
-        {expiry ? (
-          <span className="inline-flex items-center gap-1"><ClockIcon size={11} /> {expiry}</span>
-        ) : null}
-      </div>
-
-      <div className="mt-4 flex items-center gap-2 border-t border-border/50 pt-3">
-        <Button type="button" variant="outline" size="xs" className="flex-1" onClick={onCopy}>
-          {copied ? <CheckIcon size={13} /> : <CopyIcon size={13} />}
-          {copied ? t("shares.copied", lang) : t("shares.copyLink", lang)}
-        </Button>
-        <Button type="button" variant="ghost" size="xs" className="flex-1" onClick={onManage}>
-          {t("shares.manage", lang)}
-        </Button>
-        {isActive ? (
-          <Button asChild variant="ghost" size="icon-sm" className="h-[var(--floating-status)] w-[var(--floating-status)]">
-            <a href={shareUrl(share.token)} target="_blank" rel="noreferrer" aria-label={t("common.open", lang)}>
-              <ExternalLinkIcon size={13} />
-            </a>
-          </Button>
-        ) : null}
-      </div>
-    </article>
-  );
+function statusDotClass(status: string) {
+  if (status === "active") return "bg-emerald-500";
+  if (status === "paused") return "bg-amber-500";
+  if (status === "expired") return "bg-foreground/30";
+  return "bg-destructive";
 }
 
-export function DraftSharingWorkspace({
-  active,
-  draftId,
-  draft,
-  splatData,
-  tourAssets,
-  lang,
-  dateFormat,
-}: {
-  active: boolean;
+async function withTimeout<T>(promise: Promise<T>): Promise<T> {
+  let timeoutId: number | null = null;
+  const timeout = new Promise<never>((_, reject) => {
+    timeoutId = window.setTimeout(() => reject(new Error("Share links request timed out")), LINKS_TIMEOUT_MS);
+  });
+  try {
+    return await Promise.race([promise, timeout]);
+  } finally {
+    if (timeoutId != null) window.clearTimeout(timeoutId);
+  }
+}
+
+type DraftSharingDockProps = {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
   draftId: number;
   draft: DraftDetailItem;
   splatData: SplatsByDraftPayload | null;
   tourAssets: DraftTourAssetsPayload | null;
   lang: string;
   dateFormat?: string | null;
-}) {
+};
+
+export const DraftSharingDock = React.forwardRef<HTMLElement, DraftSharingDockProps>(function DraftSharingDock({
+  open,
+  onOpenChange,
+  draftId,
+  draft,
+  splatData,
+  tourAssets,
+  lang,
+  dateFormat,
+}, forwardedRef) {
   const legacyPrimarySplat = primaryShareSplat(splatData);
   const legacyPrimarySplatId = legacyPrimarySplat
     ? (legacyPrimarySplat.splat_id ?? legacyPrimarySplat.id)
@@ -192,12 +149,12 @@ export function DraftSharingWorkspace({
   const [linksLoading, setLinksLoading] = React.useState(false);
   const [linksLoaded, setLinksLoaded] = React.useState(false);
   const [linksError, setLinksError] = React.useState(false);
-  const [mode, setMode] = React.useState<WorkspaceMode>("links");
+  const [selectedShareId, setSelectedShareId] = React.useState<number | null>(null);
+  const [creating, setCreating] = React.useState(false);
+  const [editingShare, setEditingShare] = React.useState<ShareData | null>(null);
   const [scope, setScope] = React.useState<ContentScope>(() => (
     defaultContentScope(hasTour, hasPhotos, hasFloorplan)
   ));
-  const [editingShare, setEditingShare] = React.useState<ShareData | null>(null);
-  const [selectedShareId, setSelectedShareId] = React.useState<number | null>(null);
   const [formError, setFormError] = React.useState<string | null>(null);
   const [saving, setSaving] = React.useState(false);
   const [notice, setNotice] = React.useState<"copied" | "saved" | null>(null);
@@ -208,8 +165,9 @@ export function DraftSharingWorkspace({
   const [actionLoading, setActionLoading] = React.useState(false);
   const [actionError, setActionError] = React.useState(false);
   const [confirmRevoke, setConfirmRevoke] = React.useState(false);
-  const wasActiveRef = React.useRef(false);
+  const wasOpenRef = React.useRef(false);
   const headingRef = React.useRef<HTMLHeadingElement | null>(null);
+  const requestIdRef = React.useRef(0);
   const noticeTimerRef = React.useRef<number | null>(null);
   const copyTimerRef = React.useRef<number | null>(null);
 
@@ -218,42 +176,51 @@ export function DraftSharingWorkspace({
     : shares.find((share) => share.id === selectedShareId) ?? null;
 
   const loadLinks = React.useCallback(async (fresh = false) => {
+    const requestId = ++requestIdRef.current;
     setLinksLoading(true);
     setLinksError(false);
     try {
-      const allShares = await listShares(fresh ? { fresh: true } : undefined);
-      setShares(allShares.filter((share) => (
+      const allShares = await withTimeout(listShares(fresh ? { fresh: true } : undefined));
+      if (requestId !== requestIdRef.current) return;
+      const draftShares = allShares.filter((share) => (
         share.draft === draftId && share.status !== "revoked"
-      )));
+      ));
+      setShares(draftShares);
       setLinksLoaded(true);
+      setSelectedShareId((current) => (
+        current != null && draftShares.some((share) => share.id === current)
+          ? current
+          : draftShares[0]?.id ?? null
+      ));
+      if (!draftShares.length) setCreating(true);
     } catch {
-      setLinksError(true);
+      if (requestId === requestIdRef.current) setLinksError(true);
     } finally {
-      setLinksLoading(false);
+      if (requestId === requestIdRef.current) setLinksLoading(false);
     }
   }, [draftId]);
 
   React.useEffect(() => {
-    const becameActive = active && !wasActiveRef.current;
-    wasActiveRef.current = active;
-    if (!becameActive) return;
+    const becameOpen = open && !wasOpenRef.current;
+    wasOpenRef.current = open;
+    if (!becameOpen) return;
     headingRef.current?.focus({ preventScroll: true });
     if (!linksLoaded) void loadLinks();
-  }, [active, linksLoaded, loadLinks]);
+  }, [linksLoaded, loadLinks, open]);
 
   React.useEffect(() => {
     const refresh = () => {
-      if (active) void loadLinks(true);
+      if (open) void loadLinks(true);
     };
     window.addEventListener("reai-shares-updated", refresh);
     return () => window.removeEventListener("reai-shares-updated", refresh);
-  }, [active, loadLinks]);
+  }, [loadLinks, open]);
 
   React.useEffect(() => {
     setStats(null);
     setActionError(false);
     setConfirmRevoke(false);
-    if (mode !== "manage" || selectedShareId == null) return;
+    if (!open || creating || selectedShareId == null) return;
     let current = true;
     void getShareAnalytics(selectedShareId)
       .then((response) => {
@@ -263,9 +230,10 @@ export function DraftSharingWorkspace({
         if (current) setActionError(true);
       });
     return () => { current = false; };
-  }, [mode, selectedShareId]);
+  }, [creating, open, selectedShareId]);
 
   React.useEffect(() => () => {
+    requestIdRef.current += 1;
     if (noticeTimerRef.current) window.clearTimeout(noticeTimerRef.current);
     if (copyTimerRef.current) window.clearTimeout(copyTimerRef.current);
   }, []);
@@ -288,17 +256,8 @@ export function DraftSharingWorkspace({
     copyTimerRef.current = window.setTimeout(() => setCopiedShareId(null), 2_000);
   }, []);
 
-  const openLinks = React.useCallback(() => {
-    setMode("links");
-    setEditingShare(null);
-    setFormError(null);
-    setCopyFailedUrl(null);
-    setConfirmRevoke(false);
-  }, []);
-
   const openCreate = React.useCallback(() => {
-    setMode("create");
-    setSelectedShareId(null);
+    setCreating(true);
     setEditingShare(null);
     setFormError(null);
     setCopyFailedUrl(null);
@@ -306,12 +265,20 @@ export function DraftSharingWorkspace({
     setFormVersion((version) => version + 1);
   }, [hasFloorplan, hasPhotos, hasTour]);
 
-  const openManager = React.useCallback((shareId: number) => {
+  const selectShare = React.useCallback((shareId: number) => {
     setSelectedShareId(shareId);
+    setCreating(false);
     setEditingShare(null);
+    setFormError(null);
     setCopyFailedUrl(null);
-    setMode("manage");
   }, []);
+
+  const cancelCreate = React.useCallback(() => {
+    setEditingShare(null);
+    setFormError(null);
+    setCopyFailedUrl(null);
+    if (shares.length) setCreating(false);
+  }, [shares.length]);
 
   const editSelectedShare = React.useCallback(() => {
     if (!selectedShare) return;
@@ -324,7 +291,7 @@ export function DraftSharingWorkspace({
       floorplan: hasFloorplan,
     }));
     setFormVersion((version) => version + 1);
-    setMode("create");
+    setCreating(true);
   }, [hasFloorplan, hasPhotos, hasTour, selectedShare]);
 
   const handleSubmit = React.useCallback(async (formData: ShareFormData) => {
@@ -355,7 +322,7 @@ export function DraftSharingWorkspace({
         )));
         setSelectedShareId(updated.id);
         setEditingShare(null);
-        setMode("manage");
+        setCreating(false);
         showNotice("saved");
         return;
       }
@@ -369,7 +336,7 @@ export function DraftSharingWorkspace({
       setShares((current) => [created, ...current]);
       setLinksLoaded(true);
       setSelectedShareId(created.id);
-      setMode("manage");
+      setCreating(false);
       setFormVersion((version) => version + 1);
       const url = shareUrl(created.token);
       if (await copyToClipboard(url)) {
@@ -415,9 +382,10 @@ export function DraftSharingWorkspace({
         )));
       } else {
         await revokeShare(selectedShare.id);
-        setShares((current) => current.filter((share) => share.id !== selectedShare.id));
-        setSelectedShareId(null);
-        setMode("links");
+        const remaining = shares.filter((share) => share.id !== selectedShare.id);
+        setShares(remaining);
+        setSelectedShareId(remaining[0]?.id ?? null);
+        if (!remaining.length) setCreating(true);
       }
     } catch {
       setActionError(true);
@@ -425,10 +393,10 @@ export function DraftSharingWorkspace({
       setActionLoading(false);
       setConfirmRevoke(false);
     }
-  }, [selectedShare]);
+  }, [selectedShare, shares]);
 
-  const activeCount = shares.filter((share) => share.status === "active").length;
-  const totalViews = shares.reduce((sum, share) => sum + share.access_count, 0);
+  if (!open) return null;
+
   const selectedStatus = selectedShare
     ? STATUS_CONFIG[selectedShare.status] ?? STATUS_CONFIG.revoked
     : STATUS_CONFIG.revoked;
@@ -443,19 +411,25 @@ export function DraftSharingWorkspace({
   ] : [];
 
   return (
-    <section aria-labelledby="draft-sharing-title" className="animate-fade-in">
-      <header className="mb-6 flex flex-col gap-4 border-b border-border/65 pb-5 sm:flex-row sm:items-end sm:justify-between">
+    <section
+      ref={forwardedRef}
+      aria-labelledby="draft-sharing-title"
+      className="mt-8 scroll-mt-5 border-y border-border/70 py-5 animate-fade-in sm:py-6"
+    >
+      <header className="flex items-start justify-between gap-4">
         <div className="min-w-0">
-          <h1
+          <h2
             ref={headingRef}
             id="draft-sharing-title"
             tabIndex={-1}
-            className="text-[28px] font-semibold leading-tight tracking-[-0.03em] outline-none sm:text-[32px]"
+            className="text-[16px] font-semibold tracking-[-0.015em] outline-none"
           >
             {t("sharing.pageTitle", lang)}
-          </h1>
-          <p className="mt-1 truncate text-[12px] text-muted-foreground">
-            {draft.title || t("dashboard.untitled", lang)}
+          </h2>
+          <p className="mt-1 truncate text-[11px] text-muted-foreground">
+            {linksLoaded
+              ? `${shares.length} · ${t("shares.title", lang)}`
+              : draft.title || t("dashboard.untitled", lang)}
           </p>
           {linksLoading ? (
             <div className="loading-progress-track mt-3 w-16" role="progressbar" aria-label={t("common.loading", lang)}>
@@ -463,35 +437,66 @@ export function DraftSharingWorkspace({
             </div>
           ) : null}
         </div>
-        <SegmentedControl
-          value={mode === "create" ? "create" : "links"}
-          onChange={(value) => value === "create" ? openCreate() : openLinks()}
-          ariaLabel={t("sharing.pageTitle", lang)}
-          itemClassName="h-9 px-3 text-[11px]"
-          options={[
-            {
-              value: "links",
-              label: t("shares.title", lang),
-              icon: <LinkIcon size={13} />,
-              count: linksLoaded ? shares.length : undefined,
-            },
-            {
-              value: "create",
-              label: t("shares.createLink", lang),
-              icon: <PlusIcon size={13} />,
-            },
-          ]}
-        />
+        <div className="flex shrink-0 items-center gap-2">
+          {shares.length || linksError ? (
+            <Button type="button" variant="outline" size="sm" onClick={openCreate}>
+              <PlusIcon size={13} /> {t("shares.createLink", lang)}
+            </Button>
+          ) : null}
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon-sm"
+            aria-label={t("common.close", lang)}
+            onClick={() => onOpenChange(false)}
+          >
+            <CloseIcon size={15} />
+          </Button>
+        </div>
       </header>
 
       {notice ? (
-        <div role="status" className="mb-5 rounded-xl border border-border/60 bg-card px-3 py-2 text-[12px] font-medium text-foreground/70 shadow-control">
+        <div role="status" className="mt-4 rounded-xl bg-surface-subtle px-3 py-2 text-[11px] font-medium text-foreground/65">
           {t(notice === "copied" ? "sharing.linkCopied" : "common.saved", lang)}
         </div>
       ) : null}
 
+      {linksError && !shares.length ? (
+        <div className="mt-4 flex items-center justify-between gap-4 rounded-xl border border-border/70 bg-card px-4 py-3">
+          <p className="text-[12px] text-muted-foreground">{t("shares.loadFailed", lang)}</p>
+          <Button type="button" variant="outline" size="xs" onClick={() => void loadLinks(true)}>
+            {t("common.tryAgain", lang)}
+          </Button>
+        </div>
+      ) : null}
+
+      {shares.length ? (
+        <nav className="mt-5 flex items-center gap-2 overflow-x-auto pb-1 scrollbar-hide" aria-label={t("shares.title", lang)}>
+          {shares.map((share, index) => {
+            const selected = !creating && share.id === selectedShareId;
+            return (
+              <button
+                key={share.id}
+                type="button"
+                aria-pressed={selected}
+                onClick={() => selectShare(share.id)}
+                className={`floating-control min-w-fit gap-2 px-3 text-[11px] font-semibold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 ${
+                  selected
+                    ? "bg-foreground text-background shadow-sm"
+                    : "border border-border/70 bg-card text-foreground/60 hover:bg-accent hover:text-foreground"
+                }`}
+              >
+                <span className={`h-1.5 w-1.5 rounded-full ${selected ? "bg-background/75" : statusDotClass(share.status)}`} aria-hidden="true" />
+                {t("sharing.linkLabel", lang)} {index + 1}
+                <span className={selected ? "text-background/60" : "text-foreground/35"}>{share.access_count}</span>
+              </button>
+            );
+          })}
+        </nav>
+      ) : null}
+
       {copyFailedUrl ? (
-        <div className="mb-5 flex items-center gap-2 rounded-xl border border-border/70 bg-card p-2.5 shadow-control">
+        <div className="mt-4 flex items-center gap-2 rounded-xl border border-border/70 bg-card p-2.5">
           <p className="min-w-0 flex-1 truncate select-all font-mono text-[11px] text-foreground/65">{copyFailedUrl}</p>
           <Button
             type="button"
@@ -509,75 +514,20 @@ export function DraftSharingWorkspace({
         </div>
       ) : null}
 
-      {mode === "links" ? (
-        <div className="space-y-5">
-          {shares.length ? (
-            <AnalyticsGrid
-              items={[
-                { label: t("shares.allShares", lang), value: shares.length },
-                { label: t("shares.activeOnly", lang), value: activeCount },
-                { label: t("shares.totalViews", lang), value: totalViews },
-              ]}
-              className="sm:max-w-xl"
-            />
-          ) : null}
-
-          {linksError && !shares.length ? (
-            <div className="flex items-center justify-between gap-4 rounded-2xl border border-border/70 bg-card px-4 py-4 shadow-control">
-              <p className="text-[12px] text-muted-foreground">{t("shares.loadFailed", lang)}</p>
-              <Button type="button" variant="outline" size="xs" onClick={() => void loadLinks(true)}>
-                {t("common.tryAgain", lang)}
-              </Button>
-            </div>
-          ) : linksLoaded && !shares.length ? (
-            <div className="rounded-2xl border border-dashed border-border/70 px-5 py-10 text-center">
-              <p className="text-[13px] font-semibold">{t("shares.noShares", lang)}</p>
-              <p className="mt-1 text-[11px] text-muted-foreground">{t("shares.noSharesHint", lang)}</p>
-              <Button type="button" size="sm" className="mt-4" onClick={openCreate}>
-                <PlusIcon size={14} /> {t("shares.createLink", lang)}
-              </Button>
-            </div>
-          ) : shares.length ? (
-            <div className="grid max-h-[28rem] grid-cols-1 gap-3 overflow-y-auto pr-1 scrollbar-thin md:grid-cols-2">
-              {shares.map((share) => (
-                <ShareLinkCard
-                  key={share.id}
-                  share={share}
-                  lang={lang}
-                  dateFormat={dateFormat}
-                  copied={copiedShareId === share.id}
-                  onCopy={() => void copyShare(share)}
-                  onManage={() => openManager(share.id)}
-                />
-              ))}
-            </div>
-          ) : null}
-
-          {linksError && shares.length ? (
-            <div className="flex items-center gap-3 text-[11px] text-destructive/75">
-              <span>{t("shares.loadFailed", lang)}</span>
-              <Button type="button" variant="ghost" size="xs" onClick={() => void loadLinks(true)}>
-                {t("common.tryAgain", lang)}
-              </Button>
-            </div>
-          ) : null}
-        </div>
-      ) : null}
-
-      {mode === "create" ? (
-        <div className="space-y-4">
-          <div className="flex items-center gap-3">
-            {editingShare ? (
-              <Button type="button" variant="ghost" size="icon-sm" onClick={() => setMode("manage")} aria-label={t("common.back", lang)}>
-                <ArrowLeftIcon size={15} />
-              </Button>
-            ) : null}
+      {creating ? (
+        <div className="mt-5 space-y-4">
+          <div className="flex items-center justify-between gap-3">
             <div>
-              <h2 className="text-[15px] font-semibold">
+              <h3 className="text-[14px] font-semibold">
                 {t(editingShare ? "shares.editSettings" : "sharing.createNewLink", lang)}
-              </h2>
+              </h3>
               <p className="mt-0.5 text-[11px] text-muted-foreground">{draft.title || t("dashboard.untitled", lang)}</p>
             </div>
+            {shares.length ? (
+              <Button type="button" variant="ghost" size="sm" onClick={cancelCreate}>
+                {t("common.cancel", lang)}
+              </Button>
+            ) : null}
           </div>
           <ShareCreateForm
             key={`${editingShare?.id ?? "new"}-${formVersion}`}
@@ -591,125 +541,99 @@ export function DraftSharingWorkspace({
             saving={saving}
             error={formError}
             initialShare={editingShare}
-            onCancelEdit={editingShare ? () => setMode("manage") : undefined}
+            onCancelEdit={editingShare ? cancelCreate : undefined}
             layout="workspace"
             stickyActions={false}
           />
         </div>
-      ) : null}
-
-      {mode === "manage" && selectedShare ? (
-        <div className="mx-auto max-w-[860px] space-y-5">
-          <div className="flex items-center justify-between gap-3">
-            <Button type="button" variant="ghost" size="sm" onClick={openLinks}>
-              <ArrowLeftIcon size={14} /> {t("shares.title", lang)}
-            </Button>
-            <StatusPill tone={selectedStatus.tone} dot>
-              {t(selectedStatus.labelKey, lang)}
-            </StatusPill>
-          </div>
-
-          <section className="rounded-2xl border border-border/70 bg-card p-4 shadow-control sm:p-5">
-            <div className="flex min-w-0 items-start justify-between gap-4">
-              <div className="min-w-0">
-                <h2 className="truncate text-[16px] font-semibold">{selectedShare.title || t("sharing.linkLabel", lang)}</h2>
-                <p className="mt-1 text-[11px] text-muted-foreground">{t("shares.manage", lang)}</p>
+      ) : selectedShare ? (
+        <div className="mt-4 overflow-hidden rounded-2xl border border-border/70 bg-card shadow-control">
+          <div className="flex min-w-0 items-start justify-between gap-4 p-4 sm:p-5">
+            <div className="min-w-0">
+              <div className="flex items-center gap-2">
+                <h3 className="truncate text-[14px] font-semibold">{selectedShare.title || t("sharing.linkLabel", lang)}</h3>
+                <StatusPill tone={selectedStatus.tone} dot className="shrink-0">
+                  {t(selectedStatus.labelKey, lang)}
+                </StatusPill>
               </div>
-              {actionLoading ? (
-                <div className="loading-progress-track mt-2 w-12" role="progressbar" aria-label={t("common.loading", lang)}>
-                  <span className="loading-progress-indeterminate" />
-                </div>
-              ) : null}
+              <p className="mt-1 text-[10px] text-muted-foreground">
+                {formatDate(selectedShare.created_at, dateFormat, lang)} · {fieldSummaryLabel(selectedShare, lang)}
+              </p>
             </div>
-
-            {(selectedShare.status === "active" || selectedShare.status === "paused") ? (
-              <div className="mt-4 rounded-xl bg-surface-subtle p-3 ring-1 ring-inset ring-border/45">
-                <p className="truncate select-all font-mono text-[11px] text-foreground/60">{shareUrl(selectedShare.token)}</p>
-                <div className="mt-3 flex gap-2">
-                  <Button type="button" size="sm" className="flex-1" onClick={() => void copyShare(selectedShare)}>
-                    {copiedShareId === selectedShare.id ? <CheckIcon size={14} /> : <CopyIcon size={14} />}
-                    {copiedShareId === selectedShare.id ? t("shares.copied", lang) : t("shares.copyLink", lang)}
-                  </Button>
-                  {selectedShare.status === "active" ? (
-                    <Button asChild variant="outline" size="sm" className="flex-1">
-                      <a href={shareUrl(selectedShare.token)} target="_blank" rel="noreferrer">
-                        <ExternalLinkIcon size={14} /> {t("common.open", lang)}
-                      </a>
-                    </Button>
-                  ) : null}
-                </div>
+            {actionLoading ? (
+              <div className="loading-progress-track mt-2 w-12" role="progressbar" aria-label={t("common.loading", lang)}>
+                <span className="loading-progress-indeterminate" />
               </div>
             ) : null}
-          </section>
+          </div>
 
-          <section>
-            <h3 className="mb-2.5 text-[11px] font-semibold uppercase tracking-[0.045em] text-muted-foreground">
-              {t("shares.analytics", lang)}
-            </h3>
-            <AnalyticsGrid items={analyticsItems} />
-          </section>
-
-          <section>
-            <h3 className="mb-2.5 text-[11px] font-semibold uppercase tracking-[0.045em] text-muted-foreground">
-              {t("shares.tableAccess", lang)}
-            </h3>
-            <dl className="grid overflow-hidden rounded-2xl border border-border/70 bg-card shadow-control sm:grid-cols-2">
-              <div className="flex items-center justify-between gap-4 px-4 py-3 text-[12px] sm:border-r sm:border-border/50">
-                <dt className="text-muted-foreground">{t("shares.created", lang)}</dt>
-                <dd className="text-right font-medium">{formatDate(selectedShare.created_at, dateFormat, lang)}</dd>
+          {(selectedShare.status === "active" || selectedShare.status === "paused") ? (
+            <div className="border-t border-border/50 bg-surface-subtle p-3 sm:flex sm:items-center sm:gap-3 sm:px-4">
+              <p className="min-w-0 flex-1 truncate select-all font-mono text-[11px] text-foreground/60">{shareUrl(selectedShare.token)}</p>
+              <div className="mt-3 flex shrink-0 gap-2 sm:mt-0">
+                <Button type="button" size="xs" onClick={() => void copyShare(selectedShare)}>
+                  {copiedShareId === selectedShare.id ? <CheckIcon size={13} /> : <CopyIcon size={13} />}
+                  {copiedShareId === selectedShare.id ? t("shares.copied", lang) : t("shares.copyLink", lang)}
+                </Button>
+                {selectedShare.status === "active" ? (
+                  <Button asChild variant="outline" size="xs">
+                    <a href={shareUrl(selectedShare.token)} target="_blank" rel="noreferrer">
+                      <ExternalLinkIcon size={13} /> {t("common.open", lang)}
+                    </a>
+                  </Button>
+                ) : null}
               </div>
-              <div className="flex items-center justify-between gap-4 border-t border-border/50 px-4 py-3 text-[12px] sm:border-t-0">
-                <dt className="text-muted-foreground">{t("shares.tableAccess", lang)}</dt>
-                <dd className="min-w-0 truncate text-right font-medium">{fieldSummaryLabel(selectedShare, lang)}</dd>
-              </div>
-              {selectedExpiry ? (
-                <div className="flex items-center justify-between gap-4 border-t border-border/50 px-4 py-3 text-[12px] sm:border-r">
-                  <dt className="text-muted-foreground">{t("shares.expires", lang)}</dt>
-                  <dd className="inline-flex items-center gap-1.5 text-right font-medium"><ClockIcon size={12} /> {selectedExpiry}</dd>
-                </div>
-              ) : null}
-              {selectedShare.requires_pin ? (
-                <div className="flex items-center justify-between gap-4 border-t border-border/50 px-4 py-3 text-[12px]">
-                  <dt className="text-muted-foreground">{t("shares.pinProtected", lang)}</dt>
-                  <dd><LockIcon size={13} /></dd>
-                </div>
-              ) : null}
-            </dl>
-          </section>
-
-          {actionError ? (
-            <p role="alert" className="text-[11px] font-medium text-destructive">{t("common.requestFailed", lang)}</p>
+            </div>
           ) : null}
 
-          <div className="flex flex-wrap items-center gap-2 border-t border-border/60 pt-4">
+          <div className="grid gap-4 border-t border-border/50 p-4 sm:p-5 md:grid-cols-[minmax(0,1fr)_auto] md:items-center">
+            <AnalyticsGrid items={analyticsItems} />
+            <div className="flex flex-wrap items-center gap-2 text-[10px] text-foreground/50 md:max-w-[15rem] md:justify-end">
+              {selectedExpiry ? (
+                <span className="inline-flex items-center gap-1 rounded-full bg-surface-subtle px-2.5 py-1.5"><ClockIcon size={11} /> {selectedExpiry}</span>
+              ) : null}
+              {selectedShare.requires_pin ? (
+                <span className="inline-flex items-center gap-1 rounded-full bg-surface-subtle px-2.5 py-1.5"><LockIcon size={11} /> {t("shares.pinProtected", lang)}</span>
+              ) : null}
+              {selectedShare.max_access_count ? (
+                <span className="rounded-full bg-surface-subtle px-2.5 py-1.5">{t("shares.viewLimit", lang)} · {selectedShare.max_access_count}</span>
+              ) : null}
+            </div>
+          </div>
+
+          {actionError ? (
+            <p role="alert" className="border-t border-border/50 px-4 py-2.5 text-[11px] font-medium text-destructive">{t("common.requestFailed", lang)}</p>
+          ) : null}
+
+          <div className="flex flex-wrap items-center gap-2 border-t border-border/50 p-3 sm:px-4">
             {confirmRevoke ? (
               <>
                 <span className="mr-auto text-[11px] font-medium text-destructive/75">{t("shares.revokeConfirm", lang)}</span>
-                <Button type="button" variant="ghost" size="sm" onClick={() => setConfirmRevoke(false)}>
+                <Button type="button" variant="ghost" size="xs" onClick={() => setConfirmRevoke(false)}>
                   {t("shares.cancel", lang)}
                 </Button>
-                <Button type="button" variant="destructive" size="sm" disabled={actionLoading} onClick={() => void runAction("revoke")}>
+                <Button type="button" variant="destructive" size="xs" disabled={actionLoading} onClick={() => void runAction("revoke")}>
                   {t("shares.revoke", lang)}
                 </Button>
               </>
             ) : (
               <>
                 {(selectedShare.status === "active" || selectedShare.status === "paused") ? (
-                  <Button type="button" size="sm" onClick={editSelectedShare}>{t("shares.editSettings", lang)}</Button>
+                  <Button type="button" size="xs" onClick={editSelectedShare}>{t("shares.editSettings", lang)}</Button>
                 ) : null}
                 {selectedShare.status === "active" ? (
-                  <Button type="button" variant="outline" size="sm" disabled={actionLoading} onClick={() => void runAction("pause")}>
+                  <Button type="button" variant="outline" size="xs" disabled={actionLoading} onClick={() => void runAction("pause")}>
                     {t("shares.pause", lang)}
                   </Button>
                 ) : null}
                 {selectedShare.status === "paused" ? (
-                  <Button type="button" variant="outline" size="sm" disabled={actionLoading} onClick={() => void runAction("resume")}>
+                  <Button type="button" variant="outline" size="xs" disabled={actionLoading} onClick={() => void runAction("resume")}>
                     {t("shares.resume", lang)}
                   </Button>
                 ) : null}
                 <span className="flex-1" />
                 {selectedShare.status !== "revoked" ? (
-                  <Button type="button" variant="ghost" size="sm" className="text-foreground/50 hover:bg-destructive/[0.05] hover:text-destructive" onClick={() => setConfirmRevoke(true)}>
+                  <Button type="button" variant="ghost" size="xs" className="text-foreground/45 hover:bg-destructive/[0.05] hover:text-destructive" onClick={() => setConfirmRevoke(true)}>
                     {t("shares.revoke", lang)}
                   </Button>
                 ) : null}
@@ -717,7 +641,14 @@ export function DraftSharingWorkspace({
             )}
           </div>
         </div>
+      ) : linksLoaded && !linksError ? (
+        <div className="mt-5 rounded-xl border border-dashed border-border/70 px-5 py-7 text-center">
+          <p className="text-[12px] font-medium">{t("shares.noShares", lang)}</p>
+          <Button type="button" size="sm" className="mt-3" onClick={openCreate}>
+            <PlusIcon size={13} /> {t("shares.createLink", lang)}
+          </Button>
+        </div>
       ) : null}
     </section>
   );
-}
+});
