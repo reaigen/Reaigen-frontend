@@ -284,7 +284,6 @@ export default function DashboardPage() {
     <AppShell user={user} onLogout={logout}>
       <div className="mx-auto w-full max-w-[1180px]">
         <PageHeader
-          eyebrow={user.first_name ? `${t("dashboard.welcome", lang)}, ${user.first_name}` : t("dashboard.welcome", lang)}
           title={t("dashboard.creationsTitle", lang)}
           description={t("dashboard.creationsSubtitle", lang)}
           actions={

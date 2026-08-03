@@ -394,41 +394,39 @@ export default function SharesPage() {
 
   return (
     <AppShell user={user} onLogout={logout}>
-      <div className="mx-auto w-full max-w-4xl space-y-6 pb-10">
+      <div className="mx-auto w-full max-w-[1180px] pb-10">
         <PageHeader
           title={t("shares.title", lang)}
           description={t("shares.subtitle", lang)}
-          actionPlacement="start"
           actions={(
             <Button type="button" size="sm" onClick={() => setCreateOpen(true)}>
               <LinkIcon size={15} /> {t("shares.createLink", lang)}
             </Button>
           )}
+          className="mb-5 sm:mb-8"
         />
 
-        {shares.length > 0 && (
-          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-            <SearchField
-              value={query}
-              onChange={setQuery}
-              placeholder={t("shares.search", lang)}
-              clearLabel={t("dashboard.clearSearch", lang)}
-              className="min-w-0 flex-1 sm:max-w-[300px]"
-            />
-            <SegmentedControl
-              value={filter}
-              onChange={setFilter}
-              ariaLabel={t("shares.title", lang)}
-              className="w-full sm:w-auto"
-              itemClassName="text-[11px]"
-              options={[
-                { value: "all", label: t("shares.allShares", lang), count: shares.length },
-                { value: "active", label: t("shares.activeOnly", lang), count: activeCount + pausedCount },
-                { value: "inactive", label: t("shares.inactiveOnly", lang), count: inactiveCount },
-              ]}
-            />
-          </div>
-        )}
+        <div className="mb-5 flex flex-col gap-3 sm:mb-7 sm:flex-row sm:items-center sm:justify-between">
+          <SearchField
+            value={query}
+            onChange={setQuery}
+            placeholder={t("shares.search", lang)}
+            clearLabel={t("dashboard.clearSearch", lang)}
+            className="min-w-0 flex-1 sm:max-w-[300px]"
+          />
+          <SegmentedControl
+            value={filter}
+            onChange={setFilter}
+            ariaLabel={t("shares.title", lang)}
+            className="w-full sm:w-auto"
+            itemClassName="text-[11px]"
+            options={[
+              { value: "all", label: t("shares.allShares", lang), count: shares.length },
+              { value: "active", label: t("shares.activeOnly", lang), count: activeCount + pausedCount },
+              { value: "inactive", label: t("shares.inactiveOnly", lang), count: inactiveCount },
+            ]}
+          />
+        </div>
 
         {/* Content */}
         {loading ? (

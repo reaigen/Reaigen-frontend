@@ -123,33 +123,30 @@ export default function ToursPage() {
   if (isLoading || !user) return <PageLoading />;
 
   const lang = getUserLanguage(user.localization);
-  const showToolbar = !error && (items.length > 0 || query.length > 0);
 
   return (
     <AppShell user={user} onLogout={logout}>
-      <div className="mx-auto w-full max-w-[1320px] pb-10">
+      <div className="mx-auto w-full max-w-[1180px] pb-10">
         <PageHeader
           title={t("tours.title", lang)}
           description={t("tours.subtitle", lang)}
           actions={<WebCreateAction lang={lang} labelKey="webCreate.tourAction" />}
-          className={showToolbar ? "mb-6 md:mb-8 xl:mb-10" : "mb-6 md:mb-8"}
+          className="mb-5 sm:mb-8"
         />
 
-        {showToolbar ? (
-          <div className="mb-6 min-w-0 md:mb-8">
-            <div className="flex w-full min-w-0 items-center gap-3 rounded-full border border-border/80 bg-card px-4 py-0.5 shadow-control md:max-w-[340px] md:rounded-none md:border-x-0 md:border-t-0 md:bg-transparent md:px-0 md:pb-2 md:pt-0 md:shadow-none">
-              <SearchField
-                value={query}
-                onChange={setQuery}
-                onClear={() => setQuery("")}
-                placeholder={t("tours.search", lang)}
-                clearLabel={t("dashboard.clearSearch", lang)}
-                className="flex-1"
-                appearance="toolbar"
-              />
-            </div>
+        <div className="mb-5 min-w-0 sm:mb-7">
+          <div className="flex w-full min-w-0 items-center gap-3 rounded-full border border-border/80 bg-card px-4 py-0.5 shadow-control md:max-w-[340px] md:rounded-none md:border-x-0 md:border-t-0 md:bg-transparent md:px-0 md:pb-2 md:pt-0 md:shadow-none">
+            <SearchField
+              value={query}
+              onChange={setQuery}
+              onClear={() => setQuery("")}
+              placeholder={t("tours.search", lang)}
+              clearLabel={t("dashboard.clearSearch", lang)}
+              className="flex-1"
+              appearance="toolbar"
+            />
           </div>
-        ) : null}
+        </div>
 
         <div className="min-w-0">
           {loading ? (
