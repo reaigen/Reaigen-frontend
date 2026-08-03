@@ -13,12 +13,14 @@ import { PageLoading } from "../components/page-loading";
 import { StatusPill } from "../components/status-pill";
 import { SearchField } from "../components/search-field";
 import { Thumbnail } from "../components/thumbnail";
-import { listAllSplats } from "../lib/api/client";
+import { listSplats } from "../lib/api/client";
 import { getUserLanguage, t } from "../lib/i18n";
 import type { SplatListItem } from "../lib/tour-types";
 import { Button } from "../lib/ui/button";
 import { WebCreateAction } from "../components/web-create-action";
 import { CollectionLoading } from "../components/collection-loading";
+
+const TOURS_PAGE_SIZE = 24;
 
 type TourState = "ready" | "processing" | "issues";
 
@@ -56,40 +58,72 @@ export default function ToursPage() {
   const router = useRouter();
   const [items, setItems] = React.useState<SplatListItem[]>([]);
   const [loading, setLoading] = React.useState(true);
-  const [initialLoadComplete, setInitialLoadComplete] = React.useState(false);
+  const [loadingMore, setLoadingMore] = React.useState(false);
+  const [hasMore, setHasMore] = React.useState(false);
   const [error, setError] = React.useState(false);
   const [query, setQuery] = React.useState("");
+  const [searchQuery, setSearchQuery] = React.useState("");
+  const pageRef = React.useRef(1);
+  const requestRef = React.useRef(0);
 
   const load = React.useCallback(async () => {
+    const requestId = ++requestRef.current;
     setLoading(true);
+    setLoadingMore(false);
     setError(false);
     try {
-      setItems(await listAllSplats());
+      const data = await listSplats(1, TOURS_PAGE_SIZE, searchQuery);
+      if (requestId !== requestRef.current) return;
+      setItems(data.results ?? []);
+      setHasMore(!!data.next);
+      pageRef.current = 1;
     } catch {
-      setError(true);
+      if (requestId === requestRef.current) setError(true);
     } finally {
-      setLoading(false);
-      setInitialLoadComplete(true);
+      if (requestId === requestRef.current) setLoading(false);
     }
-  }, []);
+  }, [searchQuery]);
+
+  const loadMore = React.useCallback(async () => {
+    if (loadingMore || !hasMore) return;
+    const requestId = requestRef.current;
+    setLoadingMore(true);
+    try {
+      const nextPage = pageRef.current + 1;
+      const data = await listSplats(nextPage, TOURS_PAGE_SIZE, searchQuery);
+      if (requestId !== requestRef.current) return;
+      setItems((current) => {
+        const seen = new Set(current.map((item) => item.id));
+        return [...current, ...(data.results ?? []).filter((item) => !seen.has(item.id))];
+      });
+      setHasMore(!!data.next);
+      pageRef.current = nextPage;
+    } catch {
+      // Keep the already-rendered page usable; the button remains available.
+    } finally {
+      if (requestId === requestRef.current) setLoadingMore(false);
+    }
+  }, [hasMore, loadingMore, searchQuery]);
 
   React.useEffect(() => {
     if (!isLoading && !isAuthenticated) router.replace("/");
   }, [isLoading, isAuthenticated, router]);
 
   React.useEffect(() => {
-    if (isAuthenticated) void load();
+    if (!isAuthenticated) return;
+    void load();
+    return () => { requestRef.current += 1; };
   }, [isAuthenticated, load]);
 
-  if (isLoading || !user || !initialLoadComplete) return <PageLoading />;
+  React.useEffect(() => {
+    const timer = window.setTimeout(() => setSearchQuery(query.trim()), 150);
+    return () => window.clearTimeout(timer);
+  }, [query]);
+
+  if (isLoading || !user) return <PageLoading />;
 
   const lang = getUserLanguage(user.localization);
-  const normalizedQuery = query.trim().toLowerCase();
-  const visible = items.filter((item) => {
-    if (!normalizedQuery) return true;
-    return `${item.title} ${item.scan_type}`.toLowerCase().includes(normalizedQuery);
-  });
-  const showToolbar = !loading && !error && items.length > 0;
+  const showToolbar = !error && (items.length > 0 || query.length > 0);
 
   return (
     <AppShell user={user} onLogout={logout}>
@@ -127,16 +161,17 @@ export default function ToursPage() {
             title={t("tours.error", lang)}
             action={<Button type="button" variant="outline" size="sm" onClick={() => void load()}>{t("common.tryAgain", lang)}</Button>}
           />
-            ) : visible.length === 0 ? (
+            ) : items.length === 0 ? (
           <CollectionState
             icon={<TourIcon size={20} />}
-            title={query ? t("tours.emptyFiltered", lang) : t("tours.empty", lang)}
+            title={searchQuery ? t("tours.emptyFiltered", lang) : t("tours.empty", lang)}
             description={t("tours.emptyHint", lang)}
-            action={query ? <Button type="button" variant="outline" size="sm" onClick={() => setQuery("")}>{t("dashboard.clearSearch", lang)}</Button> : undefined}
+            action={searchQuery ? <Button type="button" variant="outline" size="sm" onClick={() => setQuery("")}>{t("dashboard.clearSearch", lang)}</Button> : undefined}
           />
             ) : (
+          <>
           <div className="grid grid-cols-1 gap-5 md:grid-cols-2 md:gap-6 xl:gap-5 2xl:grid-cols-3">
-            {visible.map((item, index) => {
+            {items.map((item, index) => {
               const ready = tourState(item) === "ready";
               const href = ready ? `/tour/${item.id}` : `/draft/${item.source_draft}`;
               return (
@@ -180,6 +215,14 @@ export default function ToursPage() {
               );
             })}
           </div>
+          {hasMore ? (
+            <div className="mt-8 flex justify-center">
+              <Button type="button" variant="outline" size="sm" disabled={loadingMore} onClick={() => void loadMore()}>
+                {loadingMore ? t("common.loading", lang) : t("dashboard.loadMore", lang)}
+              </Button>
+            </div>
+          ) : null}
+          </>
             )}
         </div>
       </div>

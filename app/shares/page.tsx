@@ -11,8 +11,7 @@ import { Button } from "../lib/ui/button";
 import { t, getUserLanguage, formatDate } from "../lib/i18n";
 import {
   listShares,
-  listAllDrafts,
-  listAllSplats,
+  listDrafts,
   pauseShare,
   resumeShare,
   revokeShare,
@@ -274,14 +273,20 @@ export default function SharesPage() {
   const router = useRouter();
   const [shares, setShares] = React.useState<ShareData[]>([]);
   const [drafts, setDrafts] = React.useState<DraftListingItem[]>([]);
-  const [splatsByDraft, setSplatsByDraft] = React.useState<Record<number, { title: string; splatId: number; thumbnail: string | null }>>({});
   const [loading, setLoading] = React.useState(true);
-  const [initialLoadComplete, setInitialLoadComplete] = React.useState(false);
   const [loadError, setLoadError] = React.useState(false);
+  const [draftsLoaded, setDraftsLoaded] = React.useState(false);
+  const [draftsLoading, setDraftsLoading] = React.useState(false);
+  const [draftsLoadingMore, setDraftsLoadingMore] = React.useState(false);
+  const [draftsHasMore, setDraftsHasMore] = React.useState(false);
+  const [draftsError, setDraftsError] = React.useState(false);
   const [filter, setFilter] = React.useState<"all" | "active" | "inactive">("active");
   const [query, setQuery] = React.useState("");
   const [createOpen, setCreateOpen] = React.useState(false);
   const [draftQuery, setDraftQuery] = React.useState("");
+  const [draftSearchQuery, setDraftSearchQuery] = React.useState("");
+  const draftsPageRef = React.useRef(1);
+  const draftsRequestRef = React.useRef(0);
 
   React.useEffect(() => {
     if (!isLoading && !isAuthenticated) router.replace("/");
@@ -290,32 +295,63 @@ export default function SharesPage() {
   const load = React.useCallback(async () => {
     setLoading(true);
     setLoadError(false);
-    const [shareResult, draftResult, splatResult] = await Promise.allSettled([
-      listShares({ fresh: true }),
-      listAllDrafts(),
-      listAllSplats(),
-    ]);
-    if (shareResult.status === "fulfilled") setShares(shareResult.value);
-    else {
+    try {
+      setShares(await listShares({ fresh: true }));
+    } catch {
       setShares([]);
       setLoadError(true);
+    } finally {
+      setLoading(false);
     }
-    if (draftResult.status === "fulfilled") setDrafts(draftResult.value);
-    if (splatResult.status === "fulfilled") {
-      const map: Record<number, { title: string; splatId: number; thumbnail: string | null }> = {};
-      for (const splat of splatResult.value) {
-        if (!splat.source_draft || map[splat.source_draft]) continue;
-        map[splat.source_draft] = { title: splat.title, splatId: splat.id, thumbnail: splat.thumbnail_url ?? null };
-      }
-      setSplatsByDraft(map);
-    }
-    setLoading(false);
-    setInitialLoadComplete(true);
   }, []);
+
+  const loadDraftPage = React.useCallback(async (page: number, append: boolean) => {
+    const requestId = append ? draftsRequestRef.current : ++draftsRequestRef.current;
+    if (append) {
+      setDraftsLoadingMore(true);
+    } else {
+      setDrafts([]);
+      setDraftsLoaded(false);
+      setDraftsLoading(true);
+      setDraftsLoadingMore(false);
+      setDraftsError(false);
+    }
+    try {
+      const data = await listDrafts(page, 30, draftSearchQuery);
+      if (requestId !== draftsRequestRef.current) return;
+      setDrafts((current) => {
+        const results = data.results ?? [];
+        if (!append) return results;
+        const seen = new Set(current.map((draft) => draft.id));
+        return [...current, ...results.filter((draft) => !seen.has(draft.id))];
+      });
+      setDraftsHasMore(!!data.next);
+      draftsPageRef.current = page;
+    } catch {
+      if (requestId === draftsRequestRef.current && !append) setDraftsError(true);
+    } finally {
+      if (requestId === draftsRequestRef.current) {
+        setDraftsLoaded(true);
+        setDraftsLoading(false);
+        setDraftsLoadingMore(false);
+      }
+    }
+  }, [draftSearchQuery]);
 
   React.useEffect(() => {
     if (isAuthenticated) void load();
   }, [isAuthenticated, load]);
+
+  React.useEffect(() => {
+    const timer = window.setTimeout(() => setDraftSearchQuery(draftQuery.trim()), 150);
+    return () => window.clearTimeout(timer);
+  }, [draftQuery]);
+
+  React.useEffect(() => {
+    if (!createOpen) return;
+    void loadDraftPage(1, false);
+    return () => { draftsRequestRef.current += 1; };
+  }, [createOpen, loadDraftPage]);
 
   React.useEffect(() => {
     if (!isAuthenticated) return;
@@ -334,7 +370,7 @@ export default function SharesPage() {
     }
   }, []);
 
-  if (isLoading || !user || !initialLoadComplete) {
+  if (isLoading || !user) {
     return <PageLoading />;
   }
 
@@ -348,17 +384,13 @@ export default function SharesPage() {
   const normalizedQuery = query.trim().toLowerCase();
   const filtered = statusFiltered.filter((share) => {
     if (!normalizedQuery) return true;
-    const title = share.title || draftById.get(share.draft)?.title || splatsByDraft[share.draft]?.title || "";
+    const title = share.title || share.draft_title || draftById.get(share.draft)?.title || "";
     return `${title} ${share.status}`.toLowerCase().includes(normalizedQuery);
   });
   const activeCount = shares.filter((s) => s.status === "active").length;
   const pausedCount = shares.filter((s) => s.status === "paused").length;
   const inactiveCount = shares.filter((s) => s.status === "expired" || s.status === "revoked").length;
-  const normalizedDraftQuery = draftQuery.trim().toLowerCase();
-  const selectableDrafts = drafts.filter((draft) => {
-    if (!normalizedDraftQuery) return true;
-    return `${draft.title} ${draft.display_address ?? ""} ${draft.city}`.toLowerCase().includes(normalizedDraftQuery);
-  });
+  const selectableDrafts = drafts;
 
   return (
     <AppShell user={user} onLogout={logout}>
@@ -421,8 +453,7 @@ export default function SharesPage() {
           <div className="space-y-2.5">
             {filtered.map((share) => {
               const draft = draftById.get(share.draft);
-              const draftTour = splatsByDraft[share.draft];
-              const tourName = share.title || draft?.title || draftTour?.title || t("shares.untitledTour", lang);
+              const tourName = share.title || share.draft_title || draft?.title || t("shares.untitledTour", lang);
               const tourLink = share.draft ? `/draft/${share.draft}` : null;
 
               return (
@@ -459,19 +490,30 @@ export default function SharesPage() {
           />
         </div>
         <div className="mt-5 space-y-2">
-          {selectableDrafts.length === 0 ? (
+          {draftsLoading || (!draftsLoaded && !draftsError) ? (
+            <CollectionLoading label={t("common.loading", lang)} className="min-h-40" />
+          ) : draftsError && drafts.length === 0 ? (
+            <CollectionState
+              kind="error"
+              icon={<InfoIcon size={20} />}
+              title={t("shares.loadFailed", lang)}
+              action={<Button type="button" variant="outline" size="sm" onClick={() => void loadDraftPage(1, false)}>{t("common.tryAgain", lang)}</Button>}
+            />
+          ) : selectableDrafts.length === 0 ? (
             <div className="rounded-xl border border-dashed border-border/65 px-5 py-12 text-center">
               <p className="text-[13px] font-medium">{t("shares.noCreations", lang)}</p>
               <p className="mt-1 text-[11px] leading-relaxed text-muted-foreground">{t("shares.noCreationsHint", lang)}</p>
             </div>
-          ) : selectableDrafts.map((draft) => {
-            const cover = draftThumbnail(draft) ?? splatsByDraft[draft.id]?.thumbnail ?? null;
+          ) : (
+            <>
+          {selectableDrafts.map((draft) => {
+            const cover = draftThumbnail(draft);
             const activeLinks = shares.filter((share) => share.draft === draft.id && (share.status === "active" || share.status === "paused")).length;
             return (
-              <button
-                type="button"
+              <Link
                 key={draft.id}
-                onClick={() => router.push(`/draft/${draft.id}/sharing`)}
+                href={`/draft/${draft.id}/sharing`}
+                prefetch
                 className="group flex w-full items-center gap-3 rounded-xl border border-transparent p-2 text-left transition hover:border-border/55 hover:bg-surface"
               >
                 <span className="relative h-14 w-20 shrink-0 overflow-hidden rounded-lg bg-foreground/[0.045]">
@@ -483,9 +525,24 @@ export default function SharesPage() {
                   {activeLinks > 0 ? <span className="mt-1 block text-[11px] font-medium text-foreground/45">{activeLinks} {t("shares.existingLinks", lang)}</span> : null}
                 </span>
                 <span className="pr-2 text-foreground/25 transition group-hover:translate-x-0.5 group-hover:text-foreground/60">→</span>
-              </button>
+              </Link>
             );
           })}
+          {draftsHasMore ? (
+            <div className="flex justify-center pt-3">
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                disabled={draftsLoadingMore}
+                onClick={() => void loadDraftPage(draftsPageRef.current + 1, true)}
+              >
+                {draftsLoadingMore ? t("common.loading", lang) : t("dashboard.loadMore", lang)}
+              </Button>
+            </div>
+          ) : null}
+            </>
+          )}
         </div>
       </SidePanel>
 

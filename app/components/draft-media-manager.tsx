@@ -37,6 +37,7 @@ import {
   VideoIcon,
 } from "./icons";
 import { DraftImageEditor } from "./draft-image-editor";
+import { LoadingDots } from "./loading-dots";
 import { SidePanel } from "./side-panel";
 import { StatusPill } from "./status-pill";
 import {
@@ -204,8 +205,8 @@ function MediaVisual({ upload, alt, className }: { upload: DraftUpload; alt: str
 
 function LoadingMark({ label }: { label: string }) {
   return (
-    <span className="absolute inset-0 flex flex-col items-center justify-center gap-2 bg-black/48 px-2 text-center text-white backdrop-blur-[1px]">
-      <span className="h-5 w-5 animate-spin rounded-full border-2 border-white/35 border-t-white" aria-hidden="true" />
+    <span role="status" className="absolute inset-0 flex flex-col items-center justify-center gap-2 bg-black/48 px-2 text-center text-white backdrop-blur-[1px]">
+      <LoadingDots size="sm" decorative />
       <span className="text-[10px] font-semibold">{label}</span>
     </span>
   );
@@ -1127,7 +1128,7 @@ export function DraftMediaManager({
               role="status"
               aria-live="polite"
             >
-              <span className="h-4 w-4 shrink-0 animate-spin rounded-full border-2 border-foreground/15 border-t-foreground/65" aria-hidden="true" />
+              <LoadingDots size="xs" decorative className="shrink-0" />
               <span>{versionNotice}</span>
             </div>
           ) : null}

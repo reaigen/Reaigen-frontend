@@ -25,6 +25,7 @@ import { ShareCreateForm, defaultContentScope, type ShareFormData } from "../../
 import { ShareLinkCard } from "../../../components/sharing/share-link-card";
 import type { ContentScope } from "../../../components/sharing/content-scope-selector";
 import { PageLoading } from "../../../components/page-loading";
+import { CollectionLoading } from "../../../components/collection-loading";
 import { copyToClipboard, shareUrl } from "../../../lib/share-ui";
 import type { UnitLookup } from "../../../lib/unit-catalog";
 import { currentGalleryUploads } from "../../../lib/media";
@@ -80,7 +81,6 @@ export default function SharingPage({ params }: { params: Promise<{ id: string }
   const [floorplan, setFloorplan] = useState<FloorplanDetail | null>(null);
   const [shares, setShares] = useState<ShareData[]>([]);
   const [unitCatalog, setUnitCatalog] = useState<UnitLookup[]>([]);
-  const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
   const [scope, setScope] = useState<ContentScope | null>(null);
@@ -99,24 +99,33 @@ export default function SharingPage({ params }: { params: Promise<{ id: string }
   useEffect(() => {
     if (!isAuthenticated || isNaN(draftId)) return;
     let active = true;
-    setLoading(true);
     setError(null);
     void (async () => {
       try {
-        const [d, s, fetchedTourAssets, allShares, fetchedUnits] = await Promise.all([
-          getDraft(draftId),
-          getSplatsByDraft(draftId).catch(() => null),
-          getDraftTourAssets(draftId).catch(() => null),
-          // Sharing state is access control, so always revalidate it instead
-          // of accepting the ordinary short-lived application cache.
-          listShares({ fresh: true }).catch(() => [] as ShareData[]),
-          listUnits().catch(() => []),
-        ]);
-        const fetchedFloorplan = d.floorplan_id
-          ? await getFloorplan(d.floorplan_id).catch(() => null)
-          : null;
+        // Start every independent request together, but reveal the property as
+        // soon as its own payload arrives. Sharing controls can hydrate behind
+        // it without forcing a blank full-page transition.
+        const draftRequest = getDraft(draftId);
+        const splatRequest = getSplatsByDraft(draftId).catch(() => null);
+        const tourAssetsRequest = getDraftTourAssets(draftId).catch(() => null);
+        const sharesRequest = listShares({ fresh: true }).catch(() => [] as ShareData[]);
+        const unitsRequest = listUnits().catch(() => []);
+
+        const d = await draftRequest;
         if (!active) return;
         setDraft(d);
+
+        const floorplanRequest = d.floorplan_id
+          ? getFloorplan(d.floorplan_id).catch(() => null)
+          : Promise.resolve(null);
+        const [s, fetchedTourAssets, allShares, fetchedUnits, fetchedFloorplan] = await Promise.all([
+          splatRequest,
+          tourAssetsRequest,
+          sharesRequest,
+          unitsRequest,
+          floorplanRequest,
+        ]);
+        if (!active) return;
         setSplatData(s);
         setTourAssets(fetchedTourAssets);
         setUnitCatalog(fetchedUnits);
@@ -140,8 +149,6 @@ export default function SharingPage({ params }: { params: Promise<{ id: string }
         setScope(defaultContentScope(hasSplat, hasPhotos, hasFp));
       } catch (err) {
         if (active) setError(getSafeApiErrorMessage(err, lang) || "Failed to load");
-      } finally {
-        if (active) setLoading(false);
       }
     })();
     return () => { active = false; };
@@ -233,18 +240,36 @@ export default function SharingPage({ params }: { params: Promise<{ id: string }
     }
   }, []);
 
-  if (isLoading || (loading && !draft)) {
+  if (isLoading || !user) {
     return <PageLoading />;
   }
 
-  if (error || !draft || !user) {
+  if (error) {
     return (
-      <div className="min-h-screen flex items-center justify-center px-4">
-        <div className="text-center space-y-4 max-w-xs">
-          <p className="text-[14px] font-medium text-foreground/70">{error || t("draft.error.failedTitle", lang)}</p>
-          <Button variant="outline" size="sm" onClick={() => router.push(`/draft/${draftId}`)}>{t("common.goBack", lang)}</Button>
+      <AppShell user={user} onLogout={logout}>
+        <div className="flex min-h-[60vh] items-center justify-center px-4">
+          <div className="max-w-xs space-y-4 text-center">
+            <p className="text-[14px] font-medium text-foreground/70">{error}</p>
+            <Button variant="outline" size="sm" onClick={() => router.push(`/draft/${draftId}`)}>{t("common.goBack", lang)}</Button>
+          </div>
         </div>
-      </div>
+      </AppShell>
+    );
+  }
+
+  if (!draft) {
+    return (
+      <AppShell user={user} onLogout={logout}>
+        <div className="mx-auto w-full max-w-[1320px] pb-8 md:pb-10">
+          <div className="h-9 w-44 rounded-full bg-foreground/[0.055]" aria-hidden="true" />
+          <div className="mt-7 grid grid-cols-1 gap-6 lg:grid-cols-2">
+            <div className="min-h-[24rem] rounded-[1.5rem] border border-border/60 bg-card" />
+            <div className="flex min-h-[24rem] items-center justify-center rounded-[1.5rem] border border-border/60 bg-card">
+              <CollectionLoading label={t("common.loading", lang)} className="min-h-0 p-0" />
+            </div>
+          </div>
+        </div>
+      </AppShell>
     );
   }
 
@@ -311,7 +336,7 @@ export default function SharingPage({ params }: { params: Promise<{ id: string }
                   <span className="rounded-full bg-secondary px-2.5 py-1 text-[10px] font-semibold text-foreground/55">{t("sharing.linkLabel", lang)}</span>
                 ) : null}
               </div>
-              {scope && (
+              {scope ? (
                 <ShareCreateForm
                   key={formVersion}
                   scope={scope}
@@ -326,6 +351,10 @@ export default function SharingPage({ params }: { params: Promise<{ id: string }
                   initialShare={editingShare}
                   onCancelEdit={cancelEdit}
                 />
+              ) : (
+                <div className="flex min-h-72 items-center justify-center rounded-[1.5rem] border border-border/60 bg-card">
+                  <CollectionLoading label={t("common.loading", lang)} className="min-h-0 p-0" />
+                </div>
               )}
             </div>
 
@@ -362,7 +391,7 @@ export default function SharingPage({ params }: { params: Promise<{ id: string }
           {/* Left panel — Audience Preview */}
           <div className="order-2 lg:order-1">
             <div className="lg:sticky lg:top-6">
-              {scope && (
+              {scope ? (
                 <SharePreview
                   draft={draft}
                   scope={scope}
@@ -372,6 +401,8 @@ export default function SharingPage({ params }: { params: Promise<{ id: string }
                   units={unitCatalog}
                   lang={lang}
                 />
+              ) : (
+                <div className="min-h-[28rem] rounded-[1.5rem] border border-border/60 bg-card" aria-hidden="true" />
               )}
             </div>
           </div>

@@ -948,7 +948,7 @@ import type { SplatPruneMask } from "../splat-editing";
 
 export async function listSplats(page = 1, pageSize = 20, search = ""): Promise<{ results: SplatListItem[]; count: number; next: string | null }> {
   const q = search ? `&search=${encodeURIComponent(search)}` : "";
-  return request(`/api/reaigen/splats/?page=${page}&page_size=${pageSize}${q}`);
+  return request(`/api/reaigen/splats/?view=web&page=${page}&page_size=${pageSize}${q}`);
 }
 
 export async function listDrafts(page = 1, pageSize = 100, search = ""): Promise<{ results: DraftListingItem[]; count: number; next: string | null }> {
@@ -2462,7 +2462,8 @@ export async function listAllDrafts(): Promise<DraftListingItem[]> {
   const first = await listDrafts(1, pageSize);
   const all = [...(first.results ?? [])];
   if (!first.next) return all;
-  const totalPages = Math.ceil((first.count ?? all.length) / pageSize);
+  const effectivePageSize = Math.max(first.results?.length ?? 0, 1);
+  const totalPages = Math.ceil((first.count ?? all.length) / effectivePageSize);
   const remaining = await Promise.all(
     Array.from({ length: totalPages - 1 }, (_, i) => listDrafts(i + 2, pageSize))
   );
@@ -2475,7 +2476,10 @@ export async function listAllSplats(): Promise<SplatListItem[]> {
   const first = await listSplats(1, pageSize);
   const all = [...(first.results ?? [])];
   if (!first.next) return all;
-  const totalPages = Math.ceil((first.count ?? all.length) / pageSize);
+  // The backend caps splat pages at 100 even when a larger size is requested.
+  // Derive the remaining page count from what the server actually returned.
+  const effectivePageSize = Math.max(first.results?.length ?? 0, 1);
+  const totalPages = Math.ceil((first.count ?? all.length) / effectivePageSize);
   const remaining = await Promise.all(
     Array.from({ length: totalPages - 1 }, (_, i) => listSplats(i + 2, pageSize))
   );
@@ -2949,10 +2953,26 @@ export async function verifySharePin(token: string, pin: string): Promise<{ veri
 // ─── Share Management ─────────────────────────────────────────────────────
 
 export async function listShares(options: { fresh?: boolean } = {}): Promise<ShareData[]> {
-  const data = options.fresh
-    ? await freshRequest("/api/reaigen/shares/")
-    : await request("/api/reaigen/shares/");
-  return data.results ?? data ?? [];
+  const firstPath = "/api/reaigen/shares/?view=web&page_size=100";
+  const first = options.fresh
+    ? await freshRequest(firstPath)
+    : await request(firstPath);
+  if (Array.isArray(first)) return first;
+
+  const all = [...(first?.results ?? [])] as ShareData[];
+  if (!first?.next) return all;
+
+  const effectivePageSize = Math.max(first.results?.length ?? 0, 1);
+  const totalPages = Math.ceil((first.count ?? all.length) / effectivePageSize);
+  const loadPage = (page: number) => {
+    const path = `/api/reaigen/shares/?view=web&page=${page}&page_size=100`;
+    return options.fresh ? freshRequest(path) : request(path);
+  };
+  const remaining = await Promise.all(
+    Array.from({ length: totalPages - 1 }, (_, index) => loadPage(index + 2)),
+  );
+  for (const page of remaining) all.push(...(page?.results ?? page ?? []));
+  return all;
 }
 
 export async function createDraftShare(

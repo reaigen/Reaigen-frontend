@@ -776,6 +776,7 @@ export interface ShareData {
   share_context: string;
   status: string;
   title: string;
+  draft_title?: string | null;
   description: string;
   expires_at: string | null;
   max_access_count: number | null;

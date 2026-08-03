@@ -17,6 +17,7 @@ import FloorplanViewer from "../../components/floorplan-viewer";
 import type { DraftDetailItem, DraftTourAssetsPayload, DraftUpload, SplatsByDraftPayload } from "../../lib/tour-types";
 import { baseUnitForCategory, resolveUnit, unitLabel, type UnitLookup } from "../../lib/unit-catalog";
 import { PageLoading } from "../../components/page-loading";
+import { CollectionLoading } from "../../components/collection-loading";
 import { cn } from "../../lib/utils";
 import { DraftEditor } from "../../components/draft-editor";
 import { DraftVersionManager } from "../../components/draft-version-manager";
@@ -488,7 +489,6 @@ export default function DraftPreviewPage({ params }: { params: Promise<{ id: str
   const [versionsOpen, setVersionsOpen] = useState(false);
   const [mediaOpen, setMediaOpen] = useState(false);
   const [usingCachedDraft, setUsingCachedDraft] = useState(false);
-  const [initialLoadComplete, setInitialLoadComplete] = useState(false);
   const [retryAttempt, setRetryAttempt] = useState(0);
   const [reloadNonce, setReloadNonce] = useState(0);
   const [manualRefreshPending, setManualRefreshPending] = useState(false);
@@ -525,7 +525,6 @@ export default function DraftPreviewPage({ params }: { params: Promise<{ id: str
       setUsingCachedDraft(false);
       setRetryAttempt(0);
       setManualRefreshPending(false);
-      setInitialLoadComplete(true);
       if (user?.id) writeDraftDetailCache(user.id, draftId, d);
       // Trigger description translation if not yet available and user's lang ≠ en
       if (d.description && lang !== "en" && d.translation_status !== "completed") {
@@ -552,7 +551,6 @@ export default function DraftPreviewPage({ params }: { params: Promise<{ id: str
     }).catch((err) => {
       if (!active) return;
       setManualRefreshPending(false);
-      setInitialLoadComplete(true);
       if (isApiNotFound(err)) {
         setUsingCachedDraft(false);
         setError("notFound");
@@ -610,8 +608,21 @@ export default function DraftPreviewPage({ params }: { params: Promise<{ id: str
     return () => window.removeEventListener("reai-media-updated", refreshMedia);
   }, [draftId]);
 
-  if (isLoading || !initialLoadComplete || (!draft && !error)) {
+  if (isLoading || !user) {
     return <PageLoading />;
+  }
+
+  if (!draft && !error) {
+    return (
+      <AppShell user={user} onLogout={logout} hideMobileNav>
+        <div className="mx-auto w-full max-w-[1180px] pb-28 md:pb-10">
+          <div className="h-9 w-36 rounded-full bg-foreground/[0.055]" aria-hidden="true" />
+          <div className="mt-6 min-h-[55vh] overflow-hidden rounded-[1.75rem] border border-border/60 bg-card">
+            <CollectionLoading label={t("common.loading", lang)} className="min-h-[55vh] items-center p-0" />
+          </div>
+        </div>
+      </AppShell>
+    );
   }
 
   if (error) {
@@ -837,8 +848,10 @@ export default function DraftPreviewPage({ params }: { params: Promise<{ id: str
                 <Button type="button" variant="ghost" size="sm" onClick={() => setEditorOpen(true)}>
                   <EditIcon size={14} /> {t("shareDialog.edit", lang)}
                 </Button>
-                <Button type="button" variant="ghost" size="sm" onClick={() => router.push(`/draft/${draftId}/sharing`)}>
-                  <ShareIcon size={14} /> {t("draft.share", lang)}
+                <Button asChild variant="ghost" size="sm">
+                  <Link href={`/draft/${draftId}/sharing`} prefetch>
+                    <ShareIcon size={14} /> {t("draft.share", lang)}
+                  </Link>
                 </Button>
                 <span aria-hidden="true" className="mx-1 h-5 w-px bg-border/80" />
                 <Button type="button" variant="ghost" size="sm" onClick={() => setVersionsOpen(true)}>
@@ -992,9 +1005,11 @@ export default function DraftPreviewPage({ params }: { params: Promise<{ id: str
         <Button type="button" variant="ghost" size="sm" className="h-11 min-w-0 rounded-2xl px-2" onClick={() => setEditorOpen(true)}>
           <EditIcon size={15} /> {t("shareDialog.edit", lang)}
         </Button>
-        <Button type="button" variant="ghost" size="sm" className="h-11 min-w-0 rounded-2xl px-2" onClick={() => router.push(`/draft/${draftId}/sharing`)} aria-label={t("draft.share", lang)}>
-          <ShareIcon size={15} />
-          <span className="truncate">{t("draft.share", lang)}</span>
+        <Button asChild variant="ghost" size="sm" className="h-11 min-w-0 rounded-2xl px-2">
+          <Link href={`/draft/${draftId}/sharing`} prefetch aria-label={t("draft.share", lang)}>
+            <ShareIcon size={15} />
+            <span className="truncate">{t("draft.share", lang)}</span>
+          </Link>
         </Button>
         {hasTour && (
           <Button asChild variant="default" size="sm" className="h-11 min-w-0 rounded-2xl px-2">

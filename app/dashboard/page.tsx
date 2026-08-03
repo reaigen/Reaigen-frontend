@@ -72,9 +72,7 @@ export default function DashboardPage() {
   const pageRef = React.useRef(1);
 
   const [tourStates, setTourStates] = React.useState<Record<number, DashboardTourState>>({});
-  const [tourStatesSettled, setTourStatesSettled] = React.useState(false);
   const [unitCatalog, setUnitCatalog] = React.useState<UnitLookup[]>([]);
-  const [unitCatalogSettled, setUnitCatalogSettled] = React.useState(false);
   const [searchInput, setSearchInput] = React.useState("");
   const [searchQuery, setSearchQuery] = React.useState("");
   const [gridCols, setGridCols] = React.useState<1 | 2>(2);
@@ -90,7 +88,7 @@ export default function DashboardPage() {
   }, []);
   const abortRef = React.useRef<AbortController | null>(null);
   const sentinelRef = React.useRef<HTMLDivElement>(null);
-  const draftsSettledRef = React.useRef(false);
+  const firstPageLoadingRef = React.useRef(true);
 
   // Restore this user's last successful page before paint. The live request
   // still refreshes it immediately, but returning to the dashboard no longer
@@ -119,7 +117,11 @@ export default function DashboardPage() {
     if (controller.signal.aborted) return;
 
     const results = data.results ?? [];
-    setDrafts((prev) => append ? [...prev, ...results] : results);
+    setDrafts((prev) => {
+      if (!append) return results;
+      const seen = new Set(prev.map((draft) => draft.id));
+      return [...prev, ...results.filter((draft) => !seen.has(draft.id))];
+    });
     setHasMore(!!data.next);
     setTotalCount(data.count ?? 0);
     pageRef.current = page;
@@ -137,7 +139,7 @@ export default function DashboardPage() {
 
   // Load tour availability in batches. This avoids one by-draft request per card.
   React.useEffect(() => {
-    if (!isAuthenticated) return;
+    if (!isAuthenticated || draftsLoading) return;
     let active = true;
     void listAllSplats()
       .then((splats) => {
@@ -151,18 +153,16 @@ export default function DashboardPage() {
         }
         setTourStates(map);
       })
-      .catch(() => undefined)
-      .finally(() => { if (active) setTourStatesSettled(true); });
+      .catch(() => undefined);
     return () => { active = false; };
-  }, [isAuthenticated]);
+  }, [draftsLoading, isAuthenticated]);
 
   React.useEffect(() => {
     if (!isAuthenticated) return;
     let active = true;
     void listUnits("CURRENCY")
       .then((units) => { if (active) setUnitCatalog(units); })
-      .catch(() => { if (active) setUnitCatalog([]); })
-      .finally(() => { if (active) setUnitCatalogSettled(true); });
+      .catch(() => { if (active) setUnitCatalog([]); });
     return () => { active = false; };
   }, [isAuthenticated]);
 
@@ -173,13 +173,16 @@ export default function DashboardPage() {
 
   React.useEffect(() => {
     if (!isAuthenticated) return;
-    if (!draftsSettledRef.current) {
-      setDraftsLoading(true);
-      setDraftsError(false);
-    }
-    loadPage(1, false)
-      .then(() => setDraftsError(false))
+    let active = true;
+    firstPageLoadingRef.current = true;
+    pageRef.current = 1;
+    setHasMore(false);
+    setDraftsLoading(true);
+    setDraftsError(false);
+    void loadPage(1, false)
+      .then(() => { if (active) setDraftsError(false); })
       .catch(() => {
+        if (!active) return;
         const cached = !searchQuery && user?.id ? readDraftPageCache(user.id) : null;
         if (cached?.results.length) {
           setDrafts(cached.results);
@@ -194,9 +197,14 @@ export default function DashboardPage() {
         setRetryAttempt((attempt) => attempt + 1);
       })
       .finally(() => {
-        draftsSettledRef.current = true;
+        if (!active) return;
+        firstPageLoadingRef.current = false;
         setDraftsLoading(false);
       });
+    return () => {
+      active = false;
+      abortRef.current?.abort();
+    };
   }, [searchQuery, isAuthenticated, loadPage, reloadNonce, user?.id]);
 
   React.useEffect(() => {
@@ -224,10 +232,11 @@ export default function DashboardPage() {
   }, [isAuthenticated, loadPage]);
 
   const handleLoadMore = React.useCallback(async () => {
+    if (firstPageLoadingRef.current || loadingMore || !hasMore) return;
     setLoadingMore(true);
     try { await loadPage(pageRef.current + 1, true); } catch {}
     setLoadingMore(false);
-  }, [loadPage]);
+  }, [hasMore, loadPage, loadingMore]);
 
   // Infinite scroll: observe sentinel div to auto-load next page
   React.useEffect(() => {
@@ -265,13 +274,7 @@ export default function DashboardPage() {
     return () => { clearInterval(id); document.removeEventListener("visibilitychange", onVisible); };
   }, [isAuthenticated, searchQuery, drafts]);
 
-  if (
-    isLoading
-    || !user
-    || draftsLoading
-    || !tourStatesSettled
-    || !unitCatalogSettled
-  ) {
+  if (isLoading || !user) {
     return <PageLoading />;
   }
 
@@ -405,14 +408,14 @@ export default function DashboardPage() {
                     </div>
                   </Link>
 
-                  <button
-                    type="button"
-                    onClick={() => router.push(`/draft/${draft.id}/sharing`)}
+                  <Link
+                    href={`/draft/${draft.id}/sharing`}
+                    prefetch
                     className="floating-icon-button-sm absolute right-3 top-3 z-10 flex items-center justify-center border border-white/15 bg-black/45 text-white/80 shadow-sm backdrop-blur-md transition-[background-color,color,opacity,transform] hover:scale-105 hover:bg-black/70 hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white focus-visible:ring-offset-2 focus-visible:ring-offset-black md:opacity-0 md:group-hover:opacity-100 md:group-focus-within:opacity-100"
                     aria-label={t("draft.share", lang)}
                   >
                     <ShareIcon size={14} />
-                  </button>
+                  </Link>
                 </CollectionCard>
               );
             })}

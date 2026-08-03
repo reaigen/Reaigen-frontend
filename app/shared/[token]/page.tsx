@@ -10,7 +10,7 @@
  *
  * Flow:
  *   1. Load draft data via GET /shared/{token}/ (always)
- *   2. Try tour-viewer endpoint in parallel (may 404 if no tour)
+ *   2. Render the property, then load its optional tour (may 404 if no tour)
  *   3. If PIN required → show PIN gate first
  *   4. Render: property card + optional tour overlay
  */
@@ -137,7 +137,9 @@ export default function SharedPage({ params }: { params: Promise<{ token: string
   const { token } = use(params);
 
   const [lang, setLang] = useState("en");
+  const langRef = useRef(lang);
   useEffect(() => { setLang(getBrowserLanguage()); }, []);
+  useEffect(() => { langRef.current = lang; }, [lang]);
 
   // Data
   const [tourViewerData, setTourViewerData] = useState<TourViewerData | null>(null);
@@ -145,6 +147,7 @@ export default function SharedPage({ params }: { params: Promise<{ token: string
   const [loading, setLoading] = useState(true);
   const [hasTour, setHasTour] = useState(false);
   const [unitCatalog, setUnitCatalog] = useState<UnitLookup[]>([]);
+  const loadGenerationRef = useRef(0);
 
   useEffect(() => {
     let active = true;
@@ -262,9 +265,15 @@ export default function SharedPage({ params }: { params: Promise<{ token: string
   // ── Load draft, then tour under one counted share visit ───────────
 
   const loadContent = useCallback(async () => {
+    const generation = ++loadGenerationRef.current;
+    const isCurrent = () => generation === loadGenerationRef.current;
     setError(null);
     setErrorKind(null);
+    setRequiresPin(false);
     setLoading(true);
+    setDraftData(null);
+    setTourViewerData(null);
+    setHasTour(false);
 
     // The first response establishes the backend share session through the
     // same-origin proxy. Loading the tour afterwards keeps one visible page
@@ -272,6 +281,7 @@ export default function SharedPage({ params }: { params: Promise<{ token: string
     const [draftResult] = await Promise.allSettled([
       getSharedDraftData(token),
     ]);
+    if (!isCurrent()) return;
 
     const draftGate = draftResult.status === "rejected"
       ? getApiErrorJson(draftResult.reason)
@@ -283,35 +293,37 @@ export default function SharedPage({ params }: { params: Promise<{ token: string
     }
     if (draftGate?.requires_auth) {
       setErrorKind("auth");
-      setError(t("shared.error.signInRequired", lang));
+      setError(t("shared.error.signInRequired", langRef.current));
       setLoading(false);
       return;
+    }
+
+    const draft = draftResult.status === "fulfilled" ? draftResult.value : null;
+    if (draft) {
+      // The optional 3D payload can be much heavier. Paint the property as
+      // soon as its response arrives instead of holding the whole page for it.
+      setDraftData(draft);
+      setLoading(false);
     }
 
     const [tourResult] = await Promise.allSettled([
       getSharedTourViewer(token),
     ]);
+    if (!isCurrent()) return;
 
-    // Check for PIN / sign-in requirement from either endpoint.
-    // (A share may exclude the tour, so the tour endpoint alone is not
-    // authoritative — the draft endpoint reports the same gates.)
+    // A tour failure must not replace property data that already loaded.
+    // When the draft failed too, the tour response can still identify a gate.
     const tourErrBody = tourResult.status === "rejected" ? getApiErrorJson(tourResult.reason) : null;
-    const draftErrBody = draftResult.status === "rejected" ? getApiErrorJson(draftResult.reason) : null;
-    if (tourErrBody?.requires_pin || draftErrBody?.requires_pin) {
+    if (!draft && tourErrBody?.requires_pin) {
       setRequiresPin(true);
       setLoading(false);
       return;
     }
-    if (tourErrBody?.requires_auth || draftErrBody?.requires_auth) {
+    if (!draft && tourErrBody?.requires_auth) {
       setErrorKind("auth");
-      setError(t("shared.error.signInRequired", lang));
+      setError(t("shared.error.signInRequired", langRef.current));
       setLoading(false);
       return;
-    }
-
-    // Draft data
-    if (draftResult.status === "fulfilled" && draftResult.value) {
-      setDraftData(draftResult.value);
     }
 
     // Tour data
@@ -319,15 +331,14 @@ export default function SharedPage({ params }: { params: Promise<{ token: string
       setTourViewerData(tourResult.value);
       setHasTour(true);
       // Tour response may also include inline draft data
-      if (!(draftResult.status === "fulfilled" && draftResult.value) && tourResult.value.draft_data) {
+      if (!draft && tourResult.value.draft_data) {
         setDraftData(tourResult.value.draft_data);
       }
     }
 
     // If we got neither, show error
-    const gotDraft = draftResult.status === "fulfilled" && draftResult.value;
     const gotTour = tourResult.status === "fulfilled" && tourResult.value;
-    if (!gotDraft && !gotTour) {
+    if (!draft && !gotTour) {
       // Try to classify the error from whichever endpoint failed.
       // Prefer the draft endpoint — the tour endpoint 404s for shares
       // that simply don't include the tour.
@@ -338,20 +349,23 @@ export default function SharedPage({ params }: { params: Promise<{ token: string
         const body = getApiErrorJson(err);
         const rawMessage = typeof body?.error === "string" ? body.error : typeof body?.message === "string" ? body.message : "";
         const classified = rawMessage
-          ? classifyError(rawMessage, lang)
-          : { kind: "generic" as const, message: getSafeApiErrorMessage(err, lang, "shared.error.loadFailed") };
+          ? classifyError(rawMessage, langRef.current)
+          : { kind: "generic" as const, message: getSafeApiErrorMessage(err, langRef.current, "shared.error.loadFailed") };
         setErrorKind(classified.kind);
         setError(classified.message);
       } else {
-        setError(t("shared.error.loadFailed", lang));
+        setError(t("shared.error.loadFailed", langRef.current));
         setErrorKind("generic");
       }
     }
 
     setLoading(false);
-  }, [token, lang]);
+  }, [token]);
 
-  useEffect(() => { loadContent(); }, [loadContent]);
+  useEffect(() => {
+    void loadContent();
+    return () => { loadGenerationRef.current += 1; };
+  }, [loadContent]);
 
   // ── Render URL management ─────────────────────────────────────────
 

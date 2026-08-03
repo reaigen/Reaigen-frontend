@@ -15,6 +15,7 @@ import {
   verifyEmail,
 } from "../lib/api/client";
 import { getBrowserLanguage } from "../lib/i18n";
+import { LoadingDots } from "./loading-dots";
 
 const INPUT_CLASS =
   "h-14 rounded-xl border-border bg-white px-4 text-[15px] text-foreground shadow-none placeholder:text-foreground/35 hover:border-foreground/35 focus-visible:border-foreground focus-visible:ring-0 focus-visible:shadow-[0_0_0_3px_rgba(0,0,0,0.08)]";
@@ -299,8 +300,8 @@ export function VerifyEmailFlow({ token, language }: { token: string; language?:
   return (
     <FlowShell title={title} subtitle={subtitle}>
       {state === "loading" && (
-        <div className="h-2 overflow-hidden rounded-full bg-foreground/[0.08]">
-          <div className="h-full w-1/2 animate-pulse rounded-full bg-foreground" />
+        <div className="flex justify-center py-1">
+          <LoadingDots label={copy.verifying} className="text-foreground/45" />
         </div>
       )}
       {state === "error" && (
@@ -548,8 +549,8 @@ export function ResetPasswordFlow({ token, language }: { token: string; language
           {copy.requestNewLink}
         </Link>
       ) : state === "checking" ? (
-        <div className="h-2 overflow-hidden rounded-full bg-foreground/[0.08]">
-          <div className="h-full w-1/2 animate-pulse rounded-full bg-foreground" />
+        <div className="flex justify-center py-1">
+          <LoadingDots label={copy.validatingReset} className="text-foreground/45" />
         </div>
       ) : (
         <form onSubmit={submit} className="space-y-4">

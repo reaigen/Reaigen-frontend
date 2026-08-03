@@ -40,16 +40,7 @@ function clampAgentPanelWidth(width: number) {
   return Math.round(Math.min(Math.max(width, REAI_PANEL_MIN_W), Math.min(REAI_PANEL_MAX_W, viewportLimit)));
 }
 
-export function AppShell({
-  user,
-  onLogout,
-  hideMobileNav = false,
-  reaiDraftId,
-  reaiDraftTitle,
-  reaiUploadId,
-  onReaiDraftUpdated,
-  children,
-}: {
+export type AppShellProps = {
   user: UserProfile;
   onLogout: () => void;
   /** Hide the mobile bottom tab bar — for detail screens that provide their own bottom action bar */
@@ -62,7 +53,113 @@ export function AppShell({
   reaiUploadId?: number;
   onReaiDraftUpdated?: (draft: DraftDetailItem) => void;
   children: React.ReactNode;
-}) {
+};
+
+type AppShellOverrides = Pick<
+  AppShellProps,
+  "hideMobileNav" | "reaiDraftId" | "reaiDraftTitle" | "reaiUploadId" | "onReaiDraftUpdated"
+>;
+
+type PersistentShellBridge = {
+  register: (overrides: AppShellOverrides) => () => void;
+};
+
+const PersistentShellContext = React.createContext<PersistentShellBridge | null>(null);
+
+function NestedAppShell({
+  hideMobileNav,
+  reaiDraftId,
+  reaiDraftTitle,
+  reaiUploadId,
+  onReaiDraftUpdated,
+  children,
+}: AppShellProps) {
+  const bridge = React.useContext(PersistentShellContext);
+  const draftUpdatedRef = React.useRef(onReaiDraftUpdated);
+  React.useLayoutEffect(() => {
+    draftUpdatedRef.current = onReaiDraftUpdated;
+  }, [onReaiDraftUpdated]);
+  const forwardDraftUpdate = React.useCallback((draft: DraftDetailItem) => {
+    draftUpdatedRef.current?.(draft);
+  }, []);
+  const registeredDraftUpdate = onReaiDraftUpdated ? forwardDraftUpdate : undefined;
+
+  React.useLayoutEffect(() => {
+    if (!bridge) return;
+    return bridge.register({
+      hideMobileNav,
+      reaiDraftId,
+      reaiDraftTitle,
+      reaiUploadId,
+      onReaiDraftUpdated: registeredDraftUpdate,
+    });
+  }, [
+    bridge,
+    forwardDraftUpdate,
+    hideMobileNav,
+    registeredDraftUpdate,
+    reaiDraftId,
+    reaiDraftTitle,
+    reaiUploadId,
+  ]);
+
+  return <>{children}</>;
+}
+
+export function AppShell(props: AppShellProps) {
+  const bridge = React.useContext(PersistentShellContext);
+  return bridge ? <NestedAppShell {...props} /> : <AppShellFrame {...props} />;
+}
+
+export function PersistentAppShell({
+  user,
+  onLogout,
+  hideMobileNav = false,
+  children,
+}: Pick<AppShellProps, "user" | "onLogout" | "hideMobileNav" | "children">) {
+  const [overrides, setOverrides] = React.useState<AppShellOverrides>({});
+  const activeRegistration = React.useRef<symbol | null>(null);
+
+  const bridge = React.useMemo<PersistentShellBridge>(() => ({
+    register(next) {
+      const registration = Symbol("app-shell-page");
+      activeRegistration.current = registration;
+      setOverrides(next);
+      return () => {
+        if (activeRegistration.current !== registration) return;
+        activeRegistration.current = null;
+        setOverrides({});
+      };
+    },
+  }), []);
+
+  return (
+    <PersistentShellContext.Provider value={bridge}>
+      <AppShellFrame
+        user={user}
+        onLogout={onLogout}
+        hideMobileNav={overrides.hideMobileNav ?? hideMobileNav}
+        reaiDraftId={overrides.reaiDraftId}
+        reaiDraftTitle={overrides.reaiDraftTitle}
+        reaiUploadId={overrides.reaiUploadId}
+        onReaiDraftUpdated={overrides.onReaiDraftUpdated}
+      >
+        {children}
+      </AppShellFrame>
+    </PersistentShellContext.Provider>
+  );
+}
+
+function AppShellFrame({
+  user,
+  onLogout,
+  hideMobileNav = false,
+  reaiDraftId,
+  reaiDraftTitle,
+  reaiUploadId,
+  onReaiDraftUpdated,
+  children,
+}: AppShellProps) {
   const pathname = usePathname();
   const [reaiEnabled, setReaiEnabled] = React.useState(false);
   const [reaiOpen, setReaiOpen] = React.useState(false);

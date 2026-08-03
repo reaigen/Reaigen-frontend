@@ -1,6 +1,7 @@
 import type { Metadata, Viewport } from "next";
 import "./globals.css";
 import { AuthProvider } from "./components/hooks/use-auth";
+import { WorkspaceShell } from "./components/workspace-shell";
 import { WebVitalsReporter } from "./components/web-vitals-reporter";
 
 export const viewport: Viewport = {
@@ -48,7 +49,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
       <body>
         <AuthProvider>
           <WebVitalsReporter />
-          {children}
+          <WorkspaceShell>{children}</WorkspaceShell>
         </AuthProvider>
       </body>
     </html>
