@@ -122,6 +122,22 @@ export function cameraRenderIsActive(activity: CameraRenderActivity): boolean {
     || Math.abs(activity.coastPitch) >= 0.04;
 }
 
+/** A newly pressed movement key must reclaim controls even if a stale flag says free mode is active. */
+export function cameraMovementShouldActivateControls(
+  keyAlreadyPressed: boolean,
+  freeModeActive: boolean,
+): boolean {
+  return !keyAlreadyPressed || !freeModeActive;
+}
+
+/** Babylon pointer input is used only by the desktop, non-spatial viewer. */
+export function cameraNavigationShouldRestorePointerControls(
+  immersiveControls: boolean,
+  spatialNavigation: boolean,
+): boolean {
+  return !immersiveControls && !spatialNavigation;
+}
+
 /** Resolve physical WASD/QE keys even when the active keyboard layout differs. */
 export function cameraMovementKey(event: Pick<KeyboardEvent, "code" | "key">): CameraMovementKey | null {
   const physical = PHYSICAL_MOVEMENT_KEYS[event.code];

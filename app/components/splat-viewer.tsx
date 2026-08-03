@@ -35,7 +35,9 @@ import {
   boundedAngularVelocity,
   cameraMovementFrameSeconds,
   cameraMovementKey,
+  cameraMovementShouldActivateControls,
   cameraMovementTargetIsEditable,
+  cameraNavigationShouldRestorePointerControls,
   cameraRenderIsActive,
   cameraTouchPanDelta,
   cameraWalkDirection,
@@ -4329,7 +4331,13 @@ const SplatViewer = forwardRef<SplatViewerHandle, Props>(function SplatViewer(
       if (key) {
         event.preventDefault();
         event.stopPropagation();
-        if (!freeModeRef.current) enableFreeCamera();
+        // Reassert control ownership on the first key in a chord. Saved-shot
+        // navigation detaches Babylon while it flies; a stale free-mode flag
+        // must never leave WASD waiting on that detached input lifecycle.
+        if (cameraMovementShouldActivateControls(
+          pressed.has(key),
+          freeModeRef.current,
+        )) enableFreeCamera();
         pressed.add(key);
         // Wake an idle shared viewer before its next throttled render. The
         // movement observer then extends this burst on every rendered frame.
@@ -4910,6 +4918,19 @@ const SplatViewer = forwardRef<SplatViewerHandle, Props>(function SplatViewer(
                 hz + Math.sin(panAngle) * LOOK,
               ));
               camera.fov = fov;
+              if (anim.holdElapsed >= anim.holdDuration) {
+                anim.holdActive = false;
+                if (
+                  cameraNavigationShouldRestorePointerControls(
+                    immersiveControls,
+                    spatialNavigationRef.current,
+                  )
+                  && canvasRef.current
+                ) {
+                  freeModeRef.current = true;
+                  camera.attachControl(canvasRef.current, true);
+                }
+              }
               return;
             }
 
@@ -5040,7 +5061,13 @@ const SplatViewer = forwardRef<SplatViewerHandle, Props>(function SplatViewer(
             anim.active = false;
             if ((anim as any).editorNav) {
               (anim as any).editorNav = false;
-              if (!immersiveControls && !spatialNavigationRef.current && canvasRef.current) {
+              if (
+                cameraNavigationShouldRestorePointerControls(
+                  immersiveControls,
+                  spatialNavigationRef.current,
+                )
+                && canvasRef.current
+              ) {
                 camera.attachControl(canvasRef.current, true);
               }
               syncSpatialOrbitToCamera();
@@ -5048,6 +5075,18 @@ const SplatViewer = forwardRef<SplatViewerHandle, Props>(function SplatViewer(
               anim.holdActive = true;
               anim.holdElapsed = 0;
               anim.holdPos = [anim.toPos[0], anim.toPos[1], anim.toPos[2]];
+            } else if (
+              cameraNavigationShouldRestorePointerControls(
+                immersiveControls,
+                spatialNavigationRef.current,
+              )
+              && canvasRef.current
+            ) {
+              // Saved-camera tours intentionally skip the cinematic hold. The
+              // old completion branch also skipped reattaching desktop input,
+              // leaving mouse look dead after arrow/camera navigation.
+              freeModeRef.current = true;
+              camera.attachControl(canvasRef.current, true);
             }
           }
         });

@@ -6,6 +6,8 @@ import {
   cameraMovementFrameSeconds,
   cameraMovementTargetIsEditable,
   cameraMovementKey,
+  cameraMovementShouldActivateControls,
+  cameraNavigationShouldRestorePointerControls,
   cameraRenderIsActive,
   cameraTouchPanDelta,
   cameraWalkDirection,
@@ -62,6 +64,15 @@ test("the spatial editor sleeps only while idle and wakes for input", () => {
     cameraRenderIsActive({ ...idleEditor, spatialNavigation: false }),
     true,
   );
+});
+
+test("camera input ownership recovers after saved-shot navigation", () => {
+  assert.equal(cameraMovementShouldActivateControls(false, true), true);
+  assert.equal(cameraMovementShouldActivateControls(true, false), true);
+  assert.equal(cameraMovementShouldActivateControls(true, true), false);
+  assert.equal(cameraNavigationShouldRestorePointerControls(false, false), true);
+  assert.equal(cameraNavigationShouldRestorePointerControls(true, false), false);
+  assert.equal(cameraNavigationShouldRestorePointerControls(false, true), false);
 });
 
 test("WASD stays in the ground plane and diagonal speed is normalized", () => {
