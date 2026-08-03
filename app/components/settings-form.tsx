@@ -61,16 +61,6 @@ import {
 import { t, getUserLanguage, formatDate as fmtDate } from "../lib/i18n";
 import { cn } from "../lib/utils";
 import { ManagedLegalDocuments } from "./content-documents";
-import {
-  ChevronDownIcon,
-  ClockIcon,
-  EyeClosedIcon,
-  InfoIcon,
-  LockIcon,
-  MapPinIcon,
-  PriceIcon,
-  SparklesIcon,
-} from "./icons";
 
 function useAutoDismiss(value: boolean, setter: (v: boolean) => void, ms = 3000) {
   React.useEffect(() => {
@@ -133,11 +123,11 @@ function CollapsibleSection({ title, defaultOpen, children }: {
     <div>
       <button
         type="button"
-        className="flex w-full items-center justify-between py-2 text-[14px] font-semibold text-foreground/80 hover:text-foreground"
+        aria-expanded={open}
+        className={cn("flex w-full items-center py-2 text-left text-[14px] font-semibold text-foreground/65 transition-colors hover:text-foreground", open && "text-foreground")}
         onClick={() => setOpen(!open)}
       >
         {title}
-        <ChevronDownIcon size={16} className={cn("shrink-0 text-muted-foreground transition-transform", open && "rotate-180")} />
       </button>
       {open && <div className="pt-2 space-y-4">{children}</div>}
     </div>
@@ -2202,16 +2192,16 @@ export function SettingsForm({ user, onSaved }: { user: UserProfile; onSaved: ()
     };
   }, []);
   const triggerClassName =
-    "h-11 w-full shrink-0 justify-start gap-3 rounded-2xl px-3.5 py-0 text-left text-[13px] font-medium shadow-none data-[state=active]:bg-foreground data-[state=active]:text-background data-[state=active]:shadow-control";
+    "h-11 w-full shrink-0 justify-start rounded-2xl px-4 py-0 text-left text-[13px] font-medium shadow-none data-[state=active]:bg-foreground data-[state=active]:text-background data-[state=active]:shadow-control";
   const settingsTabs = [
-    { value: "profile", label: "settings.tab.profile", icon: InfoIcon },
-    { value: "seller", label: "settings.tab.seller", icon: MapPinIcon },
-    { value: "privacy", label: "settings.tab.privacy", icon: EyeClosedIcon },
-    { value: "reai", label: "settings.tab.reai", icon: SparklesIcon },
-    { value: "localization", label: "settings.tab.localization", icon: MapPinIcon },
-    { value: "notifications", label: "settings.tab.notifications", icon: ClockIcon },
-    { value: "billing", label: "settings.tab.billing", icon: PriceIcon },
-    { value: "security", label: "settings.tab.security", icon: LockIcon },
+    { value: "profile", label: "settings.tab.profile" },
+    { value: "seller", label: "settings.tab.seller" },
+    { value: "privacy", label: "settings.tab.privacy" },
+    { value: "reai", label: "settings.tab.reai" },
+    { value: "localization", label: "settings.tab.localization" },
+    { value: "notifications", label: "settings.tab.notifications" },
+    { value: "billing", label: "settings.tab.billing" },
+    { value: "security", label: "settings.tab.security" },
   ] as const;
 
   return (
@@ -2234,26 +2224,21 @@ export function SettingsForm({ user, onSaved }: { user: UserProfile; onSaved: ()
               setActiveTab(value);
               window.history.replaceState(null, "", `#${value}`);
             }}
-            className="h-12 w-full appearance-none rounded-full border border-border/75 bg-card px-5 pr-12 text-[16px] font-semibold text-foreground shadow-control outline-none transition-[border-color,box-shadow] focus-visible:border-foreground/30 focus-visible:ring-2 focus-visible:ring-ring/20"
+            className="h-12 w-full rounded-full border border-border/75 bg-card px-5 text-[16px] font-semibold text-foreground shadow-control outline-none transition-[border-color,box-shadow] focus-visible:border-foreground/30 focus-visible:ring-2 focus-visible:ring-ring/20"
             aria-label={t("settings.title", lang)}
           >
             {settingsTabs.map((tab) => (
               <option key={tab.value} value={tab.value}>{t(tab.label, lang)}</option>
             ))}
           </select>
-          <ChevronDownIcon size={16} className="pointer-events-none absolute right-5 top-1/2 -translate-y-1/2 text-muted-foreground" />
         </label>
         {/* Desktop: vertical list */}
         <TabsList className="hidden h-auto min-h-0 w-full flex-col items-stretch gap-1 rounded-[24px] border border-border/65 bg-card p-2 text-muted-foreground shadow-card lg:flex">
-          {settingsTabs.map((tab) => {
-            const Icon = tab.icon;
-            return (
-              <TabsTrigger key={tab.value} value={tab.value} className={triggerClassName}>
-                <Icon size={16} className="shrink-0" />
-                <span className="min-w-0 truncate">{t(tab.label, lang)}</span>
-              </TabsTrigger>
-            );
-          })}
+          {settingsTabs.map((tab) => (
+            <TabsTrigger key={tab.value} value={tab.value} className={triggerClassName}>
+              <span className="min-w-0 truncate">{t(tab.label, lang)}</span>
+            </TabsTrigger>
+          ))}
         </TabsList>
       </div>
       <div className="min-w-0">

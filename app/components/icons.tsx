@@ -121,11 +121,8 @@ export function MainTourIcon({
       aria-hidden={props["aria-hidden"] ?? true}
       {...props}
     >
-      <path d="M19.7 8.4C18.25 5.85 15.35 4.25 12 4.25c-3.95 0-7.3 2.25-8.45 5.4" />
-      <path d="m16.35 8.25 3.55.4.35-3.55" />
-      <path d="M4.3 15.6c1.45 2.55 4.35 4.15 7.7 4.15 3.95 0 7.3-2.25 8.45-5.4" />
-      <path d="m7.65 15.75-3.55-.4-.35 3.55" />
-      <circle cx="12" cy="12" r="2.35" />
+      <rect x="3.25" y="4.25" width="17.5" height="15.5" rx="3.5" />
+      <path d="m10.15 8.55 5.45 3.45-5.45 3.45V8.55Z" fill="currentColor" stroke="none" />
     </svg>
   );
 }

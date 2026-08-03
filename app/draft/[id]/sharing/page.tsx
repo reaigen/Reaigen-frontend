@@ -26,7 +26,7 @@ import type { ContentScope } from "../../../components/sharing/content-scope-sel
 import { PageLoading } from "../../../components/page-loading";
 import { CollectionLoading } from "../../../components/collection-loading";
 import { PageHeader } from "../../../components/page-header";
-import { ShareManagementPanel, ShareManagementTile } from "../../../components/share-management-card";
+import { ShareManagementPanel, ShareManagementRow } from "../../../components/share-management-card";
 import { copyToClipboard, shareUrl } from "../../../lib/share-ui";
 import type { UnitLookup } from "../../../lib/unit-catalog";
 import { currentGalleryUploads } from "../../../lib/media";
@@ -365,9 +365,9 @@ export default function SharingPage({ params }: { params: Promise<{ id: string }
                     {shares.length}
                   </span>
                 </div>
-                <div className="-mx-1 flex gap-2 overflow-x-auto px-1 pb-2 scrollbar-hide" aria-label={t("sharing.activeLinks", lang)}>
+                <div className="max-h-[13rem] divide-y divide-border/60 overflow-y-auto rounded-2xl border border-border/70 bg-card scrollbar-thin" aria-label={t("sharing.activeLinks", lang)}>
                   {shares.map((share) => (
-                    <ShareManagementTile
+                    <ShareManagementRow
                       key={share.id}
                       share={share}
                       title={share.title || t("sharing.linkLabel", lang)}

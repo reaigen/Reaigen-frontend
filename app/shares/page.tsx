@@ -18,7 +18,7 @@ import { SearchField } from "../components/search-field";
 import { ArrowRightIcon, InfoIcon, LinkIcon } from "../components/icons";
 import { Thumbnail } from "../components/thumbnail";
 import { SegmentedControl } from "../components/segmented-control";
-import { ShareManagementCard, ShareManagementPanel } from "../components/share-management-card";
+import { ShareManagementPanel, ShareManagementRow } from "../components/share-management-card";
 import { currentGalleryUploads } from "../lib/media";
 
 function draftThumbnail(draft: DraftListingItem): string | null {
@@ -219,13 +219,13 @@ export default function SharesPage() {
               : <Button type="button" size="sm" onClick={() => setCreateOpen(true)}>{t("shares.createLink", lang)}</Button>}
           />
         ) : (
-          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3">
+          <div className="grid grid-cols-1 gap-px overflow-hidden rounded-2xl border border-border/70 bg-border/70 shadow-card sm:grid-cols-2">
             {filtered.map((share) => {
               const draft = draftById.get(share.draft);
               const tourName = share.title || share.draft_title || draft?.title || t("shares.untitledTour", lang);
 
               return (
-                <ShareManagementCard
+                <ShareManagementRow
                   key={share.id}
                   share={share}
                   title={tourName}

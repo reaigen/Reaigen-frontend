@@ -16,20 +16,18 @@ import { getShareAnalytics, pauseShare, resumeShare, revokeShare } from "../lib/
 import { formatDate, t } from "../lib/i18n";
 import { Button } from "../lib/ui/button";
 import { AnalyticsGrid, type AnalyticsGridItem } from "./analytics-grid";
-import { CollectionCard } from "./collection-card";
 import {
   ArrowRightIcon,
   CheckIcon,
   ClockIcon,
   CopyIcon,
   ExternalLinkIcon,
-  LinkIcon,
   LockIcon,
 } from "./icons";
 import { SidePanel } from "./side-panel";
 import { StatusPill } from "./status-pill";
 
-type SharedCardProps = {
+type SharedRowProps = {
   share: ShareData;
   title: string;
   lang: string;
@@ -37,145 +35,32 @@ type SharedCardProps = {
   onManage: () => void;
 };
 
-type SharedTileProps = {
-  share: ShareData;
-  title: string;
-  lang: string;
-  dateFormat?: string | null;
-  onManage: () => void;
-};
-
-export function ShareManagementTile({
+export function ShareManagementRow({
   share,
   title,
   lang,
   dateFormat,
   onManage,
-}: SharedTileProps) {
+}: SharedRowProps) {
   const status = STATUS_CONFIG[share.status] ?? STATUS_CONFIG.revoked;
 
   return (
     <button
       type="button"
       onClick={onManage}
-      className="group flex h-[4.75rem] w-[min(16rem,78vw)] shrink-0 items-center gap-3 rounded-2xl border border-border/70 bg-card px-3.5 text-left shadow-control transition-[border-color,box-shadow] hover:border-foreground/20 hover:shadow-card focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+      className="group flex min-h-[4.25rem] w-full min-w-0 items-center gap-4 bg-card px-4 text-left transition-colors hover:bg-accent/45 focus-visible:relative focus-visible:z-10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
       aria-label={`${t("shares.manage", lang)}: ${title}`}
     >
-      <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-surface-subtle text-foreground/60">
-        <LinkIcon size={16} />
-      </span>
       <span className="min-w-0 flex-1">
-        <span className="flex items-center gap-2">
-          <span className="truncate text-[12px] font-semibold">{title}</span>
-          <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-foreground/35" aria-hidden="true" />
-        </span>
+        <span className="block truncate text-[13px] font-semibold text-foreground/85">{title}</span>
         <span className="mt-1 block truncate text-[10px] text-muted-foreground">
           {t(status.labelKey, lang)} · {share.access_count} {share.access_count === 1 ? t("shares.viewSingular", lang) : t("shares.viewPlural", lang)} · {formatDate(share.created_at, dateFormat, lang)}
         </span>
       </span>
-      <ArrowRightIcon size={13} className="shrink-0 text-foreground/30 transition-transform group-hover:translate-x-0.5 group-hover:text-foreground/60" />
+      <span className="shrink-0 text-[11px] font-semibold text-foreground/45 transition-colors group-hover:text-foreground">
+        {t("shares.manage", lang)}
+      </span>
     </button>
-  );
-}
-
-export function ShareManagementCard({
-  share,
-  title,
-  lang,
-  dateFormat,
-  onManage,
-}: SharedCardProps) {
-  const [copied, setCopied] = React.useState(false);
-  const isActive = share.status === "active";
-  const isLive = isActive || share.status === "paused";
-  const status = STATUS_CONFIG[share.status] ?? STATUS_CONFIG.revoked;
-  const expiry = expiryLabel(share.expires_at, lang);
-
-  const handleCopy = async () => {
-    if (!await copyToClipboard(shareUrl(share.token))) return;
-    setCopied(true);
-    window.setTimeout(() => setCopied(false), 2000);
-  };
-
-  return (
-    <CollectionCard className="flex h-full min-h-[11rem] flex-col">
-      <button
-        type="button"
-        onClick={onManage}
-        className="flex min-h-0 flex-1 flex-col p-4 text-left focus-visible:outline-none"
-        aria-label={`${t("shares.manage", lang)}: ${title}`}
-      >
-        <span className="flex w-full items-start justify-between gap-3">
-          <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl border border-border/65 bg-surface-subtle text-foreground/65">
-            <LinkIcon size={15} />
-          </span>
-          <StatusPill tone={status.tone} dot className="shrink-0">
-            {t(status.labelKey, lang)}
-          </StatusPill>
-        </span>
-
-        <span className="mt-3 block w-full truncate text-[14px] font-semibold leading-snug tracking-[-0.015em] text-foreground">
-          {title}
-        </span>
-        <span className="mt-1 flex min-h-4 w-full items-center gap-1.5 overflow-hidden whitespace-nowrap text-[10px] text-muted-foreground">
-          <span className="truncate">{t("shares.created", lang)} {formatDate(share.created_at, dateFormat, lang)}</span>
-          {share.requires_pin ? (
-            <span className="inline-flex shrink-0 items-center gap-1 text-foreground/50">
-              <LockIcon size={9} /> {t("shares.pinProtected", lang)}
-            </span>
-          ) : null}
-          {expiry ? (
-            <span className="inline-flex shrink-0 items-center gap-1 text-foreground/50">
-              <ClockIcon size={9} /> {expiry}
-            </span>
-          ) : null}
-        </span>
-
-        <span className="mt-auto flex w-full items-end justify-between gap-4 pt-3">
-          <span>
-            <span className="block text-[21px] font-semibold leading-none tracking-[-0.035em] tabular-nums">{share.access_count}</span>
-            <span className="mt-1 block text-[10px] font-medium text-muted-foreground">
-              {share.access_count === 1 ? t("shares.viewSingular", lang) : t("shares.viewPlural", lang)}
-            </span>
-          </span>
-          <span className="min-w-0 max-w-[65%] truncate pb-0.5 text-right text-[10px] text-muted-foreground">
-            {fieldSummaryLabel(share, lang)}
-          </span>
-        </span>
-      </button>
-
-      <div className="flex h-11 shrink-0 items-center gap-1.5 border-t border-border/65 bg-card px-2.5">
-        {isLive ? (
-          <Button
-            type="button"
-            variant="ghost"
-            size="xs"
-            onClick={() => void handleCopy()}
-            className="min-w-[5.25rem] gap-1.5 px-2 text-[11px] text-foreground/65 hover:text-foreground"
-          >
-            {copied ? <CheckIcon size={12} /> : <CopyIcon size={12} />}
-            {copied ? t("shares.copied", lang) : t("shares.copyLink", lang)}
-          </Button>
-        ) : null}
-        {isActive ? (
-          <Button asChild variant="ghost" size="xs" className="gap-1.5 px-2 text-[11px] text-foreground/65 hover:text-foreground">
-            <a href={shareUrl(share.token)} target="_blank" rel="noreferrer">
-              <ExternalLinkIcon size={12} /> {t("common.open", lang)}
-            </a>
-          </Button>
-        ) : null}
-        <span className="flex-1" />
-        <Button
-          type="button"
-          variant="ghost"
-          size="xs"
-          onClick={onManage}
-          className="gap-1.5 px-2 text-[11px] font-semibold text-foreground/70 hover:text-foreground"
-        >
-          {t("shares.manage", lang)} <ArrowRightIcon size={12} />
-        </Button>
-      </div>
-    </CollectionCard>
   );
 }
 
