@@ -17,9 +17,6 @@ export function CollectionLoading({
       aria-busy="true"
       aria-label={label}
     >
-      <div className="loading-progress-track w-24" aria-hidden="true">
-        <span className="loading-progress-indeterminate" />
-      </div>
       <span className="sr-only">{label}</span>
     </div>
   );

@@ -1151,15 +1151,7 @@ export default function WebTourEditorPage({
                 <PlusIcon size={14} />
                 {t("webEditor.addSplat", lang)}
               </Button>
-            ) : (
-              <div
-                className="loading-progress-track mx-auto mt-5 w-28"
-                role="progressbar"
-                aria-label={t("webEditor.assetPreparing", lang)}
-              >
-                <span className="loading-progress-indeterminate" />
-              </div>
-            )}
+            ) : null}
           </div>
         </div>
       )}
