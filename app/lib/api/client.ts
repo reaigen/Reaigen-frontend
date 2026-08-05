@@ -228,6 +228,7 @@ export async function register(data: {
   accept_privacy_policy: boolean;
   accept_terms: boolean;
   preferred_language: string;
+  preferred_timezone: string;
 }) {
   return request("/api/auth/register/", {
     method: "POST",
@@ -471,6 +472,23 @@ export async function updateProfile(data: Partial<{
   });
 }
 
+export interface AccountConsent {
+  has_given_consent: boolean;
+  consent_date: string | null;
+  consent_version: string;
+  marketing_consent: boolean;
+  data_processing_consent: boolean;
+}
+
+export async function updateAccountConsent(data: Partial<Pick<AccountConsent,
+  "marketing_consent" | "data_processing_consent"
+>>): Promise<AccountConsent> {
+  return request("/api/reaigen/users/consent/", {
+    method: "PATCH",
+    body: JSON.stringify(data),
+  });
+}
+
 export async function updateSellerProfile(data: Partial<{
   phone: string;
   company: string;
@@ -684,8 +702,9 @@ export async function listUnits(category?: string): Promise<UnitLookup[]> {
 }
 
 export async function changePassword(data: {
-  current_password: string;
+  old_password: string;
   new_password: string;
+  new_password_confirm: string;
 }) {
   return request("/api/auth/change-password/", {
     method: "POST",
@@ -780,14 +799,14 @@ export async function verifyEmail(token: string) {
 export async function requestPhoneLinkOtp(phone: string) {
   return request("/api/auth/link/phone/request-otp/", {
     method: "POST",
-    body: JSON.stringify({ phone }),
+    body: JSON.stringify({ phone_number: phone }),
   });
 }
 
 export async function verifyPhoneLinkOtp(data: { phone: string; code: string }) {
   return request("/api/auth/link/phone/verify-otp/", {
     method: "POST",
-    body: JSON.stringify(data),
+    body: JSON.stringify({ phone_number: data.phone, otp_code: data.code }),
   });
 }
 
@@ -1737,11 +1756,26 @@ export type ReaiToolCode =
   | "settings_navigation"
   | "settings_localization";
 
+export interface ReaiToolStatus {
+  /** True when the active subscription tier includes the tool. */
+  entitled: boolean;
+  /** The account's own on/off preference, independent of the tier. */
+  user_policy: boolean;
+  /** entitled && user_policy — what the backend actually enforces. */
+  allowed: boolean;
+  blocker: "reaigen_access" | "tier_feature" | "user_policy" | null;
+}
+
 export interface ReaiToolPermissions {
   allow_all_tools: boolean;
+  /** Effective decision per tool; a tier-blocked tool reads false here. */
   tools: Record<ReaiToolCode, boolean>;
+  /** The stored preference, which survives a tier that blocks the tool. */
   overrides: Record<ReaiToolCode, boolean>;
+  entitled_tools: Record<ReaiToolCode, boolean>;
+  tool_status: Record<ReaiToolCode, ReaiToolStatus>;
   available_tools: ReaiToolCode[];
+  writable: boolean;
   confirmation_required_for_writes: true;
   updated_at: string;
 }

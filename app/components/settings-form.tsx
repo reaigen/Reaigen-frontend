@@ -13,6 +13,7 @@ import { Textarea } from "../lib/ui/textarea";
 import { Avatar, AvatarFallback, AvatarImage } from "../lib/ui/avatar";
 import {
   updateProfile,
+  updateAccountConsent,
   updateSellerProfile,
   updateLocalization,
   updatePersonalizedData,
@@ -41,6 +42,7 @@ import {
   grantReaiImprovementConsent,
   revokeReaiImprovementConsent,
   type UserProfile,
+  type PersonalizedData,
   type AvailablePreferences,
   type PreferenceOption,
   type TotpStatus,
@@ -314,18 +316,12 @@ function SellerTab({ user, onSaved, lang }: { user: UserProfile; onSaved: () => 
   const [state, setState] = React.useState(p?.state ?? "");
   const [country, setCountry] = React.useState(p?.country ?? "");
   const [postalCode, setPostalCode] = React.useState(p?.postal_code ?? "");
-  const [portfolioVis, setPortfolioVis] = React.useState(p?.portfolio_visibility ?? "private");
-  const [portfolioSlug, setPortfolioSlug] = React.useState(p?.portfolio_slug ?? "");
-  const [portfolioTitle, setPortfolioTitle] = React.useState(p?.portfolio_title ?? "");
-  const [portfolioHeadline, setPortfolioHeadline] = React.useState(p?.portfolio_headline ?? "");
   const [loading, setLoading] = React.useState(false);
   const [error, setError] = React.useState<string | null>(null);
   const [success, setSuccess] = React.useState(false);
   const [coverUploading, setCoverUploading] = React.useState(false);
-  const [portfolioCopied, setPortfolioCopied] = React.useState(false);
   const coverInputRef = React.useRef<HTMLInputElement>(null);
   useAutoDismiss(success, setSuccess);
-  useAutoDismiss(portfolioCopied, setPortfolioCopied);
 
   async function handleCoverChange(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
@@ -365,10 +361,6 @@ function SellerTab({ user, onSaved, lang }: { user: UserProfile; onSaved: () => 
         state: state.trim(),
         country: country.trim(),
         postal_code: postalCode.trim(),
-        portfolio_visibility: portfolioVis,
-        portfolio_slug: portfolioSlug.trim(),
-        portfolio_title: portfolioTitle.trim(),
-        portfolio_headline: portfolioHeadline.trim(),
       });
       setSuccess(true);
       onSaved();
@@ -381,10 +373,6 @@ function SellerTab({ user, onSaved, lang }: { user: UserProfile; onSaved: () => 
 
   const hasSocial = !!(linkedin || twitter || instagram);
   const hasAddress = !!(address || city || state || country || postalCode);
-  const hasPortfolio = !!(portfolioSlug || portfolioTitle || portfolioHeadline) || portfolioVis !== "private";
-
-  const portfolioLink = portfolioSlug ? `https://reaigen.com/p/${portfolioSlug}` : "";
-
   return (
     <Card>
       <CardHeader>
@@ -516,61 +504,6 @@ function SellerTab({ user, onSaved, lang }: { user: UserProfile; onSaved: () => 
                 <Input value={postalCode} onChange={(e) => setPostalCode(e.target.value)} />
               </div>
             </div>
-          </CollapsibleSection>
-
-          {/* Portfolio — collapsible */}
-          <Separator />
-          <CollapsibleSection title={t("settings.seller.sectionPortfolio", lang)} defaultOpen={hasPortfolio}>
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              <div className="space-y-1.5">
-                <Label>{t("settings.seller.portfolioVisibility", lang)}</Label>
-                <Select value={portfolioVis} onValueChange={setPortfolioVis}>
-                  <SelectTrigger><SelectValue /></SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="private">{t("settings.seller.portfolioPrivate", lang)}</SelectItem>
-                    <SelectItem value="unlisted">{t("settings.seller.portfolioUnlisted", lang)}</SelectItem>
-                    <SelectItem value="public">{t("settings.seller.portfolioPublic", lang)}</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-              <div className="space-y-1.5">
-                <Label>{t("settings.seller.portfolioSlug", lang)}</Label>
-                <div className="flex items-stretch">
-                  <span className="flex shrink-0 items-center rounded-l-xl border border-r-0 border-input bg-muted px-2.5 text-xs text-muted-foreground">
-                    {t("settings.seller.portfolioSlugPrefix", lang)}
-                  </span>
-                  <Input
-                    value={portfolioSlug}
-                    onChange={(e) => setPortfolioSlug(e.target.value)}
-                    className="rounded-l-none"
-                  />
-                </div>
-              </div>
-            </div>
-            <div className="space-y-1.5">
-              <Label>{t("settings.seller.portfolioTitleLabel", lang)}</Label>
-              <Input value={portfolioTitle} onChange={(e) => setPortfolioTitle(e.target.value)} maxLength={120} />
-            </div>
-            <div className="space-y-1.5">
-              <Label>{t("settings.seller.portfolioHeadline", lang)}</Label>
-              <Input value={portfolioHeadline} onChange={(e) => setPortfolioHeadline(e.target.value)} maxLength={200} />
-            </div>
-            {portfolioVis !== "private" && portfolioLink && (
-              <div className="space-y-1.5">
-                <Label>{t("settings.seller.portfolioLink", lang)}</Label>
-                <div className="flex items-center gap-2">
-                  <Input value={portfolioLink} readOnly className="opacity-70" />
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="sm"
-                    onClick={() => { navigator.clipboard.writeText(portfolioLink); setPortfolioCopied(true); }}
-                  >
-                    {portfolioCopied ? t("settings.seller.portfolioCopied", lang) : t("shares.copyLink", lang)}
-                  </Button>
-                </div>
-              </div>
-            )}
           </CollapsibleSection>
 
           {error && <p className="text-[12px] text-destructive">{error}</p>}
@@ -795,22 +728,33 @@ function ReaiTab({ lang }: { lang: string }) {
 
               {!toolPermissions.allow_all_tools && (
                 <div className="divide-y divide-border/60 rounded-lg border border-border/60 px-4">
-                  {toolPermissions.available_tools.map((code) => (
-                    <div key={code} className="flex items-center justify-between gap-4 py-3">
-                      <div className="min-w-0">
-                        <p className="text-[13px] font-medium">{t(`settings.reai.tool.${code}`, lang)}</p>
-                        <p className="mt-0.5 text-[12px] leading-relaxed text-muted-foreground">
-                          {t(`settings.reai.tool.${code}.help`, lang)}
-                        </p>
+                  {toolPermissions.available_tools.map((code) => {
+                    // A tool the plan excludes can never be switched on: the
+                    // backend keeps the preference but still reports it off,
+                    // so an enabled switch would silently snap back.
+                    const entitled = toolPermissions.tool_status?.[code]?.entitled ?? true;
+                    return (
+                      <div key={code} className="flex items-center justify-between gap-4 py-3">
+                        <div className="min-w-0">
+                          <p className="text-[13px] font-medium">{t(`settings.reai.tool.${code}`, lang)}</p>
+                          <p className="mt-0.5 text-[12px] leading-relaxed text-muted-foreground">
+                            {t(`settings.reai.tool.${code}.help`, lang)}
+                          </p>
+                          {!entitled && (
+                            <p className="mt-0.5 text-[12px] leading-relaxed text-muted-foreground/80">
+                              {t("settings.reai.toolTierBlocked", lang)}
+                            </p>
+                          )}
+                        </div>
+                        <Switch
+                          checked={toolPermissions.tools[code]}
+                          disabled={saving || !entitled}
+                          onCheckedChange={(checked) => void setTool(code, checked)}
+                          aria-label={t(`settings.reai.tool.${code}`, lang)}
+                        />
                       </div>
-                      <Switch
-                        checked={toolPermissions.tools[code]}
-                        disabled={saving}
-                        onCheckedChange={(checked) => void setTool(code, checked)}
-                        aria-label={t(`settings.reai.tool.${code}`, lang)}
-                      />
-                    </div>
-                  ))}
+                    );
+                  })}
                 </div>
               )}
 
@@ -862,15 +806,31 @@ function PrivacyTab({ user, onSaved, lang }: { user: UserProfile; onSaved: () =>
   const [loading, setLoading] = React.useState(false);
   const [error, setError] = React.useState<string | null>(null);
   const [success, setSuccess] = React.useState(false);
+  const [marketingConsent, setMarketingConsent] = React.useState(user.gdpr?.marketing_consent ?? false);
+  const [marketingSaving, setMarketingSaving] = React.useState(false);
+  const [marketingError, setMarketingError] = React.useState<string | null>(null);
   useAutoDismiss(success, setSuccess);
 
   React.useEffect(() => {
-    if (!isPublic) {
-      setShowEmail(false);
-      setShowPhone(false);
-      setAllowContact(false);
+    setMarketingConsent(user.gdpr?.marketing_consent ?? false);
+  }, [user.gdpr?.marketing_consent]);
+
+  async function handleMarketingConsent(nextValue: boolean) {
+    const previous = marketingConsent;
+    setMarketingConsent(nextValue);
+    setMarketingSaving(true);
+    setMarketingError(null);
+    try {
+      const saved = await updateAccountConsent({ marketing_consent: nextValue });
+      setMarketingConsent(saved.marketing_consent);
+      onSaved();
+    } catch (err) {
+      setMarketingConsent(previous);
+      setMarketingError(getSafeApiErrorMessage(err, lang));
+    } finally {
+      setMarketingSaving(false);
     }
-  }, [isPublic]);
+  }
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -1003,10 +963,6 @@ function PrivacyTab({ user, onSaved, lang }: { user: UserProfile; onSaved: () =>
               value={gdpr?.consent_version || t("common.notRecorded", lang)}
             />
             <DataRow
-              label={t("settings.privacy.legal.marketingConsent", lang)}
-              value={gdpr?.marketing_consent ? t("common.allowed", lang) : t("common.notAllowed", lang)}
-            />
-            <DataRow
               label={t("settings.privacy.legal.terms", lang)}
               value={`${t("settings.privacy.legal.termsAcceptedOn", lang)} ${formatAccountDate(user.date_joined, lang, user.localization?.date_format)}`}
             />
@@ -1015,6 +971,16 @@ function PrivacyTab({ user, onSaved, lang }: { user: UserProfile; onSaved: () =>
               value={licenseStatus}
             />
           </dl>
+          <div className="mt-3 rounded-lg border border-border/60 px-4">
+            <ToggleRow
+              label={t("settings.privacy.legal.marketingConsent", lang)}
+              hint={t("settings.privacy.legal.marketingConsentHint", lang)}
+              checked={marketingConsent}
+              onChange={handleMarketingConsent}
+              disabled={marketingSaving}
+            />
+          </div>
+          {marketingError && <p className="mt-2 text-[12px] text-destructive" role="alert">{marketingError}</p>}
           <p className="mt-3 text-[12px] leading-relaxed text-muted-foreground">
             {t("settings.privacy.legal.hint", lang)}
           </p>
@@ -1042,9 +1008,6 @@ function NotificationsTab({ user, onSaved, lang }: { user: UserProfile; onSaved:
   const [processing, setProcessing] = React.useState(pd?.notify_processing_complete ?? true);
   const [processingFailed, setProcessingFailed] = React.useState(pd?.notify_processing_failed ?? true);
   const [uploadLanded, setUploadLanded] = React.useState(pd?.notify_upload_landed ?? false);
-  const [newFeatures, setNewFeatures] = React.useState(pd?.notify_new_features ?? true);
-  const [systemUpdates, setSystemUpdates] = React.useState(pd?.notify_system_updates ?? true);
-  const [billing, setBilling] = React.useState(pd?.notify_billing ?? true);
   const [sound, setSound] = React.useState(pd?.notification_sound ?? true);
   const [quietHours, setQuietHours] = React.useState(Boolean(
     pd?.notification_quiet_hours_start
@@ -1061,7 +1024,41 @@ function NotificationsTab({ user, onSaved, lang }: { user: UserProfile; onSaved:
   const [saving, setSaving] = React.useState(false);
   const [error, setError] = React.useState<string | null>(null);
   const [success, setSuccess] = React.useState(false);
+  const saveRevision = React.useRef(0);
+  const confirmedSyncSignature = React.useRef<string | null>(null);
   useAutoDismiss(success, setSuccess);
+
+  const applyConfirmedPreferences = React.useCallback((value: PersonalizedData | null | undefined) => {
+    confirmedSyncSignature.current = JSON.stringify([
+      value?.notifications_enabled ?? true,
+      value?.email_notifications ?? true,
+      value?.push_notifications ?? false,
+      value?.notify_processing_complete ?? true,
+      value?.notify_processing_failed ?? true,
+      value?.notify_upload_landed ?? false,
+      value?.notification_sound ?? true,
+      Boolean(value?.notification_quiet_hours_start && value?.notification_quiet_hours_end),
+      value?.notification_quiet_hours_start?.slice(0, 5) ?? "22:00",
+      value?.notification_quiet_hours_end?.slice(0, 5) ?? "08:00",
+    ]);
+    setEnabled(value?.notifications_enabled ?? true);
+    setEmail(value?.email_notifications ?? true);
+    setPush(value?.push_notifications ?? false);
+    setProcessing(value?.notify_processing_complete ?? true);
+    setProcessingFailed(value?.notify_processing_failed ?? true);
+    setUploadLanded(value?.notify_upload_landed ?? false);
+    setSound(value?.notification_sound ?? true);
+    setQuietHours(Boolean(
+      value?.notification_quiet_hours_start
+      && value?.notification_quiet_hours_end,
+    ));
+    setQuietStart(value?.notification_quiet_hours_start?.slice(0, 5) ?? "22:00");
+    setQuietEnd(value?.notification_quiet_hours_end?.slice(0, 5) ?? "08:00");
+  }, []);
+
+  React.useEffect(() => {
+    applyConfirmedPreferences(pd);
+  }, [applyConfirmedPreferences, pd]);
 
   React.useEffect(() => {
     let active = true;
@@ -1106,9 +1103,28 @@ function NotificationsTab({ user, onSaved, lang }: { user: UserProfile; onSaved:
   React.useEffect(() => {
     if (isFirstRender.current) {
       isFirstRender.current = false;
+      confirmedSyncSignature.current = null;
       return;
     }
+    const currentSignature = JSON.stringify([
+      enabled,
+      email,
+      push,
+      processing,
+      processingFailed,
+      uploadLanded,
+      sound,
+      quietHours,
+      quietStart,
+      quietEnd,
+    ]);
+    if (confirmedSyncSignature.current === currentSignature) {
+      confirmedSyncSignature.current = null;
+      return;
+    }
+    confirmedSyncSignature.current = null;
     const timeout = setTimeout(() => {
+      const revision = ++saveRevision.current;
       setSaving(true);
       setError(null);
       updatePersonalizedData({
@@ -1118,9 +1134,6 @@ function NotificationsTab({ user, onSaved, lang }: { user: UserProfile; onSaved:
         notify_processing_complete: processing,
         notify_processing_failed: processingFailed,
         notify_upload_landed: uploadLanded,
-        notify_new_features: newFeatures,
-        notify_system_updates: systemUpdates,
-        notify_billing: billing,
         notification_sound: sound,
         notification_quiet_hours_start: quietHours
           ? `${quietStart || "22:00"}:00`
@@ -1131,9 +1144,20 @@ function NotificationsTab({ user, onSaved, lang }: { user: UserProfile; onSaved:
         notification_timezone: Intl.DateTimeFormat()
           .resolvedOptions().timeZone || "UTC",
       })
-        .then(() => { setSuccess(true); onSaved(); })
-        .catch((err) => setError(getSafeApiErrorMessage(err, lang)))
-        .finally(() => setSaving(false));
+        .then((saved) => {
+          if (revision !== saveRevision.current) return;
+          applyConfirmedPreferences(saved);
+          setSuccess(true);
+          onSaved();
+        })
+        .catch((err) => {
+          if (revision !== saveRevision.current) return;
+          applyConfirmedPreferences(pd);
+          setError(getSafeApiErrorMessage(err, lang));
+        })
+        .finally(() => {
+          if (revision === saveRevision.current) setSaving(false);
+        });
     }, 400);
     return () => clearTimeout(timeout);
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -1144,9 +1168,6 @@ function NotificationsTab({ user, onSaved, lang }: { user: UserProfile; onSaved:
     processing,
     processingFailed,
     uploadLanded,
-    newFeatures,
-    systemUpdates,
-    billing,
     sound,
     quietHours,
     quietStart,
@@ -1244,21 +1265,6 @@ function NotificationsTab({ user, onSaved, lang }: { user: UserProfile; onSaved:
                     </SettingsField>
                   </div>
                 )}
-                <ToggleRow
-                  label={t("settings.notifications.newFeatures", lang)}
-                  checked={newFeatures}
-                  onChange={setNewFeatures}
-                />
-                <ToggleRow
-                  label={t("settings.notifications.systemUpdates", lang)}
-                  checked={systemUpdates}
-                  onChange={setSystemUpdates}
-                />
-                <ToggleRow
-                  label={t("settings.notifications.billing", lang)}
-                  checked={billing}
-                  onChange={setBilling}
-                />
               </>
             )}
           </div>
@@ -1710,7 +1716,7 @@ function BillingTab({ user, onSaved, lang }: { user: UserProfile; onSaved: () =>
 function SecurityTab({ user, onSaved, lang }: { user: UserProfile; onSaved: () => void; lang: string }) {
   return (
     <div className="space-y-6">
-      <PasswordSection lang={lang} />
+      <PasswordSection hasExistingPassword={user.has_password} lang={lang} />
       <TwoFactorSection lang={lang} />
       <LinkedAccountsSection lang={lang} />
       <PhoneSection user={user} onSaved={onSaved} lang={lang} />
@@ -1718,7 +1724,7 @@ function SecurityTab({ user, onSaved, lang }: { user: UserProfile; onSaved: () =
   );
 }
 
-function PasswordSection({ lang }: { lang: string }) {
+function PasswordSection({ hasExistingPassword, lang }: { hasExistingPassword: boolean; lang: string }) {
   const [currentPassword, setCurrentPassword] = React.useState("");
   const [newPassword, setNewPassword] = React.useState("");
   const [confirmPassword, setConfirmPassword] = React.useState("");
@@ -1726,7 +1732,11 @@ function PasswordSection({ lang }: { lang: string }) {
   const [error, setError] = React.useState<string | null>(null);
   const [success, setSuccess] = React.useState(false);
   useAutoDismiss(success, setSuccess);
-  const canSubmit = currentPassword.length > 0 && newPassword.length >= 8 && newPassword === confirmPassword;
+  const passwordReused = hasExistingPassword && newPassword.length > 0 && newPassword === currentPassword;
+  const canSubmit = (!hasExistingPassword || currentPassword.length > 0)
+    && newPassword.length >= 8
+    && newPassword === confirmPassword
+    && !passwordReused;
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -1735,7 +1745,11 @@ function PasswordSection({ lang }: { lang: string }) {
     if (!canSubmit) return;
     try {
       setLoading(true);
-      await changePassword({ current_password: currentPassword, new_password: newPassword });
+      await changePassword({
+        old_password: currentPassword,
+        new_password: newPassword,
+        new_password_confirm: confirmPassword,
+      });
       setSuccess(true);
       setCurrentPassword("");
       setNewPassword("");
@@ -1750,17 +1764,21 @@ function PasswordSection({ lang }: { lang: string }) {
   return (
     <Card>
       <CardHeader>
-        <CardTitle>{t("settings.security.title", lang)}</CardTitle>
-        <CardDescription>{t("settings.security.passwordSubtitle", lang)}</CardDescription>
+        <CardTitle>{t("settings.security.passwordTitle", lang)}</CardTitle>
+        <CardDescription>{t(hasExistingPassword ? "settings.security.passwordSubtitle" : "settings.security.passwordCreateSubtitle", lang)}</CardDescription>
       </CardHeader>
       <CardContent>
         <form className="space-y-4" onSubmit={handleSubmit}>
-          <div className="space-y-1.5">
-            <Label htmlFor="current-password">{t("settings.security.currentPassword", lang)}</Label>
-            <Input id="current-password" type="password" value={currentPassword}
-              onChange={(e) => setCurrentPassword(e.target.value)} autoComplete="current-password" />
-          </div>
-          <Separator />
+          {hasExistingPassword && (
+            <>
+              <div className="space-y-1.5">
+                <Label htmlFor="current-password">{t("settings.security.currentPassword", lang)}</Label>
+                <Input id="current-password" type="password" value={currentPassword}
+                  onChange={(e) => setCurrentPassword(e.target.value)} autoComplete="current-password" />
+              </div>
+              <Separator />
+            </>
+          )}
           <div className="space-y-1.5">
             <Label htmlFor="new-password">{t("settings.security.newPassword", lang)}</Label>
             <Input id="new-password" type="password" value={newPassword}
@@ -1774,10 +1792,15 @@ function PasswordSection({ lang }: { lang: string }) {
           {!canSubmit && confirmPassword.length > 0 && newPassword !== confirmPassword && (
             <p className="text-[12px] text-destructive">{t("settings.security.mismatch", lang)}</p>
           )}
+          {passwordReused && (
+            <p className="text-[12px] text-destructive">{t("settings.security.mustDiffer", lang)}</p>
+          )}
           {error && <p className="text-[12px] text-destructive">{error}</p>}
           {success && <p className="text-[12px] text-success">{t("settings.security.saved", lang)}</p>}
           <div className="pt-2">
-            <Button type="submit" size="sm" loading={loading} disabled={!canSubmit || loading}>{t("settings.security.save", lang)}</Button>
+            <Button type="submit" size="sm" loading={loading} disabled={!canSubmit || loading}>
+              {t(hasExistingPassword ? "settings.security.save" : "settings.security.createPassword", lang)}
+            </Button>
           </div>
         </form>
       </CardContent>
@@ -1798,10 +1821,13 @@ function TwoFactorSection({ lang }: { lang: string }) {
   const loadStatus = React.useCallback(() => {
     setFetchLoading(true);
     getTotpStatus()
-      .then(setStatus)
-      .catch(() => {})
+      .then((nextStatus) => {
+        setStatus(nextStatus);
+        setError(null);
+      })
+      .catch((err) => setError(getSafeApiErrorMessage(err, lang)))
       .finally(() => setFetchLoading(false));
-  }, []);
+  }, [lang]);
 
   React.useEffect(() => { loadStatus(); }, [loadStatus]);
 
@@ -1862,6 +1888,25 @@ function TwoFactorSection({ lang }: { lang: string }) {
           <div className="flex min-h-11 items-center justify-between gap-4" aria-hidden="true">
             <div className="h-7 w-24 animate-pulse rounded-full bg-muted/70 motion-reduce:animate-none" />
             <div className="h-9 w-28 animate-pulse rounded-full bg-muted/55 motion-reduce:animate-none" />
+          </div>
+        </CardContent>
+      </Card>
+    );
+  }
+
+  if (!status && error) {
+    return (
+      <Card>
+        <CardHeader>
+          <CardTitle>{t("settings.security.twoFaTitle", lang)}</CardTitle>
+          <CardDescription>{t("settings.security.twoFaSubtitle", lang)}</CardDescription>
+        </CardHeader>
+        <CardContent>
+          <div className="flex items-center justify-between gap-4">
+            <p className="text-[12px] text-destructive">{error}</p>
+            <Button type="button" variant="outline" size="sm" onClick={loadStatus}>
+              {t("common.retry", lang)}
+            </Button>
           </div>
         </CardContent>
       </Card>
@@ -1987,10 +2032,13 @@ function LinkedAccountsSection({ lang }: { lang: string }) {
   const load = React.useCallback(() => {
     setLoading(true);
     getLinkedAccounts()
-      .then(setData)
-      .catch(() => {})
+      .then((nextData) => {
+        setData(nextData);
+        setError(null);
+      })
+      .catch((err) => setError(getSafeApiErrorMessage(err, lang)))
       .finally(() => setLoading(false));
-  }, []);
+  }, [lang]);
 
   React.useEffect(() => { load(); }, [load]);
 
@@ -2037,9 +2085,17 @@ function LinkedAccountsSection({ lang }: { lang: string }) {
         <CardDescription>{t("settings.security.linkedSubtitle", lang)}</CardDescription>
       </CardHeader>
       <CardContent>
-        {accounts.length === 0 ? (
+        {!data && error ? (
+          <div className="flex items-center justify-between gap-4">
+            <p className="text-[12px] text-destructive">{error}</p>
+            <Button type="button" variant="outline" size="sm" onClick={load}>
+              {t("common.retry", lang)}
+            </Button>
+          </div>
+        ) : null}
+        {data && accounts.length === 0 ? (
           <p className="text-[13px] text-muted-foreground">{t("settings.security.linkedNone", lang)}</p>
-        ) : (
+        ) : data ? (
           <div className="divide-y divide-border/60">
             {accounts.map((acc) => (
               <div key={acc.id} className="flex items-center justify-between py-3">
@@ -2065,8 +2121,8 @@ function LinkedAccountsSection({ lang }: { lang: string }) {
               </div>
             ))}
           </div>
-        )}
-        {error && <p className="mt-2 text-[12px] text-destructive">{error}</p>}
+        ) : null}
+        {data && error && <p className="mt-2 text-[12px] text-destructive">{error}</p>}
       </CardContent>
     </Card>
   );

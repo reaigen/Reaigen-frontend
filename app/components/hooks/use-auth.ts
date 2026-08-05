@@ -38,6 +38,7 @@ export type AuthState = {
     accept_privacy_policy: boolean;
     accept_terms: boolean;
     preferred_language: string;
+    preferred_timezone: string;
   }) => Promise<void>;
   logout: () => Promise<void>;
   refreshProfile: () => Promise<UserProfile | null>;
@@ -178,6 +179,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       accept_privacy_policy: boolean;
       accept_terms: boolean;
       preferred_language: string;
+      preferred_timezone: string;
     }) => {
       await apiRegister(data);
       resetPrivateApiState();

@@ -20,6 +20,7 @@ type RegisterData = {
   accept_privacy_policy: boolean;
   accept_terms: boolean;
   preferred_language: string;
+  preferred_timezone: string;
 };
 
 type AuthGateProps = {
@@ -250,6 +251,7 @@ function RegistrationCard({
         accept_privacy_policy: agreeToTerms,
         accept_terms: agreeToTerms,
         preferred_language: lang,
+        preferred_timezone: Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC",
       });
     } catch (err) {
       setError(getSafeApiErrorMessage(err, lang));
