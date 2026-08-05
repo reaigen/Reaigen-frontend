@@ -8,6 +8,8 @@ export const AUTH_BOUNDARY_STORAGE_KEY = "reaigen:auth-boundary";
 const PRIVATE_SESSION_PREFIXES = [
   "reaigen:concepts:",
   "reaigen:draft:",
+  // Agent transcripts and panel state, parked so they survive navigation.
+  "reaigen:agent:",
 ];
 
 /**

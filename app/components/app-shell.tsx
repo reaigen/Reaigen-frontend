@@ -6,6 +6,7 @@ import { usePathname } from "next/navigation";
 import { ExitIcon } from "@radix-ui/react-icons";
 import { Avatar, AvatarFallback, AvatarImage } from "../lib/ui/avatar";
 import { getReaiAgentConsent, type UserProfile } from "../lib/api/client";
+import { clearAgentSession, readAgentPanelOpen, writeAgentPanelOpen } from "../lib/agent-session";
 import type { DraftDetailItem } from "../lib/tour-types";
 import { cn } from "../lib/utils";
 import { t, getUserLanguage } from "../lib/i18n";
@@ -201,6 +202,17 @@ function AppShellFrame({
     setReaiPanelWidth(next);
   }, []);
 
+  // The shell is mounted per page, so a navigation would otherwise slam the
+  // panel shut mid-conversation. Restore before paint to avoid it flashing
+  // open, and mirror every later change back.
+  React.useLayoutEffect(() => {
+    if (readAgentPanelOpen()) setReaiOpen(true);
+  }, []);
+
+  React.useEffect(() => {
+    writeAgentPanelOpen(reaiOpen);
+  }, [reaiOpen]);
+
   React.useEffect(() => {
     if (!reaiResizing) return;
     const previousCursor = document.body.style.cursor;
@@ -230,7 +242,12 @@ function AppShellFrame({
       const enabled = (event as CustomEvent<{ enabled?: boolean }>).detail?.enabled;
       if (typeof enabled === "boolean") {
         setReaiEnabled(enabled);
-        if (!enabled) setReaiOpen(false);
+        if (!enabled) {
+          // Withdrawing consent must not leave a parked transcript behind for
+          // the next navigation to restore.
+          clearAgentSession();
+          setReaiOpen(false);
+        }
       } else {
         refresh();
       }

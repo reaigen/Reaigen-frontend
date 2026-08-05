@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useState, type ReactNode } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 
 import {
   applyReaiMediaAction,
@@ -24,6 +24,11 @@ import {
   type ReaiAgentResponse,
   type ReaiImprovementConsent,
 } from "../lib/api/client";
+import {
+  agentTranscriptKey,
+  readAgentTranscript,
+  writeAgentTranscript,
+} from "../lib/agent-session";
 import { formatDate, t } from "../lib/i18n";
 import type { LocaleKey } from "../lib/locales";
 import { PROPERTY_FIELD_SECTIONS, subtypeOptions, type PropertyFieldDefinition, type PropertyType } from "../lib/property-field-registry";
@@ -343,12 +348,32 @@ export function ReaiAgentCard({
   const [copiedShareUrl, setCopiedShareUrl] = useState<string | null>(null);
   const [consentReloadKey, setConsentReloadKey] = useState(0);
   const [composerFocused, setComposerFocused] = useState(false);
+  const [transcriptRestored, setTranscriptRestored] = useState(false);
+  const restoredTranscriptKeyRef = useRef<string | null>(null);
   const compactPanel = panel && compact;
+  const transcriptKey = agentTranscriptKey(workspaceContext, draftId);
   const quickActions = workspaceContext === "settings"
     ? (["reai.quickSettingsAgent", "reai.quickSettingsLanguage", "reai.quickSettingsSecurity"] as const)
     : draftId
     ? (["reai.quickImproveDescription", "reai.quickCheckFields", "reai.quickEditCurrent"] as const)
     : (["reai.quickFind", "reai.quickCompare", "reai.quickBulk"] as const);
+
+  // Each page mounts its own shell, so this component is recreated on every
+  // navigation. Rehydrate the parked transcript on mount, then keep the parked
+  // copy in step with it.
+  useEffect(() => {
+    setTurns(readAgentTranscript<ChatTurn>(transcriptKey) ?? []);
+    restoredTranscriptKeyRef.current = transcriptKey;
+    setTranscriptRestored(true);
+  }, [transcriptKey]);
+
+  useEffect(() => {
+    // Switching drafts changes the key one render before `turns` catches up.
+    // Writing in that gap would stamp the previous conversation onto the
+    // bucket that was just read, so wait until the two agree.
+    if (!transcriptRestored || restoredTranscriptKeyRef.current !== transcriptKey) return;
+    writeAgentTranscript(transcriptKey, turns);
+  }, [transcriptKey, transcriptRestored, turns]);
 
   useEffect(() => {
     let active = true;
@@ -759,13 +784,20 @@ export function ReaiAgentCard({
             </nav>
           )}
           {draftId && !compactPanel && (
-            <nav className="floating-toolbar mx-auto grid w-full max-w-[38rem] grid-cols-3" aria-label={t("reai.title", lang)}>
+            // A quiet segmented control. This bar only switches views, so it
+            // should not outweigh the transcript it sits above: a muted track
+            // with the active segment lifted by one step, rather than a glass
+            // toolbar carrying a solid high-contrast capsule.
+            <nav
+              className="agent-view-tabs mx-auto grid w-full max-w-[24rem] grid-cols-3"
+              aria-label={t("reai.title", lang)}
+            >
               <button
                 type="button"
                 aria-pressed={!showHistory && !showMediaHistory}
                 className={cn(
-                  "floating-control pen-touch-target w-full px-2 text-[11px] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
-                  !showHistory && !showMediaHistory ? "bg-foreground text-background shadow-sm" : "text-foreground/60 hover:bg-background/70 hover:text-foreground",
+                  "agent-view-tab",
+                  !showHistory && !showMediaHistory ? "agent-view-tab-active" : "text-foreground/55 hover:text-foreground",
                 )}
                 onClick={() => {
                   setShowHistory(false);
@@ -779,8 +811,8 @@ export function ReaiAgentCard({
                 aria-label={t("reai.mediaVersions", lang)}
                 aria-pressed={showMediaHistory}
                 className={cn(
-                  "floating-control pen-touch-target w-full px-2 text-[11px] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
-                  showMediaHistory ? "bg-foreground text-background shadow-sm" : "text-foreground/60 hover:bg-background/70 hover:text-foreground",
+                  "agent-view-tab",
+                  showMediaHistory ? "agent-view-tab-active" : "text-foreground/55 hover:text-foreground",
                 )}
                 onClick={() => {
                   if (!showMediaHistory) void loadMediaHistory();
@@ -795,8 +827,8 @@ export function ReaiAgentCard({
                 aria-label={t("reai.editHistory", lang)}
                 aria-pressed={showHistory}
                 className={cn(
-                  "floating-control pen-touch-target w-full px-2 text-[11px] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
-                  showHistory ? "bg-foreground text-background shadow-sm" : "text-foreground/60 hover:bg-background/70 hover:text-foreground",
+                  "agent-view-tab",
+                  showHistory ? "agent-view-tab-active" : "text-foreground/55 hover:text-foreground",
                 )}
                 onClick={() => {
                   if (!showHistory) void loadHistory();

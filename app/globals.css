@@ -405,6 +405,49 @@
     user-select: none;
   }
 
+  /*
+   * Agent view switcher. Deliberately quieter and tighter than the floating
+   * toolbar it replaced: no glass, no drop shadow, and label padding kept
+   * close to the text so the bar reads as a control strip rather than a
+   * headline above the transcript.
+   */
+  .agent-view-tabs {
+    gap: 0.125rem;
+    padding: 0.125rem;
+    border: 1px solid hsl(var(--border) / 0.5);
+    border-radius: 0.625rem;
+    background: hsl(var(--foreground) / 0.04);
+  }
+
+  .agent-view-tab {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 100%;
+    min-height: 1.75rem;
+    padding-inline: 0.5rem;
+    border-radius: 0.5rem;
+    font-size: 0.6875rem;
+    font-weight: 500;
+    touch-action: manipulation;
+    -webkit-tap-highlight-color: transparent;
+    user-select: none;
+    transition:
+      color var(--default-transition-duration) var(--motion-ease-smooth),
+      background-color var(--default-transition-duration) var(--motion-ease-smooth);
+  }
+
+  .agent-view-tab:focus-visible {
+    outline: none;
+    box-shadow: 0 0 0 2px hsl(var(--ring));
+  }
+
+  .agent-view-tab-active {
+    background: hsl(var(--background));
+    color: hsl(var(--foreground));
+    font-weight: 600;
+  }
+
   .loading-progress-track {
     position: relative;
     height: 0.1875rem;
