@@ -14,6 +14,7 @@ import { readDraftDetailCache, writeDraftDetailCache } from "../../lib/resilient
 import { DraftImageGallery } from "../../components/draft-image-gallery";
 import { DraftCacheNotice } from "../../components/draft-cache-notice";
 import FloorplanViewer from "../../components/floorplan-viewer";
+import FloorplanEditor from "../../components/floorplan-editor";
 import type { DraftDetailItem, DraftTourAssetsPayload, DraftUpload, SplatsByDraftPayload } from "../../lib/tour-types";
 import { baseUnitForCategory, resolveUnit, unitLabel, type UnitLookup } from "../../lib/unit-catalog";
 import { PageLoading } from "../../components/page-loading";
@@ -497,6 +498,7 @@ export default function DraftPreviewPage({
   const [translationPending, setTranslationPending] = useState(false);
   const [activeImageId, setActiveImageId] = useState<number | null>(null);
   const [editorOpen, setEditorOpen] = useState(false);
+  const [floorplanEditorOpen, setFloorplanEditorOpen] = useState(false);
   const [versionsOpen, setVersionsOpen] = useState(false);
   const [mediaOpen, setMediaOpen] = useState(false);
   const [sharingOpen, setSharingOpen] = useState(sharingRequested);
@@ -934,6 +936,13 @@ export default function DraftPreviewPage({
                     <h2 className="mb-3 flex items-center gap-2 text-[14px] font-semibold">
                       <FloorplanIcon size={16} className="text-foreground/55" />
                       {t("draft.floorplan", lang)}
+                      <button
+                        type="button"
+                        onClick={() => setFloorplanEditorOpen(true)}
+                        className="ml-auto rounded-full px-2.5 py-1 text-[12.5px] font-semibold text-foreground/55 transition-colors hover:bg-black/[0.05] hover:text-foreground"
+                      >
+                        {t("floorplan.edit", lang)}
+                      </button>
                     </h2>
                     <div className="overflow-hidden rounded-[1.5rem] sm:rounded-2xl">
                       <FloorplanViewer
@@ -1015,6 +1024,22 @@ export default function DraftPreviewPage({
       </div>
 
       <DraftEditor open={editorOpen} onOpenChange={setEditorOpen} draft={draft} units={unitCatalog} lang={lang} onSaved={setDraft} />
+      {floorplanEditorOpen && (
+        <FloorplanEditor
+          draftId={draftId}
+          draftData={draft.draft_data ?? []}
+          lang={lang}
+          onClose={() => setFloorplanEditorOpen(false)}
+          onSaved={(entries) =>
+            setDraft((current) => {
+              if (!current) return current;
+              const byId = new Map((current.draft_data ?? []).map((e) => [e.id, e]));
+              for (const entry of entries) byId.set(entry.id, entry);
+              return { ...current, draft_data: [...byId.values()] };
+            })
+          }
+        />
+      )}
       <DraftMediaManager
         open={mediaOpen}
         onOpenChange={setMediaOpen}

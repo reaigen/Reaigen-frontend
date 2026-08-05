@@ -239,6 +239,8 @@ npm run start    # Start production server (port 3055)
 npm run lint     # ESLint
 npm run typecheck # TypeScript without emitting files
 npm run check    # Lint + typecheck + production build
+npm run analyze-floorplan-patterns -- <path> [--format auto|procthor|arkitscenes] [--out-json file] [--suggest-priors]
+                 # Mine furniture placement priors from dataset annotations
 ```
 
 ---

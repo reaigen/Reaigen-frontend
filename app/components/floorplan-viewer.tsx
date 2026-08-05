@@ -4,7 +4,7 @@
  * FloorplanViewer — same architectural rendering as the iOS app.
  *
  * Primary path mirrors iOS LocalFloorplanCanvasView: parse the draft's
- * `captured_room_json` (RoomPlan CapturedRoom), Manhattan-snap it, render
+ * `captured_structure_json` (or legacy `captured_room_json`), Manhattan-snap it, render
  * walls (18 cm ink quads with door/window cuts), scan + custom doors
  * (jambs, and swing arc + panel + hinge when configured via door_N_camera),
  * windows (three parallel lines), numbered room labels, total-area chip,
@@ -39,7 +39,7 @@ import {
   parseWallGraph,
   parseOpeningEdits,
   parseDoorConfigs,
-  doorSwingRenderable,
+  objectCorners,
   parseLabelOffsets,
   parseRoomMarkers,
   parseRoomCenters,
@@ -54,6 +54,12 @@ import {
   wallQuad,
   openingCut,
   computeBounds,
+  furnitureKind,
+  prepareObjects,
+  prepareFloorplanPresentationObjects,
+  conditionWallSegmentsForPresentation,
+  doorObservationUsable,
+  solveFurnitureLayout,
   WALL_THICKNESS,
   STROKE_COLOR,
   LABEL_FILL,
@@ -63,7 +69,12 @@ import {
   DOOR_HINGE_RADIUS,
   type V2,
   type DoorConfig,
+  type ObjectXZ,
 } from "../lib/floorplan-geometry";
+import { solveReaigenFloorplan, USE_CONSTRAINT_SOLVER } from "../lib/floorplan-solver-adapter";
+import { iconForKind, type IconShape } from "../lib/floorplan-icon-shapes";
+import { assignLabelsToRoomPolygons } from "../lib/floorplan-label-placement";
+import { inferDoorPresentationConfig } from "../lib/floorplan-door-presentation";
 
 interface Props {
   draftData: DraftDataEntry[];
@@ -82,6 +93,7 @@ const SVG_W = 400;
 // Compass/area chip are HTML overlays at the card corners, so the viewBox
 // only needs breathing room for the plan itself.
 const PADDING = 32;
+
 const MESH_INK = "#141417"; // iOS FloorplanCanvas canvasInkColor
 const AREA_FILL = "#6b7280";
 
@@ -98,6 +110,36 @@ function arcPathAround(c: [number, number], p0: [number, number], p1: [number, n
   while (delta <= -Math.PI) delta += 2 * Math.PI;
   const sweep = delta > 0 ? 1 : 0;
   return `M ${p0[0]} ${p0[1]} A ${r} ${r} 0 0 ${sweep} ${p1[0]} ${p1[1]}`;
+}
+
+function doorSwingWorld(
+  door: { p1: V2; p2: V2 },
+  cfg: DoorConfig,
+  interior: V2
+): { hinge: V2; closedEnd: V2; panelEnd: V2 } {
+  const [p1, p2] = cfg.hingeSide === "Right" ? [door.p2, door.p1] : [door.p1, door.p2];
+  const dx = p2[0] - p1[0];
+  const dz = p2[1] - p1[1];
+  const len = Math.max(Math.hypot(dx, dz), 1e-4);
+  const nxA = -dz / len;
+  const nzA = dx / len;
+  const midX = (p1[0] + p2[0]) / 2;
+  const midZ = (p1[1] + p2[1]) / 2;
+  const dSq = (px: number, pz: number) =>
+    (px - interior[0]) * (px - interior[0]) +
+    (pz - interior[1]) * (pz - interior[1]);
+  const dA = dSq(midX + nxA * 0.1, midZ + nzA * 0.1);
+  const dB = dSq(midX - nxA * 0.1, midZ - nzA * 0.1);
+  const toward: V2 = dA < dB ? [nxA, nzA] : [-nxA, -nzA];
+  const away: V2 = dA < dB ? [-nxA, -nzA] : [nxA, nzA];
+  const [nx, nz] = cfg.swingDirection === "Out" ? away : toward;
+  const faceOffset = WALL_THICKNESS / 2;
+  const hinge: V2 = [p1[0] + nx * faceOffset, p1[1] + nz * faceOffset];
+  return {
+    hinge,
+    closedEnd: [p2[0] + nx * faceOffset, p2[1] + nz * faceOffset],
+    panelEnd: [hinge[0] + nx * len, hinge[1] + nz * len],
+  };
 }
 
 interface LegendEntry {
@@ -264,9 +306,11 @@ export default function FloorplanViewer({
 
 interface LocalModel {
   wallQuads: V2[][];
+  wallSegments: [V2, V2][];
   cutQuads: V2[][];
   windows: { p1: V2; p2: V2 }[];
   doors: { id: string; p1: V2; p2: V2 }[];
+  objects: ObjectXZ[];
   doorConfigs: Record<string, DoorConfig>;
   interior: V2;
   svgH: number;
@@ -275,6 +319,7 @@ interface LocalModel {
   rotW: (p: V2) => V2;
   centresByIndex: Record<number, V2>;
   floorCentres: V2[];
+  roomPolygons: V2[][];
   markers: Record<number, V2>;
   offsets: Record<number, V2>;
   totalArea: number;
@@ -282,11 +327,13 @@ interface LocalModel {
   compassRotationDeg: number;
 }
 
-function buildLocalModel(draftData: DraftDataEntry[]): { textData: Record<string, string>; local: LocalModel | null } {
+function buildLocalModel(
+  draftData: DraftDataEntry[]
+): { textData: Record<string, string>; local: LocalModel | null } {
   const textData = buildTextDataMap(draftData);
 
   let geom: ReturnType<typeof manhattanAdjust> | null = null;
-  const rawRoom = textData["captured_room_json"];
+  const rawRoom = textData["captured_structure_json"] ?? textData["captured_room_json"];
   if (rawRoom) {
     try {
       const parsed = parseCapturedRoom(JSON.parse(rawRoom));
@@ -304,23 +351,35 @@ function buildLocalModel(draftData: DraftDataEntry[]): { textData: Record<string
   // Openings: scan-detected (minus user-deleted) + user-drawn, both kept only
   // while a wall still hosts them (iOS openingHasHostWall).
   const edits = parseOpeningEdits(textData);
+  const doorConfigs = parseDoorConfigs(textData);
   const hosted = (p1: V2, p2: V2) => openingHasHostWall(midOf(p1, p2), wallSegs);
   const srcDoors = (geom?.doors ?? []).filter(
-    (d) => !edits.deletedSourceOpeningIDs.has(d.id) && hosted(d.p1, d.p2)
+    (d) =>
+      !edits.deletedSourceOpeningIDs.has(d.id)
+      && hosted(d.p1, d.p2)
+      && doorObservationUsable(d.p1, d.p2, doorConfigs[d.id])
   );
   const srcWindows = (geom?.windows ?? []).filter(
     (w) => !edits.deletedSourceOpeningIDs.has(w.id) && hosted(w.p1, w.p2)
+  );
+  const srcOpenings = (geom?.openings ?? []).filter(
+    (o) => !edits.deletedSourceOpeningIDs.has(o.id) && hosted(o.p1, o.p2)
   );
   const customDoors = edits.customOpenings.filter((o) => o.kind === "door" && hosted(o.p1, o.p2));
   const customWindows = edits.customOpenings.filter((o) => o.kind === "window" && hosted(o.p1, o.p2));
   const doors = [...srcDoors, ...customDoors].map((d) => ({ id: d.id, p1: d.p1, p2: d.p2 }));
   const windows = [...srcWindows, ...customWindows].map((w) => ({ p1: w.p1, p2: w.p2 }));
+  const openings = srcOpenings.map((o) => ({ id: o.id, p1: o.p1, p2: o.p2 }));
 
   // User rotation (0/90/180/270), applied to world points around the stable
   // bounds centre — equivalent to iOS rotating the rendered canvas.
   const stableSegs: [V2, V2][] = geom
-    ? [...wallSegs, ...geom.walls.map((w) => [w.p1, w.p2] as [V2, V2])]
-    : wallSegs;
+    ? conditionWallSegmentsForPresentation(
+        wallSegs,
+        geom.interiorCentroid,
+        geom.floorPolys ?? []
+      )
+    : conditionWallSegmentsForPresentation(wallSegs, [0, 0]);
   const preBounds = computeBounds(stableSegs.flatMap(([a, b]) => wallQuad(a, b)))!;
   const pivot: V2 = [(preBounds.minX + preBounds.maxX) / 2, (preBounds.minZ + preBounds.maxZ) / 2];
   const rotDeg = floorplanRotationDegrees(textData);
@@ -336,14 +395,81 @@ function buildLocalModel(draftData: DraftDataEntry[]): { textData: Record<string
         ];
 
   const rSeg = ([a, b]: [V2, V2]): [V2, V2] => [rotW(a), rotW(b)];
-  const wallSegsR = wallSegs.map(rSeg);
+  const wallSegsR = stableSegs.map(rSeg);
   const doorsR = doors.map((d) => ({ id: d.id, p1: rotW(d.p1), p2: rotW(d.p2) }));
   const windowsR = windows.map((w) => ({ p1: rotW(w.p1), p2: rotW(w.p2) }));
+  const openingsR = openings.map((o) => ({ id: o.id, p1: rotW(o.p1), p2: rotW(o.p2) }));
+  const rotAxis = (a: V2): V2 =>
+    rotDeg === 0 ? a : [a[0] * cosR - a[1] * sinR, a[0] * sinR + a[1] * cosR];
+  const rotObj = (o: ObjectXZ): ObjectXZ => ({
+    ...o,
+    center: rotW(o.center),
+    axisW: rotAxis(o.axisW),
+    axisD: rotAxis(o.axisD),
+  });
+  const rawObjects = geom?.objects ?? [];
+  const solveInput = {
+    // Furniture must solve against the same conditioned current graph that is
+    // published, never the stale/raw fragment set.
+    walls: stableSegs,
+    doors,
+    windows,
+    openings,
+    objects: rawObjects, // constraint solver conditions/dedupes internally
+    doorConfigs: parseDoorConfigs(textData),
+    rooms: geom?.solverRooms ?? [],
+  };
+  const solveResult = USE_CONSTRAINT_SOLVER ? solveReaigenFloorplan(solveInput) : null;
+  const solvedObjects = solveResult
+    ? solveResult.objects
+    : solveFurnitureLayout(
+        prepareObjects(rawObjects, preBounds),
+        wallSegs,
+        geom?.interiorCentroid ?? pivot,
+        doors,
+        geom?.rooms ?? []
+      );
+  const composedObjects = solvedObjects.filter((object) => {
+    if (furnitureKind(object.category) !== "oven") return true;
+    return !solvedObjects.some(
+      (other) =>
+        furnitureKind(other.category) === "stove" &&
+        Math.hypot(other.center[0] - object.center[0], other.center[1] - object.center[1]) <= 0.18
+    );
+  });
+  // Architectural draw order: broad horizontal surfaces establish the base,
+  // then seating and compact fixtures remain legible above them. RoomPlan's
+  // source order is capture order and must not determine SVG occlusion.
+  const furnitureLayer = (object: ObjectXZ): number => {
+    const kind = furnitureKind(object.category);
+    if (kind === "table") return 0;
+    if (kind === "bed" || kind === "sofa") return 1;
+    if (kind === "chair") return 3;
+    return 2;
+  };
+  const objectsR = prepareFloorplanPresentationObjects(composedObjects)
+    .sort((a, b) =>
+      furnitureLayer(a) - furnitureLayer(b)
+      || 4 * b.halfW * b.halfD - 4 * a.halfW * a.halfD
+      || a.id.localeCompare(b.id)
+    )
+    .map(rotObj);
 
   const wallQuads = wallSegsR.map(([a, b]) => wallQuad(a, b));
-  const cutQuads = [...doorsR, ...windowsR].map((o) => openingCut(o.p1, o.p2));
+  const cutQuads = [...doorsR, ...windowsR, ...openingsR].map((o) => openingCut(o.p1, o.p2));
 
-  const bounds = computeBounds(stableSegs.map(rSeg).flatMap(([a, b]) => wallQuad(a, b)))!;
+  const interiorR = geom ? rotW(geom.interiorCentroid) : pivot;
+  const doorExtentPoints = doorsR.flatMap((door) => {
+    const sourceCfg = doorConfigs[door.id];
+    const cfg = inferDoorPresentationConfig(door, sourceCfg, wallSegsR);
+    if (cfg.doorType === "Moving") return [door.p1, door.p2];
+    const swing = doorSwingWorld(door, cfg, interiorR);
+    return [swing.hinge, swing.closedEnd, swing.panelEnd];
+  });
+  const bounds = computeBounds([
+    ...wallSegsR.flatMap(([a, b]) => wallQuad(a, b)),
+    ...doorExtentPoints,
+  ])!;
   const spanX = Math.max(bounds.maxX - bounds.minX, 0.001);
   const spanZ = Math.max(bounds.maxZ - bounds.minZ, 0.001);
   const svgH = Math.max(240, Math.min(640, Math.round(SVG_W * (spanZ / spanX))));
@@ -389,17 +515,22 @@ function buildLocalModel(draftData: DraftDataEntry[]): { textData: Record<string
     textData,
     local: {
       wallQuads,
+      wallSegments: wallSegsR,
       cutQuads,
       windows: windowsR,
       doors: doorsR,
-      doorConfigs: parseDoorConfigs(textData),
-      interior: geom ? rotW(geom.interiorCentroid) : pivot,
+      objects: objectsR,
+      doorConfigs,
+      interior: interiorR,
       svgH,
       proj,
       pivot,
       rotW,
       centresByIndex,
       floorCentres: Object.values(geom?.floorCentresByID ?? {}),
+      roomPolygons: (solveResult?.result.rooms ?? []).map((room) =>
+        room.polygon.map((point) => rotW(point as V2))
+      ),
       markers,
       offsets: parseLabelOffsets(textData),
       totalArea: totalFloorArea(textData),
@@ -420,23 +551,142 @@ function LocalPlan({
   const toPts = (poly: V2[]) => poly.map((p) => proj(p[0], p[1]).join(",")).join(" ");
 
   // Numbered label positions — iOS resolveLabelWorldPositions + rotation.
-  const numbers = legendEntries.map((e) => e.n);
-  const positions = resolveLabelWorldPositions(
-    numbers,
+  const requestedNumbers = legendEntries.map((e) => e.n);
+  const rawPositions = resolveLabelWorldPositions(
+    requestedNumbers,
     model.pivot,
     model.centresByIndex,
     model.floorCentres,
     model.markers,
     model.offsets
   );
-  const fontPx = Math.max(11, Math.min(28, Math.round(Math.min(SVG_W, svgH) / 28)));
-  const circleR = (fontPx + 8) / 2;
+  const rotatedRawPositions = Object.fromEntries(
+    Object.entries(rawPositions).map(([number, point]) => [number, model.rotW(point)])
+  ) as Record<number, V2>;
+  const labelAssignment = assignLabelsToRoomPolygons(
+    requestedNumbers,
+    rotatedRawPositions,
+    model.roomPolygons
+  );
+  const numbers = labelAssignment.numbers;
+  const positions = labelAssignment.positions;
+  // Collision layout remains in viewBox units; the rendered badge itself is
+  // an HTML overlay with a fixed CSS size so it cannot jump between drafts.
+  const circleR = 12;
+  const furnitureScreenBounds = model.objects.map((object) => {
+    const corners = objectCorners(object).map(([x, z]) => proj(x, z));
+    return {
+      minX: Math.min(...corners.map(([x]) => x)),
+      maxX: Math.max(...corners.map(([x]) => x)),
+      minY: Math.min(...corners.map(([, y]) => y)),
+      maxY: Math.max(...corners.map(([, y]) => y)),
+    };
+  });
+  const doorScreenBounds = model.doors.map((door) => {
+    const sourceCfg = model.doorConfigs[door.id];
+    const cfg = inferDoorPresentationConfig(door, sourceCfg, model.wallSegments);
+    const worldPoints =
+      cfg.doorType === "Moving"
+        ? [door.p1, door.p2]
+        : (() => {
+            const swing = doorSwingWorld(door, cfg, model.interior);
+            return [swing.hinge, swing.closedEnd, swing.panelEnd];
+          })();
+    const screenPoints = worldPoints.map(([x, z]) => proj(x, z));
+    return {
+      minX: Math.min(...screenPoints.map(([x]) => x)) - 8,
+      maxX: Math.max(...screenPoints.map(([x]) => x)) + 8,
+      minY: Math.min(...screenPoints.map(([, y]) => y)) - 8,
+      maxY: Math.max(...screenPoints.map(([, y]) => y)) + 8,
+    };
+  });
+  const wallScreenBounds = model.wallQuads.map((polygon) => {
+    const points = polygon.map(([x, z]) => proj(x, z));
+    return {
+      minX: Math.min(...points.map(([x]) => x)) - 4,
+      maxX: Math.max(...points.map(([x]) => x)) + 4,
+      minY: Math.min(...points.map(([, y]) => y)) - 4,
+      maxY: Math.max(...points.map(([, y]) => y)) + 4,
+    };
+  });
+  const labelObstructions = [...wallScreenBounds, ...furnitureScreenBounds, ...doorScreenBounds];
+  const labelScreenPositions = new Map<number, [number, number]>();
+  const occupiedLabelBounds: Array<{
+    minX: number;
+    maxX: number;
+    minY: number;
+    maxY: number;
+  }> = [];
+  const labelStep = circleR * 2 + 12;
+  const labelOffsets: Array<[number, number]> = [
+    [0, 0],
+    [0, -labelStep],
+    [labelStep, 0],
+    [-labelStep, 0],
+    [0, labelStep],
+    [labelStep, -labelStep],
+    [-labelStep, -labelStep],
+    [labelStep, labelStep],
+    [-labelStep, labelStep],
+    [0, -2 * labelStep],
+  ];
+
+  for (const number of numbers) {
+    const world = positions[number];
+    if (!world) continue;
+    const [baseX, baseY] = proj(world[0], world[1]);
+    let selected: [number, number] = [baseX, baseY];
+
+    for (const [dx, dy] of labelOffsets) {
+      const candidate: [number, number] = [baseX + dx, baseY + dy];
+      const bounds = {
+        minX: candidate[0] - circleR - 12,
+        maxX: candidate[0] + circleR + 12,
+        minY: candidate[1] - circleR - 12,
+        maxY: candidate[1] + circleR + 12,
+      };
+      const withinPlan =
+        bounds.minX >= PADDING &&
+        bounds.maxX <= SVG_W - PADDING &&
+        bounds.minY >= PADDING &&
+        bounds.maxY <= svgH - PADDING;
+      const overlaps = (other: typeof bounds) =>
+        bounds.minX < other.maxX &&
+        bounds.maxX > other.minX &&
+        bounds.minY < other.maxY &&
+        bounds.maxY > other.minY;
+
+      if (
+        withinPlan &&
+        !labelObstructions.some(overlaps) &&
+        !occupiedLabelBounds.some(overlaps)
+      ) {
+        selected = candidate;
+        break;
+      }
+    }
+
+    labelScreenPositions.set(number, selected);
+    occupiedLabelBounds.push({
+      minX: selected[0] - circleR - 12,
+      maxX: selected[0] + circleR + 12,
+      minY: selected[1] - circleR - 12,
+      maxY: selected[1] + circleR + 12,
+    });
+  }
 
   const halfT = WALL_THICKNESS / 2;
 
   return (
-    <div className="relative">
-    <svg viewBox={`0 0 ${SVG_W} ${svgH}`} className="block h-auto max-h-[440px] w-full" xmlns="http://www.w3.org/2000/svg">
+    <div
+      className="relative mx-auto"
+      style={{
+        aspectRatio: `${SVG_W} / ${svgH}`,
+        width: svgH > 440 ? `${(440 * SVG_W) / svgH}px` : "100%",
+        maxWidth: "100%",
+      }}
+    >
+    <svg viewBox={`0 0 ${SVG_W} ${svgH}`} className="block h-full w-full" xmlns="http://www.w3.org/2000/svg">
       <rect width={SVG_W} height={svgH} fill="white" />
 
       {/* Walls with door/window holes (destination-out via mask) */}
@@ -454,6 +704,17 @@ function LocalPlan({
         ))}
       </g>
 
+      {/* Furniture: category symbols under openings + labels */}
+      {[...model.objects]
+        .sort(
+          (a, b) =>
+            Number(furnitureKind(a.category) === "table") -
+            Number(furnitureKind(b.category) === "table")
+        )
+        .map((o, i) => (
+          <FurnitureSymbol key={`f${i}`} object={o} proj={proj} />
+        ))}
+
       {/* Windows: two frame lines on the wall faces + light glazing centre */}
       {model.windows.map((w, i) => {
         const dx = w.p2[0] - w.p1[0];
@@ -465,19 +726,29 @@ function LocalPlan({
           const [x1, y1] = proj(w.p1[0] + nx * off, w.p1[1] + nz * off);
           const [x2, y2] = proj(w.p2[0] + nx * off, w.p2[1] + nz * off);
           return (
-            <line key={key} x1={x1} y1={y1} x2={x2} y2={y2} stroke={STROKE_COLOR} strokeWidth={width} strokeLinecap="butt" />
+            <line key={key} x1={x1} y1={y1} x2={x2} y2={y2} stroke={STROKE_COLOR} strokeWidth={width} strokeLinecap="square" />
+          );
+        };
+        const jamb = (p: V2, key: string) => {
+          const [x1, y1] = proj(p[0] + nx * halfT, p[1] + nz * halfT);
+          const [x2, y2] = proj(p[0] - nx * halfT, p[1] - nz * halfT);
+          return (
+            <line key={key} x1={x1} y1={y1} x2={x2} y2={y2} stroke={STROKE_COLOR} strokeWidth={FURNITURE_STROKE} strokeLinecap="square" />
           );
         };
         return (
           <g key={`w${i}`}>
-            {line(-halfT, DOOR_PANEL_WIDTH, "a")}
-            {line(halfT, DOOR_PANEL_WIDTH, "b")}
-            {line(0, DOOR_ARC_WIDTH, "g")}
+            {line(-halfT, FURNITURE_STROKE, "a")}
+            {line(halfT, FURNITURE_STROKE, "b")}
+            {line(0, FURNITURE_STROKE, "g")}
+            {jamb(w.p1, "j1")}
+            {jamb(w.p2, "j2")}
           </g>
         );
       })}
 
-      {/* Doors: jambs always; swing arc + panel + hinge when configured */}
+      {/* Doors: explicit configuration wins; ambiguous leaves are inferred from
+          the nearest supported wall return rather than a global Left/In default. */}
       {model.doors.map((d, i) => {
         const dx = d.p2[0] - d.p1[0];
         const dz = d.p2[1] - d.p1[1];
@@ -488,45 +759,41 @@ function LocalPlan({
           const [x1, y1] = proj(p[0] + nx * halfT, p[1] + nz * halfT);
           const [x2, y2] = proj(p[0] - nx * halfT, p[1] - nz * halfT);
           return (
-            <line key={key} x1={x1} y1={y1} x2={x2} y2={y2} stroke={STROKE_COLOR} strokeWidth={STROKE_WIDTH} strokeLinecap="butt" />
+            <line key={key} x1={x1} y1={y1} x2={x2} y2={y2} stroke={STROKE_COLOR} strokeWidth={FURNITURE_STROKE} strokeLinecap="butt" />
           );
         };
-        const cfg = model.doorConfigs[d.id];
+        const sourceCfg = model.doorConfigs[d.id];
+        const cfg = inferDoorPresentationConfig(d, sourceCfg, model.wallSegments);
         return (
           <g key={`d${i}`}>
             {jamb(d.p1, "j1")}
             {jamb(d.p2, "j2")}
-            {doorSwingRenderable(cfg) && <DoorSwing door={d} cfg={cfg!} interior={model.interior} proj={proj} />}
-          </g>
-        );
-      })}
-
-      {/* Room labels: numbered circles (names live in the legend) */}
-      {numbers.map((n) => {
-        const pos = positions[n];
-        if (!pos) return null;
-        const rp = model.rotW(pos);
-        const [sx, sy] = proj(rp[0], rp[1]);
-        return (
-          <g key={`rl${n}`}>
-            <circle cx={sx} cy={sy} r={circleR} fill="rgba(255,255,255,0.9)" stroke="rgba(0,0,0,0.2)" strokeWidth={0.5} />
-            <text
-              x={sx}
-              y={sy}
-              textAnchor="middle"
-              dominantBaseline="central"
-              fill={LABEL_FILL}
-              fontSize={fontPx}
-              fontWeight={700}
-              fontFamily="system-ui, -apple-system, sans-serif"
-            >
-              {n}
-            </text>
+            {cfg.doorType === "Moving" ? (
+              <SlidingDoor door={d} proj={proj} />
+            ) : (
+              <DoorSwing door={d} cfg={cfg} interior={model.interior} proj={proj} />
+            )}
           </g>
         );
       })}
 
     </svg>
+
+    {/* Fixed-screen room badges. Their position follows the SVG viewBox, but
+        their diameter and typography remain identical across every plan. */}
+    {numbers.map((number) => {
+      const screen = labelScreenPositions.get(number);
+      if (!screen) return null;
+      return (
+        <div
+          key={`rl${number}`}
+          className="pointer-events-none absolute flex h-8 w-8 -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-full border border-black/15 bg-white/95 text-sm font-semibold text-slate-700"
+          style={{ left: `${(screen[0] / SVG_W) * 100}%`, top: `${(screen[1] / svgH) * 100}%` }}
+        >
+          {number}
+        </div>
+      );
+    })}
 
     {/* Compass chip (iOS FloorplanCompassChip) — fixed-size HTML overlay in
         the card corner; the dial rotates so N points at true north */}
@@ -544,6 +811,134 @@ function LocalPlan({
   );
 }
 
+// ── Furniture symbols ────────────────────────────────────────────────────────
+
+const FURNITURE_STROKE = 1.35; // shared screen-pixel detail line
+const FURNITURE_OPACITY = 1;
+
+/** Draw one RoomPlan object as its icon from the REAIGEN floorplan icon set.
+ *
+ * The icon (authored in metres, app/lib/floorplan-icon-shapes.ts) is fitted
+ * to the object's oriented box: rotated 90° when their aspects oppose, then
+ * stretched to the box extents. The screen mapping is one SVG matrix built
+ * from the projected centre + axes; strokes keep their screen width via
+ * vector-effect, so the whole set keeps the same line at any plan scale,
+ * stretch, or rotation.
+ */
+function FurnitureSymbol({
+  object,
+  proj,
+}: {
+  object: ObjectXZ;
+  proj: (x: number, z: number) => [number, number];
+}) {
+  const { center, axisW, axisD, halfW, halfD } = object;
+  const c = proj(center[0], center[1]);
+  const pW = proj(center[0] + axisW[0], center[1] + axisW[1]);
+  const pD = proj(center[0] + axisD[0], center[1] + axisD[1]);
+  const toScreen = `matrix(${pW[0] - c[0]} ${pW[1] - c[1]} ${pD[0] - c[0]} ${pD[1] - c[1]} ${c[0]} ${c[1]})`;
+
+  const kind = furnitureKind(object.category);
+  const icon = iconForKind(
+    kind,
+    halfW,
+    halfD,
+    (object as ObjectXZ & { presentationVariant?: string }).presentationVariant,
+    (object as ObjectXZ & { counterSeams?: number[] }).counterSeams
+  );
+  const iw = icon.w / 2;
+  const id = icon.d / 2;
+  const aspectQuarterTurn = halfW >= halfD !== iw >= id ? 1 : 0;
+  const quarterTurns = aspectQuarterTurn + (kind === "chair" ? -1 : 0);
+  const rotatedHalfW = Math.abs(quarterTurns % 2) === 1 ? id : iw;
+  const rotatedHalfD = Math.abs(quarterTurns % 2) === 1 ? iw : id;
+  const uniformScale = Math.min(halfW / rotatedHalfW, halfD / rotatedHalfD);
+  const fit = `rotate(${quarterTurns * 90}) scale(${uniformScale})`;
+
+  return (
+    <g
+      transform={`${toScreen} ${fit}`}
+      fill="none"
+      stroke={STROKE_COLOR}
+      strokeOpacity={FURNITURE_OPACITY}
+      strokeWidth={FURNITURE_STROKE}
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
+      {kind === "table" && (
+        <rect
+          x={-icon.w / 2}
+          y={-icon.d / 2}
+          width={icon.w}
+          height={icon.d}
+          rx={Math.min(icon.w, icon.d) * 0.03}
+          fill="white"
+          stroke="white"
+          strokeWidth={FURNITURE_STROKE + 4}
+          vectorEffect="non-scaling-stroke"
+        />
+      )}
+      {icon.shapes.map((s, i) => (
+        <IconShapeEl key={i} shape={s} />
+      ))}
+    </g>
+  );
+}
+
+function IconShapeEl({ shape }: { shape: IconShape }) {
+  const ve = { vectorEffect: "non-scaling-stroke" as const };
+  const fill = "fill" in shape && shape.fill ? { fill: "white" } : {};
+  switch (shape.t) {
+    case "rect":
+      return <rect x={shape.x} y={shape.y} width={shape.w} height={shape.h} rx={shape.rx} {...fill} {...ve} />;
+    case "circle":
+      return <circle cx={shape.cx} cy={shape.cy} r={shape.r} {...fill} {...ve} />;
+    case "ellipse":
+      return <ellipse cx={shape.cx} cy={shape.cy} rx={shape.rx} ry={shape.ry} {...fill} {...ve} />;
+    case "line":
+      return <line x1={shape.x1} y1={shape.y1} x2={shape.x2} y2={shape.y2} {...ve} />;
+    case "path":
+      return <path d={shape.d} {...fill} {...ve} />;
+  }
+}
+
+/** Sliding door: two half-width panels offset to either wall face, overlapping
+ * at the middle — the standard plan symbol for a "Moving" door. */
+function SlidingDoor({
+  door,
+  proj,
+}: {
+  door: { p1: V2; p2: V2 };
+  proj: (x: number, z: number) => [number, number];
+}) {
+  const dx = door.p2[0] - door.p1[0];
+  const dz = door.p2[1] - door.p1[1];
+  const len = Math.max(Math.hypot(dx, dz), 1e-4);
+  const ux = dx / len;
+  const uz = dz / len;
+  const nx = -uz;
+  const nz = ux;
+  const off = WALL_THICKNESS / 4;
+  const overlap = len * 0.08;
+  const panel = (fromT: number, toT: number, side: number, key: string) => {
+    const [x1, y1] = proj(
+      door.p1[0] + ux * fromT + nx * off * side,
+      door.p1[1] + uz * fromT + nz * off * side
+    );
+    const [x2, y2] = proj(
+      door.p1[0] + ux * toT + nx * off * side,
+      door.p1[1] + uz * toT + nz * off * side
+    );
+    return <line key={key} x1={x1} y1={y1} x2={x2} y2={y2} stroke={STROKE_COLOR} strokeWidth={FURNITURE_STROKE} strokeLinecap="round" />;
+  };
+  return (
+    <g>
+      {panel(0, len / 2 + overlap, 1, "a")}
+      {panel(len / 2 - overlap, len, -1, "b")}
+    </g>
+  );
+}
+
 /** iOS drawDoor: hinge side picks the pivot endpoint, swing direction picks
  * the perpendicular (toward/away from the room interior). */
 function DoorSwing({
@@ -557,32 +952,16 @@ function DoorSwing({
   interior: V2;
   proj: (x: number, z: number) => [number, number];
 }) {
-  const [p1, p2] = cfg.hingeSide === "Right" ? [door.p2, door.p1] : [door.p1, door.p2];
-  const dx = p2[0] - p1[0];
-  const dz = p2[1] - p1[1];
-  const len = Math.max(Math.hypot(dx, dz), 1e-4);
-  const nxA = -dz / len;
-  const nzA = dx / len;
-
-  const midX = (p1[0] + p2[0]) / 2;
-  const midZ = (p1[1] + p2[1]) / 2;
-  const dSq = (px: number, pz: number) =>
-    (px - interior[0]) * (px - interior[0]) + (pz - interior[1]) * (pz - interior[1]);
-  const dA = dSq(midX + nxA * 0.1, midZ + nzA * 0.1);
-  const dB = dSq(midX - nxA * 0.1, midZ - nzA * 0.1);
-  const toward: V2 = dA < dB ? [nxA, nzA] : [-nxA, -nzA];
-  const away: V2 = dA < dB ? [-nxA, -nzA] : [nxA, nzA];
-  const [nx, nz] = cfg.swingDirection === "Out" ? away : toward;
-
-  const hingeC = proj(p1[0], p1[1]);
-  const panelEndC = proj(p1[0] + nx * len, p1[1] + nz * len);
-  const arcEndC = proj(p2[0], p2[1]);
+  const swing = doorSwingWorld(door, cfg, interior);
+  const hingeC = proj(swing.hinge[0], swing.hinge[1]);
+  const panelEndC = proj(swing.panelEnd[0], swing.panelEnd[1]);
+  const arcEndC = proj(swing.closedEnd[0], swing.closedEnd[1]);
 
   return (
     <g>
-      <path d={arcPathAround(hingeC, arcEndC, panelEndC)} fill="none" stroke={STROKE_COLOR} strokeWidth={DOOR_ARC_WIDTH} strokeLinecap="round" />
-      <line x1={hingeC[0]} y1={hingeC[1]} x2={panelEndC[0]} y2={panelEndC[1]} stroke={STROKE_COLOR} strokeWidth={DOOR_PANEL_WIDTH} strokeLinecap="round" />
-      <circle cx={hingeC[0]} cy={hingeC[1]} r={DOOR_HINGE_RADIUS} fill={STROKE_COLOR} />
+      <path d={arcPathAround(hingeC, arcEndC, panelEndC)} fill="none" stroke={STROKE_COLOR} strokeWidth={FURNITURE_STROKE} strokeLinecap="round" strokeLinejoin="round" />
+      <line x1={hingeC[0]} y1={hingeC[1]} x2={panelEndC[0]} y2={panelEndC[1]} stroke={STROKE_COLOR} strokeWidth={FURNITURE_STROKE} strokeLinecap="round" />
+      <circle cx={hingeC[0]} cy={hingeC[1]} r={FURNITURE_STROKE * 0.8} fill={STROKE_COLOR} />
     </g>
   );
 }
@@ -641,9 +1020,14 @@ function MeshPlan({
     <svg viewBox={`0 0 ${SVG_W} ${svgH}`} className="block h-full w-full" xmlns="http://www.w3.org/2000/svg">
       <rect width={SVG_W} height={svgH} fill="white" />
 
+      {/* Furniture: light outlined faces beneath openings and walls */}
+      {facePolys(layers.furniture).map((p, i) => (
+        <polygon key={`f${i}`} points={p} fill="none" stroke={MESH_INK} strokeWidth={FURNITURE_STROKE} strokeLinejoin="round" />
+      ))}
+
       {/* Windows: thin outlined faces */}
       {facePolys(layers.windows).map((p, i) => (
-        <polygon key={`w${i}`} points={p} fill="none" stroke={MESH_INK} strokeWidth={1.2} />
+        <polygon key={`w${i}`} points={p} fill="none" stroke={MESH_INK} strokeWidth={FURNITURE_STROKE} strokeLinejoin="round" />
       ))}
 
       {/* Doors: swing arc + panel from mesh bbox and hinge */}
@@ -666,8 +1050,8 @@ function MeshPlan({
         const arcEndC = proj(hx, cz2);
         return (
           <g key={`d${i}`}>
-            <path d={arcPathAround(hingeC, arcEndC, panelEndC)} fill="none" stroke={MESH_INK} strokeWidth={1.0} />
-            <line x1={hingeC[0]} y1={hingeC[1]} x2={panelEndC[0]} y2={panelEndC[1]} stroke={MESH_INK} strokeWidth={1.8} strokeLinecap="round" />
+            <path d={arcPathAround(hingeC, arcEndC, panelEndC)} fill="none" stroke={MESH_INK} strokeWidth={FURNITURE_STROKE} strokeLinecap="round" />
+            <line x1={hingeC[0]} y1={hingeC[1]} x2={panelEndC[0]} y2={panelEndC[1]} stroke={MESH_INK} strokeWidth={FURNITURE_STROKE} strokeLinecap="round" />
           </g>
         );
       })}

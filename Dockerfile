@@ -4,6 +4,7 @@ FROM node:20-alpine AS base
 FROM base AS deps
 WORKDIR /app
 COPY package.json package-lock.json* ./
+COPY vendor/reaigen-floorplan-solver-0.1.0.tgz ./vendor/reaigen-floorplan-solver-0.1.0.tgz
 RUN npm ci --ignore-scripts
 
 # --- build ---
