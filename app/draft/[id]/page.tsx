@@ -944,7 +944,7 @@ export default function DraftPreviewPage({
                         {t("floorplan.edit", lang)}
                       </button>
                     </h2>
-                    <div className="overflow-hidden rounded-[1.5rem] sm:rounded-2xl">
+                    <div className="w-full overflow-hidden rounded-[1.5rem] sm:rounded-2xl">
                       <FloorplanViewer
                         draftData={draft.draft_data ?? []}
                         floorplanId={draft.floorplan_id}

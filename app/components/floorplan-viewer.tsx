@@ -93,11 +93,75 @@ const SVG_W = 400;
 // Compass/area chip are HTML overlays at the card corners, so the viewBox
 // only needs breathing room for the plan itself.
 const PADDING = 32;
+// Keep detail-page plans in a stable visual envelope. Geometry still uses its
+// measured aspect ratio, but small single-room captures cannot zoom until they
+// fill the entire card while larger apartments are fitted down as needed.
+const MIN_SVG_H = 300;
+const MAX_SVG_H = 480;
+const MAX_PLAN_SCALE = 46;
 
 const MESH_INK = "#141417"; // iOS FloorplanCanvas canvasInkColor
 const AREA_FILL = "#6b7280";
 
 const midOf = (p1: V2, p2: V2): V2 => [(p1[0] + p2[0]) / 2, (p1[1] + p2[1]) / 2];
+
+/** Project a measured opening onto its best parallel host wall. RoomPlan can
+ * report an opening a few centimetres off-axis or past a wall junction; using
+ * those raw endpoints as a mask cuts white channels through adjacent walls. */
+function fitOpeningToHostWall<T extends { p1: V2; p2: V2 }>(
+  opening: T,
+  walls: [V2, V2][]
+): T {
+  const odx = opening.p2[0] - opening.p1[0];
+  const odz = opening.p2[1] - opening.p1[1];
+  const measuredLength = Math.hypot(odx, odz);
+  if (measuredLength < 0.2) return opening;
+
+  const ou: V2 = [odx / measuredLength, odz / measuredLength];
+  const midpoint = midOf(opening.p1, opening.p2);
+  let best: { a: V2; u: V2; length: number; centerT: number; score: number } | null = null;
+
+  for (const [a, b] of walls) {
+    const wdx = b[0] - a[0];
+    const wdz = b[1] - a[1];
+    const wallLength = Math.hypot(wdx, wdz);
+    if (wallLength < Math.min(0.8, measuredLength * 0.7)) continue;
+    const u: V2 = [wdx / wallLength, wdz / wallLength];
+    const parallel = Math.abs(ou[0] * u[0] + ou[1] * u[1]);
+    if (parallel < 0.9) continue;
+
+    const rawT = (midpoint[0] - a[0]) * u[0] + (midpoint[1] - a[1]) * u[1];
+    const centerT = Math.max(0, Math.min(wallLength, rawT));
+    const closest: V2 = [a[0] + u[0] * centerT, a[1] + u[1] * centerT];
+    const distance = Math.hypot(midpoint[0] - closest[0], midpoint[1] - closest[1]);
+    if (distance > 0.35) continue;
+
+    const projectedStart = rawT - measuredLength / 2;
+    const projectedEnd = rawT + measuredLength / 2;
+    const overlap = Math.max(0, Math.min(wallLength, projectedEnd) - Math.max(0, projectedStart));
+    if (overlap < Math.min(0.4, measuredLength * 0.5)) continue;
+
+    const score = distance + (1 - parallel) * 0.6;
+    if (!best || score < best.score) best = { a, u, length: wallLength, centerT, score };
+  }
+
+  if (!best) return opening;
+  const jambInset = Math.min(WALL_THICKNESS * 0.6, best.length * 0.1);
+  const available = best.length - 2 * jambInset;
+  if (available < 0.2) return opening;
+  const fittedLength = Math.min(measuredLength, available);
+  const half = fittedLength / 2;
+  const centerT = Math.max(jambInset + half, Math.min(best.length - jambInset - half, best.centerT));
+  const center: V2 = [best.a[0] + best.u[0] * centerT, best.a[1] + best.u[1] * centerT];
+  const direction = ou[0] * best.u[0] + ou[1] * best.u[1] >= 0 ? 1 : -1;
+  const axis: V2 = [best.u[0] * direction, best.u[1] * direction];
+
+  return {
+    ...opening,
+    p1: [center[0] - axis[0] * half, center[1] - axis[1] * half],
+    p2: [center[0] + axis[0] * half, center[1] + axis[1] * half],
+  };
+}
 
 /** Quarter-circle SVG arc centred on `c` from `p0` to `p1` (minor arc whose
  * centre is the hinge — matches the iOS door swing). */
@@ -396,9 +460,12 @@ function buildLocalModel(
 
   const rSeg = ([a, b]: [V2, V2]): [V2, V2] => [rotW(a), rotW(b)];
   const wallSegsR = stableSegs.map(rSeg);
-  const doorsR = doors.map((d) => ({ id: d.id, p1: rotW(d.p1), p2: rotW(d.p2) }));
-  const windowsR = windows.map((w) => ({ p1: rotW(w.p1), p2: rotW(w.p2) }));
-  const openingsR = openings.map((o) => ({ id: o.id, p1: rotW(o.p1), p2: rotW(o.p2) }));
+  const fittedDoors = doors.map((door) => fitOpeningToHostWall(door, stableSegs));
+  const fittedWindows = windows.map((window) => fitOpeningToHostWall(window, stableSegs));
+  const fittedOpenings = openings.map((opening) => fitOpeningToHostWall(opening, stableSegs));
+  const doorsR = fittedDoors.map((d) => ({ id: d.id, p1: rotW(d.p1), p2: rotW(d.p2) }));
+  const windowsR = fittedWindows.map((w) => ({ p1: rotW(w.p1), p2: rotW(w.p2) }));
+  const openingsR = fittedOpenings.map((o) => ({ id: o.id, p1: rotW(o.p1), p2: rotW(o.p2) }));
   const rotAxis = (a: V2): V2 =>
     rotDeg === 0 ? a : [a[0] * cosR - a[1] * sinR, a[0] * sinR + a[1] * cosR];
   const rotObj = (o: ObjectXZ): ObjectXZ => ({
@@ -412,9 +479,9 @@ function buildLocalModel(
     // Furniture must solve against the same conditioned current graph that is
     // published, never the stale/raw fragment set.
     walls: stableSegs,
-    doors,
-    windows,
-    openings,
+    doors: fittedDoors,
+    windows: fittedWindows,
+    openings: fittedOpenings,
     objects: rawObjects, // constraint solver conditions/dedupes internally
     doorConfigs: parseDoorConfigs(textData),
     rooms: geom?.solverRooms ?? [],
@@ -426,7 +493,7 @@ function buildLocalModel(
         prepareObjects(rawObjects, preBounds),
         wallSegs,
         geom?.interiorCentroid ?? pivot,
-        doors,
+        fittedDoors,
         geom?.rooms ?? []
       );
   const composedObjects = solvedObjects.filter((object) => {
@@ -472,10 +539,13 @@ function buildLocalModel(
   ])!;
   const spanX = Math.max(bounds.maxX - bounds.minX, 0.001);
   const spanZ = Math.max(bounds.maxZ - bounds.minZ, 0.001);
-  const svgH = Math.max(240, Math.min(640, Math.round(SVG_W * (spanZ / spanX))));
+  const svgH = Math.max(
+    MIN_SVG_H,
+    Math.min(MAX_SVG_H, Math.round(SVG_W * (spanZ / spanX)))
+  );
   const aw = SVG_W - 2 * PADDING;
   const ah = svgH - 2 * PADDING;
-  const s = Math.min(aw / spanX, ah / spanZ);
+  const s = Math.min(aw / spanX, ah / spanZ, MAX_PLAN_SCALE);
   const ox = PADDING + (aw - spanX * s) / 2;
   const oy = PADDING + (ah - spanZ * s) / 2;
   const proj = (x: number, z: number): [number, number] => [
@@ -679,11 +749,9 @@ function LocalPlan({
 
   return (
     <div
-      className="relative mx-auto"
+      className="relative w-full"
       style={{
         aspectRatio: `${SVG_W} / ${svgH}`,
-        width: svgH > 440 ? `${(440 * SVG_W) / svgH}px` : "100%",
-        maxWidth: "100%",
       }}
     >
     <svg viewBox={`0 0 ${SVG_W} ${svgH}`} className="block h-full w-full" xmlns="http://www.w3.org/2000/svg">
