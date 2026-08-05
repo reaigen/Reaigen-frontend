@@ -1,3 +1,5 @@
+import type { DraftDataEntry } from "../tour-types";
+
 export class ApiError extends Error {
   status: number;
   body: string;
@@ -2402,6 +2404,9 @@ export interface GeometryMesh {
   points: number[][];
   faces: number[][];
   hinge_xz?: number[];
+  /** Furniture meshes only: category / ML classification from the floorplan service. */
+  category?: string;
+  furniture_type?: string;
 }
 
 export interface GeometryLayer {
@@ -2428,6 +2433,7 @@ export interface FloorplanRenderingData {
       walls: GeometryLayer;
       doors: GeometryLayer;
       windows: GeometryLayer;
+      furniture?: GeometryLayer;
     };
   };
   rooms: FloorplanRoom[];
@@ -2438,6 +2444,34 @@ export interface FloorplanRenderingData {
 
 export async function getFloorplanRendering(floorplanId: number, signal?: AbortSignal): Promise<FloorplanRenderingData> {
   return abortableRequest(`/api/reaigen/floorplans/${floorplanId}/rendering/`, signal);
+}
+
+// ─── Draft data (floorplan editor persistence) ────────────────────────
+
+/** Upsert draft-data fields the way the iOS editor does: PATCH the existing
+ * record for a key, POST a new one otherwise. Returns the saved entries. */
+export async function saveDraftDataFields(
+  draftId: number,
+  fields: Record<string, string>,
+  existing: readonly DraftDataEntry[],
+): Promise<DraftDataEntry[]> {
+  const byKey = new Map(existing.map((e) => [e.data_key, e]));
+  const saved: DraftDataEntry[] = [];
+  for (const [key, value] of Object.entries(fields)) {
+    const prev = byKey.get(key);
+    const dataType = key.endsWith("_json") || key.endsWith("_camera") ? "json" : "text";
+    const entry: DraftDataEntry = prev
+      ? await request(`/api/reaigen/draft-data/${prev.id}/`, {
+          method: "PATCH",
+          body: JSON.stringify({ data_value: value }),
+        })
+      : await request(`/api/reaigen/draft-data/`, {
+          method: "POST",
+          body: JSON.stringify({ draft: draftId, data_key: key, data_value: value, data_type: dataType }),
+        });
+    saved.push(entry);
+  }
+  return saved;
 }
 
 export interface TranslateDescriptionResponse {
