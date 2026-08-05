@@ -22,10 +22,10 @@ import type {
   TourShot,
 } from "@/app/lib/tour-types";
 import {
-  clampSceneScaleComponent,
   IDENTITY_GLOBAL_SCENE_TRANSFORM,
   globalSceneScale3,
   inversePresentationPoint,
+  scaleComponentWithAuthoredSign,
   sceneScaleMagnitude,
   transformCanonicalDirection,
   transformCanonicalPoint,
@@ -2749,12 +2749,19 @@ const SplatViewer = forwardRef<SplatViewerHandle, Props>(function SplatViewer(
               root.scaling.z,
             ])
           : previous.scale,
+        // A drag resizes; it never mirrors. Babylon's per-axis scale gizmo has
+        // no sign clamp, so pulling a handle through the origin would flip that
+        // axis and mirror the whole scene. An authored mirror is still honoured
+        // because the sign comes from the transform being edited.
         scale3: spatialTransformTool === "scale"
-          ? [
-              clampSceneScaleComponent(Number(root.scaling.x.toFixed(4))),
-              clampSceneScaleComponent(Number(root.scaling.y.toFixed(4))),
-              clampSceneScaleComponent(Number(root.scaling.z.toFixed(4))),
-            ]
+          ? (() => {
+              const authored = globalSceneScale3(previous);
+              return [
+                scaleComponentWithAuthoredSign(Number(root.scaling.x.toFixed(4)), authored[0]),
+                scaleComponentWithAuthoredSign(Number(root.scaling.y.toFixed(4)), authored[1]),
+                scaleComponentWithAuthoredSign(Number(root.scaling.z.toFixed(4)), authored[2]),
+              ] as Vec3;
+            })()
           : globalSceneScale3(previous),
       };
 

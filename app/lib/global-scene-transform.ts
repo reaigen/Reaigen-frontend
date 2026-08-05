@@ -27,6 +27,24 @@ export function clampSceneScaleComponent(value: number, fallback = 1): number {
   return clipped < 0 ? -MIN_ABSOLUTE_SCENE_SCALE : MIN_ABSOLUTE_SCENE_SCALE;
 }
 
+/**
+ * Clamp a dragged scale component to the sign the scene already had.
+ *
+ * Mirroring is a supported authored state, so the sign is preserved rather
+ * than dropped. What a drag must never do is *change* it: Babylon's per-axis
+ * scale gizmo has no sign clamp, so pulling a handle through the origin
+ * silently flips that axis and mirrors the whole scene.
+ */
+export function scaleComponentWithAuthoredSign(
+  value: number,
+  authored: number,
+  fallback = 1,
+): number {
+  if (!Number.isFinite(value)) return fallback;
+  const magnitude = Math.abs(clampSceneScaleComponent(value, fallback));
+  return authored < 0 ? -magnitude : magnitude;
+}
+
 /** Positive legacy scalar retained for older API consumers. */
 export function sceneScaleMagnitude(scale3: Vec3): number {
   return Math.cbrt(Math.abs(scale3[0] * scale3[1] * scale3[2]));

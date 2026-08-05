@@ -86,6 +86,11 @@ export default function CameraEditor({ splatId, viewerRef, activeShotIdx, initia
   const clearMessageTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const autoSaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const editGenerationRef = useRef(0);
+  // Mirrors editGenerationRef so the autosave effect re-runs on every edit.
+  const [editGeneration, setEditGeneration] = useState(0);
+  // Generation whose save failed. Autosave stays parked on it until the next
+  // edit, so a rejected save cannot become a 650ms retry loop.
+  const failedGenerationRef = useRef<number | null>(null);
   const wasOpenRef = useRef(false);
 
   // Camera coordinates returned by SplatViewer are already canonical. Keep the
@@ -168,6 +173,13 @@ export default function CameraEditor({ splatId, viewerRef, activeShotIdx, initia
       if (clearMessageTimerRef.current) clearTimeout(clearMessageTimerRef.current);
       if (autoSaveTimerRef.current) clearTimeout(autoSaveTimerRef.current);
     };
+  }, []);
+
+  /** Record a user edit and let autosave pick it up. */
+  const markEdited = useCallback(() => {
+    editGenerationRef.current += 1;
+    setEditGeneration(editGenerationRef.current);
+    setDirty(true);
   }, []);
 
   const setTransientMessage = useCallback((next: string | null, ms = 2200) => {
@@ -273,12 +285,11 @@ export default function CameraEditor({ splatId, viewerRef, activeShotIdx, initia
     setSelectedIdx(nextIdx);
     setPreviewIdx(nextIdx);
     onChange?.(cameraPayload(next, sceneFov));
-    editGenerationRef.current += 1;
-    setDirty(true);
+    markEdited();
     setMode("edit");
     setIsCollapsed(false);
     setTransientMessage(t("cameraEditor.messageCaptured", lang));
-  }, [lang, onChange, sceneFov, setTransientMessage, viewerRef]);
+  }, [lang, markEdited, onChange, sceneFov, setTransientMessage, viewerRef]);
 
   const [updatedIdx, setUpdatedIdx] = useState<number | null>(null);
 
@@ -297,14 +308,13 @@ export default function CameraEditor({ splatId, viewerRef, activeShotIdx, initia
     shotsRef.current = next;
     setShots(next);
     onChange?.(cameraPayload(next, sceneFov));
-    editGenerationRef.current += 1;
-    setDirty(true);
+    markEdited();
     setUpdatedIdx(idx);
     setSelectedIdx(idx);
     setPreviewIdx(idx);
     setTimeout(() => setUpdatedIdx(null), 1500);
     setTransientMessage(t("cameraEditor.messageUpdated", lang));
-  }, [lang, onChange, sceneFov, setTransientMessage, viewerRef]);
+  }, [lang, markEdited, onChange, sceneFov, setTransientMessage, viewerRef]);
 
   const removeShot = useCallback((idx: number) => {
     const next = shotsRef.current
@@ -323,10 +333,9 @@ export default function CameraEditor({ splatId, viewerRef, activeShotIdx, initia
       setPreviewIdx(nextIdx);
     }
     onChange?.(cameraPayload(next, sceneFov));
-    editGenerationRef.current += 1;
-    setDirty(true);
+    markEdited();
     setTransientMessage(t("cameraEditor.messageRemoved", lang));
-  }, [lang, onChange, sceneFov, setTransientMessage]);
+  }, [lang, markEdited, onChange, sceneFov, setTransientMessage]);
 
   const moveShot = useCallback((idx: number, dir: -1 | 1) => {
     const currentShots = shotsRef.current;
@@ -345,10 +354,9 @@ export default function CameraEditor({ splatId, viewerRef, activeShotIdx, initia
     if (previewIdx === idx) setPreviewIdx(target);
     else if (previewIdx === target) setPreviewIdx(idx);
     onChange?.(cameraPayload(next, sceneFov));
-    editGenerationRef.current += 1;
-    setDirty(true);
+    markEdited();
     setTransientMessage(t("cameraEditor.messageOrderUpdated", lang), 1400);
-  }, [lang, onChange, previewIdx, sceneFov, selectedIdx, setTransientMessage]);
+  }, [lang, markEdited, onChange, previewIdx, sceneFov, selectedIdx, setTransientMessage]);
 
   const handleSave = useCallback(async (announce = true) => {
     const generation = editGenerationRef.current;
@@ -384,9 +392,14 @@ export default function CameraEditor({ splatId, viewerRef, activeShotIdx, initia
         });
       }
       if (editGenerationRef.current === generation) setDirty(false);
+      failedGenerationRef.current = null;
       if (announce) setTransientMessage(t("cameraEditor.messageSaved", lang));
       onSaved?.(saved);
     } catch (err) {
+      // Park autosave on this generation. The edit stays dirty so an explicit
+      // Save still retries, but the debounce no longer reschedules itself
+      // against an endpoint that just rejected the exact same payload.
+      failedGenerationRef.current = generation;
       setIsError(true);
       setMessage(`${t("cameraEditor.messageSaveFailed", lang)} ${getSafeApiErrorMessage(err, lang)}`);
     } finally {
@@ -398,6 +411,7 @@ export default function CameraEditor({ splatId, viewerRef, activeShotIdx, initia
   // or closing the panel cannot silently discard a captured shot.
   useEffect(() => {
     if (!loaded || !dirty || saving) return;
+    if (failedGenerationRef.current === editGenerationRef.current) return;
     if (autoSaveTimerRef.current) clearTimeout(autoSaveTimerRef.current);
     autoSaveTimerRef.current = setTimeout(() => {
       autoSaveTimerRef.current = null;
@@ -409,7 +423,7 @@ export default function CameraEditor({ splatId, viewerRef, activeShotIdx, initia
         autoSaveTimerRef.current = null;
       }
     };
-  }, [dirty, handleSave, loaded, saving]);
+  }, [dirty, editGeneration, handleSave, loaded, saving]);
 
   const handleSceneFovChange = useCallback((value: number) => {
     setSceneFov(value);
@@ -418,10 +432,9 @@ export default function CameraEditor({ splatId, viewerRef, activeShotIdx, initia
     shotsRef.current = next;
     setShots(next);
     onChange?.(cameraPayload(next, value));
-    editGenerationRef.current += 1;
-    setDirty(true);
+    markEdited();
     viewerRef.current?.setFov(value);
-  }, [onChange, viewerRef]);
+  }, [markEdited, onChange, viewerRef]);
 
   // ── Preview mode ───────────────────────────────────────────────────────────
 

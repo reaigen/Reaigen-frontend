@@ -337,16 +337,12 @@ export default function TourPage({
       throw new Error("Tour workspace is unavailable");
     }
     const workspace = await getWebTourWorkspace(requestedTourId!);
+    // Send cameras only. Re-sending nodes made every camera save re-validate
+    // each node's prune mask against the splat's current asset fingerprint, so
+    // a mask left stale by a re-publish or a PLY->SOG conversion rejected the
+    // save with an error about pruning that never mentioned cameras.
     await saveWebTourWorkspace(requestedTourId!, {
       base_revision: workspace.revision,
-      name: workspace.name,
-      nodes: workspace.nodes.map((node) => ({
-        id: node.id,
-        name: node.name,
-        visible: node.visible,
-        transform: node.transform,
-        prune: node.prune,
-      })),
       cameras: cameraData.cameras as unknown as Array<Record<string, unknown>>,
     });
     const current = await getSplatViewer(resolvedSplatId, {
@@ -594,8 +590,13 @@ export default function TourPage({
             activeShotIdx={shotIdx}
             initialCameras={viewerCameras}
             defaultMode="preview"
+            // Saving through the tour workspace requires the web-authoring
+            // permission, which most accounts do not have. Authoring cameras
+            // is a regular-user feature, so anyone without it falls through to
+            // the splat camera endpoint that their Reaigen entitlement already
+            // covers, instead of every save failing 403 against /web-creation/.
             saveHandler={
-              Number.isFinite(requestedTourId)
+              spatialEditorAllowed && Number.isFinite(requestedTourId)
                 ? saveTourCameras
                 : undefined
             }
