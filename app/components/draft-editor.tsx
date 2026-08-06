@@ -1198,35 +1198,18 @@ export function DraftEditor({
             ]}
           />
           {mode === "basic" ? (
-            <div
-              role="group"
-              aria-label={t("draft.editor.sections", lang)}
-              className="grid grid-cols-3 gap-1 rounded-[1.1rem] border border-border/55 bg-card p-1 shadow-control sm:hidden"
-            >
-              {([
-                { value: "basics", label: t("draft.editor.panelBasics", lang), icon: InfoIcon },
-                { value: "property", label: t("draft.editor.panelProperty", lang), icon: LayoutIcon },
-                { value: "location", label: t("draft.editor.panelLocation", lang), icon: MapPinIcon },
-              ] as const).map((panel) => {
-                const Icon = panel.icon;
-                const active = mobilePanel === panel.value;
-                return (
-                  <button
-                    key={panel.value}
-                    type="button"
-                    aria-pressed={active}
-                    onClick={() => showMobilePanel(panel.value)}
-                    className={cn(
-                      "flex min-h-11 min-w-0 items-center justify-center gap-1.5 rounded-[0.85rem] px-2 text-[10px] font-semibold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1",
-                      active ? "bg-foreground text-background" : "text-foreground/55 hover:bg-foreground/[0.045] hover:text-foreground",
-                    )}
-                  >
-                    <Icon size={13} />
-                    <span className="truncate">{panel.label}</span>
-                  </button>
-                );
-              })}
-            </div>
+            <SegmentedControl
+              value={mobilePanel}
+              onChange={showMobilePanel}
+              ariaLabel={t("draft.editor.sections", lang)}
+              className="grid w-full grid-cols-3 sm:hidden"
+              itemClassName="w-full gap-1.5 px-2 text-[11px] font-semibold"
+              options={[
+                { value: "basics", label: <span className="truncate">{t("draft.editor.panelBasics", lang)}</span>, icon: <InfoIcon size={13} /> },
+                { value: "property", label: <span className="truncate">{t("draft.editor.panelProperty", lang)}</span>, icon: <LayoutIcon size={13} /> },
+                { value: "location", label: <span className="truncate">{t("draft.editor.panelLocation", lang)}</span>, icon: <MapPinIcon size={13} /> },
+              ]}
+            />
           ) : null}
         </div>
 
