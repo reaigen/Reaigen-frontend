@@ -122,6 +122,12 @@ export default function TourPage({
   const [retryCount, setRetryCount] = useState(0);
   const [draft, setDraft] = useState<DraftDetailItem | null>(null);
   const [advancedOpen, setAdvancedOpen] = useState(false);
+  // Transform gizmos and precision entry need a pointer and room to work, so
+  // the spatial editor stays a desktop surface. Width beats a pointer query
+  // here: touchscreen laptops report coarse pointers and would lose it.
+  const [compactViewport, setCompactViewport] = useState(
+    () => typeof window !== "undefined" && window.matchMedia("(max-width: 767px)").matches,
+  );
   const [spatialViewMode, setSpatialViewMode] = useState<SpatialViewMode>("surface");
   const [inspectionStats, setInspectionStats] = useState<SplatInspectionStats | null>(null);
   const [spatialDataLoading, setSpatialDataLoading] = useState(false);
@@ -449,6 +455,20 @@ export default function TourPage({
     });
   }, [savedGlobalSceneTransform, shotIdx]);
 
+  useEffect(() => {
+    const query = window.matchMedia("(max-width: 767px)");
+    const sync = () => setCompactViewport(query.matches);
+    sync();
+    query.addEventListener("change", sync);
+    return () => query.removeEventListener("change", sync);
+  }, []);
+
+  // Shrinking past the breakpoint mid-session must not strand the user inside
+  // an editor they can no longer reach the controls of.
+  useEffect(() => {
+    if (compactViewport && advancedOpen) closeAdvancedEditor();
+  }, [compactViewport, advancedOpen, closeAdvancedEditor]);
+
   const openAdvancedEditor = useCallback(async () => {
     setSpatialTransformTool("select");
     setAdvancedOpen(true);
@@ -569,7 +589,7 @@ export default function TourPage({
               <ArrowLeftIcon size={16} />
               <span className="hidden text-[12px] font-medium xl:inline">{t("common.back", lang)}</span>
             </button>
-            {spatialEditorAllowed ? (
+            {spatialEditorAllowed && !compactViewport ? (
               <button
                 type="button"
                 onClick={() => { void openAdvancedEditor(); }}
