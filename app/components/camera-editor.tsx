@@ -81,6 +81,13 @@ export default function CameraEditor({ splatId, viewerRef, activeShotIdx, initia
   // exposes camera count, navigation, capture, and preview; users expand the
   // full editor only when they intentionally start editing.
   const [isCollapsed, setIsCollapsed] = useState(true);
+  // Framing a shot means holding a pose while reaching for controls, which a
+  // thumb on a phone cannot do well. Authoring is desktop-only; phones keep the
+  // full preview pill. Width, not pointer: touchscreen laptops report a coarse
+  // pointer and would lose authoring they can perform perfectly well.
+  const [compactViewport, setCompactViewport] = useState(
+    () => typeof window !== "undefined" && window.matchMedia("(max-width: 767px)").matches,
+  );
   const shotsRef = useRef<CameraShot[]>([]);
   const previewTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const clearMessageTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -459,6 +466,21 @@ export default function CameraEditor({ splatId, viewerRef, activeShotIdx, initia
     viewerRef.current?.enableFreeCamera();
   }, [viewerRef]);
 
+  useEffect(() => {
+    const query = window.matchMedia("(max-width: 767px)");
+    const sync = () => setCompactViewport(query.matches);
+    sync();
+    query.addEventListener("change", sync);
+    return () => query.removeEventListener("change", sync);
+  }, []);
+
+  // Rotating into a compact viewport mid-edit must not leave the user holding
+  // an authoring surface they can no longer work. Pending edits already went
+  // through the debounced autosave, so falling back to preview loses nothing.
+  useEffect(() => {
+    if (compactViewport && mode === "edit") startPreview();
+  }, [compactViewport, mode, startPreview]);
+
   // Auto-advance only when looping is enabled
   useEffect(() => {
     if (mode !== "preview" || !looping || !shots.length) return;
@@ -501,6 +523,11 @@ export default function CameraEditor({ splatId, viewerRef, activeShotIdx, initia
   // ── Render ─────────────────────────────────────────────────────────────────
 
   if (!loaded) return null;
+  // A tour with no saved cameras opens straight in edit mode, which the
+  // startPreview() fallback cannot undo because there is no shot to fly to.
+  // On a phone there is then nothing to offer: authoring is desktop-only and
+  // an empty preview pill would be worse than no chrome at all.
+  if (compactViewport && mode === "edit") return null;
 
   const ArrowLeft = <ArrowLeftIcon size={14} />;
   const ArrowRight = <ArrowRightIcon size={14} />;
@@ -589,17 +616,20 @@ export default function CameraEditor({ splatId, viewerRef, activeShotIdx, initia
             </button>
           )}
 
-          {/* Divider */}
-          <div className="h-4 w-px bg-white/15" />
+          {/* Divider + Edit button — authoring is desktop-only */}
+          {!compactViewport && (
+            <>
+              <div className="h-4 w-px bg-white/15" />
 
-          {/* Edit button */}
-          <button
-            type="button"
-            onClick={stopPreview}
-            className="floating-control px-3 text-[11px] text-white/70 hover:bg-white/10 hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/40"
-          >
-            {t("cameraEditor.edit", lang)}
-          </button>
+              <button
+                type="button"
+                onClick={stopPreview}
+                className="floating-control px-3 text-[11px] text-white/70 hover:bg-white/10 hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/40"
+              >
+                {t("cameraEditor.edit", lang)}
+              </button>
+            </>
+          )}
 
           <div className="hidden pl-1 pr-2 text-[11px] font-medium text-white/45 sm:block">
             {previewIdx + 1} / {shots.length}
