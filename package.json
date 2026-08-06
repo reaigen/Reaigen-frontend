@@ -11,7 +11,8 @@
     "analyze-floorplan-patterns": "node scripts/analyze-floorplan-patterns.mjs",
     "validate-floorplan": "node --test \"$PWD/node_modules/@reaigen/floorplan-solver/test/solver.test.mjs\"",
     "validate-floorplan-integration": "node --experimental-strip-types --test scripts/validate-floorplan-integration.mjs",
-    "check": "npm run lint && npm run typecheck && npm run validate-floorplan && npm run validate-floorplan-integration && npm run build",
+    "validate-proxy-path": "node --experimental-strip-types --test scripts/validate-proxy-path.test.mjs",
+    "check": "npm run lint && npm run typecheck && npm run validate-proxy-path && npm run validate-floorplan && npm run validate-floorplan-integration && npm run build",
     "validate-floorplan-rendering": "node --experimental-strip-types --test scripts/validate-floorplan-rendering.test.mjs",
     "validate-floorplan-presentation": "node --experimental-strip-types --test scripts/validate-floorplan-presentation.test.mjs"
   },

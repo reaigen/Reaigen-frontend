@@ -7,6 +7,7 @@ import {
   clearAuthCookies,
 } from "../../../lib/server/auth-cookies";
 import { fetchBackend } from "../../../lib/server/backend-fetch";
+import { isSafeProxyPath } from "../../../lib/server/proxy-path";
 
 const BACKEND_URL =
   process.env.REAIGEN_BACKEND_URL ?? "http://localhost:8000";
@@ -183,6 +184,17 @@ async function proxy(
   { params }: { params: Promise<{ path: string[] }> },
 ) {
   const { path } = await params;
+
+  // Reject before any cookie or token is attached: a dot-segment here would
+  // otherwise be resolved by fetch and reach a backend path outside the
+  // /api/v1/ prefix carrying the caller's credentials.
+  if (!isSafeProxyPath(path)) {
+    return NextResponse.json(
+      { error: "Invalid request path" },
+      { status: 400, headers: noStoreHeaders("application/json") },
+    );
+  }
+
   const joined = path.join("/");
   const slash = joined.endsWith("/") ? "" : "/";
   const targetUrlSearchParams = new URLSearchParams(req.nextUrl.searchParams);
