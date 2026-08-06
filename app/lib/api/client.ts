@@ -1880,6 +1880,8 @@ export async function askReaiWorkspace(
   pendingActionCode?: ReaiAgentResponse["action_code"],
   workspaceContext?: "creator" | "draft" | "settings",
   currentUploadId?: number,
+  /** The Agent window's working pool: what the user dragged in. */
+  attachedItems?: Array<{ kind: "image"; upload_id: number } | { kind: "field"; path: string }>,
 ): Promise<ReaiAgentResponse> {
   return request("/api/reaigen/reai-agent/workspace/assist/", {
     method: "POST",
@@ -1892,6 +1894,7 @@ export async function askReaiWorkspace(
       pending_action_code: pendingActionCode,
       workspace_context: workspaceContext,
       current_upload_id: currentUploadId,
+      attached_items: attachedItems?.length ? attachedItems : undefined,
     }),
   });
 }

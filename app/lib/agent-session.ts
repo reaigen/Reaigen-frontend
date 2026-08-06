@@ -14,6 +14,8 @@
  * identity drops them along with the rest of the private state.
  */
 
+import { clearAgentPools } from "./agent-pool";
+
 const TRANSCRIPT_PREFIX = "reaigen:agent:transcript:";
 const PANEL_OPEN_KEY = "reaigen:agent:panel-open";
 
@@ -80,7 +82,7 @@ export function writeAgentPanelOpen(open: boolean): void {
   }
 }
 
-/** Drops every transcript and the panel state — used when consent is revoked. */
+/** Drops every transcript, the working pool, and the panel state. */
 export function clearAgentSession(): void {
   if (typeof window === "undefined") return;
   try {
@@ -94,4 +96,5 @@ export function clearAgentSession(): void {
   } catch {
     // Nothing actionable; the auth-boundary purge is the backstop.
   }
+  clearAgentPools();
 }

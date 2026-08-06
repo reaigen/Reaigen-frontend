@@ -2,6 +2,7 @@
 
 import * as React from "react";
 import { createPortal } from "react-dom";
+import { writeDragItem } from "../lib/agent-pool";
 import { t } from "../lib/i18n";
 import { cn } from "../lib/utils";
 import { ArrowLeftIcon, ArrowRightIcon, CloseIcon, EditIcon, GridIcon } from "./icons";
@@ -290,6 +291,18 @@ function GalleryLightbox({
                 <button
                   type="button"
                   key={`${image.id ?? image.url}-overview-${imageIndex}`}
+                  // Draggable into the Agent window, where the photo becomes
+                  // the subject of the conversation.
+                  draggable={typeof image.id === "number"}
+                  onDragStart={(event) => {
+                    if (typeof image.id !== "number") return;
+                    writeDragItem(event.dataTransfer, {
+                      kind: "image",
+                      uploadId: image.id,
+                      url: image.thumbnail_url || image.url,
+                      label: `${t("draft.media.photo", lang)} ${imageIndex + 1}`,
+                    });
+                  }}
                   onClick={() => {
                     pendingPhotoIndexRef.current = imageIndex;
                     setIndex(imageIndex);

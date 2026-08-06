@@ -11,6 +11,7 @@ import {
   askReaiWorkspace,
   getAgentCreationHistory,
   getAgentMediaVersions,
+  getDraft,
   getReaiAgentConsent,
   getReaiImprovementConsent,
   listUnits,
@@ -18,12 +19,27 @@ import {
   manageAgentMediaVersion,
   saveReaiFeedback,
   updateLocalization,
+  uploadDraftPhoto,
   type AgentCreationRevision,
   type AgentMediaVersionGroup,
   type ReaiAgentConsent,
   type ReaiAgentResponse,
   type ReaiImprovementConsent,
 } from "../lib/api/client";
+import {
+  addPoolItem,
+  agentPoolKey,
+  dragHasFiles,
+  dragHasPoolItem,
+  poolItemKey,
+  poolItemsForRequest,
+  readAgentPool,
+  readDragItem,
+  removePoolItem,
+  writeAgentPool,
+  type AgentPoolImage,
+  type AgentPoolItem,
+} from "../lib/agent-pool";
 import {
   agentTranscriptKey,
   readAgentTranscript,
@@ -32,7 +48,7 @@ import {
 import { formatDate, t } from "../lib/i18n";
 import type { LocaleKey } from "../lib/locales";
 import { PROPERTY_FIELD_SECTIONS, subtypeOptions, type PropertyFieldDefinition, type PropertyType } from "../lib/property-field-registry";
-import type { DraftDetailItem } from "../lib/tour-types";
+import type { DraftDetailItem, DraftUpload } from "../lib/tour-types";
 import { baseUnitForCategory, resolveUnit, unitLabel, type UnitLookup } from "../lib/unit-catalog";
 import { Button } from "../lib/ui/button";
 import { cn } from "../lib/utils";
@@ -350,8 +366,15 @@ export function ReaiAgentCard({
   const [composerFocused, setComposerFocused] = useState(false);
   const [transcriptRestored, setTranscriptRestored] = useState(false);
   const restoredTranscriptKeyRef = useRef<string | null>(null);
+  const [pool, setPool] = useState<AgentPoolItem[]>([]);
+  const [poolRestored, setPoolRestored] = useState(false);
+  const restoredPoolKeyRef = useRef<string | null>(null);
+  const [dropActive, setDropActive] = useState(false);
+  const [uploading, setUploading] = useState(false);
+  const dragDepthRef = useRef(0);
   const compactPanel = panel && compact;
   const transcriptKey = agentTranscriptKey(workspaceContext, draftId);
+  const poolKey = agentPoolKey(workspaceContext, draftId);
   const quickActions = workspaceContext === "settings"
     ? (["reai.quickSettingsAgent", "reai.quickSettingsLanguage", "reai.quickSettingsSecurity"] as const)
     : draftId
@@ -374,6 +397,19 @@ export function ReaiAgentCard({
     if (!transcriptRestored || restoredTranscriptKeyRef.current !== transcriptKey) return;
     writeAgentTranscript(transcriptKey, turns);
   }, [transcriptKey, transcriptRestored, turns]);
+
+  // The working pool is parked and restored on the same terms as the
+  // transcript: what you dropped is still there after a navigation.
+  useEffect(() => {
+    setPool(readAgentPool(poolKey));
+    restoredPoolKeyRef.current = poolKey;
+    setPoolRestored(true);
+  }, [poolKey]);
+
+  useEffect(() => {
+    if (!poolRestored || restoredPoolKeyRef.current !== poolKey) return;
+    writeAgentPool(poolKey, pool);
+  }, [pool, poolKey, poolRestored]);
 
   useEffect(() => {
     let active = true;
@@ -505,6 +541,7 @@ export function ReaiAgentCard({
         pendingActionCode,
         workspaceContext,
         currentUploadId,
+        poolItemsForRequest(pool),
       );
       if (!draftId && response.operation === "list" && response.search_query) {
         window.dispatchEvent(new CustomEvent("reai-workspace-search", {
@@ -679,6 +716,66 @@ export function ReaiAgentCard({
     } : turn));
   };
 
+  const acceptsDrop = (dataTransfer: DataTransfer) =>
+    dragHasPoolItem(dataTransfer) || (Boolean(draftId) && dragHasFiles(dataTransfer));
+
+  /**
+   * Files dropped from the computer become photos on the open creation. When a
+   * single photo is already sitting in the pool, the drop is read as "replace
+   * this one": the upload supersedes it, which keeps the original reviewable as
+   * an earlier version rather than deleting it.
+   */
+  const handleDroppedFiles = async (files: File[]) => {
+    if (!draftId || files.length === 0 || uploading) return;
+    const images = files.filter((file) => file.type.startsWith("image/") || /\.(jpe?g|png|webp|heic|heif|tiff?|bmp)$/i.test(file.name));
+    if (images.length === 0) return;
+    const replacing = pool.filter((item): item is AgentPoolImage => item.kind === "image");
+    const target = images.length === 1 && replacing.length === 1 ? replacing[0] : null;
+    setUploading(true);
+    setError(null);
+    try {
+      const uploaded: DraftUpload[] = [];
+      for (const [index, file] of images.entries()) {
+        uploaded.push(await uploadDraftPhoto(
+          draftId,
+          file,
+          index,
+          target ? { supersedesId: target.uploadId } : {},
+        ));
+      }
+      const last = uploaded[uploaded.length - 1];
+      if (last) {
+        setPool((current) => addPoolItem(
+          target ? removePoolItem(current, poolItemKey(target)) : current,
+          {
+            kind: "image",
+            uploadId: last.id,
+            url: last.file_url,
+            label: target ? t("reai.pool.replacedPhoto", lang) : t("reai.pool.newPhoto", lang),
+          },
+        ));
+      }
+      onDraftUpdated?.(await getDraft(draftId));
+    } catch (err) {
+      setError(errorText(err, lang));
+    } finally {
+      setUploading(false);
+    }
+  };
+
+  const handleDrop = (event: React.DragEvent) => {
+    dragDepthRef.current = 0;
+    if (!acceptsDrop(event.dataTransfer)) return;
+    event.preventDefault();
+    setDropActive(false);
+    const item = readDragItem(event.dataTransfer);
+    if (item) {
+      setPool((current) => addPoolItem(current, item));
+      return;
+    }
+    void handleDroppedFiles(Array.from(event.dataTransfer.files));
+  };
+
   const copyShareUrl = async (url: string) => {
     await navigator.clipboard.writeText(url);
     setCopiedShareUrl(url);
@@ -700,11 +797,45 @@ export function ReaiAgentCard({
   };
 
   return (
-    <section className={cn(
-      "rounded-2xl bg-foreground/[0.025]",
-      compactPanel ? "p-3 [&_button]:min-h-11 [&_button]:min-w-11" : "p-4",
-      panel ? "flex h-full min-h-0 flex-col rounded-none border-0 bg-transparent pb-[max(1rem,env(safe-area-inset-bottom))]" : "mt-5 border border-border/40",
-    )} aria-label={panel ? t("reai.title", lang) : undefined} aria-labelledby={panel ? undefined : "reai-title"}>
+    <section
+      className={cn(
+        "relative rounded-2xl bg-foreground/[0.025]",
+        compactPanel ? "p-3 [&_button]:min-h-11 [&_button]:min-w-11" : "p-4",
+        panel ? "flex h-full min-h-0 flex-col rounded-none border-0 bg-transparent pb-[max(1rem,env(safe-area-inset-bottom))]" : "mt-5 border border-border/40",
+      )}
+      aria-label={panel ? t("reai.title", lang) : undefined}
+      aria-labelledby={panel ? undefined : "reai-title"}
+      // The whole window is the drop target. Depth counting keeps the
+      // affordance stable while the pointer crosses child elements, which
+      // otherwise fire dragleave on every boundary.
+      onDragEnter={(event) => {
+        if (!acceptsDrop(event.dataTransfer)) return;
+        event.preventDefault();
+        dragDepthRef.current += 1;
+        setDropActive(true);
+      }}
+      onDragOver={(event) => {
+        if (!acceptsDrop(event.dataTransfer)) return;
+        event.preventDefault();
+        event.dataTransfer.dropEffect = "copy";
+      }}
+      onDragLeave={(event) => {
+        if (!acceptsDrop(event.dataTransfer)) return;
+        dragDepthRef.current = Math.max(0, dragDepthRef.current - 1);
+        if (dragDepthRef.current === 0) setDropActive(false);
+      }}
+      onDrop={handleDrop}
+    >
+      {dropActive && (
+        <div
+          className="pointer-events-none absolute inset-1 z-20 flex items-center justify-center rounded-2xl border-2 border-dashed border-foreground/30 bg-background/85"
+          aria-hidden="true"
+        >
+          <p className="px-6 text-center text-[12px] font-medium leading-relaxed text-foreground/70">
+            {t("reai.pool.dropHint", lang)}
+          </p>
+        </div>
+      )}
       <div className={cn("items-start justify-between gap-3", panel ? "hidden" : "flex")}>
         <div>
           <h2 id="reai-title" className="text-[14px] font-semibold">{t("reai.title", lang)}</h2>
@@ -1457,6 +1588,49 @@ export function ReaiAgentCard({
                   </button>
                 );
               })}
+            </div>
+          )}
+          {!showHistory && !showMediaHistory && (pool.length > 0 || uploading) && (
+            <div className="flex flex-wrap items-center gap-1.5 rounded-2xl border border-border/60 bg-background/70 p-1.5">
+              {pool.map((item) => {
+                const key = poolItemKey(item);
+                return (
+                  <span
+                    key={key}
+                    className="inline-flex max-w-full items-center gap-1.5 rounded-xl border border-border/60 bg-card py-1 pl-1 pr-1.5 text-[11px]"
+                  >
+                    {item.kind === "image" ? (
+                      // eslint-disable-next-line @next/next/no-img-element
+                      <img src={item.url} alt="" className="h-7 w-7 rounded-lg object-cover" />
+                    ) : (
+                      <span className="flex h-7 min-w-7 items-center rounded-lg bg-foreground/[0.05] px-1.5 font-medium text-foreground/70">
+                        {item.value || "—"}
+                      </span>
+                    )}
+                    <span className="max-w-[9rem] truncate text-foreground/75">{item.label}</span>
+                    <button
+                      type="button"
+                      aria-label={`${t("reai.pool.remove", lang)} — ${item.label}`}
+                      onClick={() => setPool((current) => removePoolItem(current, key))}
+                      className="rounded-md p-0.5 text-foreground/40 transition-colors hover:text-foreground"
+                    >
+                      <CloseIcon size={12} />
+                    </button>
+                  </span>
+                );
+              })}
+              {uploading && (
+                <span className="px-1.5 text-[11px] text-muted-foreground">{t("reai.pool.uploading", lang)}</span>
+              )}
+              {pool.length > 0 && (
+                <button
+                  type="button"
+                  onClick={() => setPool([])}
+                  className="ml-auto rounded-lg px-2 py-1 text-[11px] text-foreground/50 transition-colors hover:text-foreground"
+                >
+                  {t("reai.pool.clear", lang)}
+                </button>
+              )}
             </div>
           )}
           {!showHistory && !showMediaHistory && <div className={cn(

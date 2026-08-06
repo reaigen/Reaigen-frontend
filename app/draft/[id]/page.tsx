@@ -8,6 +8,7 @@ import { AppShell } from "../../components/app-shell";
 import { Button } from "../../lib/ui/button";
 import { getDraft, getDraftTourAssets, getSplatsByDraft, listUnits, refreshDraft, translateDraftDescription } from "../../lib/api/client";
 import { isApiNotFound } from "../../lib/api/error-message";
+import { writeDragItem } from "../../lib/agent-pool";
 import { getUserLanguage, t } from "../../lib/i18n";
 import { currentGalleryUploads } from "../../lib/media";
 import { readDraftDetailCache, writeDraftDetailCache } from "../../lib/resilient-draft-cache";
@@ -151,15 +152,21 @@ const I = {
 
 // ── Facts grid (hero stats like iOS) ──────────────────────────────────────
 
-interface Fact { icon: ReactNode; value: string; label: string; sub?: string }
+/**
+ * `path` is the canonical field address the Agent acts on when this parameter
+ * is dragged into the Agent window. It is optional: a derived or composite
+ * value has no single field behind it, and stays undraggable rather than
+ * pointing the agent at the wrong one.
+ */
+interface Fact { icon: ReactNode; value: string; label: string; sub?: string; path?: string }
 
 function buildFacts(d: DraftDetailItem, lang: string, units: readonly UnitLookup[]): Fact[] {
   const facts: Fact[] = [];
-  const addFact = (icon: ReactNode, value: unknown, label: string, sub?: string | null) => {
-    if (value != null && value !== "" && value !== 0) facts.push({ icon, value: String(value), label, sub: sub || undefined });
+  const addFact = (icon: ReactNode, value: unknown, label: string, sub?: string | null, path?: string) => {
+    if (value != null && value !== "" && value !== 0) facts.push({ icon, value: String(value), label, sub: sub || undefined, path });
   };
-  addFact(I.bed, sec(d, "layout", "bedrooms"), t("draft.bedrooms", lang));
-  addFact(I.bath, sec(d, "layout", "bathrooms"), t("draft.bathrooms", lang));
+  addFact(I.bed, sec(d, "layout", "bedrooms"), t("draft.bedrooms", lang), null, "specs.layout.bedrooms");
+  addFact(I.bath, sec(d, "layout", "bathrooms"), t("draft.bathrooms", lang), null, "specs.layout.bathrooms");
 
   // Area: show preferred, with original as sub if different unit
   const storedAreaUnit = resolveUnit(units, d.area_unit, "AREA")
@@ -172,23 +179,23 @@ function buildFacts(d: DraftDetailItem, lang: string, units: readonly UnitLookup
   const origAreaStr = d.area && usingPreferredArea && storedAreaUnit && preferredAreaUnit?.id !== storedAreaUnit.id
     ? fmtWithUnit(d.area, storedAreaUnit, lang)
     : null;
-  if (area) addFact(I.area, fmtWithUnit(area, areaUnit, lang), t("draft.area", lang), origAreaStr);
+  if (area) addFact(I.area, fmtWithUnit(area, areaUnit, lang), t("draft.area", lang), origAreaStr, "area");
 
-  addFact(I.floor, sec(d, "layout", "floors") ?? sec(d, "technical", "total_floors"), t("draft.totalFloors", lang));
-  addFact(I.parking, sec(d, "layout", "parking_spaces"), t("draft.parkingSpaces", lang));
-  addFact(I.year, d.year_built ?? sec(d, "technical", "year_built"), t("draft.yearBuilt", lang));
+  addFact(I.floor, sec(d, "layout", "floors") ?? sec(d, "technical", "total_floors"), t("draft.totalFloors", lang), null, "specs.layout.floors");
+  addFact(I.parking, sec(d, "layout", "parking_spaces"), t("draft.parkingSpaces", lang), null, "specs.layout.parking_spaces");
+  addFact(I.year, d.year_built ?? sec(d, "technical", "year_built"), t("draft.yearBuilt", lang), null, "year_built");
   return facts;
 }
 
 // ── Row builder (detail params — excludes facts shown in grid) ────────────
 
-interface Row { icon: ReactNode; label: string; value: string }
+interface Row { icon: ReactNode; label: string; value: string; path?: string }
 
 function buildRows(d: DraftDetailItem, lang: string, units: readonly UnitLookup[]): Row[] {
   const rows: Row[] = [];
-  const push = (icon: ReactNode, label: string, value: unknown) => {
+  const push = (icon: ReactNode, label: string, value: unknown, path?: string) => {
     if (value == null || value === "" || value === false) return;
-    rows.push({ icon, label, value: value === true ? t("common.yes", lang) : String(value) });
+    rows.push({ icon, label, value: value === true ? t("common.yes", lang) : String(value), path });
   };
   type LK = import("../../lib/locales/en").LocaleKey;
   const storedAreaUnit = resolveUnit(units, d.area_unit, "AREA")
@@ -237,7 +244,7 @@ function buildRows(d: DraftDetailItem, lang: string, units: readonly UnitLookup[
   for (const [k, tKey] of areaFields) {
     const v = sec(d, "areas", k);
     const formatted = k === "land_area" ? fmtLotArea(v) : fmtArea(v);
-    if (formatted) push(I.area, t(tKey, lang), formatted);
+    if (formatted) push(I.area, t(tKey, lang), formatted, `specs.areas.${k}`);
   }
   // Plot dimensions (not area-formatted)
   const plotW = sec(d, "areas", "plot_width");
@@ -247,23 +254,23 @@ function buildRows(d: DraftDetailItem, lang: string, units: readonly UnitLookup[
 
   // ── Taxonomy ──
   const propTypeVal = enumT("property", sec(d, "taxonomy", "property_type"), lang);
-  push(I.building, t("draft.propertyType", lang), propTypeVal);
+  push(I.building, t("draft.propertyType", lang), propTypeVal, "specs.taxonomy.property_type");
   const subtype = sec(d, "taxonomy", "property_subtype");
   const subtypeVal = subtype ? enumT("subtype", subtype, lang) : null;
-  if (subtypeVal && subtypeVal !== propTypeVal) push(I.building, t("draft.propertySubtype", lang), subtypeVal);
+  if (subtypeVal && subtypeVal !== propTypeVal) push(I.building, t("draft.propertySubtype", lang), subtypeVal, "specs.taxonomy.property_subtype");
 
   // ── Technical / Additional details ──
-  push(I.condition, t("draft.condition", lang), enumT("condition", sec(d, "technical", "condition"), lang));
+  push(I.condition, t("draft.condition", lang), enumT("condition", sec(d, "technical", "condition"), lang), "specs.technical.condition");
   const constrType = sec(d, "technical", "construction_type");
-  if (constrType) push(I.building, t("draft.constructionType", lang), enumT("construction", constrType, lang));
+  if (constrType) push(I.building, t("draft.constructionType", lang), enumT("construction", constrType, lang), "specs.technical.construction_type");
   const renovYear = sec(d, "technical", "renovation_year");
-  if (renovYear) push(I.year, t("draft.renovationYear", lang), renovYear);
-  push(I.floor, t("draft.floor", lang), sec(d, "technical", "floor"));
-  push(I.elevator, t("draft.elevator", lang), sec(d, "technical", "elevator"));
+  if (renovYear) push(I.year, t("draft.renovationYear", lang), renovYear, "specs.technical.renovation_year");
+  push(I.floor, t("draft.floor", lang), sec(d, "technical", "floor"), "specs.technical.floor");
+  push(I.elevator, t("draft.elevator", lang), sec(d, "technical", "elevator"), "specs.technical.elevator");
   push(I.energy, t("draft.energyRating", lang), enumT("energy", sec(d, "technical", "energy_certificate"), lang));
   const energyClass = sec(d, "technical", "energy_class");
   if (energyClass) push(I.energy, t("draft.energyClass", lang), enumT("energy", energyClass, lang));
-  push(I.compass, t("draft.orientation", lang), enumT("orientation", sec(d, "technical", "orientation"), lang));
+  push(I.compass, t("draft.orientation", lang), enumT("orientation", sec(d, "technical", "orientation"), lang), "specs.technical.orientation");
   const roofType = sec(d, "technical", "roof_type");
   if (roofType) push(I.building, t("draft.roofType", lang), enumT("roof", roofType, lang));
   const view = sec(d, "technical", "view");
@@ -848,7 +855,25 @@ export default function DraftPreviewPage({
             {facts.length > 0 && (
               <div className="mt-5 grid grid-cols-2 gap-2.5 border-t border-border/70 pt-5 sm:grid-cols-3">
                 {facts.map((fact) => (
-                  <div key={fact.label} className="flex min-w-0 items-center gap-2.5 rounded-xl bg-surface-subtle px-3 py-2.5 ring-1 ring-inset ring-border/35">
+                  <div
+                    key={fact.label}
+                    // Parameters with a canonical field behind them can be
+                    // dragged into the Agent window to be asked about or edited.
+                    draggable={Boolean(fact.path)}
+                    onDragStart={(event) => {
+                      if (!fact.path) return;
+                      writeDragItem(event.dataTransfer, {
+                        kind: "field",
+                        path: fact.path,
+                        label: fact.label,
+                        value: fact.value,
+                      });
+                    }}
+                    className={cn(
+                      "flex min-w-0 items-center gap-2.5 rounded-xl bg-surface-subtle px-3 py-2.5 ring-1 ring-inset ring-border/35",
+                      fact.path && "cursor-grab active:cursor-grabbing",
+                    )}
+                  >
                     <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-card text-foreground/60 shadow-control">
                       {fact.icon}
                     </span>
@@ -968,7 +993,24 @@ export default function DraftPreviewPage({
                     </h2>
                     <div className="overflow-hidden rounded-[1.5rem] border border-border/70 bg-card shadow-card sm:rounded-2xl">
                       {visibleRows.map((row, index) => (
-                        <div key={`${row.label}-${index}`} className={cn("flex items-start justify-between gap-4 px-4 py-3", (index < visibleRows.length - 1 || detailsLong) && "border-b border-border/45")}>
+                        <div
+                          key={`${row.label}-${index}`}
+                          draggable={Boolean(row.path)}
+                          onDragStart={(event) => {
+                            if (!row.path) return;
+                            writeDragItem(event.dataTransfer, {
+                              kind: "field",
+                              path: row.path,
+                              label: row.label,
+                              value: row.value,
+                            });
+                          }}
+                          className={cn(
+                            "flex items-start justify-between gap-4 px-4 py-3",
+                            (index < visibleRows.length - 1 || detailsLong) && "border-b border-border/45",
+                            row.path && "cursor-grab active:cursor-grabbing",
+                          )}
+                        >
                           <span className="min-w-0 break-words text-[12px] leading-relaxed text-muted-foreground">{row.label}</span>
                           <span className="min-w-0 max-w-[58%] break-words text-right text-[12px] font-semibold leading-relaxed text-foreground tabular-nums">{row.value}</span>
                         </div>
