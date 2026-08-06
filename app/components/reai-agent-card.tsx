@@ -784,20 +784,23 @@ export function ReaiAgentCard({
             </nav>
           )}
           {draftId && !compactPanel && (
-            // A quiet segmented control. This bar only switches views, so it
-            // should not outweigh the transcript it sits above: a muted track
-            // with the active segment lifted by one step, rather than a glass
-            // toolbar carrying a solid high-contrast capsule.
+            // Built from the workspace capsule primitives rather than bespoke
+            // geometry: the theme's pill radius, its compact control height,
+            // and its control shadow. This bar only switches views, so the
+            // active segment is a lifted card on a muted track instead of the
+            // solid high-contrast capsule it used to be.
             <nav
-              className="agent-view-tabs mx-auto grid w-full max-w-[24rem] grid-cols-3"
+              className="mx-auto grid w-full max-w-[24rem] grid-cols-3 gap-0.5 rounded-full border border-border/60 bg-muted/50 p-0.5"
               aria-label={t("reai.title", lang)}
             >
               <button
                 type="button"
                 aria-pressed={!showHistory && !showMediaHistory}
                 className={cn(
-                  "agent-view-tab",
-                  !showHistory && !showMediaHistory ? "agent-view-tab-active" : "text-foreground/55 hover:text-foreground",
+                  "floating-control-sm w-full focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+                  !showHistory && !showMediaHistory
+                    ? "bg-card text-foreground shadow-control"
+                    : "text-foreground/55 hover:bg-background/60 hover:text-foreground",
                 )}
                 onClick={() => {
                   setShowHistory(false);
@@ -811,8 +814,10 @@ export function ReaiAgentCard({
                 aria-label={t("reai.mediaVersions", lang)}
                 aria-pressed={showMediaHistory}
                 className={cn(
-                  "agent-view-tab",
-                  showMediaHistory ? "agent-view-tab-active" : "text-foreground/55 hover:text-foreground",
+                  "floating-control-sm w-full focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+                  showMediaHistory
+                    ? "bg-card text-foreground shadow-control"
+                    : "text-foreground/55 hover:bg-background/60 hover:text-foreground",
                 )}
                 onClick={() => {
                   if (!showMediaHistory) void loadMediaHistory();
@@ -827,8 +832,10 @@ export function ReaiAgentCard({
                 aria-label={t("reai.editHistory", lang)}
                 aria-pressed={showHistory}
                 className={cn(
-                  "agent-view-tab",
-                  showHistory ? "agent-view-tab-active" : "text-foreground/55 hover:text-foreground",
+                  "floating-control-sm w-full focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+                  showHistory
+                    ? "bg-card text-foreground shadow-control"
+                    : "text-foreground/55 hover:bg-background/60 hover:text-foreground",
                 )}
                 onClick={() => {
                   if (!showHistory) void loadHistory();
