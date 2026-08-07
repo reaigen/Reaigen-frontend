@@ -296,6 +296,10 @@ export default function WebTourEditorPage({
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [viewerFailed, setViewerFailed] = useState(false);
+  // The viewer already reports why a scene failed; the page used to discard it
+  // and show only a generic message, which made every load failure -- CORS,
+  // a malformed archive, a GPU limit -- look identical and undiagnosable.
+  const [viewerErrorDetail, setViewerErrorDetail] = useState<string | null>(null);
   const [viewerReloadKey, setViewerReloadKey] = useState(0);
   const [saving, setSaving] = useState(false);
   const [uploading, setUploading] = useState(false);
@@ -1052,7 +1056,10 @@ export default function WebTourEditorPage({
           // scheduled after an explicit workspace/camera save; doing it here
           // moved the live Gaussian sort to a hidden camera immediately after
           // the first frame and could leave an otherwise healthy scene blank.
-          onReady={() => setViewerFailed(false)}
+          onReady={() => {
+            setViewerFailed(false);
+            setViewerErrorDetail(null);
+          }}
           splatUrl={selectedAssetUrl}
           splatId={selected.splat_id}
           outputsVersion={selected.asset.fingerprint}
@@ -1105,7 +1112,11 @@ export default function WebTourEditorPage({
           spatialCameraMode={cameraMode}
           onSpatialCameraModeChange={setCameraMode}
           lang={lang}
-          onError={() => setViewerFailed(true)}
+          onError={(msg) => {
+            setViewerFailed(true);
+            setViewerErrorDetail(msg ?? null);
+            if (msg) console.error("[REAI] splat viewer failed:", msg);
+          }}
         />
       ) : (
         <div className="absolute inset-0 flex items-center justify-center bg-background">
@@ -2018,6 +2029,14 @@ export default function WebTourEditorPage({
             <p className="text-[13px] font-medium">
               {t("webEditor.assetLoadFailed", lang)}
             </p>
+            {viewerErrorDetail ? (
+              /* Verbatim and selectable: this is the one string that says which
+                 stage failed, and it needs to survive being copied into a bug
+                 report. */
+              <p className="mt-2 select-text break-words font-mono text-[11px] leading-relaxed text-foreground/55">
+                {viewerErrorDetail}
+              </p>
+            ) : null}
             <div className="mt-5 flex justify-center gap-2">
               <Button
                 type="button"
@@ -2043,6 +2062,7 @@ export default function WebTourEditorPage({
                 size="sm"
                 onClick={() => {
                   setViewerFailed(false);
+                  setViewerErrorDetail(null);
                   setViewerReloadKey((value) => value + 1);
                 }}
               >

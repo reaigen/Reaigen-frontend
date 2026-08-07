@@ -5565,7 +5565,16 @@ const SplatViewer = forwardRef<SplatViewerHandle, Props>(function SplatViewer(
           viewerInitializing = false;
           setStatus(t("viewer.status.error", lang));
           console.error("[REAI]", err);
-          onError?.(err?.message);
+          // Never report an empty reason: some failures arrive as a string, a
+          // DOMException, or an object with no `message`, and an undefined
+          // reason is what made these failures undiagnosable from the UI.
+          const reason =
+            (typeof err === "string" && err)
+            || err?.message
+            || err?.name
+            || (err != null ? String(err) : "")
+            || "Unknown viewer error";
+          onError?.(reason);
         }
       }
     }

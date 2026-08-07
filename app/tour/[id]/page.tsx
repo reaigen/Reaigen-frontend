@@ -547,7 +547,12 @@ export default function TourPage({
         initialPruneMask={activePruneMask}
         preferSavedCameras={preferSavedCameras}
         performanceProfile="balanced"
-        onError={() => {
+        onError={(msg) => {
+          // Falling back to the flat render is the right recovery, but it used
+          // to happen silently: a scene that failed to parse looked identical
+          // to one that simply had no 3D, and with no fallback the viewport
+          // just stayed blank. Keep the recovery, record the cause.
+          if (msg) console.error("[REAI] splat viewer failed:", msg);
           if (fallbackRenderUrl && activeRenderUrl !== fallbackRenderUrl) {
             setActiveRenderUrl(fallbackRenderUrl);
           }
