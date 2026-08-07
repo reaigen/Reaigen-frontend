@@ -12,7 +12,7 @@ import { cn } from "../lib/utils";
 import { t, getUserLanguage } from "../lib/i18n";
 import { AppContentMessages } from "./content-documents";
 import { ReaiAgentCard } from "./reai-agent-card";
-import { AgentIcon, CloseIcon, MainHomeIcon, MainTourIcon, SettingsIcon } from "./icons";
+import { AgentIcon, CloseIcon, MainHomeIcon, MainTourIcon, PlusIcon, SettingsIcon } from "./icons";
 
 function getInitials(user: UserProfile): string {
   const f = user.first_name?.[0] ?? "";
@@ -404,24 +404,61 @@ function AppShellFrame({
     };
   }, [compactAgentViewport, reaiOpen]);
 
-  const reaiLauncher = reaiEnabled ? (
+  const openReai = (event: React.MouseEvent<HTMLButtonElement>) => {
+    reaiReturnFocusRef.current = event.currentTarget;
+    setMobileAccountOpen(false);
+    setReaiOpen(true);
+    if (!window.matchMedia("(min-width: 1440px)").matches) {
+      window.setTimeout(() => reaiCloseRef.current?.focus({ preventScroll: true }), 0);
+    }
+  };
+
+  /*
+   * The launcher lives on the same edge as the panel it opens. It used to sit
+   * in the left rail while the workspace slid in from the right, which put the
+   * control and its result on opposite sides of the screen. On phones the
+   * header is already right-aligned; on desktop it floats over the canvas,
+   * where the glass material has a grey background to actually lift off.
+   */
+  const reaiLauncher = (variant: "header" | "floating") => reaiEnabled ? (
     <button
       type="button"
-      onClick={(event) => {
-        reaiReturnFocusRef.current = event.currentTarget;
-        setMobileAccountOpen(false);
-        setReaiOpen(true);
-        if (!window.matchMedia("(min-width: 1440px)").matches) {
-          window.setTimeout(() => reaiCloseRef.current?.focus({ preventScroll: true }), 0);
-        }
-      }}
+      onClick={openReai}
       title={t("reai.openAgent", lang)}
       aria-label={t("reai.openAgent", lang)}
       aria-expanded={reaiOpen}
-      className="group inline-flex h-11 items-center justify-center gap-2 rounded-2xl border border-border bg-card px-3.5 text-[12px] font-semibold text-foreground/80 transition-colors hover:bg-accent hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 md:h-[58px] md:w-16 md:flex-col md:gap-1 md:border-transparent md:bg-transparent md:px-0 min-[1728px]:h-12 min-[1728px]:w-full min-[1728px]:flex-row min-[1728px]:justify-start min-[1728px]:gap-3 min-[1728px]:border-border min-[1728px]:bg-card min-[1728px]:px-3.5"
+      className={cn(
+        "group inline-flex shrink-0 items-center justify-center gap-2 rounded-full font-semibold transition-colors",
+        "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2",
+        variant === "header"
+          // Phone header: glass, so it lifts off a bar that shares its fill.
+          ? "floating-capsule px-3.5 text-[12px] text-foreground/80 hover:bg-card hover:text-foreground"
+          /*
+           * Desktop: solid and inverted. Glass over the grey canvas of a large
+           * display gave it almost nothing to separate from, so on a 27" screen
+           * it disappeared into the page. This is the one filled control on the
+           * canvas, and it scales from 1280px up rather than waiting for a
+           * 2560px viewport a scaled 27" display never reports.
+           */
+          : cn(
+            "fixed bottom-6 right-6 z-40 hidden h-12 gap-2.5 bg-foreground px-5 text-[13px] text-background shadow-elevated md:inline-flex",
+            "hover:bg-foreground/90 hover:-translate-y-0.5 active:translate-y-0",
+            "xl:h-[3.25rem] xl:px-6 xl:text-[14px]",
+            "min-[1728px]:bottom-8 min-[1728px]:right-8 min-[1728px]:h-14 min-[1728px]:gap-3 min-[1728px]:px-7 min-[1728px]:text-[15px]",
+          ),
+      )}
     >
-      <AgentIcon size={21} strokeWidth={1.95} className="text-foreground/75 transition-colors group-hover:text-foreground" />
-      <span className="md:text-[10px] md:leading-none min-[1728px]:text-[13px] min-[1728px]:leading-normal">{t("reai.title", lang)}</span>
+      <AgentIcon
+        size={21}
+        strokeWidth={1.95}
+        className={cn(
+          "shrink-0 transition-colors",
+          variant === "header"
+            ? "text-foreground/75 group-hover:text-foreground"
+            : "text-current min-[1728px]:h-6 min-[1728px]:w-6",
+        )}
+      />
+      <span>{t("reai.title", lang)}</span>
     </button>
   ) : null;
 
@@ -514,7 +551,6 @@ function AppShellFrame({
 
         {/* ReaUI utility stack with an X-like account position at the bottom. */}
         <div className="space-y-1 px-3 pb-4">
-          {reaiLauncher && <div className="flex justify-center min-[1728px]:block">{reaiLauncher}</div>}
           <Link
             href="/settings"
             title={t("nav.settings", lang)}
@@ -561,19 +597,36 @@ function AppShellFrame({
 
       {/* ── Top header (mobile only) ─────────────────────────────── */}
       <header
-        className="sticky top-0 z-50 border-b border-border bg-card/95 pt-safe text-foreground backdrop-blur-xl md:hidden"
+        /*
+         * Opaque, not glass. At 95% fill the blur was contributing almost
+         * nothing visually, but a backdrop-filter on a sticky bar makes the
+         * compositor re-blur that strip on every scrolled frame — the single
+         * biggest source of scroll jank on a phone.
+         */
+        className="sticky top-0 z-50 border-b border-border bg-card pt-safe text-foreground md:hidden"
       >
-        <div className="flex h-14 items-center justify-between pl-[max(1rem,env(safe-area-inset-left))] pr-[max(1rem,env(safe-area-inset-right))]">
-          <Link href="/dashboard" className="flex items-center">
+        {/*
+          Sized from --header-h, which the theme already defined but nothing
+          used. At 56px the wordmark and the 44px agent capsule left barely
+          6px of air between them and the rules above and below.
+        */}
+        <div className="flex h-[var(--header-h)] items-center justify-between gap-3 pl-[max(1rem,env(safe-area-inset-left))] pr-[max(1rem,env(safe-area-inset-right))]">
+          <Link href="/dashboard" className="flex min-w-0 items-center">
+            {/*
+              The wordmark sat at 22px while the page title below it ran at
+              32px, so the brand read as secondary to whatever screen you
+              happened to be on. Steps down on narrow phones so it never
+              crowds the agent capsule and avatar beside it.
+            */}
             <span
-              className="text-[22px] text-foreground"
-              style={{ fontFamily: 'var(--font-brand), ui-serif, Georgia, serif', fontWeight: 500, letterSpacing: '0.01em' }}
+              className="text-[26px] leading-none text-foreground min-[390px]:text-[28px]"
+              style={{ fontFamily: 'var(--font-brand), ui-serif, Georgia, serif', fontWeight: 500, letterSpacing: '0' }}
             >
               Reaigen
             </span>
           </Link>
           <div className="flex items-center gap-2">
-            {reaiLauncher}
+            {reaiLauncher("header")}
             <div ref={mobileAccountRef} className="relative">
               <button
                 ref={mobileAccountButtonRef}
@@ -640,7 +693,8 @@ function AppShellFrame({
       {/* ── Content ──────────────────────────────────────────────── */}
       <main
         className={cn(
-          "min-h-[calc(100dvh-3.5rem)] pb-24 pt-6 pl-[max(1rem,env(safe-area-inset-left))] pr-[max(1rem,env(safe-area-inset-right))]",
+          // Derived from the header token so the two can never drift apart.
+          "min-h-[calc(100dvh-var(--header-h))] pb-24 pt-6 pl-[max(1rem,env(safe-area-inset-left))] pr-[max(1rem,env(safe-area-inset-right))]",
           "md:min-h-dvh md:px-8 md:py-7 xl:px-10 2xl:px-12",
         )}
         style={{ marginLeft: `var(--sidebar-offset, 0px)` }}
@@ -649,7 +703,8 @@ function AppShellFrame({
           lang={lang}
           countryCode={user.profile?.country}
           regionCode={user.profile?.state}
-          className="pointer-events-none fixed bottom-20 right-4 z-[70] mb-0 max-h-[min(28rem,65dvh)] w-[min(28rem,calc(100vw-2rem))] overflow-y-auto [&>section]:pointer-events-auto md:bottom-6 md:right-6"
+          // Stacks above the floating agent launcher, which owns the corner.
+          className="pointer-events-none fixed bottom-20 right-4 z-[70] mb-0 max-h-[min(28rem,65dvh)] w-[min(28rem,calc(100vw-2rem))] overflow-y-auto [&>section]:pointer-events-auto md:bottom-24 md:right-6"
         />
         <div key={pathname} className="async-stable-region animate-fade-in">
           {children}
@@ -658,7 +713,8 @@ function AppShellFrame({
 
       {/* ── Mobile bottom tab bar ────────────────────────────────── */}
       {!hideMobileNav && (
-      <nav className="fixed inset-x-0 bottom-0 z-40 border-t border-border bg-card/95 pb-safe text-foreground backdrop-blur-xl md:hidden">
+      /* Opaque for the same reason as the header — on screen for every scrolled frame. */
+      <nav className="fixed inset-x-0 bottom-0 z-40 border-t border-border bg-card pb-safe text-foreground md:hidden">
         <div className="grid h-16 grid-cols-2 px-4">
           {NAV_ITEMS.map((item) => {
             const active = pathname === item.href || pathname.startsWith(item.href + "/") || (item.href === "/dashboard" && pathname.startsWith("/draft/"));
@@ -683,6 +739,9 @@ function AppShellFrame({
         </div>
       </nav>
       )}
+
+      {/* Hidden while the panel is open: the panel is the launcher's own result. */}
+      {!reaiOpen && reaiLauncher("floating")}
 
       {reaiEnabled && (
         <>
@@ -789,15 +848,32 @@ function AppShellFrame({
                   <span className="truncate text-[11px] font-normal text-muted-foreground">{reaiContextLabel}</span>
                 </h2>
               </div>
-              <button
-                ref={reaiCloseRef}
-                type="button"
-                onClick={() => setReaiOpen(false)}
-                aria-label={t("reai.closeAgent", lang)}
-                className="floating-icon-button flex items-center justify-center text-foreground/45 transition-colors hover:bg-foreground/[0.05] hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
-              >
-                <CloseIcon size={18} />
-              </button>
+              <div className="flex shrink-0 items-center gap-0.5">
+                {/*
+                  A conversation otherwise accumulated until sign-out, with no
+                  way to drop context that had drifted. The card owns the
+                  transcript, so this signals it the same way the rest of the
+                  app talks to the agent surfaces.
+                */}
+                <button
+                  type="button"
+                  onClick={() => window.dispatchEvent(new Event("reai-new-conversation"))}
+                  aria-label={t("reai.newConversation", lang)}
+                  title={t("reai.newConversation", lang)}
+                  className="floating-icon-button flex items-center justify-center text-foreground/45 transition-colors hover:bg-foreground/[0.05] hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+                >
+                  <PlusIcon size={18} />
+                </button>
+                <button
+                  ref={reaiCloseRef}
+                  type="button"
+                  onClick={() => setReaiOpen(false)}
+                  aria-label={t("reai.closeAgent", lang)}
+                  className="floating-icon-button flex items-center justify-center text-foreground/45 transition-colors hover:bg-foreground/[0.05] hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+                >
+                  <CloseIcon size={18} />
+                </button>
+              </div>
             </div>
             <div className="min-h-0 flex-1">
               <ReaiAgentCard draftId={reaiDraftId} currentUploadId={reaiUploadId} workspaceContext={reaiContext} lang={lang} onDraftUpdated={onReaiDraftUpdated} panel compact={compactAgentViewport} />

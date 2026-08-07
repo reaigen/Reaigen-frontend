@@ -197,7 +197,7 @@ function GalleryLightbox({
             ref={closeRef}
             type="button"
             onClick={onClose}
-            className="floating-capsule floating-control pen-touch-target pointer-events-auto gap-2 bg-card/95 px-3.5 text-foreground shadow-control hover:bg-foreground hover:text-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 sm:px-4"
+            className="floating-capsule floating-icon-button pen-touch-target pointer-events-auto gap-2 bg-card/95 text-foreground shadow-control hover:bg-foreground hover:text-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 sm:w-auto sm:px-4"
             aria-label={t("common.close", lang)}
           >
             <CloseIcon size={17} />
@@ -223,7 +223,7 @@ function GalleryLightbox({
                   setViewMode("overview");
                 }
               }}
-              className="floating-capsule floating-control pen-touch-target pointer-events-auto gap-2 bg-card/95 px-3.5 text-foreground shadow-control hover:bg-foreground hover:text-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 sm:px-4"
+              className="floating-capsule floating-icon-button pen-touch-target pointer-events-auto gap-2 bg-card/95 text-foreground shadow-control hover:bg-foreground hover:text-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 sm:w-auto sm:px-4"
               aria-label={t(viewMode === "overview" ? "draft.gallery.photoView" : "draft.gallery.allPhotos", lang)}
               aria-pressed={viewMode === "overview"}
             >
@@ -242,7 +242,7 @@ function GalleryLightbox({
             type="button"
             onClick={() => goTo(index - 1)}
             disabled={index === 0}
-            className="floating-capsule floating-icon-button pen-touch-target absolute left-2 top-1/2 z-30 h-12 w-12 -translate-y-1/2 bg-card/95 text-foreground shadow-control hover:bg-foreground hover:text-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:invisible sm:left-7 sm:h-13 sm:w-13"
+            className="floating-capsule floating-icon-button pen-touch-target absolute left-2 top-1/2 z-30 hidden h-12 w-12 -translate-y-1/2 sm:inline-flex bg-card/95 text-foreground shadow-control hover:bg-foreground hover:text-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:invisible sm:left-7 sm:h-[3.25rem] sm:w-[3.25rem]"
             aria-label={t("draft.gallery.previous", lang)}
           >
             <ArrowLeftIcon size={20} />
@@ -251,7 +251,7 @@ function GalleryLightbox({
             type="button"
             onClick={() => goTo(index + 1)}
             disabled={index === count - 1}
-            className="floating-capsule floating-icon-button pen-touch-target absolute right-2 top-1/2 z-30 h-12 w-12 -translate-y-1/2 bg-card/95 text-foreground shadow-control hover:bg-foreground hover:text-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:invisible sm:right-7 sm:h-13 sm:w-13"
+            className="floating-capsule floating-icon-button pen-touch-target absolute right-2 top-1/2 z-30 hidden h-12 w-12 -translate-y-1/2 sm:inline-flex bg-card/95 text-foreground shadow-control hover:bg-foreground hover:text-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:invisible sm:right-7 sm:h-[3.25rem] sm:w-[3.25rem]"
             aria-label={t("draft.gallery.next", lang)}
           >
             <ArrowRightIcon size={20} />
@@ -267,7 +267,7 @@ function GalleryLightbox({
           {images.map((image, imageIndex) => (
             <div
               key={`${image.id ?? image.url}-${imageIndex}`}
-              className="flex h-full w-full flex-none snap-start items-center justify-center px-14 pb-8 pt-20 sm:px-28 sm:pb-10 sm:pt-24 lg:px-40"
+              className="flex h-full w-full flex-none snap-start items-center justify-center px-4 pb-8 pt-20 sm:px-28 sm:pb-10 sm:pt-24 lg:px-40"
             >
               {/* eslint-disable-next-line @next/next/no-img-element */}
               <img

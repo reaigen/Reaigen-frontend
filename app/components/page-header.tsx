@@ -27,14 +27,27 @@ export function PageHeader({
         <h1 className="text-[32px] font-bold leading-[1.08] tracking-[-0.035em] text-foreground sm:text-[40px]">
           {title}
         </h1>
+        {/*
+          Desktop orientation copy. On a phone it cost two full lines above the
+          fold and pushed the working list off-screen, so the list wins there.
+        */}
         {description ? (
-          <p className="mt-3 max-w-2xl text-[14px] leading-relaxed text-muted-foreground sm:text-[15px]">
+          <p className="mt-3 hidden max-w-2xl text-[14px] leading-relaxed text-muted-foreground sm:block sm:text-[15px]">
             {description}
           </p>
         ) : null}
         {actions && actionPlacement === "start" ? <div className="mt-4 flex items-center gap-2">{actions}</div> : null}
       </div>
-      {actions && actionPlacement === "end" ? <div className="flex shrink-0 items-center gap-2 sm:pb-0.5">{actions}</div> : null}
+      {/*
+        On phones the action row spans the full width and splits, so page meta
+        sits at one end and the action at the other instead of the two crowding
+        together as look-alike pills.
+      */}
+      {actions && actionPlacement === "end" ? (
+        <div className="flex w-full shrink-0 items-center justify-between gap-2 sm:w-auto sm:justify-end sm:pb-0.5">
+          {actions}
+        </div>
+      ) : null}
     </header>
   );
 }

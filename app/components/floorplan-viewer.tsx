@@ -75,6 +75,7 @@ import { solveReaigenFloorplan, USE_CONSTRAINT_SOLVER } from "../lib/floorplan-s
 import { iconForKind, type IconShape } from "../lib/floorplan-icon-shapes";
 import { assignLabelsToRoomPolygons } from "../lib/floorplan-label-placement";
 import { inferDoorPresentationConfig } from "../lib/floorplan-door-presentation";
+import { cn } from "../lib/utils";
 
 interface Props {
   draftData: DraftDataEntry[];
@@ -87,6 +88,12 @@ interface Props {
   /** Public share mode: pre-fetched floorplan block from the share payload —
    * used instead of the authenticated rendering endpoint. */
   publicFloorplan?: SharedFloorplanPayload | null;
+  /**
+   * Applied to the drawing box. A local plan's aspect ratio comes from the
+   * captured geometry and the box fills its container, so it grows as tall as
+   * the column is wide. Callers bound it; the SVG letterboxes inside.
+   */
+  planClassName?: string;
 }
 
 const SVG_W = 400;
@@ -221,6 +228,7 @@ export default function FloorplanViewer({
   publicFloorplan,
   units,
   targetAreaUnit,
+  planClassName,
 }: Props) {
   const [rendering, setRendering] = useState<FloorplanRenderingData | null>(null);
   const [renderingLoading, setRenderingLoading] = useState(Boolean(floorplanId && !publicFloorplan));
@@ -315,7 +323,7 @@ export default function FloorplanViewer({
 
   let plan: React.ReactNode = null;
   if (model.local) {
-    plan = <LocalPlan model={model.local} legendEntries={legendEntries} />;
+    plan = <LocalPlan model={model.local} legendEntries={legendEntries} className={planClassName} />;
   } else if (hasMesh) {
     plan = (
       <div className="aspect-[4/3] overflow-hidden bg-white">
@@ -612,9 +620,11 @@ function buildLocalModel(
 function LocalPlan({
   model,
   legendEntries,
+  className,
 }: {
   model: LocalModel;
   legendEntries: LegendEntry[];
+  className?: string;
 }) {
   const maskId = useId();
   const { proj, svgH } = model;
@@ -749,7 +759,7 @@ function LocalPlan({
 
   return (
     <div
-      className="relative w-full"
+      className={cn("relative mx-auto w-full", className)}
       style={{
         aspectRatio: `${SVG_W} / ${svgH}`,
       }}

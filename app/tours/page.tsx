@@ -187,7 +187,7 @@ export default function ToursPage() {
                   <Link href={href} prefetch={ready} className="block focus-visible:outline-none">
                   <div className="relative aspect-[16/10] overflow-hidden bg-surface-subtle">
                     {item.thumbnail_url ? (
-                      <Thumbnail src={item.thumbnail_url} alt={item.title} className="absolute inset-0 h-full w-full object-cover transition-transform duration-500 ease-out group-hover:scale-[1.03]" priority={index < 4} />
+                      <Thumbnail src={item.thumbnail_url} alt={item.title} className="absolute inset-0 h-full w-full object-cover [@media(hover:hover)]:transition-transform [@media(hover:hover)]:duration-500 [@media(hover:hover)]:ease-out [@media(hover:hover)]:group-hover:scale-[1.03]" priority={index < 4} />
                     ) : (
                       <div className="absolute inset-0 flex items-center justify-center bg-gradient-to-br from-muted/60 via-muted to-foreground/10 text-foreground/20"><MainTourIcon size={42} strokeWidth={1.35} /></div>
                     )}

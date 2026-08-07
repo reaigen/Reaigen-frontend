@@ -437,7 +437,24 @@ function DirectValueField({
           id={id}
           value={value}
           required={required}
-          inputMode={numeric ? "text" : undefined}
+          /*
+           * These fields accept unit and math expressions, which is why they
+           * asked for a text keyboard — but that meant every area and price
+           * field opened a full QWERTY on a phone just to type digits. The unit
+           * is picked from the adjacent control rather than typed, so the
+           * keypad matches the value: digits for integers, a decimal pad
+           * otherwise, and text only where a minus sign is legal. Same rule the
+           * stepper field below already uses.
+           */
+          inputMode={
+            !numeric
+              ? undefined
+              : (numericMin != null && numericMin < 0)
+                ? "text"
+                : integer
+                  ? "numeric"
+                  : "decimal"
+          }
           autoComplete={autoComplete}
           maxLength={maxLength ?? (numeric ? 64 : undefined)}
           placeholder={placeholder}

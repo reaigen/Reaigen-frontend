@@ -35,7 +35,6 @@ import { AnalyticsGrid, type AnalyticsGridItem } from "./analytics-grid";
 import {
   CheckIcon,
   ClockIcon,
-  CloseIcon,
   CopyIcon,
   ExternalLinkIcon,
   LockIcon,
@@ -51,6 +50,19 @@ import { SidePanel } from "./side-panel";
 import { StatusPill } from "./status-pill";
 
 const LINKS_TIMEOUT_MS = 10_000;
+const FEEDBACK_TIMEOUT_MS = 2_500;
+const SHARE_FORM_ID = "draft-share-form";
+
+/**
+ * One channel for every "did that work?" answer in this surface. Copying,
+ * saving and a blocked clipboard used to render through three independent
+ * states in three different places, so a single create could report success
+ * three times in three visual languages.
+ */
+type ShareFeedback =
+  | { kind: "copied"; shareId: number }
+  | { kind: "saved" }
+  | { kind: "copyFailed"; url: string };
 
 function primaryShareSplat(data: SplatsByDraftPayload | null) {
   if (!data?.splats.length) return null;
@@ -120,7 +132,7 @@ type DraftSharingDockProps = {
   dateFormat?: string | null;
 };
 
-export const DraftSharingDock = React.forwardRef<HTMLElement, DraftSharingDockProps>(function DraftSharingDock({
+export function DraftSharingDock({
   open,
   onOpenChange,
   draftId,
@@ -129,7 +141,7 @@ export const DraftSharingDock = React.forwardRef<HTMLElement, DraftSharingDockPr
   tourAssets,
   lang,
   dateFormat,
-}, forwardedRef) {
+}: DraftSharingDockProps) {
   const legacyPrimarySplat = primaryShareSplat(splatData);
   const legacyPrimarySplatId = legacyPrimarySplat
     ? (legacyPrimarySplat.splat_id ?? legacyPrimarySplat.id)
@@ -158,10 +170,9 @@ export const DraftSharingDock = React.forwardRef<HTMLElement, DraftSharingDockPr
   ));
   const [formError, setFormError] = React.useState<string | null>(null);
   const [saving, setSaving] = React.useState(false);
-  const [notice, setNotice] = React.useState<"copied" | "saved" | null>(null);
-  const [copyFailedUrl, setCopyFailedUrl] = React.useState<string | null>(null);
-  const [copiedShareId, setCopiedShareId] = React.useState<number | null>(null);
+  const [feedback, setFeedback] = React.useState<ShareFeedback | null>(null);
   const [formVersion, setFormVersion] = React.useState(0);
+  const [formValid, setFormValid] = React.useState(true);
   const [stats, setStats] = React.useState<ShareStats | null>(null);
   const [actionLoading, setActionLoading] = React.useState(false);
   const [actionError, setActionError] = React.useState(false);
@@ -169,8 +180,7 @@ export const DraftSharingDock = React.forwardRef<HTMLElement, DraftSharingDockPr
   const wasOpenRef = React.useRef(false);
   const headingRef = React.useRef<HTMLHeadingElement | null>(null);
   const requestIdRef = React.useRef(0);
-  const noticeTimerRef = React.useRef<number | null>(null);
-  const copyTimerRef = React.useRef<number | null>(null);
+  const feedbackTimerRef = React.useRef<number | null>(null);
 
   const selectedShare = selectedShareId == null
     ? null
@@ -235,57 +245,59 @@ export const DraftSharingDock = React.forwardRef<HTMLElement, DraftSharingDockPr
 
   React.useEffect(() => () => {
     requestIdRef.current += 1;
-    if (noticeTimerRef.current) window.clearTimeout(noticeTimerRef.current);
-    if (copyTimerRef.current) window.clearTimeout(copyTimerRef.current);
+    if (feedbackTimerRef.current) window.clearTimeout(feedbackTimerRef.current);
   }, []);
 
-  const showNotice = React.useCallback((value: "copied" | "saved") => {
-    setNotice(value);
-    if (noticeTimerRef.current) window.clearTimeout(noticeTimerRef.current);
-    noticeTimerRef.current = window.setTimeout(() => setNotice(null), 2_000);
+  /**
+   * A blocked clipboard is the one result that needs to persist — it hands the
+   * user a URL to copy by hand. Successes clear themselves.
+   */
+  const showFeedback = React.useCallback((next: ShareFeedback | null) => {
+    if (feedbackTimerRef.current) window.clearTimeout(feedbackTimerRef.current);
+    setFeedback(next);
+    if (next && next.kind !== "copyFailed") {
+      feedbackTimerRef.current = window.setTimeout(() => setFeedback(null), FEEDBACK_TIMEOUT_MS);
+    }
   }, []);
 
   const copyShare = React.useCallback(async (share: ShareData) => {
     const url = shareUrl(share.token);
-    setCopyFailedUrl(null);
-    if (!await copyToClipboard(url)) {
-      setCopyFailedUrl(url);
-      return;
-    }
-    setCopiedShareId(share.id);
-    if (copyTimerRef.current) window.clearTimeout(copyTimerRef.current);
-    copyTimerRef.current = window.setTimeout(() => setCopiedShareId(null), 2_000);
-  }, []);
+    showFeedback(
+      await copyToClipboard(url)
+        ? { kind: "copied", shareId: share.id }
+        : { kind: "copyFailed", url },
+    );
+  }, [showFeedback]);
 
   const openCreate = React.useCallback(() => {
     setCreating(true);
     setEditingShare(null);
     setFormError(null);
-    setCopyFailedUrl(null);
+    showFeedback(null);
     setScope(defaultContentScope(hasTour, hasPhotos, hasFloorplan));
     setFormVersion((version) => version + 1);
-  }, [hasFloorplan, hasPhotos, hasTour]);
+  }, [hasFloorplan, hasPhotos, hasTour, showFeedback]);
 
   const selectShare = React.useCallback((shareId: number) => {
     setSelectedShareId(shareId);
     setCreating(false);
     setEditingShare(null);
     setFormError(null);
-    setCopyFailedUrl(null);
-  }, []);
+    showFeedback(null);
+  }, [showFeedback]);
 
   const cancelCreate = React.useCallback(() => {
     setEditingShare(null);
     setFormError(null);
-    setCopyFailedUrl(null);
+    showFeedback(null);
     setCreating(false);
-  }, []);
+  }, [showFeedback]);
 
   const editSelectedShare = React.useCallback(() => {
     if (!selectedShare) return;
     setEditingShare(selectedShare);
     setFormError(null);
-    setCopyFailedUrl(null);
+    showFeedback(null);
     setScope(scopeFromShare(selectedShare, {
       tour: hasTour,
       photos: hasPhotos,
@@ -293,7 +305,7 @@ export const DraftSharingDock = React.forwardRef<HTMLElement, DraftSharingDockPr
     }));
     setFormVersion((version) => version + 1);
     setCreating(true);
-  }, [hasFloorplan, hasPhotos, hasTour, selectedShare]);
+  }, [hasFloorplan, hasPhotos, hasTour, selectedShare, showFeedback]);
 
   const handleSubmit = React.useCallback(async (formData: ShareFormData) => {
     setFormError(null);
@@ -324,7 +336,7 @@ export const DraftSharingDock = React.forwardRef<HTMLElement, DraftSharingDockPr
         setSelectedShareId(updated.id);
         setEditingShare(null);
         setCreating(false);
-        showNotice("saved");
+        showFeedback({ kind: "saved" });
         return;
       }
 
@@ -339,15 +351,7 @@ export const DraftSharingDock = React.forwardRef<HTMLElement, DraftSharingDockPr
       setSelectedShareId(created.id);
       setCreating(false);
       setFormVersion((version) => version + 1);
-      const url = shareUrl(created.token);
-      if (await copyToClipboard(url)) {
-        setCopiedShareId(created.id);
-        if (copyTimerRef.current) window.clearTimeout(copyTimerRef.current);
-        copyTimerRef.current = window.setTimeout(() => setCopiedShareId(null), 2_000);
-        showNotice("copied");
-      } else {
-        setCopyFailedUrl(url);
-      }
+      await copyShare(created);
     } catch (error) {
       setFormError(
         getSafeApiErrorMessage(error, lang)
@@ -357,13 +361,14 @@ export const DraftSharingDock = React.forwardRef<HTMLElement, DraftSharingDockPr
       setSaving(false);
     }
   }, [
+    copyShare,
     draftId,
     editingShare,
     lang,
     primarySplatId,
     scope.tour,
     shareableTour?.id,
-    showNotice,
+    showFeedback,
   ]);
 
   const runAction = React.useCallback(async (action: "pause" | "resume" | "revoke") => {
@@ -402,6 +407,7 @@ export const DraftSharingDock = React.forwardRef<HTMLElement, DraftSharingDockPr
     ? STATUS_CONFIG[selectedShare.status] ?? STATUS_CONFIG.revoked
     : STATUS_CONFIG.revoked;
   const selectedExpiry = selectedShare ? expiryLabel(selectedShare.expires_at, lang) : null;
+  const justCopied = feedback?.kind === "copied" && feedback.shareId === selectedShare?.id;
   const analyticsItems: AnalyticsGridItem[] = selectedShare ? [
     { label: t("shareDialog.analytics.totalViews", lang), value: stats?.total_accesses ?? selectedShare.access_count },
     { label: t("shareDialog.analytics.uniqueVisitors", lang), value: stats?.unique_ips ?? "—" },
@@ -411,63 +417,85 @@ export const DraftSharingDock = React.forwardRef<HTMLElement, DraftSharingDockPr
       : []),
   ] : [];
 
+  /*
+   * Sharing is a task, not a passage of the listing: it used to render as an
+   * inline section wedged between the gallery and the tour list, where a close
+   * button sat over page content that never went away. It now owns a panel, and
+   * the create form is a second view inside that same panel rather than a
+   * dialog stacked on a dialog.
+   */
   return (
-    <>
-      <section
-        ref={forwardedRef}
-        aria-labelledby="draft-sharing-title"
-        className="mt-8 scroll-mt-5 border-y border-border/70 py-5 animate-fade-in sm:py-6"
-      >
-      <header className="flex items-start justify-between gap-4">
-        <div className="min-w-0">
-          <h2
-            ref={headingRef}
-            id="draft-sharing-title"
-            tabIndex={-1}
-            className="text-[16px] font-semibold tracking-[-0.015em] outline-none"
-          >
-            {t("sharing.pageTitle", lang)}
-          </h2>
-          <p className="mt-1 truncate text-[11px] text-muted-foreground">
-            {linksLoaded
-              ? `${shares.length} · ${t("shares.title", lang)}`
-              : draft.title || t("dashboard.untitled", lang)}
-          </p>
-          {linksLoading ? (
-            <div className="loading-progress-track mt-3 w-16" role="progressbar" aria-label={t("common.loading", lang)}>
-              <span className="loading-progress-indeterminate" />
-            </div>
-          ) : null}
-        </div>
-        <div className="flex shrink-0 items-center gap-2">
-          {shares.length || linksError ? (
-            <Button type="button" variant="outline" size="sm" onClick={openCreate}>
-              <PlusIcon size={13} /> {t("shares.createLink", lang)}
+    <SidePanel
+      open={open}
+      onOpenChange={(nextOpen) => {
+        if (nextOpen) return;
+        cancelCreate();
+        onOpenChange(false);
+      }}
+      title={t(creating ? (editingShare ? "shares.editSettings" : "sharing.createNewLink") : "sharing.pageTitle", lang)}
+      description={creating
+        ? (draft.title || t("dashboard.untitled", lang))
+        : (linksLoaded ? `${shares.length} · ${t("shares.title", lang)}` : (draft.title || t("dashboard.untitled", lang)))}
+      headerMode="editor"
+      closeIcon={creating ? "back" : "close"}
+      onBack={creating ? cancelCreate : undefined}
+      headerAction={!creating && (shares.length > 0 || linksError) ? (
+        <Button type="button" variant="ghost" size="icon" aria-label={t("shares.createLink", lang)} onClick={openCreate}>
+          <PlusIcon size={18} />
+        </Button>
+      ) : undefined}
+      className="sm:max-w-[580px]"
+      lang={lang}
+      footer={creating ? (
+        <div className="flex w-full gap-2">
+          {editingShare ? (
+            <Button type="button" variant="outline" className="flex-1" onClick={cancelCreate} disabled={saving}>
+              {t("common.cancel", lang)}
             </Button>
           ) : null}
-          <Button
-            type="button"
-            variant="ghost"
-            size="icon-sm"
-            aria-label={t("common.close", lang)}
-            onClick={() => {
-              cancelCreate();
-              onOpenChange(false);
-            }}
-          >
-            <CloseIcon size={15} />
+          <Button type="submit" form={SHARE_FORM_ID} className="flex-1" disabled={saving || !formValid} loading={saving}>
+            {t(editingShare ? "shareDialog.save" : "sharing.createAndCopy", lang)}
           </Button>
         </div>
-      </header>
+      ) : undefined}
+    >
+      {creating ? (
+        <ShareCreateForm
+          key={`${editingShare?.id ?? "new"}-${formVersion}`}
+          formId={SHARE_FORM_ID}
+          onValidityChange={setFormValid}
+          scope={scope}
+          onScopeChange={setScope}
+          hasTour={hasTour}
+          hasPhotos={hasPhotos}
+          hasFloorplan={hasFloorplan}
+          lang={lang}
+          onSubmit={handleSubmit}
+          saving={saving}
+          error={formError}
+          initialShare={editingShare}
+          layout="stacked"
+          detailsMode="inline"
+        />
+      ) : (
+      <div className="space-y-4">
+      <h2 ref={headingRef} tabIndex={-1} className="sr-only outline-none">{t("sharing.pageTitle", lang)}</h2>
 
-      {notice ? (
-        <div role="status" className="mt-4 rounded-xl bg-surface-subtle px-3 py-2 text-[11px] font-medium text-foreground/65">
-          {t(notice === "copied" ? "sharing.linkCopied" : "common.saved", lang)}
+      {linksLoading ? (
+        <div className="loading-progress-track w-16" role="progressbar" aria-label={t("common.loading", lang)}>
+          <span className="loading-progress-indeterminate" />
+        </div>
+      ) : null}
+
+      {feedback && feedback.kind !== "copyFailed" ? (
+        <div role="status" className="flex items-center gap-2 rounded-xl bg-surface-subtle px-3 py-2 text-[11px] font-medium text-foreground/70">
+          <CheckIcon size={13} />
+          {t(feedback.kind === "copied" ? "sharing.linkCopied" : "common.saved", lang)}
         </div>
       ) : null}
 
       {linksError && !shares.length ? (
-        <div className="mt-4 flex items-center justify-between gap-4 rounded-xl border border-border/70 bg-card px-4 py-3">
+        <div className="flex items-center justify-between gap-4 rounded-xl border border-border/70 bg-card px-4 py-3">
           <p className="text-[12px] text-muted-foreground">{t("shares.loadFailed", lang)}</p>
           <Button type="button" variant="outline" size="xs" onClick={() => void loadLinks(true)}>
             {t("common.tryAgain", lang)}
@@ -476,14 +504,20 @@ export const DraftSharingDock = React.forwardRef<HTMLElement, DraftSharingDockPr
       ) : null}
 
       {shares.length ? (
-        <nav className="mt-5 flex items-center gap-2 overflow-x-auto pb-1 scrollbar-hide" aria-label={t("shares.title", lang)}>
+        <nav className="flex items-center gap-2 overflow-x-auto pb-1 scrollbar-hide" aria-label={t("shares.title", lang)}>
           {shares.map((share, index) => {
             const selected = share.id === selectedShareId;
+            const status = STATUS_CONFIG[share.status] ?? STATUS_CONFIG.revoked;
+            const views = `${share.access_count} ${t(share.access_count === 1 ? "shares.viewSingular" : "shares.viewPlural", lang)}`;
             return (
               <button
                 key={share.id}
                 type="button"
                 aria-pressed={selected}
+                // The chip is too small for status and view wording, but a
+                // bare trailing number reads as an ID unless it's spelled out.
+                aria-label={`${t("sharing.linkLabel", lang)} ${index + 1} · ${t(status.labelKey, lang)} · ${views}`}
+                title={`${t(status.labelKey, lang)} · ${views}`}
                 onClick={() => selectShare(share.id)}
                 className={`floating-control min-w-fit gap-2 px-3 text-[11px] font-semibold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 ${
                   selected
@@ -492,35 +526,25 @@ export const DraftSharingDock = React.forwardRef<HTMLElement, DraftSharingDockPr
                 }`}
               >
                 <span className={`h-1.5 w-1.5 rounded-full ${selected ? "bg-background/75" : statusDotClass(share.status)}`} aria-hidden="true" />
-                {t("sharing.linkLabel", lang)} {index + 1}
-                <span className={selected ? "text-background/60" : "text-foreground/35"}>{share.access_count}</span>
+                <span aria-hidden="true">{t("sharing.linkLabel", lang)} {index + 1}</span>
+                <span aria-hidden="true" className={selected ? "text-background/60" : "text-foreground/35"}>{share.access_count}</span>
               </button>
             );
           })}
         </nav>
       ) : null}
 
-      {copyFailedUrl ? (
-        <div className="mt-4 flex items-center gap-2 rounded-xl border border-border/70 bg-card p-2.5">
-          <p className="min-w-0 flex-1 truncate select-all font-mono text-[11px] text-foreground/65">{copyFailedUrl}</p>
-          <Button
-            type="button"
-            variant="outline"
-            size="xs"
-            onClick={async () => {
-              if (await copyToClipboard(copyFailedUrl)) {
-                setCopyFailedUrl(null);
-                showNotice("copied");
-              }
-            }}
-          >
-            {t("shares.copyLink", lang)}
-          </Button>
+      {feedback?.kind === "copyFailed" ? (
+        <div role="alert" className="rounded-xl border border-border/70 bg-card p-3">
+          <p className="text-[11px] font-medium text-foreground/70">{t("sharing.copyManualHint", lang)}</p>
+          <p className="mt-2 select-all break-all rounded-lg bg-surface-subtle px-2.5 py-2 text-[12px] leading-relaxed text-foreground/75">
+            {feedback.url}
+          </p>
         </div>
       ) : null}
 
       {selectedShare ? (
-        <div className="mt-4 overflow-hidden rounded-2xl border border-border/70 bg-card shadow-control">
+        <div className="overflow-hidden rounded-2xl border border-border/70 bg-card shadow-control">
           <div className="flex min-w-0 items-start justify-between gap-4 p-4 sm:p-5">
             <div className="min-w-0">
               <div className="flex items-center gap-2">
@@ -529,7 +553,7 @@ export const DraftSharingDock = React.forwardRef<HTMLElement, DraftSharingDockPr
                   {t(selectedStatus.labelKey, lang)}
                 </StatusPill>
               </div>
-              <p className="mt-1 text-[10px] text-muted-foreground">
+              <p className="mt-1 text-[11px] text-muted-foreground">
                 {formatDate(selectedShare.created_at, dateFormat, lang)} · {fieldSummaryLabel(selectedShare, lang)}
               </p>
             </div>
@@ -540,18 +564,24 @@ export const DraftSharingDock = React.forwardRef<HTMLElement, DraftSharingDockPr
             ) : null}
           </div>
 
+          {/*
+            Handing over the link is the whole point of this surface, so copy is
+            a full-height primary rather than one of five equal-weight chips.
+          */}
           {(selectedShare.status === "active" || selectedShare.status === "paused") ? (
-            <div className="border-t border-border/50 bg-surface-subtle p-3 sm:flex sm:items-center sm:gap-3 sm:px-4">
-              <p className="min-w-0 flex-1 truncate select-all font-mono text-[11px] text-foreground/60">{shareUrl(selectedShare.token)}</p>
-              <div className="mt-3 flex shrink-0 gap-2 sm:mt-0">
-                <Button type="button" size="xs" onClick={() => void copyShare(selectedShare)}>
-                  {copiedShareId === selectedShare.id ? <CheckIcon size={13} /> : <CopyIcon size={13} />}
-                  {copiedShareId === selectedShare.id ? t("shares.copied", lang) : t("shares.copyLink", lang)}
+            <div className="border-t border-border/50 bg-surface-subtle p-3 sm:px-4">
+              <p className="min-w-0 select-all break-all text-[12px] leading-relaxed text-foreground/60">
+                {shareUrl(selectedShare.token)}
+              </p>
+              <div className="mt-3 flex gap-2">
+                <Button type="button" onClick={() => void copyShare(selectedShare)} className="flex-1 sm:flex-none sm:min-w-[10rem]">
+                  {justCopied ? <CheckIcon size={15} /> : <CopyIcon size={15} />}
+                  {justCopied ? t("shares.copied", lang) : t("shares.copyLink", lang)}
                 </Button>
                 {selectedShare.status === "active" ? (
-                  <Button asChild variant="outline" size="xs">
+                  <Button asChild variant="outline" className="flex-1 sm:flex-none">
                     <a href={shareUrl(selectedShare.token)} target="_blank" rel="noreferrer">
-                      <ExternalLinkIcon size={13} /> {t("common.open", lang)}
+                      <ExternalLinkIcon size={15} /> {t("common.open", lang)}
                     </a>
                   </Button>
                 ) : null}
@@ -561,7 +591,7 @@ export const DraftSharingDock = React.forwardRef<HTMLElement, DraftSharingDockPr
 
           <div className="grid gap-4 border-t border-border/50 p-4 sm:p-5 md:grid-cols-[minmax(0,1fr)_auto] md:items-center">
             <AnalyticsGrid items={analyticsItems} />
-            <div className="flex flex-wrap items-center gap-2 text-[10px] text-foreground/50 md:max-w-[15rem] md:justify-end">
+            <div className="flex flex-wrap items-center gap-2 text-[11px] text-foreground/50 md:max-w-[15rem] md:justify-end">
               {selectedExpiry ? (
                 <span className="inline-flex items-center gap-1 rounded-full bg-surface-subtle px-2.5 py-1.5"><ClockIcon size={11} /> {selectedExpiry}</span>
               ) : null}
@@ -578,85 +608,69 @@ export const DraftSharingDock = React.forwardRef<HTMLElement, DraftSharingDockPr
             <p role="alert" className="border-t border-border/50 px-4 py-2.5 text-[11px] font-medium text-destructive">{t("common.requestFailed", lang)}</p>
           ) : null}
 
-          <div className="flex flex-wrap items-center gap-2 border-t border-border/50 p-3 sm:px-4">
-            {confirmRevoke ? (
-              <>
-                <span className="mr-auto text-[11px] font-medium text-destructive/75">{t("shares.revokeConfirm", lang)}</span>
-                <Button type="button" variant="ghost" size="xs" onClick={() => setConfirmRevoke(false)}>
-                  {t("shares.cancel", lang)}
-                </Button>
-                <Button type="button" variant="destructive" size="xs" disabled={actionLoading} onClick={() => void runAction("revoke")}>
+          {/*
+            Deleting a live link is unrecoverable, so confirmation takes over the
+            whole bar and states the consequence instead of sitting inline beside
+            the routine actions it could be mistaken for.
+          */}
+          {confirmRevoke ? (
+            <div className="border-t border-border/50 bg-destructive/[0.035] p-3 sm:px-4">
+              <p className="text-[12px] font-semibold text-destructive">{t("shares.revokeConfirm", lang)}</p>
+              <p className="mt-1 text-[11px] leading-relaxed text-foreground/60">{t("shares.revokeConsequence", lang)}</p>
+              <div className="mt-3 flex gap-2">
+                <Button type="button" variant="destructive" size="sm" disabled={actionLoading} loading={actionLoading} onClick={() => void runAction("revoke")}>
                   {t("shares.revoke", lang)}
                 </Button>
-              </>
-            ) : (
-              <>
-                {(selectedShare.status === "active" || selectedShare.status === "paused") ? (
-                  <Button type="button" size="xs" onClick={editSelectedShare}>{t("shares.editSettings", lang)}</Button>
-                ) : null}
-                {selectedShare.status === "active" ? (
-                  <Button type="button" variant="outline" size="xs" disabled={actionLoading} onClick={() => void runAction("pause")}>
-                    {t("shares.pause", lang)}
-                  </Button>
-                ) : null}
-                {selectedShare.status === "paused" ? (
-                  <Button type="button" variant="outline" size="xs" disabled={actionLoading} onClick={() => void runAction("resume")}>
-                    {t("shares.resume", lang)}
-                  </Button>
-                ) : null}
-                <span className="flex-1" />
-                {selectedShare.status !== "revoked" ? (
-                  <Button type="button" variant="ghost" size="xs" className="text-foreground/45 hover:bg-destructive/[0.05] hover:text-destructive" onClick={() => setConfirmRevoke(true)}>
-                    {t("shares.revoke", lang)}
-                  </Button>
-                ) : null}
-              </>
-            )}
-          </div>
+                <Button type="button" variant="outline" size="sm" disabled={actionLoading} onClick={() => setConfirmRevoke(false)}>
+                  {t("shares.cancel", lang)}
+                </Button>
+              </div>
+            </div>
+          ) : (
+            <div className="flex flex-wrap items-center gap-2 border-t border-border/50 p-3 sm:px-4">
+              {(selectedShare.status === "active" || selectedShare.status === "paused") ? (
+                <Button type="button" variant="outline" size="sm" onClick={editSelectedShare}>{t("shares.editSettings", lang)}</Button>
+              ) : null}
+              {selectedShare.status === "active" ? (
+                <Button type="button" variant="outline" size="sm" disabled={actionLoading} onClick={() => void runAction("pause")}>
+                  {t("shares.pause", lang)}
+                </Button>
+              ) : null}
+              {selectedShare.status === "paused" ? (
+                <Button type="button" variant="outline" size="sm" disabled={actionLoading} onClick={() => void runAction("resume")}>
+                  {t("shares.resume", lang)}
+                </Button>
+              ) : null}
+              <span className="flex-1" />
+              {selectedShare.status !== "revoked" ? (
+                <Button type="button" variant="ghost" size="sm" className="text-foreground/45 hover:bg-destructive/[0.05] hover:text-destructive" onClick={() => setConfirmRevoke(true)}>
+                  {t("shares.revoke", lang)}
+                </Button>
+              ) : null}
+            </div>
+          )}
         </div>
       ) : linksLoaded && !linksError ? (
-        <div className="mt-5 rounded-xl border border-dashed border-border/70 px-5 py-7 text-center">
+        <div className="rounded-2xl border border-dashed border-border/70 px-5 py-9 text-center">
           <p className="text-[12px] font-medium">{t("shares.noShares", lang)}</p>
-          <Button type="button" size="sm" className="mt-3" onClick={openCreate}>
-            <PlusIcon size={13} /> {t("shares.createLink", lang)}
+          <p className="mx-auto mt-1 max-w-[22rem] text-[11px] leading-relaxed text-muted-foreground">{t("shares.noSharesHint", lang)}</p>
+          <Button type="button" className="mt-4" onClick={openCreate}>
+            <PlusIcon size={15} /> {t("shares.createLink", lang)}
           </Button>
         </div>
       ) : null}
-      </section>
 
-      <SidePanel
-        open={creating}
-        onOpenChange={(nextOpen) => {
-          if (nextOpen) setCreating(true);
-          else cancelCreate();
-        }}
-        title={t(editingShare ? "shares.editSettings" : "sharing.createNewLink", lang)}
-        description={draft.title || t("dashboard.untitled", lang)}
-        headerMode="editor"
-        closeIcon="back"
-        className="sm:max-w-[580px]"
-        contentClassName="px-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] pt-3 sm:px-4"
-        lang={lang}
-      >
-        <ShareCreateForm
-          key={`${editingShare?.id ?? "new"}-${formVersion}`}
-          scope={scope}
-          onScopeChange={setScope}
-          hasTour={hasTour}
-          hasPhotos={hasPhotos}
-          hasFloorplan={hasFloorplan}
-          lang={lang}
-          onSubmit={handleSubmit}
-          saving={saving}
-          error={formError}
-          initialShare={editingShare}
-          onCancelEdit={editingShare ? cancelCreate : undefined}
-          layout="stacked"
-          detailsMode="inline"
-          stickyActions
-          stickyActionsAtPanelEdge
-        />
-      </SidePanel>
-    </>
+      {/*
+        Adding a second link is a first-class action, not a header affordance —
+        the icon in the title bar is a shortcut, this is the one you can hit.
+      */}
+      {shares.length ? (
+        <Button type="button" variant="outline" size="lg" className="w-full" onClick={openCreate}>
+          <PlusIcon size={16} /> {t("sharing.createNewLink", lang)}
+        </Button>
+      ) : null}
+      </div>
+      )}
+    </SidePanel>
   );
-});
+}

@@ -5,6 +5,7 @@ import Link from "next/link";
 import { hasWebCreationAccess } from "../lib/api/client";
 import { t } from "../lib/i18n";
 import { Button } from "../lib/ui/button";
+import { cn } from "../lib/utils";
 import { PlusIcon } from "./icons";
 
 export function WebCreateAction({
@@ -26,15 +27,20 @@ export function WebCreateAction({
     return () => { active = false; };
   }, []);
 
+  // This is the page's primary action, and on a phone it is reached with a
+  // thumb — so it keeps the 44px touch target there and only compacts to the
+  // dense 36px header control once there is a pointer.
+  const touchHeight = "h-11 sm:h-[var(--floating-control-sm)]";
+
   if (loading) {
     return (
-      <span aria-hidden="true" className="relative inline-flex h-9 shrink-0">
+      <span aria-hidden="true" className={cn("relative inline-flex shrink-0", touchHeight)}>
         <Button
           type="button"
           size="sm"
           disabled
           tabIndex={-1}
-          className="invisible"
+          className={cn("invisible", touchHeight)}
         >
           <PlusIcon size={14} />
           {t(labelKey, lang)}
@@ -47,10 +53,10 @@ export function WebCreateAction({
   // Keep the header's vertical action row stable for users without creation
   // access. A zero-width spacer prevents a late permission response from
   // collapsing the mobile header after its first paint.
-  if (!allowed) return <span aria-hidden="true" className="h-9 w-0 shrink-0" />;
+  if (!allowed) return <span aria-hidden="true" className={cn("w-0 shrink-0", touchHeight)} />;
 
   return (
-    <Button asChild size="sm">
+    <Button asChild size="sm" className={touchHeight}>
       <Link href="/create">
         <PlusIcon size={14} />
         {t(labelKey, lang)}

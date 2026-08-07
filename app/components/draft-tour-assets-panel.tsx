@@ -813,7 +813,12 @@ export function DraftTourAssetsPanel({
               aria-label={t("webCreate.tourAction", lang)}
               title={t("webCreate.tourAction", lang)}
             >
-              <PlusIcon size={14} />
+              {/*
+                Button keeps its children beside the loading spinner, and the
+                compact variant is a 2.25rem circle — spinner plus icon does not
+                fit, so the icon stands down while the spinner is showing.
+              */}
+              {creatingInWeb ? null : <PlusIcon size={14} />}
               <span className="hidden sm:inline">{t("webCreate.tourAction", lang)}</span>
             </Button>
           ) : null}
@@ -867,7 +872,12 @@ export function DraftTourAssetsPanel({
             return (
               <article
                 key={asset.id}
-                className="grid grid-cols-[82px_minmax(0,1fr)] gap-3 p-3.5 sm:grid-cols-[108px_minmax(0,1fr)_auto] sm:items-center sm:gap-4 sm:px-5 sm:py-4"
+                /*
+                  Thumbnail leads at both widths. Phones get a slightly larger
+                  one now that the platform badges no longer force a second row
+                  of pills beside it; desktop keeps actions on their own column.
+                */
+                className="grid grid-cols-[96px_minmax(0,1fr)] items-start gap-3.5 p-3.5 sm:grid-cols-[132px_minmax(0,1fr)_auto] sm:items-center sm:gap-5 sm:px-5 sm:py-4"
               >
                 <div className="relative aspect-[16/10] overflow-hidden rounded-xl bg-surface-subtle ring-1 ring-inset ring-border/45">
                   {thumbnail ? (
@@ -884,40 +894,50 @@ export function DraftTourAssetsPanel({
                   )}
                 </div>
 
-                <div className="min-w-0 self-center">
+                {/* Title aligns to the top of the thumbnail on phones, centres beside it on desktop. */}
+                <div className="min-w-0 self-start sm:self-center">
                   <div className="flex min-w-0 items-center gap-1">
                     <h3 className="min-w-0 flex-1 truncate text-[13px] font-semibold sm:text-[14px]">{displayName}</h3>
+                    {/* Was a 28px target with a 12px glyph — under the 44px touch minimum. */}
                     <button
                       type="button"
                       aria-label={`${text.editName}: ${displayName}`}
                       title={text.editName}
-                      className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-foreground/35 transition-colors hover:bg-foreground/[0.055] hover:text-foreground"
+                      className="pen-touch-target -mr-1.5 flex shrink-0 items-center justify-center rounded-full text-foreground/40 transition-colors hover:bg-foreground/[0.055] hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring sm:h-9 sm:min-h-0 sm:w-9 sm:min-w-0"
                       onClick={() => {
                         beginRename(asset);
                         setOpen(true);
                       }}
                     >
-                      <EditIcon size={12} />
+                      <EditIcon size={14} />
                     </button>
                   </div>
                   <p className="truncate text-[10px] text-muted-foreground sm:text-[11px]">
                     {assetSubtitle(asset, lang)}
                   </p>
 
+                  {/*
+                    Status is a pill; where the tour is published is a fact.
+                    Rendering all four as pills wrapped them onto two rows next
+                    to the thumbnail and gave the platforms the same weight as
+                    the publish state, so nothing led.
+                  */}
                   <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
                     <StatusPill tone={state.tone} dot className="shrink-0">
                       {state.label}
                     </StatusPill>
-                    {(selection?.isPrimary || selection?.web || selection?.ios) ? (
-                      <>
-                        {selection?.isPrimary ? (
-                          <StatusPill tone="strong">{text.primaryBadge}</StatusPill>
-                        ) : null}
-                        {selection?.web ? <StatusPill>{text.web}</StatusPill> : null}
-                        {selection?.ios ? <StatusPill>{text.ios}</StatusPill> : null}
-                      </>
+                    {selection?.isPrimary ? (
+                      <StatusPill tone="strong">{text.primaryBadge}</StatusPill>
                     ) : null}
                   </div>
+
+                  {(selection?.web || selection?.ios) ? (
+                    <p className="mt-1.5 truncate text-[11px] text-muted-foreground">
+                      {[selection?.web ? text.web : null, selection?.ios ? text.ios : null]
+                        .filter(Boolean)
+                        .join(" · ")}
+                    </p>
+                  ) : null}
 
                   {state.hint ? (
                     <p className="mt-2 line-clamp-1 text-[10px] leading-relaxed text-muted-foreground sm:text-[11px]">

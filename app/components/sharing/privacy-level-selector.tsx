@@ -54,15 +54,18 @@ export function PrivacyLevelSelector({ level, pin, onLevelChange, onPinChange, l
               <span className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-full ${active ? "bg-foreground text-background" : "bg-secondary/80 text-foreground/50"}`}>
                 {option.icon}
               </span>
-              <span className="min-w-0 pr-5">
-                <span className="block text-[12px] font-semibold leading-snug text-foreground/85">{t(option.labelKey as LocaleKey, lang)}</span>
-                <span className="mt-0.5 block text-[10px] leading-snug text-muted-foreground">{t(option.descriptionKey as LocaleKey, lang)}</span>
+              {/* Check sits in the flow, so wrapping copy can never run under it. */}
+              <span className="min-w-0 flex-1">
+                <span className="block break-words text-[12px] font-semibold leading-snug text-foreground/85">{t(option.labelKey as LocaleKey, lang)}</span>
+                <span className="mt-0.5 block break-words text-[11px] leading-snug text-muted-foreground">{t(option.descriptionKey as LocaleKey, lang)}</span>
               </span>
-              {active ? (
-                <span className="absolute right-3 top-1/2 flex h-4 w-4 -translate-y-1/2 items-center justify-center rounded-full bg-foreground text-background">
-                  <CheckIcon size={9} />
-                </span>
-              ) : null}
+              <span className="flex h-4 w-4 shrink-0 items-center justify-center" aria-hidden="true">
+                {active ? (
+                  <span className="flex h-4 w-4 items-center justify-center rounded-full bg-foreground text-background">
+                    <CheckIcon size={9} />
+                  </span>
+                ) : null}
+              </span>
             </button>
           );
         })}

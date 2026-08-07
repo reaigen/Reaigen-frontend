@@ -4,7 +4,8 @@
 
 @layer base {
   :root {
-    --header-h: 64px;
+    /* Mobile app bar. Must clear the 2.75rem agent capsule with air to spare. */
+    --header-h: 72px;
     --font-primary: -apple-system, BlinkMacSystemFont, "SF Pro Display", "SF Pro Text", "Segoe UI", Roboto, "Helvetica Neue", Helvetica, Arial, system-ui, sans-serif;
     --motion-ease-smooth: cubic-bezier(0.22, 1, 0.36, 1);
     --motion-ease-standard: cubic-bezier(0.2, 0.8, 0.2, 1);

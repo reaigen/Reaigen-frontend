@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useRef, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 
 import {
   applyReaiMediaAction,
@@ -483,7 +483,7 @@ export function ReaiAgentCard({
     }
   };
 
-  useEffect(() => {
+  const resetConversation = useCallback(() => {
     setTurns([]);
     setMessage("");
     setComposerFocused(false);
@@ -497,7 +497,23 @@ export function ReaiAgentCard({
     setRestoreCandidateId(null);
     setHistoryNotice(null);
     setError(null);
-  }, [draftId, workspaceContext]);
+  }, []);
+
+  useEffect(() => {
+    resetConversation();
+  }, [draftId, workspaceContext, resetConversation]);
+
+  /*
+   * "New conversation" from the panel header. The transcript is client-side
+   * only — the assist endpoint is stateless and is handed the last few turns
+   * with each request — so clearing state is the entire operation. The parked
+   * copy is dropped by the write effect on the next tick.
+   */
+  useEffect(() => {
+    const startNew = () => resetConversation();
+    window.addEventListener("reai-new-conversation", startNew);
+    return () => window.removeEventListener("reai-new-conversation", startNew);
+  }, [resetConversation]);
 
   const ask = async (override?: string) => {
     const requestText = (override ?? message).trim();
@@ -985,13 +1001,13 @@ export function ReaiAgentCard({
                 <p className="mt-1 text-[11px] leading-relaxed text-muted-foreground">{t("reai.historySafety", lang)}</p>
               </div>
               {historyNotice && (
-                <div className="rounded-2xl border border-border/50 bg-foreground/[0.035] px-3 py-2.5 text-[11px] leading-relaxed text-foreground/75">
+                <div className="floating-panel-shape border border-border/65 bg-card shadow-control px-3 py-2.5 text-[11px] leading-relaxed text-foreground/75">
                   {historyNotice}
                 </div>
               )}
               {historyBusy && <Working lang={lang} />}
               {!historyBusy && history.length === 0 && (
-                <p className="rounded-2xl border border-border/40 p-3 text-[11px] leading-relaxed text-muted-foreground">{t("reai.historyEmpty", lang)}</p>
+                <p className="floating-panel-shape border border-border/65 bg-card shadow-control p-3 text-[11px] leading-relaxed text-muted-foreground">{t("reai.historyEmpty", lang)}</p>
               )}
               {!historyBusy && history.length > 0 && (
                 <div className="relative ml-1 border-l border-border/55 pl-4">
@@ -1003,7 +1019,7 @@ export function ReaiAgentCard({
                       )} />
                       <div className={cn(
                         "rounded-2xl px-3.5 py-3",
-                        index === 0 ? "bg-foreground/[0.045]" : "border border-border/45 bg-background",
+                        index === 0 ? "bg-foreground/[0.04]" : "border border-border/45 bg-background",
                       )}>
                         <div className="flex items-start justify-between gap-3">
                           <div className="min-w-0">
@@ -1115,7 +1131,7 @@ export function ReaiAgentCard({
               </div>
               {mediaBusy && mediaGroups.length === 0 && <Working lang={lang} />}
               {!mediaBusy && mediaGroups.length === 0 && (
-                <p className="rounded-[1.5rem] border border-dashed border-border/55 px-4 py-10 text-center text-[11px] text-muted-foreground">{t("reai.mediaVersionsEmpty", lang)}</p>
+                <p className="floating-panel-shape border border-dashed border-border/55 px-4 py-10 text-center text-[11px] text-muted-foreground">{t("reai.mediaVersionsEmpty", lang)}</p>
               )}
               <div className="agent-media-version-grid">
                 {mediaGroups.map((group, groupIndex) => (
@@ -1178,7 +1194,7 @@ export function ReaiAgentCard({
                       </div>
                     )}
                     {answer && Object.keys(answer.proposed_changes).length > 0 && (
-                      <div className="mt-4 overflow-hidden rounded-2xl border border-border/60 bg-foreground/[0.018]">
+                      <div className="mt-4 overflow-hidden floating-panel-shape border border-border/65 bg-card shadow-control">
                         <div className="border-b border-border/45 px-3.5 py-3">
                           <p className="text-xs font-semibold text-foreground">{t("reai.proposal", lang)}</p>
                           <p className="mt-0.5 truncate text-xs text-muted-foreground">
@@ -1244,7 +1260,7 @@ export function ReaiAgentCard({
                       </div>
                     )}
                     {answer?.action_code === "translate_description" && answer.translation_action && (
-                      <div className="mt-4 overflow-hidden rounded-2xl border border-border/60 bg-foreground/[0.018]">
+                      <div className="mt-4 overflow-hidden floating-panel-shape border border-border/65 bg-card shadow-control">
                         <div className="px-3.5 py-3">
                           <div className="flex items-start justify-between gap-3">
                             <div>
@@ -1274,7 +1290,7 @@ export function ReaiAgentCard({
                             </div>
                           </dl>
                           {answer.translation_action.translated_text && (
-                            <div className="mt-3 rounded-2xl border border-border/40 bg-background px-3 py-2.5">
+                            <div className="mt-3 rounded-xl border border-border/40 bg-background px-3 py-2.5">
                               <p className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">{t("reai.translationPreview", lang)}</p>
                               <p className="mt-1.5 whitespace-pre-wrap text-xs leading-5 text-foreground/85">
                                 {answer.translation_action.translated_text}
@@ -1312,7 +1328,7 @@ export function ReaiAgentCard({
                       </div>
                     )}
                     {answer && (["grade_draft_images", "retouch_draft_image", "cleanplate_draft_images", "generative_hdr_draft_image", "organize_draft_images", "generate_draft_video"].includes(answer.action_code || "")) && (answer.action_token || turn.actionStatus) && (
-                      <div className="mt-4 overflow-hidden rounded-2xl border border-border/60 bg-foreground/[0.018]">
+                      <div className="mt-4 overflow-hidden floating-panel-shape border border-border/65 bg-card shadow-control">
                         <div className="px-3.5 py-3">
                           <div className="flex items-start justify-between gap-3">
                             <div>
@@ -1402,7 +1418,7 @@ export function ReaiAgentCard({
                       </div>
                     )}
                     {(answer?.action_code === "revoke_all_shares" || answer?.action_code === "manage_shares") && (answer.action_token || turn.actionStatus) && (
-                      <div className="mt-4 overflow-hidden rounded-2xl border border-border/60 bg-foreground/[0.018]">
+                      <div className="mt-4 overflow-hidden floating-panel-shape border border-border/65 bg-card shadow-control">
                         <div className="px-3.5 py-3">
                           <p className="text-xs font-semibold text-foreground">{t("reai.shareManagerTitle", lang)}</p>
                           <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
@@ -1431,7 +1447,7 @@ export function ReaiAgentCard({
                       </div>
                     )}
                     {answer?.action_code === "share_inventory" && !!answer.share_results?.length && (
-                      <div className="mt-3 divide-y divide-border/40 overflow-hidden rounded-2xl border border-border/55">
+                      <div className="mt-3 divide-y divide-border/40 overflow-hidden floating-panel-shape border border-border/65 bg-card shadow-control">
                         {answer.share_results.map((share) => (
                           <div key={share.id} className="flex items-center gap-2 px-3 py-2">
                             <span className="min-w-0 flex-1 truncate text-[11px] font-medium">{share.title}</span>
@@ -1446,7 +1462,7 @@ export function ReaiAgentCard({
                       </div>
                     )}
                     {answer?.action_code === "share_status" && answer.share_status && (
-                      <div className="mt-3 rounded-2xl border border-border/55 bg-foreground/[0.018] px-3 py-2.5">
+                      <div className="mt-3 floating-panel-shape border border-border/65 bg-card shadow-control px-3 py-2.5">
                         <div className="flex items-center justify-between gap-3">
                           <div className="min-w-0">
                             <p className="text-xs font-semibold text-foreground">{t("reai.currentShareTitle", lang)}</p>
@@ -1476,14 +1492,15 @@ export function ReaiAgentCard({
                       </div>
                     )}
                     {answer?.action_code === "create_draft_share" && (answer.action_token || shareUrl || turn.actionStatus) && (
-                      <div className="mt-3 rounded-2xl border border-border/55 bg-foreground/[0.018] px-3 py-2.5">
+                      <div className="mt-3 floating-panel-shape border border-border/65 bg-card shadow-control px-3 py-2.5">
                         <div className="min-w-0">
                           <p className="text-xs font-semibold text-foreground">{t("reai.shareCreateTitle", lang)}</p>
                           <p className="mt-0.5 text-[11px] leading-4 text-muted-foreground">
                             {shareUrl ? t("reai.shareCreateReady", lang) : t("reai.shareCreateBody", lang)}
                           </p>
                           {!!answer.selected_share_fields?.length && (
-                            <p className="mt-1 truncate text-[11px] text-foreground/55">
+                            /* Wraps to two lines rather than truncating the field list to a fragment. */
+                            <p className="mt-1 line-clamp-2 text-[11px] leading-4 text-foreground/55">
                               {answer.selected_share_fields
                                 .map((field) => t(`shareDialog.field.${field}` as LocaleKey, lang))
                                 .join(" · ")}
@@ -1505,20 +1522,26 @@ export function ReaiAgentCard({
                             <AgentStatusBadge tone="neutral">{t("reai.proposalDismissed", lang)}</AgentStatusBadge>
                           </div>
                         )}
+                        {/*
+                          The link gets its own line. Sharing the URL beside two
+                          actions on one row left it truncated to almost nothing
+                          on a phone, and the two actions were a filled pill next
+                          to bare text — peers rendered as different things. This
+                          matches the sharing panel: copy leads, open follows.
+                        */}
                         {shareUrl && (
-                          <div className="mt-2 flex min-w-0 items-center gap-1.5 border-t border-border/40 pt-2">
-                            <span className="min-w-0 flex-1 truncate text-[11px] text-foreground/65">{shareUrl}</span>
-                            <Button type="button" variant="outline" size="xs" className="shrink-0 rounded-2xl" onClick={() => void copyShareUrl(shareUrl)}>
-                              {t(copiedShareUrl === shareUrl ? "reai.shareCopied" : "reai.shareCopy", lang)}
-                            </Button>
-                            <a
-                              href={shareUrl}
-                              target="_blank"
-                              rel="noreferrer"
-                              className="floating-control inline-flex min-w-11 shrink-0 items-center justify-center px-2 text-[11px] font-medium text-muted-foreground transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
-                            >
-                              {t("reai.shareOpen", lang)}
-                            </a>
+                          <div className="mt-2.5 border-t border-border/40 pt-2.5">
+                            <p className="select-all break-all text-[11px] leading-relaxed text-foreground/65">{shareUrl}</p>
+                            <div className="mt-2.5 flex gap-2">
+                              <Button type="button" size="sm" className="flex-1 rounded-2xl" onClick={() => void copyShareUrl(shareUrl)}>
+                                {t(copiedShareUrl === shareUrl ? "reai.shareCopied" : "reai.shareCopy", lang)}
+                              </Button>
+                              <Button asChild variant="outline" size="sm" className="flex-1 rounded-2xl">
+                                <a href={shareUrl} target="_blank" rel="noreferrer">
+                                  {t("reai.shareOpen", lang)}
+                                </a>
+                              </Button>
+                            </div>
                           </div>
                         )}
                       </div>
@@ -1577,7 +1600,7 @@ export function ReaiAgentCard({
                     disabled={busy}
                     onClick={() => void ask(t(key, lang))}
                     className={cn(
-                      "group inline-flex shrink-0 items-center gap-1.5 rounded-2xl border border-transparent bg-foreground/[0.045] px-3 text-[12px] font-medium text-foreground/75 transition-colors hover:bg-foreground/[0.075] hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50",
+                      "group inline-flex shrink-0 items-center gap-1.5 rounded-2xl border border-transparent bg-foreground/[0.04] px-3 text-[12px] font-medium text-foreground/75 transition-colors hover:bg-foreground/[0.06] hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50",
                       compactPanel ? "h-10" : "h-8",
                       compactPanel && index > 1 && "hidden",
                       compactPanel && index > 0 && "max-[359px]:hidden",
@@ -1603,7 +1626,7 @@ export function ReaiAgentCard({
                       // eslint-disable-next-line @next/next/no-img-element
                       <img src={item.url} alt="" className="h-7 w-7 rounded-lg object-cover" />
                     ) : (
-                      <span className="flex h-7 min-w-7 items-center rounded-lg bg-foreground/[0.05] px-1.5 font-medium text-foreground/70">
+                      <span className="flex h-7 min-w-7 items-center rounded-lg bg-foreground/[0.04] px-1.5 font-medium text-foreground/70">
                         {item.value || "—"}
                       </span>
                     )}
@@ -1612,7 +1635,7 @@ export function ReaiAgentCard({
                       type="button"
                       aria-label={`${t("reai.pool.remove", lang)} — ${item.label}`}
                       onClick={() => setPool((current) => removePoolItem(current, key))}
-                      className="rounded-md p-0.5 text-foreground/40 transition-colors hover:text-foreground"
+                      className="rounded-lg p-0.5 text-foreground/40 transition-colors hover:text-foreground"
                     >
                       <CloseIcon size={12} />
                     </button>

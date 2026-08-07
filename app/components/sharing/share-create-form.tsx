@@ -25,6 +25,14 @@ interface ShareCreateFormProps {
   detailsMode?: "panel" | "inline";
   stickyActions?: boolean;
   stickyActionsAtPanelEdge?: boolean;
+  /**
+   * When set, the form renders as a real <form> with this id and drops its own
+   * action bar, so a host panel can own the submit button in its footer. A
+   * sticky bar inside the scroll area covered the last section it scrolled past.
+   */
+  formId?: string;
+  /** Mirrors internal PIN validity out so a host footer can disable its submit. */
+  onValidityChange?: (valid: boolean) => void;
 }
 
 export interface ShareFormData {
@@ -50,6 +58,8 @@ export function ShareCreateForm({
   detailsMode = "panel",
   stickyActions = true,
   stickyActionsAtPanelEdge = false,
+  formId,
+  onValidityChange,
 }: ShareCreateFormProps) {
   const [privacyLevel, setPrivacyLevel] = React.useState<PrivacyLevel>("open");
   const [pin, setPin] = React.useState("");
@@ -65,6 +75,10 @@ export function ShareCreateForm({
   const pinValid = privacyLevel !== "pin"
     || pin.length >= 4
     || Boolean(initialShare?.requires_pin && pin.length === 0);
+
+  React.useEffect(() => {
+    onValidityChange?.(pinValid);
+  }, [onValidityChange, pinValid]);
 
   const handleSubmit = async () => {
     // The scope toggles shape the actual field list: tour ⇄ tour,
@@ -93,8 +107,19 @@ export function ShareCreateForm({
     await onSubmit(opts);
   };
 
+  const Root = formId ? "form" : "div";
+
   return (
-    <div>
+    <Root
+      {...(formId ? {
+        id: formId,
+        noValidate: true,
+        onSubmit: (event: React.FormEvent) => {
+          event.preventDefault();
+          void handleSubmit();
+        },
+      } : {})}
+    >
       {error && <p role="alert" className="mb-3 rounded-2xl border border-destructive/25 bg-destructive/[0.035] px-4 py-3 text-[12px] text-destructive">{error}</p>}
 
       <div className={cn(
@@ -135,32 +160,34 @@ export function ShareCreateForm({
           />
         </section>
 
-        <div className={cn(
-          "z-20 flex gap-2 bg-card/95 p-3 backdrop-blur-xl",
-          layout === "workspace" && "border-t border-border/50 md:col-span-6",
-          stickyActions
-            ? stickyActionsAtPanelEdge
-              ? "sticky bottom-0"
-              : "sticky bottom-[calc(4rem+env(safe-area-inset-bottom,0px))] md:static"
-            : "static",
-        )}>
-          {initialShare && onCancelEdit ? (
-            <Button type="button" variant="ghost" className="flex-1 text-[13px] font-semibold" onClick={onCancelEdit} disabled={saving}>
-              {t("common.cancel", lang)}
+        {formId ? null : (
+          <div className={cn(
+            "z-20 flex gap-2 bg-card/95 p-3 backdrop-blur-xl",
+            layout === "workspace" && "border-t border-border/50 md:col-span-6",
+            stickyActions
+              ? stickyActionsAtPanelEdge
+                ? "sticky bottom-0"
+                : "sticky bottom-[calc(4rem+env(safe-area-inset-bottom,0px))] md:static"
+              : "static",
+          )}>
+            {initialShare && onCancelEdit ? (
+              <Button type="button" variant="ghost" className="flex-1 text-[13px] font-semibold" onClick={onCancelEdit} disabled={saving}>
+                {t("common.cancel", lang)}
+              </Button>
+            ) : null}
+            <Button
+              type="button"
+              className="flex-1 text-[13px] font-semibold"
+              onClick={handleSubmit}
+              disabled={saving || !pinValid}
+              loading={saving}
+            >
+              {t(initialShare ? "shareDialog.save" : "sharing.createAndCopy", lang)}
             </Button>
-          ) : null}
-          <Button
-            type="button"
-            className="flex-1 text-[13px] font-semibold"
-            onClick={handleSubmit}
-            disabled={saving || !pinValid}
-            loading={saving}
-          >
-            {t(initialShare ? "shareDialog.save" : "sharing.createAndCopy", lang)}
-          </Button>
-        </div>
+          </div>
+        )}
       </div>
-    </div>
+    </Root>
   );
 }
 

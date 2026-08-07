@@ -288,7 +288,14 @@ export default function DashboardPage() {
           description={t("dashboard.creationsSubtitle", lang)}
           actions={
             <>
-              <StatusPill>{totalCount} {t("dashboard.items", lang)}</StatusPill>
+              {/*
+                The count is metadata about the list, not an action. As a
+                bordered pill it read as a sibling of the create button and the
+                two competed; plain text lets the action carry the weight.
+              */}
+              <span className="min-w-0 truncate text-[13px] font-medium text-muted-foreground tabular-nums">
+                {totalCount} {t("dashboard.items", lang)}
+              </span>
               <WebCreateAction lang={lang} />
             </>
           }
@@ -365,9 +372,11 @@ export default function DashboardPage() {
                     className="block focus-visible:outline-none"
                     onMouseEnter={() => router.prefetch(`/draft/${draft.id}`)}
                   >
-                    <div className="relative aspect-[16/10] overflow-hidden bg-surface-subtle">
+                    {/* A step taller than the 16/10 used elsewhere, so the overlaid title,
+                        address, portfolio line and price have room — but still landscape. */}
+                    <div className="relative aspect-[3/2] overflow-hidden bg-surface-subtle">
                       {thumbUrl ? (
-                        <Thumbnail src={thumbUrl} alt={draft.title} className="absolute inset-0 h-full w-full object-cover transition-transform duration-500 ease-out group-hover:scale-[1.03]" priority={idx < 4} />
+                        <Thumbnail src={thumbUrl} alt={draft.title} className="absolute inset-0 h-full w-full object-cover [@media(hover:hover)]:transition-transform [@media(hover:hover)]:duration-500 [@media(hover:hover)]:ease-out [@media(hover:hover)]:group-hover:scale-[1.03]" priority={idx < 4} />
                       ) : (
                         <div className="absolute inset-0 flex items-center justify-center bg-gradient-to-br from-surface-subtle via-muted/55 to-muted/80">
                           <ImageIcon size={42} className="text-foreground/15" />
@@ -377,7 +386,13 @@ export default function DashboardPage() {
                       <StatusPill
                         tone={draftTour === "ready" ? "success" : draftTour === "issues" ? "danger" : draftTour === "processing" ? "warning" : draft.is_complete ? "success" : "warning"}
                         dot
-                        className="absolute left-3 top-3 border-white/15 bg-black/55 text-white/90 shadow-sm backdrop-blur-md"
+                        /*
+                          No backdrop blur here: this pill repeats once per card,
+                          so a full list put twenty blurred regions on the scroll
+                          path. Over a photo at 55% black the blur was not
+                          legible anyway — the fill alone carries the contrast.
+                        */
+                        className="absolute left-3 top-3 border-white/15 bg-black/60 text-white/90 shadow-sm"
                       >
                         {tourStatusLabel
                           ?? (draft.is_complete
@@ -396,10 +411,18 @@ export default function DashboardPage() {
                           </p>
                         </div>
                         {price && (
-                          <div className="floating-status shrink-0 flex flex-col justify-center border border-white/45 bg-white/90 px-3 text-right text-black shadow-sm backdrop-blur-md">
-                            <span className="block text-[13px] font-semibold tabular-nums">{price}</span>
+                          /*
+                            Fully opaque. A translucent fill let busy photos read
+                            straight through the price — the one number on the
+                            card that must never be ambiguous. Solid white also
+                            means it needs no backdrop blur, which mattered here
+                            because this pill repeats once per card on the
+                            scroll path.
+                          */
+                          <div className="floating-status shrink-0 flex flex-col justify-center bg-white px-3.5 text-right text-black shadow-[0_2px_10px_rgba(0,0,0,0.18)] ring-1 ring-black/[0.06]">
+                            <span className="block text-[14px] font-semibold leading-tight tabular-nums">{price}</span>
                             {showOrigPrice && (
-                              <span className="block text-[11px] text-black/55 tabular-nums">{origPrice}</span>
+                              <span className="block text-[11px] leading-tight text-black/55 tabular-nums">{origPrice}</span>
                             )}
                           </div>
                         )}
@@ -410,7 +433,8 @@ export default function DashboardPage() {
                   <Link
                     href={`/draft/${draft.id}?sharing=1`}
                     prefetch
-                    className="floating-icon-button-sm absolute right-3 top-3 z-10 flex items-center justify-center border border-white/15 bg-black/45 text-white/80 shadow-sm backdrop-blur-md transition-[background-color,color,opacity,transform] hover:scale-105 hover:bg-black/70 hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white focus-visible:ring-offset-2 focus-visible:ring-offset-black md:opacity-0 md:group-hover:opacity-100 md:group-focus-within:opacity-100"
+                    // No backdrop blur: one per card puts a blurred region per row on the scroll path.
+                    className="floating-icon-button-sm absolute right-3 top-3 z-10 flex items-center justify-center border border-white/15 bg-black/55 text-white/85 shadow-sm transition-[background-color,color,opacity] hover:bg-black/75 hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white focus-visible:ring-offset-2 focus-visible:ring-offset-black md:opacity-0 md:group-hover:opacity-100 md:group-focus-within:opacity-100"
                     aria-label={t("draft.share", lang)}
                   >
                     <ShareIcon size={14} />

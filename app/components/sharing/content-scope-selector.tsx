@@ -149,7 +149,7 @@ export function ContentScopeSelector({
               aria-disabled={!card.available}
               aria-pressed={active}
               onClick={() => toggleCard(card.key)}
-              className={`floating-panel-shape pen-touch-target group relative flex min-h-14 w-full items-center gap-2.5 border px-3 py-2 text-left transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 ${
+              className={`floating-panel-shape pen-touch-target group relative flex min-h-16 w-full items-center gap-2.5 border px-3 py-2 text-left transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 ${
                 !card.available
                   ? "cursor-not-allowed border-border/30 bg-surface-subtle/65 text-foreground/30"
                   : `editor-control-capsule border-border/55 ${active ? "text-foreground" : "text-foreground/55 hover:bg-card hover:text-foreground"}`
@@ -158,14 +158,23 @@ export function ContentScopeSelector({
               <span className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-full transition-colors ${active ? "bg-foreground text-background" : "bg-secondary/80 text-foreground/50"}`}>
                 {card.icon}
               </span>
-              <span className="min-w-0 pr-4 text-[11px] font-semibold leading-[1.2] sm:text-[12px]">
+              {/*
+                The check sits in the flow rather than absolutely over the label.
+                Reserving space with padding was not enough: a single long word
+                ("nehnuteľnosti") is wider than the padded box and overflows it
+                instead of wrapping, running straight under the badge. Its slot
+                is always present so toggling does not reflow the label.
+              */}
+              <span className="min-w-0 flex-1 hyphens-auto break-words text-[11px] font-semibold leading-[1.2] sm:text-[12px]">
                 {t(card.labelKey, lang)}
               </span>
-              {active ? (
-                <span className="absolute right-2.5 top-1/2 flex h-4 w-4 -translate-y-1/2 items-center justify-center rounded-full bg-foreground text-background">
-                  <CheckIcon size={9} />
-                </span>
-              ) : null}
+              <span className="flex h-4 w-4 shrink-0 items-center justify-center" aria-hidden="true">
+                {active ? (
+                  <span className="flex h-4 w-4 items-center justify-center rounded-full bg-foreground text-background">
+                    <CheckIcon size={9} />
+                  </span>
+                ) : null}
+              </span>
             </button>
           );
         })}

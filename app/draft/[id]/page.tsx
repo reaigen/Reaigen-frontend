@@ -26,6 +26,7 @@ import { DraftVersionManager } from "../../components/draft-version-manager";
 import { DraftMediaManager } from "../../components/draft-media-manager";
 import { DraftTourAssetsPanel } from "../../components/draft-tour-assets-panel";
 import { DraftSharingDock } from "../../components/draft-sharing-dock";
+import { FloorplanLightbox } from "../../components/floorplan-lightbox";
 import {
   ArrowLeftIcon,
   DocumentIcon,
@@ -506,6 +507,16 @@ export default function DraftPreviewPage({
   const [activeImageId, setActiveImageId] = useState<number | null>(null);
   const [editorOpen, setEditorOpen] = useState(false);
   const [floorplanEditorOpen, setFloorplanEditorOpen] = useState(false);
+  const [floorplanFullscreen, setFloorplanFullscreen] = useState(false);
+  // Drawing walls, placing doors and dragging vertices needs a pointer and a
+  // canvas with room beside its inspector panels; on a phone the plan is pushed
+  // off-screen by its own chrome. Viewing the floorplan stays available
+  // everywhere — only authoring is desktop-only. Width, not pointer:
+  // touchscreen laptops report a coarse pointer and would lose editing they
+  // can perform perfectly well.
+  const [compactViewport, setCompactViewport] = useState(
+    () => typeof window !== "undefined" && window.matchMedia("(max-width: 767px)").matches,
+  );
   const [versionsOpen, setVersionsOpen] = useState(false);
   const [mediaOpen, setMediaOpen] = useState(false);
   const [sharingOpen, setSharingOpen] = useState(sharingRequested);
@@ -513,7 +524,6 @@ export default function DraftPreviewPage({
   const [retryAttempt, setRetryAttempt] = useState(0);
   const [reloadNonce, setReloadNonce] = useState(0);
   const [manualRefreshPending, setManualRefreshPending] = useState(false);
-  const sharingDockRef = useRef<HTMLElement | null>(null);
 
   const refreshListing = () => {
     setManualRefreshPending(true);
@@ -528,17 +538,26 @@ export default function DraftPreviewPage({
     if (sharingRequested) setSharingOpen(true);
   }, [sharingRequested]);
 
+  useEffect(() => {
+    const query = window.matchMedia("(max-width: 767px)");
+    const sync = () => setCompactViewport(query.matches);
+    sync();
+    query.addEventListener("change", sync);
+    return () => query.removeEventListener("change", sync);
+  }, []);
+
+  // Shrinking past the breakpoint mid-session must not strand the user inside
+  // an editor whose controls they can no longer reach.
+  useEffect(() => {
+    if (compactViewport) setFloorplanEditorOpen(false);
+  }, [compactViewport]);
+
   const handleSharingOpenChange = (nextOpen: boolean) => {
     setSharingOpen(nextOpen);
     const nextUrl = nextOpen
       ? `/draft/${draftId}?sharing=1`
       : `/draft/${draftId}`;
     window.history.replaceState(window.history.state, "", nextUrl);
-    if (nextOpen) {
-      window.setTimeout(() => {
-        sharingDockRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
-      }, 0);
-    }
   };
 
   useEffect(() => {
@@ -747,21 +766,35 @@ export default function DraftPreviewPage({
       }}
     >
       <div className="relative mx-auto w-full max-w-[980px] pb-24 md:pb-12">
+        {/*
+          Creation toolbar. Back stays the first thing on the page at every
+          width — the stale-listing notice below must never displace the way
+          out of this screen.
+        */}
+        <div className="mb-4 flex items-center justify-between gap-3 md:mb-6">
+          {/* Bare muted text read as a caption, not the way out. Give it a real control's chrome. */}
+          <button
+            type="button"
+            onClick={() => router.push("/dashboard")}
+            className="floating-capsule floating-control inline-flex items-center gap-2 px-4 text-[13px] font-semibold text-foreground transition-colors hover:bg-card hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+          >
+            <ArrowLeftIcon size={17} />
+            {t("common.back", lang)}
+          </button>
+        </div>
+
         {usingCachedDraft && (
+          /*
+            This notice describes the listing below it, so it sits above that
+            listing rather than floating over it — pinned, it covered the very
+            title, status and price it was warning about.
+          */
           <DraftCacheNotice
             lang={lang}
             refreshing={manualRefreshPending}
             onRefresh={refreshListing}
-            className="fixed right-4 top-20 z-50 mb-0 w-[min(28rem,calc(100vw-2rem))] bg-card/95 backdrop-blur-xl md:right-6 md:top-6"
           />
         )}
-        {/* Creation toolbar */}
-        <div className="mb-4 flex items-center justify-between gap-3 md:mb-6">
-          <button type="button" onClick={() => router.push("/dashboard")} className="floating-control -ml-2 inline-flex items-center gap-1.5 px-3 text-[13px] font-medium text-muted-foreground transition-colors hover:bg-foreground/[0.04] hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2">
-            <ArrowLeftIcon size={15} />
-            {t("common.back", lang)}
-          </button>
-        </div>
 
         {/* Media and property summary — one continuous workspace at every width. */}
         <div className="space-y-6 lg:space-y-8">
@@ -829,7 +862,13 @@ export default function DraftPreviewPage({
               </p>
             )}
 
-            <div className="mt-5 grid grid-cols-2 overflow-hidden rounded-2xl border border-border/70 bg-card p-1 shadow-control md:hidden">
+            {/*
+              Section switcher, not an action bar. It used to be an elevated
+              white card, which made it read as a peer of the floating Edit /
+              Share bar at the bottom of the screen. Recessed onto the canvas
+              instead, so weight matches role: this navigates, that acts.
+            */}
+            <div className="mt-5 grid grid-cols-2 overflow-hidden rounded-2xl border border-border/50 bg-surface-subtle p-1 md:hidden">
               <Button
                 type="button"
                 variant="ghost"
@@ -844,7 +883,7 @@ export default function DraftPreviewPage({
                 type="button"
                 variant="ghost"
                 size="sm"
-                className="h-10 min-w-0 rounded-xl border-l border-border/70 px-2"
+                className="h-10 min-w-0 rounded-xl border-l border-border/50 px-2"
                 onClick={() => setVersionsOpen(true)}
               >
                 <VersionsIcon size={15} />
@@ -915,7 +954,6 @@ export default function DraftPreviewPage({
         </div>
 
         <DraftSharingDock
-          ref={sharingDockRef}
           open={sharingOpen}
           onOpenChange={handleSharingOpenChange}
           draftId={draftId}
@@ -961,21 +999,43 @@ export default function DraftPreviewPage({
                     <h2 className="mb-3 flex items-center gap-2 text-[14px] font-semibold">
                       <FloorplanIcon size={16} className="text-foreground/55" />
                       {t("draft.floorplan", lang)}
-                      <button
-                        type="button"
-                        onClick={() => setFloorplanEditorOpen(true)}
-                        className="ml-auto rounded-full px-2.5 py-1 text-[12.5px] font-semibold text-foreground/55 transition-colors hover:bg-black/[0.05] hover:text-foreground"
-                      >
-                        {t("floorplan.edit", lang)}
-                      </button>
+                      {!compactViewport && (
+                        <button
+                          type="button"
+                          onClick={() => setFloorplanEditorOpen(true)}
+                          className="ml-auto rounded-full px-2.5 py-1 text-[12.5px] font-semibold text-foreground/55 transition-colors hover:bg-foreground/[0.05] hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+                        >
+                          {t("floorplan.edit", lang)}
+                        </button>
+                      )}
                     </h2>
-                    <div className="w-full overflow-hidden rounded-[1.5rem] sm:rounded-2xl">
+                    {/*
+                      Tapping the plan opens it fullscreen, the same way tapping
+                      a photo does. The inline drawing is sized by its column,
+                      which on a phone is too small to read room by room. The
+                      viewer itself is not interactive, so an overlay button
+                      keeps one unambiguous target over the whole plan.
+                    */}
+                    {/*
+                      The plan's aspect ratio comes from the captured geometry
+                      and the viewer fills its container, so in the 980px column
+                      a squarish plan rendered nearly 980px tall. Capping the
+                      width scales the whole drawing down proportionally; the
+                      fullscreen view is where it gets to be large.
+                    */}
+                    <div className="relative mx-auto w-full max-w-[620px] overflow-hidden rounded-[1.5rem] sm:rounded-2xl md:max-w-[540px]">
                       <FloorplanViewer
                         draftData={draft.draft_data ?? []}
                         floorplanId={draft.floorplan_id}
                         lang={lang}
                         units={unitCatalog}
                         targetAreaUnit={draft.area_preferred_unit ?? draft.area_unit}
+                      />
+                      <button
+                        type="button"
+                        onClick={() => setFloorplanFullscreen(true)}
+                        aria-label={t("draft.gallery.fullscreen", lang)}
+                        className="absolute inset-0 z-10 cursor-zoom-in rounded-[1.5rem] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset sm:rounded-2xl"
                       />
                     </div>
                   </section>
@@ -1066,7 +1126,18 @@ export default function DraftPreviewPage({
       </div>
 
       <DraftEditor open={editorOpen} onOpenChange={setEditorOpen} draft={draft} units={unitCatalog} lang={lang} onSaved={setDraft} />
-      {floorplanEditorOpen && (
+      <FloorplanLightbox
+        open={floorplanFullscreen}
+        onClose={() => setFloorplanFullscreen(false)}
+        draftData={draft.draft_data ?? []}
+        floorplanId={draft.floorplan_id}
+        lang={lang}
+        units={unitCatalog}
+        targetAreaUnit={draft.area_preferred_unit ?? draft.area_unit}
+      />
+
+      {/* Structural gate, so the editor cannot mount on a phone regardless of state. */}
+      {floorplanEditorOpen && !compactViewport && (
         <FloorplanEditor
           draftId={draftId}
           draftData={draft.draft_data ?? []}
@@ -1102,16 +1173,28 @@ export default function DraftPreviewPage({
 
       {/* Sticky mobile action bar */}
       <div className="pointer-events-none fixed inset-x-0 bottom-0 z-40 px-3 pb-[max(0.625rem,env(safe-area-inset-bottom))] md:hidden">
+        {/*
+          `shadow-floating` is not a token in the theme, so this bar was
+          rendering with no elevation at all — indistinguishable from the inline
+          card above it. Uses the real elevated token, and stays opaque rather
+          than blurred because it sits over content for every scrolled frame.
+        */}
         <div className={cn(
-          "pointer-events-auto mx-auto grid max-w-md gap-1 rounded-[1.35rem] border border-border/80 bg-card/95 p-1.5 shadow-floating backdrop-blur-xl",
+          "pointer-events-auto mx-auto grid max-w-md gap-1 rounded-[1.35rem] border border-border/80 bg-card p-1.5 shadow-elevated",
           hasTour ? "grid-cols-[0.9fr_0.9fr_1.2fr]" : "grid-cols-2",
         )}>
         <Button type="button" variant="ghost" size="sm" className="h-11 min-w-0 rounded-2xl px-2" onClick={() => setEditorOpen(true)}>
           <EditIcon size={15} /> {t("shareDialog.edit", lang)}
         </Button>
+        {/*
+          With a tour present that button is the headline action, so sharing
+          stays quiet beside it. With no tour, nothing in this bar carried any
+          weight — sharing becomes the anchor rather than leaving two identical
+          ghosts side by side.
+        */}
         <Button
           type="button"
-          variant="ghost"
+          variant={hasTour ? "ghost" : "default"}
           size="sm"
           className="h-11 min-w-0 rounded-2xl px-2"
           aria-label={t("draft.share", lang)}
