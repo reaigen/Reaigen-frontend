@@ -119,6 +119,43 @@ const GAUSSIAN_MIP_SIGMA_PIXELS = 0.3;
 const GAUSSIAN_MIP_VARIANCE =
   GAUSSIAN_MIP_SIGMA_PIXELS * GAUSSIAN_MIP_SIGMA_PIXELS;
 
+/**
+ * Render-tuning overrides, read from the URL.
+ *
+ * The Mip kernel and opacity compensation are the two knobs that decide
+ * whether a reconstruction reads crisp or hazy, and the correct values depend
+ * on how the file was trained -- a SOG carrying `antialias: true` was trained
+ * expecting compensation, one without it was not. We currently hardcode both,
+ * which is right for the room-scale scans that make up the existing library
+ * and demonstrably wrong for at least one antialiased export.
+ *
+ * Rather than guess, these let a specific scene be dialled against a reference
+ * render in one pass:
+ *
+ *   ?kernel=0.3   Mip variance added to the 2D covariance (default 0.09)
+ *   ?comp=0       disable opacity compensation (default on)
+ *   ?sh=0         drop spherical harmonics, render SH0-only
+ *
+ * Absent from the URL, behaviour is exactly as before.
+ */
+function renderTuning(): { kernel: number | null; compensation: boolean | null; sh: boolean } {
+  if (typeof window === "undefined") {
+    return { kernel: null, compensation: null, sh: true };
+  }
+  const q = new URLSearchParams(window.location.search);
+  const rawKernel = q.get("kernel");
+  const parsedKernel = rawKernel === null ? null : Number(rawKernel);
+  const rawComp = q.get("comp");
+  return {
+    kernel:
+      parsedKernel !== null && Number.isFinite(parsedKernel) && parsedKernel >= 0
+        ? parsedKernel
+        : null,
+    compensation: rawComp === null ? null : rawComp !== "0",
+    sh: q.get("sh") !== "0",
+  };
+}
+
 function buildFallbackShots(data: TourData, lang: string): TourShot[] {
   const n = data.positions?.length ?? 0;
   if (n < 2) return [];
@@ -307,6 +344,73 @@ function sampleSplatBuffer(buffer: ArrayBuffer, maximum = 24_000): SplatSample |
  * This follows the native viewer principle of starting from a safe interior
  * anchor when no captured camera is available.
  */
+/**
+ * Camera authored by the exporter inside a SOG's meta.json.
+ *
+ * `computeSceneFrameFromSplatBuffer` below derives framing from the point
+ * cloud, and every constant in it assumes an indoor room-scale property scan:
+ * a 1.55 m standing eye height, a 1.5 m minimum orbit radius, ceiling and
+ * floor band detection. Those are right for a 30 m flat and wrong for an
+ * object-scale capture -- a 3.8 m scene puts the camera inside the cloud and
+ * renders blank or washed out.
+ *
+ * When the file ships its own camera we simply use it: the exporter framed
+ * that specific scene and knows better than any heuristic. Files without a
+ * viewer block keep the derived framing untouched, so existing scans are
+ * unaffected.
+ */
+interface SogViewerHint {
+  target: Vec3;
+  distance: number;
+  yawRadians: number;
+  pitchRadians: number;
+}
+
+function parseSogViewerHint(meta: unknown): SogViewerHint | null {
+  const v = (meta as { viewer?: Record<string, unknown> } | null)?.viewer;
+  if (!v || typeof v !== "object") return null;
+  const target = v.target;
+  const distance = v.distance;
+  if (!Array.isArray(target) || target.length < 3) return null;
+  if (typeof distance !== "number" || !Number.isFinite(distance) || distance <= 0) return null;
+  const nums = target.slice(0, 3).map(Number);
+  if (nums.some((n) => !Number.isFinite(n))) return null;
+  const num = (x: unknown) => (typeof x === "number" && Number.isFinite(x) ? x : 0);
+  return {
+    target: [nums[0], nums[1], nums[2]] as Vec3,
+    distance,
+    yawRadians: num(v.yawRadians),
+    pitchRadians: num(v.pitchRadians),
+  };
+}
+
+/** Turn an authored camera into the SceneFrame the viewer places its camera from. */
+function sceneFrameFromSogViewer(hint: SogViewerHint, derived: SceneFrame | null): SceneFrame {
+  const { target, distance, yawRadians, pitchRadians } = hint;
+  // Spherical offset from the target, matching the exporter's yaw/pitch.
+  const cosPitch = Math.cos(pitchRadians);
+  const eye: Vec3 = [
+    target[0] - distance * cosPitch * Math.sin(yawRadians),
+    target[1] - distance * Math.sin(pitchRadians),
+    target[2] - distance * cosPitch * Math.cos(yawRadians),
+  ];
+  const half = distance;
+  return {
+    center: target,
+    radius: distance,
+    safePosition: eye,
+    safeTarget: target,
+    // Keep the derived floor/ceiling when we have them: they drive the editor
+    // grid, not the camera, and the point cloud is the better source for both.
+    floorY: derived?.floorY ?? target[1] - half,
+    ceilingY: derived?.ceilingY ?? target[1] + half,
+    footprint: derived?.footprint ?? {
+      minX: target[0] - half, maxX: target[0] + half,
+      minZ: target[2] - half, maxZ: target[2] + half,
+    },
+  };
+}
+
 function computeSceneFrameFromSplatBuffer(buffer: ArrayBuffer): SceneFrame | null {
   if (buffer.byteLength < 32) return null;
   const floats = new Float32Array(buffer);
@@ -1261,6 +1365,7 @@ const SplatViewer = forwardRef<SplatViewerHandle, Props>(function SplatViewer(
     typeof window !== "undefined" && window.matchMedia("(max-width: 767px), (pointer: coarse)").matches
   ));
   const fallbackSceneRef = useRef<SceneFrame | null>(null);
+  const sogViewerHintRef = useRef<SogViewerHint | null>(null);
   const immersiveControls = Boolean(readOnly || compactTouch);
 
   useEffect(() => {
@@ -4855,8 +4960,9 @@ const SplatViewer = forwardRef<SplatViewerHandle, Props>(function SplatViewer(
         // Match Spinoff's accepted deterministic Mip profile. Babylon's
         // material expects variance, not the user-facing pixel sigma.
         const { GaussianSplattingMaterial } = BABYLON;
-        GaussianSplattingMaterial.KernelSize = GAUSSIAN_MIP_VARIANCE;
-        GaussianSplattingMaterial.Compensation = true;
+        const tuning = renderTuning();
+        GaussianSplattingMaterial.KernelSize = tuning.kernel ?? GAUSSIAN_MIP_VARIANCE;
+        GaussianSplattingMaterial.Compensation = tuning.compensation ?? true;
 
         // Reduce per-frame work
         scene.skipPointerMovePicking = true;
@@ -5277,7 +5383,10 @@ const SplatViewer = forwardRef<SplatViewerHandle, Props>(function SplatViewer(
           mesh.parent = primaryRoot;
           return mesh;
         };
-        const publishSceneFrame = (frame: SceneFrame | null) => {
+        const publishSceneFrame = (rawFrame: SceneFrame | null) => {
+          const hint = sogViewerHintRef.current;
+          // An authored camera wins over the room-scale heuristic.
+          const frame = hint ? sceneFrameFromSogViewer(hint, rawFrame) : rawFrame;
           if (!frame) return;
           fallbackSceneRef.current = frame;
           const resolvedTransform = onSceneFrameRef.current?.(frame);
@@ -5386,6 +5495,7 @@ const SplatViewer = forwardRef<SplatViewerHandle, Props>(function SplatViewer(
               const meta = JSON.parse(decoded) as VkgsSogMeta & {
                 shN?: { shape?: number[]; files?: string[]; bands?: number; mins?: number; maxs?: number; codebook?: number[] };
               };
+              sogViewerHintRef.current = parseSogViewerHint(meta);
               if (isVkgsSogMeta(meta)) {
                 vkgsMeta = meta;
               }
@@ -5421,7 +5531,9 @@ const SplatViewer = forwardRef<SplatViewerHandle, Props>(function SplatViewer(
             parsedSOG = await ParseSogMeta(files, "", scene);
           }
           if (disposed) return;
-          const sogSh = parsedSOG.sh && parsedSOG.sh.length ? parsedSOG.sh : undefined;
+          const sogSh = renderTuning().sh && parsedSOG.sh && parsedSOG.sh.length
+            ? parsedSOG.sh
+            : undefined;
           const sogDegree = sogSh ? (parsedSOG.shDegree ?? 0) : 0;
           const renderData = initializeSplatEditing(parsedSOG.data, sogSh, sogDegree);
           publishSceneFrame(computeSceneFrameFromSplatBuffer(renderData.buffer));
@@ -5527,8 +5639,9 @@ const SplatViewer = forwardRef<SplatViewerHandle, Props>(function SplatViewer(
           mat.backFaceCulling = false;
           // Set this on the concrete material as well as the Babylon default
           // so a loader-created material cannot restore its softer default.
-          mat.kernelSize = GAUSSIAN_MIP_VARIANCE;
-          mat.compensation = true;
+          const matTuning = renderTuning();
+          mat.kernelSize = matTuning.kernel ?? GAUSSIAN_MIP_VARIANCE;
+          mat.compensation = matTuning.compensation ?? true;
         }
 
         let meshReady = false;
