@@ -1925,7 +1925,8 @@ function TwoFactorSection({ lang }: { lang: string }) {
           <div className="space-y-3 mb-4">
             <p className="text-sm font-medium">{t("settings.security.twoFaBackupTitle", lang)}</p>
             <p className="text-[12px] text-muted-foreground">{t("settings.security.twoFaBackupHint", lang)}</p>
-            <div className="grid grid-cols-2 gap-1 rounded-lg border border-border p-3 font-mono text-[13px]">
+            {/* Recovery codes are worthless if they cannot be copied out. */}
+            <div className="grid select-all grid-cols-2 gap-1 rounded-lg border border-border p-3 font-mono text-[13px]">
               {backupCodes.map((c) => <span key={c}>{c}</span>)}
             </div>
             <Button type="button" variant="outline" size="sm" onClick={() => setBackupCodes(null)}>

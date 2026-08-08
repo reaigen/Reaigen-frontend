@@ -481,9 +481,38 @@ export function DraftSharingDock({
       <div className="space-y-4">
       <h2 ref={headingRef} tabIndex={-1} className="sr-only outline-none">{t("sharing.pageTitle", lang)}</h2>
 
-      {linksLoading ? (
-        <div className="loading-progress-track w-16" role="progressbar" aria-label={t("common.loading", lang)}>
-          <span className="loading-progress-indeterminate" />
+      {/*
+        A 64px progress hairline alone in an empty panel read as a rendering
+        fault rather than as loading. This traces the layout that is about to
+        arrive — link chips, then the selected link's card — so nothing shifts
+        when it does. Only on the first load: a background refresh already has
+        real content on screen and must not replace it with placeholders.
+      */}
+      {linksLoading && !linksLoaded ? (
+        <div className="space-y-4" role="status" aria-busy="true" aria-label={t("common.loading", lang)}>
+          <span className="sr-only">{t("common.loading", lang)}</span>
+          <div className="flex gap-2" aria-hidden="true">
+            <span className="h-11 w-28 animate-pulse rounded-full bg-foreground/[0.06] motion-reduce:animate-none" />
+            <span className="h-11 w-24 animate-pulse rounded-full bg-foreground/[0.04] motion-reduce:animate-none" />
+          </div>
+          <div aria-hidden="true" className="overflow-hidden rounded-2xl border border-border/70 bg-card shadow-control">
+            <div className="p-4 sm:p-5">
+              <span className="block h-4 w-40 max-w-full animate-pulse rounded-full bg-foreground/[0.06] motion-reduce:animate-none" />
+              <span className="mt-2.5 block h-3 w-56 max-w-full animate-pulse rounded-full bg-foreground/[0.04] motion-reduce:animate-none" />
+            </div>
+            <div className="border-t border-border/50 bg-surface-subtle p-3 sm:px-4">
+              <span className="block h-3 w-2/3 animate-pulse rounded-full bg-foreground/[0.05] motion-reduce:animate-none" />
+              <div className="mt-3 flex gap-2">
+                <span className="h-11 flex-1 animate-pulse rounded-full bg-foreground/[0.06] motion-reduce:animate-none sm:max-w-[10rem]" />
+                <span className="h-11 flex-1 animate-pulse rounded-full bg-foreground/[0.04] motion-reduce:animate-none sm:max-w-[8rem]" />
+              </div>
+            </div>
+            <div className="grid grid-cols-3 gap-2 border-t border-border/50 p-4 sm:p-5">
+              <span className="h-16 animate-pulse rounded-lg bg-foreground/[0.04] motion-reduce:animate-none" />
+              <span className="h-16 animate-pulse rounded-lg bg-foreground/[0.04] motion-reduce:animate-none" />
+              <span className="h-16 animate-pulse rounded-lg bg-foreground/[0.04] motion-reduce:animate-none" />
+            </div>
+          </div>
         </div>
       ) : null}
 
@@ -557,11 +586,6 @@ export function DraftSharingDock({
                 {formatDate(selectedShare.created_at, dateFormat, lang)} · {fieldSummaryLabel(selectedShare, lang)}
               </p>
             </div>
-            {actionLoading ? (
-              <div className="loading-progress-track mt-2 w-12" role="progressbar" aria-label={t("common.loading", lang)}>
-                <span className="loading-progress-indeterminate" />
-              </div>
-            ) : null}
           </div>
 
           {/*
@@ -632,12 +656,12 @@ export function DraftSharingDock({
                 <Button type="button" variant="outline" size="sm" onClick={editSelectedShare}>{t("shares.editSettings", lang)}</Button>
               ) : null}
               {selectedShare.status === "active" ? (
-                <Button type="button" variant="outline" size="sm" disabled={actionLoading} onClick={() => void runAction("pause")}>
+                <Button type="button" variant="outline" size="sm" disabled={actionLoading} loading={actionLoading} onClick={() => void runAction("pause")}>
                   {t("shares.pause", lang)}
                 </Button>
               ) : null}
               {selectedShare.status === "paused" ? (
-                <Button type="button" variant="outline" size="sm" disabled={actionLoading} onClick={() => void runAction("resume")}>
+                <Button type="button" variant="outline" size="sm" disabled={actionLoading} loading={actionLoading} onClick={() => void runAction("resume")}>
                   {t("shares.resume", lang)}
                 </Button>
               ) : null}

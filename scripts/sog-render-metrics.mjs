@@ -17,6 +17,7 @@ import {
   eyeFromSogViewer,
   isAntialiasedReconstruction,
   parseSogViewerHint,
+  sogCameraIsInterior,
   resolveSplatRenderProfile,
 } from "../app/lib/splat-render-profile.ts";
 
@@ -63,16 +64,13 @@ for (const path of files) {
   }
 
   const eye = eyeFromSogViewer(hint);
-  const insideCloud = eye.every((v, i) => v >= mins[i] && v <= maxs[i]);
-  console.log(`  camera           authored`);
+  const interior = sogCameraIsInterior(meta);
+  console.log(`  camera           derived from point cloud (interior walkthrough)`);
+  console.log(`  authored camera  present, ${interior ? "interior" : "EXTERIOR orbit — not used for framing"}`);
   console.log(`    target         [${hint.target.map((v) => v.toFixed(2)).join(", ")}]`);
   console.log(`    eye            [${eye.map((v) => v.toFixed(2)).join(", ")}]`);
   console.log(`    distance       ${hint.distance.toFixed(2)} m  (${(hint.distance / size).toFixed(2)}x extent)`);
-  console.log(`    outside cloud  ${!insideCloud}`);
-  if (insideCloud) {
-    console.log(`  ⚠ authored camera resolves inside the point cloud`);
-    problems += 1;
-  }
+  console.log(`    inside room    ${interior}`);
 }
 
 console.log(

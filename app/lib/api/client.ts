@@ -3136,3 +3136,134 @@ export async function getShareAnalytics(shareId: number): Promise<{
 }> {
   return request(`/api/reaigen/shares/${shareId}/analytics/`);
 }
+
+// ---------------------------------------------------------------------------
+// Volumes & rooms
+//
+// A volume is one capture unit — one splat, one 3D scene. Open-plan spaces are
+// captured as a single volume holding several rooms, so the tour presents
+// volumes while rooms are labelled regions inside them.
+//
+// These are the regular authenticated draft endpoints, deliberately not the
+// staff-gated /web-creation/ ones: editing after creation must be available to
+// every owner. The backend rewrites the derived `scan_volume_assignments`
+// draft-data projection itself, so clients must never write that key directly.
+// ---------------------------------------------------------------------------
+
+export interface VolumeRoom {
+  id: number;
+  room: number;
+  room_label: string;
+  room_number: number;
+  display_order: number;
+}
+
+export interface DraftVolume {
+  id: number;
+  draft: number;
+  label: string;
+  volume_number: number;
+  status: string;
+  exposure_compensation: number;
+  volume_rooms: VolumeRoom[];
+  created_at: string;
+  updated_at: string;
+}
+
+export async function listDraftVolumes(
+  draftId: number | string,
+  opts: { includeArchived?: boolean } = {},
+): Promise<DraftVolume[]> {
+  const qs = opts.includeArchived ? "?all=true" : "";
+  return freshRequest(`/api/reaigen/drafts/${draftId}/volumes/${qs}`);
+}
+
+export async function updateDraftVolume(
+  draftId: number | string,
+  volumeId: number,
+  patch: Partial<Pick<DraftVolume, "label" | "volume_number" | "status" | "exposure_compensation">> & {
+    room_ids?: (number | string)[];
+  },
+): Promise<DraftVolume> {
+  return request(`/api/reaigen/drafts/${draftId}/volumes/${volumeId}/`, {
+    method: "PATCH",
+    body: JSON.stringify(patch),
+  });
+}
+
+export async function createDraftVolume(
+  draftId: number | string,
+  data: { label?: string; volume_number?: number; room_ids?: (number | string)[] },
+): Promise<DraftVolume> {
+  return request(`/api/reaigen/drafts/${draftId}/volumes/`, {
+    method: "POST",
+    body: JSON.stringify(data),
+  });
+}
+
+export async function archiveDraftVolume(
+  draftId: number | string,
+  volumeId: number,
+): Promise<void> {
+  await request(`/api/reaigen/drafts/${draftId}/volumes/${volumeId}/`, {
+    method: "DELETE",
+  });
+}
+
+export async function listDraftRooms(draftId: number | string): Promise<FloorplanRoom[]> {
+  return freshRequest(`/api/reaigen/floorplans/by-draft/${draftId}/rooms/`);
+}
+
+export async function renameFloorplanRoom(
+  floorplanId: number,
+  roomId: number,
+  label: string,
+): Promise<FloorplanRoom> {
+  return request(`/api/reaigen/floorplans/${floorplanId}/rooms/${roomId}/`, {
+    method: "PATCH",
+    body: JSON.stringify({ label }),
+  });
+}
+
+/**
+ * Move one room into another volume.
+ *
+ * Assignment is expressed as the destination's complete room set, because the
+ * backend treats `room_ids` as the authoritative membership list for a volume
+ * rather than as a delta. Both sides are written so a room is never briefly
+ * present in two volumes at once.
+ */
+export async function moveRoomToVolume(
+  draftId: number | string,
+  room: VolumeRoom,
+  fromVolume: DraftVolume,
+  toVolume: DraftVolume,
+): Promise<void> {
+  const remaining = fromVolume.volume_rooms
+    .filter((r) => r.id !== room.id)
+    .map((r) => r.room);
+  const destination = [...toVolume.volume_rooms.map((r) => r.room), room.room];
+
+  await updateDraftVolume(draftId, toVolume.id, { room_ids: destination });
+  await updateDraftVolume(draftId, fromVolume.id, { room_ids: remaining });
+}
+
+/** Split a room out of its volume into a brand-new one. */
+export async function splitRoomIntoNewVolume(
+  draftId: number | string,
+  room: VolumeRoom,
+  fromVolume: DraftVolume,
+  existingVolumes: DraftVolume[],
+): Promise<DraftVolume> {
+  const nextNumber =
+    Math.max(0, ...existingVolumes.map((v) => v.volume_number || 0)) + 1;
+  const created = await createDraftVolume(draftId, {
+    label: room.room_label || `Volume ${nextNumber}`,
+    volume_number: nextNumber,
+    room_ids: [room.room],
+  });
+  await updateDraftVolume(draftId, fromVolume.id, {
+    room_ids: fromVolume.volume_rooms.filter((r) => r.id !== room.id).map((r) => r.room),
+  });
+  return created;
+}

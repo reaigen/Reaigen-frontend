@@ -759,7 +759,7 @@ function LocalPlan({
 
   return (
     <div
-      className={cn("relative mx-auto w-full", className)}
+      className={cn("relative mx-auto w-full [container-type:inline-size]", className)}
       style={{
         aspectRatio: `${SVG_W} / ${svgH}`,
       }}
@@ -857,16 +857,28 @@ function LocalPlan({
 
     </svg>
 
-    {/* Fixed-screen room badges. Their position follows the SVG viewBox, but
-        their diameter and typography remain identical across every plan. */}
+    {/*
+      Room badges scale with the drawing. Their position was already a
+      percentage of the viewBox, but their diameter was a fixed 32px, so the
+      smaller a plan rendered the larger each badge became relative to the
+      rooms — on a phone, or in the capped desktop column, they swelled over
+      walls and into each other. Sized from the container instead, clamped so
+      they stay legible on a small plan and never balloon on a large one.
+    */}
     {numbers.map((number) => {
       const screen = labelScreenPositions.get(number);
       if (!screen) return null;
       return (
         <div
           key={`rl${number}`}
-          className="pointer-events-none absolute flex h-8 w-8 -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-full border border-black/15 bg-white/95 text-sm font-semibold text-slate-700"
-          style={{ left: `${(screen[0] / SVG_W) * 100}%`, top: `${(screen[1] / svgH) * 100}%` }}
+          className="pointer-events-none absolute flex -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-full border border-black/15 bg-white/95 font-semibold tabular-nums text-slate-700"
+          style={{
+            left: `${(screen[0] / SVG_W) * 100}%`,
+            top: `${(screen[1] / svgH) * 100}%`,
+            width: "clamp(1.125rem, 7cqw, 2rem)",
+            height: "clamp(1.125rem, 7cqw, 2rem)",
+            fontSize: "clamp(0.5625rem, 3.2cqw, 0.875rem)",
+          }}
         >
           {number}
         </div>

@@ -85,13 +85,15 @@ export function parseSogViewerHint(meta: unknown): SogViewerHint | null {
 }
 
 /**
- * Eye position for an authored camera.
+ * Eye position for a camera authored inside a SOG.
  *
- * Spherical offset from the target using the exporter's yaw and pitch, so the
- * scene is seen from where it was framed. The viewer's own framing derives
- * this from the point cloud with constants tuned for indoor room-scale
- * property scans — a 1.55 m standing eye height and a 1.5 m minimum orbit
- * radius — which seats the camera inside the cloud on an object-scale capture.
+ * Kept for inspection and metrics, NOT used to frame the viewer. Exporters
+ * author an exterior orbit: for the living-room capture this returns an eye at
+ * y 3.79 against a ceiling at 1.82 — a dollhouse view of the outside of the
+ * room. These are interior scans, so the viewer belongs inside the room at
+ * eye height, which is what the point-cloud framing produces.
+ *
+ * `sogCameraIsInterior` below is the check that distinguishes the two.
  */
 export function eyeFromSogViewer(hint: SogViewerHint): Vec3 {
   const { target, distance, yawRadians, pitchRadians } = hint;
@@ -111,23 +113,25 @@ export function isAntialiasedReconstruction(meta: unknown): boolean {
 /**
  * Resolve the material parameters for one reconstruction.
  *
- * Overrides always win so a scene can be dialled against a reference; absent
- * those, the file's own `antialias` flag decides. Files predating that flag
- * keep the historic kernel, so nothing already published moves.
+ * The kernel is deliberately NOT keyed off the file's `antialias` flag. A
+ * controlled CPU render of the same scene under both values showed 0.09 vs
+ * 0.30 moves mean luminance by 0.00005 and clipped highlights by 0.001
+ * percentage points, while costing about 9% sharpness. The kernel is a small
+ * additive screen-space term next to the splat footprints, so it is not what
+ * washes a render out, and varying it per file would only risk shifting the
+ * published library for no measured gain.
+ *
+ * Overrides still win, so a scene can be dialled against a reference render.
  */
 export function resolveSplatRenderProfile(
-  meta: unknown,
+  _meta: unknown,
   overrides: RenderTuningOverrides = {},
 ): SplatRenderProfile {
-  const antialiased = isAntialiasedReconstruction(meta);
-  const defaultKernel = antialiased
-    ? GAUSSIAN_ANTIALIASED_VARIANCE
-    : GAUSSIAN_MIP_VARIANCE;
   return {
     kernelSize:
       finite(overrides.kernel) && overrides.kernel! >= 0
         ? overrides.kernel!
-        : defaultKernel,
+        : GAUSSIAN_MIP_VARIANCE,
     compensation:
       typeof overrides.compensation === "boolean" ? overrides.compensation : true,
     useSphericalHarmonics: overrides.sh !== false,
@@ -149,4 +153,19 @@ export function parseRenderTuning(search: string): RenderTuningOverrides {
     compensation: rawComp === null ? null : rawComp !== "0",
     sh: q.get("sh") !== "0",
   };
+}
+
+/**
+ * Whether an authored camera actually stands inside the captured volume.
+ *
+ * An exterior orbit is the normal case for an exporter preview and is wrong
+ * for an interior walkthrough, so this is the test that decides whether an
+ * authored camera could ever be used for framing.
+ */
+export function sogCameraIsInterior(meta: unknown): boolean {
+  const hint = parseSogViewerHint(meta);
+  const means = (meta as { means?: { mins?: number[]; maxs?: number[] } } | null)?.means;
+  if (!hint || !Array.isArray(means?.mins) || !Array.isArray(means?.maxs)) return false;
+  const eye = eyeFromSogViewer(hint);
+  return eye.every((v, i) => v >= means!.mins![i] && v <= means!.maxs![i]);
 }

@@ -11,6 +11,7 @@ import {
   isAntialiasedReconstruction,
   parseRenderTuning,
   parseSogViewerHint,
+  sogCameraIsInterior,
   resolveSplatRenderProfile,
 } from "../app/lib/splat-render-profile.ts";
 
@@ -62,24 +63,25 @@ test("the published library keeps its historic kernel", () => {
   assert.equal(p.useSphericalHarmonics, true);
 });
 
-test("an antialias-trained file gets the full 3DGS dilation", () => {
-  const p = resolveSplatRenderProfile(ANTIALIASED);
-  assert.equal(p.kernelSize, GAUSSIAN_ANTIALIASED_VARIANCE);
-  assert.equal(p.kernelSize, 0.3);
-  assert.equal(p.compensation, true);
+test("every file gets the same kernel unless explicitly overridden", () => {
+  // A controlled CPU render of the same scene showed 0.09 vs 0.30 changes mean
+  // luminance by 0.00005 and clipped highlights by 0.001pp, while costing ~9%
+  // sharpness. The kernel is not what washes a render out, so nothing is keyed
+  // off the antialias flag and the published library cannot shift.
+  assert.equal(resolveSplatRenderProfile(ANTIALIASED).kernelSize, GAUSSIAN_MIP_VARIANCE);
+  assert.equal(resolveSplatRenderProfile(LEGACY).kernelSize, GAUSSIAN_MIP_VARIANCE);
 });
 
-test("the antialiased kernel is materially larger, not a rounding difference", () => {
-  const legacy = resolveSplatRenderProfile(LEGACY).kernelSize;
-  const aa = resolveSplatRenderProfile(ANTIALIASED).kernelSize;
-  // 0.09 is 0.3 squared — the bug was squaring a value that is already a
-  // variance. The corrected kernel must therefore be ~3.33x the old one.
-  assert.ok(aa / legacy > 3, `expected >3x dilation, got ${(aa / legacy).toFixed(2)}x`);
-  assert.equal(Math.round((aa / legacy) * 100) / 100, 3.33);
+test("the 3DGS kernel remains available as an override", () => {
+  assert.equal(GAUSSIAN_ANTIALIASED_VARIANCE, 0.3);
+  assert.equal(
+    resolveSplatRenderProfile(ANTIALIASED, parseRenderTuning("?kernel=0.3")).kernelSize,
+    0.3,
+  );
 });
 
-test("a file with no antialias flag is never given the antialiased profile", () => {
-  for (const meta of [null, undefined, {}, { antialias: false }, { antialias: "true" }, { antialias: 1 }]) {
+test("no metadata shape changes the kernel", () => {
+  for (const meta of [null, undefined, {}, { antialias: false }, { antialias: true }, { antialias: "true" }]) {
     assert.equal(
       resolveSplatRenderProfile(meta).kernelSize,
       GAUSSIAN_MIP_VARIANCE,
@@ -92,40 +94,28 @@ test("a file with no antialias flag is never given the antialiased profile", () 
 // Authored camera — the blank-viewport fix
 // ---------------------------------------------------------------------------
 
-test("the authored camera sits outside the point cloud, looking at it", () => {
+test("the exporter's camera is an exterior orbit, so it must not frame an interior scan", () => {
   const hint = parseSogViewerHint(ANTIALIASED);
   const eye = eyeFromSogViewer(hint);
 
-  assert.equal(inside(eye, ANTIALIASED), false, "camera must not sit inside the cloud");
-
-  // The target aims slightly above the cloud's top (y 1.87 against 1.82) so
-  // the view looks down into the room. It should still be *near* the subject,
-  // not off in space — measured against the scene's own size.
-  const size = extent(ANTIALIASED);
-  const centre = ANTIALIASED.means.maxs.map((v, i) => (v + ANTIALIASED.means.mins[i]) / 2);
-  const targetOffset = Math.hypot(...hint.target.map((v, i) => v - centre[i]));
+  // Eye sits above the ceiling: y 3.79 against a cloud top of 1.82. That is a
+  // dollhouse view of the outside of the room, not a walkthrough.
   assert.ok(
-    targetOffset < size,
-    `target should sit within one scene-extent of centre (${targetOffset.toFixed(2)} m vs ${size.toFixed(2)} m)`,
+    eye[1] > ANTIALIASED.means.maxs[1],
+    `authored eye should be above the ceiling (${eye[1].toFixed(2)} vs ${ANTIALIASED.means.maxs[1].toFixed(2)})`,
   );
-
-  const dist = Math.hypot(...eye.map((v, i) => v - hint.target[i]));
-  assert.ok(
-    Math.abs(dist - hint.distance) < 1e-6,
-    `eye must be exactly the authored distance away (${dist} vs ${hint.distance})`,
+  assert.equal(
+    sogCameraIsInterior(ANTIALIASED),
+    false,
+    "authored camera is exterior, so framing must stay with the point cloud",
   );
 });
 
-test("the authored distance is proportionate to the scene, unlike the room-scale floor", () => {
+test("eyeFromSogViewer stays exact, since metrics report it", () => {
   const hint = parseSogViewerHint(ANTIALIASED);
-  const size = extent(ANTIALIASED);
-  const ratio = hint.distance / size;
-  assert.ok(ratio > 0.5 && ratio < 2, `distance/extent = ${ratio.toFixed(2)} should frame the scene`);
-
-  // The derived framing clamps radius to a 1.5 m floor and 5 m ceiling, tuned
-  // for room-scale scans. On this scene that range brackets the whole subject,
-  // which is how the camera ended up inside it.
-  assert.ok(size < 5, "object-scale scene is smaller than the heuristic's max radius");
+  const eye = eyeFromSogViewer(hint);
+  const dist = Math.hypot(...eye.map((v, i) => v - hint.target[i]));
+  assert.ok(Math.abs(dist - hint.distance) < 1e-6, "eye must be the authored distance from target");
 });
 
 test("a partial or malformed viewer block is refused rather than half-applied", () => {
@@ -171,7 +161,7 @@ test("overrides win over the file's own flag", () => {
 test("an empty or unrelated query string changes nothing", () => {
   for (const search of ["", "?", "?foo=bar", "?page=2"]) {
     const p = resolveSplatRenderProfile(ANTIALIASED, parseRenderTuning(search));
-    assert.equal(p.kernelSize, GAUSSIAN_ANTIALIASED_VARIANCE, `search=${search}`);
+    assert.equal(p.kernelSize, GAUSSIAN_MIP_VARIANCE, `search=${search}`);
     assert.equal(p.compensation, true);
     assert.equal(p.useSphericalHarmonics, true);
   }
@@ -181,7 +171,7 @@ test("a nonsensical kernel override is ignored rather than rendering nothing", (
   for (const search of ["?kernel=abc", "?kernel=-1", "?kernel=", "?kernel=NaN"]) {
     assert.equal(
       resolveSplatRenderProfile(ANTIALIASED, parseRenderTuning(search)).kernelSize,
-      GAUSSIAN_ANTIALIASED_VARIANCE,
+      GAUSSIAN_MIP_VARIANCE,
       `search=${search}`,
     );
   }

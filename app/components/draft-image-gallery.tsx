@@ -204,10 +204,16 @@ function GalleryLightbox({
             <span className="hidden text-sm font-semibold sm:inline">{t("common.close", lang)}</span>
           </button>
         </div>
+        {/*
+          The header floats over the content, and in overview the photo grid
+          scrolls right beneath it — bare text sat on whatever image happened to
+          be underneath and disappeared. It now carries the same capsule as the
+          two controls flanking it, so all three stay legible over anything.
+        */}
         <span
           aria-live="polite"
           aria-atomic="true"
-          className="text-sm font-semibold tabular-nums tracking-[-0.01em] text-foreground/70 sm:text-base"
+          className="floating-capsule inline-flex h-9 items-center justify-center px-3.5 text-sm font-semibold tabular-nums tracking-[-0.01em] text-foreground/85 sm:h-10 sm:px-4 sm:text-base"
         >
           {viewMode === "overview" ? t("draft.gallery.allPhotos", lang) : `${index + 1} / ${count}`}
         </span>

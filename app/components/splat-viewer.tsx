@@ -5348,10 +5348,13 @@ const SplatViewer = forwardRef<SplatViewerHandle, Props>(function SplatViewer(
           mesh.parent = primaryRoot;
           return mesh;
         };
-        const publishSceneFrame = (rawFrame: SceneFrame | null) => {
-          const hint = sogViewerHintRef.current;
-          // An authored camera wins over the room-scale heuristic.
-          const frame = hint ? sceneFrameFromSogViewer(hint, rawFrame) : rawFrame;
+        const publishSceneFrame = (frame: SceneFrame | null) => {
+          // The exporter's camera is deliberately NOT used here. A SOG's
+          // viewer block describes an exterior orbit -- for the living-room
+          // capture that prompted this it sits at y 3.79 above a ceiling at
+          // 1.82, a dollhouse view. These are interior scans and the viewer
+          // belongs inside the room at eye height, which is what the derived
+          // framing below produces.
           if (!frame) return;
           fallbackSceneRef.current = frame;
           const resolvedTransform = onSceneFrameRef.current?.(frame);
@@ -5606,10 +5609,11 @@ const SplatViewer = forwardRef<SplatViewerHandle, Props>(function SplatViewer(
           mat.backFaceCulling = false;
           // Set this on the concrete material as well as the Babylon default
           // so a loader-created material cannot restore its softer default.
-          const profile = resolveSplatRenderProfile(
-            { antialias: sogAntialiasRef.current },
-            renderTuning(),
-          );
+          // Kernel deliberately not keyed off the antialias flag: a controlled
+          // CPU render of the same file showed 0.09 vs 0.30 changes mean
+          // luminance by 0.00005 and only costs sharpness. Overrides remain,
+          // so a scene can still be dialled against a reference.
+          const profile = resolveSplatRenderProfile({}, renderTuning());
           mat.kernelSize = profile.kernelSize;
           mat.compensation = profile.compensation;
         }

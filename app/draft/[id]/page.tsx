@@ -16,6 +16,7 @@ import { DraftImageGallery } from "../../components/draft-image-gallery";
 import { DraftCacheNotice } from "../../components/draft-cache-notice";
 import FloorplanViewer from "../../components/floorplan-viewer";
 import FloorplanEditor from "../../components/floorplan-editor";
+import { VolumesEditor } from "../../components/volumes-editor";
 import type { DraftDetailItem, DraftTourAssetsPayload, DraftUpload, SplatsByDraftPayload } from "../../lib/tour-types";
 import { baseUnitForCategory, resolveUnit, unitLabel, type UnitLookup } from "../../lib/unit-catalog";
 import { PageLoading } from "../../components/page-loading";
@@ -35,6 +36,7 @@ import {
   InfoIcon,
   ImageIcon,
   MapPinIcon,
+  PlusIcon,
   PriceIcon,
   SearchIcon,
   ShareIcon,
@@ -460,7 +462,8 @@ function ExpandableDescription({ text, lang }: { text: string; lang: string }) {
       <div
         ref={textRef}
         className={cn(
-          "overflow-hidden whitespace-pre-line text-[14px] leading-[1.75] text-foreground/78 transition-[max-height] duration-300",
+          // Listing copy, not chrome — agents paste this into portals and mail.
+          "select-text overflow-hidden whitespace-pre-line text-[14px] leading-[1.75] text-foreground/78 transition-[max-height] duration-300",
           expanded ? "max-h-[200em]" : "max-h-[8.75em]",
         )}
       >
@@ -798,6 +801,32 @@ export default function DraftPreviewPage({
 
         {/* Media and property summary — one continuous workspace at every width. */}
         <div className="space-y-6 lg:space-y-8">
+          {/*
+            A listing with no photos rendered no hero at all, so the page opened
+            on status pills floating in whitespace and never said the obvious
+            thing: it needs photographs. This holds the same slot the gallery
+            would, so the page has one structure either way, and carries the
+            action instead of leaving the gap unexplained.
+          */}
+          {!hasMedia && (
+            <button
+              type="button"
+              onClick={() => setMediaOpen(true)}
+              className="flex aspect-[16/10] w-full flex-col items-center justify-center gap-3 rounded-[1.5rem] border border-dashed border-border/70 bg-card/50 px-6 text-center transition-colors hover:border-foreground/25 hover:bg-card focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 sm:rounded-2xl"
+            >
+              <span className="flex h-12 w-12 items-center justify-center rounded-full bg-surface-subtle text-foreground/30">
+                <ImageIcon size={22} />
+              </span>
+              <span className="text-[15px] font-semibold">{t("draft.media.emptyTitle", lang)}</span>
+              <span className="hidden max-w-md text-[12px] leading-relaxed text-muted-foreground sm:block">
+                {t("draft.media.emptyBody", lang)}
+              </span>
+              <span className="floating-control mt-1 inline-flex items-center gap-2 bg-foreground px-4 text-[13px] font-semibold text-background shadow-control">
+                <PlusIcon size={15} />
+                {t("draft.media.addPhotos", lang)}
+              </span>
+            </button>
+          )}
           {hasMedia && (
             <div className="min-w-0 space-y-4">
               {images.length > 0 && (
@@ -844,17 +873,17 @@ export default function DraftPreviewPage({
               {hasTour ? <StatusPill tone="strong">{t("dashboard.tourReady", lang)}</StatusPill> : null}
             </div>
 
-            <h1 className="mt-3 text-[28px] font-semibold leading-[1.08] tracking-[-0.03em] sm:text-[30px] lg:text-[34px]">
+            <h1 className="mt-3 select-text text-[28px] font-semibold leading-[1.08] tracking-[-0.03em] sm:text-[30px] lg:text-[34px]">
               {draft.title || t("dashboard.untitled", lang)}
             </h1>
             {address && (
-              <p className="mt-2 flex items-start gap-1.5 text-[13px] leading-relaxed text-muted-foreground">
+              <p className="mt-2 flex select-text items-start gap-1.5 text-[13px] leading-relaxed text-muted-foreground">
                 <MapPinIcon size={14} className="mt-0.5 shrink-0 text-foreground/40" />
                 <span>{address}</span>
               </p>
             )}
             {price && (
-              <p className="mt-3 text-[22px] font-semibold tracking-[-0.025em] tabular-nums sm:mt-4">
+              <p className="mt-3 select-text text-[22px] font-semibold tracking-[-0.025em] tabular-nums sm:mt-4">
                 {price}
                 {showOrigPrice && (
                   <span className="ml-2 text-[12px] font-normal tracking-normal text-muted-foreground tabular-nums">{origPrice}</span>
@@ -917,7 +946,7 @@ export default function DraftPreviewPage({
                       {fact.icon}
                     </span>
                     <span className="min-w-0 leading-tight">
-                      <span className="block truncate text-[13px] font-semibold tabular-nums">{fact.value}</span>
+                      <span className="block select-text truncate text-[13px] font-semibold tabular-nums">{fact.value}</span>
                       <span className="mt-1 block truncate text-[10px] font-medium text-muted-foreground">{fact.label}{fact.sub ? ` · ${fact.sub}` : ""}</span>
                     </span>
                   </div>
@@ -925,27 +954,41 @@ export default function DraftPreviewPage({
               </div>
             )}
 
-            <div className="mt-6 hidden border-t border-border/70 pt-5 md:flex">
-              <div className="inline-flex max-w-full items-center overflow-x-auto rounded-full border border-border/70 bg-card p-1 shadow-control">
-                {hasTour && (
-                  <Button asChild size="sm" className="shrink-0">
-                    <Link href={`/tour/${primarySplatId}?tourId=${shareableTour?.id}`}>
-                      <TourIcon size={15} />
-                      {t("draft.viewTour", lang)}
-                    </Link>
-                  </Button>
-                )}
-                <Button type="button" variant="ghost" size="sm" onClick={() => setMediaOpen(true)}>
+            {/*
+              The primary action stands on its own rather than living inside the
+              capsule. Its fill reaches its own edge, so within the capsule it
+              took only the 4px container padding while the ghost buttons beside
+              it contributed 12px of their own — the left end read tight and the
+              right end loose. Outside, the split also states the hierarchy: one
+              headline action, then the tools that act on the listing.
+            */}
+            <div className="mt-6 hidden flex-wrap items-center gap-3 border-t border-border/70 pt-5 md:flex">
+              {hasTour && (
+                <Button asChild size="sm" className="shrink-0">
+                  <Link href={`/tour/${primarySplatId}?tourId=${shareableTour?.id}`}>
+                    <TourIcon size={15} />
+                    {t("draft.viewTour", lang)}
+                  </Link>
+                </Button>
+              )}
+              {/*
+                Anchored to the right edge so the row spans the same width as
+                the cards below it. Sized to its content and left-aligned, the
+                group trailed off mid-column while everything under it ran full
+                width — the row read as unfinished rather than as a toolbar.
+              */}
+              <div className="inline-flex max-w-full items-center gap-0.5 overflow-x-auto rounded-full border border-border/70 bg-card p-1 shadow-control lg:ml-auto">
+                <Button type="button" variant="ghost" size="sm" className="shrink-0" onClick={() => setMediaOpen(true)}>
                   <ImageIcon size={15} /> {t("draft.media.manage", lang)}
                 </Button>
-                <Button type="button" variant="ghost" size="sm" onClick={() => setEditorOpen(true)}>
+                <Button type="button" variant="ghost" size="sm" className="shrink-0" onClick={() => setEditorOpen(true)}>
                   <EditIcon size={14} /> {t("shareDialog.edit", lang)}
                 </Button>
-                <Button type="button" variant="ghost" size="sm" onClick={() => handleSharingOpenChange(true)}>
+                <Button type="button" variant="ghost" size="sm" className="shrink-0" onClick={() => handleSharingOpenChange(true)}>
                   <ShareIcon size={14} /> {t("draft.share", lang)}
                 </Button>
-                <span aria-hidden="true" className="mx-1 h-5 w-px bg-border/80" />
-                <Button type="button" variant="ghost" size="sm" onClick={() => setVersionsOpen(true)}>
+                <span aria-hidden="true" className="mx-1.5 h-5 w-px shrink-0 bg-border/70" />
+                <Button type="button" variant="ghost" size="sm" className="shrink-0" onClick={() => setVersionsOpen(true)}>
                   <VersionsIcon size={15} /> {t("draft.versions.title", lang)}
                 </Button>
               </div>
@@ -1038,6 +1081,19 @@ export default function DraftPreviewPage({
                         className="absolute inset-0 z-10 cursor-zoom-in rounded-[1.5rem] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset sm:rounded-2xl"
                       />
                     </div>
+
+                    {/*
+                      Volumes sit with the plan because they describe the same
+                      thing: which captured scene each room belongs to. Editing
+                      is deliberately available after creation, not only during
+                      the capture flow.
+                    */}
+                    <VolumesEditor
+                      draftId={draft.id}
+                      floorplanId={draft.floorplan_id}
+                      lang={lang}
+                      className="mt-6 border-t border-border/70 pt-6"
+                    />
                   </section>
                 )}
               </div>
@@ -1072,7 +1128,7 @@ export default function DraftPreviewPage({
                           )}
                         >
                           <span className="min-w-0 break-words text-[12px] leading-relaxed text-muted-foreground">{row.label}</span>
-                          <span className="min-w-0 max-w-[58%] break-words text-right text-[12px] font-semibold leading-relaxed text-foreground tabular-nums">{row.value}</span>
+                          <span className="min-w-0 max-w-[58%] select-text break-words text-right text-[12px] font-semibold leading-relaxed text-foreground tabular-nums">{row.value}</span>
                         </div>
                       ))}
                       {detailsLong && (
@@ -1112,7 +1168,7 @@ export default function DraftPreviewPage({
                       {monthlyCosts.map((row, index) => (
                         <div key={`${row.label}-${index}`} className={cn("flex items-center justify-between gap-4 px-4 py-3", index < monthlyCosts.length - 1 && "border-b border-border/45")}>
                           <span className="min-w-0 break-words text-[12px] text-muted-foreground">{row.label}</span>
-                          <span className="min-w-0 max-w-[58%] break-words text-right text-[12px] font-semibold text-foreground tabular-nums">{row.value}</span>
+                          <span className="min-w-0 max-w-[58%] select-text break-words text-right text-[12px] font-semibold text-foreground tabular-nums">{row.value}</span>
                         </div>
                       ))}
                     </div>
@@ -1181,7 +1237,8 @@ export default function DraftPreviewPage({
         */}
         <div className={cn(
           "pointer-events-auto mx-auto grid max-w-md gap-1 rounded-[1.35rem] border border-border/80 bg-card p-1.5 shadow-elevated",
-          hasTour ? "grid-cols-[0.9fr_0.9fr_1.2fr]" : "grid-cols-2",
+          // Slovak and Czech labels are the longest; give the tour column the slack.
+          hasTour ? "grid-cols-[0.8fr_0.8fr_1.4fr]" : "grid-cols-2",
         )}>
         <Button type="button" variant="ghost" size="sm" className="h-11 min-w-0 rounded-2xl px-2" onClick={() => setEditorOpen(true)}>
           <EditIcon size={15} /> {t("shareDialog.edit", lang)}

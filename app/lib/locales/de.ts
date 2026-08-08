@@ -1215,6 +1215,7 @@ const de: LocaleStrings = {
   "floorplan.total":                     "Gesamt:",
   "floorplan.room":                      "Zimmer",
   "floorplan.edit":                      "Bearbeiten",
+  "floorplan.resetZoom":                  "An Bildschirm anpassen",
   "floorplan.editor.title":              "Grundriss-Editor",
   "floorplan.editor.draw":               "Zeichnen",
   "floorplan.editor.erase":              "Radieren",
@@ -1542,6 +1543,24 @@ const de: LocaleStrings = {
   "reai.value.commercial":              "Gewerbefläche",
   "reai.value.office":                  "Büro",
   "reai.value.airConditioning":         "Klimaanlage",
+  // Volumes & rooms editor
+  "volumes.title":                       "Volumen",
+  "volumes.subtitle":                    "Ein Volumen ist eine erfasste 3D-Szene. Offene Grundrisse enthalten mehrere Räume.",
+  "volumes.empty":                       "Für dieses Objekt gibt es noch keine Volumen.",
+  "volumes.rooms":                       "Räume",
+  "volumes.noRooms":                     "Keine Räume zugeordnet",
+  "volumes.rename":                      "Umbenennen",
+  "volumes.renameVolume":                "Volumen umbenennen",
+  "volumes.renameRoom":                  "Raum umbenennen",
+  "volumes.namePlaceholder":             "Name",
+  "volumes.moveTo":                      "In Volumen verschieben",
+  "volumes.splitOut":                    "In neues Volumen aufteilen",
+  "volumes.archive":                     "Volumen archivieren",
+  "volumes.archiveConfirm":              "Dieses Volumen archivieren? Die Räume bleiben im Grundriss.",
+  "volumes.mobileHint":                  "Hier können Sie umbenennen. Zum Verschieben oder Aufteilen einen Desktop-Browser verwenden.",
+  "volumes.saveFailed":                  "Speichern fehlgeschlagen. Die Änderung wurde nicht übernommen.",
+  "volumes.loadFailed":                  "Volumen konnten nicht geladen werden.",
+
 };
 
 export default de;

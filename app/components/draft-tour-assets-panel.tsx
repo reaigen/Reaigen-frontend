@@ -888,7 +888,7 @@ export function DraftTourAssetsPanel({
                       priority={index === 0}
                     />
                   ) : (
-                    <div className="absolute inset-0 flex items-center justify-center text-foreground/20">
+                    <div className="absolute inset-0 flex items-center justify-center text-foreground/30">
                       {state.ready ? <TourIcon size={24} /> : <ClockIcon size={21} />}
                     </div>
                   )}

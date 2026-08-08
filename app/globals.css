@@ -88,9 +88,49 @@
 
   button, [role="button"], a { -webkit-tap-highlight-color: transparent; }
 
+  /*
+   * Application chrome is not a document. A long press on a card title or a
+   * page heading raised the platform's text-selection toolbar over the UI and,
+   * on Android, a search sheet on top of that. Selection is therefore opt-in:
+   * anything you type into, plus values explicitly marked as copyable with
+   * Tailwind's `select-text` / `select-all` — those live in the utilities
+   * layer, so they win over this without needing `!important`.
+   */
+  body {
+    -webkit-user-select: none;
+    user-select: none;
+  }
+
+  input,
+  textarea,
+  select,
+  [contenteditable]:not([contenteditable="false"]) {
+    -webkit-user-select: text;
+    user-select: text;
+  }
+
+  /*
+   * Keep every browser-drawn accent inside the monochrome palette. Untouched,
+   * the caret, the Android selection handles and native control accents all
+   * render in the platform blue, which is the only colour on screen.
+   *
+   * `caret-color` was previously set only inside the autofill rule, so ordinary
+   * fields kept the system caret. Chrome derives the selection handle tint from
+   * the ::selection background, which needs enough opacity to read as a colour.
+   */
   ::selection {
-    background: hsl(var(--foreground) / 0.14);
+    background: hsl(var(--foreground) / 0.16);
     color: hsl(var(--foreground));
+  }
+
+  :root {
+    accent-color: hsl(var(--foreground));
+  }
+
+  input,
+  textarea,
+  [contenteditable]:not([contenteditable="false"]) {
+    caret-color: hsl(var(--foreground));
   }
 
   h1, h2, h3, h4 {

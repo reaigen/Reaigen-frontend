@@ -1215,6 +1215,7 @@ const sk: LocaleStrings = {
   "floorplan.total":                     "Spolu:",
   "floorplan.room":                      "Miestnosť",
   "floorplan.edit":                      "Upraviť",
+  "floorplan.resetZoom":                  "Prispôsobiť obrazovke",
   "floorplan.editor.title":              "Editor pôdorysu",
   "floorplan.editor.draw":               "Kresliť",
   "floorplan.editor.erase":              "Gumovať",
@@ -1542,6 +1543,24 @@ const sk: LocaleStrings = {
   "reai.value.commercial":              "Komerčný priestor",
   "reai.value.office":                  "Kancelária",
   "reai.value.airConditioning":         "Klimatizácia",
+  // Volumes & rooms editor
+  "volumes.title":                       "Objemy",
+  "volumes.subtitle":                    "Objem je jedna nasnímaná 3D scéna. Otvorené priestory obsahujú viac miestností.",
+  "volumes.empty":                       "Táto nehnuteľnosť zatiaľ nemá žiadne objemy.",
+  "volumes.rooms":                       "miestností",
+  "volumes.noRooms":                     "Žiadne priradené miestnosti",
+  "volumes.rename":                      "Premenovať",
+  "volumes.renameVolume":                "Premenovať objem",
+  "volumes.renameRoom":                  "Premenovať miestnosť",
+  "volumes.namePlaceholder":             "Názov",
+  "volumes.moveTo":                      "Presunúť do objemu",
+  "volumes.splitOut":                    "Rozdeliť do nového objemu",
+  "volumes.archive":                     "Archivovať objem",
+  "volumes.archiveConfirm":              "Archivovať tento objem? Miestnosti zostanú v pôdoryse.",
+  "volumes.mobileHint":                  "Tu môžete premenovávať. Na presun alebo rozdelenie použite počítač.",
+  "volumes.saveFailed":                  "Nepodarilo sa uložiť. Zmena nebola použitá.",
+  "volumes.loadFailed":                  "Nepodarilo sa načítať objemy.",
+
 };
 
 export default sk;

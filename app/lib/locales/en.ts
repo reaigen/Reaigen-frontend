@@ -1233,6 +1233,7 @@ const en = {
   "floorplan.total":                     "Total:",
   "floorplan.room":                      "Room",
   "floorplan.edit":                      "Edit",
+  "floorplan.resetZoom":                  "Fit to screen",
   "floorplan.editor.title":              "Floorplan editor",
   "floorplan.editor.draw":               "Draw",
   "floorplan.editor.erase":              "Erase",
@@ -1562,6 +1563,24 @@ const en = {
   "reai.value.commercial":              "Commercial space",
   "reai.value.office":                  "Office",
   "reai.value.airConditioning":         "Air conditioning",
+
+  // Volumes & rooms editor
+  "volumes.title":                       "Volumes",
+  "volumes.subtitle":                    "A volume is one captured 3D scene. Open-plan spaces hold several rooms.",
+  "volumes.empty":                       "No volumes on this property yet.",
+  "volumes.rooms":                       "rooms",
+  "volumes.noRooms":                     "No rooms assigned",
+  "volumes.rename":                      "Rename",
+  "volumes.renameVolume":                "Rename volume",
+  "volumes.renameRoom":                  "Rename room",
+  "volumes.namePlaceholder":             "Name",
+  "volumes.moveTo":                      "Move to volume",
+  "volumes.splitOut":                    "Split into new volume",
+  "volumes.archive":                     "Archive volume",
+  "volumes.archiveConfirm":              "Archive this volume? Its rooms stay on the floorplan.",
+  "volumes.mobileHint":                  "Renaming is available here. Use a desktop browser to move or split rooms.",
+  "volumes.saveFailed":                  "Could not save. Your change was not applied.",
+  "volumes.loadFailed":                  "Could not load volumes.",
 
 } as const;
 

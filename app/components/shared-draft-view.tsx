@@ -258,11 +258,11 @@ export function SharedDraftView({ draftData, lang, hasTour, tours, onOpenTour, f
             {/* Title block */}
             {(has.title || has.address || has.price) && (
               <div className="space-y-1.5">
-                {has.title && <h1 className="text-[24px] font-semibold tracking-tight leading-tight">{draftData.title}</h1>}
+                {has.title && <h1 className="select-text text-[24px] font-semibold tracking-tight leading-tight">{draftData.title}</h1>}
                 {has.address && (
-                  <p className="flex items-center gap-1.5 text-[13px] text-muted-foreground">{I.pin} {addressText}</p>
+                  <p className="flex select-text items-center gap-1.5 text-[13px] text-muted-foreground">{I.pin} {addressText}</p>
                 )}
-                {has.price && <p className="text-[20px] font-semibold text-foreground mt-1">{price}</p>}
+                {has.price && <p className="mt-1 select-text text-[20px] font-semibold text-foreground">{price}</p>}
               </div>
             )}
 
@@ -294,7 +294,8 @@ export function SharedDraftView({ draftData, lang, hasTour, tours, onOpenTour, f
               <div>
                 <h2 className="text-[14px] font-semibold mb-2">{t("draft.description", lang)}</h2>
                 <div className="rounded-2xl bg-foreground/[0.03] px-4 py-3.5">
-                  <p className="text-[13px] leading-[1.75] text-foreground/65 whitespace-pre-line">{draftData.description}</p>
+                  {/* Recipients copy listing copy out of the public page too. */}
+                  <p className="select-text text-[13px] leading-[1.75] text-foreground/65 whitespace-pre-line">{draftData.description}</p>
                 </div>
               </div>
             )}
