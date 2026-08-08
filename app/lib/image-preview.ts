@@ -378,6 +378,14 @@ export function previewSize(width: number, height: number, maxEdge = PREVIEW_MAX
   };
 }
 
-export function mediaProxyUrl(uploadId: number) {
-  return `/api/media-proxy?upload=${encodeURIComponent(String(uploadId))}`;
+/**
+ * `maxEdge` asks the proxy to shrink before sending. Costs nothing in quality at
+ * `PREVIEW_MAX_EDGE` — the working copy is built at that size regardless — and on
+ * a phone it is the difference between a few hundred kilobytes and the whole
+ * original. The proxy sends the original whenever it cannot resize.
+ */
+export function mediaProxyUrl(uploadId: number, maxEdge?: number) {
+  const query = new URLSearchParams({ upload: String(uploadId) });
+  if (maxEdge) query.set("max", String(Math.round(maxEdge)));
+  return `/api/media-proxy?${query.toString()}`;
 }

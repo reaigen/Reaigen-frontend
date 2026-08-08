@@ -7,6 +7,7 @@ import {
   encodeLinear,
   linearToSrgb,
   srgbToLinear,
+  mediaProxyUrl,
   previewSize,
   proposeTone,
   proposeWhiteBalance,
@@ -251,4 +252,12 @@ test("the working copy is bounded but small images are never upscaled", () => {
   assert.deepEqual(previewSize(4000, 3000, 1400), { width: 1400, height: 1050 });
   assert.deepEqual(previewSize(3000, 4000, 1400), { width: 1050, height: 1400 });
   assert.deepEqual(previewSize(800, 600, 1400), { width: 800, height: 600 });
+});
+
+test("the proxy is asked for a preview-sized copy, never for a raw dimension", () => {
+  assert.equal(mediaProxyUrl(42), "/api/media-proxy?upload=42");
+  assert.equal(mediaProxyUrl(42, 1400), "/api/media-proxy?upload=42&max=1400");
+  // Fractions would fail the route's numeric guard and silently cost the caller
+  // the full-resolution download it was trying to avoid.
+  assert.equal(mediaProxyUrl(42, 1399.6), "/api/media-proxy?upload=42&max=1400");
 });

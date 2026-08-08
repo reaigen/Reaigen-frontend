@@ -2055,6 +2055,26 @@ export async function manageAgentMediaVersion(
   return result;
 }
 
+export interface DraftServiceStatus {
+  id: number;
+  service_name: string;
+  status: string;
+  error_message: string | null;
+  output_data: Record<string, unknown> | null;
+}
+
+/**
+ * Read one queued processing job. Image editing answers 202 with a `service_id`
+ * and produces its version asynchronously; without this the app could only watch
+ * the version list and guess — a failed job looked exactly like a slow one.
+ */
+export async function getDraftService(serviceId: number): Promise<DraftServiceStatus> {
+  const path = `/api/reaigen/draft-services/${serviceId}/`;
+  cache.delete(path);
+  inFlight.delete(path);
+  return request(path);
+}
+
 export async function getMediaVersions(
   draftId: number,
   options: { fresh?: boolean } = {},

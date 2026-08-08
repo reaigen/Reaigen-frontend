@@ -25,6 +25,47 @@ export const dynamic = "force-dynamic";
 
 const BACKEND_URL = process.env.REAIGEN_BACKEND_URL ?? "http://localhost:8000";
 const MAX_IMAGE_BYTES = 40 * 1024 * 1024;
+/** Longest edge `?max=` may ask for. Above this, send the original untouched. */
+const MAX_PREVIEW_EDGE = 2048;
+
+/**
+ * Shrink to `maxEdge` before the bytes cross the network, or return null and let
+ * the caller send the original.
+ *
+ * The editor decodes to a 1400px working copy no matter what arrives, so on a
+ * phone the full-resolution download — several megabytes of detail thrown away
+ * on arrival — was pure latency before any control could do anything. Every
+ * failure path here is non-fatal on purpose: a missing codec or an image sharp
+ * cannot read must degrade to today's behaviour, never to a broken editor.
+ */
+async function downscale(
+  bytes: ArrayBuffer,
+  maxEdge: number,
+): Promise<{ body: Buffer; contentType: string } | null> {
+  try {
+    const { default: sharp } = await import("sharp");
+    const input = Buffer.from(bytes);
+    const metadata = await sharp(input).metadata();
+    const longest = Math.max(metadata.width ?? 0, metadata.height ?? 0);
+    if (!longest || longest <= maxEdge) return null;
+    const body = await sharp(input)
+      // Bake in EXIF orientation: the resized output carries no orientation tag,
+      // and a browser would otherwise render it rotated against the original.
+      .rotate()
+      .resize({ width: maxEdge, height: maxEdge, fit: "inside", withoutEnlargement: true })
+      .webp({ quality: 90 })
+      .toBuffer();
+    return { body, contentType: "image/webp" };
+  } catch {
+    return null;
+  }
+}
+
+function requestedMaxEdge(raw: string | null): number | null {
+  if (!raw || !/^[0-9]{2,4}$/.test(raw)) return null;
+  const value = Number(raw);
+  return value > 0 && value <= MAX_PREVIEW_EDGE ? value : null;
+}
 
 function backendCandidates(): string[] {
   const configured = BACKEND_URL.replace(/\/+$/, "");
@@ -126,6 +167,15 @@ export async function GET(req: NextRequest) {
 
   const bytes = await imageResponse.arrayBuffer();
   if (bytes.byteLength > MAX_IMAGE_BYTES) return fail(413, "Image is too large to preview.");
+
+  const maxEdge = requestedMaxEdge(req.nextUrl.searchParams.get("max"));
+  const reduced = maxEdge === null ? null : await downscale(bytes, maxEdge);
+  if (reduced) {
+    return new NextResponse(new Uint8Array(reduced.body), {
+      status: 200,
+      headers: headersFor(reduced.contentType),
+    });
+  }
 
   return new NextResponse(bytes, { status: 200, headers: headersFor(contentType) });
 }

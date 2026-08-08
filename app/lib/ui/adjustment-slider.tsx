@@ -18,6 +18,25 @@ const DETENT_PX = 7;
 /** Sensitivity multiplier while shift is held. */
 const FINE_SCALE = 0.2;
 
+/**
+ * Sensitivity by how far the pointer has strayed from the rail, coarsest first.
+ *
+ * Shift is the fine control on a desktop and there is no shift on a phone, where
+ * it is needed most: exposure covers 80 steps, so on a ~230px rail one step is
+ * under 3px and a fingertip cannot place a value. Dragging away from the rail is
+ * the gesture iOS and Lightroom both use for this, and it costs a touch-only
+ * control nothing — a mouse simply never leaves the first band.
+ */
+const VERTICAL_SCALES: Array<{ beyondPx: number; scale: number }> = [
+  { beyondPx: 110, scale: 0.1 },
+  { beyondPx: 55, scale: 0.3 },
+  { beyondPx: 0, scale: 1 },
+];
+
+function scaleForDistance(distancePx: number) {
+  return VERTICAL_SCALES.find((band) => distancePx > band.beyondPx)?.scale ?? 1;
+}
+
 function decimalsOf(step: number) {
   const text = String(step);
   const dot = text.indexOf(".");
@@ -67,9 +86,10 @@ export function AdjustmentSlider({
     anchorPx: number;
     anchorValue: number;
     lastValue: number;
-    fine: boolean;
+    scale: number;
   } | null>(null);
   const [dragging, setDragging] = React.useState(false);
+  const [fineDrag, setFineDrag] = React.useState(false);
 
   const detent = origin ?? min;
   const span = max - min || 1;
@@ -86,12 +106,25 @@ export function AdjustmentSlider({
     const rail = railRef.current;
     const width = rail?.getBoundingClientRect().width ?? 0;
     // Snap in pointer space so the detent feels identical at any track width.
-    // Holding shift is the escape hatch: without it the steps either side of the
+    // Fine mode is the escape hatch: without it the steps either side of the
     // detent are unreachable by dragging.
     if (!fine && showTick && width > 0 && Math.abs(raw - detent) * (width / span) <= DETENT_PX) {
       return detent;
     }
     return quantize(raw, min, max, step);
+  };
+
+  /**
+   * Shift, or straying off the rail, either one. Whichever the person is using,
+   * the value moves at the same reduced rate and the detent stops grabbing.
+   */
+  const scaleFor = (event: React.PointerEvent<HTMLDivElement>) => {
+    if (event.shiftKey) return FINE_SCALE;
+    const rail = railRef.current;
+    if (!rail) return 1;
+    const bounds = rail.getBoundingClientRect();
+    const centre = bounds.top + (bounds.height / 2);
+    return scaleForDistance(Math.abs(event.clientY - centre));
   };
 
   const valueAt = (clientX: number) => {
@@ -108,15 +141,18 @@ export function AdjustmentSlider({
 
   const onPointerDown = (event: React.PointerEvent<HTMLDivElement>) => {
     if (disabled || event.button !== 0) return;
+    // Always coarse on the press itself: the press lands on the rail, so the
+    // vertical distance is zero, and jumping to the tapped position is the point.
     const next = commit(valueAt(event.clientX), event.shiftKey);
     drag.current = {
       pointerId: event.pointerId,
       anchorPx: event.clientX,
       anchorValue: next,
       lastValue: next,
-      fine: event.shiftKey,
+      scale: event.shiftKey ? FINE_SCALE : 1,
     };
     setDragging(true);
+    setFineDrag(event.shiftKey);
     event.currentTarget.setPointerCapture(event.pointerId);
     event.currentTarget.focus();
     emit(next);
@@ -125,23 +161,27 @@ export function AdjustmentSlider({
   const onPointerMove = (event: React.PointerEvent<HTMLDivElement>) => {
     const session = drag.current;
     if (!session || session.pointerId !== event.pointerId) return;
-    // Re-anchor when shift is toggled mid-drag so the knob never jumps.
-    if (session.fine !== event.shiftKey) {
-      session.fine = event.shiftKey;
+    // Re-anchor whenever the sensitivity changes mid-drag — shift pressed, or the
+    // finger crossing a band — so the knob carries on from where it already is
+    // instead of teleporting to wherever the new rate puts the anchor.
+    const scale = scaleFor(event);
+    if (session.scale !== scale) {
+      session.scale = scale;
       session.anchorPx = event.clientX;
       session.anchorValue = session.lastValue;
+      setFineDrag(scale < 1);
     }
     const rail = railRef.current;
     const width = rail?.getBoundingClientRect().width ?? 1;
     const travelled = ((event.clientX - session.anchorPx) / Math.max(width, 1)) * span;
-    const scale = session.fine ? FINE_SCALE : 1;
-    emit(commit(session.anchorValue + (travelled * scale), session.fine));
+    emit(commit(session.anchorValue + (travelled * scale), scale < 1));
   };
 
   const endDrag = (event: React.PointerEvent<HTMLDivElement>) => {
     if (drag.current?.pointerId !== event.pointerId) return;
     drag.current = null;
     setDragging(false);
+    setFineDrag(false);
     if (event.currentTarget.hasPointerCapture(event.pointerId)) {
       event.currentTarget.releasePointerCapture(event.pointerId);
     }
@@ -184,7 +224,7 @@ export function AdjustmentSlider({
   };
 
   return (
-    <div className={cn("select-none py-1", disabled && "opacity-45")}>
+    <div className={cn("select-none py-0.5", disabled && "opacity-45")}>
       <div className="flex items-baseline justify-between gap-3">
         <span id={labelId} className="text-[11px] font-medium text-foreground/70">
           {label}
@@ -225,7 +265,11 @@ export function AdjustmentSlider({
         onDoubleClick={() => { if (!disabled) onChange(detent); }}
         onKeyDown={onKeyDown}
         className={cn(
-          "group relative flex h-6 touch-none items-center rounded-md outline-none",
+          // h-9, not the h-6 the rail needs to look right: the hit area is what a
+          // fingertip has to find, and a 24px row inside a scrolling tray is a
+          // coin toss between grabbing the control and scrolling past it. The
+          // rail and knob keep their own sizes inside it.
+          "group relative flex h-9 touch-none items-center rounded-md outline-none",
           "focus-visible:ring-2 focus-visible:ring-ring",
           disabled ? "cursor-not-allowed" : dragging ? "cursor-grabbing" : "cursor-grab",
         )}
@@ -251,14 +295,17 @@ export function AdjustmentSlider({
             )}
             style={{ left: `${fillLeft * 100}%`, width: `${fillWidth * 100}%` }}
           />
+          {/* The knob rings while the drag is running fine, which is the only
+              feedback that the value has stopped tracking the finger 1:1. */}
           <span
             aria-hidden="true"
             className={cn(
               "absolute top-1/2 -translate-x-1/2 -translate-y-1/2 rounded-full border bg-background shadow-control",
-              "transition-[border-color,transform] duration-100 motion-reduce:transition-none",
+              "transition-[border-color,transform,box-shadow] duration-100 motion-reduce:transition-none",
               dragging
                 ? "border-foreground scale-105"
                 : "border-foreground/35 group-hover:border-foreground/60 group-focus-visible:border-foreground",
+              fineDrag && "ring-2 ring-foreground/25",
             )}
             style={{
               left: `${valueFraction * 100}%`,

@@ -7,6 +7,7 @@ import {
   cleanplateDraftImages,
   editDraftImage,
   generateDraftImageHdr,
+  getDraftService,
   getMediaVersions,
   listDraftUploads,
   manageMediaVersion,
@@ -295,6 +296,10 @@ export function DraftMediaManager({
   const [reorderMode, setReorderMode] = React.useState(false);
   const [versionActionsAvailable, setVersionActionsAvailable] = React.useState<boolean | null>(null);
   const [error, setError] = React.useState<string | null>(null);
+  // The job's own words, kept beside the plain-language error rather than glued
+  // onto it: a storage key wrapped over four red lines buries the sentence that
+  // actually tells someone what happened.
+  const [errorDetail, setErrorDetail] = React.useState<string | null>(null);
   const [errorCanRetryLoad, setErrorCanRetryLoad] = React.useState(false);
   const [confirmAction, setConfirmAction] = React.useState<ConfirmAction>(null);
   const [view, setView] = React.useState<MediaManagerView>("gallery");
@@ -303,7 +308,9 @@ export function DraftMediaManager({
   const [versionCandidate, setVersionCandidate] = React.useState<MediaAction>(null);
   const [versionCreateRequest, setVersionCreateRequest] = React.useState<MediaVersionCreateRequest | null>(null);
   const [versionBusy, setVersionBusy] = React.useState(false);
-  const [versionNotice, setVersionNotice] = React.useState<string | null>(null);
+  // `pending` drives the spinner. A notice that outlives the work it describes
+  // needs to stop spinning, or "still running" reads as "still checking".
+  const [versionNotice, setVersionNotice] = React.useState<{ text: string; pending: boolean } | null>(null);
   const [uploadDropActive, setUploadDropActive] = React.useState(false);
   const [undoOrderIds, setUndoOrderIds] = React.useState<string[] | null>(null);
   const [versionUploadTargetId, setVersionUploadTargetId] = React.useState<string | null>(null);
@@ -879,11 +886,41 @@ export function DraftMediaManager({
     switchView("editor");
   };
 
+  // One owner: the detail only ever describes the error beside it, so it lives
+  // and dies with it instead of being cleared at a dozen `setError(null)` sites.
+  React.useEffect(() => {
+    if (!error) setErrorDetail(null);
+  }, [error]);
+
+  /** The job's own reason for having produced nothing, or null while it may yet. */
+  const editJobVerdict = async (
+    serviceId: number | null,
+  ): Promise<{ message: string; detail: string | null } | null> => {
+    if (!serviceId) return null;
+    try {
+      const service = await getDraftService(serviceId);
+      if (service.status !== "failed" && service.status !== "timeout") return null;
+      return {
+        message: t("draft.media.editFailed", lang),
+        detail: (service.error_message || "").trim() || null,
+      };
+    } catch {
+      // The job record is unreadable; keep polling the version list instead.
+      return null;
+    }
+  };
+
   const watchEditedVersion = (
     logicalAssetId: string,
     previousVersionIds: Set<number>,
+    serviceId: number | null,
   ) => {
-    const delays = [1200, 2200, 3600, 5600, 8200] as const;
+    // Denser at the front, and it runs longer at the back. A 12 MP grade takes
+    // roughly three and a half seconds, which the old 1.2/2.2/3.6 ladder only
+    // noticed on its third tick at seven seconds — twice the wait for no reason.
+    // The long tail is affordable now that a failed job is detected outright
+    // rather than waited out.
+    const delays = [800, 1200, 1800, 2600, 3600, 5000, 7000, 9000] as const;
     const check = async (index: number) => {
       if (!panelOpenRef.current) return;
       try {
@@ -908,9 +945,26 @@ export function DraftMediaManager({
         // normal error surface remains available if the final refresh fails.
       }
 
+      // No version yet — ask the job itself why. A worker that died leaves the
+      // version list looking exactly like a job that is merely slow, which is how
+      // a hard failure used to end as a spinner that quietly stopped spinning.
+      const verdict = await editJobVerdict(serviceId);
+      if (!panelOpenRef.current) return;
+      if (verdict) {
+        versionRefreshTimers.current.forEach((timer) => window.clearTimeout(timer));
+        versionRefreshTimers.current = [];
+        setVersionNotice(null);
+        setError(verdict.message);
+        setErrorDetail(verdict.detail);
+        setErrorCanRetryLoad(false);
+        return;
+      }
+
       const nextIndex = index + 1;
       if (nextIndex >= delays.length) {
-        setVersionNotice(null);
+        // Out of patience, not out of hope: the job may still be running, so say
+        // so instead of clearing the notice and leaving nothing behind.
+        setVersionNotice({ text: t("draft.media.editStillRunning", lang), pending: false });
         return;
       }
       const timer = window.setTimeout(() => { void check(nextIndex); }, delays[nextIndex]);
@@ -926,17 +980,18 @@ export function DraftMediaManager({
     const previousVersionIds = new Set(editingGroup.versions.map((version) => version.id));
     setVersionBusy(true);
     setError(null);
-    setVersionNotice(t("reai.mediaCreating", lang));
+    setNotice(null);
+    setVersionNotice({ text: t("reai.mediaCreating", lang), pending: true });
     setErrorCanRetryLoad(false);
     versionRefreshTimers.current.forEach((timer) => window.clearTimeout(timer));
     versionRefreshTimers.current = [];
     try {
-      await editDraftImage(draft.id, editingGroup.active.id, operations);
+      const queued = await editDraftImage(draft.id, editingGroup.active.id, operations);
       setEditingId(null);
       setView("versions");
       await loadMedia(false);
       await notifyChanged();
-      if (logicalAssetId) watchEditedVersion(logicalAssetId, previousVersionIds);
+      if (logicalAssetId) watchEditedVersion(logicalAssetId, previousVersionIds, queued.service_id ?? null);
       else setVersionNotice(null);
     } catch (nextError) {
       setVersionNotice(null);
@@ -972,7 +1027,7 @@ export function DraftMediaManager({
   ) => {
     setVersionBusy(true);
     setVersionCandidate(null);
-    setVersionNotice(t("reai.mediaCreating", lang));
+    setVersionNotice({ text: t("reai.mediaCreating", lang), pending: true });
     setError(null);
     setErrorCanRetryLoad(false);
     versionRefreshTimers.current.forEach((timer) => window.clearTimeout(timer));
@@ -1125,7 +1180,16 @@ export function DraftMediaManager({
         <div className="relative">
           {error ? (
             <div role="alert" className="floating-panel-shape mb-4 flex items-start justify-between gap-3 border border-red-500/20 bg-red-500/[0.055] px-4 py-3 text-[11px] leading-relaxed text-red-800">
-              <span>{error}</span>
+              <span className="min-w-0">
+                <span>{error}</span>
+                {/* Second line, smaller and quieter: worth relaying to support,
+                    never worth reading before the sentence above it. */}
+                {errorDetail ? (
+                  <span className="mt-1 block break-words text-[10px] leading-relaxed text-red-900/55">
+                    {errorDetail}
+                  </span>
+                ) : null}
+              </span>
               <Button type="button" variant="ghost" size="xs" onClick={() => setError(null)} className="shrink-0 text-red-900 hover:bg-red-500/10 hover:text-red-900">
                 {t("common.dismiss", lang)}
               </Button>
@@ -1138,8 +1202,15 @@ export function DraftMediaManager({
               role="status"
               aria-live="polite"
             >
-              <span className="h-4 w-4 shrink-0 animate-spin rounded-full border-2 border-foreground/15 border-t-foreground/65" aria-hidden="true" />
-              <span>{versionNotice}</span>
+              {versionNotice.pending ? (
+                <span className="h-4 w-4 shrink-0 animate-spin rounded-full border-2 border-foreground/15 border-t-foreground/65" aria-hidden="true" />
+              ) : null}
+              <span>{versionNotice.text}</span>
+              {versionNotice.pending ? null : (
+                <Button type="button" variant="ghost" size="xs" onClick={() => void loadMedia(false)} className="shrink-0">
+                  {t("common.tryAgain", lang)}
+                </Button>
+              )}
             </div>
           ) : null}
 
