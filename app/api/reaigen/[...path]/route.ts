@@ -8,6 +8,7 @@ import {
 } from "../../../lib/server/auth-cookies";
 import { fetchBackend } from "../../../lib/server/backend-fetch";
 import { isSafeProxyPath } from "../../../lib/server/proxy-path";
+import { refreshSession } from "../../../lib/server/token-refresh";
 
 const BACKEND_URL =
   process.env.REAIGEN_BACKEND_URL ?? "http://localhost:8000";
@@ -160,25 +161,6 @@ function resolveTarget(baseUrl: string, joined: string): string {
   return `${baseUrl}/api/v1/reaigen/${joined}`;
 }
 
-async function refreshAccessToken(refreshToken: string): Promise<string | null> {
-  for (const baseUrl of backendCandidates()) {
-    try {
-      const res = await fetchBackend(`${baseUrl}/api/v1/core/auth/refresh/`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ refresh: refreshToken }),
-        cache: "no-store",
-      }, 5_000);
-      if (!res.ok) continue;
-      const data = (await res.json()) as { access?: string };
-      return data.access ?? null;
-    } catch {
-      continue;
-    }
-  }
-  return null;
-}
-
 async function proxy(
   req: NextRequest,
   { params }: { params: Promise<{ path: string[] }> },
@@ -240,10 +222,10 @@ async function proxy(
       let res = await fetchBackend(target, { ...init, cache: "no-store" }, timeoutMs);
 
       if (res.status === 401 && refreshToken) {
-        const newAccess = await refreshAccessToken(refreshToken);
-        if (newAccess) {
-          accessToken = newAccess;
-          headers["Authorization"] = `Bearer ${newAccess}`;
+        const refreshed = await refreshSession(refreshToken, backendCandidates());
+        if (refreshed) {
+          accessToken = refreshed.access;
+          headers["Authorization"] = `Bearer ${refreshed.access}`;
           res = await fetchBackend(target, { ...init, headers, cache: "no-store" }, timeoutMs);
 
           const data = await res.text();
@@ -257,7 +239,10 @@ async function proxy(
             res,
             sharedContentToken,
           );
-          setAuthCookies(response, { access: newAccess }, refreshToken);
+          // The rotated refresh token, not the one just presented. Django has
+          // revoked that one, so writing it back would guarantee that the next
+          // silent refresh fails and the session is dropped.
+          setAuthCookies(response, refreshed, refreshToken);
           return response;
         } else {
           const response = NextResponse.json(

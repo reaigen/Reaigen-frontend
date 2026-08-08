@@ -1,14 +1,18 @@
 import { NextRequest, NextResponse } from "next/server";
 import {
+  ACCESS_COOKIE_NAME,
   REFRESH_COOKIE_NAME,
   clearAuthCookies,
   setAuthCookies,
 } from "../../../lib/server/auth-cookies";
 import { fetchBackend } from "../../../lib/server/backend-fetch";
+import { authPathCarriesSession } from "../../../lib/server/auth-paths";
 import { isSafeProxyPath } from "../../../lib/server/proxy-path";
+import { refreshSession } from "../../../lib/server/token-refresh";
 
 const BACKEND_URL =
   process.env.REAIGEN_BACKEND_URL ?? "http://localhost:8000";
+
 
 function backendCandidates(): string[] {
   const configured = BACKEND_URL.replace(/\/+$/, "");
@@ -72,6 +76,11 @@ async function proxy(
   const ct = req.headers.get("Content-Type");
   if (ct) headers["Content-Type"] = ct;
 
+  const sessionPath = authPathCarriesSession(joined);
+  const accessToken = sessionPath ? req.cookies.get(ACCESS_COOKIE_NAME)?.value ?? null : null;
+  const refreshToken = sessionPath ? req.cookies.get(REFRESH_COOKIE_NAME)?.value ?? null : null;
+  if (accessToken) headers["Authorization"] = `Bearer ${accessToken}`;
+
   const init: RequestInit = { method: req.method, headers };
 
   if (req.method !== "GET" && req.method !== "HEAD") {
@@ -81,13 +90,26 @@ async function proxy(
   for (const baseUrl of backendCandidates()) {
     const target = `${baseUrl}/api/v1/core/auth/${joined}${slash}${req.nextUrl.search}`;
     try {
-      const res = await fetchBackend(target, { ...init, cache: "no-store" }, 5_000);
+      let res = await fetchBackend(target, { ...init, cache: "no-store" }, 5_000);
+
+      // Same silent renewal the reaigen proxy performs. Without it an expired
+      // access token on, say, the settings page reads as a dead session.
+      let rotated: { access: string; refresh: string | null } | null = null;
+      if (res.status === 401 && sessionPath && refreshToken) {
+        rotated = await refreshSession(refreshToken, backendCandidates());
+        if (rotated) {
+          headers["Authorization"] = `Bearer ${rotated.access}`;
+          res = await fetchBackend(target, { ...init, headers, cache: "no-store" }, 5_000);
+        }
+      }
+
       const data = await res.text();
       const contentType = res.headers.get("Content-Type") ?? "application/json";
       const response = new NextResponse(data, {
         status: res.status,
         headers: noStoreHeaders(contentType),
       });
+      if (rotated) setAuthCookies(response, rotated, refreshToken);
 
       if (res.ok && contentType.includes("application/json")) {
         try {
