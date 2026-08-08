@@ -4925,28 +4925,11 @@ const SplatViewer = forwardRef<SplatViewerHandle, Props>(function SplatViewer(
         camera.speed = 0.3;
         camera.upVector = new BABYLON.Vector3(0, 1, 0);
 
-        // Highlight rolloff. Without it a bright reconstruction clips to flat
-        // white -- measured on a sunlit living-room capture, 1.33% of pixels
-        // pinned at >0.98, which reads as blown-out windows and floor.
-        //
-        // It has to be a real post-process: the Gaussian material bypasses
-        // scene.imageProcessingConfiguration entirely, so setting toneMapping
-        // there changes nothing (verified -- every metric identical).
-        //
-        // fromLinearSpace stays false because splat colours are already
-        // display-referred; the default linear->sRGB conversion would brighten
-        // the whole image by ~0.13 mean luminance instead of just taming the
-        // highlights.
-        //
-        // Measured on both a new capture and one from the existing library:
-        //   new file    clipped 1.332% -> 0.000%, mean 0.5420 -> 0.5140
-        //   known-good  clipped 0.000% -> 0.000%, mean 0.4403 -> 0.4368
-        // so published scans are effectively untouched.
-        const toneMap = new BABYLON.ImageProcessingPostProcess(
-          "reaiToneMap", 1.0, camera, undefined, engine,
-        );
-        toneMap.fromLinearSpace = false;
-        toneMap.toneMappingEnabled = true;
+        // No tone mapping here. Adding ACES rolloff did remove the clipped
+        // highlights (1.33% -> 0%) but flattened the image: contrast fell
+        // 0.2177 -> 0.1751 and it read as *more* washed out, not less. Zero
+        // clipped pixels was the wrong thing to optimise for -- the reference
+        // render is high-contrast with deep blacks, not highlight-safe.
 
         if (!immersiveControls) camera.attachControl(canvas, true);
         // Restore the native FreeCamera bindings used by the known-good July
