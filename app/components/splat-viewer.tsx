@@ -22,6 +22,14 @@ import type {
   TourShot,
 } from "@/app/lib/tour-types";
 import {
+  eyeFromSogViewer,
+  parseRenderTuning,
+  parseSogViewerHint,
+  resolveSplatRenderProfile,
+  type RenderTuningOverrides,
+  type SogViewerHint,
+} from "@/app/lib/splat-render-profile";
+import {
   IDENTITY_GLOBAL_SCENE_TRANSFORM,
   globalSceneScale3,
   inversePresentationPoint,
@@ -115,25 +123,9 @@ const DEFAULT_IMMERSIVE_FOV = 85 * Math.PI / 180;
 // Spinoff's accepted deterministic profile uses a 0.3 physical-pixel Mip
 // sigma. Babylon adds the supplied value directly to the 2D covariance, so
 // its equivalent material parameter is sigma squared rather than sigma.
-const GAUSSIAN_MIP_SIGMA_PIXELS = 0.3;
-const GAUSSIAN_MIP_VARIANCE =
-  GAUSSIAN_MIP_SIGMA_PIXELS * GAUSSIAN_MIP_SIGMA_PIXELS;
+// Mip kernel constants and the render profile live in
+// lib/splat-render-profile so they can be asserted against real .sog files.
 
-/**
- * Screen-space dilation for reconstructions trained with antialiasing.
- *
- * 3DGS adds 0.3 to the 2D covariance diagonal, and that 0.3 is already a
- * variance in pixel^2 -- it is not a sigma to be squared. The value above
- * squares it a second time, giving 0.09, which is roughly a third of the
- * intended dilation. A too-small kernel also weakens the opacity
- * compensation derived from it, so splats stay brighter than the exporter
- * intended: the hazy, blown-out look.
- *
- * Applied only to files that declare `antialias: true`, which were trained
- * expecting Mip-Splatting compensation. The existing library predates that
- * flag and keeps GAUSSIAN_MIP_VARIANCE, so its appearance does not move.
- */
-const GAUSSIAN_ANTIALIASED_VARIANCE = 0.3;
 
 /**
  * Render-tuning overrides, read from the URL.
@@ -154,22 +146,9 @@ const GAUSSIAN_ANTIALIASED_VARIANCE = 0.3;
  *
  * Absent from the URL, behaviour is exactly as before.
  */
-function renderTuning(): { kernel: number | null; compensation: boolean | null; sh: boolean } {
-  if (typeof window === "undefined") {
-    return { kernel: null, compensation: null, sh: true };
-  }
-  const q = new URLSearchParams(window.location.search);
-  const rawKernel = q.get("kernel");
-  const parsedKernel = rawKernel === null ? null : Number(rawKernel);
-  const rawComp = q.get("comp");
-  return {
-    kernel:
-      parsedKernel !== null && Number.isFinite(parsedKernel) && parsedKernel >= 0
-        ? parsedKernel
-        : null,
-    compensation: rawComp === null ? null : rawComp !== "0",
-    sh: q.get("sh") !== "0",
-  };
+function renderTuning(): RenderTuningOverrides {
+  if (typeof window === "undefined") return {};
+  return parseRenderTuning(window.location.search);
 }
 
 function buildFallbackShots(data: TourData, lang: string): TourShot[] {
@@ -375,41 +354,10 @@ function sampleSplatBuffer(buffer: ArrayBuffer, maximum = 24_000): SplatSample |
  * viewer block keep the derived framing untouched, so existing scans are
  * unaffected.
  */
-interface SogViewerHint {
-  target: Vec3;
-  distance: number;
-  yawRadians: number;
-  pitchRadians: number;
-}
-
-function parseSogViewerHint(meta: unknown): SogViewerHint | null {
-  const v = (meta as { viewer?: Record<string, unknown> } | null)?.viewer;
-  if (!v || typeof v !== "object") return null;
-  const target = v.target;
-  const distance = v.distance;
-  if (!Array.isArray(target) || target.length < 3) return null;
-  if (typeof distance !== "number" || !Number.isFinite(distance) || distance <= 0) return null;
-  const nums = target.slice(0, 3).map(Number);
-  if (nums.some((n) => !Number.isFinite(n))) return null;
-  const num = (x: unknown) => (typeof x === "number" && Number.isFinite(x) ? x : 0);
-  return {
-    target: [nums[0], nums[1], nums[2]] as Vec3,
-    distance,
-    yawRadians: num(v.yawRadians),
-    pitchRadians: num(v.pitchRadians),
-  };
-}
-
 /** Turn an authored camera into the SceneFrame the viewer places its camera from. */
 function sceneFrameFromSogViewer(hint: SogViewerHint, derived: SceneFrame | null): SceneFrame {
-  const { target, distance, yawRadians, pitchRadians } = hint;
-  // Spherical offset from the target, matching the exporter's yaw/pitch.
-  const cosPitch = Math.cos(pitchRadians);
-  const eye: Vec3 = [
-    target[0] - distance * cosPitch * Math.sin(yawRadians),
-    target[1] - distance * Math.sin(pitchRadians),
-    target[2] - distance * cosPitch * Math.cos(yawRadians),
-  ];
+  const { target, distance } = hint;
+  const eye = eyeFromSogViewer(hint);
   const half = distance;
   return {
     center: target,
@@ -4977,9 +4925,9 @@ const SplatViewer = forwardRef<SplatViewerHandle, Props>(function SplatViewer(
         // Match Spinoff's accepted deterministic Mip profile. Babylon's
         // material expects variance, not the user-facing pixel sigma.
         const { GaussianSplattingMaterial } = BABYLON;
-        const tuning = renderTuning();
-        GaussianSplattingMaterial.KernelSize = tuning.kernel ?? GAUSSIAN_MIP_VARIANCE;
-        GaussianSplattingMaterial.Compensation = tuning.compensation ?? true;
+        const baseProfile = resolveSplatRenderProfile({}, renderTuning());
+        GaussianSplattingMaterial.KernelSize = baseProfile.kernelSize;
+        GaussianSplattingMaterial.Compensation = baseProfile.compensation;
 
         // Reduce per-frame work
         scene.skipPointerMovePicking = true;
@@ -5658,12 +5606,12 @@ const SplatViewer = forwardRef<SplatViewerHandle, Props>(function SplatViewer(
           mat.backFaceCulling = false;
           // Set this on the concrete material as well as the Babylon default
           // so a loader-created material cannot restore its softer default.
-          const matTuning = renderTuning();
-          const trainedAntialiased = sogAntialiasRef.current;
-          mat.kernelSize =
-            matTuning.kernel
-            ?? (trainedAntialiased ? GAUSSIAN_ANTIALIASED_VARIANCE : GAUSSIAN_MIP_VARIANCE);
-          mat.compensation = matTuning.compensation ?? true;
+          const profile = resolveSplatRenderProfile(
+            { antialias: sogAntialiasRef.current },
+            renderTuning(),
+          );
+          mat.kernelSize = profile.kernelSize;
+          mat.compensation = profile.compensation;
         }
 
         let meshReady = false;
