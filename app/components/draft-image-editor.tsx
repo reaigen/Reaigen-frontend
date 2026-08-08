@@ -4,17 +4,34 @@
 import * as React from "react";
 import type { ReaiImageEditOperations } from "../lib/api/client";
 import { t } from "../lib/i18n";
+import {
+  analyzeImage,
+  mediaProxyUrl,
+  previewSize,
+  proposeTone,
+  proposeWhiteBalance,
+  renderPreview,
+  type ImageStatistics,
+  type PreviewOperations,
+} from "../lib/image-preview";
 import type { DraftUpload } from "../lib/tour-types";
+import { AdjustmentSlider } from "../lib/ui/adjustment-slider";
 import { Button } from "../lib/ui/button";
 import { cn } from "../lib/utils";
-import { CheckIcon, RotateIcon } from "./icons";
+import { RotateIcon, SparklesIcon } from "./icons";
+
+/**
+ * Rails for the colour controls, so the track shows the direction it grades in.
+ * Muted on purpose — these sit inside an otherwise monochrome panel.
+ */
+const TEMPERATURE_TRACK = "linear-gradient(90deg, #6ba3e8 0%, #d5d3cf 50%, #e8b75c 100%)";
+const TINT_TRACK = "linear-gradient(90deg, #6fb583 0%, #d5d3cf 50%, #c079b4 100%)";
+const HUE_TRACK = "linear-gradient(90deg, #c079b4 0%, #cf7d6a 25%, #d5d3cf 50%, #86b36e 75%, #5fae9e 100%)";
 
 type CropAspect = NonNullable<ReaiImageEditOperations["crop_aspect"]>;
 type Rotation = NonNullable<ReaiImageEditOperations["rotation"]>;
 
 interface EditState {
-  autoEnhance: boolean;
-  autoWhiteBalance: boolean;
   exposure: number;
   brightness: number;
   contrast: number;
@@ -30,8 +47,6 @@ interface EditState {
 }
 
 const DEFAULT_EDIT: EditState = {
-  autoEnhance: false,
-  autoWhiteBalance: false,
   exposure: 0,
   brightness: 1,
   contrast: 1,
@@ -59,9 +74,11 @@ function round(value: number) {
 }
 
 function buildOperations(state: EditState): ReaiImageEditOperations {
+  // Deliberately no `auto_enhance` / `auto_white_balance` flags: the automatic
+  // buttons now write their result into the explicit controls, so what is sent is
+  // exactly what the preview showed. Sending a flag instead would hand the
+  // backend a second, different implementation to expand it with.
   const operations: ReaiImageEditOperations = {};
-  if (state.autoEnhance) operations.auto_enhance = true;
-  if (state.autoWhiteBalance) operations.auto_white_balance = true;
   if (state.exposure !== 0) operations.exposure_ev = round(state.exposure);
   if (state.brightness !== 1) operations.brightness = round(state.brightness);
   if (state.contrast !== 1) operations.contrast = round(state.contrast);
@@ -83,46 +100,6 @@ function clampOffset(value: number) {
   return Math.max(-1, Math.min(1, value));
 }
 
-function EditorSlider({
-  label,
-  value,
-  min,
-  max,
-  step,
-  displayValue,
-  disabled,
-  onChange,
-}: {
-  label: string;
-  value: number;
-  min: number;
-  max: number;
-  step: number;
-  displayValue: string;
-  disabled: boolean;
-  onChange: (value: number) => void;
-}) {
-  return (
-    <label className="block rounded-[calc(var(--floating-panel-radius)-0.45rem)] px-1.5 py-1.5 transition-colors focus-within:bg-foreground/[0.035]">
-      <span className="mb-1.5 flex items-center justify-between gap-3 text-[10px]">
-        <span className="font-medium text-foreground/70">{label}</span>
-        <span className="min-w-10 text-right font-mono text-[9px] tabular-nums text-muted-foreground">{displayValue}</span>
-      </span>
-      <input
-        type="range"
-        value={value}
-        min={min}
-        max={max}
-        step={step}
-        disabled={disabled}
-        onChange={(event) => onChange(Number(event.target.value))}
-        aria-label={label}
-        className="h-8 w-full cursor-pointer accent-foreground disabled:cursor-not-allowed disabled:opacity-45"
-      />
-    </label>
-  );
-}
-
 export function DraftImageEditor({
   upload,
   label,
@@ -140,7 +117,17 @@ export function DraftImageEditor({
 }) {
   const [edit, setEdit] = React.useState<EditState>(DEFAULT_EDIT);
   const [showOriginal, setShowOriginal] = React.useState(false);
-  const [naturalAspect, setNaturalAspect] = React.useState(16 / 10);
+  const [naturalAspect, setNaturalAspect] = React.useState<number | null>(null);
+  const [stage, setStage] = React.useState({ width: 0, height: 0 });
+  const stageRef = React.useRef<HTMLDivElement>(null);
+  const canvasRef = React.useRef<HTMLCanvasElement>(null);
+  const [pipeline, setPipeline] = React.useState<{
+    source: ImageData;
+    target: ImageData;
+    stats: ImageStatistics;
+    width: number;
+    height: number;
+  } | null>(null);
   const cropDrag = React.useRef<{
     pointerId: number;
     startX: number;
@@ -154,22 +141,93 @@ export function DraftImageEditor({
   React.useEffect(() => {
     setEdit(DEFAULT_EDIT);
     setShowOriginal(false);
+    setNaturalAspect(null);
   }, [upload.id]);
+
+  // Pull the bytes same-origin so the canvas stays readable, then keep a pristine
+  // working copy plus its statistics. Failure is not fatal: the <img> preview
+  // below stays on CSS filters, it just cannot show the statistical controls.
+  React.useEffect(() => {
+    let cancelled = false;
+    const controller = new AbortController();
+    setPipeline(null);
+
+    void (async () => {
+      try {
+        const response = await fetch(mediaProxyUrl(upload.id), {
+          signal: controller.signal,
+          credentials: "same-origin",
+        });
+        if (!response.ok) throw new Error(`media proxy ${response.status}`);
+        const bitmap = await createImageBitmap(await response.blob());
+        const sourceWidth = bitmap.width;
+        const sourceHeight = bitmap.height;
+        const { width, height } = previewSize(sourceWidth, sourceHeight);
+
+        const scratch = document.createElement("canvas");
+        scratch.width = width;
+        scratch.height = height;
+        const context = scratch.getContext("2d", { willReadFrequently: true });
+        if (!context) throw new Error("2d context unavailable");
+        context.drawImage(bitmap, 0, 0, width, height);
+        bitmap.close?.();
+        if (cancelled) return;
+
+        const source = context.getImageData(0, 0, width, height);
+        setNaturalAspect(sourceWidth / sourceHeight);
+        setPipeline({
+          source,
+          target: context.createImageData(width, height),
+          stats: analyzeImage(source),
+          width,
+          height,
+        });
+      } catch {
+        // Aborts and proxy failures both land here; the CSS-filter path remains.
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+      controller.abort();
+    };
+  }, [upload.id]);
+
+  // The frame is sized in JS from the measured stage. Pure-CSS `aspect-ratio`
+  // contain needs whichever axis binds first, and getting it wrong is what made
+  // the layout lurch when the crop or rotation changed.
+  React.useLayoutEffect(() => {
+    const node = stageRef.current;
+    if (!node) return;
+    const observer = new ResizeObserver((entries) => {
+      const box = entries[0]?.contentRect;
+      if (box) setStage({ width: box.width, height: box.height });
+    });
+    observer.observe(node);
+    return () => observer.disconnect();
+  }, []);
 
   const operations = React.useMemo(() => buildOperations(edit), [edit]);
   const hasChanges = Object.keys(operations).length > 0;
   const chosenAspect = CROP_ASPECTS.find((option) => option.value === edit.cropAspect)?.ratio;
-  const rotatedNaturalAspect = edit.rotation === 90 || edit.rotation === 270
-    ? 1 / naturalAspect
-    : naturalAspect;
+  const rotatedNaturalAspect = naturalAspect === null
+    ? null
+    : (edit.rotation === 90 || edit.rotation === 270 ? 1 / naturalAspect : naturalAspect);
   const previewAspect = chosenAspect ?? rotatedNaturalAspect;
   const displayAspect = showOriginal ? naturalAspect : previewAspect;
+
+  const frame = React.useMemo(() => {
+    if (!displayAspect || stage.width <= 0 || stage.height <= 0) return null;
+    const width = Math.min(stage.width, stage.height * displayAspect);
+    return { width, height: width / displayAspect };
+  }, [stage.width, stage.height, displayAspect]);
+
   const effectiveBrightness = Math.max(0.15, Math.min(4, (2 ** edit.exposure) * edit.brightness));
   const previewFilter = showOriginal
     ? "none"
     : [
         `brightness(${effectiveBrightness})`,
-        `contrast(${edit.contrast * (edit.autoEnhance ? 1.06 : 1)})`,
+        `contrast(${edit.contrast})`,
         `saturate(${edit.saturation})`,
         `hue-rotate(${edit.hue}deg)`,
       ].join(" ");
@@ -181,9 +239,57 @@ export function DraftImageEditor({
     minimumFractionDigits: 2,
     maximumFractionDigits: 2,
   }), [lang]);
+  const resetLabel = t("draft.media.resetEdits", lang);
+  const cropLocked = edit.cropAspect === "original";
+
+  // Deliberately keyed on the individual grading fields rather than `edit`:
+  // panning a crop mutates `edit` on every pointermove, and re-grading the whole
+  // working copy on each of those would stall the drag.
+  const previewOperations = React.useMemo<PreviewOperations>(() => ({
+    exposure: edit.exposure,
+    brightness: edit.brightness,
+    contrast: edit.contrast,
+    saturation: edit.saturation,
+    sharpness: edit.sharpness,
+    temperature: edit.temperature,
+    tint: edit.tint,
+    hue: edit.hue,
+  }), [
+    edit.exposure, edit.brightness,
+    edit.contrast, edit.saturation, edit.sharpness, edit.temperature,
+    edit.tint, edit.hue,
+  ]);
+
+  React.useEffect(() => {
+    if (!pipeline) return;
+    const canvas = canvasRef.current;
+    const context = canvas?.getContext("2d");
+    if (!context) return;
+    const handle = requestAnimationFrame(() => {
+      if (showOriginal) {
+        context.putImageData(pipeline.source, 0, 0);
+        return;
+      }
+      renderPreview(pipeline.source, pipeline.target, previewOperations, null);
+      context.putImageData(pipeline.target, 0, 0);
+    });
+    return () => cancelAnimationFrame(handle);
+  }, [pipeline, previewOperations, showOriginal]);
 
   const setValue = <K extends keyof EditState>(key: K, value: EditState[K]) => {
     setEdit((current) => ({ ...current, [key]: value }));
+  };
+
+  /**
+   * Analyse the pristine working copy and move the relevant sliders to what the
+   * estimator chose. Nothing is applied invisibly, and the values are ordinary
+   * control values afterwards — resettable, adjustable, and saved verbatim.
+   */
+  const applyAuto = (kind: "tone" | "balance") => {
+    if (!pipeline) return;
+    setEdit((current) => (kind === "balance"
+      ? { ...current, ...proposeWhiteBalance(pipeline.stats) }
+      : { ...current, ...proposeTone(pipeline.stats) }));
   };
 
   const rotate = (direction: -1 | 1) => {
@@ -194,7 +300,7 @@ export function DraftImageEditor({
   };
 
   const beginCropDrag = (event: React.PointerEvent<HTMLDivElement>) => {
-    if (edit.cropAspect === "original" || busy || showOriginal) return;
+    if (cropLocked || busy || showOriginal) return;
     const bounds = event.currentTarget.getBoundingClientRect();
     cropDrag.current = {
       pointerId: event.pointerId,
@@ -224,220 +330,262 @@ export function DraftImageEditor({
     }
   };
 
-  const temperatureOpacity = showOriginal ? 0 : Math.abs(edit.temperature) * 0.18;
-  const tintOpacity = showOriginal ? 0 : Math.abs(edit.tint) * 0.14;
+  // Crop framing and rotation are geometry, so they apply the same way whether
+  // the pixels come from the canvas or the CSS-filter fallback.
+  const rotated = !showOriginal && (edit.rotation === 90 || edit.rotation === 270);
+  const framingStyle: React.CSSProperties = {
+    objectPosition: showOriginal
+      ? "50% 50%"
+      : `${50 + (edit.cropX * 50)}% ${50 + (edit.cropY * 50)}%`,
+    width: rotated ? `${100 / Math.max(previewAspect ?? 1, 0.01)}%` : "100%",
+    height: rotated ? `${(previewAspect ?? 1) * 100}%` : "100%",
+    transform: `translate(-50%, -50%) rotate(${showOriginal ? 0 : edit.rotation}deg)`,
+  };
+
+  // Only used by the fallback <img>: once the canvas is live it carries the real
+  // grade, and layering a CSS filter on top would apply everything twice.
+  const temperatureOpacity = pipeline || showOriginal ? 0 : Math.abs(edit.temperature) * 0.18;
+  const tintOpacity = pipeline || showOriginal ? 0 : Math.abs(edit.tint) * 0.14;
+
+  // A plain segmented control, not `floating-toolbar` + `floating-control-sm`:
+  // that pairing is 50px tall inside a 44px header, so it hung past the header
+  // onto the canvas and its drop shadow read as a detached palette.
+  const compareButton = (originalView: boolean, text: string) => (
+    <button
+      type="button"
+      onClick={() => setShowOriginal(originalView)}
+      aria-pressed={showOriginal === originalView}
+      className={cn(
+        "h-7 rounded-full px-3 text-[11px] font-medium transition-colors",
+        "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+        showOriginal === originalView
+          ? "bg-foreground text-background"
+          : "text-muted-foreground hover:text-foreground",
+      )}
+    >
+      {text}
+    </button>
+  );
 
   return (
-    <div className="grid items-start gap-4 min-[760px]:grid-cols-[minmax(0,1.25fr)_minmax(17rem,0.75fr)]">
-      <section className="floating-panel-shape min-w-0 overflow-hidden border border-border/65 bg-card">
-        <div className="flex min-h-12 items-center justify-between gap-3 border-b border-border/55 px-3.5">
-          <div className="min-w-0">
-            <p className="truncate text-[12px] font-semibold" title={label}>{label}</p>
-            <p className="text-[9px] text-muted-foreground">{t("draft.media.livePreview", lang)}</p>
-          </div>
-          <div className="floating-toolbar grid shrink-0 grid-cols-2 p-1">
-            <button
-              type="button"
-              onClick={() => setShowOriginal(true)}
-              aria-pressed={showOriginal}
-              className={cn(
-                "floating-control-sm px-2.5 text-[9px] font-semibold",
-                showOriginal ? "bg-foreground text-background" : "text-muted-foreground hover:text-foreground",
-              )}
-            >
-              {t("reai.mediaOriginal", lang)}
-            </button>
-            <button
-              type="button"
-              onClick={() => setShowOriginal(false)}
-              aria-pressed={!showOriginal}
-              className={cn(
-                "floating-control-sm px-2.5 text-[9px] font-semibold",
-                !showOriginal ? "bg-foreground text-background" : "text-muted-foreground hover:text-foreground",
-              )}
-            >
-              {t("draft.media.editedPreview", lang)}
-            </button>
+    <div className="flex min-h-0 min-w-0 flex-1 flex-col min-[820px]:flex-row">
+      {/* Stage. Fixed share of the box: the frame resizes inside it, nothing outside moves. */}
+      <section className="flex h-[46%] min-h-0 min-w-0 shrink-0 flex-col bg-foreground/[0.075] min-[820px]:h-auto min-[820px]:flex-1">
+        <div className="flex min-h-11 shrink-0 items-center justify-between gap-3 border-b border-border/50 bg-card/60 px-3">
+          <p className="truncate text-[11px] font-medium text-muted-foreground" title={label}>
+            {label}
+          </p>
+          <div className="flex shrink-0 items-center gap-0.5 rounded-full border border-border/60 bg-background/70 p-0.5">
+            {compareButton(true, t("reai.mediaOriginal", lang))}
+            {compareButton(false, t("draft.media.editedPreview", lang))}
           </div>
         </div>
 
-        <div className="flex min-h-[24rem] items-center justify-center bg-black/[0.035] p-3 sm:p-5">
-          <div
-            className={cn(
-              "relative max-h-[68dvh] w-full max-w-3xl touch-none select-none overflow-hidden rounded-[calc(var(--floating-panel-radius)-0.35rem)] bg-black shadow-card",
-              edit.cropAspect !== "original" && !showOriginal && "cursor-move",
-            )}
-            style={{ aspectRatio: displayAspect }}
-            onPointerDown={beginCropDrag}
-            onPointerMove={continueCropDrag}
-            onPointerUp={finishCropDrag}
-            onPointerCancel={finishCropDrag}
-          >
-            <img
-              src={upload.file_url}
-              alt={label}
-              draggable={false}
-              onLoad={(event) => {
-                const image = event.currentTarget;
-                if (image.naturalWidth && image.naturalHeight) {
-                  setNaturalAspect(image.naturalWidth / image.naturalHeight);
-                }
-              }}
-              className={cn(
-                "absolute left-1/2 top-1/2 max-w-none transition-[filter,transform,object-position,width,height] duration-150 motion-reduce:transition-none",
-                edit.cropAspect === "original" ? "object-contain" : "object-cover",
-              )}
-              style={{
-                filter: previewFilter,
-                objectPosition: showOriginal
-                  ? "50% 50%"
-                  : `${50 + (edit.cropX * 50)}% ${50 + (edit.cropY * 50)}%`,
-                width: !showOriginal && (edit.rotation === 90 || edit.rotation === 270)
-                  ? `${100 / Math.max(previewAspect, 0.01)}%`
-                  : "100%",
-                height: !showOriginal && (edit.rotation === 90 || edit.rotation === 270)
-                  ? `${previewAspect * 100}%`
-                  : "100%",
-                transform: `translate(-50%, -50%) rotate(${showOriginal ? 0 : edit.rotation}deg)`,
-              }}
-            />
-            <span
-              aria-hidden="true"
-              className="pointer-events-none absolute inset-0 transition-opacity"
-              style={{
-                background: edit.temperature >= 0 ? "#ff9a4d" : "#4d8dff",
-                mixBlendMode: "soft-light",
-                opacity: temperatureOpacity,
-              }}
-            />
-            <span
-              aria-hidden="true"
-              className="pointer-events-none absolute inset-0 transition-opacity"
-              style={{
-                background: edit.tint >= 0 ? "#d959b8" : "#46aa72",
-                mixBlendMode: "soft-light",
-                opacity: tintOpacity,
-              }}
-            />
-            {edit.cropAspect !== "original" && !showOriginal ? (
-              <span className="pointer-events-none absolute inset-0 border border-white/50 shadow-[inset_0_0_0_1px_rgba(0,0,0,0.18)]" aria-hidden="true" />
+        <div className="relative min-h-0 flex-1">
+          <div ref={stageRef} className="absolute inset-3 flex items-center justify-center sm:inset-4">
+            {/* Learn the photo's real shape before drawing any frame. Seeding a 16/10
+                guess and correcting it on load snapped the whole stage on every open,
+                worst on portrait photos where the frame flipped wide → tall. */}
+            {naturalAspect === null ? (
+              <img
+                src={upload.file_url}
+                alt=""
+                aria-hidden="true"
+                className="pointer-events-none absolute h-px w-px opacity-0"
+                onLoad={(event) => {
+                  const image = event.currentTarget;
+                  if (image.naturalWidth && image.naturalHeight) {
+                    setNaturalAspect(image.naturalWidth / image.naturalHeight);
+                  }
+                }}
+              />
+            ) : null}
+            {frame ? (
+              <div
+                className={cn(
+                  "relative touch-none select-none overflow-hidden rounded-lg bg-background shadow-soft",
+                  "transition-[width,height] duration-150 motion-reduce:transition-none",
+                  !cropLocked && !showOriginal && "cursor-move",
+                )}
+                style={{ width: frame.width, height: frame.height }}
+                onPointerDown={beginCropDrag}
+                onPointerMove={continueCropDrag}
+                onPointerUp={finishCropDrag}
+                onPointerCancel={finishCropDrag}
+              >
+                {pipeline ? (
+                  <canvas
+                    ref={canvasRef}
+                    width={pipeline.width}
+                    height={pipeline.height}
+                    aria-label={label}
+                    role="img"
+                    className={cn(
+                      "absolute left-1/2 top-1/2 max-w-none transition-[object-position] duration-150 motion-reduce:transition-none",
+                      cropLocked ? "object-contain" : "object-cover",
+                    )}
+                    style={framingStyle}
+                  />
+                ) : (
+                  <img
+                    src={upload.file_url}
+                    alt={label}
+                    draggable={false}
+                    className={cn(
+                      "absolute left-1/2 top-1/2 max-w-none transition-[filter,object-position] duration-150 motion-reduce:transition-none",
+                      cropLocked ? "object-contain" : "object-cover",
+                    )}
+                    style={{ ...framingStyle, filter: previewFilter }}
+                  />
+                )}
+                <span
+                  aria-hidden="true"
+                  className="pointer-events-none absolute inset-0 transition-opacity"
+                  style={{
+                    background: edit.temperature >= 0 ? "#ff9a4d" : "#4d8dff",
+                    mixBlendMode: "soft-light",
+                    opacity: temperatureOpacity,
+                  }}
+                />
+                <span
+                  aria-hidden="true"
+                  className="pointer-events-none absolute inset-0 transition-opacity"
+                  style={{
+                    background: edit.tint >= 0 ? "#d959b8" : "#46aa72",
+                    mixBlendMode: "soft-light",
+                    opacity: tintOpacity,
+                  }}
+                />
+                {!cropLocked && !showOriginal ? (
+                  <span
+                    aria-hidden="true"
+                    className="pointer-events-none absolute inset-0 border border-white/50 shadow-[inset_0_0_0_1px_rgba(0,0,0,0.18)]"
+                  />
+                ) : null}
+              </div>
             ) : null}
           </div>
         </div>
-        <p className="border-t border-border/55 px-4 py-3 text-[10px] leading-relaxed text-muted-foreground">
-          {t("draft.media.editorPreviewHint", lang)}
-        </p>
       </section>
 
-      <aside className="space-y-3">
-        <section className="floating-panel-shape border border-border/65 bg-card p-3.5">
-          <p className="text-[10px] font-semibold uppercase tracking-[0.11em] text-muted-foreground">
-            {t("draft.media.adjustments", lang)}
-          </p>
-          <div className="mt-3 grid grid-cols-2 gap-2">
-            {([
-              ["autoEnhance", "reai.mediaOperation.auto_enhance"],
-              ["autoWhiteBalance", "reai.mediaOperation.auto_white_balance"],
-            ] as const).map(([key, labelKey]) => {
-              const active = edit[key];
-              return (
+      {/* One continuous rail: hairline-divided sections, its own scroll, pinned actions. */}
+      <aside className="flex min-h-0 flex-1 flex-col border-t border-border/55 bg-card min-[820px]:w-[19.5rem] min-[820px]:flex-none min-[820px]:border-l min-[820px]:border-t-0">
+        <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain scrollbar-thin">
+          <section className="border-b border-border/55 px-3.5 py-3">
+            <p className="text-[11px] font-semibold uppercase tracking-[0.11em] text-muted-foreground">
+              {t("draft.media.adjustments", lang)}
+            </p>
+            {/* Actions, not toggles. Auto now writes its result into the sliders
+                below, so you can see what it decided and adjust from there —
+                and what gets saved is exactly what the preview showed. */}
+            <div className="mt-2.5 grid grid-cols-2 gap-2">
+              {([
+                ["tone", "reai.mediaOperation.auto_enhance"],
+                ["balance", "reai.mediaOperation.auto_white_balance"],
+              ] as const).map(([kind, labelKey]) => (
                 <button
-                  key={key}
+                  key={kind}
                   type="button"
-                  onClick={() => setValue(key, !active)}
-                  disabled={busy}
-                  aria-pressed={active}
+                  onClick={() => applyAuto(kind)}
+                  disabled={busy || !pipeline}
+                  title={pipeline ? undefined : t("draft.media.livePreview", lang)}
                   className={cn(
-                    "min-h-11 rounded-[calc(var(--floating-panel-radius)-0.45rem)] border px-2.5 py-2 text-left text-[9px] font-semibold transition-colors disabled:opacity-45",
-                    active
-                      ? "border-foreground bg-foreground text-background"
-                      : "border-border/70 bg-background/45 text-foreground/65 hover:border-foreground/35 hover:text-foreground",
+                    "min-h-11 rounded-xl border px-2.5 py-2 text-left text-[11px] font-medium transition-colors",
+                    "border-border/70 bg-background/45 text-foreground/75",
+                    "hover:border-foreground/35 hover:text-foreground",
+                    "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+                    "disabled:opacity-45",
                   )}
                 >
                   <span className="flex items-center gap-1.5">
-                    <CheckIcon size={12} className={active ? "opacity-100" : "opacity-25"} />
+                    <SparklesIcon size={12} className="shrink-0" />
                     {t(labelKey, lang)}
                   </span>
                 </button>
-              );
-            })}
-          </div>
-          <div className="mt-2 space-y-0.5">
-            <EditorSlider label={t("reai.mediaOperation.exposure_ev", lang)} value={edit.exposure} min={-2} max={2} step={0.05} displayValue={`${formatter.format(edit.exposure)} EV`} disabled={busy} onChange={(value) => setValue("exposure", value)} />
-            <EditorSlider label={t("reai.mediaOperation.brightness", lang)} value={edit.brightness} min={0.5} max={1.5} step={0.05} displayValue={neutralFormatter.format(edit.brightness)} disabled={busy} onChange={(value) => setValue("brightness", value)} />
-            <EditorSlider label={t("reai.mediaOperation.contrast", lang)} value={edit.contrast} min={0.5} max={1.5} step={0.05} displayValue={neutralFormatter.format(edit.contrast)} disabled={busy} onChange={(value) => setValue("contrast", value)} />
-            <EditorSlider label={t("reai.mediaOperation.saturation", lang)} value={edit.saturation} min={0.5} max={1.5} step={0.05} displayValue={neutralFormatter.format(edit.saturation)} disabled={busy} onChange={(value) => setValue("saturation", value)} />
-            <EditorSlider label={t("reai.mediaOperation.sharpness", lang)} value={edit.sharpness} min={0.5} max={1.5} step={0.05} displayValue={neutralFormatter.format(edit.sharpness)} disabled={busy} onChange={(value) => setValue("sharpness", value)} />
-            <EditorSlider label={t("reai.mediaOperation.temperature", lang)} value={edit.temperature} min={-1} max={1} step={0.05} displayValue={formatter.format(edit.temperature)} disabled={busy} onChange={(value) => setValue("temperature", value)} />
-            <EditorSlider label={t("reai.mediaOperation.tint", lang)} value={edit.tint} min={-1} max={1} step={0.05} displayValue={formatter.format(edit.tint)} disabled={busy} onChange={(value) => setValue("tint", value)} />
-            <EditorSlider label={t("reai.mediaOperation.hue_degrees", lang)} value={edit.hue} min={-45} max={45} step={1} displayValue={`${formatter.format(edit.hue)}°`} disabled={busy} onChange={(value) => setValue("hue", value)} />
-          </div>
-        </section>
-
-        <section className="floating-panel-shape border border-border/65 bg-card p-3.5">
-          <div className="flex items-center justify-between gap-3">
-            <p className="text-[10px] font-semibold uppercase tracking-[0.11em] text-muted-foreground">
-              {t("draft.media.cropAndRotate", lang)}
-            </p>
-            <span className="text-[9px] tabular-nums text-muted-foreground">{edit.rotation}°</span>
-          </div>
-          <div className="mt-3 grid grid-cols-5 gap-1">
-            {CROP_ASPECTS.map((option) => (
-              <button
-                key={option.value}
-                type="button"
-                onClick={() => setEdit((current) => ({
-                  ...current,
-                  cropAspect: option.value,
-                  cropX: option.value === "original" ? 0 : current.cropX,
-                  cropY: option.value === "original" ? 0 : current.cropY,
-                }))}
-                disabled={busy}
-                aria-pressed={edit.cropAspect === option.value}
-                className={cn(
-                  "min-h-9 rounded-full border px-1.5 text-[9px] font-semibold transition-colors disabled:opacity-45",
-                  edit.cropAspect === option.value
-                    ? "border-foreground bg-foreground text-background"
-                    : "border-border/70 text-muted-foreground hover:border-foreground/35 hover:text-foreground",
-                )}
-              >
-                {option.value === "original" ? t("draft.media.cropOriginal", lang) : option.value}
-              </button>
-            ))}
-          </div>
-          {edit.cropAspect !== "original" ? (
-            <div className="mt-2 space-y-0.5">
-              <EditorSlider label={t("draft.media.cropX", lang)} value={edit.cropX} min={-1} max={1} step={0.02} displayValue={formatter.format(edit.cropX)} disabled={busy} onChange={(value) => setValue("cropX", value)} />
-              <EditorSlider label={t("draft.media.cropY", lang)} value={edit.cropY} min={-1} max={1} step={0.02} displayValue={formatter.format(edit.cropY)} disabled={busy} onChange={(value) => setValue("cropY", value)} />
+              ))}
             </div>
-          ) : null}
-          <div className="mt-3 grid grid-cols-2 gap-2">
-            <Button type="button" variant="outline" size="sm" onClick={() => rotate(-1)} disabled={busy} className="w-full px-2 text-[9px]">
-              <RotateIcon size={13} className="scale-x-[-1]" /> {t("draft.media.rotateLeft", lang)}
-            </Button>
-            <Button type="button" variant="outline" size="sm" onClick={() => rotate(1)} disabled={busy} className="w-full px-2 text-[9px]">
-              <RotateIcon size={13} /> {t("draft.media.rotateRight", lang)}
-            </Button>
-          </div>
-        </section>
+            <div className="mt-2">
+              <AdjustmentSlider label={t("reai.mediaOperation.exposure_ev", lang)} value={edit.exposure} min={-2} max={2} step={0.05} origin={0} displayValue={`${formatter.format(edit.exposure)} EV`} resetLabel={resetLabel} disabled={busy} onChange={(value) => setValue("exposure", value)} />
+              <AdjustmentSlider label={t("reai.mediaOperation.brightness", lang)} value={edit.brightness} min={0.5} max={1.5} step={0.05} origin={1} displayValue={neutralFormatter.format(edit.brightness)} resetLabel={resetLabel} disabled={busy} onChange={(value) => setValue("brightness", value)} />
+              <AdjustmentSlider label={t("reai.mediaOperation.contrast", lang)} value={edit.contrast} min={0.5} max={1.5} step={0.05} origin={1} displayValue={neutralFormatter.format(edit.contrast)} resetLabel={resetLabel} disabled={busy} onChange={(value) => setValue("contrast", value)} />
+              <AdjustmentSlider label={t("reai.mediaOperation.saturation", lang)} value={edit.saturation} min={0.5} max={1.5} step={0.05} origin={1} displayValue={neutralFormatter.format(edit.saturation)} resetLabel={resetLabel} disabled={busy} onChange={(value) => setValue("saturation", value)} />
+              <AdjustmentSlider label={t("reai.mediaOperation.sharpness", lang)} value={edit.sharpness} min={0.5} max={1.5} step={0.05} origin={1} displayValue={neutralFormatter.format(edit.sharpness)} resetLabel={resetLabel} disabled={busy} onChange={(value) => setValue("sharpness", value)} />
+              <AdjustmentSlider label={t("reai.mediaOperation.temperature", lang)} value={edit.temperature} min={-1} max={1} step={0.05} origin={0} trackGradient={TEMPERATURE_TRACK} displayValue={formatter.format(edit.temperature)} resetLabel={resetLabel} disabled={busy} onChange={(value) => setValue("temperature", value)} />
+              <AdjustmentSlider label={t("reai.mediaOperation.tint", lang)} value={edit.tint} min={-1} max={1} step={0.05} origin={0} trackGradient={TINT_TRACK} displayValue={formatter.format(edit.tint)} resetLabel={resetLabel} disabled={busy} onChange={(value) => setValue("tint", value)} />
+              <AdjustmentSlider label={t("reai.mediaOperation.hue_degrees", lang)} value={edit.hue} min={-45} max={45} step={1} origin={0} trackGradient={HUE_TRACK} displayValue={`${formatter.format(edit.hue)}°`} resetLabel={resetLabel} disabled={busy} onChange={(value) => setValue("hue", value)} />
+            </div>
+          </section>
 
-        <section className="floating-panel-shape border border-border/65 bg-card p-3.5">
-          <p className="text-[10px] leading-relaxed text-muted-foreground">{t("reai.mediaCreateHint", lang)}</p>
-          {!hasChanges ? (
-            <p role="status" className="mt-2 text-[10px] font-medium text-foreground/55">{t("draft.media.noEdits", lang)}</p>
-          ) : null}
-          <div className="mt-3 grid grid-cols-2 gap-2">
+          <section className="px-3.5 py-3">
+            <div className="flex items-center justify-between gap-3">
+              <p className="text-[11px] font-semibold uppercase tracking-[0.11em] text-muted-foreground">
+                {t("draft.media.cropAndRotate", lang)}
+              </p>
+              <span className="w-10 text-right text-[11px] tabular-nums text-muted-foreground">
+                {edit.rotation}°
+              </span>
+            </div>
+            <div className="mt-2.5 grid grid-cols-5 gap-1">
+              {CROP_ASPECTS.map((option) => (
+                <button
+                  key={option.value}
+                  type="button"
+                  onClick={() => setEdit((current) => ({
+                    ...current,
+                    cropAspect: option.value,
+                    cropX: option.value === "original" ? 0 : current.cropX,
+                    cropY: option.value === "original" ? 0 : current.cropY,
+                  }))}
+                  disabled={busy}
+                  aria-pressed={edit.cropAspect === option.value}
+                  className={cn(
+                    "min-h-9 rounded-full border px-1.5 text-[11px] font-medium transition-colors disabled:opacity-45",
+                    edit.cropAspect === option.value
+                      ? "border-foreground bg-foreground text-background"
+                      : "border-border/70 text-muted-foreground hover:border-foreground/35 hover:text-foreground",
+                  )}
+                >
+                  {option.value === "original" ? t("draft.media.cropOriginal", lang) : option.value}
+                </button>
+              ))}
+            </div>
+            {/* Always mounted, disabled while the crop is unconstrained — mounting these
+                on demand pushed everything below them down. */}
+            <div className="mt-2">
+              <AdjustmentSlider label={t("draft.media.cropX", lang)} value={edit.cropX} min={-1} max={1} step={0.02} origin={0} displayValue={formatter.format(edit.cropX)} resetLabel={resetLabel} disabled={busy || cropLocked} onChange={(value) => setValue("cropX", value)} />
+              <AdjustmentSlider label={t("draft.media.cropY", lang)} value={edit.cropY} min={-1} max={1} step={0.02} origin={0} displayValue={formatter.format(edit.cropY)} resetLabel={resetLabel} disabled={busy || cropLocked} onChange={(value) => setValue("cropY", value)} />
+            </div>
+            <div className="mt-2.5 grid grid-cols-2 gap-2">
+              <Button type="button" variant="outline" size="sm" onClick={() => rotate(-1)} disabled={busy} className="w-full px-2 text-[11px]">
+                <RotateIcon size={13} className="scale-x-[-1]" /> {t("draft.media.rotateLeft", lang)}
+              </Button>
+              <Button type="button" variant="outline" size="sm" onClick={() => rotate(1)} disabled={busy} className="w-full px-2 text-[11px]">
+                <RotateIcon size={13} /> {t("draft.media.rotateRight", lang)}
+              </Button>
+            </div>
+          </section>
+        </div>
+
+        <div className="shrink-0 border-t border-border/55 bg-card px-3.5 py-3">
+          <div className="grid grid-cols-2 gap-2">
             <Button type="button" variant="outline" onClick={() => setEdit(DEFAULT_EDIT)} disabled={busy || !hasChanges} className="w-full">
-              {t("draft.media.resetEdits", lang)}
+              {resetLabel}
             </Button>
-            <Button type="button" onClick={() => void onSave(operations)} disabled={busy || !hasChanges} loading={busy} className="w-full px-3">
+            <Button
+              type="button"
+              onClick={() => void onSave(operations)}
+              disabled={busy || !hasChanges}
+              loading={busy}
+              title={hasChanges ? undefined : t("draft.media.noEdits", lang)}
+              className="w-full px-3"
+            >
               {t("draft.media.saveAsVersion", lang)}
             </Button>
           </div>
-          <Button type="button" variant="ghost" size="sm" onClick={onCancel} disabled={busy} className="mt-2 w-full">
+          <Button type="button" variant="ghost" size="sm" onClick={onCancel} disabled={busy} className="mt-1.5 w-full">
             {t("common.cancel", lang)}
           </Button>
-        </section>
+        </div>
       </aside>
     </div>
   );

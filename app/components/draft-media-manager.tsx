@@ -1044,6 +1044,10 @@ export function DraftMediaManager({
     </div>
   ) : null;
 
+  // The editor needs a wider stage than the browsing views: at 920px a portrait
+  // photo binds on width and strands a band of empty canvas above and below it.
+  const panelWidthClass = view === "editor" ? "sm:max-w-[1180px]" : "sm:max-w-[920px]";
+
   return (
     <SidePanel
       open={open}
@@ -1051,8 +1055,15 @@ export function DraftMediaManager({
       title={t(view === "gallery" ? "draft.media.title" : view === "editor" ? "draft.media.editPhoto" : "reai.mediaVersions", lang)}
       description={draft.title || t("dashboard.untitled", lang)}
       headerMode="editor"
-      className="sm:max-w-[920px]"
-      contentClassName="media-manager-workspace"
+      className={panelWidthClass}
+      contentClassName={cn(
+        "media-manager-workspace",
+        // The editor owns the whole content box and scrolls its own rail, so the
+        // page chrome never moves while you grade. Everything else scrolls normally.
+        // `sm:px-0` is required as well: an unprefixed `p-0` does not override the
+        // panel's `sm:px-6`, which otherwise leaves a bare strip beside the stage.
+        view === "editor" && "flex overflow-hidden p-0 sm:px-0",
+      )}
       contentRef={contentRef}
       closeIcon={view === "gallery" ? "close" : "back"}
       onBack={view === "gallery" ? undefined : () => switchView("gallery")}
@@ -1082,9 +1093,9 @@ export function DraftMediaManager({
 
       {view === "editor" ? (
         editingGroup ? (
-          <>
+          <div className="flex min-h-0 min-w-0 flex-1 flex-col">
             {error ? (
-              <div role="alert" className="floating-panel-shape mb-4 flex items-start justify-between gap-3 border border-red-500/20 bg-red-500/[0.055] px-4 py-3 text-[11px] leading-relaxed text-red-800">
+              <div role="alert" className="flex shrink-0 items-start justify-between gap-3 border-b border-red-500/20 bg-red-500/[0.055] px-4 py-3 text-[11px] leading-relaxed text-red-800">
                 <span>{error}</span>
                 <Button type="button" variant="ghost" size="xs" onClick={() => setError(null)} className="shrink-0 text-red-900 hover:bg-red-500/10 hover:text-red-900">
                   {t("common.dismiss", lang)}
@@ -1099,9 +1110,9 @@ export function DraftMediaManager({
               onCancel={() => switchView("gallery")}
               onSave={saveEditedVersion}
             />
-          </>
+          </div>
         ) : (
-          <div className="floating-panel-shape border border-dashed border-border/70 bg-card px-6 py-14 text-center">
+          <div className="floating-panel-shape m-5 flex-1 border border-dashed border-border/70 bg-card px-6 py-14 text-center">
             <ImageIcon size={23} className="mx-auto text-foreground/25" />
             <Button type="button" variant="outline" size="sm" className="mt-4" onClick={() => switchView("gallery")}>
               {t("common.back", lang)}
@@ -1668,14 +1679,16 @@ export function DraftMediaManager({
                         </span>
                       </div>
                       {isSelected && group.kind === "image" ? group.visible ? (
-                        <div className="media-manager-card-actions grid grid-cols-2 gap-1.5">
+                        /* One column: at card width a 2-up grid leaves ~70px for the
+                           label, and Slovak/German labels then spill out of the pill. */
+                        <div className="media-manager-card-actions grid gap-1.5">
                           <Button
                             type="button"
                             size="sm"
                             variant="secondary"
                             onClick={() => openImageEditor(group)}
                             disabled={busy}
-                            className="min-h-10 w-full px-2 text-[10px]"
+                            className="min-h-10 w-full justify-start px-3 text-[11px]"
                           >
                             <EditIcon size={13} /> {t("draft.media.editPhoto", lang)}
                           </Button>
@@ -1685,7 +1698,7 @@ export function DraftMediaManager({
                             variant="secondary"
                             onClick={() => requestVersionUpload(group)}
                             disabled={galleryActionDisabled}
-                            className="min-h-10 w-full px-2 text-[10px]"
+                            className="min-h-10 w-full justify-start px-3 text-[11px]"
                           >
                             <UploadIcon size={13} /> {t("draft.media.uploadVersion", lang)}
                           </Button>
@@ -1712,7 +1725,7 @@ export function DraftMediaManager({
                               setConfirmAction({ kind: "hide", groupId: group.id });
                             }}
                             disabled={galleryActionDisabled}
-                            className="min-h-10 w-full px-2 text-[10px]"
+                            className="min-h-10 w-full justify-start px-3 text-[11px]"
                             aria-label={t("draft.media.hideFromGallery", lang)}
                             title={t("draft.media.hideFromGallery", lang)}
                           >
@@ -1763,7 +1776,7 @@ export function DraftMediaManager({
           <aside className="floating-panel media-manager-inspector sticky top-0 min-w-0 overflow-hidden">
             {selected ? (
               <>
-                <div className="relative aspect-[16/9] overflow-hidden bg-black/[0.035]">
+                <div className="relative aspect-[16/10] overflow-hidden bg-surface-subtle">
                   <motion.div
                     key={selected.id}
                     initial={{ opacity: 0.45, scale: 1.01 }}
@@ -1771,7 +1784,9 @@ export function DraftMediaManager({
                     transition={{ duration: 0.18 }}
                     className="absolute inset-0"
                   >
-                    <MediaVisual upload={selected.active} alt={selectedLabel} className="object-contain" />
+                    {/* Fill the frame like the grid cards do. object-contain letterboxed
+                        portrait photos and stranded the cover badge over empty space. */}
+                    <MediaVisual upload={selected.active} alt={selectedLabel} />
                   </motion.div>
                   {replacingId === selected.id ? <LoadingMark label={t("draft.media.uploadingVersion", lang)} /> : null}
                   {selected.id === coverId ? (
@@ -1802,11 +1817,14 @@ export function DraftMediaManager({
                     </p>
                   ) : null}
                   {selected.kind === "image" ? (
-                    <div className="mt-4 grid grid-cols-2 gap-2">
-                      <Button type="button" variant="secondary" className="w-full px-2.5 text-[10px]" onClick={() => openImageEditor(selected)} disabled={busy}>
+                    /* Stacked, not side by side: the inspector is 17rem, which leaves
+                       ~72px per column for the label. "Nahrať novú verziu" and the
+                       German equivalent overflow the pill, since Button is nowrap. */
+                    <div className="mt-4 grid gap-2">
+                      <Button type="button" variant="secondary" className="w-full justify-start px-3 text-[11px]" onClick={() => openImageEditor(selected)} disabled={busy}>
                         <EditIcon size={14} /> {t("draft.media.editPhoto", lang)}
                       </Button>
-                      <Button type="button" variant="secondary" className="w-full px-2.5 text-[10px]" onClick={() => requestVersionUpload(selected)} disabled={busy || !selected.active.logical_asset_id} title={t("draft.media.uploadVersionHint", lang)}>
+                      <Button type="button" variant="secondary" className="w-full justify-start px-3 text-[11px]" onClick={() => requestVersionUpload(selected)} disabled={busy || !selected.active.logical_asset_id} title={t("draft.media.uploadVersionHint", lang)}>
                         <UploadIcon size={14} /> {t("draft.media.uploadVersion", lang)}
                       </Button>
                     </div>

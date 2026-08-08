@@ -6,7 +6,13 @@ import { cva, type VariantProps } from "class-variance-authority";
 import { cn } from "../utils";
 
 const buttonVariants = cva(
-  "inline-flex items-center justify-center gap-2 whitespace-nowrap rounded-full text-sm font-medium transition-all duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50 [&_svg]:pointer-events-none [&_svg]:size-4 [&_svg]:shrink-0",
+  // `min-w-0 overflow-hidden` is a containment guard, not styling: the label is
+  // `whitespace-nowrap`, so in any narrow flex/grid cell it used to escape the
+  // pill and overlap whatever sat beside it — which happened repeatedly in the
+  // longer locales (sk/cs/de) before it was ever noticed in English.
+  // The focus ring is a box-shadow and is painted outside the border box, so it
+  // is not clipped by this.
+  "inline-flex min-w-0 items-center justify-center gap-2 overflow-hidden whitespace-nowrap rounded-full text-sm font-medium transition-all duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50 [&_svg]:pointer-events-none [&_svg]:size-4 [&_svg]:shrink-0",
   {
     variants: {
       variant: {
