@@ -120,6 +120,22 @@ const GAUSSIAN_MIP_VARIANCE =
   GAUSSIAN_MIP_SIGMA_PIXELS * GAUSSIAN_MIP_SIGMA_PIXELS;
 
 /**
+ * Screen-space dilation for reconstructions trained with antialiasing.
+ *
+ * 3DGS adds 0.3 to the 2D covariance diagonal, and that 0.3 is already a
+ * variance in pixel^2 -- it is not a sigma to be squared. The value above
+ * squares it a second time, giving 0.09, which is roughly a third of the
+ * intended dilation. A too-small kernel also weakens the opacity
+ * compensation derived from it, so splats stay brighter than the exporter
+ * intended: the hazy, blown-out look.
+ *
+ * Applied only to files that declare `antialias: true`, which were trained
+ * expecting Mip-Splatting compensation. The existing library predates that
+ * flag and keeps GAUSSIAN_MIP_VARIANCE, so its appearance does not move.
+ */
+const GAUSSIAN_ANTIALIASED_VARIANCE = 0.3;
+
+/**
  * Render-tuning overrides, read from the URL.
  *
  * The Mip kernel and opacity compensation are the two knobs that decide
@@ -1366,6 +1382,7 @@ const SplatViewer = forwardRef<SplatViewerHandle, Props>(function SplatViewer(
   ));
   const fallbackSceneRef = useRef<SceneFrame | null>(null);
   const sogViewerHintRef = useRef<SogViewerHint | null>(null);
+  const sogAntialiasRef = useRef(false);
   const immersiveControls = Boolean(readOnly || compactTouch);
 
   useEffect(() => {
@@ -5496,6 +5513,8 @@ const SplatViewer = forwardRef<SplatViewerHandle, Props>(function SplatViewer(
                 shN?: { shape?: number[]; files?: string[]; bands?: number; mins?: number; maxs?: number; codebook?: number[] };
               };
               sogViewerHintRef.current = parseSogViewerHint(meta);
+              sogAntialiasRef.current =
+                (meta as { antialias?: unknown }).antialias === true;
               if (isVkgsSogMeta(meta)) {
                 vkgsMeta = meta;
               }
@@ -5640,7 +5659,10 @@ const SplatViewer = forwardRef<SplatViewerHandle, Props>(function SplatViewer(
           // Set this on the concrete material as well as the Babylon default
           // so a loader-created material cannot restore its softer default.
           const matTuning = renderTuning();
-          mat.kernelSize = matTuning.kernel ?? GAUSSIAN_MIP_VARIANCE;
+          const trainedAntialiased = sogAntialiasRef.current;
+          mat.kernelSize =
+            matTuning.kernel
+            ?? (trainedAntialiased ? GAUSSIAN_ANTIALIASED_VARIANCE : GAUSSIAN_MIP_VARIANCE);
           mat.compensation = matTuning.compensation ?? true;
         }
 
