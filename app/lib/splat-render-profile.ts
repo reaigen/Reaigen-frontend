@@ -169,3 +169,50 @@ export function sogCameraIsInterior(meta: unknown): boolean {
   const eye = eyeFromSogViewer(hint);
   return eye.every((v, i) => v >= means!.mins![i] && v <= means!.maxs![i]);
 }
+
+/**
+ * Pick an orbit azimuth whose camera position is not buried in geometry.
+ *
+ * The viewer places its camera on a ring around the scene centre and never
+ * checks whether that spot is occupied. On a 32 m flat the ring clears the
+ * furniture at every angle, so this went unnoticed; on a 3.8 m room capture
+ * one quadrant put the camera inside a sofa with 956 splats within 0.35 m,
+ * which renders as a wall of blurred fabric.
+ *
+ * Samples azimuths and returns the clearest, preferring the caller's existing
+ * choice when nothing is meaningfully better so that scenes which already
+ * frame well do not move.
+ */
+export function chooseClearAzimuth(
+  points: ArrayLike<number>,
+  centre: Vec3,
+  radius: number,
+  eyeY: number,
+  options: { clearance?: number; samples?: number; preferred?: number } = {},
+): { azimuth: number; blocked: number } {
+  const clearance = options.clearance ?? 0.35;
+  const samples = Math.max(4, options.samples ?? 16);
+  const preferred = options.preferred ?? 0;
+  const c2 = clearance * clearance;
+  const n = Math.floor(points.length / 3);
+
+  let best = { azimuth: preferred, blocked: Number.POSITIVE_INFINITY };
+  for (let s = 0; s < samples; s += 1) {
+    const azimuth = preferred + (s / samples) * Math.PI * 2;
+    const ex = centre[0] + radius * Math.cos(azimuth);
+    const ez = centre[2] + radius * Math.sin(azimuth);
+    let blocked = 0;
+    for (let i = 0; i < n; i += 1) {
+      const dx = points[i * 3] - ex;
+      const dy = points[i * 3 + 1] - eyeY;
+      const dz = points[i * 3 + 2] - ez;
+      if (dx * dx + dy * dy + dz * dz < c2) {
+        blocked += 1;
+        if (blocked >= best.blocked) break;   // cannot win; stop early
+      }
+    }
+    if (blocked < best.blocked) best = { azimuth, blocked };
+    if (blocked === 0) break;                 // clear enough, keep the earliest
+  }
+  return best;
+}

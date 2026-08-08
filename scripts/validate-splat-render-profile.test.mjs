@@ -12,6 +12,7 @@ import {
   parseRenderTuning,
   parseSogViewerHint,
   sogCameraIsInterior,
+  chooseClearAzimuth,
   resolveSplatRenderProfile,
 } from "../app/lib/splat-render-profile.ts";
 
@@ -177,4 +178,64 @@ test("a nonsensical kernel override is ignored rather than rendering nothing", (
   }
   // Zero is a legitimate request: no dilation at all.
   assert.equal(resolveSplatRenderProfile(ANTIALIASED, parseRenderTuning("?kernel=0")).kernelSize, 0);
+});
+
+// ---------------------------------------------------------------------------
+// Orbit clearance — the camera-inside-the-sofa fix
+// ---------------------------------------------------------------------------
+
+/** A ring of wall points with one quadrant packed solid, like a sofa. */
+function roomWithObstacle() {
+  const pts = [];
+  for (let i = 0; i < 360; i += 2) {                  // walls at r = 3
+    const a = (i * Math.PI) / 180;
+    pts.push(3 * Math.cos(a), 1.0, 3 * Math.sin(a));
+  }
+  for (let i = 0; i < 500; i += 1) {                  // dense blob at azimuth 270 deg
+    pts.push(0 + (i % 10) * 0.02, 1.0 + ((i / 10) % 5) * 0.02, -2 + ((i / 50) % 5) * 0.02);
+  }
+  return pts;
+}
+
+test("an azimuth buried in geometry is rejected for a clear one", () => {
+  const pts = roomWithObstacle();
+  const buried = chooseClearAzimuth(pts, [0, 1, 0], 2, 1.0, {
+    preferred: -Math.PI / 2, samples: 16,
+  });
+  assert.equal(buried.blocked, 0, "must find a clear azimuth rather than sit in the blob");
+
+  // Sanity: the preferred angle really was blocked, so the test has teeth.
+  // Counted directly, because `samples` is floored at 4 and cannot be forced to
+  // evaluate a single azimuth.
+  const ex = 2 * Math.cos(-Math.PI / 2);
+  const ez = 2 * Math.sin(-Math.PI / 2);
+  let blockedAtPreferred = 0;
+  for (let i = 0; i < pts.length / 3; i += 1) {
+    const dx = pts[i * 3] - ex, dy = pts[i * 3 + 1] - 1.0, dz = pts[i * 3 + 2] - ez;
+    if (dx * dx + dy * dy + dz * dz < 0.35 * 0.35) blockedAtPreferred += 1;
+  }
+  assert.ok(blockedAtPreferred > 0, `preferred azimuth should be blocked, got ${blockedAtPreferred}`);
+  assert.ok(buried.azimuth !== -Math.PI / 2, "should have moved away from the blocked azimuth");
+});
+
+test("a scene that is already clear keeps its preferred azimuth", () => {
+  const pts = [];
+  for (let i = 0; i < 360; i += 2) {
+    const a = (i * Math.PI) / 180;
+    pts.push(8 * Math.cos(a), 1.0, 8 * Math.sin(a));   // far walls, nothing near the ring
+  }
+  const chosen = chooseClearAzimuth(pts, [0, 1, 0], 2, 1.0, { preferred: 0.7, samples: 16 });
+  assert.equal(chosen.blocked, 0);
+  assert.equal(chosen.azimuth, 0.7, "should not move a camera that is already clear");
+});
+
+test("a lone obstruction is escaped rather than tolerated", () => {
+  // One point sitting exactly where azimuth 0 would place the eye. Any
+  // clearance radius should reject that angle and find an empty one.
+  const pts = [2.0, 1.0, 0.0];
+  for (const clearance of [0.1, 0.35, 1.0]) {
+    const chosen = chooseClearAzimuth(pts, [0, 1, 0], 2, 1.0, { preferred: 0, clearance });
+    assert.equal(chosen.blocked, 0, `clearance=${clearance} should find a clear azimuth`);
+    assert.notEqual(chosen.azimuth, 0, `clearance=${clearance} should move off the obstructed angle`);
+  }
 });

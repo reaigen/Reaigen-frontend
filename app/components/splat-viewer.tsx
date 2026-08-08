@@ -22,6 +22,7 @@ import type {
   TourShot,
 } from "@/app/lib/tour-types";
 import {
+  chooseClearAzimuth,
   eyeFromSogViewer,
   parseRenderTuning,
   parseSogViewerHint,
@@ -490,8 +491,8 @@ function computeSceneFrameFromSplatBuffer(buffer: ArrayBuffer): SceneFrame | nul
     }
   }
 
-  let safeX = center[0];
-  let safeZ = center[2];
+  let safeXRaw = center[0];
+  let safeZRaw = center[2];
   const eyeMaximum = Math.max(...eyeGrid);
   const openThreshold = Math.max(1, eyeMaximum * 0.2);
   const gridMiddle = gridSize * 0.5;
@@ -513,14 +514,35 @@ function computeSceneFrameFromSplatBuffer(buffer: ArrayBuffer): SceneFrame | nul
   if (bestCell >= 0) {
     const gx = bestCell % gridSize;
     const gz = Math.floor(bestCell / gridSize);
-    safeX = minX + ((gx + 0.5) / gridSize) * width;
-    safeZ = minZ + ((gz + 0.5) / gridSize) * depth;
+    safeXRaw = minX + ((gx + 0.5) / gridSize) * width;
+    safeZRaw = minZ + ((gz + 0.5) / gridSize) * depth;
   } else if (floorCount >= 10) {
-    safeX = floorXSum / floorCount;
-    safeZ = floorZSum / floorCount;
+    safeXRaw = floorXSum / floorCount;
+    safeZRaw = floorZSum / floorCount;
   } else if (eyeCount >= 5) {
-    safeX = eyeXSum / eyeCount;
-    safeZ = eyeZSum / eyeCount;
+    safeXRaw = eyeXSum / eyeCount;
+    safeZRaw = eyeZSum / eyeCount;
+  }
+  // The grid above finds an open *footprint* cell, but never checks whether the
+  // resulting eye point is actually clear in 3D. On a 32 m flat it always is;
+  // on a 3.8 m room capture it put the camera inside a sofa, with 956 splats
+  // within 0.35 m, rendering as a wall of blurred fabric. Re-seat the eye on a
+  // clear orbit angle when that happens, and leave it alone when it does not.
+  let safeX = safeXRaw;
+  let safeZ = safeZRaw;
+  {
+    const cleared = chooseClearAzimuth(
+      xs.flatMap((x, i) => [x, ys[i], zs[i]]),
+      center,
+      Math.max(0.35, Math.hypot(safeXRaw - center[0], safeZRaw - center[2]) || radius * 0.5),
+      eyeY,
+      { preferred: Math.atan2(safeZRaw - center[2], safeXRaw - center[0]) },
+    );
+    if (cleared.blocked === 0) {
+      const r = Math.max(0.35, Math.hypot(safeXRaw - center[0], safeZRaw - center[2]) || radius * 0.5);
+      safeX = center[0] + r * Math.cos(cleared.azimuth);
+      safeZ = center[2] + r * Math.sin(cleared.azimuth);
+    }
   }
   const safePosition: Vec3 = [safeX, eyeY, safeZ];
 
