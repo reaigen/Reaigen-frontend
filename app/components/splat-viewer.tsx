@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState, useCallback, forwardRef, useImperativeHandle } from "react";
 import { AllocateShBuffers } from "@babylonjs/core/Meshes/GaussianSplatting/gaussianSplattingMeshBase.js";
 import { cameraFovRadians, normalizeCameraData } from "@/app/lib/camera-coordinates";
+import { installSuperSplatGaussianFragment } from "@/app/lib/gaussian-rasterizer";
 import { clampCameraPosition } from "@/app/lib/camera-bounds";
 import { getCache, putCache } from "@/app/lib/splat-cache";
 import { t } from "@/app/lib/i18n";
@@ -24,6 +25,7 @@ import type {
 } from "@/app/lib/tour-types";
 import {
   chooseClearAzimuth,
+  correctSogScalesForBabylon,
   eyeFromSogViewer,
   fallbackOverviewCamera,
   parseRenderTuning,
@@ -142,11 +144,11 @@ const SH_C0 = 0.28209479177387814;
  * Rather than guess, these let a specific scene be dialled against a reference
  * render in one pass:
  *
- *   ?kernel=0.3   Mip variance added to the 2D covariance (default 0.09)
- *   ?comp=0       disable opacity compensation (default on)
+ *   ?kernel=0.09  compare Babylon's historic covariance kernel (default 0.3)
+ *   ?comp=1       enable determinant opacity compensation (default off)
  *   ?sh=0         drop spherical harmonics, render SH0-only
  *
- * Absent from the URL, behaviour is exactly as before.
+ * Absent from the URL, the source-matched production profile is used.
  */
 function renderTuning(): RenderTuningOverrides {
   if (typeof window === "undefined") return {};
@@ -1050,6 +1052,7 @@ async function loadCompositionGaussian(
     } else {
       parsed = await ParseSogMeta(new Map(Object.entries(zipData)), "", scene);
     }
+    correctSogScalesForBabylon(parsed.data);
     const sh = parsed.sh?.length ? parsed.sh : undefined;
     const alive = decodeSplatPruneMask(
       pruneMask,
@@ -4861,6 +4864,8 @@ const SplatViewer = forwardRef<SplatViewerHandle, Props>(function SplatViewer(
         setStatus(t("viewer.status.loadingEngine", lang));
         const BABYLON = await import("@babylonjs/core");
         await import("@babylonjs/loaders");
+        await import("@babylonjs/core/Shaders/ShadersInclude/gaussianSplattingFragmentDeclaration.js");
+        installSuperSplatGaussianFragment(BABYLON.ShaderStore);
         babylonRef.current = BABYLON;
         if (disposed) return;
 
@@ -4919,9 +4924,11 @@ const SplatViewer = forwardRef<SplatViewerHandle, Props>(function SplatViewer(
         // the decoded Gaussian covariance basis disagree with the producer.
         scene.useRightHandedSystem = true;
         sceneRef.current = scene;
-        scene.clearColor = spatialNavigation
-          ? new BABYLON.Color4(0.965, 0.969, 0.976, 1)
-          : new BABYLON.Color4(1, 1, 1, 1);
+        // Match SuperSplat's reconstruction backdrop. Gaussian surfaces remain
+        // partially transmissive at their edges; compositing those edges over
+        // pure white bleaches the entire reconstruction and is the main reason
+        // dark upholstery rendered grey in delivery.
+        scene.clearColor = new BABYLON.Color4(0, 0, 0, 1);
 
         const camera = new BABYLON.FreeCamera("cam", BABYLON.Vector3.Zero(), scene);
         camera.minZ = 0.1;
@@ -5568,6 +5575,7 @@ const SplatViewer = forwardRef<SplatViewerHandle, Props>(function SplatViewer(
             }
             parsedSOG = await ParseSogMeta(files, "", scene);
           }
+          correctSogScalesForBabylon(parsedSOG.data);
           if (disposed) return;
           const sogSh = renderTuning().sh && parsedSOG.sh && parsedSOG.sh.length
             ? parsedSOG.sh
@@ -5676,11 +5684,8 @@ const SplatViewer = forwardRef<SplatViewerHandle, Props>(function SplatViewer(
         if (mat) {
           mat.backFaceCulling = false;
           // Set this on the concrete material as well as the Babylon default
-          // so a loader-created material cannot restore its softer default.
-          // Kernel deliberately not keyed off the antialias flag: a controlled
-          // CPU render of the same file showed 0.09 vs 0.30 changes mean
-          // luminance by 0.00005 and only costs sharpness. Overrides remain,
-          // so a scene can still be dialled against a reference.
+          // so a loader-created material cannot diverge from the measured
+          // SuperSplat forward profile. Overrides remain for comparisons.
           const profile = resolveSplatRenderProfile({}, renderTuning());
           mat.kernelSize = profile.kernelSize;
           mat.compensation = profile.compensation;

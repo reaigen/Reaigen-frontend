@@ -9,26 +9,38 @@ import type { Vec3 } from "./tour-types";
  * Babylon, DOM or WebGL involvement.
  */
 
-/**
- * Screen-space dilation for reconstructions trained *without* antialiasing.
- *
- * Historic value, kept so that the existing library does not shift appearance.
- * It is 0.3 squared, which is a mistake (see below) — but it is the mistake
- * every already-published scan was authored against.
- */
+/** Historic Babylon profile, retained for explicit comparison overrides. */
 export const GAUSSIAN_MIP_VARIANCE = 0.09;
 
 /**
- * Screen-space dilation for reconstructions trained *with* antialiasing.
- *
- * 3DGS adds 0.3 to the 2D covariance diagonal, and that 0.3 is already a
- * variance in pixel², not a sigma to be squared. Squaring it a second time
- * leaves roughly a third of the intended dilation. Because the Mip-Splatting
- * opacity compensation is derived from the same kernel, an undersized kernel
- * also under-compensates, so splats render brighter than the exporter
- * intended — the hazy, blown-out highlights.
+ * SuperSplat/PlayCanvas adds 0.3 directly to the projected covariance. It is
+ * already a pixel² variance, not a sigma that should be squared again.
  */
 export const GAUSSIAN_ANTIALIASED_VARIANCE = 0.3;
+
+/**
+ * Babylon expands packed Gaussian scales by 2 while building its covariance
+ * textures. That convention is correct for Babylon-authored `.splat` data,
+ * but SOG stores the trained standard deviations directly: SuperSplat,
+ * Spinoff Web and the Splatfiction renderer all use `exp(codebook[index])`
+ * without that expansion. Halving only decoded SOG scales before handing the
+ * buffer to Babylon cancels the extra factor and preserves the trained
+ * covariance (`(2 * 0.5 * scale)^2 === scale^2`).
+ */
+export const SOG_TO_BABYLON_SCALE = 0.5;
+
+export function correctSogScalesForBabylon(buffer: ArrayBuffer): ArrayBuffer {
+  if (buffer.byteLength % 32 !== 0) {
+    throw new Error("Decoded SOG buffer must contain 32-byte splat rows");
+  }
+  const values = new Float32Array(buffer);
+  for (let row = 0; row < values.length; row += 8) {
+    values[row + 3] *= SOG_TO_BABYLON_SCALE;
+    values[row + 4] *= SOG_TO_BABYLON_SCALE;
+    values[row + 5] *= SOG_TO_BABYLON_SCALE;
+  }
+  return buffer;
+}
 
 /** Spinoff Web's authored default vertical field of view. */
 export const SPINOFF_DEFAULT_VERTICAL_FOV = 68 * Math.PI / 180;
@@ -157,15 +169,9 @@ export function isAntialiasedReconstruction(meta: unknown): boolean {
 /**
  * Resolve the material parameters for one reconstruction.
  *
- * The kernel is deliberately NOT keyed off the file's `antialias` flag. A
- * controlled CPU render of the same scene under both values showed 0.09 vs
- * 0.30 moves mean luminance by 0.00005 and clipped highlights by 0.001
- * percentage points, while costing about 9% sharpness. The kernel is a small
- * additive screen-space term next to the splat footprints, so it is not what
- * washes a render out, and varying it per file would only risk shifting the
- * published library for no measured gain.
- *
- * Overrides still win, so a scene can be dialled against a reference render.
+ * This is source-matched to SuperSplat's forward renderer: 0.3 covariance
+ * dilation and no determinant opacity compensation. URL overrides remain for
+ * controlled regression comparisons.
  */
 export function resolveSplatRenderProfile(
   _meta: unknown,
@@ -175,9 +181,9 @@ export function resolveSplatRenderProfile(
     kernelSize:
       finite(overrides.kernel) && overrides.kernel! >= 0
         ? overrides.kernel!
-        : GAUSSIAN_MIP_VARIANCE,
+        : GAUSSIAN_ANTIALIASED_VARIANCE,
     compensation:
-      typeof overrides.compensation === "boolean" ? overrides.compensation : true,
+      typeof overrides.compensation === "boolean" ? overrides.compensation : false,
     useSphericalHarmonics: overrides.sh !== false,
   };
 }
