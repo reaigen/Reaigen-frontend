@@ -896,14 +896,22 @@ export function DraftTourAssetsPanel({
 
                 {/* Title aligns to the top of the thumbnail on phones, centres beside it on desktop. */}
                 <div className="min-w-0 self-start sm:self-center">
-                  <div className="flex min-w-0 items-center gap-1">
-                    <h3 className="min-w-0 flex-1 truncate text-[13px] font-semibold sm:text-[14px]">{displayName}</h3>
+                  {/*
+                    `justify-start`, and the heading sized by its text rather
+                    than `flex-1`: this column is everything between the
+                    thumbnail and the actions, so a stretched heading pushed the
+                    rename control to the far right of the row, where it read as
+                    a stray icon floating in the middle of the card instead of
+                    as something belonging to the title beside it.
+                  */}
+                  <div className="flex min-w-0 items-center justify-start gap-0.5">
+                    <h3 className="min-w-0 truncate text-[13px] font-semibold sm:text-[14px]">{displayName}</h3>
                     {/* Was a 28px target with a 12px glyph — under the 44px touch minimum. */}
                     <button
                       type="button"
                       aria-label={`${text.editName}: ${displayName}`}
                       title={text.editName}
-                      className="pen-touch-target -mr-1.5 flex shrink-0 items-center justify-center rounded-full text-foreground/40 transition-colors hover:bg-foreground/[0.055] hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring sm:h-9 sm:min-h-0 sm:w-9 sm:min-w-0"
+                      className="pen-touch-target flex shrink-0 items-center justify-center rounded-full text-foreground/40 transition-colors hover:bg-foreground/[0.055] hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring sm:h-9 sm:min-h-0 sm:w-9 sm:min-w-0"
                       onClick={() => {
                         beginRename(asset);
                         setOpen(true);
