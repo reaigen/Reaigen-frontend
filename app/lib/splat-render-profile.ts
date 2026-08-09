@@ -30,6 +30,43 @@ export const GAUSSIAN_MIP_VARIANCE = 0.09;
  */
 export const GAUSSIAN_ANTIALIASED_VARIANCE = 0.3;
 
+/**
+ * Babylon's packed-splat path multiplies each decoded linear scale by two
+ * before constructing the 3D covariance. SOG stores the Gaussian sigma
+ * directly (the convention used by SuperSplat/PlayCanvas), so compensate once
+ * after decoding. Babylon's internal x2 then reconstructs the authored sigma.
+ */
+export const BABYLON_SOG_SCALE_COMPENSATION = 0.5;
+
+const PACKED_SPLAT_STRIDE_BYTES = 32;
+const PACKED_SPLAT_STRIDE_FLOATS = PACKED_SPLAT_STRIDE_BYTES / Float32Array.BYTES_PER_ELEMENT;
+
+/**
+ * Normalize a transient decoded SOG buffer for Babylon's scale convention.
+ *
+ * The packed layout is position xyz, scale xyz, RGBA, quaternion. This mutates
+ * only the three scale floats to avoid copying very large reconstructions.
+ * Compressed source buffers in the cache are never passed here, so the
+ * correction cannot accumulate between loads.
+ */
+export function normalizeDecodedSogScalesForBabylon(buffer: ArrayBuffer): ArrayBuffer {
+  if (buffer.byteLength % PACKED_SPLAT_STRIDE_BYTES !== 0) {
+    throw new Error(
+      `Decoded SOG buffer has invalid byte length ${buffer.byteLength}; expected 32 bytes per splat`,
+    );
+  }
+
+  const floats = new Float32Array(buffer);
+  const splatCount = buffer.byteLength / PACKED_SPLAT_STRIDE_BYTES;
+  for (let index = 0; index < splatCount; index += 1) {
+    const scaleOffset = index * PACKED_SPLAT_STRIDE_FLOATS + 3;
+    floats[scaleOffset] *= BABYLON_SOG_SCALE_COMPENSATION;
+    floats[scaleOffset + 1] *= BABYLON_SOG_SCALE_COMPENSATION;
+    floats[scaleOffset + 2] *= BABYLON_SOG_SCALE_COMPENSATION;
+  }
+  return buffer;
+}
+
 /** Camera authored by the exporter inside a SOG's meta.json. */
 export interface SogViewerHint {
   target: Vec3;

@@ -3,6 +3,17 @@ import type { CameraData, SavedCamera, Vec3 } from "./tour-types";
 /** Backend splats and current web/iOS cameras share one Y-up identity space. */
 export const CAMERA_COORDINATE_SPACE = "y-up-identity";
 
+/**
+ * Default perspective for an unsaved viewport camera.
+ *
+ * Keep this aligned with the camera editor and the 3DGS/SuperSplat reference
+ * lens. At 85 degrees vertically, a desktop 2:1 viewport expands to roughly
+ * 124 degrees horizontally and visibly stretches furniture and architecture
+ * near the edges before the user has authored a camera.
+ */
+export const DEFAULT_CAMERA_FOV_DEGREES = 60;
+export const DEFAULT_CAMERA_FOV_RADIANS = DEFAULT_CAMERA_FOV_DEGREES * Math.PI / 180;
+
 /** Camera payloads use radians for per-camera/FOV-Y values, while scene FOV
  * is exposed to editors in degrees. Accept either representation at read time. */
 export function cameraFovRadians(value: unknown, fallback = 0.66): number {

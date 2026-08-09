@@ -18,7 +18,7 @@
     "validate-splat-render-profile": "node --experimental-strip-types --test scripts/validate-splat-render-profile.test.mjs",
     "sog-metrics": "node --experimental-strip-types scripts/sog-render-metrics.mjs",
     "validate-auth-paths": "node --experimental-strip-types --test scripts/validate-auth-paths.test.mjs",
-    "validate-camera-bounds": "node --experimental-strip-types --test app/lib/camera-bounds.test.mjs"
+    "validate-camera-bounds": "node --experimental-strip-types --test app/lib/camera-bounds.test.mjs app/lib/camera-coordinates.test.mjs"
   },
   "dependencies": {
     "@babylonjs/core": "^9.10.1",

@@ -2,7 +2,11 @@
 
 import { useEffect, useRef, useState, useCallback, forwardRef, useImperativeHandle } from "react";
 import { AllocateShBuffers } from "@babylonjs/core/Meshes/GaussianSplatting/gaussianSplattingMeshBase.js";
-import { cameraFovRadians, normalizeCameraData } from "@/app/lib/camera-coordinates";
+import {
+  DEFAULT_CAMERA_FOV_RADIANS,
+  cameraFovRadians,
+  normalizeCameraData,
+} from "@/app/lib/camera-coordinates";
 import { clampCameraPosition } from "@/app/lib/camera-bounds";
 import { getCache, putCache } from "@/app/lib/splat-cache";
 import { t } from "@/app/lib/i18n";
@@ -25,6 +29,7 @@ import type {
 import {
   chooseClearAzimuth,
   eyeFromSogViewer,
+  normalizeDecodedSogScalesForBabylon,
   parseRenderTuning,
   parseSogViewerHint,
   resolveSplatRenderProfile,
@@ -121,26 +126,16 @@ function editorAngleDistance(a: number, b: number): number {
 const LOOK = 5;
 const TILT_Y = LOOK * Math.tan(5 * Math.PI / 180);
 const SH_C0 = 0.28209479177387814;
-const DEFAULT_IMMERSIVE_FOV = 85 * Math.PI / 180;
-// Spinoff's accepted deterministic profile uses a 0.3 physical-pixel Mip
-// sigma. Babylon adds the supplied value directly to the 2D covariance, so
-// its equivalent material parameter is sigma squared rather than sigma.
-// Mip kernel constants and the render profile live in
-// lib/splat-render-profile so they can be asserted against real .sog files.
+// Mip-kernel constants and Babylon/SOG scale normalization live in the pure
+// render-profile module so they can be asserted against real reconstruction
+// fixtures without loading Babylon, WebGL, or the DOM.
 
 
 /**
  * Render-tuning overrides, read from the URL.
  *
- * The Mip kernel and opacity compensation are the two knobs that decide
- * whether a reconstruction reads crisp or hazy, and the correct values depend
- * on how the file was trained -- a SOG carrying `antialias: true` was trained
- * expecting compensation, one without it was not. We currently hardcode both,
- * which is right for the room-scale scans that make up the existing library
- * and demonstrably wrong for at least one antialiased export.
- *
- * Rather than guess, these let a specific scene be dialled against a reference
- * render in one pass:
+ * These escape hatches let a specific scene be measured against a reference
+ * render without changing the published library's defaults:
  *
  *   ?kernel=0.3   Mip variance added to the 2D covariance (default 0.09)
  *   ?comp=0       disable opacity compensation (default on)
@@ -1050,6 +1045,7 @@ async function loadCompositionGaussian(
     } else {
       parsed = await ParseSogMeta(new Map(Object.entries(zipData)), "", scene);
     }
+    normalizeDecodedSogScalesForBabylon(parsed.data);
     const sh = parsed.sh?.length ? parsed.sh : undefined;
     const alive = decodeSplatPruneMask(
       pruneMask,
@@ -5380,7 +5376,9 @@ const SplatViewer = forwardRef<SplatViewerHandle, Props>(function SplatViewer(
             cameraUpRef.current = [0, 1, 0];
             camera.setTarget(new BABYLON.Vector3(tx, ty, tz));
             camera.rotation.z = 0;
-            camera.fov = DEFAULT_IMMERSIVE_FOV;
+            // Match the authoring lens and the 3DGS/SuperSplat reference.
+            // Saved cameras remain authoritative and return earlier above.
+            camera.fov = DEFAULT_CAMERA_FOV_RADIANS;
             camera.minZ = Math.max(0.05, fallback.radius / 250);
             camera.maxZ = Math.max(80, fallback.radius * 30);
           }
@@ -5563,6 +5561,7 @@ const SplatViewer = forwardRef<SplatViewerHandle, Props>(function SplatViewer(
             parsedSOG = await ParseSogMeta(files, "", scene);
           }
           if (disposed) return;
+          normalizeDecodedSogScalesForBabylon(parsedSOG.data);
           const sogSh = renderTuning().sh && parsedSOG.sh && parsedSOG.sh.length
             ? parsedSOG.sh
             : undefined;
