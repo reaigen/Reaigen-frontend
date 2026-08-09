@@ -25,6 +25,7 @@ import type {
 import {
   chooseClearAzimuth,
   eyeFromSogViewer,
+  fallbackOverviewCamera,
   parseRenderTuning,
   parseSogViewerHint,
   resolveSplatRenderProfile,
@@ -121,7 +122,6 @@ function editorAngleDistance(a: number, b: number): number {
 const LOOK = 5;
 const TILT_Y = LOOK * Math.tan(5 * Math.PI / 180);
 const SH_C0 = 0.28209479177387814;
-const DEFAULT_IMMERSIVE_FOV = 85 * Math.PI / 180;
 // Spinoff's accepted deterministic profile uses a 0.3 physical-pixel Mip
 // sigma. Babylon adds the supplied value directly to the 2D covariance, so
 // its equivalent material parameter is sigma squared rather than sigma.
@@ -4913,6 +4913,11 @@ const SplatViewer = forwardRef<SplatViewerHandle, Props>(function SplatViewer(
         });
 
         const scene = new BABYLON.Scene(engine);
+        // Reconstruction content, saved cameras, and the OpenUSD workspace are
+        // canonical right-handed. Babylon defaults to a left-handed scene;
+        // leaving that default active mirrors the photographic view and makes
+        // the decoded Gaussian covariance basis disagree with the producer.
+        scene.useRightHandedSystem = true;
         sceneRef.current = scene;
         scene.clearColor = spatialNavigation
           ? new BABYLON.Color4(0.965, 0.969, 0.976, 1)
@@ -5365,12 +5370,13 @@ const SplatViewer = forwardRef<SplatViewerHandle, Props>(function SplatViewer(
           } catch { /* best-effort */ }
 
           if (fallback) {
+            const overview = fallbackOverviewCamera(fallback);
             const worldPosition = transformCanonicalPoint(
-              fallback.safePosition,
+              overview.position,
               globalSceneTransformRef.current,
             );
             const worldTarget = transformCanonicalPoint(
-              fallback.safeTarget,
+              overview.target,
               globalSceneTransformRef.current,
             );
             const [px, py, pz] = worldPosition;
@@ -5380,7 +5386,7 @@ const SplatViewer = forwardRef<SplatViewerHandle, Props>(function SplatViewer(
             cameraUpRef.current = [0, 1, 0];
             camera.setTarget(new BABYLON.Vector3(tx, ty, tz));
             camera.rotation.z = 0;
-            camera.fov = DEFAULT_IMMERSIVE_FOV;
+            camera.fov = overview.fov;
             camera.minZ = Math.max(0.05, fallback.radius / 250);
             camera.maxZ = Math.max(80, fallback.radius * 30);
           }
