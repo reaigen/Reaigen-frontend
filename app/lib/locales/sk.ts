@@ -467,6 +467,8 @@ const sk: LocaleStrings = {
   "settings.seller.title":               "Profil predajcu",
   "settings.seller.subtitle":            "Informácie viditeľné pre vašich klientov.",
   "settings.seller.phone":               "Telefón",
+  "settings.seller.publicEmail":         "Verejný e-mail",
+  "settings.seller.secondaryPhone":      "Sekundárny telefón",
   "settings.seller.company":             "Spoločnosť",
   "settings.seller.website":             "Webová stránka",
   "settings.seller.bio":                 "Bio",

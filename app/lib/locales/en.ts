@@ -478,6 +478,8 @@ const en = {
   "settings.seller.title":               "Seller Profile",
   "settings.seller.subtitle":            "Info visible to your clients.",
   "settings.seller.phone":               "Phone",
+  "settings.seller.publicEmail":         "Public email",
+  "settings.seller.secondaryPhone":      "Secondary phone",
   "settings.seller.company":             "Company",
   "settings.seller.website":             "Website",
   "settings.seller.bio":                 "Bio",

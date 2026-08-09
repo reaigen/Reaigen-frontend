@@ -155,6 +155,51 @@ async function uploadPresigned(
   await confirmFn(upload_key);
 }
 
+type JsonObject = Record<string, unknown>;
+
+function asJsonObject(value: unknown): JsonObject {
+  return value !== null && typeof value === "object" && !Array.isArray(value)
+    ? value as JsonObject
+    : {};
+}
+
+function optionalString(value: unknown): string {
+  return typeof value === "string" ? value : "";
+}
+
+function getSellerContactPreferences(preferences: unknown) {
+  const root = asJsonObject(preferences);
+  const canonical = asJsonObject(root.seller_contact);
+  const legacy = asJsonObject(root.sellerContact);
+  return {
+    root,
+    contact: { ...legacy, ...canonical },
+    publicEmail: optionalString(canonical.public_email ?? legacy.publicEmail),
+    secondaryPhone: optionalString(canonical.secondary_phone ?? legacy.secondaryPhone),
+  };
+}
+
+function withSellerContactPreferences(
+  preferences: unknown,
+  publicEmail: string,
+  secondaryPhone: string,
+): JsonObject {
+  const { root, contact } = getSellerContactPreferences(preferences);
+  const canonicalRoot = { ...root };
+  const canonicalContact = { ...contact };
+  delete canonicalRoot.sellerContact;
+  delete canonicalContact.publicEmail;
+  delete canonicalContact.secondaryPhone;
+  return {
+    ...canonicalRoot,
+    seller_contact: {
+      ...canonicalContact,
+      public_email: publicEmail,
+      secondary_phone: secondaryPhone,
+    },
+  };
+}
+
 /* ── Profile Tab ─────────────────────────────────────────────────────── */
 
 function ProfileTab({ user, onSaved, lang }: { user: UserProfile; onSaved: () => void; lang: string }) {
@@ -170,6 +215,12 @@ function ProfileTab({ user, onSaved, lang }: { user: UserProfile; onSaved: () =>
   const avatarInputRef = React.useRef<HTMLInputElement>(null);
   useAutoDismiss(success, setSuccess);
   useAutoDismiss(emailResent, setEmailResent);
+
+  React.useEffect(() => {
+    setFirstName(user.first_name ?? "");
+    setLastName(user.last_name ?? "");
+    setUsername(user.username ?? "");
+  }, [user.first_name, user.last_name, user.username]);
 
   async function handleAvatarChange(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
@@ -300,7 +351,10 @@ function ProfileTab({ user, onSaved, lang }: { user: UserProfile; onSaved: () =>
 
 function SellerTab({ user, onSaved, lang }: { user: UserProfile; onSaved: () => void; lang: string }) {
   const p = user.profile ?? {} as Partial<NonNullable<typeof user.profile>>;
+  const sellerContact = getSellerContactPreferences(user.personalized_data?.preferences);
   const [phone, setPhone] = React.useState(p?.phone ?? "");
+  const [publicEmail, setPublicEmail] = React.useState(sellerContact.publicEmail);
+  const [secondaryPhone, setSecondaryPhone] = React.useState(sellerContact.secondaryPhone);
   const [company, setCompany] = React.useState(p?.company ?? "");
   const [website, setWebsite] = React.useState(p?.website ?? "");
   const [bio, setBio] = React.useState(p?.bio ?? "");
@@ -323,6 +377,46 @@ function SellerTab({ user, onSaved, lang }: { user: UserProfile; onSaved: () => 
   const coverInputRef = React.useRef<HTMLInputElement>(null);
   useAutoDismiss(success, setSuccess);
 
+  React.useEffect(() => {
+    setPhone(p?.phone ?? "");
+    setPublicEmail(sellerContact.publicEmail);
+    setSecondaryPhone(sellerContact.secondaryPhone);
+    setCompany(p?.company ?? "");
+    setWebsite(p?.website ?? "");
+    setBio(p?.bio ?? "");
+    setJobTitle(p?.job_title ?? "");
+    setLinkedin(p?.linkedin_url ?? "");
+    setTwitter(p?.twitter_handle ?? "");
+    setInstagram(p?.instagram_handle ?? "");
+    setIsRePro(p?.is_real_estate_professional ?? false);
+    setLicense(p?.license_number ?? "");
+    setAgency(p?.agency_name ?? "");
+    setAddress(p?.address ?? "");
+    setCity(p?.city ?? "");
+    setState(p?.state ?? "");
+    setCountry(p?.country ?? "");
+    setPostalCode(p?.postal_code ?? "");
+  }, [
+    p?.address,
+    p?.agency_name,
+    p?.bio,
+    p?.city,
+    p?.company,
+    p?.country,
+    p?.instagram_handle,
+    p?.is_real_estate_professional,
+    p?.job_title,
+    p?.license_number,
+    p?.linkedin_url,
+    p?.phone,
+    p?.postal_code,
+    p?.state,
+    p?.twitter_handle,
+    p?.website,
+    sellerContact.publicEmail,
+    sellerContact.secondaryPhone,
+  ]);
+
   async function handleCoverChange(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -344,24 +438,33 @@ function SellerTab({ user, onSaved, lang }: { user: UserProfile; onSaved: () => 
     setSuccess(false);
     try {
       setLoading(true);
-      await updateSellerProfile({
-        phone: phone.trim(),
-        company: company.trim(),
-        website: website.trim(),
-        bio: bio.trim(),
-        job_title: jobTitle.trim(),
-        linkedin_url: linkedin.trim(),
-        twitter_handle: twitter.trim(),
-        instagram_handle: instagram.trim(),
-        is_real_estate_professional: isRePro,
-        license_number: license.trim(),
-        agency_name: agency.trim(),
-        address: address.trim(),
-        city: city.trim(),
-        state: state.trim(),
-        country: country.trim(),
-        postal_code: postalCode.trim(),
-      });
+      await Promise.all([
+        updateSellerProfile({
+          phone: phone.trim(),
+          company: company.trim(),
+          website: website.trim(),
+          bio: bio.trim(),
+          job_title: jobTitle.trim(),
+          linkedin_url: linkedin.trim(),
+          twitter_handle: twitter.trim(),
+          instagram_handle: instagram.trim(),
+          is_real_estate_professional: isRePro,
+          license_number: license.trim(),
+          agency_name: agency.trim(),
+          address: address.trim(),
+          city: city.trim(),
+          state: state.trim(),
+          country: country.trim(),
+          postal_code: postalCode.trim(),
+        }),
+        updatePersonalizedData({
+          preferences: withSellerContactPreferences(
+            user.personalized_data?.preferences,
+            publicEmail.trim(),
+            secondaryPhone.trim(),
+          ),
+        }),
+      ]);
       setSuccess(true);
       onSaved();
     } catch (err) {
@@ -414,6 +517,17 @@ function SellerTab({ user, onSaved, lang }: { user: UserProfile; onSaved: () => 
             <div className="space-y-1.5">
               <Label>{t("settings.seller.company", lang)}</Label>
               <Input value={company} onChange={(e) => setCompany(e.target.value)} />
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div className="space-y-1.5">
+              <Label>{t("settings.seller.publicEmail", lang)}</Label>
+              <Input value={publicEmail} onChange={(e) => setPublicEmail(e.target.value)} type="email" />
+            </div>
+            <div className="space-y-1.5">
+              <Label>{t("settings.seller.secondaryPhone", lang)}</Label>
+              <Input value={secondaryPhone} onChange={(e) => setSecondaryPhone(e.target.value)} placeholder="+421 900 123 456" />
             </div>
           </div>
 
@@ -812,8 +926,18 @@ function PrivacyTab({ user, onSaved, lang }: { user: UserProfile; onSaved: () =>
   useAutoDismiss(success, setSuccess);
 
   React.useEffect(() => {
+    setIsPublic(p?.is_public ?? true);
+    setShowEmail(p?.show_email ?? false);
+    setShowPhone(p?.show_phone ?? false);
+    setAllowContact(p?.allow_contact ?? true);
     setMarketingConsent(user.gdpr?.marketing_consent ?? false);
-  }, [user.gdpr?.marketing_consent]);
+  }, [
+    p?.allow_contact,
+    p?.is_public,
+    p?.show_email,
+    p?.show_phone,
+    user.gdpr?.marketing_consent,
+  ]);
 
   async function handleMarketingConsent(nextValue: boolean) {
     const previous = marketingConsent;
@@ -1371,6 +1495,15 @@ function LocalizationTab({ user, lang }: { user: UserProfile; lang: string }) {
 
   React.useEffect(() => { loadPrefs(); }, [loadPrefs]);
 
+  React.useEffect(() => {
+    setLanguage(loc?.language ?? "en");
+    setCurrency(loc?.currency ?? "");
+    setAreaUnit(loc?.area_unit ?? "");
+    setDistanceUnit(loc?.distance_unit ?? "");
+    setTimezone(loc?.timezone || browserTz);
+    setDateFormat(loc?.date_format ?? "EU");
+  }, [loc, browserTz]);
+
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     setError(null);
@@ -1575,6 +1708,16 @@ function BillingTab({ user, onSaved, lang }: { user: UserProfile; onSaved: () =>
   const [error, setError] = React.useState<string | null>(null);
   const [success, setSuccess] = React.useState(false);
   useAutoDismiss(success, setSuccess);
+
+  React.useEffect(() => {
+    setBillingName(ba?.billing_name ?? "");
+    setBillingEmail(ba?.billing_email ?? "");
+    setBillingAddress(ba?.billing_address ?? "");
+    setBillingCity(ba?.billing_city ?? "");
+    setBillingPostal(ba?.billing_postal_code ?? "");
+    setBillingCountry(ba?.billing_country ?? "");
+    setVat(ba?.vat_number ?? "");
+  }, [ba]);
 
   const hasAddressData = !!(billingName || billingEmail || billingAddress || billingCity || billingPostal || billingCountry || vat);
 

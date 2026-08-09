@@ -467,6 +467,8 @@ const de: LocaleStrings = {
   "settings.seller.title":               "Verkäuferprofil",
   "settings.seller.subtitle":            "Für Ihre Kunden sichtbare Informationen.",
   "settings.seller.phone":               "Telefon",
+  "settings.seller.publicEmail":         "Öffentliche E-Mail",
+  "settings.seller.secondaryPhone":      "Zweite Telefonnummer",
   "settings.seller.company":             "Unternehmen",
   "settings.seller.website":             "Website",
   "settings.seller.bio":                 "Bio",
