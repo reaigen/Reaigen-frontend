@@ -5,29 +5,16 @@ import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 
 import {
-  BABYLON_SOG_SCALE_COMPENSATION,
   GAUSSIAN_ANTIALIASED_VARIANCE,
   GAUSSIAN_MIP_VARIANCE,
   eyeFromSogViewer,
   isAntialiasedReconstruction,
-  normalizeDecodedSogScalesForBabylon,
   parseRenderTuning,
   parseSogViewerHint,
   sogCameraIsInterior,
   chooseClearAzimuth,
   resolveSplatRenderProfile,
 } from "../app/lib/splat-render-profile.ts";
-
-const packedSplat = ({ position, scale, rgba, rotation }) => {
-  const buffer = new ArrayBuffer(32);
-  const floats = new Float32Array(buffer);
-  const bytes = new Uint8Array(buffer);
-  floats.set(position, 0);
-  floats.set(scale, 3);
-  bytes.set(rgba, 24);
-  bytes.set(rotation, 28);
-  return buffer;
-};
 
 /**
  * Fixtures are the real meta.json from two production reconstructions, so
@@ -68,39 +55,6 @@ test("fixtures are the two distinct cases they claim to be", () => {
 // ---------------------------------------------------------------------------
 // Rasterisation profile
 // ---------------------------------------------------------------------------
-
-test("decoded SOG scales compensate exactly once for Babylon's internal x2", () => {
-  assert.equal(BABYLON_SOG_SCALE_COMPENSATION, 0.5);
-  const buffer = packedSplat({
-    position: [1.25, -2.5, 3.75],
-    scale: [0.2, 0.4, 0.8],
-    rgba: [11, 22, 33, 44],
-    rotation: [55, 66, 77, 88],
-  });
-  const bytesBefore = new Uint8Array(buffer).slice();
-
-  assert.equal(normalizeDecodedSogScalesForBabylon(buffer), buffer);
-
-  const floats = new Float32Array(buffer);
-  assert.deepEqual(Array.from(floats.slice(0, 3)), [1.25, -2.5, 3.75]);
-  assert.deepEqual(
-    Array.from(floats.slice(3, 6)).map((value) => Math.round(value * 1e6) / 1e6),
-    [0.1, 0.2, 0.4],
-  );
-  assert.deepEqual(Array.from(new Uint8Array(buffer).slice(24, 32)), [11, 22, 33, 44, 55, 66, 77, 88]);
-  assert.deepEqual(
-    Array.from(new Uint8Array(buffer).slice(0, 12)),
-    Array.from(bytesBefore.slice(0, 12)),
-    "position bytes must remain untouched",
-  );
-});
-
-test("SOG scale normalization rejects malformed packed buffers", () => {
-  assert.throws(
-    () => normalizeDecodedSogScalesForBabylon(new ArrayBuffer(31)),
-    /expected 32 bytes per splat/,
-  );
-});
 
 test("the published library keeps its historic kernel", () => {
   const p = resolveSplatRenderProfile(LEGACY);

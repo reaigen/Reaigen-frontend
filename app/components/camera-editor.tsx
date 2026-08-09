@@ -7,13 +7,7 @@ import { Button } from "@/app/lib/ui/button";
 import { saveCameras, getCameras } from "@/app/lib/api/client";
 import { getSafeApiErrorMessage } from "@/app/lib/api/error-message";
 import { savedCameraNavigationIsInstant, stableCameraReferenceUp } from "@/app/lib/camera-navigation";
-import {
-  DEFAULT_CAMERA_FOV_DEGREES,
-  cameraFovDegrees,
-  cameraFovRadians,
-  markIdentityCamera,
-  normalizeCameraData,
-} from "@/app/lib/camera-coordinates";
+import { cameraFovDegrees, cameraFovRadians, markIdentityCamera, normalizeCameraData } from "@/app/lib/camera-coordinates";
 import { t } from "@/app/lib/i18n";
 import type { CameraData, GlobalSceneTransform, Vec3 } from "@/app/lib/tour-types";
 import type { SplatViewerHandle } from "./splat-viewer";
@@ -80,7 +74,7 @@ export default function CameraEditor({ splatId, viewerRef, activeShotIdx, initia
   const [message, setMessage] = useState<string | null>(null);
   const [isError, setIsError] = useState(false);
   const [loaded, setLoaded] = useState(false);
-  const [sceneFov, setSceneFov] = useState<number>(DEFAULT_CAMERA_FOV_DEGREES);
+  const [sceneFov, setSceneFov] = useState<number>(60);
   const [sceneRevision, setSceneRevision] = useState(0);
   const [dirty, setDirty] = useState(false);
   // Keep the 3D scene primary on every device. The compact capsule still
