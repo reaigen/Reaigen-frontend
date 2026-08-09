@@ -69,3 +69,23 @@ export function clearAuthCookies(response: NextResponse) {
     expires: new Date(0),
   });
 }
+
+/**
+ * The server's verdict that a session cannot be recovered, and the only thing
+ * the app treats as grounds for signing someone out.
+ *
+ * A bare 401 is not that verdict. It is also what an endpoint returns when the
+ * proxy forgot to attach the token, when one resource is refused while the
+ * identity is perfectly good, or when the backend blips mid-deploy — and the
+ * client used to sign the user out for every one of them. Only the proxies know
+ * whether renewal was tried and failed, so only they get to say so.
+ */
+export const SESSION_STATUS_HEADER = "X-Reaigen-Session";
+export const SESSION_EXPIRED = "expired";
+
+/** Clear the session and mark the response as the reason it ended. */
+export function expireSession(response: NextResponse) {
+  clearAuthCookies(response);
+  response.headers.set(SESSION_STATUS_HEADER, SESSION_EXPIRED);
+  return response;
+}

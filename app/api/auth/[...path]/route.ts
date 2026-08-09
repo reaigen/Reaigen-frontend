@@ -3,6 +3,7 @@ import {
   ACCESS_COOKIE_NAME,
   REFRESH_COOKIE_NAME,
   clearAuthCookies,
+  expireSession,
   setAuthCookies,
 } from "../../../lib/server/auth-cookies";
 import { fetchBackend } from "../../../lib/server/backend-fetch";
@@ -110,6 +111,11 @@ async function proxy(
         headers: noStoreHeaders(contentType),
       });
       if (rotated) setAuthCookies(response, rotated, refreshToken);
+      // Renewal was attempted for this session and refused. Anything else that
+      // happens to be a 401 is the endpoint's business, not the session's.
+      if (res.status === 401 && sessionPath && refreshToken && !rotated) {
+        expireSession(response);
+      }
 
       if (res.ok && contentType.includes("application/json")) {
         try {
@@ -145,7 +151,7 @@ async function proxy(
       }
 
       if (!res.ok && joined === "token/refresh") {
-        clearAuthCookies(response);
+        expireSession(response);
       }
 
       return response;

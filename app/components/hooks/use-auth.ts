@@ -84,9 +84,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     refreshProfile().finally(() => setIsLoading(false));
   }, [refreshProfile]);
 
-  // Global session-expiry handler: any 401 from any request means the session
-  // is dead. If we were authenticated, clear state and send the user to a
-  // clean login instead of leaving them on a stale authenticated page.
+  // Global session-expiry handler. The event fires only once the API client has
+  // established that the identity is genuinely gone — either a proxy said so
+  // outright, or a probe confirmed it — never on a bare 401, which is raised for
+  // plenty of reasons that leave the session perfectly valid. If we were
+  // authenticated, clear state and send the user to a clean login instead of
+  // leaving them on a stale authenticated page.
   React.useEffect(() => {
     const handleUnauthorized = () => {
       const expiredUser = userRef.current;

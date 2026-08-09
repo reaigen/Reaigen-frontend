@@ -29,7 +29,7 @@ export function resetPrivateApiState() {
   inFlight.clear();
 }
 
-/** Session expired (401): flush all cached data and signal the app to
+/** Session expired: flush all cached data and signal the app to
  * re-authenticate. A single global event lets AuthProvider force a clean
  * logout + redirect to login, instead of leaving the user stranded on a
  * dead authenticated session (which is unsafe — stale data, failing actions). */
@@ -38,6 +38,61 @@ function notifyUnauthorized() {
   if (typeof window !== "undefined") {
     window.dispatchEvent(new Event("reai:unauthorized"));
   }
+}
+
+/** The proxies set this when renewal was tried for a session and refused. */
+const SESSION_STATUS_HEADER = "X-Reaigen-Session";
+const SESSION_EXPIRED = "expired";
+/** The cheapest endpoint that answers only "is this identity still good?". */
+const IDENTITY_PROBE_PATH = "/api/reaigen/users/me/";
+
+let identityProbe: Promise<void> | null = null;
+
+/**
+ * Ask once whether the identity is actually gone, and sign out only if it is.
+ *
+ * Deliberately not fired by every 401. A 401 is raised for plenty of reasons
+ * that have nothing to do with the session — one resource refused, a backend
+ * restarting mid-request, a proxy that failed to attach the token (which is
+ * precisely what used to sign people out of Settings). Evicting on all of them
+ * throws people back to the login screen while their credentials are fine.
+ *
+ * Leaving someone on a dead session is the opposite hazard, so the doubtful
+ * case is resolved rather than assumed: one probe, shared by every 401 racing
+ * with it, and the answer decides. A network failure decides nothing.
+ */
+function confirmSessionEnded(): Promise<void> {
+  if (identityProbe) return identityProbe;
+  identityProbe = (async () => {
+    try {
+      // Raw fetch on purpose, and the verdict is applied directly: routing the
+      // probe's own 401 back through handleUnauthorized would ask it to confirm
+      // itself, and the in-flight guard would swallow the answer.
+      const res = await fetch(IDENTITY_PROBE_PATH, {
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        cache: "no-store",
+      });
+      if (res.status === 401) notifyUnauthorized();
+    } catch {
+      // Offline or unreachable is not a verdict on the session.
+    } finally {
+      identityProbe = null;
+    }
+  })();
+  return identityProbe;
+}
+
+/**
+ * The single place a 401 is turned into a decision about the session.
+ * Every caller that reads a response status routes through here.
+ */
+function handleUnauthorized(res: Response) {
+  if (res.headers.get(SESSION_STATUS_HEADER) === SESSION_EXPIRED) {
+    notifyUnauthorized();
+    return;
+  }
+  void confirmSessionEnded();
 }
 
 const CACHE_TTL = 30_000; // 30s default
@@ -69,7 +124,7 @@ async function fetchGetData(path: string, options: RequestInit): Promise<unknown
       });
       if (!res.ok) {
         const body = await res.text();
-        if (res.status === 401) notifyUnauthorized();
+        if (res.status === 401) handleUnauthorized(res);
         throw new ApiError(res.status, body);
       }
       const text = await res.text();
@@ -148,7 +203,7 @@ async function request(path: string, options: RequestInit = {}) {
 
   if (!res.ok) {
     const body = await res.text();
-    if (res.status === 401) notifyUnauthorized();
+    if (res.status === 401) handleUnauthorized(res);
     throw new ApiError(res.status, body);
   }
 
@@ -167,7 +222,7 @@ async function abortableRequest(path: string, signal?: AbortSignal) {
   });
   if (!res.ok) {
     const body = await res.text();
-    if (res.status === 401) notifyUnauthorized();
+    if (res.status === 401) handleUnauthorized(res);
     throw new ApiError(res.status, body);
   }
   const text = await res.text();
@@ -197,7 +252,7 @@ async function freshRequest(path: string) {
   });
   if (!res.ok) {
     const body = await res.text();
-    if (res.status === 401) notifyUnauthorized();
+    if (res.status === 401) handleUnauthorized(res);
     throw new ApiError(res.status, body);
   }
   const text = await res.text();
@@ -2772,7 +2827,7 @@ export async function downloadSplatSceneDeliveryBundle(
   );
   if (!response.ok) {
     const body = await response.text();
-    if (response.status === 401) notifyUnauthorized();
+    if (response.status === 401) handleUnauthorized(response);
     throw new ApiError(response.status, body);
   }
   return response.blob();
@@ -2877,7 +2932,7 @@ export async function downloadSplatUsdBundle(
   );
   if (!response.ok) {
     const body = await response.text();
-    if (response.status === 401) notifyUnauthorized();
+    if (response.status === 401) handleUnauthorized(response);
     throw new ApiError(response.status, body);
   }
   return response.blob();

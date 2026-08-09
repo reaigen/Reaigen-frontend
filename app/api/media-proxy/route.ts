@@ -1,6 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
-import { ACCESS_COOKIE_NAME } from "../../lib/server/auth-cookies";
+import {
+  ACCESS_COOKIE_NAME,
+  REFRESH_COOKIE_NAME,
+  setAuthCookies,
+} from "../../lib/server/auth-cookies";
 import { fetchBackend } from "../../lib/server/backend-fetch";
+import { refreshSession } from "../../lib/server/token-refresh";
 
 /**
  * Same-origin image bytes for the photo editor.
@@ -93,8 +98,17 @@ function headersFor(contentType: string) {
   };
 }
 
-function fail(status: number, detail: string) {
-  return NextResponse.json({ detail }, { status, headers: headersFor("application/json") });
+function fail(
+  status: number,
+  detail: string,
+  rotated?: { access: string; refresh: string | null } | null,
+  currentRefresh?: string | null,
+) {
+  const response = NextResponse.json({ detail }, { status, headers: headersFor("application/json") });
+  // A refresh that happened on the way to a failure still has to be persisted,
+  // or the rotated token is lost and the *next* request is the one that breaks.
+  if (rotated) setAuthCookies(response, rotated, currentRefresh ?? null);
+  return response;
 }
 
 export async function GET(req: NextRequest) {
@@ -104,36 +118,63 @@ export async function GET(req: NextRequest) {
   }
 
   const accessToken = req.cookies.get(ACCESS_COOKIE_NAME)?.value;
-  if (!accessToken) return fail(401, "Authentication required.");
+  const refreshToken = req.cookies.get(REFRESH_COOKIE_NAME)?.value ?? null;
+  if (!accessToken && !refreshToken) return fail(401, "Authentication required.");
 
-  const authHeaders = {
-    Authorization: `Bearer ${accessToken}`,
-    "X-Reaigen-Client": "web",
+  // Renew like the other proxies do. Without this an access token that expired
+  // while the editor was open turned into a permanent "live preview
+  // unavailable" — the grading controls silently lost their working copy for a
+  // reason no one could see, and only reopening the app fixed it.
+  let bearer = accessToken ?? null;
+  let rotated: { access: string; refresh: string | null } | null = null;
+
+  const readMetadata = async (): Promise<Response | null> => {
+    for (const baseUrl of backendCandidates()) {
+      try {
+        return await fetchBackend(
+          `${baseUrl}/api/v1/reaigen/uploads/${uploadId}/`,
+          {
+            headers: {
+              ...(bearer ? { Authorization: `Bearer ${bearer}` } : {}),
+              "X-Reaigen-Client": "web",
+            },
+            cache: "no-store",
+          },
+        );
+      } catch {
+        // Try the next candidate origin.
+      }
+    }
+    return null;
   };
 
-  let fileUrl: string | null = null;
-  for (const baseUrl of backendCandidates()) {
-    try {
-      const metaResponse = await fetchBackend(
-        `${baseUrl}/api/v1/reaigen/uploads/${uploadId}/`,
-        { headers: authHeaders, cache: "no-store" },
-      );
-      if (!metaResponse.ok) {
-        // Surface the backend's own authorization verdict rather than masking it.
-        if (metaResponse.status === 401 || metaResponse.status === 403 || metaResponse.status === 404) {
-          return fail(metaResponse.status, "Upload is not available.");
-        }
-        continue;
-      }
-      const meta = await metaResponse.json();
-      if (typeof meta?.file_url === "string" && meta.file_url) fileUrl = meta.file_url;
-      break;
-    } catch {
-      // Try the next candidate origin.
+  let metaResponse = await readMetadata();
+  if ((!metaResponse || metaResponse.status === 401) && refreshToken) {
+    rotated = await refreshSession(refreshToken, backendCandidates());
+    if (rotated) {
+      bearer = rotated.access;
+      metaResponse = await readMetadata();
     }
   }
 
-  if (!fileUrl) return fail(502, "Could not resolve the upload.");
+  if (!metaResponse) return fail(502, "Could not resolve the upload.");
+  if (!metaResponse.ok) {
+    // Surface the backend's own authorization verdict rather than masking it.
+    if (metaResponse.status === 401 || metaResponse.status === 403 || metaResponse.status === 404) {
+      return fail(metaResponse.status, "Upload is not available.", rotated, refreshToken);
+    }
+    return fail(502, "Could not resolve the upload.", rotated, refreshToken);
+  }
+
+  let fileUrl: string | null = null;
+  try {
+    const meta = await metaResponse.json();
+    if (typeof meta?.file_url === "string" && meta.file_url) fileUrl = meta.file_url;
+  } catch {
+    return fail(502, "Could not resolve the upload.", rotated, refreshToken);
+  }
+
+  if (!fileUrl) return fail(502, "Could not resolve the upload.", rotated, refreshToken);
 
   // The value came from our own backend, but validate the scheme anyway so a
   // malformed record can never make us fetch a `file:`/`data:` target.
@@ -141,41 +182,41 @@ export async function GET(req: NextRequest) {
   try {
     target = new URL(fileUrl);
   } catch {
-    return fail(502, "Upload has an unusable location.");
+    return fail(502, "Upload has an unusable location.", rotated, refreshToken);
   }
   if (target.protocol !== "https:" && target.protocol !== "http:") {
-    return fail(502, "Upload has an unsupported scheme.");
+    return fail(502, "Upload has an unsupported scheme.", rotated, refreshToken);
   }
 
   let imageResponse: Response;
   try {
     imageResponse = await fetchBackend(target.toString(), { cache: "no-store" });
   } catch {
-    return fail(504, "Upstream media did not respond.");
+    return fail(504, "Upstream media did not respond.", rotated, refreshToken);
   }
-  if (!imageResponse.ok) return fail(502, "Upstream media returned an error.");
+  if (!imageResponse.ok) return fail(502, "Upstream media returned an error.", rotated, refreshToken);
 
   const contentType = imageResponse.headers.get("Content-Type") ?? "";
   if (!contentType.toLowerCase().startsWith("image/")) {
-    return fail(415, "Upload is not an image.");
+    return fail(415, "Upload is not an image.", rotated, refreshToken);
   }
 
   const declared = Number(imageResponse.headers.get("Content-Length") ?? "");
   if (Number.isFinite(declared) && declared > MAX_IMAGE_BYTES) {
-    return fail(413, "Image is too large to preview.");
+    return fail(413, "Image is too large to preview.", rotated, refreshToken);
   }
 
   const bytes = await imageResponse.arrayBuffer();
-  if (bytes.byteLength > MAX_IMAGE_BYTES) return fail(413, "Image is too large to preview.");
+  if (bytes.byteLength > MAX_IMAGE_BYTES) return fail(413, "Image is too large to preview.", rotated, refreshToken);
 
   const maxEdge = requestedMaxEdge(req.nextUrl.searchParams.get("max"));
   const reduced = maxEdge === null ? null : await downscale(bytes, maxEdge);
-  if (reduced) {
-    return new NextResponse(new Uint8Array(reduced.body), {
-      status: 200,
-      headers: headersFor(reduced.contentType),
-    });
-  }
-
-  return new NextResponse(bytes, { status: 200, headers: headersFor(contentType) });
+  const success = reduced
+    ? new NextResponse(new Uint8Array(reduced.body), {
+        status: 200,
+        headers: headersFor(reduced.contentType),
+      })
+    : new NextResponse(bytes, { status: 200, headers: headersFor(contentType) });
+  if (rotated) setAuthCookies(success, rotated, refreshToken);
+  return success;
 }

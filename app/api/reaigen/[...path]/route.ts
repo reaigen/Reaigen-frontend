@@ -4,7 +4,7 @@ import {
   ACCESS_COOKIE_NAME,
   REFRESH_COOKIE_NAME,
   setAuthCookies,
-  clearAuthCookies,
+  expireSession,
 } from "../../../lib/server/auth-cookies";
 import { fetchBackend } from "../../../lib/server/backend-fetch";
 import { isSafeProxyPath } from "../../../lib/server/proxy-path";
@@ -245,12 +245,11 @@ async function proxy(
           setAuthCookies(response, refreshed, refreshToken);
           return response;
         } else {
-          const response = NextResponse.json(
+          // Renewal was tried and refused: this is the verdict the client acts on.
+          return expireSession(NextResponse.json(
             { error: "Session expired" },
             { status: 401, headers: noStoreHeaders("application/json") },
-          );
-          clearAuthCookies(response);
-          return response;
+          ));
         }
       }
 
