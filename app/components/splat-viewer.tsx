@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState, useCallback, forwardRef, useImperativeHandle } from "react";
 import { AllocateShBuffers } from "@babylonjs/core/Meshes/GaussianSplatting/gaussianSplattingMeshBase.js";
 import { cameraFovRadians, normalizeCameraData } from "@/app/lib/camera-coordinates";
+import { clampCameraPosition } from "@/app/lib/camera-bounds";
 import { getCache, putCache } from "@/app/lib/splat-cache";
 import { t } from "@/app/lib/i18n";
 import { ReaigenLoadingMark } from "@/app/components/reaigen-loading-mark";
@@ -4924,6 +4925,38 @@ const SplatViewer = forwardRef<SplatViewerHandle, Props>(function SplatViewer(
         camera.inertia = 0.5;
         camera.speed = 0.3;
         camera.upVector = new BABYLON.Vector3(0, 1, 0);
+
+        /*
+          Hold the camera inside the reconstruction.
+
+          A FreeCamera has no limits, so pulling back far enough leaves the
+          captured volume and shows the splat cloud from outside — floaters,
+          background gaussians, no room. Nothing coherent exists out there to
+          render; a reconstruction is only defined where cameras looked.
+
+          Applied here rather than in any one input path: keys, pointer drag,
+          wheel, immersive and spatial modes all move this camera, and a limit
+          that only some of them respect is not a limit. Inertia keeps writing
+          position after the input stops, so the check has to run per frame.
+        */
+        const boundsObserver = scene.onBeforeRenderObservable.add(() => {
+          const frame = fallbackSceneRef.current;
+          if (!frame) return;
+          const held = clampCameraPosition(camera.position, {
+            footprint: frame.footprint,
+            floorY: frame.floorY,
+            ceilingY: frame.ceilingY,
+            radius: frame.radius,
+          });
+          if (!held.clamped) return;
+          camera.position.set(held.x, held.y, held.z);
+          // Kill the momentum that carried it out, or inertia spends the next
+          // frames pushing back into the wall and the view judders.
+          camera.cameraDirection.setAll(0);
+        });
+        // No explicit removal: the observable belongs to the scene and is
+        // released with it, and this scope has no disposer list of its own.
+        void boundsObserver;
 
         // No tone mapping here. Adding ACES rolloff did remove the clipped
         // highlights (1.33% -> 0%) but flattened the image: contrast fell
