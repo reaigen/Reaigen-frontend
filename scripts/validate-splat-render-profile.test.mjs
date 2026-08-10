@@ -8,14 +8,12 @@ import {
   GAUSSIAN_ANTIALIASED_VARIANCE,
   GAUSSIAN_MIP_VARIANCE,
   eyeFromSogViewer,
-  fallbackOverviewCamera,
   isAntialiasedReconstruction,
   parseRenderTuning,
   parseSogViewerHint,
   sogCameraIsInterior,
   chooseClearAzimuth,
   resolveSplatRenderProfile,
-  SPINOFF_DEFAULT_VERTICAL_FOV,
 } from "../app/lib/splat-render-profile.ts";
 
 /**
@@ -240,38 +238,4 @@ test("a lone obstruction is escaped rather than tolerated", () => {
     assert.equal(chosen.blocked, 0, `clearance=${clearance} should find a clear azimuth`);
     assert.notEqual(chosen.azimuth, 0, `clearance=${clearance} should move off the obstructed angle`);
   }
-});
-
-// ---------------------------------------------------------------------------
-// Source-matched fallback framing
-// ---------------------------------------------------------------------------
-
-test("fallback overview preserves the clear ray and retreats to a room frame", () => {
-  const frame = {
-    radius: 2.836655895168706,
-    safePosition: [1.960787486676928, 1.0307753705978393, 0.046193325298956034],
-    safeTarget: [-0.8732836339698324, 1.0307753705978393, 0.1672616973512389],
-  };
-  const overview = fallbackOverviewCamera(frame);
-  const originalDirection = frame.safePosition.map((value, index) => value - frame.safeTarget[index]);
-  const overviewDirection = overview.position.map((value, index) => value - overview.target[index]);
-  const originalLength = Math.hypot(...originalDirection);
-  const overviewLength = Math.hypot(...overviewDirection);
-
-  assert.ok(Math.abs(overviewLength - frame.radius * 1.7) < 1e-9);
-  assert.deepEqual(overview.target, frame.safeTarget);
-  assert.ok(originalDirection.every((value, index) => (
-    Math.abs(value / originalLength - overviewDirection[index] / overviewLength) < 1e-9
-  )));
-  assert.equal(overview.fov, SPINOFF_DEFAULT_VERTICAL_FOV);
-  assert.equal(overview.fov, 68 * Math.PI / 180);
-});
-
-test("fallback overview never moves an already-wider safe camera closer", () => {
-  const frame = {
-    radius: 1,
-    safePosition: [0, 0, 5],
-    safeTarget: [0, 0, 0],
-  };
-  assert.deepEqual(fallbackOverviewCamera(frame).position, frame.safePosition);
 });
