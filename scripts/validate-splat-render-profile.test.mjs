@@ -3,17 +3,21 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
+import { resolveSpinoffSogQuaternionOrder } from "@reaigen/spinoff";
 
 import {
   GAUSSIAN_ANTIALIASED_VARIANCE,
   GAUSSIAN_MIP_VARIANCE,
+  SPINOFF_NATIVE_MIP_SIGMA,
   eyeFromSogViewer,
+  fallbackOverviewCamera,
   isAntialiasedReconstruction,
   parseRenderTuning,
   parseSogViewerHint,
   sogCameraIsInterior,
   chooseClearAzimuth,
   resolveSplatRenderProfile,
+  SPINOFF_DEFAULT_VERTICAL_FOV,
 } from "../app/lib/splat-render-profile.ts";
 
 /**
@@ -32,6 +36,7 @@ const fixture = (name) =>
 
 const LEGACY = fixture("legacy-room-scale.meta.json");
 const ANTIALIASED = fixture("antialiased-object-scale.meta.json");
+const SPLATFICTION_10122 = fixture("splatfiction-web-10122.meta.json");
 
 const extent = (meta) =>
   Math.max(...meta.means.maxs.map((v, i) => v - meta.means.mins[i]));
@@ -75,10 +80,41 @@ test("every file gets the same kernel unless explicitly overridden", () => {
 
 test("the 3DGS kernel remains available as an override", () => {
   assert.equal(GAUSSIAN_ANTIALIASED_VARIANCE, 0.3);
+  assert.equal(SPINOFF_NATIVE_MIP_SIGMA, Math.sqrt(0.3));
   assert.equal(
     resolveSplatRenderProfile(ANTIALIASED, parseRenderTuning("?kernel=0.3")).kernelSize,
     0.3,
   );
+});
+
+test("the imported Splatfiction-web scene keeps the public WXYZ SOG contract", () => {
+  assert.equal(SPLATFICTION_10122.count, 288_444);
+  assert.equal(SPLATFICTION_10122.antialias, true);
+  assert.equal(SPLATFICTION_10122.asset.generator, "Splatfiction WebGPU");
+  assert.equal(resolveSpinoffSogQuaternionOrder(SPLATFICTION_10122), "wxyz");
+  assert.equal(resolveSpinoffSogQuaternionOrder({}), "wxyz");
+  assert.equal(
+    resolveSpinoffSogQuaternionOrder({ asset: { quaternionOrder: "xyzw" } }),
+    "xyzw",
+  );
+});
+
+test("vendored Spinoff uses Splatfiction's finite normalized Gaussian support", () => {
+  const packageRoot = join(here, "..", "node_modules", "@reaigen", "spinoff");
+  const packageJson = JSON.parse(readFileSync(join(packageRoot, "package.json"), "utf8"));
+  const webGpu = readFileSync(join(packageRoot, "dist", "gpu", "shaders.js"), "utf8");
+  const webGl = readFileSync(
+    join(packageRoot, "dist", "renderer", "SpinoffWebGlBackend.js"),
+    "utf8",
+  );
+
+  assert.equal(packageJson.version, "0.1.44");
+  for (const shader of [webGpu, webGl]) {
+    assert.match(shader, /radiusSquared > 8\.0/);
+    assert.match(shader, /0\.01831563888873418/);
+    assert.match(shader, /0\.9816843611112658/);
+    assert.doesNotMatch(shader, /radiusSquared > 9\.0/);
+  }
 });
 
 test("no metadata shape changes the kernel", () => {
@@ -238,4 +274,38 @@ test("a lone obstruction is escaped rather than tolerated", () => {
     assert.equal(chosen.blocked, 0, `clearance=${clearance} should find a clear azimuth`);
     assert.notEqual(chosen.azimuth, 0, `clearance=${clearance} should move off the obstructed angle`);
   }
+});
+
+// ---------------------------------------------------------------------------
+// Source-matched fallback framing
+// ---------------------------------------------------------------------------
+
+test("fallback overview preserves the clear ray and retreats to a room frame", () => {
+  const frame = {
+    radius: 2.836655895168706,
+    safePosition: [1.960787486676928, 1.0307753705978393, 0.046193325298956034],
+    safeTarget: [-0.8732836339698324, 1.0307753705978393, 0.1672616973512389],
+  };
+  const overview = fallbackOverviewCamera(frame);
+  const originalDirection = frame.safePosition.map((value, index) => value - frame.safeTarget[index]);
+  const overviewDirection = overview.position.map((value, index) => value - overview.target[index]);
+  const originalLength = Math.hypot(...originalDirection);
+  const overviewLength = Math.hypot(...overviewDirection);
+
+  assert.ok(Math.abs(overviewLength - frame.radius * 1.7) < 1e-9);
+  assert.deepEqual(overview.target, frame.safeTarget);
+  assert.ok(originalDirection.every((value, index) => (
+    Math.abs(value / originalLength - overviewDirection[index] / overviewLength) < 1e-9
+  )));
+  assert.equal(overview.fov, SPINOFF_DEFAULT_VERTICAL_FOV);
+  assert.equal(overview.fov, 68 * Math.PI / 180);
+});
+
+test("fallback overview never moves an already-wider safe camera closer", () => {
+  const frame = {
+    radius: 1,
+    safePosition: [0, 0, 5],
+    safeTarget: [0, 0, 0],
+  };
+  assert.deepEqual(fallbackOverviewCamera(frame).position, frame.safePosition);
 });

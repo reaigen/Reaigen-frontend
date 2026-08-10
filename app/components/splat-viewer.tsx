@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState, useCallback, forwardRef, useImperativeHandle } from "react";
 import { AllocateShBuffers } from "@babylonjs/core/Meshes/GaussianSplatting/gaussianSplattingMeshBase.js";
+import type { SpinoffOrbitCamera, SpinoffRenderer } from "@reaigen/spinoff";
 import { cameraFovRadians, normalizeCameraData } from "@/app/lib/camera-coordinates";
 import { clampCameraPosition } from "@/app/lib/camera-bounds";
 import { getCache, putCache } from "@/app/lib/splat-cache";
@@ -23,8 +24,10 @@ import type {
   TourShot,
 } from "@/app/lib/tour-types";
 import {
+  SPINOFF_NATIVE_MIP_SIGMA,
   chooseClearAzimuth,
   eyeFromSogViewer,
+  fallbackOverviewCamera,
   parseRenderTuning,
   parseSogViewerHint,
   resolveSplatRenderProfile,
@@ -34,6 +37,7 @@ import {
 import {
   IDENTITY_GLOBAL_SCENE_TRANSFORM,
   globalSceneScale3,
+  globalSceneQuaternion,
   inversePresentationPoint,
   scaleComponentWithAuthoredSign,
   sceneScaleMagnitude,
@@ -76,7 +80,7 @@ import {
 } from "@/app/lib/splat-editing";
 
 /**
- * SplatViewer — BabylonJS Gaussian Splatting renderer with guided tour.
+ * SplatViewer — Spinoff delivery renderer with BabylonJS authoring controls.
  *
  * Modes:
  *   Tour    — arrow keys / buttons navigate shots with quintic easing.
@@ -107,6 +111,115 @@ function normalizeVec3(value: Vec3, fallback: Vec3 = [0, 0, 1]): Vec3 {
   return [value[0] / length, value[1] / length, value[2] / length];
 }
 
+function spinoffModelTransform(transform: GlobalSceneTransform): {
+  compatible: boolean;
+  scale: number;
+  rotationRadians: Vec3;
+  translation: Vec3;
+} {
+  const [sx, sy, sz] = globalSceneScale3(transform);
+  const scale = (Math.abs(sx) + Math.abs(sy) + Math.abs(sz)) / 3;
+  const compatible = sx > 0
+    && Math.abs(sx - sy) < 1e-5
+    && Math.abs(sx - sz) < 1e-5;
+
+  // Spinoff accepts an XYZ Euler model rotation (Rz * Ry * Rx), while the
+  // OpenUSD root is a quaternion. Extract the equivalent angles so geometry
+  // and authored cameras still receive the root exactly once.
+  const [qx, qy, qz, qw] = globalSceneQuaternion(transform);
+  const m00 = 1 - 2 * (qy * qy + qz * qz);
+  const m10 = 2 * (qx * qy + qz * qw);
+  const m20 = 2 * (qx * qz - qy * qw);
+  const m21 = 2 * (qy * qz + qx * qw);
+  const m22 = 1 - 2 * (qx * qx + qy * qy);
+  const y = Math.asin(Math.max(-1, Math.min(1, -m20)));
+  const cosY = Math.cos(y);
+  const x = Math.abs(cosY) > 1e-7 ? Math.atan2(m21, m22) : 0;
+  const z = Math.abs(cosY) > 1e-7
+    ? Math.atan2(m10, m00)
+    : Math.atan2(-2 * (qx * qy - qz * qw), 1 - 2 * (qx * qx + qz * qz));
+  return {
+    compatible,
+    scale,
+    rotationRadians: [x, y, z],
+    translation: [...transform.translation] as Vec3,
+  };
+}
+
+function synchronizeSpinoffCamera(
+  target: SpinoffOrbitCamera,
+  source: any,
+): void {
+  if (!source) return;
+  const sourceTarget = source.getTarget();
+  const position: Vec3 = [source.position.x, source.position.y, source.position.z];
+  const forward = normalizeVec3([
+    sourceTarget.x - source.position.x,
+    sourceTarget.y - source.position.y,
+    sourceTarget.z - source.position.z,
+  ]);
+  const distance = Math.max(0.08, Math.hypot(
+    sourceTarget.x - source.position.x,
+    sourceTarget.y - source.position.y,
+    sourceTarget.z - source.position.z,
+  ));
+  const pitch = -Math.asin(Math.max(-1, Math.min(1, forward[1])));
+  const yaw = Math.atan2(forward[2], -forward[0]);
+
+  const backward: Vec3 = [-forward[0], -forward[1], -forward[2]];
+  const right = normalizeVec3([
+    backward[2],
+    0,
+    -backward[0],
+  ], [1, 0, 0]);
+  const referenceUp = normalizeVec3([
+    backward[1] * right[2] - backward[2] * right[1],
+    backward[2] * right[0] - backward[0] * right[2],
+    backward[0] * right[1] - backward[1] * right[0],
+  ], [0, 1, 0]);
+  const authoredUp = normalizeVec3([
+    source.upVector.x,
+    source.upVector.y,
+    source.upVector.z,
+  ], referenceUp);
+  const roll = Math.atan2(
+    authoredUp[0] * right[0] + authoredUp[1] * right[1] + authoredUp[2] * right[2],
+    authoredUp[0] * referenceUp[0] + authoredUp[1] * referenceUp[1] + authoredUp[2] * referenceUp[2],
+  );
+
+  const nextTarget: Vec3 = [
+    position[0] + forward[0] * distance,
+    position[1] + forward[1] * distance,
+    position[2] + forward[2] * distance,
+  ];
+  const close = (left: number, rightValue: number) => (
+    Math.abs(left - rightValue) <= 1e-6 * Math.max(1, Math.abs(left), Math.abs(rightValue))
+  );
+  const nextNear = Math.max(0.001, source.minZ ?? 0.02);
+  const nextFar = Math.max(nextNear + 1, source.maxZ ?? 500);
+  const changed = (
+    !close(target.distance, distance)
+    || !close(target.yawRadians, yaw)
+    || !close(target.pitchRadians, pitch)
+    || !close(target.rollRadians, roll)
+    || !close(target.verticalFovRadians, source.fov)
+    || !close(target.near, nextNear)
+    || !close(target.far, nextFar)
+    || nextTarget.some((value, index) => !close(target.target[index], value))
+  );
+  if (!changed) return;
+
+  target.distance = distance;
+  target.yawRadians = yaw;
+  target.pitchRadians = pitch;
+  target.rollRadians = roll;
+  target.verticalFovRadians = source.fov;
+  target.near = nextNear;
+  target.far = nextFar;
+  // setTarget publishes the one renderer invalidation for the complete pose.
+  target.setTarget(nextTarget);
+}
+
 function normalizedEditorDegrees(radians: number): number {
   if (!Number.isFinite(radians)) return 0;
   const degrees = radians * 180 / Math.PI;
@@ -121,10 +234,9 @@ function editorAngleDistance(a: number, b: number): number {
 const LOOK = 5;
 const TILT_Y = LOOK * Math.tan(5 * Math.PI / 180);
 const SH_C0 = 0.28209479177387814;
-const DEFAULT_IMMERSIVE_FOV = 85 * Math.PI / 180;
-// Spinoff's accepted deterministic profile uses a 0.3 physical-pixel Mip
-// sigma. Babylon adds the supplied value directly to the 2D covariance, so
-// its equivalent material parameter is sigma squared rather than sigma.
+// SOG/3DGS adds 0.30 px² to the projected covariance. Spinoff accepts sigma,
+// while Babylon accepts the variance directly; the shared profile keeps that
+// unit conversion explicit.
 // Mip kernel constants and the render profile live in
 // lib/splat-render-profile so they can be asserted against real .sog files.
 
@@ -649,6 +761,16 @@ interface VkgsSogMeta {
   shN?: VkgsMetaBlock & { mins: number[][]; maxs: number[][] };
 }
 
+interface SogBoundsMeta {
+  count?: number;
+  means: VkgsMetaBlock & {
+    shape?: number[];
+    mins: number[];
+    maxs: number[];
+  };
+  sh0: VkgsMetaBlock;
+}
+
 interface DecodedImageData {
   bits: Uint8Array;
   width: number;
@@ -696,6 +818,65 @@ async function decodeWebpImage(fileData: Uint8Array): Promise<DecodedImageData> 
   } finally {
     URL.revokeObjectURL(objectUrl);
   }
+}
+
+async function computeSceneFrameFromSogTextures(
+  zipData: Record<string, Uint8Array>,
+  meta: SogBoundsMeta,
+): Promise<SceneFrame | null> {
+  const meansLowData = zipData[meta.means.files[0]];
+  const meansHighData = zipData[meta.means.files[1]];
+  const sh0Data = zipData[meta.sh0.files[0]];
+  const splatCount = meta.count ?? meta.means.shape?.[0] ?? 0;
+  if (
+    !meansLowData
+    || !meansHighData
+    || !sh0Data
+    || !Number.isFinite(splatCount)
+    || splatCount <= 0
+    || meta.means.mins.length < 3
+    || meta.means.maxs.length < 3
+  ) {
+    return null;
+  }
+
+  // Delivery mode needs bounds for camera constraints, not a second Gaussian
+  // scene. Decode only means and opacity, sample the complete ordered cloud,
+  // and feed the existing robust frame estimator a compact packed buffer.
+  const [meansLow, meansHigh, sh0] = await Promise.all([
+    decodeWebpImage(meansLowData),
+    decodeWebpImage(meansHighData),
+    decodeWebpImage(sh0Data),
+  ]);
+  const sampleStep = Math.max(1, Math.ceil(splatCount / 30_000));
+  const sampleCount = Math.ceil(splatCount / sampleStep);
+  const sampleBuffer = new ArrayBuffer(sampleCount * 32);
+  const floats = new Float32Array(sampleBuffer);
+  const bytes = new Uint8Array(sampleBuffer);
+  const unlog = (value: number) => (
+    Math.sign(value) * (Math.exp(Math.abs(value)) - 1)
+  );
+
+  let outputIndex = 0;
+  for (let sourceIndex = 0; sourceIndex < splatCount; sourceIndex += sampleStep) {
+    const pixelOffset = sourceIndex * 4;
+    for (let axis = 0; axis < 3; axis += 1) {
+      const quantized = (
+        (meansHigh.bits[pixelOffset + axis] << 8)
+        | meansLow.bits[pixelOffset + axis]
+      );
+      const encoded = lerp(
+        meta.means.mins[axis],
+        meta.means.maxs[axis],
+        quantized / 65535,
+      );
+      floats[outputIndex * 8 + axis] = unlog(encoded);
+    }
+    bytes[outputIndex * 32 + 27] = sh0.bits[pixelOffset + 3];
+    outputIndex += 1;
+  }
+
+  return computeSceneFrameFromSplatBuffer(sampleBuffer);
 }
 
 function isVkgsSogMeta(meta: unknown): meta is VkgsSogMeta {
@@ -1263,6 +1444,9 @@ const SplatViewer = forwardRef<SplatViewerHandle, Props>(function SplatViewer(
 ) {
   const rootRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
+  const spinoffCanvasRef = useRef<HTMLCanvasElement>(null);
+  const spinoffRendererRef = useRef<SpinoffRenderer | null>(null);
+  const spinoffSourceRef = useRef<Blob | null>(null);
   const engineRef = useRef<any>(null);
   const cameraRef = useRef<any>(null);
   const babylonRef = useRef<any>(null);
@@ -1343,6 +1527,7 @@ const SplatViewer = forwardRef<SplatViewerHandle, Props>(function SplatViewer(
     pointer: { x: number; y: number };
   } | null>(null);
   const [ready, setReady] = useState(false);
+  const [spinoffStatus, setSpinoffStatus] = useState<"idle" | "loading" | "ready" | "error">("idle");
   const [tourData, setTourData] = useState<TourData | null>(null);
   const [immersiveAdjusted, setImmersiveAdjusted] = useState(false);
   const [showGestureHint, setShowGestureHint] = useState(false);
@@ -1355,6 +1540,17 @@ const SplatViewer = forwardRef<SplatViewerHandle, Props>(function SplatViewer(
   const sogViewerHintRef = useRef<SogViewerHint | null>(null);
   const sogAntialiasRef = useRef(false);
   const immersiveControls = Boolean(readOnly || compactTouch);
+  const isSogSource = splatUrl.split("?")[0].toLowerCase().endsWith(".sog");
+  const spinoffTransform = spinoffModelTransform(globalSceneTransform);
+  // One plain SOG node is rendered by the exact Splatfiction renderer in both
+  // delivery and authoring. Babylon stays mounted only as the Reaigen camera,
+  // grid, gizmo and selection-control layer; it never uploads a second copy of
+  // the Gaussian scene. Pruned/composed scenes retain the mutable fallback.
+  const spinoffEligible = isSogSource
+    && !initialPruneMask
+    && !compositionAssets.length
+    && spinoffTransform.compatible;
+  const visibleReady = ready && (!spinoffEligible || spinoffStatus === "ready");
 
   useEffect(() => {
     const query = window.matchMedia("(max-width: 767px), (pointer: coarse)");
@@ -4853,6 +5049,7 @@ const SplatViewer = forwardRef<SplatViewerHandle, Props>(function SplatViewer(
     let layoutResizePending = false;
     let lastCanvasCssWidth = 0;
     let lastCanvasCssHeight = 0;
+    setReady(false);
 
     async function init() {
       if (!canvasRef.current) return;
@@ -4860,7 +5057,7 @@ const SplatViewer = forwardRef<SplatViewerHandle, Props>(function SplatViewer(
       try {
         setStatus(t("viewer.status.loadingEngine", lang));
         const BABYLON = await import("@babylonjs/core");
-        await import("@babylonjs/loaders");
+        if (!spinoffEligible) await import("@babylonjs/loaders");
         babylonRef.current = BABYLON;
         if (disposed) return;
 
@@ -4879,18 +5076,22 @@ const SplatViewer = forwardRef<SplatViewerHandle, Props>(function SplatViewer(
           const dpr = typeof window !== "undefined"
             ? window.devicePixelRatio || 1
             : 1;
-          const renderDpr = viewerRenderDpr(
-            dpr,
-            canvas.clientWidth,
-            canvas.clientHeight,
-            compactTouch,
-            spatialNavigationRef.current,
-            performanceProfile,
-          );
+          const renderDpr = spinoffEligible
+            ? spatialNavigationRef.current ? 1 : 0.125
+            : viewerRenderDpr(
+                dpr,
+                canvas.clientWidth,
+                canvas.clientHeight,
+                compactTouch,
+                spatialNavigationRef.current,
+                performanceProfile,
+              );
           canvas.dataset.renderDpr = renderDpr.toFixed(3);
-          canvas.dataset.renderProfile = spatialNavigationRef.current
-            ? "authoring"
-            : `delivery-${performanceProfile}`;
+          canvas.dataset.renderProfile = spinoffEligible
+            ? "spinoff-camera-controller"
+            : spatialNavigationRef.current
+              ? "authoring"
+              : `delivery-${performanceProfile}`;
           return 1 / renderDpr;
         };
         let activeHardwareScale = resolveHardwareScale();
@@ -4913,9 +5114,14 @@ const SplatViewer = forwardRef<SplatViewerHandle, Props>(function SplatViewer(
         });
 
         const scene = new BABYLON.Scene(engine);
+        // Reconstruction content, saved cameras, and the OpenUSD workspace are
+        // canonical right-handed. Babylon defaults to a left-handed scene;
+        // leaving that default active mirrors the photographic view and makes
+        // the decoded Gaussian covariance basis disagree with the producer.
+        scene.useRightHandedSystem = true;
         sceneRef.current = scene;
         scene.clearColor = spatialNavigation
-          ? new BABYLON.Color4(0.965, 0.969, 0.976, 1)
+          ? new BABYLON.Color4(0.965, 0.969, 0.976, spinoffEligible ? 0 : 1)
           : new BABYLON.Color4(1, 1, 1, 1);
 
         const camera = new BABYLON.FreeCamera("cam", BABYLON.Vector3.Zero(), scene);
@@ -5365,12 +5571,13 @@ const SplatViewer = forwardRef<SplatViewerHandle, Props>(function SplatViewer(
           } catch { /* best-effort */ }
 
           if (fallback) {
+            const overview = fallbackOverviewCamera(fallback);
             const worldPosition = transformCanonicalPoint(
-              fallback.safePosition,
+              overview.position,
               globalSceneTransformRef.current,
             );
             const worldTarget = transformCanonicalPoint(
-              fallback.safeTarget,
+              overview.target,
               globalSceneTransformRef.current,
             );
             const [px, py, pz] = worldPosition;
@@ -5380,7 +5587,7 @@ const SplatViewer = forwardRef<SplatViewerHandle, Props>(function SplatViewer(
             cameraUpRef.current = [0, 1, 0];
             camera.setTarget(new BABYLON.Vector3(tx, ty, tz));
             camera.rotation.z = 0;
-            camera.fov = DEFAULT_IMMERSIVE_FOV;
+            camera.fov = overview.fov;
             camera.minZ = Math.max(0.05, fallback.radius / 250);
             camera.maxZ = Math.max(80, fallback.radius * 30);
           }
@@ -5507,9 +5714,10 @@ const SplatViewer = forwardRef<SplatViewerHandle, Props>(function SplatViewer(
         const isGZippedSpz = u8.length >= 2 && u8[0] === 0x1f && u8[1] === 0x8b;
         const isNgspSpz = u8.length >= 4 && u8[0] === 0x4e && u8[1] === 0x47 && u8[2] === 0x53 && u8[3] === 0x50;
         if (isZip || isSogUrl) {
-          // SOG format: unzip and parse with BabylonJS SOG parser
+          // SOG format. Delivery sends the compressed source directly to the
+          // exact renderer and samples only three textures for camera bounds;
+          // editor mode keeps Babylon's full mutable decode.
           setStatus(t("viewer.status.processing", lang));
-          const { ParseSogMeta } = await import("@babylonjs/loaders/SPLAT/sog");
           const fflate = await import("fflate");
           const zipData = await new Promise<Record<string, Uint8Array>>((resolve, reject) => {
             fflate.unzip(new Uint8Array(rawBuffer), (error, data) => {
@@ -5517,7 +5725,18 @@ const SplatViewer = forwardRef<SplatViewerHandle, Props>(function SplatViewer(
               else resolve(data);
             });
           });
+          if (spinoffEligible) {
+            // Portable Splatfiction exports deflate their ZIP members. Spinoff
+            // uses stored members for zero-copy range access, so repackage the
+            // already-compressed WebPs losslessly without decoding Gaussians.
+            const storedSog = fflate.zipSync(zipData, { level: 0 });
+            spinoffSourceRef.current = new Blob(
+              [new Uint8Array(storedSog).buffer],
+              { type: "application/octet-stream" },
+            );
+          }
           let vkgsMeta: VkgsSogMeta | null = null;
+          let boundsMeta: SogBoundsMeta | null = null;
           const metaEntry = zipData["meta.json"];
           if (metaEntry) {
             try {
@@ -5525,6 +5744,16 @@ const SplatViewer = forwardRef<SplatViewerHandle, Props>(function SplatViewer(
               const meta = JSON.parse(decoded) as VkgsSogMeta & {
                 shN?: { shape?: number[]; files?: string[]; bands?: number; mins?: number; maxs?: number; codebook?: number[] };
               };
+              if (
+                Array.isArray(meta.means?.files)
+                && meta.means.files.length >= 2
+                && Array.isArray(meta.means.mins)
+                && Array.isArray(meta.means.maxs)
+                && Array.isArray(meta.sh0?.files)
+                && meta.sh0.files.length >= 1
+              ) {
+                boundsMeta = meta as SogBoundsMeta;
+              }
               sogViewerHintRef.current = parseSogViewerHint(meta);
               sogAntialiasRef.current =
                 (meta as { antialias?: unknown }).antialias === true;
@@ -5552,33 +5781,44 @@ const SplatViewer = forwardRef<SplatViewerHandle, Props>(function SplatViewer(
             }
           }
           if (disposed) return;
-          let parsedSOG: ParsedSogData;
-          if (vkgsMeta) {
-            parsedSOG = await parseVkgsSogMeta(zipData as Record<string, Uint8Array>, vkgsMeta, scene);
-          } else {
-            const files = new Map<string, Uint8Array>();
-            for (const [name, data] of Object.entries(zipData)) {
-              files.set(name, data as Uint8Array);
+          if (spinoffEligible) {
+            if (!spinoffSourceRef.current) {
+              throw new Error("SOG delivery source was not prepared");
             }
-            parsedSOG = await ParseSogMeta(files, "", scene);
-          }
-          if (disposed) return;
-          const sogSh = renderTuning().sh && parsedSOG.sh && parsedSOG.sh.length
-            ? parsedSOG.sh
-            : undefined;
-          const sogDegree = sogSh ? (parsedSOG.shDegree ?? 0) : 0;
-          const renderData = initializeSplatEditing(parsedSOG.data, sogSh, sogDegree);
-          publishSceneFrame(computeSceneFrameFromSplatBuffer(renderData.buffer));
-          splatBufferRef.current = renderData.buffer;
+            if (boundsMeta) {
+              publishSceneFrame(await computeSceneFrameFromSogTextures(zipData, boundsMeta));
+            }
+            splatBufferRef.current = null;
+          } else {
+            const { ParseSogMeta } = await import("@babylonjs/loaders/SPLAT/sog");
+            let parsedSOG: ParsedSogData;
+            if (vkgsMeta) {
+              parsedSOG = await parseVkgsSogMeta(zipData, vkgsMeta, scene);
+            } else {
+              const files = new Map<string, Uint8Array>();
+              for (const [name, data] of Object.entries(zipData)) {
+                files.set(name, data);
+              }
+              parsedSOG = await ParseSogMeta(files, "", scene);
+            }
+            if (disposed) return;
+            const sogSh = renderTuning().sh && parsedSOG.sh && parsedSOG.sh.length
+              ? parsedSOG.sh
+              : undefined;
+            const sogDegree = sogSh ? (parsedSOG.shDegree ?? 0) : 0;
+            const renderData = initializeSplatEditing(parsedSOG.data, sogSh, sogDegree);
+            publishSceneFrame(computeSceneFrameFromSplatBuffer(renderData.buffer));
+            splatBufferRef.current = renderData.buffer;
 
-          gs = createPrimaryGaussian();
-          gs.updateData(
-            renderData.buffer,
-            renderData.sh,
-            { flipY: false },
-            undefined,
-            renderData.sh?.length ? (renderData.shDegree ?? 0) : 0,
-          );
+            gs = createPrimaryGaussian();
+            gs.updateData(
+              renderData.buffer,
+              renderData.sh,
+              { flipY: false },
+              undefined,
+              renderData.sh?.length ? (renderData.shDegree ?? 0) : 0,
+            );
+          }
         } else if (isGZippedSpz || isNgspSpz || isSpzUrl) {
           // SPZ format: this is the current R&D-packed web format.
           setStatus(t("viewer.status.processing", lang));
@@ -5661,6 +5901,23 @@ const SplatViewer = forwardRef<SplatViewerHandle, Props>(function SplatViewer(
           }
           if (disposed) return;
         }
+        if (spinoffEligible && (isZip || isSogUrl)) {
+          // Camera/input state is ready; the Spinoff effect now owns the only
+          // Gaussian upload, sort, and draw for this delivery scene.
+          await placeCamera();
+          if (immersiveControls) {
+            const target = camera.getTarget();
+            setImmersiveBase(
+              [camera.position.x, camera.position.y, camera.position.z],
+              [target.x - camera.position.x, target.y - camera.position.y, target.z - camera.position.z],
+              camera.fov,
+            );
+          }
+          setReady(true);
+          viewerInitializing = false;
+          return;
+        }
+
         gsRef.current = gs;
 
         // Backend output and current web/iOS cameras are already Y-up in the
@@ -5732,6 +5989,7 @@ const SplatViewer = forwardRef<SplatViewerHandle, Props>(function SplatViewer(
     return () => {
       disposed = true;
       splatBufferRef.current = null;
+      spinoffSourceRef.current = null;
       originalSplatDataRef.current = null;
       aliveSplatMaskRef.current = null;
       savedSplatMaskRef.current = null;
@@ -5747,7 +6005,116 @@ const SplatViewer = forwardRef<SplatViewerHandle, Props>(function SplatViewer(
       layoutResizeObserver?.disconnect();
       engineRef.current?.dispose();
     };
-  }, [splatUrl, splatId, camerasUrl]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [splatUrl, splatId, camerasUrl, spinoffEligible]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // ── Exact single-Gaussian delivery renderer ──────────────────────────────
+
+  useEffect(() => {
+    const canvas = spinoffCanvasRef.current;
+    let source = spinoffSourceRef.current;
+    const babylonCamera = cameraRef.current;
+    const scene = sceneRef.current;
+    if (!ready || !spinoffEligible || !canvas || !source || !babylonCamera || !scene) {
+      setSpinoffStatus("idle");
+      return;
+    }
+
+    let disposed = false;
+    let cameraObserver: any = null;
+    const abortController = new AbortController();
+    setSpinoffStatus("loading");
+    setStatus(t("viewer.status.processing", lang));
+
+    void (async () => {
+      try {
+        const { SpinoffOrbitCamera, SpinoffRenderer } = await import("@reaigen/spinoff");
+        if (disposed) return;
+        const camera = new SpinoffOrbitCamera();
+        synchronizeSpinoffCamera(camera, babylonCamera);
+        const currentTransform = spinoffModelTransform(globalSceneTransformRef.current);
+        const renderer = new SpinoffRenderer(canvas, {
+          camera,
+          backendPreference: "auto",
+          sourceUpAxis: "y",
+          modelScale: currentTransform.scale,
+          modelRotationRadians: currentTransform.rotationRadians,
+          modelTranslation: currentTransform.translation,
+          renderMode: "deterministic",
+          // Match Splatfiction-web exactly: SOG specifies 0.30 px² variance,
+          // while Spinoff's public option is sigma in physical pixels.
+          mipSigmaPixels: SPINOFF_NATIVE_MIP_SIGMA,
+          mipOpacityCompensation: true,
+          motionSmoothing: false,
+          maxCanvasPixels: spatialNavigation
+            ? compactTouch ? 3_000_000 : 8_000_000
+            : performanceProfile === "balanced"
+              ? compactTouch ? 2_250_000 : 4_500_000
+              : compactTouch ? 3_500_000 : 9_000_000,
+          // Keep the Reaigen light viewport material; Spinoff contributes no
+          // application theme or UI chrome.
+          background: spatialNavigation
+            ? [0.965, 0.969, 0.976, 1]
+            : [1, 1, 1, 1],
+          physicalSky: false,
+        });
+        spinoffRendererRef.current = renderer;
+        canvas.dataset.spinoffStatus = "initializing";
+        await renderer.initialize();
+        if (disposed) return;
+        renderer.start();
+        canvas.dataset.spinoffStatus = "loading";
+        await renderer.loadSog(source, {
+          signal: abortController.signal,
+          sourceUpAxis: "y",
+        });
+        source = null;
+        spinoffSourceRef.current = null;
+        if (disposed) return;
+
+        const syncCamera = () => synchronizeSpinoffCamera(camera, babylonCamera);
+        cameraObserver = scene.onBeforeRenderObservable.add(syncCamera);
+        syncCamera();
+        renderer.renderOnce();
+        canvas.dataset.spinoffStatus = "ready";
+        canvas.dataset.spinoffBackend = renderer.stats.backend;
+        canvas.dataset.spinoffSplats = String(renderer.stats.sceneSplats);
+        canvas.dataset.spinoffGaussianEngines = "1";
+        setSpinoffStatus("ready");
+        setStatus("");
+        onReady?.();
+      } catch (error) {
+        if (disposed || abortController.signal.aborted) return;
+        const reason = error instanceof Error ? error.message : String(error);
+        canvas.dataset.spinoffStatus = "error";
+        canvas.dataset.spinoffError = reason;
+        console.error("[REAI] Exact Spinoff delivery renderer failed:", error);
+        setSpinoffStatus("error");
+        setStatus(t("viewer.status.error", lang));
+        onError?.(reason);
+      }
+    })();
+
+    return () => {
+      disposed = true;
+      source = null;
+      abortController.abort();
+      if (cameraObserver) scene.onBeforeRenderObservable.remove(cameraObserver);
+      spinoffRendererRef.current?.dispose();
+      spinoffRendererRef.current = null;
+    };
+  }, [compactTouch, lang, outputsVersion, performanceProfile, ready, spatialNavigation, spinoffEligible, splatUrl]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  useEffect(() => {
+    if (!spinoffEligible) return;
+    const renderer = spinoffRendererRef.current;
+    if (!renderer) return;
+    const transform = spinoffModelTransform(globalSceneTransform);
+    renderer.setModelTransform({
+      scale: transform.scale,
+      rotationRadians: transform.rotationRadians,
+      translation: transform.translation,
+    });
+  }, [globalSceneTransform, spinoffEligible]);
 
   // ── UI ─────────────────────────────────────────────────────────────────────
 
@@ -5756,7 +6123,7 @@ const SplatViewer = forwardRef<SplatViewerHandle, Props>(function SplatViewer(
       ref={rootRef}
       className={`relative h-full w-full select-none bg-background ${className ?? ""}`}
       tabIndex={0}
-      aria-busy={!ready}
+      aria-busy={!visibleReady}
     >
       <canvas
         ref={canvasRef}
@@ -5769,9 +6136,23 @@ const SplatViewer = forwardRef<SplatViewerHandle, Props>(function SplatViewer(
             event.currentTarget.focus();
           }
         }}
-        className="w-full h-full block outline-none"
+        className={`block h-full w-full outline-none ${
+          spinoffEligible && spatialNavigation ? "absolute inset-0 z-10" : ""
+        }`}
         style={{ touchAction: "none", overscrollBehavior: "none" }}
       />
+
+      {spinoffEligible ? (
+        <canvas
+          ref={spinoffCanvasRef}
+          aria-label="Spinoff Gaussian renderer"
+          className={`pointer-events-none absolute inset-0 h-full w-full transition-opacity duration-200 ${
+            spatialNavigation ? "z-0" : "z-10"
+          } ${
+            spinoffStatus === "ready" ? "opacity-100" : "opacity-0"
+          }`}
+        />
+      ) : null}
 
       {selectionGesture ? (
         <svg
@@ -5815,7 +6196,7 @@ const SplatViewer = forwardRef<SplatViewerHandle, Props>(function SplatViewer(
         </svg>
       ) : null}
 
-      {immersiveControls && !spatialNavigation && ready && (
+      {immersiveControls && !spatialNavigation && visibleReady && (
         <>
           <div
             className={`pointer-events-none absolute inset-x-0 top-[42%] z-10 flex justify-center px-6 transition-all duration-500 md:hidden ${showGestureHint ? "translate-y-0 opacity-100" : "translate-y-2 opacity-0"}`}
@@ -5866,9 +6247,9 @@ const SplatViewer = forwardRef<SplatViewerHandle, Props>(function SplatViewer(
         className={`absolute inset-0 flex flex-col items-center justify-center bg-background text-foreground transition-opacity duration-500 ease-[var(--motion-ease-smooth)] ${
           spatialNavigation ? "z-40" : "z-10"
         } ${
-          ready ? "pointer-events-none opacity-0" : "opacity-100"
+          visibleReady ? "pointer-events-none opacity-0" : "opacity-100"
         }`}
-        aria-hidden={ready}
+        aria-hidden={visibleReady}
       >
         <ReaigenLoadingMark status={status} />
       </div>

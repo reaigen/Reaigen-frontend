@@ -30,6 +30,59 @@ export const GAUSSIAN_MIP_VARIANCE = 0.09;
  */
 export const GAUSSIAN_ANTIALIASED_VARIANCE = 0.3;
 
+/**
+ * Spinoff accepts a pixel sigma while the SOG/3DGS contract specifies a
+ * variance. Keep the conversion at this boundary so callers cannot
+ * accidentally square 0.30 twice or pass it through unchanged.
+ */
+export const SPINOFF_NATIVE_MIP_SIGMA = Math.sqrt(
+  GAUSSIAN_ANTIALIASED_VARIANCE,
+);
+
+/** Spinoff Web's authored default vertical field of view. */
+export const SPINOFF_DEFAULT_VERTICAL_FOV = 68 * Math.PI / 180;
+
+interface FallbackSceneFrame {
+  radius: number;
+  safePosition: Vec3;
+  safeTarget: Vec3;
+}
+
+/**
+ * Turn the collision-safe interior direction into a useful room overview.
+ *
+ * The point-cloud frame already finds a clear eye and a meaningful look
+ * direction. Its distance is intentionally close enough for navigation,
+ * though, which can open a room with the camera seated against furniture.
+ * Retreat on the same ray to Spinoff's overview distance and keep the target
+ * untouched, so no scene-specific axis or mirror is introduced.
+ */
+export function fallbackOverviewCamera(frame: FallbackSceneFrame): {
+  position: Vec3;
+  target: Vec3;
+  fov: number;
+} {
+  const backward: Vec3 = [
+    frame.safePosition[0] - frame.safeTarget[0],
+    frame.safePosition[1] - frame.safeTarget[1],
+    frame.safePosition[2] - frame.safeTarget[2],
+  ];
+  const currentDistance = Math.hypot(...backward);
+  const direction: Vec3 = currentDistance > 1e-6
+    ? backward.map((value) => value / currentDistance) as Vec3
+    : [0, 0, 1];
+  const distance = Math.max(currentDistance, Math.max(0.1, frame.radius) * 1.7);
+  return {
+    position: [
+      frame.safeTarget[0] + direction[0] * distance,
+      frame.safeTarget[1] + direction[1] * distance,
+      frame.safeTarget[2] + direction[2] * distance,
+    ],
+    target: [...frame.safeTarget],
+    fov: SPINOFF_DEFAULT_VERTICAL_FOV,
+  };
+}
+
 /** Camera authored by the exporter inside a SOG's meta.json. */
 export interface SogViewerHint {
   target: Vec3;
