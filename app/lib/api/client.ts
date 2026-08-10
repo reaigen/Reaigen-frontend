@@ -1088,6 +1088,36 @@ export interface WebTourWorkspace {
   thumbnail_renderer_version?: number | null;
 }
 
+function webTourSogDeliveryUrl(
+  tourId: number,
+  splatId: number,
+  fingerprint: string,
+): string {
+  const version = fingerprint ? `?v=${encodeURIComponent(fingerprint)}` : "";
+  return `/api/sog/${tourId}/${splatId}/scene.sog${version}`;
+}
+
+function withWebTourSogDelivery(workspace: WebTourWorkspace): WebTourWorkspace {
+  return {
+    ...workspace,
+    nodes: workspace.nodes.map((node) => (
+      node.asset.format === "sog"
+        ? {
+            ...node,
+            asset: {
+              ...node.asset,
+              url: webTourSogDeliveryUrl(
+                workspace.tour_id,
+                node.splat_id,
+                node.asset.fingerprint,
+              ),
+            },
+          }
+        : node
+    )),
+  };
+}
+
 export interface WebCreationAccess {
   allowed: boolean;
   feature: "web_scene_authoring";
@@ -1131,14 +1161,18 @@ export async function createWebTour(data: {
   draft_id: number;
   name?: string;
 }): Promise<WebTourWorkspace> {
-  return request("/api/reaigen/web-creation/tours/", {
+  const workspace = await request("/api/reaigen/web-creation/tours/", {
     method: "POST",
     body: JSON.stringify(data),
-  });
+  }) as WebTourWorkspace;
+  return withWebTourSogDelivery(workspace);
 }
 
 export async function getWebTourWorkspace(tourId: number): Promise<WebTourWorkspace> {
-  return freshRequest(`/api/reaigen/web-creation/tours/${tourId}/`);
+  const workspace = await freshRequest(
+    `/api/reaigen/web-creation/tours/${tourId}/`,
+  ) as WebTourWorkspace;
+  return withWebTourSogDelivery(workspace);
 }
 
 export async function saveWebTourWorkspace(
@@ -1152,10 +1186,11 @@ export async function saveWebTourWorkspace(
     cameras?: Array<Record<string, unknown>>;
   },
 ): Promise<WebTourWorkspace> {
-  return request(`/api/reaigen/web-creation/tours/${tourId}/`, {
+  const workspace = await request(`/api/reaigen/web-creation/tours/${tourId}/`, {
     method: "PATCH",
     body: JSON.stringify(data),
-  });
+  }) as WebTourWorkspace;
+  return withWebTourSogDelivery(workspace);
 }
 
 export async function saveWebTourPruneMask(
@@ -1164,7 +1199,7 @@ export async function saveWebTourPruneMask(
   baseRevision: number,
   prune: SplatPruneMask | null,
 ): Promise<WebTourWorkspace> {
-  return request(
+  const workspace = await request(
     `/api/reaigen/web-creation/tours/${tourId}/assets/${splatId}/prune/`,
     {
       method: "POST",
@@ -1173,7 +1208,8 @@ export async function saveWebTourPruneMask(
         prune,
       }),
     },
-  );
+  ) as WebTourWorkspace;
+  return withWebTourSogDelivery(workspace);
 }
 
 export async function saveWebTourThumbnail(
@@ -1190,9 +1226,9 @@ export async function saveWebTourThumbnail(
       camera_id: cameraId,
       renderer_version: 2,
     }),
-  });
+  }) as WebTourWorkspace;
   invalidateCache(`/api/reaigen/splats/by-draft/${workspace.draft_id}/?all=true`);
-  return workspace;
+  return withWebTourSogDelivery(workspace);
 }
 
 interface WebTourUploadInit {
@@ -1315,13 +1351,14 @@ export async function uploadWebTourAsset(
       throw new Error("The upload session is incomplete.");
     }
 
-    return request(
+    const workspace = await request(
       `/api/reaigen/web-creation/tours/${tourId}/assets/${initialized.splat_id}/confirm/`,
       {
         method: "POST",
         body: JSON.stringify(confirmBody),
       },
-    );
+    ) as WebTourWorkspace;
+    return withWebTourSogDelivery(workspace);
   } catch (error) {
     void request(
       `/api/reaigen/web-creation/tours/${tourId}/assets/${initialized.splat_id}/abort/`,
@@ -1385,13 +1422,14 @@ export async function replaceWebTourAsset(
       throw new Error("The upload session is incomplete.");
     }
 
-    return request(
+    const workspace = await request(
       `/api/reaigen/web-creation/tours/${tourId}/assets/${initialized.splat_id}/confirm/`,
       {
         method: "POST",
         body: JSON.stringify(confirmBody),
       },
-    );
+    ) as WebTourWorkspace;
+    return withWebTourSogDelivery(workspace);
   } catch (error) {
     void request(
       `/api/reaigen/web-creation/tours/${tourId}/assets/${initialized.splat_id}/abort/`,
@@ -1405,9 +1443,15 @@ export async function getWebTourAssetStatus(
   tourId: number,
   splatId: number,
 ): Promise<WebTourWorkspaceNode["asset"]> {
-  return freshRequest(
+  const asset = await freshRequest(
     `/api/reaigen/web-creation/tours/${tourId}/assets/${splatId}/status/`,
-  );
+  ) as WebTourWorkspaceNode["asset"];
+  return asset.format === "sog"
+    ? {
+        ...asset,
+        url: webTourSogDeliveryUrl(tourId, splatId, asset.fingerprint),
+      }
+    : asset;
 }
 
 /** Bypass the short detail cache after an editor or media mutation. */

@@ -1509,15 +1509,12 @@ const SplatViewer = forwardRef<SplatViewerHandle, Props>(function SplatViewer(
   const sogAntialiasRef = useRef(false);
   const immersiveControls = Boolean(readOnly || compactTouch);
   const isSogSource = splatUrl.split("?")[0].toLowerCase().endsWith(".sog");
-  const spinoffTransform = spinoffModelTransform(globalSceneTransform);
-  // One plain SOG node is rendered by the exact Splatfiction renderer in both
-  // delivery and authoring. Babylon stays mounted only as the Reaigen camera,
-  // grid, gizmo and selection-control layer; it never uploads a second copy of
-  // the Gaussian scene. Pruned/composed scenes retain the mutable fallback.
-  const spinoffEligible = isSogSource
-    && !initialPruneMask
-    && !compositionAssets.length
-    && spinoffTransform.compatible;
+  // SOG has one rendering contract: Splatfiction/Spinoff. Never silently send
+  // it through Babylon's full-archive fallback because a workspace option is
+  // present; that downloads the private tensors, changes the appearance, and
+  // is exactly the cross-origin Firefox failure this path is designed to avoid.
+  // Babylon remains only as Reaigen's camera/grid/gizmo control layer.
+  const spinoffEligible = isSogSource;
   const visibleReady = ready && (!spinoffEligible || spinoffStatus === "ready");
 
   useEffect(() => {
