@@ -89,6 +89,9 @@ export interface SogViewerHint {
   distance: number;
   yawRadians: number;
   pitchRadians: number;
+  verticalFovRadians?: number;
+  near?: number;
+  far?: number;
 }
 
 export interface SplatRenderProfile {
@@ -134,6 +137,11 @@ export function parseSogViewerHint(meta: unknown): SogViewerHint | null {
     distance,
     yawRadians: angle(viewer.yawRadians),
     pitchRadians: angle(viewer.pitchRadians),
+    ...(finite(viewer.verticalFovRadians) && viewer.verticalFovRadians > 0
+      ? { verticalFovRadians: viewer.verticalFovRadians }
+      : {}),
+    ...(finite(viewer.near) && viewer.near > 0 ? { near: viewer.near } : {}),
+    ...(finite(viewer.far) && viewer.far > 0 ? { far: viewer.far } : {}),
   };
 }
 

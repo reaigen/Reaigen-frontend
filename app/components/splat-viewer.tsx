@@ -2,7 +2,11 @@
 
 import { useEffect, useRef, useState, useCallback, forwardRef, useImperativeHandle } from "react";
 import { AllocateShBuffers } from "@babylonjs/core/Meshes/GaussianSplatting/gaussianSplattingMeshBase.js";
-import type { SpinoffOrbitCamera, SpinoffRenderer } from "@reaigen/spinoff";
+import type {
+  SpinoffOrbitCamera,
+  SpinoffRenderer,
+  SpinoffSogSource,
+} from "@reaigen/spinoff";
 import { cameraFovRadians, normalizeCameraData } from "@/app/lib/camera-coordinates";
 import { clampCameraPosition } from "@/app/lib/camera-bounds";
 import { getCache, putCache } from "@/app/lib/splat-cache";
@@ -453,42 +457,6 @@ function sampleSplatBuffer(buffer: ArrayBuffer, maximum = 24_000): SplatSample |
  * This follows the native viewer principle of starting from a safe interior
  * anchor when no captured camera is available.
  */
-/**
- * Camera authored by the exporter inside a SOG's meta.json.
- *
- * `computeSceneFrameFromSplatBuffer` below derives framing from the point
- * cloud, and every constant in it assumes an indoor room-scale property scan:
- * a 1.55 m standing eye height, a 1.5 m minimum orbit radius, ceiling and
- * floor band detection. Those are right for a 30 m flat and wrong for an
- * object-scale capture -- a 3.8 m scene puts the camera inside the cloud and
- * renders blank or washed out.
- *
- * When the file ships its own camera we simply use it: the exporter framed
- * that specific scene and knows better than any heuristic. Files without a
- * viewer block keep the derived framing untouched, so existing scans are
- * unaffected.
- */
-/** Turn an authored camera into the SceneFrame the viewer places its camera from. */
-function sceneFrameFromSogViewer(hint: SogViewerHint, derived: SceneFrame | null): SceneFrame {
-  const { target, distance } = hint;
-  const eye = eyeFromSogViewer(hint);
-  const half = distance;
-  return {
-    center: target,
-    radius: distance,
-    safePosition: eye,
-    safeTarget: target,
-    // Keep the derived floor/ceiling when we have them: they drive the editor
-    // grid, not the camera, and the point cloud is the better source for both.
-    floorY: derived?.floorY ?? target[1] - half,
-    ceilingY: derived?.ceilingY ?? target[1] + half,
-    footprint: derived?.footprint ?? {
-      minX: target[0] - half, maxX: target[0] + half,
-      minZ: target[2] - half, maxZ: target[2] + half,
-    },
-  };
-}
-
 function computeSceneFrameFromSplatBuffer(buffer: ArrayBuffer): SceneFrame | null {
   if (buffer.byteLength < 32) return null;
   const floats = new Float32Array(buffer);
@@ -1446,7 +1414,7 @@ const SplatViewer = forwardRef<SplatViewerHandle, Props>(function SplatViewer(
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const spinoffCanvasRef = useRef<HTMLCanvasElement>(null);
   const spinoffRendererRef = useRef<SpinoffRenderer | null>(null);
-  const spinoffSourceRef = useRef<Blob | null>(null);
+  const spinoffSourceRef = useRef<SpinoffSogSource | null>(null);
   const engineRef = useRef<any>(null);
   const cameraRef = useRef<any>(null);
   const babylonRef = useRef<any>(null);
@@ -5679,6 +5647,33 @@ const SplatViewer = forwardRef<SplatViewerHandle, Props>(function SplatViewer(
 
         const isSogUrl = splatUrl.split("?")[0].toLowerCase().endsWith(".sog");
         const isSpzUrl = splatUrl.split("?")[0].toLowerCase().endsWith(".spz");
+
+        if (spinoffEligible && isSogUrl) {
+          // Splatfiction exports a range-readable stored ZIP. Give its URL to
+          // Spinoff unchanged: it fetches only the public property planes it
+          // renders. Downloading the complete archive here also pulled the
+          // private exact/editor tensors (about 65 MB for room 10122), then
+          // unzipped and rebuilt the file before the renderer could start.
+          // Besides wasting memory and time, Firefox can terminate that large
+          // cross-origin response with a generic NetworkError. The native
+          // range path is both the Splatfiction contract and the fast path.
+          setStatus(t("viewer.status.processing", lang));
+          spinoffSourceRef.current = splatUrl;
+          splatBufferRef.current = null;
+          await placeCamera();
+          if (immersiveControls) {
+            const target = camera.getTarget();
+            setImmersiveBase(
+              [camera.position.x, camera.position.y, camera.position.z],
+              [target.x - camera.position.x, target.y - camera.position.y, target.z - camera.position.z],
+              camera.fov,
+            );
+          }
+          setReady(true);
+          viewerInitializing = false;
+          return;
+        }
+
         const sourceCacheEligible = isSogUrl || isSpzUrl;
 
         const [cachedSource, cachedFull]: [ArrayBuffer | null, ArrayBuffer | null] = await Promise.all([
@@ -6063,13 +6058,50 @@ const SplatViewer = forwardRef<SplatViewerHandle, Props>(function SplatViewer(
         if (disposed) return;
         renderer.start();
         canvas.dataset.spinoffStatus = "loading";
-        await renderer.loadSog(source, {
+        const loadedScene = await renderer.loadSog(source, {
           signal: abortController.signal,
           sourceUpAxis: "y",
         });
         source = null;
         spinoffSourceRef.current = null;
         if (disposed) return;
+
+        // Splatfiction persists the viewport pose in meta.json. The range
+        // loader has now read that metadata, so restore the exact authored
+        // camera instead of waiting for a second full-file bounds decode.
+        // The OpenUSD root is applied to the camera once, just like geometry.
+        const viewerHint = parseSogViewerHint(loadedScene.metadata);
+        if (viewerHint && spatialNavigationRef.current) {
+          const canonicalEye = eyeFromSogViewer(viewerHint);
+          const transform = globalSceneTransformRef.current;
+          const worldEye = transformCanonicalPoint(canonicalEye, transform);
+          const worldTarget = transformCanonicalPoint(viewerHint.target, transform);
+          const worldUp = transformCanonicalDirection([0, 1, 0], transform);
+          babylonCamera.position.set(...worldEye);
+          babylonCamera.upVector.set(...worldUp);
+          cameraUpRef.current = worldUp;
+          babylonCamera.setTarget(new (babylonRef.current.Vector3)(...worldTarget));
+          babylonCamera.rotation.z = 0;
+          if (viewerHint.verticalFovRadians) {
+            babylonCamera.fov = viewerHint.verticalFovRadians;
+          }
+          if (viewerHint.near) babylonCamera.minZ = viewerHint.near;
+          if (viewerHint.far) babylonCamera.maxZ = viewerHint.far;
+          spatialOrbitRef.current = {
+            enabled: true,
+            target: worldTarget,
+            radius: Math.max(
+              0.08,
+              Math.hypot(
+                worldEye[0] - worldTarget[0],
+                worldEye[1] - worldTarget[1],
+                worldEye[2] - worldTarget[2],
+              ),
+            ),
+            yaw: viewerHint.yawRadians,
+            pitch: viewerHint.pitchRadians,
+          };
+        }
 
         const syncCamera = () => synchronizeSpinoffCamera(camera, babylonCamera);
         cameraObserver = scene.onBeforeRenderObservable.add(syncCamera);

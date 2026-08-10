@@ -99,6 +99,16 @@ test("the imported Splatfiction-web scene keeps the public WXYZ SOG contract", (
   );
 });
 
+test("the Splatfiction viewport camera retains its complete physical lens", () => {
+  const hint = parseSogViewerHint(SPLATFICTION_10122);
+  assert.ok(hint);
+  assert.deepEqual(hint.target, SPLATFICTION_10122.viewer.target);
+  assert.equal(hint.distance, SPLATFICTION_10122.viewer.distance);
+  assert.equal(hint.verticalFovRadians, SPLATFICTION_10122.viewer.verticalFovRadians);
+  assert.equal(hint.near, SPLATFICTION_10122.viewer.near);
+  assert.equal(hint.far, SPLATFICTION_10122.viewer.far);
+});
+
 test("vendored Spinoff uses Splatfiction's finite normalized Gaussian support", () => {
   const packageRoot = join(here, "..", "node_modules", "@reaigen", "spinoff");
   const packageJson = JSON.parse(readFileSync(join(packageRoot, "package.json"), "utf8"));
