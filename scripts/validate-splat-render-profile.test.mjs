@@ -7,8 +7,6 @@ import { dirname, join } from "node:path";
 import {
   GAUSSIAN_ANTIALIASED_VARIANCE,
   GAUSSIAN_MIP_VARIANCE,
-  SOG_TO_BABYLON_SCALE,
-  correctSogScalesForBabylon,
   eyeFromSogViewer,
   fallbackOverviewCamera,
   isAntialiasedReconstruction,
@@ -19,10 +17,6 @@ import {
   resolveSplatRenderProfile,
   SPINOFF_DEFAULT_VERTICAL_FOV,
 } from "../app/lib/splat-render-profile.ts";
-import {
-  SUPERSPLAT_GAUSSIAN_FRAGMENT,
-  installSuperSplatGaussianFragment,
-} from "../app/lib/gaussian-rasterizer.ts";
 
 /**
  * Fixtures are the real meta.json from two production reconstructions, so
@@ -64,32 +58,36 @@ test("fixtures are the two distinct cases they claim to be", () => {
 // Rasterisation profile
 // ---------------------------------------------------------------------------
 
-test("the default material matches SuperSplat's forward profile", () => {
+test("the published library keeps its historic kernel", () => {
   const p = resolveSplatRenderProfile(LEGACY);
-  assert.equal(p.kernelSize, GAUSSIAN_ANTIALIASED_VARIANCE);
-  assert.equal(p.kernelSize, 0.3);
-  assert.equal(p.compensation, false);
+  assert.equal(p.kernelSize, GAUSSIAN_MIP_VARIANCE);
+  assert.equal(p.kernelSize, 0.09);
+  assert.equal(p.compensation, true);
   assert.equal(p.useSphericalHarmonics, true);
 });
 
-test("every SOG gets the same source-matched kernel", () => {
-  assert.equal(resolveSplatRenderProfile(ANTIALIASED).kernelSize, GAUSSIAN_ANTIALIASED_VARIANCE);
-  assert.equal(resolveSplatRenderProfile(LEGACY).kernelSize, GAUSSIAN_ANTIALIASED_VARIANCE);
+test("every file gets the same kernel unless explicitly overridden", () => {
+  // A controlled CPU render of the same scene showed 0.09 vs 0.30 changes mean
+  // luminance by 0.00005 and clipped highlights by 0.001pp, while costing ~9%
+  // sharpness. The kernel is not what washes a render out, so nothing is keyed
+  // off the antialias flag and the published library cannot shift.
+  assert.equal(resolveSplatRenderProfile(ANTIALIASED).kernelSize, GAUSSIAN_MIP_VARIANCE);
+  assert.equal(resolveSplatRenderProfile(LEGACY).kernelSize, GAUSSIAN_MIP_VARIANCE);
 });
 
-test("the historic Babylon kernel remains available as an override", () => {
-  assert.equal(GAUSSIAN_MIP_VARIANCE, 0.09);
+test("the 3DGS kernel remains available as an override", () => {
+  assert.equal(GAUSSIAN_ANTIALIASED_VARIANCE, 0.3);
   assert.equal(
-    resolveSplatRenderProfile(ANTIALIASED, parseRenderTuning("?kernel=0.09")).kernelSize,
-    0.09,
+    resolveSplatRenderProfile(ANTIALIASED, parseRenderTuning("?kernel=0.3")).kernelSize,
+    0.3,
   );
 });
 
-test("metadata does not silently change the rasterizer", () => {
+test("no metadata shape changes the kernel", () => {
   for (const meta of [null, undefined, {}, { antialias: false }, { antialias: true }, { antialias: "true" }]) {
     assert.equal(
       resolveSplatRenderProfile(meta).kernelSize,
-      GAUSSIAN_ANTIALIASED_VARIANCE,
+      GAUSSIAN_MIP_VARIANCE,
       `unexpected profile for ${JSON.stringify(meta)}`,
     );
   }
@@ -166,8 +164,8 @@ test("overrides win over the file's own flag", () => {
 test("an empty or unrelated query string changes nothing", () => {
   for (const search of ["", "?", "?foo=bar", "?page=2"]) {
     const p = resolveSplatRenderProfile(ANTIALIASED, parseRenderTuning(search));
-    assert.equal(p.kernelSize, GAUSSIAN_ANTIALIASED_VARIANCE, `search=${search}`);
-    assert.equal(p.compensation, false);
+    assert.equal(p.kernelSize, GAUSSIAN_MIP_VARIANCE, `search=${search}`);
+    assert.equal(p.compensation, true);
     assert.equal(p.useSphericalHarmonics, true);
   }
 });
@@ -176,53 +174,12 @@ test("a nonsensical kernel override is ignored rather than rendering nothing", (
   for (const search of ["?kernel=abc", "?kernel=-1", "?kernel=", "?kernel=NaN"]) {
     assert.equal(
       resolveSplatRenderProfile(ANTIALIASED, parseRenderTuning(search)).kernelSize,
-      GAUSSIAN_ANTIALIASED_VARIANCE,
+      GAUSSIAN_MIP_VARIANCE,
       `search=${search}`,
     );
   }
   // Zero is a legitimate request: no dilation at all.
   assert.equal(resolveSplatRenderProfile(ANTIALIASED, parseRenderTuning("?kernel=0")).kernelSize, 0);
-});
-
-test("decoded SOG scales cancel Babylon's packed-data doubling exactly once", () => {
-  assert.equal(SOG_TO_BABYLON_SCALE, 0.5);
-  const buffer = new ArrayBuffer(64);
-  const values = new Float32Array(buffer);
-  values.set([1, 2, 3, 0.2, 0.4, 0.8, 0, 0]);
-  values.set([4, 5, 6, 1.2, 1.4, 1.8, 0, 0], 8);
-  assert.equal(correctSogScalesForBabylon(buffer), buffer);
-  const actual = [values[3], values[4], values[5], values[11], values[12], values[13]];
-  const expected = [0.1, 0.2, 0.4, 0.6, 0.7, 0.9];
-  assert.ok(actual.every((value, index) => Math.abs(value - expected[index]) < 1e-6));
-});
-
-test("malformed packed SOG rows are rejected", () => {
-  assert.throws(() => correctSogScalesForBabylon(new ArrayBuffer(33)), /32-byte/);
-});
-
-test("the Babylon fragment is replaced with SuperSplat's clipped Gaussian", () => {
-  const store = {
-    IncludesShadersStore: {
-      gaussianSplattingFragmentDeclaration:
-        "vec4 x(){float A=-dot(vPosition,vPosition);return vec4(exp(A));}",
-    },
-  };
-  installSuperSplatGaussianFragment(store);
-  assert.equal(
-    store.IncludesShadersStore.gaussianSplattingFragmentDeclaration,
-    SUPERSPLAT_GAUSSIAN_FRAGMENT,
-  );
-  assert.match(SUPERSPLAT_GAUSSIAN_FRAGMENT, /EXP4/);
-  assert.match(SUPERSPLAT_GAUSSIAN_FRAGMENT, /1\.0\/255\.0/);
-});
-
-test("an unknown Babylon shader cannot silently bypass the parity patch", () => {
-  assert.throws(
-    () => installSuperSplatGaussianFragment({
-      IncludesShadersStore: { gaussianSplattingFragmentDeclaration: "changed upstream" },
-    }),
-    /Unsupported Babylon/,
-  );
 });
 
 // ---------------------------------------------------------------------------
