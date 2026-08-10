@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState, useCallback, forwardRef, useImperativeHandle } from "react";
 import { AllocateShBuffers } from "@babylonjs/core/Meshes/GaussianSplatting/gaussianSplattingMeshBase.js";
+import type { SpinoffOrbitCamera, SpinoffRenderer } from "@reaigen/spinoff";
 import { cameraFovRadians, normalizeCameraData } from "@/app/lib/camera-coordinates";
 import { clampCameraPosition } from "@/app/lib/camera-bounds";
 import { getCache, putCache } from "@/app/lib/splat-cache";
@@ -35,6 +36,7 @@ import {
 import {
   IDENTITY_GLOBAL_SCENE_TRANSFORM,
   globalSceneScale3,
+  globalSceneQuaternion,
   inversePresentationPoint,
   scaleComponentWithAuthoredSign,
   sceneScaleMagnitude,
@@ -106,6 +108,96 @@ function normalizeVec3(value: Vec3, fallback: Vec3 = [0, 0, 1]): Vec3 {
   const length = Math.hypot(value[0], value[1], value[2]);
   if (!Number.isFinite(length) || length < 1e-6) return fallback;
   return [value[0] / length, value[1] / length, value[2] / length];
+}
+
+function spinoffModelTransform(transform: GlobalSceneTransform): {
+  compatible: boolean;
+  scale: number;
+  rotationRadians: Vec3;
+  translation: Vec3;
+} {
+  const [sx, sy, sz] = globalSceneScale3(transform);
+  const scale = (Math.abs(sx) + Math.abs(sy) + Math.abs(sz)) / 3;
+  const compatible = sx > 0
+    && Math.abs(sx - sy) < 1e-5
+    && Math.abs(sx - sz) < 1e-5;
+
+  // Spinoff accepts an XYZ Euler model rotation (Rz * Ry * Rx), while the
+  // OpenUSD/editor boundary stores the composed root as a quaternion. Extract
+  // the equivalent XYZ angles so the authored root is still applied exactly
+  // once rather than changing the renderer's coordinate convention.
+  const [qx, qy, qz, qw] = globalSceneQuaternion(transform);
+  const m00 = 1 - 2 * (qy * qy + qz * qz);
+  const m10 = 2 * (qx * qy + qz * qw);
+  const m20 = 2 * (qx * qz - qy * qw);
+  const m21 = 2 * (qy * qz + qx * qw);
+  const m22 = 1 - 2 * (qx * qx + qy * qy);
+  const y = Math.asin(Math.max(-1, Math.min(1, -m20)));
+  const cosY = Math.cos(y);
+  const x = Math.abs(cosY) > 1e-7 ? Math.atan2(m21, m22) : 0;
+  const z = Math.abs(cosY) > 1e-7 ? Math.atan2(m10, m00) : Math.atan2(-2 * (qx * qy - qz * qw), 1 - 2 * (qx * qx + qz * qz));
+  return {
+    compatible,
+    scale,
+    rotationRadians: [x, y, z],
+    translation: [...transform.translation] as Vec3,
+  };
+}
+
+function synchronizeSpinoffCamera(
+  target: SpinoffOrbitCamera,
+  source: any,
+): void {
+  if (!source) return;
+  const sourceTarget = source.getTarget();
+  const position: Vec3 = [source.position.x, source.position.y, source.position.z];
+  const forward = normalizeVec3([
+    sourceTarget.x - source.position.x,
+    sourceTarget.y - source.position.y,
+    sourceTarget.z - source.position.z,
+  ]);
+  const distance = Math.max(0.08, Math.hypot(
+    sourceTarget.x - source.position.x,
+    sourceTarget.y - source.position.y,
+    sourceTarget.z - source.position.z,
+  ));
+  const pitch = -Math.asin(Math.max(-1, Math.min(1, forward[1])));
+  const yaw = Math.atan2(forward[2], -forward[0]);
+
+  const backward: Vec3 = [-forward[0], -forward[1], -forward[2]];
+  let right = normalizeVec3([
+    backward[2],
+    0,
+    -backward[0],
+  ], [1, 0, 0]);
+  if (Math.hypot(right[0], right[1], right[2]) < 1e-6) right = [1, 0, 0];
+  const referenceUp = normalizeVec3([
+    backward[1] * right[2] - backward[2] * right[1],
+    backward[2] * right[0] - backward[0] * right[2],
+    backward[0] * right[1] - backward[1] * right[0],
+  ], [0, 1, 0]);
+  const authoredUp = normalizeVec3([
+    source.upVector.x,
+    source.upVector.y,
+    source.upVector.z,
+  ], referenceUp);
+  const roll = Math.atan2(
+    authoredUp[0] * right[0] + authoredUp[1] * right[1] + authoredUp[2] * right[2],
+    authoredUp[0] * referenceUp[0] + authoredUp[1] * referenceUp[1] + authoredUp[2] * referenceUp[2],
+  );
+
+  target.distance = distance;
+  target.yawRadians = yaw;
+  target.pitchRadians = pitch;
+  target.rollRadians = roll;
+  target.verticalFovRadians = source.fov;
+  target.near = Math.max(0.001, source.minZ ?? 0.02);
+  target.far = Math.max(target.near + 1, source.maxZ ?? 500);
+  target.setTarget([
+    position[0] + forward[0] * distance,
+    position[1] + forward[1] * distance,
+    position[2] + forward[2] * distance,
+  ]);
 }
 
 function normalizedEditorDegrees(radians: number): number {
@@ -1263,6 +1355,9 @@ const SplatViewer = forwardRef<SplatViewerHandle, Props>(function SplatViewer(
 ) {
   const rootRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
+  const spinoffCanvasRef = useRef<HTMLCanvasElement>(null);
+  const spinoffRendererRef = useRef<SpinoffRenderer | null>(null);
+  const spinoffSourceRef = useRef<Blob | null>(null);
   const engineRef = useRef<any>(null);
   const cameraRef = useRef<any>(null);
   const babylonRef = useRef<any>(null);
@@ -1343,6 +1438,7 @@ const SplatViewer = forwardRef<SplatViewerHandle, Props>(function SplatViewer(
     pointer: { x: number; y: number };
   } | null>(null);
   const [ready, setReady] = useState(false);
+  const [spinoffStatus, setSpinoffStatus] = useState<"idle" | "loading" | "ready" | "error">("idle");
   const [tourData, setTourData] = useState<TourData | null>(null);
   const [immersiveAdjusted, setImmersiveAdjusted] = useState(false);
   const [showGestureHint, setShowGestureHint] = useState(false);
@@ -1355,6 +1451,14 @@ const SplatViewer = forwardRef<SplatViewerHandle, Props>(function SplatViewer(
   const sogViewerHintRef = useRef<SogViewerHint | null>(null);
   const sogAntialiasRef = useRef(false);
   const immersiveControls = Boolean(readOnly || compactTouch);
+  const isSogSource = splatUrl.split("?")[0].toLowerCase().endsWith(".sog");
+  const spinoffTransform = spinoffModelTransform(globalSceneTransform);
+  const spinoffEligible = isSogSource
+    && !spatialNavigation
+    && !initialPruneMask
+    && !compositionAssets.length
+    && spinoffTransform.compatible;
+  const visibleReady = ready && (!spinoffEligible || spinoffStatus === "ready" || spinoffStatus === "error");
 
   useEffect(() => {
     const query = window.matchMedia("(max-width: 767px), (pointer: coarse)");
@@ -5523,6 +5627,16 @@ const SplatViewer = forwardRef<SplatViewerHandle, Props>(function SplatViewer(
               else resolve(data);
             });
           });
+          // Splatfiction's portable archive currently deflates every ZIP
+          // member. Spinoff deliberately accepts only stored members so it can
+          // slice each WebP independently. Repack the already-decoded members
+          // losslessly at this format boundary; the member bytes, metadata,
+          // Gaussian values, and renderer remain unchanged.
+          const storedSog = fflate.zipSync(zipData, { level: 0 });
+          spinoffSourceRef.current = new Blob(
+            [new Uint8Array(storedSog).buffer],
+            { type: "application/octet-stream" },
+          );
           let vkgsMeta: VkgsSogMeta | null = null;
           const metaEntry = zipData["meta.json"];
           if (metaEntry) {
@@ -5738,6 +5852,7 @@ const SplatViewer = forwardRef<SplatViewerHandle, Props>(function SplatViewer(
     return () => {
       disposed = true;
       splatBufferRef.current = null;
+      spinoffSourceRef.current = null;
       originalSplatDataRef.current = null;
       aliveSplatMaskRef.current = null;
       savedSplatMaskRef.current = null;
@@ -5755,6 +5870,96 @@ const SplatViewer = forwardRef<SplatViewerHandle, Props>(function SplatViewer(
     };
   }, [splatUrl, splatId, camerasUrl]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  // ── Exact Spinoff delivery renderer ──────────────────────────────────────
+
+  useEffect(() => {
+    const canvas = spinoffCanvasRef.current;
+    const source = spinoffSourceRef.current;
+    const babylonCamera = cameraRef.current;
+    const scene = sceneRef.current;
+    if (!ready || !spinoffEligible || !canvas || !source || !babylonCamera || !scene) {
+      setSpinoffStatus("idle");
+      return;
+    }
+
+    let disposed = false;
+    let cameraObserver: any = null;
+    const abortController = new AbortController();
+    setSpinoffStatus("loading");
+    setStatus(t("viewer.status.processing", lang));
+
+    void (async () => {
+      try {
+        const { SpinoffOrbitCamera, SpinoffRenderer } = await import("@reaigen/spinoff");
+        if (disposed) return;
+        const camera = new SpinoffOrbitCamera();
+        synchronizeSpinoffCamera(camera, babylonCamera);
+        const currentTransform = spinoffModelTransform(globalSceneTransformRef.current);
+        const renderer = new SpinoffRenderer(canvas, {
+          camera,
+          backendPreference: "auto",
+          sourceUpAxis: "y",
+          modelScale: currentTransform.scale,
+          modelRotationRadians: currentTransform.rotationRadians,
+          modelTranslation: currentTransform.translation,
+          renderMode: "deterministic",
+          mipSigmaPixels: 0.3,
+          background: [0.53, 0.61, 0.64, 1],
+          physicalSky: false,
+        });
+        spinoffRendererRef.current = renderer;
+        canvas.dataset.spinoffStatus = "initializing";
+        await renderer.initialize();
+        if (disposed) return;
+        renderer.start();
+        canvas.dataset.spinoffStatus = "loading";
+        await renderer.loadSog(source, {
+          signal: abortController.signal,
+          sourceUpAxis: "y",
+        });
+        if (disposed) return;
+
+        const syncCamera = () => synchronizeSpinoffCamera(camera, babylonCamera);
+        cameraObserver = scene.onBeforeRenderObservable.add(syncCamera);
+        syncCamera();
+        renderer.renderOnce();
+        canvas.dataset.spinoffStatus = "ready";
+        canvas.dataset.spinoffBackend = renderer.stats.backend;
+        canvas.dataset.spinoffSplats = String(renderer.stats.sceneSplats);
+        setSpinoffStatus("ready");
+        setStatus("");
+      } catch (error) {
+        if (disposed || abortController.signal.aborted) return;
+        const reason = error instanceof Error ? error.message : String(error);
+        canvas.dataset.spinoffStatus = "error";
+        canvas.dataset.spinoffError = reason;
+        console.error("[REAI] Exact Spinoff renderer failed; retaining Babylon fallback:", error);
+        setSpinoffStatus("error");
+        setStatus("");
+      }
+    })();
+
+    return () => {
+      disposed = true;
+      abortController.abort();
+      if (cameraObserver) scene.onBeforeRenderObservable.remove(cameraObserver);
+      spinoffRendererRef.current?.dispose();
+      spinoffRendererRef.current = null;
+    };
+  }, [lang, outputsVersion, ready, spinoffEligible, splatUrl]);
+
+  useEffect(() => {
+    if (!spinoffEligible) return;
+    const renderer = spinoffRendererRef.current;
+    if (!renderer) return;
+    const transform = spinoffModelTransform(globalSceneTransform);
+    renderer.setModelTransform({
+      scale: transform.scale,
+      rotationRadians: transform.rotationRadians,
+      translation: transform.translation,
+    });
+  }, [globalSceneTransform, spinoffEligible]);
+
   // ── UI ─────────────────────────────────────────────────────────────────────
 
   return (
@@ -5762,7 +5967,7 @@ const SplatViewer = forwardRef<SplatViewerHandle, Props>(function SplatViewer(
       ref={rootRef}
       className={`relative h-full w-full select-none bg-background ${className ?? ""}`}
       tabIndex={0}
-      aria-busy={!ready}
+      aria-busy={!visibleReady}
     >
       <canvas
         ref={canvasRef}
@@ -5778,6 +5983,16 @@ const SplatViewer = forwardRef<SplatViewerHandle, Props>(function SplatViewer(
         className="w-full h-full block outline-none"
         style={{ touchAction: "none", overscrollBehavior: "none" }}
       />
+
+      {spinoffEligible ? (
+        <canvas
+          ref={spinoffCanvasRef}
+          aria-label="Spinoff Gaussian renderer"
+          className={`pointer-events-none absolute inset-0 h-full w-full transition-opacity duration-200 ${
+            spinoffStatus === "ready" ? "opacity-100" : "opacity-0"
+          }`}
+        />
+      ) : null}
 
       {selectionGesture ? (
         <svg
@@ -5872,9 +6087,9 @@ const SplatViewer = forwardRef<SplatViewerHandle, Props>(function SplatViewer(
         className={`absolute inset-0 flex flex-col items-center justify-center bg-background text-foreground transition-opacity duration-500 ease-[var(--motion-ease-smooth)] ${
           spatialNavigation ? "z-40" : "z-10"
         } ${
-          ready ? "pointer-events-none opacity-0" : "opacity-100"
+          visibleReady ? "pointer-events-none opacity-0" : "opacity-100"
         }`}
-        aria-hidden={ready}
+        aria-hidden={visibleReady}
       >
         <ReaigenLoadingMark status={status} />
       </div>
