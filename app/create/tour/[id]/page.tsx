@@ -636,7 +636,7 @@ export default function WebTourEditorPage({
       for (const node of workspace.nodes) {
         const preview = next[node.id];
         if (
-          preview?.sourceFormat === "ply"
+          preview
           && node.asset.format === "sog"
         ) {
           URL.revokeObjectURL(preview.url);
@@ -750,7 +750,12 @@ export default function WebTourEditorPage({
       setTransformDirty(false);
       if (transformDirty) setWorkspaceDirty(true);
       const addedNode = value.nodes.at(-1);
-      if (addedNode) {
+      // A confirmed SOG must immediately use Reaigen's fingerprinted range
+      // URL. A blob URL has no .sog suffix and previously selected Babylon's
+      // full-archive fallback, so a fresh Splatfiction import looked different
+      // until the editor was reloaded. PLY keeps its local preview while the
+      // backend conversion runs.
+      if (addedNode && extension === "ply") {
         const preview: LocalPreview = {
           url: URL.createObjectURL(file),
           sourceFormat: extension,
