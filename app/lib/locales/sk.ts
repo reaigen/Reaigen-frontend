@@ -183,6 +183,7 @@ const sk: LocaleStrings = {
   "webEditor.workspaceDraft":              "Koncept v editore",
   "webEditor.workspaceDraftHint":          "Otvorte editor, pridajte splaty PLY alebo SOG, usporiadajte scénu a vytvorte kamery.",
   "webEditor.unsavedLeave":                "V scéne máte neuložené zmeny. Chcete odísť bez uloženia?",
+  "webEditor.unsavedLeaveAction":          "Odísť bez uloženia",
   "webEditor.saveTour":                    "Uložiť prehliadku",
   "webEditor.navigationHint":               "3D editor · potiahnutím sa rozhliadnete · WASD na pohyb · koliesko na priblíženie",
   "webEditor.orbitHint":                    "Ľavé: obiehanie · stredné: posun · pravé: priblíženie · koliesko: priblíženie · F: zarámovať",

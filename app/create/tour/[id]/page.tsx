@@ -40,6 +40,7 @@ import {
   type WebTourWorkspaceNode,
 } from "../../../lib/api/client";
 import { useWebAuthoringAccess } from "../../../components/hooks/use-web-authoring-access";
+import { useConfirm } from "../../../lib/ui/confirm-dialog";
 import { getUserLanguage, t } from "../../../lib/i18n";
 import type {
   CameraData,
@@ -284,6 +285,7 @@ export default function WebTourEditorPage({
   const tourId = Number(id);
   const { isAuthenticated, isLoading, user } = useAuth();
   const { allowed, loading: accessLoading } = useWebAuthoringAccess(isAuthenticated);
+  const { confirm, dialog: confirmDialog } = useConfirm();
   const router = useRouter();
   const viewerRef = useRef<SplatViewerHandle | null>(null);
   // SparkJS draws the Gaussians; Babylon keeps the gizmos, grid and selection.
@@ -675,6 +677,16 @@ export default function WebTourEditorPage({
   }, [workspace]);
 
   const lang = getUserLanguage(user?.localization);
+
+  // Both exits from the editor ask the same question, so they ask it in one
+  // place — the header's back button and the one on the viewer-failure panel
+  // had drifted to separate copies of the same guard.
+  const confirmLeave = useCallback(() => confirm({
+    title: t("webEditor.unsavedLeave", lang),
+    confirmLabel: t("webEditor.unsavedLeaveAction", lang),
+    cancelLabel: t("common.cancel", lang),
+    destructive: true,
+  }), [confirm, lang]);
 
   const captureAutomaticThumbnail = useCallback((workspaceRevision: number) => {
     const task = thumbnailCaptureRef.current
@@ -1216,7 +1228,7 @@ export default function WebTourEditorPage({
         <div className="floating-panel pointer-events-auto flex h-11 min-w-0 flex-1 items-center gap-1 p-1 md:flex-none">
           <button
             type="button"
-            onClick={() => {
+            onClick={async () => {
               if (
                 (
                   workspaceDirty
@@ -1224,7 +1236,7 @@ export default function WebTourEditorPage({
                   || splatSelectionStats.dirty
                   || hasPendingPruneMasks
                 )
-                && !window.confirm(t("webEditor.unsavedLeave", lang))
+                && !(await confirmLeave())
               ) return;
               router.push(`/draft/${workspace.draft_id}`);
             }}
@@ -2087,7 +2099,7 @@ export default function WebTourEditorPage({
                 type="button"
                 variant="outline"
                 size="sm"
-                onClick={() => {
+                onClick={async () => {
                   if (
                     (
                       workspaceDirty
@@ -2095,7 +2107,7 @@ export default function WebTourEditorPage({
                       || splatSelectionStats.dirty
                       || hasPendingPruneMasks
                     )
-                    && !window.confirm(t("webEditor.unsavedLeave", lang))
+                    && !(await confirmLeave())
                   ) return;
                   router.push(`/draft/${workspace.draft_id}`);
                 }}
@@ -2127,6 +2139,7 @@ export default function WebTourEditorPage({
         </div>
       ) : null}
 
+      {confirmDialog}
     </main>
   );
 }

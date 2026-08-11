@@ -35,12 +35,18 @@ export function ReaigenLoadingMark({
       */}
       <div className="inline-flex flex-col items-stretch gap-4">
         {/*
-          The vw term is what phones actually get; the ceiling only ever
-          applies from ~520px up, so desktop stays at 60px while a 393px
-          handset drops from ~59px to ~45px. The rail is sized off this mark,
-          so it narrows with it and the pair stays in proportion.
+          The vw term is what phones actually get; the ceiling applies from
+          ~430px up, so desktop settles at 40px while a 393px handset drops to
+          ~37px. The rail is sized off this mark, so it narrows with it and the
+          pair stays in proportion.
+
+          This is a wait, not a splash. At 60px the mark filled a third of a
+          laptop viewport for something that is often gone inside a second, and
+          the bigger it is the more any change in it — a font swapping in, a
+          remount replaying the entrance — reads as movement rather than as a
+          logo sitting still.
         */}
-        <ReaigenWordmark className="animate-startup-mark text-[clamp(40px,11.5vw,60px)] leading-none tracking-[-0.02em] text-foreground" />
+        <ReaigenWordmark className="animate-startup-mark text-[clamp(32px,9vw,40px)] leading-none tracking-[-0.02em] text-foreground" />
 
         {/* iOS drives this determinately from AppStartupManager.progress; the
             web has no equivalent signal, so it runs indeterminate. */}

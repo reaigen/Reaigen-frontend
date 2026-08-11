@@ -14,6 +14,7 @@ import {
 } from "../lib/api/client";
 import { t } from "../lib/i18n";
 import { Button } from "../lib/ui/button";
+import { useConfirm } from "../lib/ui/confirm-dialog";
 import { Input } from "../lib/ui/input";
 import { cn } from "../lib/utils";
 
@@ -47,6 +48,7 @@ export function VolumesEditor({
   lang: string;
   className?: string;
 }) {
+  const { confirm, dialog: confirmDialog } = useConfirm();
   const [volumes, setVolumes] = React.useState<DraftVolume[]>([]);
   const [loading, setLoading] = React.useState(true);
   const [error, setError] = React.useState<string | null>(null);
@@ -191,8 +193,14 @@ export function VolumesEditor({
                     size="sm"
                     disabled={volumeBusy}
                     className="ml-auto hidden text-[12px] text-foreground/60 sm:inline-flex"
-                    onClick={() => {
-                      if (!window.confirm(t("volumes.archiveConfirm", lang))) return;
+                    onClick={async () => {
+                      const proceed = await confirm({
+                        title: t("volumes.archiveConfirm", lang),
+                        confirmLabel: t("volumes.archive", lang),
+                        cancelLabel: t("common.cancel", lang),
+                        destructive: true,
+                      });
+                      if (!proceed) return;
                       void run({ kind: "volume", id: volume.id }, () =>
                         archiveDraftVolume(draftId, volume.id),
                       );
@@ -303,6 +311,7 @@ export function VolumesEditor({
           })}
         </ul>
       )}
+      {confirmDialog}
     </section>
   );
 }

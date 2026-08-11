@@ -192,6 +192,7 @@ const en = {
   "webEditor.workspaceDraft":              "Editor draft",
   "webEditor.workspaceDraftHint":          "Open the editor to add PLY or SOG splats, arrange the scene, and create cameras.",
   "webEditor.unsavedLeave":                "You have unsaved scene changes. Leave without saving them?",
+  "webEditor.unsavedLeaveAction":          "Leave without saving",
   "webEditor.saveTour":                    "Save tour",
   "webEditor.navigationHint":               "3D editor · drag to look · WASD to move · wheel to zoom",
   "webEditor.orbitHint":                    "LMB orbit · MMB pan · RMB dolly · wheel dolly · F frame",

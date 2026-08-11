@@ -183,6 +183,7 @@ const de: LocaleStrings = {
   "webEditor.workspaceDraft":              "Editor-Entwurf",
   "webEditor.workspaceDraftHint":          "Öffnen Sie den Editor, fügen Sie PLY- oder SOG-Splats hinzu, ordnen Sie die Szene an und erstellen Sie Kameras.",
   "webEditor.unsavedLeave":                "Die Szene enthält ungespeicherte Änderungen. Möchten Sie sie verwerfen?",
+  "webEditor.unsavedLeaveAction":          "Ohne Speichern verlassen",
   "webEditor.saveTour":                    "Tour speichern",
   "webEditor.navigationHint":               "3D-Editor · ziehen zum Umsehen · WASD zum Bewegen · Mausrad zum Zoomen",
   "webEditor.orbitHint":                    "Linke Taste: Orbit · mittlere: Verschieben · rechte: Dolly · Mausrad: Dolly · F: Einrahmen",
