@@ -13,6 +13,8 @@ import {
   GAUSSIAN_ANTIALIASED_VARIANCE,
   GAUSSIAN_MIP_VARIANCE,
   SPINOFF_NATIVE_MIP_SIGMA,
+  SPINOFF_SUPPORT_RADIUS_SQUARED,
+  SPLAT_MAX_STD_DEV,
   VIEW_KERNEL_VARIANCE,
   deliveryKernelVariance,
   eyeFromSogViewer,
@@ -132,6 +134,29 @@ test("Spark and Spinoff cannot drift apart on one file", () => {
       SPINOFF_NATIVE_MIP_SIGMA * SPINOFF_NATIVE_MIP_SIGMA - deliveryKernelVariance(true),
     ) < 1e-12,
   );
+});
+
+test("Spark's hard cutoff sits where Spinoff's renormalised one reaches zero", () => {
+  // Spinoff discards past radiusSquared 8 and rescales alpha by
+  // (exp(-0.5*r2) - exp(-4)) / (1 - exp(-4)), so it reaches exactly zero at the
+  // edge. Spark cannot renormalise -- it just discards -- so its cutoff has to
+  // land where the Gaussian is already negligible. At 2.0 sigma it lands at
+  // exp(-2), 13.5% of peak, and every splat gets a visible rim once it is large
+  // on screen. The two engines draw the same file, so they agree here or the
+  // same scene ends differently depending on which one the device could run.
+  assert.equal(SPINOFF_SUPPORT_RADIUS_SQUARED, 8);
+  assert.equal(SPLAT_MAX_STD_DEV, Math.sqrt(8));
+  // Tolerance: squaring sqrt(8) back lands one ulp high, at 8.000000000000002.
+  assert.ok(
+    Math.abs(
+      SPLAT_MAX_STD_DEV * SPLAT_MAX_STD_DEV - SPINOFF_SUPPORT_RADIUS_SQUARED,
+    ) < 1e-12,
+  );
+
+  // Residual alpha at the cutoff: what a splat's edge actually steps down from.
+  const residual = Math.exp(-0.5 * SPINOFF_SUPPORT_RADIUS_SQUARED);
+  assert.ok(Math.abs(residual - 0.01831563888873418) < 1e-15);
+  assert.ok(residual < 0.02, "edge must be near-invisible, not a 13.5% rim");
 });
 
 test("a kernel override still wins on the delivery path", () => {

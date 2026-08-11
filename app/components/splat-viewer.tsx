@@ -29,6 +29,7 @@ import type {
 } from "@/app/lib/tour-types";
 import {
   SPINOFF_NATIVE_MIP_SIGMA,
+  SPLAT_MAX_STD_DEV,
   chooseClearAzimuth,
   deliveryKernelVariance,
   eyeFromSogViewer,
@@ -157,6 +158,25 @@ const EDITOR_FAR_PLANE = 10_000;
 const ORBIT_MIN_RADIUS = 0.02;
 
 /**
+ * How far outside the frustum a splat's centre may sit and still be drawn.
+ *
+ * Spark culls per splat *centre*: `abs(clipCenter.xy) > clipXY * clipCenter.w`
+ * discards it outright, whatever its footprint. At 1.4 — the library default —
+ * that is a sound optimisation while splats are small on screen, and wrong the
+ * moment the camera is nearer to a surface than the splats composing it are
+ * wide. Then most of what should cover the frame has a centre just outside it
+ * and is thrown away, leaving only the sparse few whose centres are still
+ * inside: a continuous surface disintegrates into isolated blobs on the
+ * backdrop.
+ *
+ * 4.0 keeps a splat until its centre is two frames' width out, which covers the
+ * near-field case at the cost of transforming a few more splats per frame —
+ * they are rejected later by the same test against their real footprint, so
+ * nothing is drawn that should not be.
+ */
+const SPLAT_CLIP_XY = 4.0;
+
+/**
  * Set a camera's clip planes for one framing.
  *
  * Every framing path used to compute its own pair from the radius it had just
@@ -178,15 +198,6 @@ function setCameraDepthRange(
 
 /** /view renders at most 1.5x CSS pixels so the splat sort keeps up. */
 const VIEW_DPR_CAP = 1.5;
-/**
- * How many standard deviations of each Gaussian actually get drawn.
- *
- * PlayCanvas cuts at 2.0, so this is what SuperSplat and Splatfiction show;
- * Spark defaults to sqrt(8) ≈ 2.83 instead, drawing a skirt ~40% wider on every
- * splat. Individually those tails are nearly transparent, but an interior scan
- * stacks hundreds of them per pixel and they sum into visible haze.
- */
-const SPLAT_MAX_STD_DEV = 2.0;
 
 /**
  * Backdrop the Gaussians composite against.
@@ -6378,6 +6389,16 @@ const SplatViewer = forwardRef<SplatViewerHandle, Props>(function SplatViewer(
           // while Spinoff's public option is sigma in physical pixels.
           mipSigmaPixels: SPINOFF_NATIVE_MIP_SIGMA,
           mipOpacityCompensation: true,
+          // Spinoff's own answer to the oversized, nearly isotropic Gaussians
+          // that a reconstruction leaves behind in under-observed regions —
+          // ceilings, windows, anywhere few training views looked. Approach one
+          // and it inflates into a soft balloon across the frame. The guard
+          // shrinks a splat's footprint only when it is both round and oversized
+          // on screen, deliberately sparing elongated ones because those are
+          // real thin surfaces. Off by default (`strength` resolves to 0 when
+          // the option is absent), which is why the balloons were showing.
+          // Footprint only: the SOG bytes and the lossless tensors are untouched.
+          reconstructionFogGuard: true,
           motionSmoothing: false,
           maxCanvasPixels: spatialNavigation
             ? compactTouch ? 3_000_000 : 8_000_000
@@ -6582,21 +6603,40 @@ const SplatViewer = forwardRef<SplatViewerHandle, Props>(function SplatViewer(
         //    washed-out render, and it is why this now follows the file rather
         //    than a single constant.
         //
-        // 2. Projected splat scale. Spark draws each Gaussian out to
-        //    `maxStdDev` standard deviations and defaults to sqrt(8) ≈ 2.83,
-        //    which is where the extra softness against SuperSplat came from:
-        //    every splat carries ~40% more skirt, and those faint overlapping
-        //    tails accumulate into haze. PlayCanvas — and so both SuperSplat
-        //    and Splatfiction — cut at 2.0.
+        // 2. Where each Gaussian's edge falls. Spark draws out to `maxStdDev`
+        //    sigma and then hard-discards, so this decides whether a splat ends
+        //    gradually or in a visible rim. It tracks Spinoff's own cutoff —
+        //    see SPLAT_MAX_STD_DEV for why sqrt(8) and not 2.0.
         //
         // ?kernel= still overrides for A/B against SuperSplat.
         const kernel = deliveryKernelVariance(sogAntialiasRef.current, renderTuning());
-        threeScene.add(new SparkRenderer({
+        // 3. Which splats are considered at all. Spark discards a splat on its
+        //    centre alone — `abs(clipCenter.xy) > clipXY * w` — and defaults
+        //    clipXY to 1.4. That is fine at a distance, where a splat's
+        //    footprint is close to a point, and wrong up close: approach a
+        //    surface and most of the splats covering the frame have centres
+        //    just outside it, so they are dropped while the few whose centres
+        //    remain on screen keep drawing. The continuous field falls apart
+        //    into isolated blobs floating on the backdrop, which is the
+        //    artefact, rather than the smooth wash SuperSplat degrades to.
+        //
+        //    Measured on room_3.sog, this is not a tail of oversized
+        //    Gaussians: the median splat is 7cm across at 3 sigma and only 22
+        //    of 147,382 exceed a metre, all of them elongated. They are
+        //    ordinary splats seen from nearer than they are wide.
+        //
+        //    maxPixelRadius is deliberately left at Spark's default. It clamps
+        //    the quad without rescaling the Gaussian's UV, so a clamped splat
+        //    is cut off square instead of shrunk — trading soft balloons for
+        //    hard-edged discs.
+        const sparkRenderer = new SparkRenderer({
           renderer,
           blurAmount: kernel,
           preBlurAmount: 0,
           maxStdDev: SPLAT_MAX_STD_DEV,
-        }));
+          clipXY: SPLAT_CLIP_XY,
+        });
+        threeScene.add(sparkRenderer);
 
         // The loader hands over either the asset URL for range streaming or a
         // repackaged stored archive; Spark reads both.

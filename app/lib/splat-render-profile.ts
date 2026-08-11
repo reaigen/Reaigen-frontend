@@ -285,6 +285,27 @@ export function resolveSplatRenderProfile(
 }
 
 /**
+ * Squared radius at which Spinoff stops drawing a Gaussian.
+ *
+ * Its fragment shader discards past `radiusSquared > 8.0` and, at that radius,
+ * rescales alpha by `(exp(-0.5 * r2) - exp(-4)) / (1 - exp(-4))` so the value
+ * reaches exactly zero as the edge is reached — finite support with a
+ * continuous falloff, no rim.
+ */
+export const SPINOFF_SUPPORT_RADIUS_SQUARED = 8;
+
+/**
+ * Where a splat's edge falls, in standard deviations.
+ *
+ * Spark cannot renormalise the way Spinoff does; it hard-discards past
+ * `maxStdDev`. So the cutoff has to sit where the Gaussian is already
+ * negligible, or every splat ends in a visible rim once it is large on screen.
+ * Matching Spinoff's radius puts it at exp(-4) — 1.8% of peak — where 2.0 would
+ * leave 13.5%.
+ */
+export const SPLAT_MAX_STD_DEV = Math.sqrt(SPINOFF_SUPPORT_RADIUS_SQUARED);
+
+/**
  * Fixed VKGS-tier kernel the /view policy applies to the existing library
  * (Reaigen-splatviewer-02/RENDERING.md), for reconstructions trained without
  * antialiasing.
