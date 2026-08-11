@@ -30,6 +30,7 @@ import type {
 import {
   SPINOFF_NATIVE_MIP_SIGMA,
   chooseClearAzimuth,
+  deliveryKernelVariance,
   eyeFromSogViewer,
   fallbackOverviewCamera,
   parseRenderTuning,
@@ -116,10 +117,35 @@ function normalizeVec3(value: Vec3, fallback: Vec3 = [0, 0, 1]): Vec3 {
   return [value[0] / length, value[1] / length, value[2] / length];
 }
 
-/** Fixed VKGS-tier screen-space kernel used by /view (RENDERING.md). */
-const VIEW_KERNEL_SIZE = 0.15;
 /** /view renders at most 1.5x CSS pixels so the splat sort keeps up. */
 const VIEW_DPR_CAP = 1.5;
+/**
+ * How many standard deviations of each Gaussian actually get drawn.
+ *
+ * PlayCanvas cuts at 2.0, so this is what SuperSplat and Splatfiction show;
+ * Spark defaults to sqrt(8) ≈ 2.83 instead, drawing a skirt ~40% wider on every
+ * splat. Individually those tails are nearly transparent, but an interior scan
+ * stacks hundreds of them per pixel and they sum into visible haze.
+ */
+const SPLAT_MAX_STD_DEV = 2.0;
+
+/**
+ * Backdrop the Gaussians composite against.
+ *
+ * This is not a theme choice, it is part of the image. A splat only reaches
+ * full coverage where enough Gaussians overlap, and in room_3.sog the median
+ * splat opacity is 0.29 — so wherever coverage falls short, the backdrop is
+ * mixed into the result in proportion. Against the app's near-white page that
+ * lifted every thin or distant region toward white, which is what made these
+ * scans read as milky and blown-out next to SuperSplat and Splatfiction, both
+ * of which composite against near-black.
+ *
+ * Deliberately not pure black: a true 0 makes the canvas edge disappear against
+ * dark UI chrome and hides whether the renderer has painted at all.
+ */
+const SPLAT_BACKDROP: [number, number, number, number] = [0.07, 0.07, 0.078, 1];
+/** The same colour for the DOM layers the Gaussian canvases sit on. */
+const SPLAT_BACKDROP_CSS = "#121214";
 
 function spinoffModelTransform(transform: GlobalSceneTransform): {
   compatible: boolean;
@@ -794,13 +820,28 @@ async function decodeWebpImage(fileData: Uint8Array): Promise<DecodedImageData> 
   }
 }
 
+/**
+ * What the cheap range probe learned about a remote .sog.
+ *
+ * `meta` is the parsed meta.json when the probe could reach it. The stored fast
+ * path below hands the URL straight to the delivery renderer and never unzips
+ * the archive, so this is the only opportunity to read the file's own
+ * description of itself. Without it every stored SOG rendered as though it
+ * carried `antialias: false` and no authored camera — and Splatfiction's
+ * exports, which are exactly the ones that qualify for the fast path, set both.
+ */
+interface StoredSogProbe {
+  stored: boolean;
+  meta: unknown | null;
+}
+
 // Spinoff reads SOG members over independent HTTP ranges, so every member has
 // to be ZIP-stored (method 0); a deflated member is only decodable from the
 // start of its stream. Splatfiction's own exports satisfy this, but archives
 // produced elsewhere in the pipeline still deflate, and handing one of those to
 // Spinoff fails the whole tour. Read just the central directory to find out
 // which kind we have, and let the caller repackage when it is the wrong kind.
-async function sogMembersAreStored(url: string): Promise<boolean> {
+async function probeStoredSog(url: string): Promise<StoredSogProbe> {
   const readRange = async (start: number, end: number): Promise<Uint8Array | null> => {
     const resp = await fetch(url, {
       headers: { Range: `bytes=${start}-${end}` },
@@ -812,6 +853,8 @@ async function sogMembersAreStored(url: string): Promise<boolean> {
     return new Uint8Array(await resp.arrayBuffer());
   };
 
+  const NOT_STORED: StoredSogProbe = { stored: false, meta: null };
+
   try {
     // Ask for the archive tail with a suffix range rather than sizing it with a
     // HEAD first: signed object URLs are commonly signed for GET only and answer
@@ -821,15 +864,15 @@ async function sogMembersAreStored(url: string): Promise<boolean> {
       headers: { Range: "bytes=-65557" },
       cache: "force-cache",
     });
-    if (!tailResp.ok) return false;
+    if (!tailResp.ok) return NOT_STORED;
     const tail = new Uint8Array(await tailResp.arrayBuffer());
-    if (tail.length < 22) return false;
+    if (tail.length < 22) return NOT_STORED;
 
     // A server that honours the range reports the total in Content-Range; one
     // that ignores it answers 200 with the whole file, which is still usable.
     const total = tailResp.headers.get("content-range")?.match(/\/(\d+)\s*$/);
     const size = total ? Number(total[1]) : tail.length;
-    if (!Number.isFinite(size) || size <= 0) return false;
+    if (!Number.isFinite(size) || size <= 0) return NOT_STORED;
     const tailStart = total ? Math.max(0, size - tail.length) : 0;
     const tailView = new DataView(tail.buffer, tail.byteOffset, tail.byteLength);
 
@@ -840,7 +883,7 @@ async function sogMembersAreStored(url: string): Promise<boolean> {
         break;
       }
     }
-    if (eocd < 0) return false;
+    if (eocd < 0) return NOT_STORED;
 
     const entries = tailView.getUint16(eocd + 10, true);
     const dirSize = tailView.getUint32(eocd + 12, true);
@@ -848,31 +891,86 @@ async function sogMembersAreStored(url: string): Promise<boolean> {
     // ZIP64 needs a different directory walk; treat it as "repackage" rather
     // than guessing, which keeps the safe path safe.
     if (entries === 0xffff || dirSize === 0xffffffff || dirOffset === 0xffffffff) {
-      return false;
+      return NOT_STORED;
     }
-    if (entries === 0 || dirSize === 0) return false;
+    if (entries === 0 || dirSize === 0) return NOT_STORED;
 
     const dir =
       dirOffset >= tailStart
         ? tail.subarray(dirOffset - tailStart, dirOffset - tailStart + dirSize)
         : await readRange(dirOffset, dirOffset + dirSize - 1);
-    if (!dir || dir.length < dirSize) return false;
+    if (!dir || dir.length < dirSize) return NOT_STORED;
     const dirView = new DataView(dir.buffer, dir.byteOffset, dir.byteLength);
+
+    const names = new TextDecoder();
+    // Where meta.json's *local* header starts, captured on the way past. The
+    // central directory records the member's compressed size but not where its
+    // payload begins, because the local header repeats the name and extra
+    // fields at its own lengths — so the payload offset can only be resolved by
+    // reading that header.
+    let metaHeaderOffset = -1;
+    let metaSize = 0;
 
     let cursor = 0;
     for (let i = 0; i < entries; i += 1) {
-      if (cursor + 46 > dir.length) return false;
-      if (dirView.getUint32(cursor, true) !== 0x02014b50) return false;
-      if (dirView.getUint16(cursor + 10, true) !== 0) return false; // not stored
+      if (cursor + 46 > dir.length) return NOT_STORED;
+      if (dirView.getUint32(cursor, true) !== 0x02014b50) return NOT_STORED;
+      if (dirView.getUint16(cursor + 10, true) !== 0) return NOT_STORED; // not stored
       const nameLen = dirView.getUint16(cursor + 28, true);
       const extraLen = dirView.getUint16(cursor + 30, true);
       const commentLen = dirView.getUint16(cursor + 32, true);
+      if (
+        metaHeaderOffset < 0
+        && names.decode(dir.subarray(cursor + 46, cursor + 46 + nameLen)) === "meta.json"
+      ) {
+        metaHeaderOffset = dirView.getUint32(cursor + 42, true);
+        metaSize = dirView.getUint32(cursor + 24, true);
+      }
       cursor += 46 + nameLen + extraLen + commentLen;
     }
-    return true;
+
+    return { stored: true, meta: await readStoredMeta(readRange, metaHeaderOffset, metaSize) };
   } catch {
     // Probe failures must not decide rendering; repackaging always works.
-    return false;
+    return NOT_STORED;
+  }
+}
+
+/**
+ * Pull meta.json out of an already-verified stored archive.
+ *
+ * Two more ranges over ~16 KB, against saving the whole multi-megabyte download
+ * the fast path exists to avoid. A failure here is not fatal: the caller keeps
+ * the URL delivery path and simply falls back to the conservative defaults it
+ * used before this was read at all.
+ */
+async function readStoredMeta(
+  readRange: (start: number, end: number) => Promise<Uint8Array | null>,
+  headerOffset: number,
+  size: number,
+): Promise<unknown | null> {
+  // 16 MB is far past any real meta.json and stops a corrupt directory entry
+  // from turning the probe into a large download.
+  if (headerOffset < 0 || size <= 0 || size > 16 << 20) return null;
+
+  const header = await readRange(headerOffset, headerOffset + 29);
+  if (!header || header.length < 30) return null;
+  const headerView = new DataView(header.buffer, header.byteOffset, header.byteLength);
+  if (headerView.getUint32(0, true) !== 0x04034b50) return null;
+
+  // The local header's own name and extra lengths, which are allowed to differ
+  // from the central directory's — the extra field in particular is routinely a
+  // different size in the two records.
+  const start = headerOffset + 30
+    + headerView.getUint16(26, true)
+    + headerView.getUint16(28, true);
+  const body = await readRange(start, start + size - 1);
+  if (!body || body.length < size) return null;
+
+  try {
+    return JSON.parse(new TextDecoder().decode(body.subarray(0, size)));
+  } catch {
+    return null;
   }
 }
 
@@ -5198,9 +5296,18 @@ const SplatViewer = forwardRef<SplatViewerHandle, Props>(function SplatViewer(
         // the decoded Gaussian covariance basis disagree with the producer.
         scene.useRightHandedSystem = true;
         sceneRef.current = scene;
-        scene.clearColor = spatialNavigation
-          ? new BABYLON.Color4(0.965, 0.969, 0.976, spinoffEligible ? 0 : 1)
-          : new BABYLON.Color4(1, 1, 1, 1);
+        // When an external engine draws the Gaussians, Babylon is only the
+        // camera/gizmo layer above it and must clear fully transparent; the
+        // backdrop then comes from the DOM behind both canvases. When Babylon
+        // is drawing the splats itself it owns the backdrop directly. Either
+        // way the colour is the same one — see SPLAT_BACKDROP for why it is not
+        // the app's page white.
+        scene.clearColor = new BABYLON.Color4(
+          SPLAT_BACKDROP[0],
+          SPLAT_BACKDROP[1],
+          SPLAT_BACKDROP[2],
+          spinoffEligible ? 0 : 1,
+        );
 
         const camera = new BABYLON.FreeCamera("cam", BABYLON.Vector3.Zero(), scene);
         camera.minZ = 0.1;
@@ -5769,11 +5876,25 @@ const SplatViewer = forwardRef<SplatViewerHandle, Props>(function SplatViewer(
           // ones fall through to be repackaged stored below, which keeps Spinoff
           // as the renderer and leaves appearance unchanged.
           setStatus(t("viewer.status.processing", lang));
-          const membersStored = await sogMembersAreStored(splatUrl);
+          const probe = await probeStoredSog(splatUrl);
           if (disposed) return;
-          if (membersStored) {
+          if (probe.stored) {
             spinoffSourceRef.current = splatUrl;
             splatBufferRef.current = null;
+            // The archive is never unzipped on this path, so the probe's
+            // meta.json is the only description of the file the renderer will
+            // ever see. Skipping it meant every stored SOG was drawn as though
+            // it were trained without antialiasing — and Splatfiction's exports,
+            // which are precisely the ones stored well enough to qualify here,
+            // all carry `antialias: true`. That halved the Mip kernel and, with
+            // it, the opacity compensation derived from the same kernel, which
+            // is what made these scenes render brighter and hazier than the
+            // exporter intended.
+            if (probe.meta) {
+              sogViewerHintRef.current = parseSogViewerHint(probe.meta);
+              sogAntialiasRef.current =
+                (probe.meta as { antialias?: unknown }).antialias === true;
+            }
             await placeCamera();
             if (immersiveControls) {
               const target = camera.getTarget();
@@ -6163,11 +6284,11 @@ const SplatViewer = forwardRef<SplatViewerHandle, Props>(function SplatViewer(
             : performanceProfile === "balanced"
               ? compactTouch ? 2_250_000 : 4_500_000
               : compactTouch ? 3_500_000 : 9_000_000,
-          // Keep the Reaigen light viewport material; Spinoff contributes no
-          // application theme or UI chrome.
-          background: spatialNavigation
-            ? [0.965, 0.969, 0.976, 1]
-            : [1, 1, 1, 1],
+          // Spinoff contributes no application theme or UI chrome; this is the
+          // surface the Gaussians are composited onto, and it has to match the
+          // Spark path and the DOM behind it or the same scene would change
+          // exposure depending on which engine happened to be available.
+          background: SPLAT_BACKDROP,
           physicalSky: false,
         });
         spinoffRendererRef.current = renderer;
@@ -6340,32 +6461,31 @@ const SplatViewer = forwardRef<SplatViewerHandle, Props>(function SplatViewer(
         //    blurAmount (dilation *plus* Mip-Splatting opacity compensation),
         //    others want preBlurAmount (dilation only).
         //
-        //    The kernel value stays GAUSSIAN_MIP_VARIANCE deliberately.
-        //    scripts/validate-splat-render-profile.test.mjs records a CPU
-        //    render showing 0.09 vs 0.30 moves mean luminance by 0.00005 and
-        //    clipped highlights by 0.001pp while costing ~9% sharpness: the
-        //    kernel is not what washes a render out, and raising it would only
-        //    blur the result and reshade the published library.
+        //    Spark's blurAmount is added straight onto the projected covariance
+        //    diagonal, so it is a variance in px² — the same unit the SOG
+        //    contract specifies and the same quantity Spinoff arrives at after
+        //    squaring its `mipSigmaPixels`. A file trained with antialiasing
+        //    therefore wants the full 0.30, not the /view library default: the
+        //    Mip-Splatting opacity compensation is derived from this very
+        //    kernel, so an undersized one under-compensates and the splats come
+        //    out brighter than the exporter intended. That is the hazy,
+        //    washed-out render, and it is why this now follows the file rather
+        //    than a single constant.
         //
-        // 2. Projected splat scale. This is the term that actually differs from
-        //    SuperSplat: Spark's default renders softer than the PlayCanvas
-        //    convention, and Spark documents 2.0 as the matching value.
-        // Rasterisation follows the documented /view policy from
-        // Reaigen-splatviewer-02/RENDERING.md rather than library defaults:
-        // a fixed VKGS-tier kernel with compensation on. Spark's blurAmount is
-        // the compensated term (Mip-Splatting opacity adjustment included);
-        // preBlurAmount dilates without compensating and would over-brighten.
-        // ?kernel= overrides for A/B against SuperSplat.
-        const tuning = new URLSearchParams(window.location.search);
-        const rawKernel = tuning.get("kernel");
-        const kernel = rawKernel !== null && rawKernel.trim() !== ""
-          && Number.isFinite(Number(rawKernel))
-          ? Number(rawKernel)
-          : VIEW_KERNEL_SIZE;
+        // 2. Projected splat scale. Spark draws each Gaussian out to
+        //    `maxStdDev` standard deviations and defaults to sqrt(8) ≈ 2.83,
+        //    which is where the extra softness against SuperSplat came from:
+        //    every splat carries ~40% more skirt, and those faint overlapping
+        //    tails accumulate into haze. PlayCanvas — and so both SuperSplat
+        //    and Splatfiction — cut at 2.0.
+        //
+        // ?kernel= still overrides for A/B against SuperSplat.
+        const kernel = deliveryKernelVariance(sogAntialiasRef.current, renderTuning());
         threeScene.add(new SparkRenderer({
           renderer,
           blurAmount: kernel,
           preBlurAmount: 0,
+          maxStdDev: SPLAT_MAX_STD_DEV,
         }));
 
         // The loader hands over either the asset URL for range streaming or a
@@ -6665,7 +6785,13 @@ const SplatViewer = forwardRef<SplatViewerHandle, Props>(function SplatViewer(
   return (
     <div
       ref={rootRef}
-      className={`relative h-full w-full select-none bg-background ${className ?? ""}`}
+      className={`relative h-full w-full select-none ${className ?? ""}`}
+      // The Gaussian canvases are transparent wherever coverage is incomplete,
+      // so this element is literally the backdrop of the render rather than
+      // decoration around it. Set from the same constant the two engines use —
+      // as a style rather than a class so a caller's className cannot silently
+      // put the page white back underneath the splats.
+      style={{ backgroundColor: SPLAT_BACKDROP_CSS }}
       tabIndex={0}
       aria-busy={!visibleReady}
     >

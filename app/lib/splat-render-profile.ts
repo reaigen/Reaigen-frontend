@@ -284,6 +284,38 @@ export function resolveSplatRenderProfile(
   };
 }
 
+/**
+ * Fixed VKGS-tier kernel the /view policy applies to the existing library
+ * (Reaigen-splatviewer-02/RENDERING.md), for reconstructions trained without
+ * antialiasing.
+ */
+export const VIEW_KERNEL_VARIANCE = 0.15;
+
+/**
+ * Screen-space dilation for the external delivery engines, in px² of variance.
+ *
+ * Spark adds `blurAmount` straight onto the projected covariance diagonal and
+ * Spinoff squares its `mipSigmaPixels` before doing the same, so both land on a
+ * variance and both must be handed the same number for one file — otherwise the
+ * scene changes exposure depending on which engine the device could run, which
+ * is exactly what happened: WebGPU machines got 0.30 while everything on the
+ * WebGL2 fallback got 0.15.
+ *
+ * Unlike `resolveSplatRenderProfile`, this *does* key off the file's own
+ * `antialias` flag. That flag records that the trainer already added the 0.30
+ * to its 2D covariance, and the Mip-Splatting opacity compensation is derived
+ * from the same kernel — so rendering such a file at a smaller value
+ * under-compensates and the splats come out brighter than the exporter
+ * intended. Splatfiction's exports all set it.
+ */
+export function deliveryKernelVariance(
+  antialiased: boolean,
+  overrides: RenderTuningOverrides = {},
+): number {
+  if (finite(overrides.kernel) && overrides.kernel! >= 0) return overrides.kernel!;
+  return antialiased ? GAUSSIAN_ANTIALIASED_VARIANCE : VIEW_KERNEL_VARIANCE;
+}
+
 /** Parse the tuning overrides out of a URL query string. */
 export function parseRenderTuning(search: string): RenderTuningOverrides {
   const q = new URLSearchParams(search);

@@ -3,12 +3,18 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
-import { resolveSpinoffSogQuaternionOrder } from "@reaigen/spinoff";
+import {
+  resolveSpinoffSogQuaternionOrder,
+  spinoffSogCodebookRows,
+  spinoffSogUsesPerChannelCodebook,
+} from "@reaigen/spinoff";
 
 import {
   GAUSSIAN_ANTIALIASED_VARIANCE,
   GAUSSIAN_MIP_VARIANCE,
   SPINOFF_NATIVE_MIP_SIGMA,
+  VIEW_KERNEL_VARIANCE,
+  deliveryKernelVariance,
   eyeFromSogViewer,
   fallbackOverviewCamera,
   isAntialiasedReconstruction,
@@ -88,6 +94,57 @@ test("the 3DGS kernel remains available as an override", () => {
   );
 });
 
+// ---------------------------------------------------------------------------
+// Delivery-engine kernel
+//
+// The Babylon path above is deliberately fixed for the whole library. The two
+// external delivery engines are not: they render the file as authored, so they
+// follow the file's own antialias flag. These assert that both engines can only
+// ever be handed the same number.
+// ---------------------------------------------------------------------------
+
+test("an antialiased delivery scene gets the full 3DGS dilation", () => {
+  // Splatfiction's exports set this, and the trainer already added 0.30 to the
+  // 2D covariance. The Mip-Splatting opacity compensation is derived from the
+  // same kernel, so rendering one at the library's smaller value
+  // under-compensates and the splats come out brighter than the exporter
+  // intended -- the washed-out render.
+  assert.equal(deliveryKernelVariance(true), GAUSSIAN_ANTIALIASED_VARIANCE);
+  assert.equal(deliveryKernelVariance(true), 0.3);
+  assert.equal(isAntialiasedReconstruction(SPLATFICTION_10122), true);
+});
+
+test("a library scene keeps the documented /view kernel", () => {
+  assert.equal(deliveryKernelVariance(false), VIEW_KERNEL_VARIANCE);
+  assert.equal(deliveryKernelVariance(false), 0.15);
+  assert.equal(isAntialiasedReconstruction(LEGACY), false);
+});
+
+test("Spark and Spinoff cannot drift apart on one file", () => {
+  // Spark adds blurAmount onto the covariance diagonal directly; Spinoff
+  // squares mipSigmaPixels first. Same variance, different units -- so the
+  // sigma Spinoff is configured with has to square back to what Spark is
+  // handed, or a scene changes exposure with the device's WebGPU support.
+  // Tolerance, not equality: the sigma is stored as sqrt(0.3), and squaring it
+  // back lands one ulp low at 0.29999999999999993.
+  assert.ok(
+    Math.abs(
+      SPINOFF_NATIVE_MIP_SIGMA * SPINOFF_NATIVE_MIP_SIGMA - deliveryKernelVariance(true),
+    ) < 1e-12,
+  );
+});
+
+test("a kernel override still wins on the delivery path", () => {
+  assert.equal(deliveryKernelVariance(true, parseRenderTuning("?kernel=0.09")), 0.09);
+  assert.equal(deliveryKernelVariance(false, parseRenderTuning("?kernel=0.3")), 0.3);
+  // Blank and nonsensical values fall through to the file's own answer rather
+  // than rendering with no dilation at all.
+  assert.equal(deliveryKernelVariance(true, parseRenderTuning("?kernel=")), 0.3);
+  assert.equal(deliveryKernelVariance(true, parseRenderTuning("?kernel=abc")), 0.3);
+  // An explicit zero is a legitimate request for no dilation.
+  assert.equal(deliveryKernelVariance(true, parseRenderTuning("?kernel=0")), 0);
+});
+
 test("the imported Splatfiction-web scene keeps the public WXYZ SOG contract", () => {
   assert.equal(SPLATFICTION_10122.count, 288_444);
   assert.equal(SPLATFICTION_10122.antialias, true);
@@ -119,7 +176,7 @@ test("vendored Spinoff uses Splatfiction's finite normalized Gaussian support", 
     "utf8",
   );
 
-  assert.equal(packageJson.version, "0.1.44");
+  assert.equal(packageJson.version, "0.1.45");
   for (const shader of [webGpu, webGl]) {
     assert.match(shader, /radiusSquared > 8\.0/);
     assert.match(shader, /0\.01831563888873418/);
@@ -223,6 +280,33 @@ test("tour 33 vkgs SOG frames from its real signed-log metadata without a viewer
       >= frame.radius * 1.7 - 1e-9,
     "camera must retreat far enough to see the complete SOG bounds",
   );
+});
+
+test("tour 33 vkgs per-channel palettes survive the fast Spinoff path", () => {
+  const codebook = [
+    new Array(256).fill(0),
+    new Array(256).fill(0),
+    new Array(256).fill(0),
+  ];
+  const samples = [
+    [-13.119266510009766, -7.740798473358154, -0.2833249568939209],
+    [-13.580313682556152, -8.21716594696045, 0.32248708605766296],
+    [-12.076475143432617, -8.169289588928223, 0.25365978479385376],
+  ];
+  for (let channel = 0; channel < 3; channel += 1) {
+    codebook[channel][0] = samples[channel][0];
+    codebook[channel][42] = samples[channel][1];
+    codebook[channel][255] = samples[channel][2];
+  }
+
+  assert.equal(spinoffSogUsesPerChannelCodebook(codebook), true);
+  const rows = spinoffSogCodebookRows(codebook);
+  for (let channel = 0; channel < 3; channel += 1) {
+    for (const [index, expected] of [[0, samples[channel][0]], [42, samples[channel][1]], [255, samples[channel][2]]]) {
+      assert.ok(Math.abs(rows[channel * 256 + index] - expected) < 1e-5);
+    }
+  }
+  assert.ok(Array.from(rows).every(Number.isFinite));
 });
 
 test("metadata framing rejects malformed and degenerate means domains", () => {
