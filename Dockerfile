@@ -4,8 +4,13 @@ FROM node:20-alpine AS base
 FROM base AS deps
 WORKDIR /app
 COPY package.json package-lock.json* ./
-COPY vendor/reaigen-floorplan-solver-0.1.0.tgz ./vendor/reaigen-floorplan-solver-0.1.0.tgz
-COPY vendor/reaigen-spinoff-0.1.44.tgz ./vendor/reaigen-spinoff-0.1.44.tgz
+# The whole directory, not each tarball by name. package.json pins these as
+# file: dependencies, so naming them here duplicated the version in a second
+# place and the two drifted: the spinoff bump to 0.1.45 updated package.json and
+# left this copying 0.1.44, which fails at COPY before npm ci can report
+# anything useful. Copying the directory means a version bump only has to be
+# made once.
+COPY vendor/ ./vendor/
 RUN npm ci --ignore-scripts
 
 # --- build ---
