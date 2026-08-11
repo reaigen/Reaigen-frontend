@@ -1,4 +1,5 @@
 import type { ComponentPropsWithoutRef } from "react";
+import { cn } from "../lib/utils";
 
 type ReaigenWordmarkProps = Omit<ComponentPropsWithoutRef<"span">, "children">;
 
@@ -11,7 +12,10 @@ export function ReaigenWordmark({
   return (
     <span
       {...props}
-      className={`font-medium tracking-[0.005em] ${className}`}
+      // DM Serif Display ships a single 400 cut, and the marketing site tracks
+      // the mark in rather than out. Display serifs want negative tracking; the
+      // old +0.005em was tuned for Georgia.
+      className={cn("font-normal tracking-[-0.01em]", className)}
       style={{
         ...style,
         fontFamily: "var(--font-brand), ui-serif, Georgia, serif",

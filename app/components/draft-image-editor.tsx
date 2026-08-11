@@ -444,6 +444,14 @@ export function DraftImageEditor({
     </button>
   );
 
+  /**
+   * A full-width row rather than a tile in a two-up grid. These labels are long
+   * outside English — "Automatické vyváženie bielej" wrapped onto two lines in a
+   * half-width cell, which left the icon floating against a two-line block and
+   * the pair ragged, since only one of the two ever wrapped. Across the panel
+   * both fit on one line in every locale, so they stay the same height and read
+   * as the pair of actions they are.
+   */
   const autoButton = (kind: "tone" | "balance", labelKey: LocaleKey, className?: string) => (
     <button
       type="button"
@@ -451,25 +459,23 @@ export function DraftImageEditor({
       disabled={busy || !pipeline}
       aria-busy={pipelineState === "loading" || undefined}
       className={cn(
-        "min-h-11 rounded-xl border px-2.5 py-2 text-left text-[11px] font-medium transition-colors",
-        "border-border/70 bg-background/45 text-foreground/75",
-        "hover:border-foreground/35 hover:text-foreground",
+        "flex h-11 w-full items-center gap-2 rounded-xl border px-3 text-left text-[12px] font-medium transition-colors",
+        "border-border/70 bg-surface text-foreground/80",
+        "hover:border-foreground/30 hover:bg-foreground/[0.035] hover:text-foreground",
         "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
         "disabled:opacity-45",
         className,
       )}
     >
-      <span className="flex items-center gap-1.5">
-        {pipelineState === "loading" ? (
-          <span
-            aria-hidden="true"
-            className="h-3 w-3 shrink-0 animate-spin rounded-full border-2 border-foreground/15 border-t-foreground/55"
-          />
-        ) : (
-          <SparklesIcon size={12} className="shrink-0" />
-        )}
-        {t(labelKey, lang)}
-      </span>
+      {pipelineState === "loading" ? (
+        <span
+          aria-hidden="true"
+          className="h-3.5 w-3.5 shrink-0 animate-spin rounded-full border-2 border-foreground/15 border-t-foreground/55"
+        />
+      ) : (
+        <SparklesIcon size={14} className="shrink-0 text-foreground/40" />
+      )}
+      <span className="min-w-0 truncate">{t(labelKey, lang)}</span>
     </button>
   );
 
@@ -732,7 +738,7 @@ export function DraftImageEditor({
               {/* Actions, not toggles. Auto now writes its result into the sliders
                   below, so you can see what it decided and adjust from there —
                   and what gets saved is exactly what the preview showed. */}
-              <div className="mt-2.5 grid grid-cols-2 gap-2">
+              <div className="mt-2.5 space-y-1.5">
                 {autoButton("tone", "reai.mediaOperation.auto_enhance")}
                 {autoButton("balance", "reai.mediaOperation.auto_white_balance")}
               </div>

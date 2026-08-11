@@ -37,6 +37,49 @@ function scaleForDistance(distancePx: number) {
   return VERTICAL_SCALES.find((band) => distancePx > band.beyondPx)?.scale ?? 1;
 }
 
+/**
+ * The control also has to sit on the dark glass of the tour overlays, where the
+ * light palette disappears. Both sets keep the same geometry — hollow ring knob,
+ * thin rail, fill out of the origin — so it reads as one control in either place.
+ *
+ * `onDark` deliberately spells its colours out rather than leaning on the
+ * `.camera-editor-workspace` class remap in globals.css: that remap flattens
+ * every `bg-white/*` step onto a single grey, which would sink the fill into the
+ * rail. Callers that render on both pass the tone explicitly instead.
+ */
+const TONES = {
+  default: {
+    label: "text-foreground/70",
+    readoutIdle: "text-muted-foreground",
+    readoutActive: "text-foreground hover:bg-foreground/[0.06]",
+    focus: "focus-visible:ring-ring",
+    rail: "bg-foreground/[0.11]",
+    tick: "bg-foreground/25",
+    fill: "bg-foreground/55",
+    fillOverGradient: "bg-foreground/80",
+    knob: "bg-background border-foreground/35",
+    knobHover: "group-hover:border-foreground/60 group-focus-visible:border-foreground",
+    knobDragging: "border-foreground",
+    fineRing: "ring-foreground/25",
+  },
+  onDark: {
+    label: "text-white/60",
+    readoutIdle: "text-white/45",
+    readoutActive: "text-white hover:bg-white/[0.14]",
+    focus: "focus-visible:ring-white/40",
+    rail: "bg-white/20",
+    tick: "bg-white/35",
+    fill: "bg-white/70",
+    fillOverGradient: "bg-white/90",
+    knob: "bg-black/70 border-white/45",
+    knobHover: "group-hover:border-white/75 group-focus-visible:border-white",
+    knobDragging: "border-white",
+    fineRing: "ring-white/30",
+  },
+} as const;
+
+export type AdjustmentSliderTone = keyof typeof TONES;
+
 function decimalsOf(step: number) {
   const text = String(step);
   const dot = text.indexOf(".");
@@ -62,6 +105,8 @@ export interface AdjustmentSliderProps {
   resetLabel: string;
   /** CSS gradient painted on the rail to show what the control does (colour controls only). */
   trackGradient?: string;
+  /** Palette to render in. `onDark` is for the glass tour/camera overlays. */
+  tone?: AdjustmentSliderTone;
   disabled?: boolean;
   onChange: (value: number) => void;
 }
@@ -76,9 +121,11 @@ export function AdjustmentSlider({
   displayValue,
   resetLabel,
   trackGradient,
+  tone = "default",
   disabled = false,
   onChange,
 }: AdjustmentSliderProps) {
+  const palette = TONES[tone];
   const labelId = React.useId();
   const railRef = React.useRef<HTMLDivElement>(null);
   const drag = React.useRef<{
@@ -226,7 +273,7 @@ export function AdjustmentSlider({
   return (
     <div className={cn("select-none py-0.5", disabled && "opacity-45")}>
       <div className="flex items-baseline justify-between gap-3">
-        <span id={labelId} className="text-[11px] font-medium text-foreground/70">
+        <span id={labelId} className={cn("text-[11px] font-medium", palette.label)}>
           {label}
         </span>
         {/* Always the same element and padding: swapping span/button here shifted
@@ -238,10 +285,9 @@ export function AdjustmentSlider({
           aria-label={isNeutral ? undefined : `${label} · ${resetLabel}`}
           className={cn(
             "rounded-md px-1 py-0.5 text-[11px] font-medium tabular-nums transition-colors",
-            "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
-            isNeutral || disabled
-              ? "text-muted-foreground"
-              : "text-foreground hover:bg-foreground/[0.06]",
+            "focus-visible:outline-none focus-visible:ring-2",
+            palette.focus,
+            isNeutral || disabled ? palette.readoutIdle : palette.readoutActive,
           )}
         >
           {displayValue}
@@ -270,20 +316,21 @@ export function AdjustmentSlider({
           // coin toss between grabbing the control and scrolling past it. The
           // rail and knob keep their own sizes inside it.
           "group relative flex h-9 touch-none items-center rounded-md outline-none",
-          "focus-visible:ring-2 focus-visible:ring-ring",
+          "focus-visible:ring-2",
+          palette.focus,
           disabled ? "cursor-not-allowed" : dragging ? "cursor-grabbing" : "cursor-grab",
         )}
         style={{ paddingInline: THUMB_PX / 2 }}
       >
         <div
           ref={railRef}
-          className={cn("relative h-1 w-full rounded-full", !trackGradient && "bg-foreground/[0.11]")}
+          className={cn("relative h-1 w-full rounded-full", !trackGradient && palette.rail)}
           style={trackGradient ? { backgroundImage: trackGradient } : undefined}
         >
           {showTick ? (
             <span
               aria-hidden="true"
-              className="absolute top-1/2 h-2 w-px -translate-x-1/2 -translate-y-1/2 rounded-full bg-foreground/25"
+              className={cn("absolute top-1/2 h-2 w-px -translate-x-1/2 -translate-y-1/2 rounded-full", palette.tick)}
               style={{ left: `${originFraction * 100}%` }}
             />
           ) : null}
@@ -291,7 +338,7 @@ export function AdjustmentSlider({
             aria-hidden="true"
             className={cn(
               "absolute top-0 h-full rounded-full",
-              trackGradient ? "bg-foreground/80" : "bg-foreground/55",
+              trackGradient ? palette.fillOverGradient : palette.fill,
             )}
             style={{ left: `${fillLeft * 100}%`, width: `${fillWidth * 100}%` }}
           />
@@ -300,12 +347,11 @@ export function AdjustmentSlider({
           <span
             aria-hidden="true"
             className={cn(
-              "absolute top-1/2 -translate-x-1/2 -translate-y-1/2 rounded-full border bg-background shadow-control",
+              "absolute top-1/2 -translate-x-1/2 -translate-y-1/2 rounded-full border shadow-control",
               "transition-[border-color,transform,box-shadow] duration-100 motion-reduce:transition-none",
-              dragging
-                ? "border-foreground scale-105"
-                : "border-foreground/35 group-hover:border-foreground/60 group-focus-visible:border-foreground",
-              fineDrag && "ring-2 ring-foreground/25",
+              palette.knob,
+              dragging ? cn(palette.knobDragging, "scale-105") : palette.knobHover,
+              fineDrag && cn("ring-2", palette.fineRing),
             )}
             style={{
               left: `${valueFraction * 100}%`,

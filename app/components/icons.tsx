@@ -74,56 +74,138 @@ export const LinkIcon = fromRadix(Link2Icon, "LinkIcon");
 export const SettingsIcon = fromRadix(GearIcon, "SettingsIcon");
 export const SearchIcon = fromRadix(MagnifyingGlassIcon, "SearchIcon");
 
-/** Primary workspace glyphs use one bold 24px optical grid. */
-export function MainHomeIcon({
+/**
+ * Primary navigation glyphs.
+ *
+ * These share one optical grid so the rail reads as a single set: a 24px
+ * viewBox, artwork bounded to roughly 3.9–20.1 on both axes, round caps and
+ * joins, and one stroke weight driven by the caller. The rail previously mixed
+ * these with Radix glyphs, which are filled artwork on a 15px grid — scaled up
+ * to 21–22px they sat visibly lighter and on a different baseline than the
+ * stroked ones next to them, which is what made the column look unaligned.
+ *
+ * Because they are stroked, `strokeWidth` actually does something here: the
+ * active/inactive weight shift the shell asks for now renders.
+ */
+export type MainGlyphProps = IconProps & {
+  /**
+   * Solid glyph for the selected state, hollow otherwise.
+   *
+   * This mirrors both design references rather than being a flourish: the iOS
+   * tab bar is built from SF Symbols' `.fill` variants (`house.fill`,
+   * `gearshape.fill` — see ContentView.swift), and X marks its active tab the
+   * same way. A rail of uniformly hollow glyphs is what made the web nav read
+   * flatter than the app it mirrors.
+   *
+   * Filled variants are a single path with the inner detail as a subpath and
+   * `fill-rule: evenodd`, so the door / triangle / gear bore punch through as
+   * real holes instead of being painted in an assumed background colour.
+   */
+  filled?: boolean;
+};
+
+function MainGlyph({
   size = 18,
   width,
   height,
-  strokeWidth = 1.8,
+  strokeWidth = 1.7,
+  filled = false,
+  children,
   ...props
-}: IconProps) {
+}: MainGlyphProps & { children: React.ReactNode }) {
   return (
     <svg
       viewBox="0 0 24 24"
       width={width ?? size}
       height={height ?? size}
-      fill="none"
-      stroke="currentColor"
+      fill={filled ? "currentColor" : "none"}
+      fillRule={filled ? "evenodd" : undefined}
+      clipRule={filled ? "evenodd" : undefined}
+      stroke={filled ? "none" : "currentColor"}
       strokeWidth={strokeWidth}
       strokeLinecap="round"
       strokeLinejoin="round"
       aria-hidden={props["aria-hidden"] ?? true}
       {...props}
     >
-      <path d="m3.25 11.15 7.95-6.9a1.25 1.25 0 0 1 1.6 0l7.95 6.9" />
-      <path d="M5.25 9.85v8.4a2 2 0 0 0 2 2H9.5v-5.5h5v5.5h2.25a2 2 0 0 0 2-2v-8.4" />
+      {children}
     </svg>
   );
 }
 
-export function MainTourIcon({
-  size = 18,
-  width,
-  height,
-  strokeWidth = 1.8,
-  ...props
-}: IconProps) {
+/**
+ * The roof and the walls used to be two strokes that crossed at the eaves —
+ * the roofline ran the full width at y=11.15 while the wall started higher at
+ * y=9.85, leaving a doubled line and two spurs poking out of the sides. This is
+ * one continuous silhouette instead, with the door as the only inner mark.
+ */
+export function MainHomeIcon({ filled, ...props }: MainGlyphProps) {
   return (
-    <svg
-      viewBox="0 0 24 24"
-      width={width ?? size}
-      height={height ?? size}
-      fill="none"
-      stroke="currentColor"
-      strokeWidth={strokeWidth}
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      aria-hidden={props["aria-hidden"] ?? true}
-      {...props}
-    >
-      <rect x="3.25" y="4.25" width="17.5" height="15.5" rx="3.5" />
-      <path d="m10.15 8.55 5.45 3.45-5.45 3.45V8.55Z" fill="currentColor" stroke="none" />
-    </svg>
+    <MainGlyph filled={filled} {...props}>
+      {filled ? (
+        <path d="M3.9 10.4 12 4.05l8.1 6.35v7.75a2 2 0 0 1-2 2H5.9a2 2 0 0 1-2-2Zm5.85 9.75v-5.1a1.15 1.15 0 0 1 1.15-1.15h2.2a1.15 1.15 0 0 1 1.15 1.15v5.1Z" />
+      ) : (
+        <>
+          <path d="M3.9 10.4 12 4.05l8.1 6.35v7.75a2 2 0 0 1-2 2H5.9a2 2 0 0 1-2-2Z" />
+          <path d="M9.75 20.15v-5.1a1.15 1.15 0 0 1 1.15-1.15h2.2a1.15 1.15 0 0 1 1.15 1.15v5.1" />
+        </>
+      )}
+    </MainGlyph>
+  );
+}
+
+export function MainTourIcon({ filled, ...props }: MainGlyphProps) {
+  return (
+    <MainGlyph filled={filled} {...props}>
+      {filled ? (
+        // Rounded square spelled out as a path so the triangle can ride along
+        // in the same `d` and be punched out by the even-odd rule.
+        <path d="M8.5 3.9h7a4.6 4.6 0 0 1 4.6 4.6v7a4.6 4.6 0 0 1-4.6 4.6h-7a4.6 4.6 0 0 1-4.6-4.6v-7a4.6 4.6 0 0 1 4.6-4.6Zm1.95 5.25v5.7L15.55 12Z" />
+      ) : (
+        <>
+          {/* Square, not the old 17.5×15.5 letterbox, so it occupies the same
+              optical square as the house beside it. */}
+          <rect x="3.9" y="3.9" width="16.2" height="16.2" rx="4.6" />
+          {/* Filled *and* stroked: the fill gives it enough mass to match the
+              house's density, the stroke rounds its corners to match everything
+              else, and a bare fill at 18px read as a hard little wedge. */}
+          <path d="M10.45 9.15 15.55 12l-5.1 2.85Z" fill="currentColor" />
+        </>
+      )}
+    </MainGlyph>
+  );
+}
+
+/**
+ * Eight-tooth cog generated on the same 3.9–20.1 box rather than borrowed from
+ * Radix, whose gear is filled artwork that ignores `strokeWidth`.
+ */
+const COG_OUTLINE = "M10.51 3.99A8.15 8.15 0 0 1 13.49 3.99L14.22 6.05A6.35 6.35 0 0 1 14.63 6.22L16.62 5.28A8.15 8.15 0 0 1 18.72 7.38L17.78 9.37A6.35 6.35 0 0 1 17.95 9.78L20.01 10.51A8.15 8.15 0 0 1 20.01 13.49L17.95 14.22A6.35 6.35 0 0 1 17.78 14.63L18.72 16.62A8.15 8.15 0 0 1 16.62 18.72L14.63 17.78A6.35 6.35 0 0 1 14.22 17.95L13.49 20.01A8.15 8.15 0 0 1 10.51 20.01L9.78 17.95A6.35 6.35 0 0 1 9.37 17.78L7.38 18.72A8.15 8.15 0 0 1 5.28 16.62L6.22 14.63A6.35 6.35 0 0 1 6.05 14.22L3.99 13.49A8.15 8.15 0 0 1 3.99 10.51L6.05 9.78A6.35 6.35 0 0 1 6.22 9.37L5.28 7.38A8.15 8.15 0 0 1 7.38 5.28L9.37 6.22A6.35 6.35 0 0 1 9.78 6.05L10.51 3.99Z";
+/** The bore, as a path so it can share the cog's `d` and be punched out. */
+const COG_BORE = "M12 8.95a3.05 3.05 0 1 0 0 6.1 3.05 3.05 0 0 0 0-6.1Z";
+
+export function MainSettingsIcon({ filled, ...props }: MainGlyphProps) {
+  return (
+    <MainGlyph filled={filled} {...props}>
+      {filled ? (
+        <path d={`${COG_OUTLINE}${COG_BORE}`} />
+      ) : (
+        <>
+          <path d={COG_OUTLINE} />
+          <circle cx="12" cy="12" r="3.05" />
+        </>
+      )}
+    </MainGlyph>
+  );
+}
+
+export function MainSignOutIcon(props: IconProps) {
+  return (
+    <MainGlyph {...props}>
+      <path d="M14.15 4.35H6.9a2 2 0 0 0-2 2v11.3a2 2 0 0 0 2 2h7.25" />
+      <path d="M11.6 12h8.3" />
+      <path d="m17.15 9.25 2.75 2.75-2.75 2.75" />
+    </MainGlyph>
   );
 }
 

@@ -66,6 +66,14 @@
   * { border-color: hsl(var(--border)); }
 
   html {
+    /*
+     * `color-scheme` belongs on the root, not on body. Chrome on Android reads
+     * it from the root element to decide whether to leave a page alone; declared
+     * only on body, Auto Dark Theme still repainted the app on phones with the
+     * system theme set to dark — the white gallery lightbox came out grey, which
+     * is the one surface the design system pins to pure white.
+     */
+    color-scheme: light;
     scroll-behavior: smooth;
     scrollbar-gutter: stable;
     -webkit-font-smoothing: antialiased;
@@ -76,7 +84,6 @@
   body {
     background: hsl(var(--background));
     color: hsl(var(--foreground));
-    color-scheme: light;
     font-family: var(--font-primary);
     font-size: 0.95rem;
     line-height: 1.5;
@@ -258,6 +265,30 @@
 
     .media-manager-card-meta {
       margin-bottom: 0 !important;
+    }
+  }
+
+  /*
+   * The draft hero is aspect-driven, which is correct until the viewport is
+   * wider than it is tall. On a 14" laptop the content column is ~1180px, so a
+   * full-width 16:9 hero computes to ~660px — taller than what is left below the
+   * header, and the listing's own facts never appeared without scrolling past a
+   * single photo. Capping the height turns it into a band on short screens; the
+   * image is `object-cover`, so it crops rather than letterboxes. Phones keep
+   * the tall 16:10 hero, where filling the screen is the intent.
+   */
+  @media (min-width: 768px) {
+    .detail-hero-gallery {
+      /*
+       * `width` is not redundant next to the cap — it is the whole reason the
+       * cap is safe. With an `aspect-ratio` set and the height constrained, a
+       * width of `auto` gets resolved *from the ratio*, so capping the height
+       * shrank the box horizontally and left a band of empty frame down the
+       * right-hand side. Pinning the width keeps the box full-bleed and lets
+       * `object-cover` on the image absorb the cap by cropping.
+       */
+      width: 100%;
+      max-height: min(60vh, 38rem);
     }
   }
 
@@ -446,12 +477,18 @@
     user-select: none;
   }
 
+  /*
+   * Geometry mirrors the iOS launch screen (AppStartupView.swift): a 2.5px rail
+   * on a 4px radius, track at 8% and fill at 50% of the primary colour. iOS can
+   * drive it determinately from AppStartupManager.progress; the web has no such
+   * signal, so the same rail carries an indeterminate sweep instead.
+   */
   .loading-progress-track {
     position: relative;
-    height: 0.1875rem;
+    height: 2.5px;
     overflow: hidden;
-    border-radius: 9999px;
-    background: hsl(var(--foreground) / 0.1);
+    border-radius: 4px;
+    background: hsl(var(--foreground) / 0.08);
   }
 
   .loading-progress-indeterminate {
@@ -460,7 +497,7 @@
     left: 0;
     width: 38%;
     border-radius: inherit;
-    background: hsl(var(--foreground) / 0.52);
+    background: hsl(var(--foreground) / 0.5);
     animation: loadingProgressSmooth 1.35s cubic-bezier(0.45, 0, 0.55, 1) infinite;
     will-change: transform, opacity;
   }
@@ -496,6 +533,15 @@
   .animate-shimmer {
     animation: shimmer 1.5s ease-in-out infinite;
   }
+  /*
+   * iOS settles the wordmark with spring(response: 0.55, dampingFraction: 0.82)
+   * — a light overshoot, not a linear ramp. The cubic below is the closest
+   * single-curve stand-in; the slight overshoot is what stops the mark from
+   * looking like it simply faded in.
+   */
+  .animate-startup-mark {
+    animation: startupMark 0.55s cubic-bezier(0.17, 0.89, 0.32, 1.06) both;
+  }
 }
 
 @keyframes fadeIn {
@@ -505,6 +551,10 @@
 @keyframes fadeInUp {
   from { opacity: 0; transform: translateY(8px); }
   to { opacity: 1; transform: translateY(0); }
+}
+@keyframes startupMark {
+  from { opacity: 0; transform: scale(0.96); }
+  to { opacity: 1; transform: scale(1); }
 }
 @keyframes fadeOut {
   from { opacity: 1; }
@@ -532,6 +582,29 @@
   24%, 76% { opacity: 1; }
   88% { opacity: 0.55; }
   100% { opacity: 0; transform: translate3d(365%, 0, 0); }
+}
+
+/*
+ * Every Radix dialog here — the side panels, the lightbox, the legal sheet —
+ * locks the page scroll through react-remove-scroll, which measures the
+ * scrollbar and pads the body by that width so the page does not reflow as the
+ * bar disappears.
+ *
+ * That compensation is wrong for this app: `scrollbar-gutter: stable` on `html`
+ * means the track is permanently reserved and never disappears in the first
+ * place. So the padding was pure surplus, and the whole page slid sideways by
+ * the scrollbar's width the instant any panel opened, and slid back on close.
+ * Cancel the padding; the scroll lock itself is untouched.
+ *
+ * `html body[...]` is deliberate. The library emits its own rule with
+ * `!important` and injects it into <head> at runtime, so it lands after this
+ * file — at equal specificity source order would hand it the win. The extra
+ * `html` outranks it regardless of order. It compensates with `margin-right`
+ * or `padding-right` depending on its gapMode, so both are neutralised.
+ */
+html body[data-scroll-locked] {
+  padding-right: 0 !important;
+  margin-right: 0 !important;
 }
 
 input:-webkit-autofill,

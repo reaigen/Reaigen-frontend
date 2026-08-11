@@ -594,10 +594,27 @@ export function DraftSharingDock({
           */}
           {(selectedShare.status === "active" || selectedShare.status === "paused") ? (
             <div className="border-t border-border/50 bg-surface-subtle p-3 sm:px-4">
-              <p className="min-w-0 select-all break-all text-[12px] leading-relaxed text-foreground/60">
-                {shareUrl(selectedShare.token)}
-              </p>
+              {/*
+                The URL is a second copy target. It is the thing being handed
+                over, so pressing it is the obvious gesture — and on a phone it
+                is a far easier hit than trying to text-select a wrapped URL.
+              */}
+              <button
+                type="button"
+                onClick={() => void copyShare(selectedShare)}
+                title={t("shares.copyLink", lang)}
+                className="block w-full rounded-lg text-left text-[12px] leading-relaxed text-foreground/60 transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              >
+                <span className="block min-w-0 break-all">{shareUrl(selectedShare.token)}</span>
+              </button>
               <div className="mt-3 flex gap-2">
+                {/*
+                  Confirmation stays monochrome — the product has no colour to
+                  spend here, and a filled green button was louder than the
+                  action it was confirming. The icon and label swap, and the
+                  banner above announces it; both revert on the feedback
+                  timeout.
+                */}
                 <Button type="button" onClick={() => void copyShare(selectedShare)} className="flex-1 sm:flex-none sm:min-w-[10rem]">
                   {justCopied ? <CheckIcon size={15} /> : <CopyIcon size={15} />}
                   {justCopied ? t("shares.copied", lang) : t("shares.copyLink", lang)}

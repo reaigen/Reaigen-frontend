@@ -3,7 +3,6 @@
 import * as React from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { ExitIcon } from "@radix-ui/react-icons";
 import { Avatar, AvatarFallback, AvatarImage } from "../lib/ui/avatar";
 import { getReaiAgentConsent, type UserProfile } from "../lib/api/client";
 import { clearAgentSession, readAgentPanelOpen, writeAgentPanelOpen } from "../lib/agent-session";
@@ -12,7 +11,7 @@ import { cn } from "../lib/utils";
 import { t, getUserLanguage } from "../lib/i18n";
 import { AppContentMessages } from "./content-documents";
 import { ReaiAgentCard } from "./reai-agent-card";
-import { AgentIcon, CloseIcon, MainHomeIcon, MainTourIcon, PlusIcon, SettingsIcon } from "./icons";
+import { AgentIcon, CloseIcon, MainHomeIcon, MainSettingsIcon, MainSignOutIcon, MainTourIcon, PlusIcon } from "./icons";
 
 function getInitials(user: UserProfile): string {
   const f = user.first_name?.[0] ?? "";
@@ -509,15 +508,15 @@ function AppShellFrame({
           >
             <span
               aria-hidden="true"
-              className="text-[20px] leading-none text-foreground min-[1728px]:hidden"
-              style={{ fontFamily: 'var(--font-brand), ui-serif, Georgia, serif', fontWeight: 500, letterSpacing: '0.005em' }}
+              className="text-[23px] leading-none text-foreground min-[1728px]:hidden"
+              style={{ fontFamily: 'var(--font-brand), ui-serif, Georgia, serif', fontWeight: 400, letterSpacing: '-0.01em' }}
             >
               Re
             </span>
             <span
               aria-hidden="true"
-              className="hidden text-[25px] leading-none text-foreground min-[1728px]:inline"
-              style={{ fontFamily: 'var(--font-brand), ui-serif, Georgia, serif', fontWeight: 500, letterSpacing: '0.005em' }}
+              className="hidden text-[28px] leading-none text-foreground min-[1728px]:inline"
+              style={{ fontFamily: 'var(--font-brand), ui-serif, Georgia, serif', fontWeight: 400, letterSpacing: '-0.01em' }}
             >
               Reaigen
             </span>
@@ -536,13 +535,19 @@ function AppShellFrame({
                 title={item.label}
                 aria-current={active ? "page" : undefined}
                 className={cn(
-                  "mx-auto flex min-h-[58px] w-16 flex-col items-center justify-center gap-1 rounded-xl text-[10px] leading-none transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 min-[1728px]:h-12 min-[1728px]:min-h-0 min-[1728px]:w-full min-[1728px]:flex-row min-[1728px]:justify-start min-[1728px]:gap-3.5 min-[1728px]:px-3 min-[1728px]:text-[14px] min-[1728px]:leading-normal",
+                  // The selected chip is the tokenised bg-foreground/[0.06],
+                  // not bg-accent. bg-accent is a solid mid-grey, so at 64×58
+                  // it read as a heavy slab behind a small glyph rather than a
+                  // selection. Now the filled icon carries the selected state
+                  // and the chip just sits under it. Label is 11px — the
+                  // documented floor — where it used to be 10.
+                  "mx-auto flex min-h-[58px] w-16 flex-col items-center justify-center gap-1.5 rounded-2xl text-[11px] leading-none transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 min-[1728px]:h-12 min-[1728px]:min-h-0 min-[1728px]:w-full min-[1728px]:flex-row min-[1728px]:justify-start min-[1728px]:gap-3.5 min-[1728px]:px-3 min-[1728px]:text-[14px] min-[1728px]:leading-normal",
                   active
-                    ? "bg-accent font-semibold text-foreground"
-                    : "font-medium text-muted-foreground hover:bg-accent/80 hover:text-foreground"
+                    ? "bg-foreground/[0.06] font-semibold text-foreground"
+                    : "font-medium text-muted-foreground hover:bg-foreground/[0.04] hover:text-foreground"
                 )}
               >
-                <Icon size={22} strokeWidth={active ? 2.25 : 1.9} className={cn("shrink-0", active ? "text-foreground" : "text-foreground/55")} />
+                <Icon size={22} filled={active} strokeWidth={1.9} className={cn("shrink-0", active ? "text-foreground" : "text-foreground/55")} />
                 <span className="max-w-full truncate min-[1728px]:block">{item.label}</span>
               </Link>
             );
@@ -556,13 +561,14 @@ function AppShellFrame({
             title={t("nav.settings", lang)}
             aria-current={settingsActive ? "page" : undefined}
             className={cn(
-              "mx-auto flex min-h-[58px] w-16 flex-col items-center justify-center gap-1 rounded-xl text-[10px] leading-none transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 min-[1728px]:h-12 min-[1728px]:min-h-0 min-[1728px]:w-full min-[1728px]:flex-row min-[1728px]:justify-start min-[1728px]:gap-3.5 min-[1728px]:px-3 min-[1728px]:text-[14px] min-[1728px]:leading-normal",
+              // Matches the primary nav items above — same chip, same floor.
+              "mx-auto flex min-h-[58px] w-16 flex-col items-center justify-center gap-1.5 rounded-2xl text-[11px] leading-none transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 min-[1728px]:h-12 min-[1728px]:min-h-0 min-[1728px]:w-full min-[1728px]:flex-row min-[1728px]:justify-start min-[1728px]:gap-3.5 min-[1728px]:px-3 min-[1728px]:text-[14px] min-[1728px]:leading-normal",
               settingsActive
-                ? "bg-accent font-semibold text-foreground"
-                : "font-medium text-muted-foreground hover:bg-accent/80 hover:text-foreground"
+                ? "bg-foreground/[0.06] font-semibold text-foreground"
+                : "font-medium text-muted-foreground hover:bg-foreground/[0.04] hover:text-foreground"
             )}
           >
-            <SettingsIcon size={22} strokeWidth={settingsActive ? 2.2 : 1.7} className={cn("shrink-0", settingsActive ? "text-foreground" : "text-foreground/55")} />
+            <MainSettingsIcon size={22} filled={settingsActive} strokeWidth={1.9} className={cn("shrink-0", settingsActive ? "text-foreground" : "text-foreground/55")} />
             <span className="max-w-full truncate min-[1728px]:block">{t("nav.settings", lang)}</span>
           </Link>
 
@@ -589,7 +595,7 @@ function AppShellFrame({
             aria-label={t("nav.signout", lang)}
             className="mx-auto flex h-12 w-12 items-center justify-center rounded-full text-foreground/55 transition-colors hover:bg-accent/80 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 min-[1728px]:w-full min-[1728px]:justify-start min-[1728px]:gap-3.5 min-[1728px]:px-3 min-[1728px]:text-[13px] min-[1728px]:font-medium"
           >
-            <ExitIcon className="h-[21px] w-[21px] shrink-0" />
+            <MainSignOutIcon size={22} strokeWidth={1.9} className="shrink-0" />
             <span className="hidden min-[1728px]:block">{t("nav.signout", lang)}</span>
           </button>
         </div>
@@ -618,9 +624,17 @@ function AppShellFrame({
               happened to be on. Steps down on narrow phones so it never
               crowds the agent capsule and avatar beside it.
             */}
+            {/*
+              DM Serif Display is a narrower, higher-contrast face than the
+              Georgia these sizes were originally tuned against, so it reads
+              noticeably smaller at the same pixel size — hence the step up
+              here. It also ships a single 400 cut, which made the old
+              fontWeight 500 a no-op, and display serifs want tracking in
+              rather than out.
+            */}
             <span
-              className="text-[26px] leading-none text-foreground min-[390px]:text-[28px]"
-              style={{ fontFamily: 'var(--font-brand), ui-serif, Georgia, serif', fontWeight: 500, letterSpacing: '0' }}
+              className="text-[29px] leading-none text-foreground min-[390px]:text-[31px]"
+              style={{ fontFamily: 'var(--font-brand), ui-serif, Georgia, serif', fontWeight: 400, letterSpacing: '-0.01em' }}
             >
               Reaigen
             </span>
@@ -664,7 +678,7 @@ function AppShellFrame({
                       onClick={() => setMobileAccountOpen(false)}
                       className="flex min-h-11 items-center gap-3 rounded-2xl px-3 text-sm font-medium text-foreground/75 transition-colors hover:bg-accent hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                     >
-                      <SettingsIcon size={19} className="shrink-0 text-foreground/55" />
+                      <MainSettingsIcon size={20} strokeWidth={1.9} className="shrink-0 text-foreground/55" />
                       {t("nav.settings", lang)}
                     </Link>
                     <button
@@ -679,7 +693,7 @@ function AppShellFrame({
                       }}
                       className="flex min-h-11 w-full items-center gap-3 rounded-2xl px-3 text-left text-sm font-medium text-foreground/75 transition-colors hover:bg-accent hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                     >
-                      <ExitIcon className="h-[19px] w-[19px] shrink-0 text-foreground/55" />
+                      <MainSignOutIcon size={20} strokeWidth={1.9} className="shrink-0 text-foreground/55" />
                       {t("nav.signout", lang)}
                     </button>
                   </div>
@@ -696,6 +710,12 @@ function AppShellFrame({
           // Derived from the header token so the two can never drift apart.
           "min-h-[calc(100dvh-var(--header-h))] pb-24 pt-6 pl-[max(1rem,env(safe-area-inset-left))] pr-[max(1rem,env(safe-area-inset-right))]",
           "md:min-h-dvh md:px-8 md:py-7 xl:px-10 2xl:px-12",
+          // The rail glides between its 88px and 260px widths over 200ms, but
+          // this margin is driven by --sidebar-offset, which flips at the
+          // breakpoint with no transition of its own — the content jumped to
+          // the wide position while the rail was still travelling. Same
+          // duration as the aside so the two move as one edge.
+          "transition-[margin] duration-200",
         )}
         style={{ marginLeft: `var(--sidebar-offset, 0px)` }}
       >
@@ -725,13 +745,13 @@ function AppShellFrame({
                 href={item.href}
                 aria-current={active ? "page" : undefined}
                 className={cn(
-                  "flex flex-col items-center justify-center gap-1 rounded-lg text-[10px] font-medium leading-none transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2",
+                  "flex flex-col items-center justify-center gap-1.5 rounded-lg text-[11px] font-medium leading-none transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2",
                   active
                     ? "font-semibold text-foreground"
                     : "text-foreground/55 hover:text-foreground"
                 )}
               >
-                <Icon size={23} strokeWidth={active ? 2.3 : 1.9} />
+                <Icon size={23} filled={active} strokeWidth={1.9} />
                 <span className="max-w-full truncate px-1">{item.label}</span>
               </Link>
             );

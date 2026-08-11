@@ -569,8 +569,14 @@ export default function DraftPreviewPage({
     setError(null);
     const cachedDraft = user?.id ? readDraftDetailCache(user.id, draftId) : null;
     if (cachedDraft) {
+      // Paint the cached copy immediately, but do NOT raise the stale-listing
+      // notice here. The live request is already in flight, so on every visit
+      // with a warm cache the banner appeared, then removed itself a moment
+      // later when the fetch landed — and since it is an inline block with a
+      // bottom margin, the entire listing slid up underneath it every time.
+      // The notice only tells the truth in the catch branch below, where the
+      // request actually failed and this cached copy is all there is.
       setDraft(cachedDraft);
-      setUsingCachedDraft(true);
     }
     Promise.all([
       getDraft(draftId),
@@ -1060,19 +1066,26 @@ export default function DraftPreviewPage({
                       keeps one unambiguous target over the whole plan.
                     */}
                     {/*
-                      The plan's aspect ratio comes from the captured geometry
-                      and the viewer fills its container, so in the 980px column
-                      a squarish plan rendered nearly 980px tall. Capping the
-                      width scales the whole drawing down proportionally; the
-                      fullscreen view is where it gets to be large.
+                      The plan's aspect ratio comes from the captured geometry,
+                      so a squarish plan left to fill this column rendered
+                      nearly as tall as it is wide. That used to be solved by
+                      capping the card's *width*, which left the floorplan
+                      visibly narrower than every other card on the page.
+
+                      The cap belongs on the drawing's height instead: the plan
+                      box carries its own `aspectRatio`, so bounding the height
+                      makes it give back width and centre itself, while the card
+                      keeps the full column and stays flush with its siblings.
+                      Fullscreen is still where the plan gets to be large.
                     */}
-                    <div className="relative mx-auto w-full max-w-[620px] overflow-hidden rounded-[1.5rem] sm:rounded-2xl md:max-w-[540px]">
+                    <div className="relative w-full overflow-hidden rounded-[1.5rem] sm:rounded-2xl">
                       <FloorplanViewer
                         draftData={draft.draft_data ?? []}
                         floorplanId={draft.floorplan_id}
                         lang={lang}
                         units={unitCatalog}
                         targetAreaUnit={draft.area_preferred_unit ?? draft.area_unit}
+                        planClassName="max-h-[min(56vh,32rem)]"
                       />
                       <button
                         type="button"

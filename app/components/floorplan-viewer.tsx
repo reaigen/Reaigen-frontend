@@ -312,7 +312,9 @@ export default function FloorplanViewer({
         aria-label={t("draft.media.loading", lang)}
         aria-busy="true"
       >
-        <div className="aspect-[4/3] animate-pulse bg-muted/55 motion-reduce:animate-none" />
+        {/* Carries the caller's height cap too, so the skeleton occupies the
+            same box as the plan that replaces it and nothing shifts on swap. */}
+        <div className={cn("mx-auto aspect-[4/3] w-full animate-pulse bg-muted/55 motion-reduce:animate-none", planClassName)} />
         <div className="min-h-16 space-y-2 border-t border-border/40 px-4 py-3">
           <div className="h-3 w-2/5 rounded-full bg-muted/65" />
           <div className="h-3 w-3/5 rounded-full bg-muted/45" />
@@ -326,14 +328,14 @@ export default function FloorplanViewer({
     plan = <LocalPlan model={model.local} legendEntries={legendEntries} className={planClassName} />;
   } else if (hasMesh) {
     plan = (
-      <div className="aspect-[4/3] overflow-hidden bg-white">
+      <div className={cn("mx-auto aspect-[4/3] w-full overflow-hidden bg-white", planClassName)}>
         <MeshPlan data={rendering!} legendEntries={legendEntries} lang={lang} formatArea={formatArea} />
       </div>
     );
   } else if (publicFloorplan?.composite_url || rendering?.composite?.url) {
     const url = publicFloorplan?.composite_url ?? rendering!.composite.url;
     plan = (
-      <div className="relative aspect-[4/3] overflow-hidden bg-white">
+      <div className={cn("relative mx-auto aspect-[4/3] w-full overflow-hidden bg-white", planClassName)}>
         {/* eslint-disable-next-line @next/next/no-img-element */}
         <img src={url} alt="" className="absolute inset-0 h-full w-full object-contain" />
       </div>

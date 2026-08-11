@@ -3,6 +3,7 @@
 import { useState, useCallback, useEffect, useRef, type RefObject } from "react";
 import { ArrowDownIcon, ArrowUpIcon, EyeOpenIcon, PlusIcon, TrashIcon, UpdateIcon } from "@radix-ui/react-icons";
 import { ArrowLeftIcon, ArrowRightIcon, CheckIcon, ChevronDownIcon, PlayIcon } from "./icons";
+import { AdjustmentSlider } from "@/app/lib/ui/adjustment-slider";
 import { Button } from "@/app/lib/ui/button";
 import { saveCameras, getCameras } from "@/app/lib/api/client";
 import { getSafeApiErrorMessage } from "@/app/lib/api/error-message";
@@ -793,19 +794,21 @@ export default function CameraEditor({ splatId, viewerRef, activeShotIdx, initia
             </Button>
           </div>
 
-          <div className="flex min-h-11 items-center gap-3 rounded-[var(--floating-panel-radius)] border border-white/[0.06] bg-white/[0.04] px-3">
-            <span className="shrink-0 text-[11px] font-medium text-white/55">{t("cameraEditor.sceneFov", lang)}</span>
-            <input
-              type="range"
+          {/* 60° is the lens the editor opens on, so it is the detent the fill
+              grows out of — an untouched scene reads as an empty track. */}
+          <div className="rounded-[var(--floating-panel-radius)] border border-white/[0.06] bg-white/[0.04] px-3 py-1">
+            <AdjustmentSlider
+              label={t("cameraEditor.sceneFov", lang)}
+              value={sceneFov}
               min={40}
               max={100}
               step={1}
-              value={sceneFov}
-              onChange={(event) => handleSceneFovChange(Number(event.target.value))}
-              aria-label={t("cameraEditor.sceneFov", lang)}
-              className="h-11 min-w-0 flex-1 cursor-pointer accent-white"
+              origin={60}
+              displayValue={`${Math.round(sceneFov)}°`}
+              resetLabel={t("draft.media.resetEdits", lang)}
+              tone={appearance === "workspace" ? "default" : "onDark"}
+              onChange={handleSceneFovChange}
             />
-            <span className="w-8 shrink-0 text-right text-[11px] tabular-nums text-white/65">{Math.round(sceneFov)}°</span>
           </div>
 
           {shots.length === 0 ? (

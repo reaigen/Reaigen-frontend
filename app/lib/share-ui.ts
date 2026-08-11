@@ -10,8 +10,90 @@ export type ShareStats = {
   failed_pin_attempts: number;
 };
 
+/**
+ * Copy text, falling back to the legacy path when the async Clipboard API is
+ * unavailable.
+ *
+ * `navigator.clipboard` only exists in a *secure context*, so on any plain-HTTP
+ * origin — a LAN dev server, an internal deployment reached by IP — it is
+ * simply `undefined` and every copy failed, dropping the user into the
+ * "your browser blocked the clipboard, copy it by hand" panel. `execCommand`
+ * is deprecated but carries no such requirement and is still honoured
+ * everywhere, so it covers exactly the case the modern API cannot.
+ */
 export async function copyToClipboard(text: string): Promise<boolean> {
-  try { await navigator.clipboard.writeText(text); return true; } catch { return false; }
+  const asyncApiUsable =
+    typeof window !== "undefined"
+    && window.isSecureContext
+    && typeof navigator !== "undefined"
+    && typeof navigator.clipboard?.writeText === "function";
+
+  /*
+   * Order matters, and this is the subtle part. Outside a secure context the
+   * async API is either missing or rejects — but `await`ing it to find that out
+   * *spends the user gesture*, and `execCommand` only works while that gesture
+   * is still live. Trying the modern API first and falling back afterwards
+   * therefore fails twice over on plain HTTP. When we already know the API
+   * cannot work, go straight to the synchronous path instead.
+   */
+  if (!asyncApiUsable) return legacyCopy(text);
+
+  try {
+    await navigator.clipboard.writeText(text);
+    return true;
+  } catch {
+    // Secure context but refused — a non-focused document, or a permissions
+    // policy. Worth one synchronous attempt even with the gesture spent.
+    return legacyCopy(text);
+  }
+}
+
+function legacyCopy(text: string): boolean {
+  if (typeof document === "undefined") return false;
+
+  const field = document.createElement("textarea");
+  field.value = text;
+  field.setAttribute("readonly", "");
+  // Not `display:none`, `visibility:hidden`, or `opacity:0` — none of them can
+  // reliably hold a selection, so the copy silently fails. Off-screen but fully
+  // rendered is the one state that stays invisible and stays selectable.
+  // `position: fixed` keeps focusing it from scrolling the page, and the 16px
+  // font size stops iOS zooming toward it.
+  Object.assign(field.style, {
+    position: "fixed",
+    top: "0",
+    left: "-9999px",
+    width: "1px",
+    height: "1px",
+    padding: "0",
+    margin: "0",
+    border: "none",
+    outline: "none",
+    boxShadow: "none",
+    background: "transparent",
+    fontSize: "16px",
+  } satisfies Partial<CSSStyleDeclaration>);
+
+  document.body.appendChild(field);
+
+  // Restore whatever the user had selected; hijacking it is a visible side
+  // effect of pressing a copy button.
+  const selection = document.getSelection();
+  const previousRange = selection && selection.rangeCount > 0 ? selection.getRangeAt(0) : null;
+
+  try {
+    field.select();
+    field.setSelectionRange(0, text.length);
+    return document.execCommand("copy");
+  } catch {
+    return false;
+  } finally {
+    field.remove();
+    if (previousRange && selection) {
+      selection.removeAllRanges();
+      selection.addRange(previousRange);
+    }
+  }
 }
 
 export function shareUrl(token: string): string {

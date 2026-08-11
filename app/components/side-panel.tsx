@@ -91,7 +91,13 @@ export function SidePanel({
   return (
     <Dialog.Root open={open} onOpenChange={onOpenChange}>
       <Dialog.Portal>
-        <Dialog.Overlay className="fixed inset-0 z-[80] bg-black/25 backdrop-blur-[2px] data-[state=closed]:animate-[fadeOut_160ms_ease-in] data-[state=open]:animate-fade-in" />
+        {/*
+          The scrim runs on the panel's clock, not its own. It used to use the
+          shared `animate-fade-in` (400ms) against the panel's 220ms, so the
+          page kept darkening for almost two tenths of a second after the panel
+          had already come to rest — the two never looked like one movement.
+        */}
+        <Dialog.Overlay className="fixed inset-0 z-[80] bg-black/25 backdrop-blur-[2px] data-[state=closed]:animate-[fadeOut_180ms_ease-in] data-[state=open]:animate-[fadeIn_220ms_var(--motion-ease-smooth)]" />
         <Dialog.Content
           style={{
             ...(phoneViewport ? {
@@ -111,7 +117,11 @@ export function SidePanel({
             "data-[state=closed]:animate-[panelOut_180ms_ease-in] data-[state=open]:animate-[panelIn_220ms_var(--motion-ease-smooth)]",
             "sm:max-w-[520px]",
             headerMode === "editor"
-              ? "bg-background/90 backdrop-blur-2xl sm:inset-y-3 sm:right-3 sm:w-[calc(100%-1.5rem)] sm:overflow-hidden sm:rounded-[var(--floating-frame-radius)] sm:border"
+              // Once it detaches from the edge it is a floating card, so the
+              // elevation has to come from underneath rather than staying the
+              // sideways drawer shadow, which lit only its left edge and left
+              // the other three sitting flat on the page.
+              ? "bg-background/90 backdrop-blur-2xl sm:inset-y-3 sm:right-3 sm:w-[calc(100%-1.5rem)] sm:overflow-hidden sm:rounded-[var(--floating-frame-radius)] sm:border sm:shadow-[0_24px_70px_-24px_rgba(0,0,0,0.32)]"
               : "bg-background",
             className,
           )}

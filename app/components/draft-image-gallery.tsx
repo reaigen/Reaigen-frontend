@@ -210,13 +210,22 @@ function GalleryLightbox({
           be underneath and disappeared. It now carries the same capsule as the
           two controls flanking it, so all three stay legible over anything.
         */}
-        <span
-          aria-live="polite"
-          aria-atomic="true"
-          className="floating-capsule inline-flex h-9 items-center justify-center px-3.5 text-sm font-semibold tabular-nums tracking-[-0.01em] text-foreground/85 sm:h-10 sm:px-4 sm:text-base"
-        >
-          {viewMode === "overview" ? t("draft.gallery.allPhotos", lang) : `${index + 1} / ${count}`}
-        </span>
+        {/*
+          A "1 / 1" counter states nothing — the arrows already hide themselves
+          at a single image, and the capsule was the only chrome left claiming
+          there was something to page through.
+        */}
+        {viewMode === "overview" || count > 1 ? (
+          <span
+            aria-live="polite"
+            aria-atomic="true"
+            className="floating-capsule inline-flex h-9 items-center justify-center px-3.5 text-sm font-semibold tabular-nums tracking-[-0.01em] text-foreground/85 sm:h-10 sm:px-4 sm:text-base"
+          >
+            {viewMode === "overview" ? t("draft.gallery.allPhotos", lang) : `${index + 1} / ${count}`}
+          </span>
+        ) : (
+          <span />
+        )}
         <div className="flex min-w-0 justify-end">
           {overviewAvailable ? (
             <button
@@ -280,7 +289,10 @@ function GalleryLightbox({
                 src={image.url}
                 alt={`${alt} ${imageIndex + 1}`}
                 className={cn(
-                  "max-h-[calc(100dvh-7rem)] max-w-full select-none rounded-[var(--radius)] object-contain transition-opacity duration-200 ease-out motion-reduce:transition-none sm:max-h-[calc(100dvh-10rem)]",
+                  // The field behind it is white, so a light photo used to bleed
+                  // straight into the background with no edge. The shadow and
+                  // hairline give it one without tinting the surround.
+                  "max-h-[calc(100dvh-7rem)] max-w-full select-none rounded-[var(--radius)] object-contain shadow-soft ring-1 ring-black/[0.06] transition-opacity duration-200 ease-out motion-reduce:transition-none sm:max-h-[calc(100dvh-10rem)]",
                   imageIndex === index ? "opacity-100" : "opacity-80",
                 )}
                 draggable={false}
@@ -445,7 +457,7 @@ export function DraftImageGallery({ images, alt, fallbackUrl, lang = "en", onAct
         role="region"
         aria-label={alt}
         onKeyDown={handleKeyboardNavigation}
-        className="detail-hero-gallery group relative aspect-[16/10] overflow-hidden bg-white ring-1 ring-inset ring-black/[0.045] md:aspect-video md:rounded-xl"
+        className="detail-hero-gallery group relative aspect-[16/10] w-full overflow-hidden bg-white ring-1 ring-inset ring-black/[0.045] md:aspect-video md:rounded-xl"
       >
         <div
           ref={scrollRef}
@@ -571,7 +583,16 @@ export function DraftImageGallery({ images, alt, fallbackUrl, lang = "en", onAct
               onClick={() => goTo(activeIndex - 1)}
               disabled={activeIndex === 0}
               className={cn(
-                "floating-icon-button pen-touch-target absolute left-3 top-1/2 -translate-y-1/2 border border-black/10 bg-white/90 text-black/70 shadow-sm backdrop-blur-xl hover:scale-105 hover:bg-black hover:text-white hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-black/25 disabled:pointer-events-none disabled:opacity-30",
+                /*
+                 * No `disabled:pointer-events-none` here, deliberately. The
+                 * image behind these arrows opens the lightbox, so making a
+                 * disabled arrow transparent to clicks meant that the moment
+                 * you paged onto the first or last photo, the very next click
+                 * — still aimed at the arrow — fell through and threw the
+                 * fullscreen gallery open. A spent arrow now simply absorbs
+                 * the click, which is what pressing a dead control should do.
+                 */
+                "floating-icon-button pen-touch-target absolute left-3 top-1/2 -translate-y-1/2 border border-black/10 bg-white/90 text-black/70 shadow-sm backdrop-blur-xl hover:scale-105 hover:bg-black hover:text-white hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-black/25 disabled:cursor-default disabled:opacity-30 disabled:hover:scale-100 disabled:hover:bg-white/90 disabled:hover:text-black/70 disabled:hover:shadow-sm",
                 mosaicAvailable && "lg:hidden",
               )}
               aria-label={t("draft.gallery.previous", lang)}
@@ -583,7 +604,9 @@ export function DraftImageGallery({ images, alt, fallbackUrl, lang = "en", onAct
               onClick={() => goTo(activeIndex + 1)}
               disabled={activeIndex === count - 1}
               className={cn(
-                "floating-icon-button pen-touch-target absolute right-3 top-1/2 -translate-y-1/2 border border-black/10 bg-white/90 text-black/70 shadow-sm backdrop-blur-xl hover:scale-105 hover:bg-black hover:text-white hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-black/25 disabled:pointer-events-none disabled:opacity-30",
+                // Same reasoning as the previous arrow: a disabled arrow must
+                // still swallow the click rather than let it reach the image.
+                "floating-icon-button pen-touch-target absolute right-3 top-1/2 -translate-y-1/2 border border-black/10 bg-white/90 text-black/70 shadow-sm backdrop-blur-xl hover:scale-105 hover:bg-black hover:text-white hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-black/25 disabled:cursor-default disabled:opacity-30 disabled:hover:scale-100 disabled:hover:bg-white/90 disabled:hover:text-black/70 disabled:hover:shadow-sm",
                 mosaicAvailable && "lg:hidden",
               )}
               aria-label={t("draft.gallery.next", lang)}

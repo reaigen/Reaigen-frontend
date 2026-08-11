@@ -49,6 +49,7 @@ import { formatDate, t } from "../lib/i18n";
 import type { LocaleKey } from "../lib/locales";
 import { PROPERTY_FIELD_SECTIONS, subtypeOptions, type PropertyFieldDefinition, type PropertyType } from "../lib/property-field-registry";
 import type { DraftDetailItem, DraftUpload } from "../lib/tour-types";
+import { copyToClipboard } from "../lib/share-ui";
 import { baseUnitForCategory, resolveUnit, unitLabel, type UnitLookup } from "../lib/unit-catalog";
 import { Button } from "../lib/ui/button";
 import { cn } from "../lib/utils";
@@ -793,7 +794,10 @@ export function ReaiAgentCard({
   };
 
   const copyShareUrl = async (url: string) => {
-    await navigator.clipboard.writeText(url);
+    // Via the shared helper, not navigator.clipboard directly: that API only
+    // exists in a secure context, so this threw on every plain-HTTP origin and
+    // the "copied" confirmation never appeared.
+    if (!await copyToClipboard(url)) return;
     setCopiedShareUrl(url);
     window.setTimeout(() => setCopiedShareUrl((current) => current === url ? null : current), 1800);
   };
