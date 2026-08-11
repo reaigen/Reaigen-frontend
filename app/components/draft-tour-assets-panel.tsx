@@ -6,7 +6,6 @@ import { useRouter } from "next/navigation";
 import {
   createWebTour,
   getDraftTourAssets,
-  hasWebCreationAccess,
   renameDraftTourAsset,
   removeDraftTourAsset,
   updateDraftTourPublication,
@@ -21,6 +20,7 @@ import type {
 } from "../lib/tour-types";
 import { Button } from "../lib/ui/button";
 import { CollectionLoading } from "./collection-loading";
+import { useWebAuthoringAccess } from "./hooks/use-web-authoring-access";
 import { Switch } from "../lib/ui/switch";
 import { cn } from "../lib/utils";
 import {
@@ -478,24 +478,13 @@ export function DraftTourAssetsPanel({
   const [applyToShares, setApplyToShares] = React.useState(true);
   const [error, setError] = React.useState<string | null>(null);
   const [notice, setNotice] = React.useState<string | null>(null);
-  const [canCreateInWeb, setCanCreateInWeb] = React.useState(false);
-  const [createAccessLoading, setCreateAccessLoading] = React.useState(true);
+  // Rendered on the draft detail page, which is behind AppShell and therefore
+  // already authenticated.
+  const {
+    allowed: canCreateInWeb,
+    loading: createAccessLoading,
+  } = useWebAuthoringAccess(true);
   const [creatingInWeb, setCreatingInWeb] = React.useState(false);
-
-  React.useEffect(() => {
-    let active = true;
-    void hasWebCreationAccess()
-      .then((allowed) => {
-        if (active) setCanCreateInWeb(allowed);
-      })
-      .catch(() => {
-        if (active) setCanCreateInWeb(false);
-      })
-      .finally(() => {
-        if (active) setCreateAccessLoading(false);
-      });
-    return () => { active = false; };
-  }, []);
 
   const createInWeb = React.useCallback(async () => {
     setCreatingInWeb(true);
@@ -866,8 +855,14 @@ export function DraftTourAssetsPanel({
             const canOpen = Boolean(
               asset.source_splat_id && (state.ready || canPreview),
             );
+            // Authoring access gates both arms. An asset that already carries an
+            // editor_workspace used to offer the editor to anyone who could see
+            // the draft, because an existing workspace was read as proof of
+            // permission — but it only records that *someone* authored this
+            // tour, not that this account may. Those users reached the editor
+            // and got 403s from every endpoint it calls.
             const canEdit = Boolean(
-              asset.editor_workspace || (canCreateInWeb && asset.source_splat_id),
+              canCreateInWeb && (asset.editor_workspace || asset.source_splat_id),
             );
             return (
               <article
@@ -1078,8 +1073,29 @@ export function DraftTourAssetsPanel({
             </p>
 
             {loading ? (
-              <div className="flex justify-center py-14">
-                <span className="h-5 w-5 animate-spin rounded-full border-2 border-foreground/15 border-t-foreground/60" />
+              /*
+                A skeleton in the shape of the list, not a spinner floating in
+                the middle of a tall empty box. The spinner sat centred in its
+                own `py-14` well and was then replaced by full-height cards, so
+                the panel appeared to load in the middle and then shove
+                everything else down. These match the real card — same
+                `floating-panel p-4`, same 4.4rem thumbnail, same header row —
+                so the swap barely moves.
+              */
+              <div className="space-y-3" role="status" aria-busy="true" aria-label={t("common.loading", lang)}>
+                <span className="sr-only">{t("common.loading", lang)}</span>
+                {[0, 1].map((row) => (
+                  <div key={row} className="floating-panel p-4" aria-hidden="true">
+                    <div className="flex items-start gap-3">
+                      <div className="h-11 w-[4.4rem] shrink-0 animate-pulse rounded-xl bg-surface-subtle ring-1 ring-inset ring-border/45 motion-reduce:animate-none" />
+                      <div className="min-w-0 flex-1 space-y-2 pt-1">
+                        <div className="h-3.5 w-2/5 animate-pulse rounded-full bg-muted/70 motion-reduce:animate-none" />
+                        <div className="h-3 w-1/4 animate-pulse rounded-full bg-muted/50 motion-reduce:animate-none" />
+                      </div>
+                      <div className="h-6 w-24 shrink-0 animate-pulse rounded-full bg-muted/55 motion-reduce:animate-none" />
+                    </div>
+                  </div>
+                ))}
               </div>
             ) : !payload?.assets.length ? (
               <div className="rounded-2xl border border-dashed border-border p-7 text-center">
@@ -1284,7 +1300,7 @@ export function DraftTourAssetsPanel({
                                   </Link>
                                 </Button>
                               ) : null}
-                              {asset.editor_workspace || (canCreateInWeb && asset.source_splat_id) ? (
+                              {canCreateInWeb && (asset.editor_workspace || asset.source_splat_id) ? (
                                 <Button asChild variant="outline" size="sm" className="mt-3 w-full">
                                   <Link href={`/create/tour/${asset.id}`}>
                                     <EditIcon size={13} />
@@ -1297,22 +1313,34 @@ export function DraftTourAssetsPanel({
 
                           {asset.lifecycle?.can_remove ? (
                             <div className="mt-3 border-t border-border/55 pt-3">
+                              {/*
+                                The confirm tray itself stays neutral. Tinting
+                                it red as well as the heading, the border and
+                                the action turned a two-button confirmation
+                                into a block of red inside an otherwise
+                                monochrome product — the destructive signal
+                                reads more clearly when only the action
+                                carries it.
+                              */}
                               {confirmRemoveId === asset.id ? (
-                                <div className="floating-panel-shape border border-destructive/20 bg-destructive/[0.04] p-3">
+                                <div className="floating-panel-shape border border-border/60 bg-surface-subtle p-3">
                                   <p className="text-[12px] font-semibold text-destructive">
                                     {text.removeConfirmTitle}
                                   </p>
-                                  <p className="mt-1 text-[10px] leading-relaxed text-muted-foreground">
+                                  <p className="mt-1 text-[11px] leading-relaxed text-muted-foreground">
                                     {text.removeConfirm(
                                       asset.lifecycle.removal_kind ?? "archive",
                                     )}
                                   </p>
                                   {changed ? (
-                                    <p className="mt-2 text-[10px] font-medium text-foreground/60">
+                                    <p className="mt-2 text-[11px] font-medium text-foreground/60">
                                       {text.saveBeforeRemove}
                                     </p>
                                   ) : null}
-                                  <div className="mt-3 grid gap-2">
+                                  {/* Side by side once there is room; two
+                                      full-width stacked pills made a routine
+                                      confirmation look like a major event. */}
+                                  <div className="mt-3 grid gap-2 sm:grid-cols-2">
                                     <Button
                                       type="button"
                                       variant="outline"

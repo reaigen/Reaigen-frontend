@@ -2,10 +2,10 @@
 
 import * as React from "react";
 import Link from "next/link";
-import { hasWebCreationAccess } from "../lib/api/client";
 import { t } from "../lib/i18n";
 import { Button } from "../lib/ui/button";
 import { cn } from "../lib/utils";
+import { useWebAuthoringAccess } from "./hooks/use-web-authoring-access";
 import { PlusIcon } from "./icons";
 
 export function WebCreateAction({
@@ -15,17 +15,9 @@ export function WebCreateAction({
   lang: string;
   labelKey?: "webCreate.action" | "webCreate.tourAction";
 }) {
-  const [allowed, setAllowed] = React.useState(false);
-  const [loading, setLoading] = React.useState(true);
-
-  React.useEffect(() => {
-    let active = true;
-    void hasWebCreationAccess()
-      .then((value) => { if (active) setAllowed(value); })
-      .catch(() => { if (active) setAllowed(false); })
-      .finally(() => { if (active) setLoading(false); });
-    return () => { active = false; };
-  }, []);
+  // Only ever rendered inside AppShell, which does not mount without a signed-in
+  // user — so the session is established by the time this runs.
+  const { allowed, loading } = useWebAuthoringAccess(true);
 
   // This is the page's primary action, and on a phone it is reached with a
   // thumb — so it keeps the 44px touch target there and only compacts to the

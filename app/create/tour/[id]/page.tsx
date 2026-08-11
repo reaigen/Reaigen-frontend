@@ -39,6 +39,7 @@ import {
   type WebTourWorkspace,
   type WebTourWorkspaceNode,
 } from "../../../lib/api/client";
+import { useWebAuthoringAccess } from "../../../components/hooks/use-web-authoring-access";
 import { getUserLanguage, t } from "../../../lib/i18n";
 import type {
   CameraData,
@@ -282,6 +283,7 @@ export default function WebTourEditorPage({
   const { id } = use(params);
   const tourId = Number(id);
   const { isAuthenticated, isLoading, user } = useAuth();
+  const { allowed, loading: accessLoading } = useWebAuthoringAccess(isAuthenticated);
   const router = useRouter();
   const viewerRef = useRef<SplatViewerHandle | null>(null);
   // SparkJS draws the Gaussians; Babylon keeps the gizmos, grid and selection.
@@ -403,6 +405,18 @@ export default function WebTourEditorPage({
     if (!isLoading && !isAuthenticated) router.replace("/");
   }, [isAuthenticated, isLoading, router]);
 
+  // The editor is internal authoring tooling, and the backend already treats it
+  // that way: every endpoint this page calls sits behind CanAuthorWebScenes.
+  // Without a matching check the page loaded, mounted the viewer, and only
+  // failed once a request came back 403 — so an agent who found the URL got a
+  // seemingly working editor that could not save. Send them back to their tours
+  // instead, where there is something to act on.
+  useEffect(() => {
+    if (!isLoading && isAuthenticated && !accessLoading && !allowed) {
+      router.replace("/tours");
+    }
+  }, [accessLoading, allowed, isAuthenticated, isLoading, router]);
+
   const reload = useCallback(async () => {
     const value = await getWebTourWorkspace(tourId);
     setWorkspace(value);
@@ -415,12 +429,17 @@ export default function WebTourEditorPage({
   }, [tourId]);
 
   useEffect(() => {
-    if (!isAuthenticated || !Number.isFinite(tourId)) return;
+    // Wait for the authoring check before asking for the workspace. Firing
+    // regardless meant an account without access got a guaranteed 403, which
+    // this page renders as "failed to load" — a misleading error for what is
+    // really a permission the user simply does not have, and it would flash
+    // before the redirect above could run.
+    if (!isAuthenticated || !allowed || !Number.isFinite(tourId)) return;
     setLoading(true);
     reload()
       .catch(() => setError("load"))
       .finally(() => setLoading(false));
-  }, [isAuthenticated, reload, tourId]);
+  }, [allowed, isAuthenticated, reload, tourId]);
 
   const selected = useMemo(
     () => workspace?.nodes.find((node) => node.id === selectedId) ?? null,
@@ -1014,7 +1033,9 @@ export default function WebTourEditorPage({
     };
   };
 
-  if (isLoading || loading || !user) return <PageLoading />;
+  // Hold the loader rather than rendering a frame of the editor while the
+  // access check or the redirect above is still in flight.
+  if (isLoading || accessLoading || loading || !user || !allowed) return <PageLoading />;
 
   if (error === "load" || !workspace) {
     return (

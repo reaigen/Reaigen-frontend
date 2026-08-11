@@ -4,6 +4,7 @@ import * as React from "react";
 import { useRouter } from "next/navigation";
 import { AppShell } from "../components/app-shell";
 import { useAuth } from "../components/hooks/use-auth";
+import { useWebAuthoringAccess } from "../components/hooks/use-web-authoring-access";
 import {
   ArrowLeftIcon,
   ArrowRightIcon,
@@ -16,7 +17,6 @@ import { PageLoading } from "../components/page-loading";
 import {
   createWebDraft,
   createWebTour,
-  getWebCreationAccess,
   listDrafts,
 } from "../lib/api/client";
 import { getUserLanguage, t } from "../lib/i18n";
@@ -32,8 +32,7 @@ type CreationMode = "draft" | "tour";
 export default function WebCreatePage() {
   const { isAuthenticated, isLoading, user, logout } = useAuth();
   const router = useRouter();
-  const [accessLoading, setAccessLoading] = React.useState(true);
-  const [allowed, setAllowed] = React.useState(false);
+  const { allowed, loading: accessLoading } = useWebAuthoringAccess(isAuthenticated);
   const [mode, setMode] = React.useState<CreationMode>("draft");
   const [drafts, setDrafts] = React.useState<DraftListingItem[]>([]);
   const [draftsLoading, setDraftsLoading] = React.useState(false);
@@ -51,19 +50,6 @@ export default function WebCreatePage() {
   React.useEffect(() => {
     if (!isLoading && !isAuthenticated) router.replace("/");
   }, [isAuthenticated, isLoading, router]);
-
-  React.useEffect(() => {
-    if (!isAuthenticated) return;
-    let active = true;
-    getWebCreationAccess()
-      .then((access) => {
-        if (!active) return;
-        setAllowed(access.allowed);
-      })
-      .catch(() => { if (active) setAllowed(false); })
-      .finally(() => { if (active) setAccessLoading(false); });
-    return () => { active = false; };
-  }, [isAuthenticated]);
 
   React.useEffect(() => {
     if (!allowed || mode !== "tour" || draftsLoaded || draftsLoading) return;
