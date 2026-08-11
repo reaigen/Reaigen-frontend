@@ -35,6 +35,7 @@ import {
   parseRenderTuning,
   parseSogViewerHint,
   resolveSplatRenderProfile,
+  sceneFrameFromSogMetadata,
   type RenderTuningOverrides,
   type SogViewerHint,
 } from "@/app/lib/splat-render-profile";
@@ -6063,6 +6064,13 @@ const SplatViewer = forwardRef<SplatViewerHandle, Props>(function SplatViewer(
         spinoffSourceRef.current = null;
         if (disposed) return;
 
+        // vkgs_trainer and other standard SOG producers are not required to
+        // persist a viewer pose. The range renderer has already loaded
+        // meta.json, whose signed-log means domain is enough to frame the
+        // scene without a second full-file download or texture decode.
+        const metadataFrame = sceneFrameFromSogMetadata(loadedScene.metadata);
+        if (metadataFrame) fallbackSceneRef.current = metadataFrame;
+
         // Splatfiction persists the viewport pose in meta.json. The range
         // loader has now read that metadata, so restore the exact authored
         // camera instead of waiting for a second full-file bounds decode.
@@ -6097,6 +6105,28 @@ const SplatViewer = forwardRef<SplatViewerHandle, Props>(function SplatViewer(
             ),
             yaw: viewerHint.yawRadians,
             pitch: viewerHint.pitchRadians,
+          };
+        } else if (metadataFrame) {
+          const framed = editorFramePose(
+            metadataFrame,
+            globalSceneTransformRef.current,
+          );
+          babylonCamera.position.set(...framed.position);
+          babylonCamera.upVector.set(0, 1, 0);
+          cameraUpRef.current = [0, 1, 0];
+          babylonCamera.setTarget(
+            new (babylonRef.current.Vector3)(...framed.target),
+          );
+          babylonCamera.rotation.z = 0;
+          babylonCamera.fov = 60 * Math.PI / 180;
+          babylonCamera.minZ = Math.max(0.02, framed.radius / 500);
+          babylonCamera.maxZ = Math.max(100, framed.radius * 40);
+          spatialOrbitRef.current = {
+            enabled: true,
+            target: framed.target,
+            radius: framed.radius,
+            yaw: framed.yaw,
+            pitch: framed.pitch,
           };
         }
 

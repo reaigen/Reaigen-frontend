@@ -49,6 +49,91 @@ interface FallbackSceneFrame {
 }
 
 /**
+ * Conservative scene bounds reconstructed from the quantization domain in a
+ * SOG's meta.json. SOG stores means in signed-log space; the renderer applies
+ * signed expm1 after texture decoding, so camera framing must do the same.
+ */
+export interface SogMetadataSceneFrame extends FallbackSceneFrame {
+  center: Vec3;
+  floorY: number;
+  ceilingY: number;
+  footprint: { minX: number; maxX: number; minZ: number; maxZ: number };
+}
+
+/**
+ * Produce a usable first camera without downloading or decoding the Gaussian
+ * textures. This is the fallback for valid SOGs that omit an authored viewer
+ * block (including vkgs_trainer exports).
+ */
+export function sceneFrameFromSogMetadata(
+  meta: unknown,
+): SogMetadataSceneFrame | null {
+  const means = (meta as {
+    means?: { mins?: unknown; maxs?: unknown };
+  } | null)?.means;
+  if (!Array.isArray(means?.mins) || !Array.isArray(means?.maxs)) return null;
+  if (means.mins.length < 3 || means.maxs.length < 3) return null;
+
+  const signedExpm1 = (value: unknown) => {
+    if (!finite(value)) return Number.NaN;
+    return Math.sign(value) * Math.expm1(Math.abs(value));
+  };
+  const low = means.mins.slice(0, 3).map(signedExpm1);
+  const high = means.maxs.slice(0, 3).map(signedExpm1);
+  if (![...low, ...high].every(Number.isFinite)) return null;
+
+  const mins: Vec3 = [
+    Math.min(low[0], high[0]),
+    Math.min(low[1], high[1]),
+    Math.min(low[2], high[2]),
+  ];
+  const maxs: Vec3 = [
+    Math.max(low[0], high[0]),
+    Math.max(low[1], high[1]),
+    Math.max(low[2], high[2]),
+  ];
+  const center: Vec3 = [
+    (mins[0] + maxs[0]) * 0.5,
+    (mins[1] + maxs[1]) * 0.5,
+    (mins[2] + maxs[2]) * 0.5,
+  ];
+  const diagonal = Math.hypot(
+    maxs[0] - mins[0],
+    maxs[1] - mins[1],
+    maxs[2] - mins[2],
+  );
+  if (!Number.isFinite(diagonal) || diagonal <= 1e-6) return null;
+
+  const radius = Math.max(0.1, diagonal * 0.5);
+  const eyeY = Math.max(
+    mins[1] + Math.min(1.55, (maxs[1] - mins[1]) * 0.5),
+    center[1],
+  );
+  const safeTarget: Vec3 = [center[0], eyeY, center[2]];
+  const safeDistance = Math.max(0.5, radius * 1.7);
+  const safePosition: Vec3 = [
+    center[0] + safeDistance * Math.SQRT1_2,
+    eyeY,
+    center[2] + safeDistance * Math.SQRT1_2,
+  ];
+
+  return {
+    center,
+    radius,
+    safePosition,
+    safeTarget,
+    floorY: mins[1],
+    ceilingY: maxs[1],
+    footprint: {
+      minX: mins[0],
+      maxX: maxs[0],
+      minZ: mins[2],
+      maxZ: maxs[2],
+    },
+  };
+}
+
+/**
  * Turn the collision-safe interior direction into a useful room overview.
  *
  * The point-cloud frame already finds a clear eye and a meaningful look

@@ -14,6 +14,7 @@ import {
   isAntialiasedReconstruction,
   parseRenderTuning,
   parseSogViewerHint,
+  sceneFrameFromSogMetadata,
   sogCameraIsInterior,
   chooseClearAzimuth,
   resolveSplatRenderProfile,
@@ -192,6 +193,49 @@ test("missing yaw/pitch default to zero instead of producing NaN", () => {
   const eye = eyeFromSogViewer(hint);
   assert.ok(eye.every(Number.isFinite), "eye must be finite");
   assert.equal(Math.round(Math.hypot(...eye) * 1e6) / 1e6, 5);
+});
+
+test("tour 33 vkgs SOG frames from its real signed-log metadata without a viewer", () => {
+  const tour33 = {
+    version: 2,
+    asset: { generator: "vkgs_trainer" },
+    count: 251_328,
+    antialias: true,
+    means: {
+      mins: [-2.1410603523254395, -1.7319598197937012, -2.4355626106262207],
+      maxs: [2.127394437789917, 1.447962760925293, 1.8802263736724854],
+      files: ["means_l.webp", "means_u.webp"],
+    },
+  };
+  assert.equal(parseSogViewerHint(tour33), null, "the failing SOG has no viewer pose");
+
+  const frame = sceneFrameFromSogMetadata(tour33);
+  assert.ok(frame, "its means quantization domain must still produce a frame");
+  assert.ok(frame.radius > 10 && frame.radius < 13, `unexpected radius ${frame.radius}`);
+  assert.ok(frame.floorY < -4.5 && frame.ceilingY > 3.2);
+  assert.ok(frame.footprint.minZ < -10 && frame.footprint.maxZ > 5.5);
+
+  const overview = fallbackOverviewCamera(frame);
+  assert.ok([...overview.position, ...overview.target].every(Number.isFinite));
+  assert.ok(Math.hypot(...overview.position) > 10, "camera must not remain at the origin");
+  assert.ok(
+    Math.hypot(...overview.position.map((value, index) => value - overview.target[index]))
+      >= frame.radius * 1.7 - 1e-9,
+    "camera must retreat far enough to see the complete SOG bounds",
+  );
+});
+
+test("metadata framing rejects malformed and degenerate means domains", () => {
+  for (const meta of [
+    null,
+    {},
+    { means: {} },
+    { means: { mins: [0, 0], maxs: [1, 1] } },
+    { means: { mins: [0, 0, 0], maxs: [0, 0, 0] } },
+    { means: { mins: [0, 0, Number.NaN], maxs: [1, 1, 1] } },
+  ]) {
+    assert.equal(sceneFrameFromSogMetadata(meta), null);
+  }
 });
 
 // ---------------------------------------------------------------------------
