@@ -117,6 +117,22 @@ function normalizeVec3(value: Vec3, fallback: Vec3 = [0, 0, 1]): Vec3 {
   return [value[0] / length, value[1] / length, value[2] / length];
 }
 
+/**
+ * Orbit rotation per pixel of drag, in radians.
+ *
+ * Babylon expresses this inverted, as `angularSensibility` in pixels per
+ * radian, and the authoring viewer this editor is meant to match
+ * (Reaigen-splatviewer-02) runs its edit mode at 540 over a 220% navigation
+ * multiplier — about 245 px/rad — against 850 for playback. This orbit is
+ * hand-rolled on a FreeCamera rather than an ArcRotateCamera, so it has to
+ * restate the number instead of inheriting it, and it had drifted to 0.006
+ * rad/px: roughly 167 px/rad, half again as fast as the editor it mirrors and
+ * five times Babylon's own default. A drag that crosses a quarter of the canvas
+ * swung the camera most of the way around the scene, which is what made
+ * orbiting feel unusable rather than merely quick.
+ */
+const ORBIT_RADIANS_PER_PIXEL = 1 / 245;
+
 /** /view renders at most 1.5x CSS pixels so the splat sort keeps up. */
 const VIEW_DPR_CAP = 1.5;
 /**
@@ -4222,8 +4238,11 @@ const SplatViewer = forwardRef<SplatViewerHandle, Props>(function SplatViewer(
           dollyOrbit(dy * 0.008);
         } else {
           const pose = spatialOrbitRef.current;
-          pose.yaw -= dx * 0.006;
-          pose.pitch = Math.max(-Math.PI * 0.485, Math.min(Math.PI * 0.485, pose.pitch + dy * 0.006));
+          pose.yaw -= dx * ORBIT_RADIANS_PER_PIXEL;
+          pose.pitch = Math.max(
+            -Math.PI * 0.485,
+            Math.min(Math.PI * 0.485, pose.pitch + dy * ORBIT_RADIANS_PER_PIXEL),
+          );
           applySpatialOrbitPose();
         }
       } else {
@@ -4332,11 +4351,14 @@ const SplatViewer = forwardRef<SplatViewerHandle, Props>(function SplatViewer(
       const dx = touch.clientX - previous.x;
       const dy = touch.clientY - previous.y;
       if (spatialCameraMode === "orbit") {
+        // Same rate as the pointer path above: a touch drag and a mouse drag of
+        // the same distance must rotate the scene by the same amount, or the
+        // editor feels like two different tools on a tablet with a trackpad.
         const pose = spatialOrbitRef.current;
-        pose.yaw -= dx * 0.006;
+        pose.yaw -= dx * ORBIT_RADIANS_PER_PIXEL;
         pose.pitch = Math.max(
           -Math.PI * 0.485,
-          Math.min(Math.PI * 0.485, pose.pitch + dy * 0.006),
+          Math.min(Math.PI * 0.485, pose.pitch + dy * ORBIT_RADIANS_PER_PIXEL),
         );
         applySpatialOrbitPose();
       } else {
