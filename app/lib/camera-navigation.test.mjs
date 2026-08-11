@@ -192,10 +192,23 @@ test("camera input ownership recovers after saved-shot navigation", () => {
 });
 
 test("WASD stays in the ground plane and diagonal speed is normalized", () => {
+  // Facing +z with +y up, the camera's right is -x: right is cross(forward, up),
+  // matching SpinoffOrbitCamera.right ([-forward.z, 0, forward.x]) in the engine
+  // that flies the Splatfiction viewport. This previously asserted +x, which is
+  // cross(up, forward) — the opposite vector — so the suite agreed with the code
+  // while both had D strafing left and A strafing right in the editor.
   closeTo(
     cameraWalkDirection([0, 0.8, 1], [0, 1, 0], new Set(["w", "d"])),
-    [Math.SQRT1_2, 0, Math.SQRT1_2],
+    [-Math.SQRT1_2, 0, Math.SQRT1_2],
   );
+});
+
+test("A and D strafe to opposite sides, D to the camera's right", () => {
+  // Facing -z, the OpenGL/right-handed convention this scene uses, the right
+  // hand side is +x. Asserted from a second facing so the pair cannot both be
+  // flipped again without one of these failing.
+  closeTo(cameraWalkDirection([0, 0, -1], [0, 1, 0], new Set(["d"])), [1, 0, 0]);
+  closeTo(cameraWalkDirection([0, 0, -1], [0, 1, 0], new Set(["a"])), [-1, 0, 0]);
 });
 
 test("Q and E follow a transformed scene up axis", () => {

@@ -270,7 +270,14 @@ export function cameraWalkDirection(
 ): Vec3 {
   const up = normalized(rawUp, [0, 1, 0]);
   const forward = projectedForward(rawForward, up, fallbackForward);
-  const right = normalized(cross(up, forward), [1, 0, 0]);
+  // cross(forward, up), not cross(up, forward) — the two differ by sign, and
+  // the wrong one made A strafe right and D strafe left. Spinoff's camera, the
+  // engine that actually flies the Splatfiction viewport, derives the same
+  // vector as `[-forward.z, 0, forward.x]` (SpinoffOrbitCamera.right), which is
+  // precisely cross(forward, up) for a Y-up scene; its fly controls then apply
+  // D as +right and A as -right. This scene is right-handed, so that is the
+  // basis the reconstruction, the saved cameras and the USD workspace all use.
+  const right = normalized(cross(forward, up), [1, 0, 0]);
   const movement: Vec3 = [0, 0, 0];
   const add = (direction: Vec3, factor: number) => {
     movement[0] += direction[0] * factor;
