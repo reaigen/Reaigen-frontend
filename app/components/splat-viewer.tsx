@@ -133,6 +133,49 @@ function normalizeVec3(value: Vec3, fallback: Vec3 = [0, 0, 1]): Vec3 {
  */
 const ORBIT_RADIANS_PER_PIXEL = 1 / 245;
 
+/**
+ * Depth range for authoring, taken from the reference viewer.
+ *
+ * Reaigen-splatviewer-02 opens its camera at `minZ = 0.001` / `maxZ = 10_000`
+ * and leaves it there, narrowing only for a saved shot that carries its own
+ * authored clip planes. A static range that simply contains everything is what
+ * lets that camera go wherever the author sends it.
+ *
+ * This viewer instead derived its planes from whatever it last framed —
+ * `maxZ = max(100, radius * 40)`, so about 160 for a room-scale scan — while
+ * the orbit dolly allows a radius of 250. Backing off far enough therefore
+ * pushed the scene through its own far plane and it vanished; the external
+ * Gaussian engines copy `minZ`/`maxZ` off this camera, so they clipped with it.
+ *
+ * The wide range is safe here because Babylon draws only the grid and gizmos —
+ * the Gaussians are rasterised by Spark or Spinoff, which order splats by
+ * distance on the CPU rather than through this depth buffer.
+ */
+const EDITOR_NEAR_PLANE = 0.001;
+const EDITOR_FAR_PLANE = 10_000;
+/** Reference viewer's `lowerRadiusLimit`; how close the orbit may close in. */
+const ORBIT_MIN_RADIUS = 0.02;
+
+/**
+ * Set a camera's clip planes for one framing.
+ *
+ * Every framing path used to compute its own pair from the radius it had just
+ * framed, which is right for delivery — the camera is held inside the
+ * reconstruction there, so planes fitted to the room give the best depth
+ * precision. In the editor the camera is free, so a range fitted to the scene
+ * is a range the author can fly out of, and each of those sites was an
+ * independent chance to re-narrow it after the fact.
+ */
+function setCameraDepthRange(
+  camera: { minZ: number; maxZ: number },
+  authoring: boolean,
+  deliveryNear: number,
+  deliveryFar: number,
+): void {
+  camera.minZ = authoring ? EDITOR_NEAR_PLANE : deliveryNear;
+  camera.maxZ = authoring ? EDITOR_FAR_PLANE : deliveryFar;
+}
+
 /** /view renders at most 1.5x CSS pixels so the splat sort keeps up. */
 const VIEW_DPR_CAP = 1.5;
 /**
@@ -4136,7 +4179,16 @@ const SplatViewer = forwardRef<SplatViewerHandle, Props>(function SplatViewer(
     };
     const dollyOrbit = (amount: number) => {
       const pose = spatialOrbitRef.current;
-      pose.radius = Math.max(0.12, Math.min(250, pose.radius * Math.exp(amount)));
+      // The reference viewer sets lowerRadiusLimit 0.02 and leaves the upper
+      // limit off entirely. This had 0.12 and a flat 250, so on any capture
+      // bigger than a room the dolly stopped while the scene still filled the
+      // frame, and the author could neither get close enough to inspect a
+      // surface nor far enough to see the whole asset. The only ceiling that
+      // means anything is the far plane — past it there is nothing to see.
+      pose.radius = Math.max(
+        ORBIT_MIN_RADIUS,
+        Math.min(EDITOR_FAR_PLANE * 0.5, pose.radius * Math.exp(amount)),
+      );
       applySpatialOrbitPose();
     };
     const moveFly = (amount: number) => {
@@ -5332,20 +5384,37 @@ const SplatViewer = forwardRef<SplatViewerHandle, Props>(function SplatViewer(
         );
 
         const camera = new BABYLON.FreeCamera("cam", BABYLON.Vector3.Zero(), scene);
-        camera.minZ = 0.1;
-        camera.maxZ = 100;
+        // Authoring gets the reference viewer's static wide range so the camera
+        // can leave the capture without clipping it away. Delivery keeps the
+        // tight pair, where the camera is held inside the reconstruction and a
+        // narrow range is the better trade.
+        camera.minZ = spatialNavigation ? EDITOR_NEAR_PLANE : 0.1;
+        camera.maxZ = spatialNavigation ? EDITOR_FAR_PLANE : 100;
         camera.fov = 0.66;
         camera.inertia = 0.5;
         camera.speed = 0.3;
         camera.upVector = new BABYLON.Vector3(0, 1, 0);
 
         /*
-          Hold the camera inside the reconstruction.
+          Hold the camera inside the reconstruction — when presenting it.
 
           A FreeCamera has no limits, so pulling back far enough leaves the
           captured volume and shows the splat cloud from outside — floaters,
           background gaussians, no room. Nothing coherent exists out there to
-          render; a reconstruction is only defined where cameras looked.
+          render; a reconstruction is only defined where cameras looked. For a
+          buyer walking a listing that is a dead end, so delivery keeps the box.
+
+          Authoring is the opposite case. Placing a capture in the USD
+          workspace, framing it whole, judging its footprint against another
+          asset or setting up an exterior shot all require standing outside the
+          volume and looking in. The box applied there too, so the editor could
+          not leave the room it was editing — and it silently fought the
+          editor's own Frame Selected, which orbits deliberately from beyond the
+          bounds only to be pulled back to the wall on the next frame.
+
+          Read through the ref rather than the captured prop: this observer
+          outlives the render that installed it, and the mode can change under
+          it without the scene being rebuilt.
 
           Applied here rather than in any one input path: keys, pointer drag,
           wheel, immersive and spatial modes all move this camera, and a limit
@@ -5353,6 +5422,7 @@ const SplatViewer = forwardRef<SplatViewerHandle, Props>(function SplatViewer(
           position after the input stops, so the check has to run per frame.
         */
         const boundsObserver = scene.onBeforeRenderObservable.add(() => {
+          if (spatialNavigationRef.current) return;
           const frame = fallbackSceneRef.current;
           if (!frame) return;
           const held = clampCameraPosition(camera.position, {
@@ -5695,8 +5765,12 @@ const SplatViewer = forwardRef<SplatViewerHandle, Props>(function SplatViewer(
             camera.setTarget(new BABYLON.Vector3(...framed.target));
             camera.rotation.z = 0;
             camera.fov = 60 * Math.PI / 180;
-            camera.minZ = Math.max(0.02, framed.radius / 500);
-            camera.maxZ = Math.max(100, framed.radius * 40);
+            setCameraDepthRange(
+              camera,
+              spatialNavigation,
+              Math.max(0.02, framed.radius / 500),
+              Math.max(100, framed.radius * 40),
+            );
             spatialOrbitRef.current = {
               enabled: true,
               target: framed.target,
@@ -5795,8 +5869,12 @@ const SplatViewer = forwardRef<SplatViewerHandle, Props>(function SplatViewer(
             camera.setTarget(new BABYLON.Vector3(tx, ty, tz));
             camera.rotation.z = 0;
             camera.fov = overview.fov;
-            camera.minZ = Math.max(0.05, fallback.radius / 250);
-            camera.maxZ = Math.max(80, fallback.radius * 30);
+            setCameraDepthRange(
+              camera,
+              spatialNavigation,
+              Math.max(0.05, fallback.radius / 250),
+              Math.max(80, fallback.radius * 30),
+            );
           }
         }
 
@@ -6353,8 +6431,14 @@ const SplatViewer = forwardRef<SplatViewerHandle, Props>(function SplatViewer(
           if (viewerHint.verticalFovRadians) {
             babylonCamera.fov = viewerHint.verticalFovRadians;
           }
-          if (viewerHint.near) babylonCamera.minZ = viewerHint.near;
-          if (viewerHint.far) babylonCamera.maxZ = viewerHint.far;
+          // An authored SOG camera carries its own clip planes, which are sized
+          // for the shot the exporter framed. Honour them when presenting that
+          // shot; ignore them while authoring, where the camera does not stay
+          // in it.
+          if (!spatialNavigation) {
+            if (viewerHint.near) babylonCamera.minZ = viewerHint.near;
+            if (viewerHint.far) babylonCamera.maxZ = viewerHint.far;
+          }
           spatialOrbitRef.current = {
             enabled: true,
             target: worldTarget,
@@ -6382,8 +6466,12 @@ const SplatViewer = forwardRef<SplatViewerHandle, Props>(function SplatViewer(
           );
           babylonCamera.rotation.z = 0;
           babylonCamera.fov = 60 * Math.PI / 180;
-          babylonCamera.minZ = Math.max(0.02, framed.radius / 500);
-          babylonCamera.maxZ = Math.max(100, framed.radius * 40);
+          setCameraDepthRange(
+            babylonCamera,
+            spatialNavigation,
+            Math.max(0.02, framed.radius / 500),
+            Math.max(100, framed.radius * 40),
+          );
           spatialOrbitRef.current = {
             enabled: true,
             target: framed.target,
@@ -6663,8 +6751,12 @@ const SplatViewer = forwardRef<SplatViewerHandle, Props>(function SplatViewer(
                 // 85° matches the iOS player's indoor default and the fov the
                 // authored tour cameras carry; 60° crops an interior too tightly.
                 babylonCamera.fov = 85 * Math.PI / 180;
-                babylonCamera.minZ = Math.max(0.02, frame.radius / 500);
-                babylonCamera.maxZ = Math.max(100, frame.radius * 40);
+                setCameraDepthRange(
+                  babylonCamera,
+                  spatialNavigation,
+                  Math.max(0.02, frame.radius / 500),
+                  Math.max(100, frame.radius * 40),
+                );
                 // Derive the orbit state from the camera we just set rather
                 // than computing yaw/radius by hand — the pivot is offset along
                 // the view direction, not the look point, so a hand-rolled
