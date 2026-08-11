@@ -3,8 +3,13 @@ import type { NextConfig } from "next";
 const isProduction = process.env.NODE_ENV === "production";
 
 function contentSecurityPolicy() {
-  const scriptSrc = ["'self'", "'unsafe-inline'"];
-  const connectSrc = ["'self'", "https:"];
+  // The SparkJS splat decoder ships its WebAssembly inlined as a data: URL and
+  // instantiates it inside a blob worker. 'wasm-unsafe-eval' is the narrow
+  // token for that — it permits WebAssembly compilation without granting
+  // 'unsafe-eval' to JavaScript — and connect-src needs data:/blob: so the
+  // worker can fetch the module it was bundled with.
+  const scriptSrc = ["'self'", "'unsafe-inline'", "'wasm-unsafe-eval'"];
+  const connectSrc = ["'self'", "https:", "data:", "blob:"];
 
   if (!isProduction) {
     scriptSrc.push("'unsafe-eval'");

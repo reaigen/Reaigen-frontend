@@ -116,6 +116,11 @@ function normalizeVec3(value: Vec3, fallback: Vec3 = [0, 0, 1]): Vec3 {
   return [value[0] / length, value[1] / length, value[2] / length];
 }
 
+/** Fixed VKGS-tier screen-space kernel used by /view (RENDERING.md). */
+const VIEW_KERNEL_SIZE = 0.15;
+/** /view renders at most 1.5x CSS pixels so the splat sort keeps up. */
+const VIEW_DPR_CAP = 1.5;
+
 function spinoffModelTransform(transform: GlobalSceneTransform): {
   compatible: boolean;
   scale: number;
@@ -789,6 +794,88 @@ async function decodeWebpImage(fileData: Uint8Array): Promise<DecodedImageData> 
   }
 }
 
+// Spinoff reads SOG members over independent HTTP ranges, so every member has
+// to be ZIP-stored (method 0); a deflated member is only decodable from the
+// start of its stream. Splatfiction's own exports satisfy this, but archives
+// produced elsewhere in the pipeline still deflate, and handing one of those to
+// Spinoff fails the whole tour. Read just the central directory to find out
+// which kind we have, and let the caller repackage when it is the wrong kind.
+async function sogMembersAreStored(url: string): Promise<boolean> {
+  const readRange = async (start: number, end: number): Promise<Uint8Array | null> => {
+    const resp = await fetch(url, {
+      headers: { Range: `bytes=${start}-${end}` },
+      cache: "force-cache",
+    });
+    // A server that ignores Range answers 200 with the whole file; that is
+    // still usable, just wasteful, and only happens on the probe path.
+    if (!resp.ok) return null;
+    return new Uint8Array(await resp.arrayBuffer());
+  };
+
+  try {
+    // Ask for the archive tail with a suffix range rather than sizing it with a
+    // HEAD first: signed object URLs are commonly signed for GET only and answer
+    // HEAD with 403, and this needs one request instead of two. The
+    // end-of-central-directory record lives in the last 64 KiB at most.
+    const tailResp = await fetch(url, {
+      headers: { Range: "bytes=-65557" },
+      cache: "force-cache",
+    });
+    if (!tailResp.ok) return false;
+    const tail = new Uint8Array(await tailResp.arrayBuffer());
+    if (tail.length < 22) return false;
+
+    // A server that honours the range reports the total in Content-Range; one
+    // that ignores it answers 200 with the whole file, which is still usable.
+    const total = tailResp.headers.get("content-range")?.match(/\/(\d+)\s*$/);
+    const size = total ? Number(total[1]) : tail.length;
+    if (!Number.isFinite(size) || size <= 0) return false;
+    const tailStart = total ? Math.max(0, size - tail.length) : 0;
+    const tailView = new DataView(tail.buffer, tail.byteOffset, tail.byteLength);
+
+    let eocd = -1;
+    for (let i = tail.length - 22; i >= 0; i -= 1) {
+      if (tailView.getUint32(i, true) === 0x06054b50) {
+        eocd = i;
+        break;
+      }
+    }
+    if (eocd < 0) return false;
+
+    const entries = tailView.getUint16(eocd + 10, true);
+    const dirSize = tailView.getUint32(eocd + 12, true);
+    const dirOffset = tailView.getUint32(eocd + 16, true);
+    // ZIP64 needs a different directory walk; treat it as "repackage" rather
+    // than guessing, which keeps the safe path safe.
+    if (entries === 0xffff || dirSize === 0xffffffff || dirOffset === 0xffffffff) {
+      return false;
+    }
+    if (entries === 0 || dirSize === 0) return false;
+
+    const dir =
+      dirOffset >= tailStart
+        ? tail.subarray(dirOffset - tailStart, dirOffset - tailStart + dirSize)
+        : await readRange(dirOffset, dirOffset + dirSize - 1);
+    if (!dir || dir.length < dirSize) return false;
+    const dirView = new DataView(dir.buffer, dir.byteOffset, dir.byteLength);
+
+    let cursor = 0;
+    for (let i = 0; i < entries; i += 1) {
+      if (cursor + 46 > dir.length) return false;
+      if (dirView.getUint32(cursor, true) !== 0x02014b50) return false;
+      if (dirView.getUint16(cursor + 10, true) !== 0) return false; // not stored
+      const nameLen = dirView.getUint16(cursor + 28, true);
+      const extraLen = dirView.getUint16(cursor + 30, true);
+      const commentLen = dirView.getUint16(cursor + 32, true);
+      cursor += 46 + nameLen + extraLen + commentLen;
+    }
+    return true;
+  } catch {
+    // Probe failures must not decide rendering; repackaging always works.
+    return false;
+  }
+}
+
 async function computeSceneFrameFromSogTextures(
   zipData: Record<string, Uint8Array>,
   meta: SogBoundsMeta,
@@ -1336,6 +1423,13 @@ interface Props {
   /** Additional OpenUSD workspace nodes rendered around the editable node. */
   compositionAssets?: SplatCompositionAsset[];
   lang?: string;
+  /**
+   * Which engine draws the Gaussians. Spinoff is the default; "spark" swaps in
+   * the WebGL2 SparkJS renderer, which is what phones and insecure dev origins
+   * can actually run. Babylon keeps the camera, grid, gizmo and selection layer
+   * either way.
+   */
+  gaussianRenderer?: "spinoff" | "spark";
 }
 
 export interface SplatViewerHandle {
@@ -1408,12 +1502,15 @@ const SplatViewer = forwardRef<SplatViewerHandle, Props>(function SplatViewer(
     onSplatSelectionChange,
     compositionAssets = [],
     lang = "en",
+    gaussianRenderer = "spinoff",
   },
   ref,
 ) {
   const rootRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const spinoffCanvasRef = useRef<HTMLCanvasElement>(null);
+  const sparkCanvasRef = useRef<HTMLCanvasElement>(null);
+  const sparkModelTransformRef = useRef<(() => void) | null>(null);
   const spinoffRendererRef = useRef<SpinoffRenderer | null>(null);
   const spinoffSourceRef = useRef<SpinoffSogSource | null>(null);
   const engineRef = useRef<any>(null);
@@ -1510,12 +1607,22 @@ const SplatViewer = forwardRef<SplatViewerHandle, Props>(function SplatViewer(
   const sogAntialiasRef = useRef(false);
   const immersiveControls = Boolean(readOnly || compactTouch);
   const isSogSource = splatUrl.split("?")[0].toLowerCase().endsWith(".sog");
-  // SOG has one rendering contract: Splatfiction/Spinoff. Never silently send
-  // it through Babylon's full-archive fallback because a workspace option is
-  // present; that downloads the private tensors, changes the appearance, and
-  // is exactly the cross-origin Firefox failure this path is designed to avoid.
-  // Babylon remains only as Reaigen's camera/grid/gizmo control layer.
-  const spinoffEligible = isSogSource;
+  const spinoffTransform = spinoffModelTransform(globalSceneTransform);
+  // SOG renders through Splatfiction/Spinoff wherever Spinoff can represent the
+  // scene, so delivery keeps the exact renderer and never pulls the private
+  // tensors. But Spinoff takes a single uniform modelScale and draws the
+  // archive as authored: it cannot express a mirrored or non-uniform root, a
+  // prune mask, or composed assets. Forcing those through it silently drops the
+  // very geometry the workspace is editing and renders an empty viewport, so
+  // they keep Babylon's mutable decode. Babylon otherwise stays mounted only as
+  // Reaigen's camera, grid, gizmo and selection-control layer.
+  const spinoffEligible = isSogSource
+    && !initialPruneMask
+    && !compositionAssets.length
+    && spinoffTransform.compatible;
+  // Delivery mode is shared: the loader prepares one SOG source and exactly one
+  // external engine consumes it. Only the engine differs.
+  const useSparkEngine = spinoffEligible && gaussianRenderer === "spark";
   const visibleReady = ready && (!spinoffEligible || spinoffStatus === "ready");
 
   useEffect(() => {
@@ -5028,9 +5135,14 @@ const SplatViewer = forwardRef<SplatViewerHandle, Props>(function SplatViewer(
         if (disposed) return;
 
         const canvas = canvasRef.current;
+        // In the editor Babylon sits above the external Gaussian layer so its
+        // grid, gizmos and selection stay visible, which only works if its own
+        // backbuffer has an alpha channel. Without alpha: true a clearColor of
+        // alpha 0 still composites opaque and hides the splats completely.
         const engine = new BABYLON.Engine(canvas, true, {
           antialias: true, powerPreference: "high-performance",
           preserveDrawingBuffer: false, stencil: false,
+          alpha: true, premultipliedAlpha: false,
         });
         engineRef.current = engine;
 
@@ -5647,29 +5759,37 @@ const SplatViewer = forwardRef<SplatViewerHandle, Props>(function SplatViewer(
         const isSpzUrl = splatUrl.split("?")[0].toLowerCase().endsWith(".spz");
 
         if (spinoffEligible && isSogUrl) {
-          // Splatfiction exports a range-readable stored ZIP. Give its URL to
-          // Spinoff unchanged: it fetches only the public property planes it
-          // renders. Downloading the complete archive here also pulled the
-          // private exact/editor tensors (about 65 MB for room 10122), then
-          // unzipped and rebuilt the file before the renderer could start.
-          // Besides wasting memory and time, Firefox can terminate that large
-          // cross-origin response with a generic NetworkError. The native
-          // range path is both the Splatfiction contract and the fast path.
+          // A stored SOG can go to Spinoff by URL: it then fetches only the
+          // public property planes it renders. Downloading the complete archive
+          // instead also pulls the private exact/editor tensors (about 65 MB for
+          // room 10122), unzips and rebuilds the file before the renderer can
+          // start, and Firefox can terminate that large cross-origin response
+          // with a generic NetworkError. So the range path stays the fast path —
+          // but only for archives that are actually range-readable. Deflated
+          // ones fall through to be repackaged stored below, which keeps Spinoff
+          // as the renderer and leaves appearance unchanged.
           setStatus(t("viewer.status.processing", lang));
-          spinoffSourceRef.current = splatUrl;
-          splatBufferRef.current = null;
-          await placeCamera();
-          if (immersiveControls) {
-            const target = camera.getTarget();
-            setImmersiveBase(
-              [camera.position.x, camera.position.y, camera.position.z],
-              [target.x - camera.position.x, target.y - camera.position.y, target.z - camera.position.z],
-              camera.fov,
-            );
+          const membersStored = await sogMembersAreStored(splatUrl);
+          if (disposed) return;
+          if (membersStored) {
+            spinoffSourceRef.current = splatUrl;
+            splatBufferRef.current = null;
+            await placeCamera();
+            if (immersiveControls) {
+              const target = camera.getTarget();
+              setImmersiveBase(
+                [camera.position.x, camera.position.y, camera.position.z],
+                [target.x - camera.position.x, target.y - camera.position.y, target.z - camera.position.z],
+                camera.fov,
+              );
+            }
+            setReady(true);
+            viewerInitializing = false;
+            return;
           }
-          setReady(true);
-          viewerInitializing = false;
-          return;
+          console.warn(
+            "[REAI] SOG members are deflated; repackaging stored for Spinoff range access",
+          );
         }
 
         const sourceCacheEligible = isSogUrl || isSpzUrl;
@@ -6007,8 +6127,8 @@ const SplatViewer = forwardRef<SplatViewerHandle, Props>(function SplatViewer(
     let source = spinoffSourceRef.current;
     const babylonCamera = cameraRef.current;
     const scene = sceneRef.current;
-    if (!ready || !spinoffEligible || !canvas || !source || !babylonCamera || !scene) {
-      setSpinoffStatus("idle");
+    if (!ready || !spinoffEligible || useSparkEngine || !canvas || !source || !babylonCamera || !scene) {
+      if (!useSparkEngine) setSpinoffStatus("idle");
       return;
     }
 
@@ -6164,6 +6284,10 @@ const SplatViewer = forwardRef<SplatViewerHandle, Props>(function SplatViewer(
   }, [compactTouch, lang, outputsVersion, performanceProfile, ready, spatialNavigation, spinoffEligible, splatUrl]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
+    if (useSparkEngine) {
+      sparkModelTransformRef.current?.();
+      return;
+    }
     if (!spinoffEligible) return;
     const renderer = spinoffRendererRef.current;
     if (!renderer) return;
@@ -6173,7 +6297,368 @@ const SplatViewer = forwardRef<SplatViewerHandle, Props>(function SplatViewer(
       rotationRadians: transform.rotationRadians,
       translation: transform.translation,
     });
-  }, [globalSceneTransform, spinoffEligible]);
+  }, [globalSceneTransform, spinoffEligible, useSparkEngine]);
+
+  // SparkJS engine. Same contract as the Spinoff effect above: Babylon owns the
+  // camera and all chrome, this only draws the Gaussians underneath and follows
+  // the Babylon camera every frame.
+  useEffect(() => {
+    const canvas = sparkCanvasRef.current;
+    const source = spinoffSourceRef.current;
+    const babylonCamera = cameraRef.current;
+    const scene = sceneRef.current;
+    if (!ready || !useSparkEngine || !canvas || !source || !babylonCamera || !scene) {
+      return;
+    }
+
+    let disposed = false;
+    let frame = 0;
+    let cleanup: (() => void) | null = null;
+    setSpinoffStatus("loading");
+
+    void (async () => {
+      try {
+        const [THREE, { SparkRenderer, SplatMesh, SplatFileType }] = await Promise.all([
+          import("three"),
+          import("@sparkjsdev/spark"),
+        ]);
+        if (disposed) return;
+
+        const renderer = new THREE.WebGLRenderer({ canvas, antialias: false, alpha: true });
+        renderer.setClearColor(0x000000, 0);
+        // /view caps effective resolution at 1.5x CSS pixels so the sort keeps
+        // up with the camera on retina displays; 2x costs motion stability.
+        renderer.setPixelRatio(Math.min(window.devicePixelRatio, VIEW_DPR_CAP));
+
+        const threeScene = new THREE.Scene();
+        const threeCamera = new THREE.PerspectiveCamera(60, 1, 0.05, 1000);
+        // Two independent terms decide how a SOG rasterises here.
+        //
+        // 1. Screen-space dilation. Spark defaults both blur terms to 0 — no
+        //    dilation at all — so carry the same kernel Spinoff used. Which
+        //    term applies depends on training: antialiased scenes want
+        //    blurAmount (dilation *plus* Mip-Splatting opacity compensation),
+        //    others want preBlurAmount (dilation only).
+        //
+        //    The kernel value stays GAUSSIAN_MIP_VARIANCE deliberately.
+        //    scripts/validate-splat-render-profile.test.mjs records a CPU
+        //    render showing 0.09 vs 0.30 moves mean luminance by 0.00005 and
+        //    clipped highlights by 0.001pp while costing ~9% sharpness: the
+        //    kernel is not what washes a render out, and raising it would only
+        //    blur the result and reshade the published library.
+        //
+        // 2. Projected splat scale. This is the term that actually differs from
+        //    SuperSplat: Spark's default renders softer than the PlayCanvas
+        //    convention, and Spark documents 2.0 as the matching value.
+        // Rasterisation follows the documented /view policy from
+        // Reaigen-splatviewer-02/RENDERING.md rather than library defaults:
+        // a fixed VKGS-tier kernel with compensation on. Spark's blurAmount is
+        // the compensated term (Mip-Splatting opacity adjustment included);
+        // preBlurAmount dilates without compensating and would over-brighten.
+        // ?kernel= overrides for A/B against SuperSplat.
+        const tuning = new URLSearchParams(window.location.search);
+        const rawKernel = tuning.get("kernel");
+        const kernel = rawKernel !== null && rawKernel.trim() !== ""
+          && Number.isFinite(Number(rawKernel))
+          ? Number(rawKernel)
+          : VIEW_KERNEL_SIZE;
+        threeScene.add(new SparkRenderer({
+          renderer,
+          blurAmount: kernel,
+          preBlurAmount: 0,
+        }));
+
+        // The loader hands over either the asset URL for range streaming or a
+        // repackaged stored archive; Spark reads both.
+        // The loader hands over either the asset URL for range streaming or a
+        // repackaged stored archive; Spark reads both.
+        const fileBytes = typeof source === "string"
+          ? null
+          : new Uint8Array(await (source as Blob).arrayBuffer());
+        if (disposed) return;
+
+        // SplatMesh loads asynchronously; reading numSplats straight after the
+        // constructor always reports 0 and would reveal the layer before a
+        // single Gaussian exists.
+        // Never let Spark sniff the format. Our delivery bundles are always
+        // PlayCanvas SOGS zips, and a signed URL that has expired — or any
+        // error page served in its place — sniffs as "Unknown file type" and
+        // throws out of the worker where nothing can catch it.
+        const mesh: InstanceType<typeof SplatMesh> = new SplatMesh({
+          fileType: SplatFileType.PCSOGSZIP,
+          ...(typeof source === "string" ? { url: source } : { fileBytes: fileBytes! }),
+          onLoad: () => {
+            if (disposed) return;
+            const count = mesh.packedSplats?.numSplats ?? 0;
+
+            // Camera placement belongs to the loader's own scene-frame path,
+            // shared with Spinoff — re-framing unconditionally fought the
+            // editor's orbit state, snapping the pose back on drag.
+            //
+            // But that path only runs when the scene has something to frame
+            // from. A tour with no authored cameras gets nothing, leaving the
+            // camera parked at the origin inside the geometry: the render looks
+            // like mush and the controls appear dead because there is no orbit
+            // radius to work with. Frame from the splats only in that case.
+            // A camera still sitting exactly on the origin was never placed.
+            // Its target is Babylon's default (0,0,1), so only the position is
+            // a reliable signal that the scene-frame path had nothing to work
+            // from.
+            const unplaced = babylonCamera.position.lengthSquared() < 1e-6;
+            if (unplaced && count > 0) {
+              const axes = [
+                new Float32Array(count),
+                new Float32Array(count),
+                new Float32Array(count),
+              ];
+              let kept = 0;
+              mesh.forEachSplat((_i, centre) => {
+                if (
+                  kept < count
+                  && Number.isFinite(centre.x)
+                  && Number.isFinite(centre.y)
+                  && Number.isFinite(centre.z)
+                ) {
+                  axes[0][kept] = centre.x;
+                  axes[1][kept] = centre.y;
+                  axes[2][kept] = centre.z;
+                  kept += 1;
+                }
+              });
+              if (kept > 0) {
+                // SOG stores means in a signed-log domain, so far-field
+                // Gaussians decode tens of thousands of units out. Percentiles
+                // frame the room rather than the noise.
+                const lo: number[] = [];
+                const hi: number[] = [];
+                for (const axis of axes) {
+                  const values = axis.subarray(0, kept).slice().sort();
+                  lo.push(values[Math.floor(kept * 0.02)]);
+                  hi.push(values[Math.min(kept - 1, Math.floor(kept * 0.98))]);
+                }
+                const frame: SceneFrame = {
+                  center: [(lo[0] + hi[0]) / 2, (lo[1] + hi[1]) / 2, (lo[2] + hi[2]) / 2],
+                  radius: Math.max(
+                    0.25,
+                    Math.hypot(hi[0] - lo[0], hi[1] - lo[1], hi[2] - lo[2]) / 2,
+                  ),
+                  safePosition: [(lo[0] + hi[0]) / 2, (lo[1] + hi[1]) / 2, (lo[2] + hi[2]) / 2],
+                  safeTarget: [(lo[0] + hi[0]) / 2, (lo[1] + hi[1]) / 2, (lo[2] + hi[2]) / 2],
+                  floorY: lo[1],
+                  ceilingY: hi[1],
+                  footprint: { minX: lo[0], maxX: hi[0], minZ: lo[2], maxZ: hi[2] },
+                };
+                fallbackSceneRef.current = frame;
+
+                // Stand inside the room, not outside it. editorFramePose orbits
+                // the capture from beyond its bounds, which for an interior scan
+                // means looking in through the ceiling and walls — every surface
+                // between the camera and the room smears across the view. An
+                // authored camera is always inside, which is the whole reason
+                // tours that have one look right.
+                //
+                // Eye height above the floor, at the footprint centre, facing
+                // along the room's longest horizontal axis so the view runs down
+                // the space rather than into the nearest wall.
+                const spanX = hi[0] - lo[0];
+                const spanZ = hi[2] - lo[2];
+                const eyeY = Math.min(
+                  frame.floorY + 1.6,
+                  frame.floorY + (frame.ceilingY - frame.floorY) * 0.6,
+                );
+
+                // Face the densest eye-level region, the way the iOS player
+                // does. The centroid of splats at standing height points at the
+                // room's interior mass — furniture, walls, features — while the
+                // global centroid is dragged around by floor and ceiling.
+                // Aiming down the longest axis instead just finds a blank wall.
+                let dx = 0, dz = 0, band = 0;
+                const bandLo = frame.floorY + (eyeY - frame.floorY) * 0.5;
+                const bandHi = eyeY + 0.4;
+                for (let i = 0; i < kept; i += 1) {
+                  const y = axes[1][i];
+                  if (y >= bandLo && y <= bandHi) {
+                    dx += axes[0][i];
+                    dz += axes[2][i];
+                    band += 1;
+                  }
+                }
+                const eye: Vec3 = [frame.center[0], eyeY, frame.center[2]];
+                let look: Vec3;
+                if (band > 0) {
+                  const towardX = dx / band - eye[0];
+                  const towardZ = dz / band - eye[2];
+                  // Below iOS's 0.20 m threshold the centroid sits on top of the
+                  // anchor and its direction is noise, so fall back to the axis.
+                  if (Math.hypot(towardX, towardZ) > 0.2) {
+                    const scale = Math.max(spanX, spanZ) / 2;
+                    const norm = Math.hypot(towardX, towardZ);
+                    look = [
+                      eye[0] + (towardX / norm) * scale,
+                      eyeY,
+                      eye[2] + (towardZ / norm) * scale,
+                    ];
+                  } else {
+                    look = spanX >= spanZ
+                      ? [hi[0], eyeY, frame.center[2]]
+                      : [frame.center[0], eyeY, hi[2]];
+                  }
+                } else {
+                  look = spanX >= spanZ
+                    ? [hi[0], eyeY, frame.center[2]]
+                    : [frame.center[0], eyeY, hi[2]];
+                }
+                const worldEye = transformCanonicalPoint(eye, globalSceneTransformRef.current);
+                const worldLook = transformCanonicalPoint(look, globalSceneTransformRef.current);
+
+                babylonCamera.position.set(...worldEye);
+                babylonCamera.upVector.set(0, 1, 0);
+                cameraUpRef.current = [0, 1, 0];
+                babylonCamera.setTarget(
+                  new (babylonRef.current.Vector3)(...worldLook),
+                );
+                babylonCamera.rotation.z = 0;
+                // 85° matches the iOS player's indoor default and the fov the
+                // authored tour cameras carry; 60° crops an interior too tightly.
+                babylonCamera.fov = 85 * Math.PI / 180;
+                babylonCamera.minZ = Math.max(0.02, frame.radius / 500);
+                babylonCamera.maxZ = Math.max(100, frame.radius * 40);
+                // Derive the orbit state from the camera we just set rather
+                // than computing yaw/radius by hand — the pivot is offset along
+                // the view direction, not the look point, so a hand-rolled
+                // target/radius disagrees with the pose and dragging either
+                // jumps or does nothing.
+                syncSpatialOrbitToCamera();
+                canvas.dataset.sparkFramed = "interior";
+                canvas.dataset.sparkOrbit = JSON.stringify(spatialOrbitRef.current);
+              }
+            }
+
+            canvas.dataset.sparkStatus = "ready";
+            canvas.dataset.sparkSplats = String(count);
+            canvas.dataset.sparkQuality = JSON.stringify({
+              maxSh: (mesh as { maxSh?: number }).maxSh ?? null,
+              dpr: renderer.getPixelRatio(),
+              buffer: `${renderer.domElement.width}x${renderer.domElement.height}`,
+              css: `${canvas.clientWidth}x${canvas.clientHeight}`,
+              devicePixelRatio: window.devicePixelRatio,
+            });
+            setSpinoffStatus("ready");
+            setStatus("");
+            onReady?.();
+          },
+        });
+        // Babylon transforms the *camera* into world space, while the external
+        // Gaussian engine is expected to transform the *model* by the USD root
+        // (Spinoff does this via setModelTransform). Leaving the mesh in
+        // canonical space puts the geometry and the camera in two different
+        // frames: poses land inside the floor and orbiting appears to drag the
+        // whole scene. Apply the root as a quaternion rather than re-deriving
+        // Euler angles, so there is no order convention to get wrong.
+        const applyModelTransform = () => {
+          const transform = globalSceneTransformRef.current;
+          const [qx, qy, qz, qw] = globalSceneQuaternion(transform);
+          const [sx, sy, sz] = globalSceneScale3(transform);
+          mesh.quaternion.set(qx, qy, qz, qw);
+          mesh.scale.set(sx, sy, sz);
+          mesh.position.set(...transform.translation);
+          mesh.updateMatrixWorld(true);
+        };
+        applyModelTransform();
+        sparkModelTransformRef.current = applyModelTransform;
+        threeScene.add(mesh);
+
+        // SplatMesh decodes on a worker, so a load failure surfaces as an
+        // unhandled rejection — a full-screen dev overlay instead of the
+        // viewer's own error path. Route it back into onError like every
+        // other load failure here.
+        void Promise.resolve(mesh.initialized).catch((error: unknown) => {
+          if (disposed) return;
+          const reason = error instanceof Error ? error.message : String(error);
+          canvas.dataset.sparkStatus = "error";
+          console.error("[REAI] Spark delivery renderer failed:", error);
+          setSpinoffStatus("error");
+          setStatus(t("viewer.status.error", lang));
+          onError?.(reason);
+        });
+
+        const target = new THREE.Vector3();
+        const syncCamera = () => {
+          const babylonTarget = babylonCamera.getTarget();
+          threeCamera.position.set(
+            babylonCamera.position.x,
+            babylonCamera.position.y,
+            babylonCamera.position.z,
+          );
+          target.set(babylonTarget.x, babylonTarget.y, babylonTarget.z);
+
+          // camera.upVector is the *reference* up, not the camera's oriented
+          // up. On phones the immersive controls roll the camera, and reading
+          // upVector silently drops that roll — the scene renders on its side.
+          // The world matrix's up column carries the real orientation.
+          //
+          // Babylon stores matrices in WebGL column-major order, same as THREE,
+          // so columns are [right | up | forward | translation].
+          const world = babylonCamera.getWorldMatrix?.()?.m;
+          if (world && Number.isFinite(world[4])) {
+            threeCamera.up.set(world[4], world[5], world[6]).normalize();
+          } else {
+            const up = babylonCamera.upVector;
+            if (up) threeCamera.up.set(up.x, up.y, up.z);
+          }
+          threeCamera.lookAt(target);
+          // Babylon stores fov in radians and applies it vertically, matching
+          // THREE's perspective camera once converted to degrees.
+          threeCamera.fov = (babylonCamera.fov ?? 1) * 180 / Math.PI;
+          threeCamera.near = Math.max(0.01, babylonCamera.minZ ?? 0.05);
+          threeCamera.far = Math.max(threeCamera.near + 1, babylonCamera.maxZ ?? 1000);
+          const width = canvas.clientWidth || 1;
+          const height = canvas.clientHeight || 1;
+          threeCamera.aspect = width / height;
+          threeCamera.updateProjectionMatrix();
+          renderer.setSize(width, height, false);
+          canvas.dataset.sparkCamera = [
+            threeCamera.position.x, threeCamera.position.y, threeCamera.position.z,
+          ].map((v) => v.toFixed(2)).join(",");
+          canvas.dataset.sparkTarget = [target.x, target.y, target.z]
+            .map((v) => v.toFixed(2)).join(",");
+          canvas.dataset.sparkSize = `${width}x${height}`;
+          canvas.dataset.sparkClip =
+            `${threeCamera.near.toFixed(3)}/${threeCamera.far.toFixed(1)}/fov${threeCamera.fov.toFixed(1)}`;
+        };
+        // Babylon pauses its render loop while a saved camera is applied, which
+        // would silently freeze an onBeforeRender-driven sync. Pull the pose
+        // every frame from our own loop so the layers can never diverge.
+        const tick = () => {
+          syncCamera();
+          renderer.render(threeScene, threeCamera);
+          frame = requestAnimationFrame(tick);
+        };
+        syncCamera();
+        frame = requestAnimationFrame(tick);
+
+        cleanup = () => {
+          cancelAnimationFrame(frame);
+          threeScene.remove(mesh);
+          mesh.dispose?.();
+          renderer.dispose();
+        };
+      } catch (error) {
+        if (disposed) return;
+        const reason = error instanceof Error ? error.message : String(error);
+        canvas.dataset.sparkStatus = "error";
+        console.error("[REAI] Spark delivery renderer failed:", error);
+        setSpinoffStatus("error");
+        setStatus(t("viewer.status.error", lang));
+        onError?.(reason);
+      }
+    })();
+
+    return () => {
+      disposed = true;
+      cleanup?.();
+    };
+  }, [lang, ready, splatUrl, useSparkEngine]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // ── UI ─────────────────────────────────────────────────────────────────────
 
@@ -6201,7 +6686,20 @@ const SplatViewer = forwardRef<SplatViewerHandle, Props>(function SplatViewer(
         style={{ touchAction: "none", overscrollBehavior: "none" }}
       />
 
-      {spinoffEligible ? (
+      {useSparkEngine ? (
+        <canvas
+          ref={sparkCanvasRef}
+          aria-label="Spark Gaussian renderer"
+          data-render-profile="spark"
+          className={`pointer-events-none absolute inset-0 h-full w-full transition-opacity duration-200 ${
+            spatialNavigation ? "z-0" : "z-10"
+          } ${
+            spinoffStatus === "ready" ? "opacity-100" : "opacity-0"
+          }`}
+        />
+      ) : null}
+
+      {spinoffEligible && !useSparkEngine ? (
         <canvas
           ref={spinoffCanvasRef}
           aria-label="Spinoff Gaussian renderer"

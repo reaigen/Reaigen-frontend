@@ -58,6 +58,7 @@ import type {
   SplatSelectionStats,
   SplatSelectionTool,
 } from "../../../lib/splat-editing";
+import { AdjustmentSlider } from "../../../lib/ui/adjustment-slider";
 import { Button } from "../../../lib/ui/button";
 import { Input } from "../../../lib/ui/input";
 import { cn } from "../../../lib/utils";
@@ -283,6 +284,12 @@ export default function WebTourEditorPage({
   const { isAuthenticated, isLoading, user } = useAuth();
   const router = useRouter();
   const viewerRef = useRef<SplatViewerHandle | null>(null);
+  // SparkJS draws the Gaussians; Babylon keeps the gizmos, grid and selection.
+  // ?renderer=spinoff opts back to the WebGPU engine for comparison.
+  const [sparkRenderer] = useState(
+    () => typeof window === "undefined"
+      || new URLSearchParams(window.location.search).get("renderer") !== "spinoff",
+  );
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const [workspace, setWorkspace] = useState<WebTourWorkspace | null>(null);
   const [selectedId, setSelectedId] = useState<string | null>(null);
@@ -844,19 +851,30 @@ export default function WebTourEditorPage({
             cameras: currentWorkspace.cameras as unknown as Array<Record<string, unknown>>,
           })
         : currentWorkspace;
+      // The write has landed. Everything below is local bookkeeping, and it
+      // must not be able to report a failed save: a throw here previously
+      // surfaced "workspace could not be saved" for a workspace that was
+      // already persisted, which is worse than useless — it tells the user to
+      // redo work the server has.
       workspaceRef.current = saved;
       setWorkspace(saved);
-      const savedSelected = saved.nodes.find((node) => node.id === selected?.id);
-      if (savedSelected) setDraftTransform(runtimeTransform(savedSelected.transform));
-      pendingPruneMasksRef.current = {};
-      setPendingPruneMasks({});
-      viewerRef.current?.markSplatPruneSaved();
-      setTransformDirty(false);
-      setWorkspaceDirty(false);
-      void captureAutomaticThumbnail(saved.revision);
+      try {
+        const savedSelected = saved.nodes.find((node) => node.id === selected?.id);
+        if (savedSelected) setDraftTransform(runtimeTransform(savedSelected.transform));
+        pendingPruneMasksRef.current = {};
+        setPendingPruneMasks({});
+        viewerRef.current?.markSplatPruneSaved();
+        setTransformDirty(false);
+        setWorkspaceDirty(false);
+        void captureAutomaticThumbnail(saved.revision);
+      } catch (error) {
+        console.error("[REAI] workspace saved, post-save bookkeeping failed:", error);
+      }
       if (exitAfterSave) router.push(`/draft/${saved.draft_id}`);
       return true;
-    } catch {
+    } catch (error) {
+      // A bare catch made this undiagnosable: the reason never reached anyone.
+      console.error("[REAI] workspace save failed:", error);
       setError(t("webEditor.saveFailed", lang));
       return false;
     } finally {
@@ -1065,6 +1083,7 @@ export default function WebTourEditorPage({
             setViewerFailed(false);
             setViewerErrorDetail(null);
           }}
+          gaussianRenderer={sparkRenderer ? "spark" : "spinoff"}
           splatUrl={selectedAssetUrl}
           splatId={selected.splat_id}
           outputsVersion={selected.asset.fingerprint}
@@ -1654,19 +1673,19 @@ export default function WebTourEditorPage({
           </div>
 
           {splatSelectionTool === "brush" ? (
-            <label className="mt-3 flex items-center gap-3 text-[9px] text-muted-foreground">
-              <span className="shrink-0">{t("webEditor.brushSize", lang)}</span>
-              <input
-                type="range"
+            <div className="mt-2">
+              <AdjustmentSlider
+                label={t("webEditor.brushSize", lang)}
+                value={splatBrushRadius}
                 min={8}
                 max={120}
                 step={1}
-                value={splatBrushRadius}
-                onChange={(event) => setSplatBrushRadius(Number(event.target.value))}
-                className="min-w-0 flex-1 accent-foreground"
+                origin={36}
+                displayValue={`${splatBrushRadius} px`}
+                resetLabel={t("draft.media.resetEdits", lang)}
+                onChange={setSplatBrushRadius}
               />
-              <span className="w-8 text-right tabular-nums">{splatBrushRadius}</span>
-            </label>
+            </div>
           ) : null}
 
           <div className="mt-3 grid grid-cols-3 gap-1 rounded-xl bg-foreground/[0.04] p-2 text-center">

@@ -4,7 +4,6 @@ import { useEffect, useState, useRef, use, useCallback, useMemo } from "react";
 import { useRouter } from "next/navigation";
 import { useAuth } from "../../components/hooks/use-auth";
 import {
-  authorUsdSceneTransformOperation,
   getDraft,
   getDraftTourAssets,
   getWebTourWorkspace,
@@ -20,28 +19,21 @@ import type {
   DraftDetailItem,
   GlobalSceneTransform,
   RoomKitCageWall,
-  SpatialTransformTool,
-  SpatialViewMode,
-  SplatInspectionStats,
   SplatViewerPayload,
 } from "../../lib/tour-types";
 import type { SplatViewerHandle } from "../../components/splat-viewer";
 import dynamic from "next/dynamic";
 import CameraEditor from "../../components/camera-editor";
-import { AdvancedTourEditor } from "../../components/advanced-tour-editor";
 import { Button } from "../../lib/ui/button";
 import { getUserLanguage, t } from "../../lib/i18n";
 import { PageLoading } from "../../components/page-loading";
-import { ArrowLeftIcon, InfoIcon, SearchIcon, TechnicalIcon } from "../../components/icons";
+import { ArrowLeftIcon, InfoIcon, SearchIcon } from "../../components/icons";
 import { buildTextDataMap } from "../../lib/floorplan-geometry";
 import { parseRoomKitCage } from "../../lib/spatial-editor-data";
 import {
   cloneGlobalSceneTransform,
   composedRootTransformFromScene,
-  composeGlobalSceneTransform,
-  globalSceneTransformsEqual,
   IDENTITY_GLOBAL_SCENE_TRANSFORM,
-  relativeGlobalSceneTransform,
 } from "../../lib/global-scene-transform";
 
 const SplatViewer = dynamic(() => import("../../components/splat-viewer"), { ssr: false });
@@ -81,13 +73,18 @@ export default function TourPage({
   searchParams,
 }: {
   params: Promise<{ id: string }>;
-  searchParams: Promise<{ tourId?: string | string[] }>;
+  searchParams: Promise<{ tourId?: string | string[]; renderer?: string | string[] }>;
 }) {
   const { id } = use(params);
   const query = use(searchParams);
   const splatId = parseInt(id, 10);
   const rawTourId = Array.isArray(query.tourId) ? query.tourId[0] : query.tourId;
   const requestedTourId = rawTourId ? parseInt(rawTourId, 10) : undefined;
+  // SparkJS is the delivery renderer: it is WebGL2-only, so it renders on
+  // phones and on insecure dev origins where navigator.gpu does not exist and
+  // Spinoff draws nothing. ?renderer=spinoff opts back for comparison.
+  const rawRenderer = Array.isArray(query.renderer) ? query.renderer[0] : query.renderer;
+  const useSparkRenderer = rawRenderer !== "spinoff";
   const { isAuthenticated, isLoading, user } = useAuth();
   const router = useRouter();
   const [spatialEditorAllowed, setSpatialEditorAllowed] = useState(false);
@@ -121,28 +118,10 @@ export default function TourPage({
   const [activeRenderUrl, setActiveRenderUrl] = useState<string | null>(null);
   const [retryCount, setRetryCount] = useState(0);
   const [draft, setDraft] = useState<DraftDetailItem | null>(null);
-  const [advancedOpen, setAdvancedOpen] = useState(false);
-  // Transform gizmos and precision entry need a pointer and room to work, so
-  // the spatial editor stays a desktop surface. Width beats a pointer query
-  // here: touchscreen laptops report coarse pointers and would lose it.
-  const [compactViewport, setCompactViewport] = useState(
-    () => typeof window !== "undefined" && window.matchMedia("(max-width: 767px)").matches,
-  );
-  const [spatialViewMode, setSpatialViewMode] = useState<SpatialViewMode>("surface");
-  const [inspectionStats, setInspectionStats] = useState<SplatInspectionStats | null>(null);
-  const [spatialDataLoading, setSpatialDataLoading] = useState(false);
   const [roomKitCage, setRoomKitCage] = useState<RoomKitCageWall[]>([]);
-  const [showRoomKitCage, setShowRoomKitCage] = useState(true);
-  const [showSpatialGrid, setShowSpatialGrid] = useState(false);
-  const [spatialTransformTool, setSpatialTransformTool] = useState<SpatialTransformTool>("select");
   const [globalSceneTransform, setGlobalSceneTransform] = useState<GlobalSceneTransform>(
     () => cloneGlobalSceneTransform(IDENTITY_GLOBAL_SCENE_TRANSFORM),
   );
-  const [savedGlobalSceneTransform, setSavedGlobalSceneTransform] = useState<GlobalSceneTransform>(
-    () => cloneGlobalSceneTransform(IDENTITY_GLOBAL_SCENE_TRANSFORM),
-  );
-  const [globalTransformSaving, setGlobalTransformSaving] = useState(false);
-  const [globalTransformError, setGlobalTransformError] = useState<string | null>(null);
   const splatRef = useRef<SplatViewerHandle | null>(null);
   const loadedCollisionSplatRef = useRef<number | null>(null);
   const resolvedSplatId = viewer?.splat_id ?? splatId;
@@ -248,8 +227,6 @@ export default function TourPage({
       .then((data) => {
         const transform = composedRootTransformFromScene(data.scene_description);
         setGlobalSceneTransform(transform);
-        setSavedGlobalSceneTransform(cloneGlobalSceneTransform(transform));
-        setGlobalTransformError(null);
         setViewer(data);
       })
       .catch((err) => {
@@ -278,7 +255,6 @@ export default function TourPage({
     if (!viewer || loadedCollisionSplatRef.current === resolvedSplatId) return;
     let cancelled = false;
     setRoomKitCage([]);
-    setSpatialDataLoading(true);
 
     const loadCollisionGeometry = async () => {
       const splatPackage = await getSplatPackage(resolvedSplatId);
@@ -296,7 +272,6 @@ export default function TourPage({
       // The reconstruction footprint remains the declared runtime fallback.
       if (!cancelled) loadedCollisionSplatRef.current = resolvedSplatId;
     }).finally(() => {
-      if (!cancelled) setSpatialDataLoading(false);
     });
     return () => { cancelled = true; };
   }, [resolvedSplatId, viewer]);
@@ -316,23 +291,9 @@ export default function TourPage({
     setShotIdx(idx);
   }, []);
 
-  const globalTransformDirty = useMemo(
-    () => !globalSceneTransformsEqual(globalSceneTransform, savedGlobalSceneTransform),
-    [globalSceneTransform, savedGlobalSceneTransform],
-  );
-  const editorTransformDelta = useMemo(
-    () => relativeGlobalSceneTransform(
-      savedGlobalSceneTransform,
-      globalSceneTransform,
-    ),
-    [globalSceneTransform, savedGlobalSceneTransform],
-  );
 
   const applyViewerSnapshot = useCallback((current: SplatViewerPayload) => {
-    const transform = composedRootTransformFromScene(current.scene_description);
-    setGlobalSceneTransform(transform);
-    setSavedGlobalSceneTransform(cloneGlobalSceneTransform(transform));
-    setGlobalTransformError(null);
+    setGlobalSceneTransform(composedRootTransformFromScene(current.scene_description));
     setViewer(current);
   }, []);
 
@@ -363,133 +324,8 @@ export default function TourPage({
     resolvedSplatId,
   ]);
 
-  const persistGlobalTransform = useCallback(async () => {
-    if (!globalTransformDirty) return true;
-    setGlobalTransformSaving(true);
-    setGlobalTransformError(null);
-    try {
-      if (Number.isFinite(requestedTourId)) {
-        const workspace = await getWebTourWorkspace(requestedTourId!);
-        const sourceNode = workspace.nodes.find(
-          (node) => node.splat_id === resolvedSplatId,
-        );
-        if (!sourceNode) throw new Error("Tour source node is unavailable");
-        const scale3 = globalSceneTransform.scale3 ?? [
-          globalSceneTransform.scale,
-          globalSceneTransform.scale,
-          globalSceneTransform.scale,
-        ];
-        await saveWebTourWorkspace(requestedTourId!, {
-          base_revision: workspace.revision,
-          name: workspace.name,
-          nodes: workspace.nodes.map((node) => ({
-            id: node.id,
-            name: node.name,
-            visible: node.visible,
-            transform: node.splat_id === resolvedSplatId
-              ? {
-                  translation: [...globalSceneTransform.translation],
-                  rotationDeg: [...globalSceneTransform.rotationDeg],
-                  scale3: [...scale3],
-                  scale: globalSceneTransform.scale,
-                }
-              : node.transform,
-            prune: node.prune,
-          })),
-          cameras: workspace.cameras,
-        });
-        const current = await getSplatViewer(resolvedSplatId, {
-          fresh: true,
-          tourId: requestedTourId,
-        });
-        applyViewerSnapshot(current);
-        return true;
-      }
-      const response = await authorUsdSceneTransformOperation(
-        resolvedSplatId,
-        editorTransformDelta,
-        viewer?.scene_description?.stage?.revision ?? 0,
-        viewer?.scene_description?.usdStage?.stageSha256,
-      );
-      const saved = composedRootTransformFromScene(response.sceneDescription);
-      setGlobalSceneTransform(saved);
-      setSavedGlobalSceneTransform(cloneGlobalSceneTransform(saved));
-      setViewer((current) => current ? {
-        ...current,
-        scene_description: response.sceneDescription,
-        cameras: current.cameras ? {
-          ...current.cameras,
-          sceneDescription: response.sceneDescription,
-          sceneRevision: response.sceneRevision,
-        } : current.cameras,
-      } : current);
-      return true;
-    } catch {
-      setGlobalTransformError(t("spatialEditor.transformSaveFailed", lang));
-      return false;
-    } finally {
-      setGlobalTransformSaving(false);
-    }
-  }, [
-    applyViewerSnapshot,
-    editorTransformDelta,
-    globalSceneTransform,
-    globalTransformDirty,
-    lang,
-    requestedTourId,
-    resolvedSplatId,
-    viewer?.scene_description?.stage?.revision,
-    viewer?.scene_description?.usdStage?.stageSha256,
-  ]);
 
-  const closeAdvancedEditor = useCallback(() => {
-    // Closing the viewport never authors a hidden operation. Only Apply may
-    // create a USD opinion. Discard the pending session-layer delta.
-    setGlobalSceneTransform(cloneGlobalSceneTransform(savedGlobalSceneTransform));
-    setGlobalTransformError(null);
-    setSpatialTransformTool("select");
-    setAdvancedOpen(false);
-    // Leave the scene-composition viewport in the active tour pose.
-    window.requestAnimationFrame(() => {
-      splatRef.current?.goToShot(shotIdx, false);
-    });
-  }, [savedGlobalSceneTransform, shotIdx]);
 
-  useEffect(() => {
-    const query = window.matchMedia("(max-width: 767px)");
-    const sync = () => setCompactViewport(query.matches);
-    sync();
-    query.addEventListener("change", sync);
-    return () => query.removeEventListener("change", sync);
-  }, []);
-
-  // Shrinking past the breakpoint mid-session must not strand the user inside
-  // an editor they can no longer reach the controls of.
-  useEffect(() => {
-    if (compactViewport && advancedOpen) closeAdvancedEditor();
-  }, [compactViewport, advancedOpen, closeAdvancedEditor]);
-
-  const openAdvancedEditor = useCallback(async () => {
-    setSpatialTransformTool("select");
-    setAdvancedOpen(true);
-    try {
-      // Scene deliveries can be promoted while the tour page remains open.
-      // Revalidate before editing so the controls always represent the
-      // current immutable USD revision instead of a stale mounted payload.
-      const current = await getSplatViewer(resolvedSplatId, {
-        fresh: true,
-        tourId: Number.isFinite(requestedTourId) ? requestedTourId : undefined,
-      });
-      const transform = composedRootTransformFromScene(current.scene_description);
-      setGlobalSceneTransform(transform);
-      setSavedGlobalSceneTransform(cloneGlobalSceneTransform(transform));
-      setGlobalTransformError(null);
-      setViewer(current);
-    } catch {
-      // The already loaded delivery remains usable when revalidation is
-      // temporarily unavailable.
-    }
-  }, [requestedTourId, resolvedSplatId]);
 
   if (isLoading || spatialAccessLoading || (!viewer && !error)) {
     return <PageLoading />;
@@ -540,6 +376,7 @@ export default function TourPage({
     <div className="relative h-[100dvh] w-screen overflow-hidden bg-white">
       <SplatViewer
         ref={splatRef}
+        gaussianRenderer={useSparkRenderer ? "spark" : "spinoff"}
         splatUrl={activeRenderUrl ?? viewer.asset.url}
         splatId={resolvedSplatId}
         initialCameras={viewerCameras}
@@ -558,33 +395,23 @@ export default function TourPage({
           }
         }}
         onShotChange={handleShotChange}
-        spatialViewMode={advancedOpen ? spatialViewMode : "surface"}
+        spatialViewMode="surface"
         roomKitCage={roomKitCage}
-        showRoomKitCage={advancedOpen && showRoomKitCage}
-        showSpatialGrid={advancedOpen && showSpatialGrid}
+        showRoomKitCage={false}
+        showSpatialGrid={false}
         globalSceneTransform={globalSceneTransform}
-        spatialTransformTool={advancedOpen ? spatialTransformTool : "select"}
+        spatialTransformTool="select"
         spatialGizmoResetKey={viewer.scene_description?.stage?.revision}
-        onSpatialTransformChange={(transform) => {
-          setGlobalTransformError(null);
-          setGlobalSceneTransform(transform);
-        }}
-        onInspectionStats={setInspectionStats}
-        spatialNavigation={advancedOpen}
+        spatialNavigation={false}
         compositionAssets={workspaceComposition}
         lang={lang}
       />
 
-      {!advancedOpen ? (
-        <>
-          <div className="pointer-events-none absolute inset-x-0 top-0 z-10 h-28 bg-gradient-to-b from-black/50 to-transparent" aria-hidden="true" />
-          <div className="pointer-events-none absolute inset-x-0 bottom-0 z-10 h-36 bg-gradient-to-t from-black/55 to-transparent" aria-hidden="true" />
-        </>
-      ) : null}
+      <div className="pointer-events-none absolute inset-x-0 top-0 z-10 h-28 bg-gradient-to-b from-black/50 to-transparent" aria-hidden="true" />
+      <div className="pointer-events-none absolute inset-x-0 bottom-0 z-10 h-36 bg-gradient-to-t from-black/55 to-transparent" aria-hidden="true" />
 
       {/* Top bar */}
-      {!advancedOpen ? (
-        <>
+      <>
           <div className="absolute left-3 top-[calc(0.75rem+env(safe-area-inset-top,0px))] z-20 flex items-center gap-2 animate-fade-in sm:left-4 sm:top-[calc(1rem+env(safe-area-inset-top,0px))] xl:left-6 xl:top-[calc(1.5rem+env(safe-area-inset-top,0px))]">
             <button
               onClick={() => router.push(viewer.draft_id ? `/draft/${viewer.draft_id}` : "/tours")}
@@ -594,19 +421,6 @@ export default function TourPage({
               <ArrowLeftIcon size={16} />
               <span className="hidden text-[12px] font-medium xl:inline">{t("common.back", lang)}</span>
             </button>
-            {spatialEditorAllowed && !compactViewport ? (
-              <button
-                type="button"
-                onClick={() => { void openAdvancedEditor(); }}
-                className="floating-capsule pen-touch-target flex items-center gap-2 border px-3 text-[11px] font-semibold text-foreground transition-transform hover:scale-[1.02] active:scale-[0.98]"
-              >
-                <TechnicalIcon size={14} />
-                <span>{t("spatialEditor.open", lang)}</span>
-                <span className="rounded-full bg-foreground/[0.07] px-1.5 py-0.5 text-[8px] font-bold uppercase tracking-[0.1em] text-foreground/55">
-                  {t("spatialEditor.rnd", lang)}
-                </span>
-              </button>
-            ) : null}
           </div>
 
           <CameraEditor
@@ -634,39 +448,7 @@ export default function TourPage({
             }}
             lang={lang}
           />
-        </>
-      ) : (
-        <AdvancedTourEditor
-          title={draft?.title || String(viewer.metadata?.title ?? t("spatialEditor.title", lang))}
-          lang={lang}
-          sceneDescription={viewer.scene_description}
-          viewMode={spatialViewMode}
-          onViewModeChange={setSpatialViewMode}
-          stats={inspectionStats}
-          dataLoading={spatialDataLoading}
-          cageCount={roomKitCage.length}
-          showCage={showRoomKitCage}
-          onShowCageChange={setShowRoomKitCage}
-          showGrid={showSpatialGrid}
-          onShowGridChange={setShowSpatialGrid}
-          transform={editorTransformDelta}
-          transformTool={spatialTransformTool}
-          onTransformToolChange={setSpatialTransformTool}
-          onTransformChange={(transform) => {
-            setGlobalTransformError(null);
-            setGlobalSceneTransform(composeGlobalSceneTransform(
-              savedGlobalSceneTransform,
-              transform,
-            ));
-          }}
-          transformDirty={globalTransformDirty}
-          transformSaving={globalTransformSaving}
-          transformError={globalTransformError}
-          onApplyTransform={() => { void persistGlobalTransform(); }}
-          onFrameScene={() => splatRef.current?.frameScene()}
-          onClose={closeAdvancedEditor}
-        />
-      )}
+      </>
     </div>
   );
 }
