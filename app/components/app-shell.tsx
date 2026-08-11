@@ -25,6 +25,40 @@ const REAI_PANEL_MIN_W = 420;
 const REAI_PANEL_MAX_W = 960;
 const REAI_PANEL_WIDTH_KEY = "reaigen:agentPanelWidth.v2";
 
+/**
+ * Narrowest the page may become while the agent is docked beside it.
+ *
+ * The resize handle already refuses to leave less than this, so it is the
+ * shell's existing answer to "how much room does the page actually need" and
+ * the dock threshold below is derived from it rather than being a second,
+ * independent opinion.
+ */
+const AGENT_MIN_CONTENT_W = 480;
+
+/**
+ * Narrowest the docked panel itself is drawn, before the user resizes it.
+ *
+ * Deliberately not REAI_PANEL_MIN_W: that is how far the resize handle may be
+ * dragged, whereas this is the width the panel opens at. The threshold below
+ * has to be built from this one, or the panel opens wider than the space the
+ * threshold reserved for it and eats the difference out of the page.
+ */
+const AGENT_PANEL_BASE_W = 480;
+
+/**
+ * Width at which the agent stops overlaying the page and becomes part of it.
+ *
+ * The panel used to dock only past 1440px, so on every laptop below that it
+ * slid over the page instead — reading as something covering the work rather
+ * than sitting beside it, and hiding the very content it is meant to talk
+ * about. There is nothing special about 1440: the real question is whether the
+ * sidebar, the panel at its opening width and a usable page fit at once, so
+ * that is what this asks. Below it the viewport genuinely cannot hold all three
+ * and the overlay is the right composition.
+ */
+const AGENT_DOCK_MIN_W =
+  SIDEBAR_COLLAPSED_W + AGENT_PANEL_BASE_W + AGENT_MIN_CONTENT_W;
+
 function clampAgentPanelWidth(width: number) {
   const viewportLimit = typeof window === "undefined"
     ? REAI_PANEL_MAX_W
@@ -34,7 +68,7 @@ function clampAgentPanelWidth(width: number) {
         window.innerWidth * 0.58,
         window.innerWidth
           - (window.innerWidth >= 1728 ? SIDEBAR_EXPANDED_W : SIDEBAR_COLLAPSED_W)
-          - 480,
+          - AGENT_MIN_CONTENT_W,
       ),
     );
   return Math.round(Math.min(Math.max(width, REAI_PANEL_MIN_W), Math.min(REAI_PANEL_MAX_W, viewportLimit)));
@@ -263,7 +297,7 @@ function AppShellFrame({
     // Width determines composition. Pointer media queries are unreliable on
     // touchscreen laptops, remote browsers, and desktop device emulation.
     const compactQuery = window.matchMedia("(max-width: 767px)");
-    const dockedQuery = window.matchMedia("(min-width: 1440px)");
+    const dockedQuery = window.matchMedia(`(min-width: ${AGENT_DOCK_MIN_W}px)`);
     const syncAgentViewport = () => {
       setCompactAgentViewport(compactQuery.matches);
       setDockedAgentViewport(dockedQuery.matches);
@@ -904,7 +938,7 @@ function AppShellFrame({
 
       {/* CSS variables keep the ReaUI rail and X-style wide navigation aligned. */}
       <style>{`
-        :root { --reai-panel-width: clamp(480px, 33vw, 720px); }
+        :root { --reai-panel-width: clamp(${AGENT_PANEL_BASE_W}px, 33vw, 720px); }
         @media (min-width: 768px) {
           :root { --sidebar-offset: ${SIDEBAR_COLLAPSED_W}px; }
         }
