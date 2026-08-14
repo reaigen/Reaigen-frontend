@@ -1451,63 +1451,93 @@ export function DraftMediaManager({
         </motion.div>
       ) : null}
 
-      {filter === "hidden" || reorderMode ? (
+      {filter === "hidden" ? (
         <div className="floating-panel-shape mb-4 flex items-center gap-3 border border-border/65 bg-card px-3 py-2.5 shadow-control">
           <span className="floating-capsule floating-icon-button-sm text-foreground/60">
-            {filter === "hidden" ? <EyeClosedIcon size={15} /> : <DragHandleIcon size={15} />}
+            <EyeClosedIcon size={15} />
           </span>
           <div className="min-w-0 flex-1">
-            <p className="text-[11px] font-semibold text-foreground/80">
-              {t(filter === "hidden" ? "draft.media.hidden" : "draft.media.galleryOrder", lang)}
-            </p>
+            <p className="text-[11px] font-semibold text-foreground/80">{t("draft.media.hidden", lang)}</p>
             <p className="mt-0.5 max-w-xl text-[10px] leading-relaxed text-muted-foreground">
-              {t(filter === "hidden" ? "draft.media.hiddenHint" : "draft.media.reorderHint", lang)}
+              {t("draft.media.hiddenHint", lang)}
             </p>
           </div>
-          <span
-            role="status"
-            className={cn("shrink-0 text-[10px] font-medium text-muted-foreground", !busy && "invisible")}
-            aria-hidden={!busy}
-          >
-            {t("draft.media.saving", lang)}
-          </span>
         </div>
       ) : null}
 
-      {reorderMode && selected && reorderSelectedIndex >= 0 ? (
-        <div className="floating-panel mb-4 flex flex-col gap-3 p-3 min-[520px]:flex-row min-[520px]:items-center min-[520px]:justify-between">
-          <div className="min-w-0">
-            <p className="truncate text-[11px] font-semibold text-foreground/80" title={selectedLabel}>{selectedLabel}</p>
-            <p className="mt-0.5 text-[10px] text-muted-foreground">
-              {t("draft.media.position", lang)
-                .replace("{current}", String(reorderSelectedIndex + 1))
-                .replace("{total}", String(activeReorderIds.length))}
-            </p>
-          </div>
-          <div className="grid shrink-0 grid-cols-2 gap-2">
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              onClick={() => moveReorderItem(selected.id, -1)}
-              disabled={busy || reorderSelectedIndex === 0}
-              className="pen-touch-target min-h-11 min-w-0 px-3"
+      {/*
+        Reordering is one card, not two. The guidance and the move controls were
+        separate panels stacked above the list, so on a phone entering reorder
+        mode pushed every photo — the thing being reordered — off the screen
+        behind two blocks of chrome. They describe one mode, so they read as one
+        card with the selected item on its own row.
+
+        The move buttons are icons alone until there is room for words. "O
+        miesto skôr" and "O miesto neskôr" are wide enough that two of them
+        filled a phone row on their own, and their arrows already say which way
+        each goes; the label is a nicety once the width is free.
+      */}
+      {reorderMode ? (
+        <div className="floating-panel-shape mb-4 border border-border/65 bg-card shadow-control">
+          <div className="flex items-center gap-3 px-3 py-2.5">
+            <span className="floating-capsule floating-icon-button-sm shrink-0 text-foreground/60">
+              <DragHandleIcon size={15} />
+            </span>
+            <div className="min-w-0 flex-1">
+              <p className="text-[11px] font-semibold text-foreground/80">{t("draft.media.galleryOrder", lang)}</p>
+              <p className="mt-0.5 max-w-xl text-[10px] leading-relaxed text-muted-foreground">
+                {t("draft.media.reorderHint", lang)}
+              </p>
+            </div>
+            <span
+              role="status"
+              className={cn("shrink-0 text-[10px] font-medium text-muted-foreground", !busy && "invisible")}
+              aria-hidden={!busy}
             >
-              <ArrowLeftIcon size={14} />
-              <span>{t("draft.media.moveEarlier", lang)}</span>
-            </Button>
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              onClick={() => moveReorderItem(selected.id, 1)}
-              disabled={busy || reorderSelectedIndex === activeReorderIds.length - 1}
-              className="pen-touch-target min-h-11 min-w-0 px-3"
-            >
-              <span>{t("draft.media.moveLater", lang)}</span>
-              <ArrowRightIcon size={14} />
-            </Button>
+              {t("draft.media.saving", lang)}
+            </span>
           </div>
+
+          {selected && reorderSelectedIndex >= 0 ? (
+            <div className="flex items-center gap-3 border-t border-border/55 px-3 py-2.5">
+              <div className="min-w-0 flex-1">
+                <p className="truncate text-[11px] font-semibold text-foreground/80" title={selectedLabel}>{selectedLabel}</p>
+                <p className="mt-0.5 text-[10px] text-muted-foreground">
+                  {t("draft.media.position", lang)
+                    .replace("{current}", String(reorderSelectedIndex + 1))
+                    .replace("{total}", String(activeReorderIds.length))}
+                </p>
+              </div>
+              <div className="flex shrink-0 items-center gap-2">
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={() => moveReorderItem(selected.id, -1)}
+                  disabled={busy || reorderSelectedIndex === 0}
+                  aria-label={t("draft.media.moveEarlier", lang)}
+                  title={t("draft.media.moveEarlier", lang)}
+                  className="pen-touch-target min-h-11 min-w-0 px-3"
+                >
+                  <ArrowLeftIcon size={14} />
+                  <span className="hidden min-[520px]:inline">{t("draft.media.moveEarlier", lang)}</span>
+                </Button>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={() => moveReorderItem(selected.id, 1)}
+                  disabled={busy || reorderSelectedIndex === activeReorderIds.length - 1}
+                  aria-label={t("draft.media.moveLater", lang)}
+                  title={t("draft.media.moveLater", lang)}
+                  className="pen-touch-target min-h-11 min-w-0 px-3"
+                >
+                  <span className="hidden min-[520px]:inline">{t("draft.media.moveLater", lang)}</span>
+                  <ArrowRightIcon size={14} />
+                </Button>
+              </div>
+            </div>
+          ) : null}
         </div>
       ) : null}
 
