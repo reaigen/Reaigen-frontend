@@ -785,7 +785,15 @@ function AppShellFrame({
                     : "text-foreground/55 hover:text-foreground"
                 )}
               >
-                <Icon size={23} filled={active} strokeWidth={1.9} />
+                {/*
+                  27px, not 23. This is the app's primary navigation on a phone
+                  and the only always-visible way between sections, but the
+                  glyphs were drawn smaller than the iOS tab bar they mirror —
+                  small enough that the tour glyph's play triangle inside its
+                  frame turned to mush. The row's height is set by the 44px
+                  touch target, so this costs no space.
+                */}
+                <Icon size={27} filled={active} strokeWidth={1.9} />
                 <span className="max-w-full truncate px-1">{item.label}</span>
               </Link>
             );

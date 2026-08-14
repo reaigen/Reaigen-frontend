@@ -283,26 +283,21 @@ export default function DashboardPage() {
   return (
     <AppShell user={user} onLogout={logout}>
       <div className="mx-auto w-full max-w-[1180px]">
+        {/*
+          The count goes to `meta`, not `actions`. In the action row it was not
+          just competing with the create button for weight, it was holding that
+          row full-width on phones; under the title it reads as what it is and
+          costs no band of its own.
+        */}
         <PageHeader
           title={t("dashboard.creationsTitle", lang)}
           description={t("dashboard.creationsSubtitle", lang)}
-          actions={
-            <>
-              {/*
-                The count is metadata about the list, not an action. As a
-                bordered pill it read as a sibling of the create button and the
-                two competed; plain text lets the action carry the weight.
-              */}
-              <span className="min-w-0 truncate text-[13px] font-medium text-muted-foreground tabular-nums">
-                {totalCount} {t("dashboard.items", lang)}
-              </span>
-              <WebCreateAction lang={lang} />
-            </>
-          }
-          className="mb-5 sm:mb-8"
+          meta={`${totalCount} ${t("dashboard.items", lang)}`}
+          actions={<WebCreateAction lang={lang} />}
+          className="mb-4 sm:mb-8"
         />
         {/* Search bar */}
-        <div className="mb-5 flex items-center gap-3 rounded-full border border-border/80 bg-card px-4 py-0.5 shadow-control sm:mb-7 md:rounded-none md:border-x-0 md:border-t-0 md:bg-transparent md:px-0 md:pb-2 md:pt-0 md:shadow-none">
+        <div className="mb-4 flex items-center gap-3 rounded-full border border-border/80 bg-card px-4 py-0.5 shadow-control sm:mb-7 md:rounded-none md:border-x-0 md:border-t-0 md:bg-transparent md:px-0 md:pb-2 md:pt-0 md:shadow-none">
           <SearchField
             value={searchInput}
             onChange={setSearchInput}
@@ -392,7 +387,11 @@ export default function DashboardPage() {
                           path. Over a photo at 55% black the blur was not
                           legible anyway — the fill alone carries the contrast.
                         */
-                        className="absolute left-3 top-3 border-white/15 bg-black/60 text-white/90 shadow-sm"
+                        // Same inset as the title block at the foot of the card
+                        // (p-4 sm:p-5). Anything laid over the photo shares one
+                        // margin on all four sides, or the pill starts left of
+                        // the title it sits above and the card reads crooked.
+                        className="absolute left-4 top-4 border-white/15 bg-black/60 text-white/90 shadow-sm sm:left-5 sm:top-5"
                       >
                         {tourStatusLabel
                           ?? (draft.is_complete
@@ -434,7 +433,7 @@ export default function DashboardPage() {
                     href={`/draft/${draft.id}?sharing=1`}
                     prefetch
                     // No backdrop blur: one per card puts a blurred region per row on the scroll path.
-                    className="floating-icon-button-sm absolute right-3 top-3 z-10 flex items-center justify-center border border-white/15 bg-black/55 text-white/85 shadow-sm transition-[background-color,color,opacity] hover:bg-black/75 hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white focus-visible:ring-offset-2 focus-visible:ring-offset-black md:opacity-0 md:group-hover:opacity-100 md:group-focus-within:opacity-100"
+                    className="floating-icon-button-sm absolute right-4 top-4 z-10 flex items-center justify-center border border-white/15 bg-black/55 text-white/85 shadow-sm sm:right-5 sm:top-5 transition-[background-color,color,opacity] hover:bg-black/75 hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white focus-visible:ring-offset-2 focus-visible:ring-offset-black md:opacity-0 md:group-hover:opacity-100 md:group-focus-within:opacity-100"
                     aria-label={t("draft.share", lang)}
                   >
                     <ShareIcon size={14} />

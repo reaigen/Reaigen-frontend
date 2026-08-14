@@ -116,7 +116,9 @@ export function SharePreview({ draft, scope, hasTour, hasFloorplan, thumbUrl, un
               </div>
             )}
             {tourIncluded && (
-              <div className="glass-chip floating-status absolute left-2.5 top-2.5 flex items-center gap-1 text-[10px]">
+              // Matches the p-4 title block below it; this sat at 10px against
+              // that 16px and read as leaning out of the frame.
+              <div className="glass-chip floating-status absolute left-4 top-4 flex items-center gap-1 text-[10px]">
                 <MainTourIcon size={11} />
                 {t("sharing.scopeTour", lang)}
               </div>

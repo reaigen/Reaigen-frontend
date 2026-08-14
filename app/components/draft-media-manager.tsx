@@ -1861,7 +1861,11 @@ export function DraftMediaManager({
                   </motion.div>
                   {replacingId === selected.id ? <LoadingMark label={t("draft.media.uploadingVersion", lang)} /> : null}
                   {selected.id === coverId ? (
-                    <StatusPill tone="strong" className="absolute left-3 top-3 border-white/15 bg-black/55 text-[9px] text-white backdrop-blur-xl">
+                    // 16px, matching the p-4 caption block below the image. The
+                    // photo runs edge to edge, so both are measured from the
+                    // same card edge and a 12px badge sat visibly left of the
+                    // text under it.
+                    <StatusPill tone="strong" className="absolute left-4 top-4 border-white/15 bg-black/55 text-[9px] text-white backdrop-blur-xl">
                       <StarIcon size={11} /> {t("draft.media.cover", lang)}
                     </StatusPill>
                   ) : null}

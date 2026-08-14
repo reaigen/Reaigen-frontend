@@ -192,11 +192,13 @@ export default function ToursPage() {
                       <div className="absolute inset-0 flex items-center justify-center bg-gradient-to-br from-muted/60 via-muted to-foreground/10 text-foreground/20"><MainTourIcon size={42} strokeWidth={1.35} /></div>
                     )}
                     <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/5 to-black/15" aria-hidden="true" />
-                    <StatusPill tone={statusTone(item)} dot className="absolute left-3 top-3 border-white/15 bg-black/55 text-white/90 shadow-sm backdrop-blur-md">
+                    {/* Matches the p-4 sm:p-5 block at the foot of the card, so
+                        everything over the photo shares one margin. */}
+                    <StatusPill tone={statusTone(item)} dot className="absolute left-4 top-4 border-white/15 bg-black/55 text-white/90 shadow-sm backdrop-blur-md sm:left-5 sm:top-5">
                       {statusLabel(item, lang)}
                     </StatusPill>
                     {ready ? (
-                      <span className="absolute right-3 top-3 inline-flex h-8 w-8 items-center justify-center rounded-full border border-white/15 bg-black/65 px-0 text-[11px] font-semibold text-white shadow-sm backdrop-blur-md transition-colors group-hover:bg-black/80 sm:w-auto sm:gap-1.5 sm:px-3">
+                      <span className="absolute right-4 top-4 inline-flex h-8 w-8 items-center justify-center rounded-full border border-white/15 bg-black/65 px-0 text-[11px] font-semibold text-white shadow-sm backdrop-blur-md transition-colors group-hover:bg-black/80 sm:right-5 sm:top-5 sm:w-auto sm:gap-1.5 sm:px-3">
                         <PlayIcon size={14} /> <span className="hidden sm:inline">{t("tours.open", lang)}</span>
                       </span>
                     ) : null}
