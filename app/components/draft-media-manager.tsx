@@ -1818,6 +1818,35 @@ export function DraftMediaManager({
                           >
                             <UploadIcon size={13} /> {t("draft.media.uploadVersion", lang)}
                           </Button>
+                          {/*
+                            The way into the version list from the photo itself.
+                            The desktop inspector has had this; these card
+                            actions never did, so on a phone the only entry was
+                            the toolbar icon covering every photo at once — and
+                            from here the photo offered "edit" and "upload a new
+                            version" while giving no way to go back to a version
+                            that already exists. Only shown when there is more
+                            than one: with a single version there is nothing to
+                            switch to, and the count is the useful part.
+                          */}
+                          {group.versions.length > 1 ? (
+                            <Button
+                              type="button"
+                              size="sm"
+                              variant="secondary"
+                              onClick={() => {
+                                setSelectedId(group.id);
+                                switchView("versions");
+                              }}
+                              disabled={busy}
+                              className="min-h-10 w-full justify-between px-3 text-[11px]"
+                            >
+                              <span className="inline-flex items-center gap-2">
+                                <VersionsIcon size={13} /> {t("draft.media.versions", lang)}
+                              </span>
+                              <span className="text-[11px] font-semibold tabular-nums">{group.versions.length}</span>
+                            </Button>
+                          ) : null}
                           <Button
                             type="button"
                             size="sm"
