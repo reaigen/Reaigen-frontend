@@ -311,9 +311,16 @@ export default function DashboardPage() {
         </div>
 
         {usingCachedDrafts && (
+          /*
+            In flow above the list it describes, not floating over it. Fixed at
+            top-20 it sat on the header on a phone — a notice about stale
+            results covering the page's own title and search — and it has no
+            dismiss, so it stayed there. Nothing about it is urgent enough to
+            take a layer above the content.
+          */
           <div
             role="status"
-            className="floating-panel fixed right-4 top-20 z-50 flex w-[min(28rem,calc(100vw-2rem))] items-start gap-3 border-border/70 bg-card/95 px-3.5 py-3 text-[12px] text-foreground/65 backdrop-blur-xl sm:items-center md:right-6 md:top-6"
+            className="floating-panel mb-4 flex items-start gap-3 border-border/70 bg-card/95 px-3.5 py-3 text-[12px] text-foreground/65 sm:items-center"
           >
             <InfoIcon size={16} className="mt-0.5 shrink-0 text-foreground/45 sm:mt-0" />
             <p className="min-w-0 flex-1 leading-relaxed">{t("dashboard.cachedNotice", lang)}</p>

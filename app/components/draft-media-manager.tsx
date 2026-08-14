@@ -1197,8 +1197,14 @@ export function DraftMediaManager({
           ) : null}
 
           {versionNotice ? (
+            /*
+              In flow, for the same reason as the reorder bar above: pinned to
+              the top-right of the versions view it landed on the first version
+              card, so the status about a photo covered the photo. It reads as a
+              header for the list it precedes instead.
+            */
             <div
-              className="floating-capsule absolute right-0 top-0 z-20 flex max-w-[min(24rem,100%)] items-center gap-3 !bg-card/90 px-3.5 text-[11px] text-foreground/70"
+              className="floating-capsule mb-3 flex max-w-[min(24rem,100%)] items-center gap-3 !bg-card/90 px-3.5 text-[11px] text-foreground/70"
               role="status"
               aria-live="polite"
             >
@@ -1414,13 +1420,22 @@ export function DraftMediaManager({
       </div>
 
       {undoOrderIds ? (
+        /*
+          In flow, not pinned. This was `absolute top-14`, which put it over
+          whatever happened to sit 56px down — on a phone the instructions card
+          directly below, so the undo bar covered the sentence explaining what
+          reordering does. Being absolute bought a layout that does not shift
+          when the bar appears; covering the text it appears next to is the
+          worse half of that trade, and the bar belongs with the list it is
+          reporting on anyway.
+        */
         <motion.div
           initial={{ opacity: 0, y: -4 }}
           animate={{ opacity: 1, y: 0 }}
-          className="pointer-events-none absolute inset-x-0 top-14 z-20 flex justify-end"
+          className="mb-3 flex justify-end"
           role="status"
         >
-          <div className="floating-capsule pointer-events-auto flex w-full max-w-sm items-center justify-between gap-3 border !bg-card/90 pl-3 pr-1 text-foreground shadow-control">
+          <div className="floating-capsule flex w-full max-w-sm items-center justify-between gap-3 border !bg-card/90 pl-3 pr-1 text-foreground shadow-control">
             <span className="text-[10px] font-medium">{t("draft.media.orderSaved", lang)}</span>
             <Button
               type="button"
