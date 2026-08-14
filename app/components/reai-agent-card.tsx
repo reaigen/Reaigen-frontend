@@ -85,6 +85,51 @@ function Working({ lang, className }: { lang: string; className?: string }) {
   );
 }
 
+/**
+ * The pending assistant turn.
+ *
+ * A turn is one JSON request — there is no token stream to render, so this
+ * cannot show the answer arriving. What it can do is stop the panel looking
+ * stopped: the previous version was a single line of static grey text above an
+ * otherwise empty screen, so a reply that takes several seconds was
+ * indistinguishable from a request that had failed silently.
+ *
+ * It occupies the shape the answer will take — same left rule, same rhythm of
+ * lines — so the reply lands in place rather than appearing somewhere new, and
+ * the widths taper the way a paragraph does. Deliberately three lines: enough
+ * to read as prose, few enough not to promise a longer answer than usually
+ * arrives.
+ *
+ * No invented progress steps. Naming stages the client cannot observe
+ * ("reading images…", "checking the listing…") would be telling the user
+ * something we do not know.
+ */
+function PendingAnswer({ lang }: { lang: string }) {
+  return (
+    <div className="border-l border-foreground/15 pl-3" role="status" aria-live="polite">
+      <p className="flex items-center gap-2 py-1 text-[12px] text-muted-foreground">
+        <svg className="h-3 w-3 shrink-0 animate-spin motion-reduce:animate-none" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+          <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+          <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+        </svg>
+        {t("reai.working", lang)}
+      </p>
+      <div aria-hidden="true" className="mt-2 space-y-2 pb-1">
+        {["w-[92%]", "w-[78%]", "w-[54%]"].map((width) => (
+          <div
+            key={width}
+            className={cn(
+              "h-2.5 rounded-full bg-gradient-to-r from-foreground/[0.06] via-foreground/[0.13] to-foreground/[0.06]",
+              "bg-[length:200%_100%] animate-shimmer motion-reduce:animate-none",
+              width,
+            )}
+          />
+        ))}
+      </div>
+    </div>
+  );
+}
+
 function AgentStatusBadge({
   tone,
   children,
@@ -1582,7 +1627,7 @@ export function ReaiAgentCard({
                   </div>
                 );
               })}
-              {busy && <div className="border-l border-foreground/15 py-1 pl-3 text-[12px] text-muted-foreground">{t("reai.working", lang)}</div>}
+              {busy && <PendingAnswer lang={lang} />}
             </div>
           )}
           {!showHistory && !showMediaHistory && turns.length === 0 && (
