@@ -46,7 +46,16 @@ export function ReaigenLoadingMark({
           remount replaying the entrance — reads as movement rather than as a
           logo sitting still.
         */}
-        <ReaigenWordmark className="animate-startup-mark text-[clamp(32px,9vw,40px)] leading-none tracking-[-0.02em] text-foreground" />
+        {/*
+          No entrance animation. The mark had faded in — originally with a
+          scale, then opacity alone — but this loader mounts on route changes
+          and again behind the viewport and the editor, several times in a
+          session, and every mount replays it. Repeated often enough, a logo
+          that keeps fading up does not read as an entrance; it reads as
+          flickering. The rail underneath already carries the "working" signal,
+          so the mark can simply be present and hold still.
+        */}
+        <ReaigenWordmark className="text-[clamp(32px,9vw,40px)] leading-none tracking-[-0.02em] text-foreground" />
 
         {/* iOS drives this determinately from AppStartupManager.progress; the
             web has no equivalent signal, so it runs indeterminate. */}

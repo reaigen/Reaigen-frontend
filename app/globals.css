@@ -533,21 +533,6 @@
   .animate-shimmer {
     animation: shimmer 1.5s ease-in-out infinite;
   }
-  /*
-   * A plain fade, deliberately.
-   *
-   * This began as a stand-in for the iOS launch spring — scale 0.96 to 1 on a
-   * lightly overshooting cubic — which is right for an app launching once. The
-   * web loader is not that: it mounts on route changes and again behind the
-   * viewport and the editor, several times in a session, and every mount
-   * replays the entrance. A scaling, overshooting mark replayed that often does
-   * not read as a considered entrance, it reads as the logo pulsing and
-   * twitching. Opacity alone survives repetition, because nothing about the
-   * mark's size or position changes while it is on screen.
-   */
-  .animate-startup-mark {
-    animation: startupMark 0.4s var(--motion-ease-smooth, ease-out) both;
-  }
 }
 
 @keyframes fadeIn {
@@ -557,10 +542,6 @@
 @keyframes fadeInUp {
   from { opacity: 0; transform: translateY(8px); }
   to { opacity: 1; transform: translateY(0); }
-}
-@keyframes startupMark {
-  from { opacity: 0; }
-  to { opacity: 1; }
 }
 @keyframes fadeOut {
   from { opacity: 1; }
