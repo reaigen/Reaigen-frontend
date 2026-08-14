@@ -1002,13 +1002,18 @@ export function DraftMediaManager({
     }
   };
 
-  const applyVersionAction = async () => {
-    if (!versionCandidate) return;
+  const applyVersionAction = async (override?: MediaAction) => {
+    const versionCandidateToApply = override ?? versionCandidate;
+    if (!versionCandidateToApply) return;
     setVersionBusy(true);
     setError(null);
     setErrorCanRetryLoad(false);
     try {
-      await manageMediaVersion(draft.id, versionCandidate.uploadId, versionCandidate.action);
+      await manageMediaVersion(
+        draft.id,
+        versionCandidateToApply.uploadId,
+        versionCandidateToApply.action,
+      );
       setVersionCandidate(null);
       await loadMedia(false);
       await notifyChanged();
@@ -1256,8 +1261,22 @@ export function DraftMediaManager({
                       setVersionCreateRequest(null);
                     }}
                     onCandidate={(nextCandidate) => {
-                      setVersionCandidate(nextCandidate);
                       setVersionCreateRequest(null);
+                      /*
+                        Switching which version is live needs no confirmation
+                        step. It is reversible in one tap — the version it
+                        replaces stays in this same list, which is what the
+                        confirmation's own wording promised — so the prompt
+                        asked the user to read two sentences to authorise
+                        something they could simply undo. Hiding still asks,
+                        because that one removes a version from the gallery.
+                      */
+                      if (nextCandidate?.action === "promote") {
+                        setVersionCandidate(null);
+                        void applyVersionAction(nextCandidate);
+                        return;
+                      }
+                      setVersionCandidate(nextCandidate);
                     }}
                     onCancel={() => setVersionCandidate(null)}
                     onConfirm={() => void applyVersionAction()}

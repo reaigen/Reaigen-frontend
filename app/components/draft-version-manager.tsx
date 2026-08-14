@@ -26,7 +26,6 @@ import { baseUnitForCategory, resolveUnit, unitLabel, type UnitLookup } from "..
 import { cn } from "../lib/utils";
 import { useAuth } from "./hooks/use-auth";
 import {
-  ArrowLeftIcon,
   ArrowRightIcon,
   CheckIcon,
   ChevronDownIcon,
@@ -917,9 +916,6 @@ export function MediaVersionCard({
     ?? versions.find((version) => !version.is_deleted)
     ?? versions[0];
   if (!selected) return null;
-  const selectedIndex = versions.findIndex((version) => version.id === selected.id);
-  const older = selectedIndex > 0 ? versions[selectedIndex - 1] : null;
-  const newer = selectedIndex < versions.length - 1 ? versions[selectedIndex + 1] : null;
   const operations = mediaOperationLabels(selected, lang);
   const selectedCandidate = candidate?.uploadId === selected.id ? candidate : null;
   const assetLabel = t("reai.mediaAsset", lang).replace("{number}", String(groupIndex + 1));
@@ -933,11 +929,12 @@ export function MediaVersionCard({
           <ImageIcon size={25} className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 text-foreground/20" />
         )}
         <div className="pointer-events-none absolute inset-0 bg-gradient-to-t from-black/65 via-black/0 to-black/25" />
-        <StatusPill className="absolute left-3 top-3 border-white/20 bg-black/45 text-[9px] text-white backdrop-blur-md">
-          {t("reai.mediaVersionPosition", lang)
-            .replace("{current}", String(selectedIndex + 1))
-            .replace("{total}", String(versions.length))}
-        </StatusPill>
+        {/*
+          No "1 of 2" pill. The strip below shows which version is selected and
+          how many there are, and each thumbnail carries its own v-number, so
+          the pill was a third statement of one fact — and at a single version
+          it said "1 of 1", which is nothing at all.
+        */}
         <div className="absolute right-3 top-3 flex flex-wrap justify-end gap-1.5">
           {selected.is_master ? <StatusPill className="glass-chip text-[9px]">{t("reai.mediaCurrent", lang)}</StatusPill> : null}
           {selected.is_deleted ? <StatusPill tone="strong" className="border-white/15 bg-black/60 text-[9px] text-white">{t("reai.mediaHidden", lang)}</StatusPill> : null}
@@ -948,29 +945,12 @@ export function MediaVersionCard({
             <p className="mt-0.5 truncate text-[10px] text-white/75">{assetLabel}</p>
             <p className="mt-0.5 text-[9px] text-white/55">{formatDate(selected.uploaded_at, dateFormat, lang)}</p>
           </div>
-          {versions.length > 1 ? (
-            <div className="floating-capsule pointer-events-auto flex shrink-0 overflow-hidden">
-              <button
-                type="button"
-                className="floating-icon-button pen-touch-target text-muted-foreground hover:bg-accent hover:text-accent-foreground disabled:opacity-30"
-                disabled={busy || !older}
-                onClick={() => older && onSelect(older.id)}
-                aria-label={t("reai.mediaPreviousVersion", lang)}
-              >
-                <ArrowLeftIcon size={14} />
-              </button>
-              <span className="h-5 w-px self-center bg-border/70" aria-hidden="true" />
-              <button
-                type="button"
-                className="floating-icon-button pen-touch-target text-muted-foreground hover:bg-accent hover:text-accent-foreground disabled:opacity-30"
-                disabled={busy || !newer}
-                onClick={() => newer && onSelect(newer.id)}
-                aria-label={t("reai.mediaNextVersion", lang)}
-              >
-                <ArrowRightIcon size={14} />
-              </button>
-            </div>
-          ) : null}
+          {/*
+            The previous/next capsule is gone. It stepped through the same list
+            the thumbnail strip shows directly below, so there were two controls
+            for one job — and this one floated over the photograph, which is the
+            thing being compared between versions.
+          */}
         </div>
       </div>
 
