@@ -1679,6 +1679,10 @@ const SplatViewer = forwardRef<SplatViewerHandle, Props>(function SplatViewer(
   const spinoffCanvasRef = useRef<HTMLCanvasElement>(null);
   const sparkCanvasRef = useRef<HTMLCanvasElement>(null);
   const sparkModelTransformRef = useRef<(() => void) | null>(null);
+  // Set from the callback below. Held separately so the gizmo's drag observer,
+  // which is registered once per gizmo, can reach the current applier without
+  // depending on it.
+  const applyEngineModelTransformRef = useRef<(() => void) | null>(null);
   const spinoffRendererRef = useRef<SpinoffRenderer | null>(null);
   const spinoffSourceRef = useRef<SpinoffSogSource | null>(null);
   const engineRef = useRef<any>(null);
@@ -3298,6 +3302,12 @@ const SplatViewer = forwardRef<SplatViewerHandle, Props>(function SplatViewer(
       globalSceneTransformRef.current = nextTransform;
       onSpatialTransformChangeRef.current?.(nextTransform);
       root.computeWorldMatrix(true);
+      // Move the Gaussians now, on this drag frame, rather than waiting for the
+      // transform to make a round trip through React state and come back as a
+      // prop. Called through a ref because this observer is registered once and
+      // must not be torn down and re-registered every time the applier's
+      // identity changes.
+      applyEngineModelTransformRef.current?.();
       immersiveRenderBurstUntilRef.current = performance.now() + 300;
     };
 
@@ -5976,6 +5986,24 @@ const SplatViewer = forwardRef<SplatViewerHandle, Props>(function SplatViewer(
         const isSogUrl = splatUrl.split("?")[0].toLowerCase().endsWith(".sog");
         const isSpzUrl = splatUrl.split("?")[0].toLowerCase().endsWith(".spz");
 
+        // NOTE: the editor takes this path too, and that costs it the selection
+        // tools. Nothing here unzips the archive, so originalSplatDataRef and
+        // the masks beside it are never populated — and those are exactly what
+        // box, lasso and brush select against, what pruning marks, and what a
+        // save writes back. The selection effect requires that data and returns
+        // early without it, so on a stored SOG the tools install no pointer
+        // handlers and appear to do nothing.
+        //
+        // Forcing the editor down the download-and-decode path below does fix
+        // that, and must not be done: the whole archive then comes through
+        // /api/sog, which measured 82s for tour 47's asset against a few
+        // hundred milliseconds of range requests here. Trading a working editor
+        // for one that takes a minute and a half to open is not a trade.
+        //
+        // The editable data has to be produced without a second full download —
+        // either from the Gaussian mesh the renderer has already decoded, or by
+        // fetching it lazily when a selection tool is first used rather than on
+        // open.
         if (spinoffEligible && isSogUrl) {
           // A stored SOG can go to Spinoff by URL: it then fetches only the
           // public property planes it renders. Downloading the complete archive
@@ -6535,7 +6563,17 @@ const SplatViewer = forwardRef<SplatViewerHandle, Props>(function SplatViewer(
     };
   }, [compactTouch, lang, outputsVersion, performanceProfile, ready, spatialNavigation, spinoffEligible, splatUrl]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  useEffect(() => {
+  /**
+   * Push the current model transform into whichever engine draws the Gaussians.
+   *
+   * Reads `globalSceneTransformRef` rather than the prop so a gizmo drag can
+   * call this synchronously, in the same frame it moves the Babylon root,
+   * without waiting for the change to travel out to the page, come back as a
+   * new prop and arrive here through an effect. Babylon's gizmo and grid moved
+   * on the drag frame while the reconstruction itself only caught up a render
+   * later, so the splats visibly trailed the handle being dragged.
+   */
+  const applyEngineModelTransform = useCallback(() => {
     if (useSparkEngine) {
       sparkModelTransformRef.current?.();
       return;
@@ -6543,13 +6581,24 @@ const SplatViewer = forwardRef<SplatViewerHandle, Props>(function SplatViewer(
     if (!spinoffEligible) return;
     const renderer = spinoffRendererRef.current;
     if (!renderer) return;
-    const transform = spinoffModelTransform(globalSceneTransform);
+    const transform = spinoffModelTransform(globalSceneTransformRef.current);
     renderer.setModelTransform({
       scale: transform.scale,
       rotationRadians: transform.rotationRadians,
       translation: transform.translation,
     });
-  }, [globalSceneTransform, spinoffEligible, useSparkEngine]);
+  }, [spinoffEligible, useSparkEngine]);
+
+  useEffect(() => {
+    applyEngineModelTransformRef.current = applyEngineModelTransform;
+  }, [applyEngineModelTransform]);
+
+  // Still driven by the prop as well, for every transform change that does not
+  // come from a drag: the inspector's numeric fields, undo, and the workspace
+  // reloading after a save.
+  useEffect(() => {
+    applyEngineModelTransform();
+  }, [applyEngineModelTransform, globalSceneTransform]);
 
   // SparkJS engine. Same contract as the Spinoff effect above: Babylon owns the
   // camera and all chrome, this only draws the Gaussians underneath and follows
