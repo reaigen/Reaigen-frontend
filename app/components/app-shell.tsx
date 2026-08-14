@@ -581,7 +581,14 @@ function AppShellFrame({
                     : "font-medium text-muted-foreground hover:bg-foreground/[0.04] hover:text-foreground"
                 )}
               >
-                <Icon size={22} filled={active} strokeWidth={1.9} className={cn("shrink-0", active ? "text-foreground" : "text-foreground/55")} />
+                {/*
+                  25px. The rail's rows are tall and its labels are 14px on the
+                  wide layout, against which 22px glyphs read as undersized —
+                  and in the collapsed rail the icon *is* the control, with the
+                  label only a caption under it. Matches the weight the mobile
+                  tab bar now carries.
+                */}
+                <Icon size={25} filled={active} strokeWidth={1.9} className={cn("shrink-0", active ? "text-foreground" : "text-foreground/55")} />
                 <span className="max-w-full truncate min-[1728px]:block">{item.label}</span>
               </Link>
             );
@@ -602,7 +609,7 @@ function AppShellFrame({
                 : "font-medium text-muted-foreground hover:bg-foreground/[0.04] hover:text-foreground"
             )}
           >
-            <MainSettingsIcon size={22} filled={settingsActive} strokeWidth={1.9} className={cn("shrink-0", settingsActive ? "text-foreground" : "text-foreground/55")} />
+            <MainSettingsIcon size={25} filled={settingsActive} strokeWidth={1.9} className={cn("shrink-0", settingsActive ? "text-foreground" : "text-foreground/55")} />
             <span className="max-w-full truncate min-[1728px]:block">{t("nav.settings", lang)}</span>
           </Link>
 
@@ -629,7 +636,7 @@ function AppShellFrame({
             aria-label={t("nav.signout", lang)}
             className="mx-auto flex h-12 w-12 items-center justify-center rounded-full text-foreground/55 transition-colors hover:bg-accent/80 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 min-[1728px]:w-full min-[1728px]:justify-start min-[1728px]:gap-3.5 min-[1728px]:px-3 min-[1728px]:text-[13px] min-[1728px]:font-medium"
           >
-            <MainSignOutIcon size={22} strokeWidth={1.9} className="shrink-0" />
+            <MainSignOutIcon size={25} strokeWidth={1.9} className="shrink-0" />
             <span className="hidden min-[1728px]:block">{t("nav.signout", lang)}</span>
           </button>
         </div>

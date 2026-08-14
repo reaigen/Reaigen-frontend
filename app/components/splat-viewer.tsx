@@ -5469,6 +5469,21 @@ const SplatViewer = forwardRef<SplatViewerHandle, Props>(function SplatViewer(
         // render is high-contrast with deep blacks, not highlight-safe.
 
         if (!immersiveControls) camera.attachControl(canvas, true);
+        /*
+          Undo Babylon's handedness flip on mouse look.
+          FreeCameraMouseInput multiplies the drag delta by
+          `useRightHandedSystem ? -1 : 1`, and this scene is right-handed on
+          purpose — the reconstruction, the saved cameras and the USD workspace
+          all are. The result was a tour that dragged backwards: pull left and
+          the room went right. The editor never showed it because it detaches
+          Babylon's input and rotates from its own pointer handlers.
+
+          Negating the sensibility cancels that factor. It applies to both axes
+          because the input divides one value into each, which is also the
+          convention the reference viewers use: the drag carries the scene with
+          it rather than turning the head against it.
+        */
+        camera.angularSensibility = -Math.abs(camera.angularSensibility);
         // Restore the native FreeCamera bindings used by the known-good July
         // tour viewer. Spatial and immersive modes detach Babylon and keep
         // their dedicated transform-aware movement implementations.

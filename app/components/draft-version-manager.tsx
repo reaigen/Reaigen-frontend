@@ -252,7 +252,9 @@ export function DraftVersionManager({
 }) {
   const { user } = useAuth();
   const dateFormat = user?.localization?.date_format;
-  const [activeTab, setActiveTab] = React.useState<VersionTab>("tour");
+  // Opens on the listing, the first tab and the history that actually moves:
+  // every confirmed Agent edit lands there, while tour versions change rarely.
+  const [activeTab, setActiveTab] = React.useState<VersionTab>("listing");
   const [agentEnabled, setAgentEnabled] = React.useState<boolean | null>(null);
   const [history, setHistory] = React.useState<AgentCreationRevision[]>([]);
   const [media, setMedia] = React.useState<MediaVersionGroup[]>([]);
@@ -475,8 +477,15 @@ export function DraftVersionManager({
       <Tabs value={activeTab} onValueChange={(value) => setActiveTab(value as VersionTab)}>
         <div className="mb-1">
           <TabsList className="floating-toolbar grid h-auto w-full grid-cols-3">
-            <VersionTabTrigger value="tour" icon={TourIcon} label={t("draft.versions.tour", lang)} count={versions.length} />
+            {/*
+              Listing, then tour, then media — the order the work is done in.
+              The listing is the thing being published; the tour and the photos
+              are attached to it. Leading with the tour put the least-often
+              edited history first and buried the one that changes on every
+              Agent edit.
+            */}
             <VersionTabTrigger value="listing" icon={VersionsIcon} label={t("draft.versions.listing", lang)} count={history.length} />
+            <VersionTabTrigger value="tour" icon={TourIcon} label={t("draft.versions.tour", lang)} count={versions.length} />
             <VersionTabTrigger value="media" icon={ImageIcon} label={t("draft.versions.media", lang)} count={media.length} />
           </TabsList>
         </div>
