@@ -915,16 +915,22 @@ export function DraftTourAssetsPanel({
                       <EditIcon size={14} />
                     </button>
                   </div>
+                  {/*
+                    Status is a pill; when it was captured and where it is
+                    published are facts. Those two facts used to sit on separate
+                    lines with the pills wedged between them, so one asset spent
+                    four stacked rows saying very little. They are the same kind
+                    of thing in the same muted voice, so they share a line and
+                    the pills follow — name, facts, state.
+                  */}
                   <p className="truncate text-[10px] text-muted-foreground sm:text-[11px]">
-                    {assetSubtitle(asset, lang)}
+                    {[
+                      assetSubtitle(asset, lang),
+                      selection?.web ? text.web : null,
+                      selection?.ios ? text.ios : null,
+                    ].filter(Boolean).join(" · ")}
                   </p>
 
-                  {/*
-                    Status is a pill; where the tour is published is a fact.
-                    Rendering all four as pills wrapped them onto two rows next
-                    to the thumbnail and gave the platforms the same weight as
-                    the publish state, so nothing led.
-                  */}
                   <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
                     <StatusPill tone={state.tone} dot className="shrink-0">
                       {state.label}
@@ -933,14 +939,6 @@ export function DraftTourAssetsPanel({
                       <StatusPill tone="strong">{text.primaryBadge}</StatusPill>
                     ) : null}
                   </div>
-
-                  {(selection?.web || selection?.ios) ? (
-                    <p className="mt-1.5 truncate text-[11px] text-muted-foreground">
-                      {[selection?.web ? text.web : null, selection?.ios ? text.ios : null]
-                        .filter(Boolean)
-                        .join(" · ")}
-                    </p>
-                  ) : null}
 
                   {state.hint ? (
                     <p className="mt-2 line-clamp-1 text-[10px] leading-relaxed text-muted-foreground sm:text-[11px]">
