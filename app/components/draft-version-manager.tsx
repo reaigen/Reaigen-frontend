@@ -937,7 +937,14 @@ export function MediaVersionCard({
         ) : (
           <ImageIcon size={25} className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 text-foreground/20" />
         )}
-        <div className="pointer-events-none absolute inset-0 bg-gradient-to-t from-black/65 via-black/0 to-black/25" />
+        {/*
+          A light scrim, only at the top, only for the status pill. The version
+          text used to be burned into the bottom of the picture over a heavy
+          black gradient — unreadable on a bright photo, and it darkened the one
+          thing the card exists to show. It lives in the card body now, so the
+          photograph is just the photograph.
+        */}
+        <div className="pointer-events-none absolute inset-x-0 top-0 h-16 bg-gradient-to-b from-black/25 to-transparent" />
         {/*
           No "1 of 2" pill. The strip below shows which version is selected and
           how many there are, and each thumbnail carries its own v-number, so
@@ -947,19 +954,6 @@ export function MediaVersionCard({
         <div className="absolute right-3 top-3 flex flex-wrap justify-end gap-1.5">
           {selected.is_master ? <StatusPill className="glass-chip text-[9px]">{t("reai.mediaCurrent", lang)}</StatusPill> : null}
           {selected.is_deleted ? <StatusPill tone="strong" className="border-white/15 bg-black/60 text-[9px] text-white">{t("reai.mediaHidden", lang)}</StatusPill> : null}
-        </div>
-        <div className="absolute inset-x-3 bottom-3 flex items-end justify-between gap-3 text-white">
-          <div className="min-w-0">
-            <p className="text-[13px] font-semibold">v{selected.version}</p>
-            <p className="mt-0.5 truncate text-[10px] text-white/75">{assetLabel}</p>
-            <p className="mt-0.5 text-[9px] text-white/55">{formatDate(selected.uploaded_at, dateFormat, lang)}</p>
-          </div>
-          {/*
-            The previous/next capsule is gone. It stepped through the same list
-            the thumbnail strip shows directly below, so there were two controls
-            for one job — and this one floated over the photograph, which is the
-            thing being compared between versions.
-          */}
         </div>
       </div>
 
@@ -991,6 +985,22 @@ export function MediaVersionCard({
       ) : null}
 
       <div className="p-3.5">
+        {/*
+          The version's identity, off the photograph and onto the card. Version
+          number leads because it is what the row is for; the asset name and
+          date are secondary and sit on one line beneath it with the processing
+          it went through, so the whole description of a version is one block
+          instead of half over the image and half under it.
+        */}
+        <div className="mb-3 flex items-baseline gap-2">
+          <p className="shrink-0 text-[13px] font-semibold leading-none">v{selected.version}</p>
+          <p className="min-w-0 flex-1 truncate text-[10px] leading-none text-muted-foreground" title={assetLabel}>
+            {assetLabel}
+          </p>
+          <p className="shrink-0 text-[10px] leading-none text-muted-foreground/80 tabular-nums">
+            {formatDate(selected.uploaded_at, dateFormat, lang)}
+          </p>
+        </div>
         <p className="mb-3 truncate text-[10px] text-muted-foreground" title={[mediaProcessorLabel(selected, lang), ...operations].join(" · ")}>
           {[mediaProcessorLabel(selected, lang), ...operations].join(" · ")}
         </p>
