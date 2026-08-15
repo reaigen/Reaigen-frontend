@@ -280,12 +280,18 @@
   @media (min-width: 768px) {
     .detail-hero-gallery {
       /*
-       * `width` is not redundant next to the cap — it is the whole reason the
-       * cap is safe. With an `aspect-ratio` set and the height constrained, a
-       * width of `auto` gets resolved *from the ratio*, so capping the height
-       * shrank the box horizontally and left a band of empty frame down the
-       * right-hand side. Pinning the width keeps the box full-bleed and lets
-       * `object-cover` on the image absorb the cap by cropping.
+       * `width` is not redundant next to the cap — it is what decides how the
+       * cap is absorbed. With an `aspect-ratio` set and the height constrained,
+       * a width of `auto` gets resolved *from the ratio*, so the box gives back
+       * width instead of cropping. Pinned, it stays full-bleed and
+       * `object-cover` takes the difference out of the image.
+       *
+       * Full-bleed is right for a mosaic, which is a composition filling the
+       * column. It is wrong for a single photograph: the crop needed to hold a
+       * wide column at this cap turns one 16:9 image into a ~2.4:1 strip. The
+       * gallery drops this pin for that case (`md:w-auto md:mx-auto`) so the
+       * photo keeps its shape and centres — the same behaviour the floorplan
+       * relies on.
        */
       width: 100%;
       max-height: min(60vh, 38rem);

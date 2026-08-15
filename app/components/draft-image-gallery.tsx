@@ -457,7 +457,26 @@ export function DraftImageGallery({ images, alt, fallbackUrl, lang = "en", onAct
         role="region"
         aria-label={alt}
         onKeyDown={handleKeyboardNavigation}
-        className="detail-hero-gallery group relative aspect-[16/10] w-full overflow-hidden bg-white ring-1 ring-inset ring-black/[0.045] md:aspect-video md:rounded-xl"
+        className={cn(
+          "detail-hero-gallery group relative aspect-[16/10] w-full overflow-hidden bg-white ring-1 ring-inset ring-black/[0.045] md:aspect-video md:rounded-xl",
+          /*
+            A lone photo shrinks and centres rather than holding the column.
+            The hero is aspect-driven with its height capped, so pinning the
+            width means the cap can only be absorbed by cropping: on a wide
+            desktop a single 16:9 image became a ~2.4:1 letterbox strip, which
+            reads as a banner rather than a photograph. Releasing the width lets
+            the cap resolve it from the ratio instead, so the picture keeps its
+            shape and sits centred with the column falling away either side.
+
+            A mosaic keeps the full width: it is a composition rather than one
+            image, so filling the column is the point and each tile crops to its
+            own cell anyway. The condition is therefore "is this a mosaic", not
+            "is there exactly one photo" — below five images this is still a
+            carousel showing one picture at a time, and a second photo does not
+            make the first one any less stretched.
+          */
+          !mosaicAvailable && "md:mx-auto md:w-auto",
+        )}
       >
         <div
           ref={scrollRef}
