@@ -228,6 +228,15 @@
     display: grid;
     grid-template-columns: repeat(auto-fit, minmax(min(100%, 12.5rem), 1fr));
     gap: 0.75rem;
+    /*
+     * Cards are as tall as their own contents, not as tall as the tallest in
+     * the row. Grid items stretch by default, and while every card carried a
+     * caption that was invisible — the caption absorbed the slack. With the
+     * caption gone the stretch showed up as an empty white band under each
+     * photo, and a selected card (which grows to hold its buttons) dragged
+     * every neighbour's band taller still.
+     */
+    align-items: start;
   }
 
   .media-manager-inspector {
