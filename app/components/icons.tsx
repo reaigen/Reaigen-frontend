@@ -344,3 +344,141 @@ export function ScaleIcon({ size = 18, width, height, ...props }: IconProps) {
 
 // The Agent uses a neutral wand glyph—never a colored app tile.
 export const SparklesIcon = fromRadix(MagicWandIcon, "SparklesIcon");
+
+/**
+ * Floorplan editor toolbox.
+ *
+ * Drawn rather than borrowed, because the three that matter — door, window,
+ * room — are architectural notation, and a floorplan editor whose door button
+ * is a generic rectangle asks the user to translate. Each is the symbol the
+ * canvas itself draws for that element, so the button and the result look like
+ * the same language.
+ *
+ * Same 24px grid, round caps and joins, and caller-driven stroke as the
+ * navigation set, so the two never sit at different weights beside each other.
+ */
+function ToolGlyph({
+  size = 18,
+  width,
+  height,
+  strokeWidth = 1.7,
+  children,
+  ...props
+}: IconProps & { children: React.ReactNode }) {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      width={width ?? size}
+      height={height ?? size}
+      fill="none"
+      stroke="currentColor"
+      strokeWidth={strokeWidth}
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden={props["aria-hidden"] ?? true}
+      {...props}
+    >
+      {children}
+    </svg>
+  );
+}
+
+/** Wall being drawn: a segment with its two endpoint nodes. */
+export function DrawWallIcon(props: IconProps) {
+  return (
+    <ToolGlyph {...props}>
+      <path d="M5.6 18.4 18.4 5.6" />
+      <circle cx="5.6" cy="18.4" r="2.1" />
+      <circle cx="18.4" cy="5.6" r="2.1" />
+    </ToolGlyph>
+  );
+}
+
+/** Eraser on its working edge, angled the way it is held. */
+export function EraseIcon(props: IconProps) {
+  return (
+    <ToolGlyph {...props}>
+      <path d="M9.1 19.4h9.9" />
+      <path d="M4.4 14.7 11 8.1a1.9 1.9 0 0 1 2.7 0l4.2 4.2a1.9 1.9 0 0 1 0 2.7l-4.4 4.4H8.1l-3.7-3.7a1.9 1.9 0 0 1 0-2.7Z" />
+      <path d="M9.4 9.7 16 16.3" />
+    </ToolGlyph>
+  );
+}
+
+/** Door: leaf on its hinge with the swing arc the plan draws. */
+export function DoorToolIcon(props: IconProps) {
+  return (
+    <ToolGlyph {...props}>
+      <path d="M5.5 19V6.2" />
+      <path d="M5.5 19h13.2" />
+      <path d="M5.5 6.2 18.7 19" />
+      <path d="M18.7 19a13.2 13.2 0 0 0-13.2-12.8" strokeDasharray="2.4 2.2" />
+    </ToolGlyph>
+  );
+}
+
+/** Window: the wall broken by a glazed run, as the plan notates it. */
+export function WindowToolIcon(props: IconProps) {
+  return (
+    <ToolGlyph {...props}>
+      <path d="M3.4 8.2h4.1M16.5 8.2h4.1" />
+      <path d="M3.4 15.8h4.1M16.5 15.8h4.1" />
+      <path d="M7.5 6.6v10.8M16.5 6.6v10.8" />
+      <path d="M7.5 12h9" />
+    </ToolGlyph>
+  );
+}
+
+/** Room: an enclosed area with its number marker. */
+export function RoomToolIcon(props: IconProps) {
+  return (
+    <ToolGlyph {...props}>
+      <path d="M4.2 5.4h15.6v13.2H4.2z" />
+      <circle cx="12" cy="12" r="2.4" />
+    </ToolGlyph>
+  );
+}
+
+/** Move: the four-way handle used for dragging elements. */
+export function MoveToolIcon(props: IconProps) {
+  return (
+    <ToolGlyph {...props}>
+      <path d="M12 3.6v16.8M3.6 12h16.8" />
+      <path d="m9.4 6.2 2.6-2.6 2.6 2.6" />
+      <path d="m9.4 17.8 2.6 2.6 2.6-2.6" />
+      <path d="m6.2 9.4-2.6 2.6 2.6 2.6" />
+      <path d="m17.8 9.4 2.6 2.6-2.6 2.6" />
+    </ToolGlyph>
+  );
+}
+
+/** Undo: a step back along the history arc. */
+export function UndoIcon(props: IconProps) {
+  return (
+    <ToolGlyph {...props}>
+      <path d="M4.6 9.4h9.1a5.3 5.3 0 0 1 0 10.6H7.4" />
+      <path d="m8.4 4.8-3.8 4.6 3.8 4.6" />
+    </ToolGlyph>
+  );
+}
+
+/** Layers: stacked sheets, for toggling what the plan shows. */
+export function LayersToolIcon(props: IconProps) {
+  return (
+    <ToolGlyph {...props}>
+      <path d="m12 3.4 8.4 4.3-8.4 4.3-8.4-4.3z" />
+      <path d="m3.6 12 8.4 4.3 8.4-4.3" />
+      <path d="m3.6 16.3 8.4 4.3 8.4-4.3" />
+    </ToolGlyph>
+  );
+}
+
+/** Reset: return the plan to its captured state. */
+export function ResetToolIcon(props: IconProps) {
+  return (
+    <ToolGlyph {...props}>
+      <path d="M20 12a8 8 0 1 1-2.6-5.9" />
+      <path d="M20.4 4.2v5.1h-5.1" />
+    </ToolGlyph>
+  );
+}

@@ -58,6 +58,20 @@ import {
   type DoorConfig,
   type V2,
 } from "../lib/floorplan-geometry";
+import {
+  DoorToolIcon,
+  DrawWallIcon,
+  EraseIcon,
+  FrameIcon,
+  LayersToolIcon,
+  MoveToolIcon,
+  ResetToolIcon,
+  RoomToolIcon,
+  RotateIcon,
+  UndoIcon,
+  WindowToolIcon,
+  type IconProps,
+} from "./icons";
 import { solveReaigenFloorplan, USE_CONSTRAINT_SOLVER } from "../lib/floorplan-solver-adapter";
 import { iconForKind, type IconShape } from "../lib/floorplan-icon-shapes";
 
@@ -969,28 +983,29 @@ export default function FloorplanEditor({ draftId, draftData, lang, onClose, onS
   }, [base.initialGraph.vertices, base.geom?.walls, base.geom?.doors, base.geom?.windows, base.geom?.openings, furniture]);
   const mapW = mapBounds ? mapBounds.maxX - mapBounds.minX : 0;
   const mapZ = mapBounds ? mapBounds.maxZ - mapBounds.minZ : 0;
-  const mapArea = mapW * mapZ;
   const ratioText = mapBounds ? `${fmt(mapW)}m × ${fmt(mapZ)}m` : "n/a";
-  const aspectRatioText = mapBounds && mapZ > 0 ? fmt(mapW / mapZ, 2) : "n/a";
   const wallCount = segs.length;
   const windowCount = windows.length;
   const doorCount = doors.length;
-  const objectCount = furniture.length;
-  const doorWindowRatio = windowCount > 0 ? `${fmt(doorCount / windowCount, 2)}:1` : "n/a";
-  const elementDensity = mapArea > 0 ? fmt(objectCount / mapArea, 2) : "n/a";
   const compassDeg = ((360 - ((rotationDeg % 360) + 360)) % 360);
 
-  const toolButton = (tl: Tool, label: string) => (
+  const toolButton = (tl: Tool, label: string, Icon: (props: IconProps) => React.ReactElement) => (
     <button
       key={tl}
       type="button"
       onClick={() => setTool((prev) => (prev === tl ? null : tl))}
+      aria-pressed={tool === tl}
+      title={label}
       className={cn(
-        "rounded-full px-3 py-1.5 text-[12.5px] font-semibold transition-colors",
-        tool === tl ? "bg-foreground text-background" : "text-foreground/60 hover:text-foreground"
+        "flex min-h-9 items-center gap-2 rounded-full px-3 text-[12.5px] font-semibold transition-colors",
+        "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2",
+        tool === tl
+          ? "bg-foreground text-background"
+          : "text-foreground/60 hover:bg-foreground/[0.05] hover:text-foreground",
       )}
     >
-      {label}
+      <Icon size={16} className="shrink-0" />
+      <span className="hidden min-[1180px]:inline">{label}</span>
     </button>
   );
 
@@ -1310,21 +1325,20 @@ export default function FloorplanEditor({ draftId, draftData, lang, onClose, onS
             </div>
           </div>
 
+          {/*
+            What the plan contains, not how it scores. Furniture density per m²,
+            width-to-height ratio and a door:window ratio were also listed here
+            — measurements of the drawing rather than facts about the property,
+            which no one editing a floorplan acts on and which read as debug
+            output left switched on. The dimensions and the counts stay, because
+            they are what you check against the room you are standing in.
+          */}
           <div className="rounded-xl border border-border/40 bg-card/92 px-3 py-2 text-[11px] leading-5 text-foreground/80 shadow-card backdrop-blur-md">
             <div className="font-semibold text-foreground/95">
               {t("floorplan.area", lang)}: {ratioText}
             </div>
             <div>
-              {t("floorplan.editor.furnitureDensity", lang)}: {elementDensity}
-            </div>
-            <div>
               {t("floorplan.walls", lang)}:{wallCount} · {t("floorplan.doors", lang)}:{doorCount} · {t("floorplan.windows", lang)}:{windowCount}
-            </div>
-            <div>
-              {t("floorplan.editor.aspectRatio", lang)}: {aspectRatioText}:1
-            </div>
-            <div>
-              {t("floorplan.editor.doorWindowRatio", lang)}: {doorWindowRatio}
             </div>
             <div>{t("floorplan.rooms", lang)}: {roomNumbers.length}</div>
           </div>
@@ -1386,54 +1400,85 @@ export default function FloorplanEditor({ draftId, draftData, lang, onClose, onS
             {chip("furniture", t("floorplan.editor.furniture", lang))}
           </div>
         )}
-        <div className="flex flex-wrap items-center justify-center gap-1">
-          {toolButton("draw", t("floorplan.editor.draw", lang))}
-          {toolButton("erase", t("floorplan.editor.erase", lang))}
-          {toolButton("move", t("floorplan.editor.move", lang))}
-          {toolButton("door", t("floorplan.editor.door", lang))}
-          {toolButton("window", t("floorplan.editor.window", lang))}
-          {toolButton("room", t("floorplan.editor.room", lang))}
-        </div>
-        <div className="mt-1 flex items-center justify-center gap-1">
-          <UtilButton onClick={rotate} label={t("floorplan.editor.rotate", lang)} />
-          <UtilButton onClick={undo} disabled={!canUndo} label={t("floorplan.editor.undo", lang)} />
-          <UtilButton onClick={() => setLayersOpen((v) => !v)} label={t("floorplan.editor.layers", lang)} active={layersOpen} />
-          <UtilButton onClick={resetAll} label={t("floorplan.editor.reset", lang)} />
-          <UtilButton
-            onClick={() => {
-              setZoom(1);
-              setPan({ x: 0, y: 0 });
-            }}
-            label={t("floorplan.editor.fitView", lang)}
-          />
+        {/*
+          One palette, not two rows of links. The tools and the utilities were
+          separate centred rows of bare text, so nothing said which of them was
+          a mode you were in and which was a thing that happens once — and with
+          no glyphs the whole bar read as navigation rather than a toolbox. They
+          share one bar now, split by a rule: modes on the left, actions on the
+          right. Labels drop below 1180px, where six of them plus five actions
+          stop fitting on one line; the icons and their titles carry it.
+        */}
+        <div className="flex justify-center">
+          <div className="floating-toolbar flex max-w-full items-center gap-1 overflow-x-auto rounded-full p-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+            {toolButton("draw", t("floorplan.editor.draw", lang), DrawWallIcon)}
+            {toolButton("erase", t("floorplan.editor.erase", lang), EraseIcon)}
+            {toolButton("move", t("floorplan.editor.move", lang), MoveToolIcon)}
+            {toolButton("door", t("floorplan.editor.door", lang), DoorToolIcon)}
+            {toolButton("window", t("floorplan.editor.window", lang), WindowToolIcon)}
+            {toolButton("room", t("floorplan.editor.room", lang), RoomToolIcon)}
+
+            <span aria-hidden="true" className="mx-1 h-6 w-px shrink-0 bg-border/70" />
+
+            <UtilButton onClick={rotate} label={t("floorplan.editor.rotate", lang)} icon={RotateIcon} />
+            <UtilButton onClick={undo} disabled={!canUndo} label={t("floorplan.editor.undo", lang)} icon={UndoIcon} />
+            <UtilButton onClick={() => setLayersOpen((v) => !v)} label={t("floorplan.editor.layers", lang)} active={layersOpen} icon={LayersToolIcon} />
+            <UtilButton onClick={resetAll} label={t("floorplan.editor.reset", lang)} icon={ResetToolIcon} />
+            <UtilButton
+              onClick={() => {
+                setZoom(1);
+                setPan({ x: 0, y: 0 });
+              }}
+              label={t("floorplan.editor.fitView", lang)}
+              icon={FrameIcon}
+            />
+          </div>
         </div>
       </div>
     </div>
   );
 }
 
+/**
+ * A one-shot action in the toolbox: rotate, undo, layers, reset, fit.
+ *
+ * Icon-only with the label as its accessible name and tooltip. These are not
+ * modes — nothing stays pressed afterwards except the layers panel — so giving
+ * them the same width as the tools made five actions look like five more tools
+ * to choose between.
+ */
 function UtilButton({
   onClick,
   label,
   disabled,
   active,
+  icon: Icon,
 }: {
   onClick: () => void;
   label: string;
   disabled?: boolean;
   active?: boolean;
+  icon: (props: IconProps) => React.ReactElement;
 }) {
   return (
     <button
       type="button"
       onClick={onClick}
       disabled={disabled}
+      aria-label={label}
+      aria-pressed={active}
+      title={label}
       className={cn(
-        "rounded-full px-2.5 py-1 text-[12px] font-medium transition-colors",
-        disabled ? "text-foreground/25" : active ? "bg-black/[0.07] text-foreground" : "text-foreground/60 hover:text-foreground"
+        "flex h-9 w-9 shrink-0 items-center justify-center rounded-full transition-colors",
+        "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2",
+        disabled
+          ? "text-foreground/25"
+          : active
+            ? "bg-foreground/[0.08] text-foreground"
+            : "text-foreground/55 hover:bg-foreground/[0.05] hover:text-foreground",
       )}
     >
-      {label}
+      <Icon size={16} />
     </button>
   );
 }
