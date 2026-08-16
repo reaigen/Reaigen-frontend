@@ -118,49 +118,82 @@ const cloneGraph = (g: WallGraphState): WallGraphState => ({
   vertices: g.vertices.map((v) => [v[0], v[1]]),
   edges: g.edges.map((e) => ({ ...e })),
 });
-/**
- * Keep a dragged corner square with the walls that meet it.
- *
- * The draw tool already refuses to make a wall that is not on an axis — it
- * snaps every new segment to whichever of X or Z it moved further along. Moving
- * did not: it wrote the raw cursor position straight into the vertex, so a
- * corner could be dragged to any angle and the room quietly stopped being
- * rectilinear. One drag was enough to leave a plan no scan would ever produce,
- * with no indication anything had gone wrong.
- *
- * So a dragged vertex snaps back onto the axis of each wall that meets it. A
- * wall that was vertical keeps its X and the corner slides along it; one that
- * was horizontal keeps its Z. Where both meet — an ordinary corner — the drag
- * follows the cursor but each wall lands square again, which is what someone
- * nudging a mis-scanned corner is trying to do.
- *
- * The tolerance is generous on purpose. This is not drafting: the user is
- * correcting a scan by eye, and being pulled to square is the helpful outcome
- * far more often than a deliberate 3-degree wall is.
- */
-const AXIS_SNAP_M = 0.45;
+/** Was this wall running along Z (vertical in plan) before the drag? */
+const wallWasVertical = (a: V2, b: V2) => Math.abs(b[0] - a[0]) <= Math.abs(b[1] - a[1]);
 
-function squareVertexDrag(
+/**
+ * Drag a corner and carry the walls that meet it, so they stay square.
+ *
+ * Dragging used to write the cursor position straight into the vertex, which
+ * let any corner be pulled to any angle — one drag turned a scanned room into a
+ * triangle. Snapping the vertex back onto its neighbours' axes within a
+ * tolerance was not enough either: past that tolerance it skewed exactly as
+ * before, so the guarantee only held for drags too small to matter.
+ *
+ * The corner cannot be constrained on its own, because a corner joins two walls
+ * at right angles and moving it necessarily lengthens one and shifts the other.
+ * So the neighbours move too. A wall that ran vertical takes the corner's new X
+ * and keeps its own Z — it slides sideways and stays vertical; a horizontal one
+ * takes the new Z and keeps its X. Every wall touching the corner is still
+ * exactly on an axis afterwards, by construction rather than by tolerance.
+ *
+ * This is what dragging a corner of a room looks like everywhere else, and it
+ * is the only version that cannot produce a shape the scan could not have
+ * measured.
+ */
+function dragCornerSquare(
   target: V2,
   vertexIndex: number,
   base: WallGraphState,
-): V2 {
-  let [x, z] = target;
+): WallGraphState {
+  const origin = base.vertices[vertexIndex];
+  if (!origin) return base;
+
+  const next = cloneGraph(base);
+  next.vertices[vertexIndex] = [target[0], target[1]];
+
   for (const edge of base.edges) {
     const otherIndex = edge.a === vertexIndex ? edge.b : edge.b === vertexIndex ? edge.a : null;
     if (otherIndex == null) continue;
     const other = base.vertices[otherIndex];
-    const origin = base.vertices[vertexIndex];
-    if (!other || !origin) continue;
-    // Which way did this wall run before the drag started?
-    const wasVertical = Math.abs(other[0] - origin[0]) <= Math.abs(other[1] - origin[1]);
-    if (wasVertical) {
-      if (Math.abs(x - other[0]) <= AXIS_SNAP_M) x = other[0];
-    } else if (Math.abs(z - other[1]) <= AXIS_SNAP_M) {
-      z = other[1];
-    }
+    if (!other) continue;
+    next.vertices[otherIndex] = wallWasVertical(origin, other)
+      ? [target[0], other[1]]
+      : [other[0], target[1]];
   }
-  return [x, z];
+  return next;
+}
+
+/**
+ * Slide a whole wall, perpendicular to itself.
+ *
+ * Translating both endpoints by the raw cursor delta moved a wall diagonally,
+ * which breaks every wall joined to it. A wall only has one degree of freedom
+ * worth having here: a vertical one moves left and right, a horizontal one up
+ * and down. Its own length is unchanged and the walls it meets simply grow or
+ * shrink to follow, which keeps the room rectilinear without moving anything
+ * the user did not grab.
+ */
+function slideWallSquare(
+  delta: V2,
+  edgeIndex: number,
+  base: WallGraphState,
+): WallGraphState {
+  const edge = base.edges[edgeIndex];
+  if (!edge) return base;
+  const a = base.vertices[edge.a];
+  const b = base.vertices[edge.b];
+  if (!a || !b) return base;
+
+  const next = cloneGraph(base);
+  if (wallWasVertical(a, b)) {
+    next.vertices[edge.a] = [a[0] + delta[0], a[1]];
+    next.vertices[edge.b] = [b[0] + delta[0], b[1]];
+  } else {
+    next.vertices[edge.a] = [a[0], a[1] + delta[1]];
+    next.vertices[edge.b] = [b[0], b[1] + delta[1]];
+  }
+  return next;
 }
 
 const cloneEdits = (e: OpeningEditsState): OpeningEditsState => ({
@@ -832,19 +865,15 @@ export default function FloorplanEditor({ draftId, draftData, lang, onClose, onS
           setEraseStroke((prev) => [...prev, w]);
           return;
         case "moveVertex": {
-          const next = cloneGraph(g.baseGraph!);
-          next.vertices[g.vertexIndex!] = squareVertexDrag(w, g.vertexIndex!, g.baseGraph!);
-          setGraph(next);
+          setGraph(dragCornerSquare(w, g.vertexIndex!, g.baseGraph!));
           return;
         }
         case "moveEdge": {
-          const dx = w[0] - g.start[0];
-          const dz = w[1] - g.start[1];
-          const next = cloneGraph(g.baseGraph!);
-          const e = next.edges[g.edgeIndex!];
-          next.vertices[e.a] = [g.baseGraph!.vertices[e.a][0] + dx, g.baseGraph!.vertices[e.a][1] + dz];
-          next.vertices[e.b] = [g.baseGraph!.vertices[e.b][0] + dx, g.baseGraph!.vertices[e.b][1] + dz];
-          setGraph(next);
+          setGraph(slideWallSquare(
+            [w[0] - g.start[0], w[1] - g.start[1]],
+            g.edgeIndex!,
+            g.baseGraph!,
+          ));
           return;
         }
         case "label": {
@@ -1357,9 +1386,26 @@ export default function FloorplanEditor({ draftId, draftData, lang, onClose, onS
                   arrow pointing at nothing.
                 */}
                 <g transform={`rotate(${compassDeg} 32 32)`}>
-                  <path d="M32 17 L35.2 26 H28.8 Z" fill={STROKE_COLOR} />
-                  <line x1={32} y1={25} x2={32} y2={41} stroke={STROKE_COLOR} strokeWidth={2.2} />
-                  <circle cx={32} cy={32} r={2.6} fill={STROKE_COLOR} />
+                  {/*
+                    A two-tone needle, not a hand on a pivot. This was a
+                    vertical line with a filled dot at the centre and a small
+                    arrowhead on top, which is the anatomy of a clock — the dot
+                    reads as the pivot and the line as the hand, so the dial
+                    looked like a grandfather clock rather than a compass.
+
+                    The needle is one diamond split at its waist instead:
+                    filled toward north, hollow toward south. That is the
+                    convention every compass rose uses, and the two halves say
+                    which end is which without needing the letters at all.
+                  */}
+                  <path d="M32 16.5 L37 33 L27 33 Z" fill={STROKE_COLOR} />
+                  <path
+                    d="M32 49.5 L37 33 L27 33 Z"
+                    fill="white"
+                    stroke={STROKE_COLOR}
+                    strokeWidth={1.1}
+                    strokeLinejoin="round"
+                  />
                   <text x={32} y={13} textAnchor="middle" fontSize={10} fontWeight={700} fill={STROKE_COLOR}>
                     {northLabel}
                   </text>
