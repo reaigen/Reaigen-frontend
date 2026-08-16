@@ -1804,15 +1804,26 @@ export function DraftMediaManager({
                         </StatusPill>
                       ) : null}
 
+                      {/*
+                        Video and version markers sit on the picture, where the
+                        position badge already is. They used to live in a white
+                        strip under it, alongside the photo's "name" — and that
+                        name is generated, "Photo 3" for the third photo, so the
+                        strip existed to repeat the number in the corner of the
+                        same image. It gave every thumbnail a caption bar
+                        carrying nothing, which is what made this grid read as a
+                        form while the lightbox reads as photographs.
+                      */}
+                      {group.kind === "video" || group.versions.length > 1 ? (
+                        <StatusPill className="glass-chip pointer-events-none absolute bottom-2 left-2 gap-1 px-2 text-[10px] tabular-nums">
+                          {group.kind === "video"
+                            ? <VideoIcon size={11} />
+                            : <>{group.versions.length}×</>}
+                        </StatusPill>
+                      ) : null}
                     </div>
 
-                    <div className="p-2.5">
-                      <div className="media-manager-card-meta mb-2 flex min-w-0 items-center justify-between gap-2 px-0.5">
-                        <p className="truncate text-[11px] font-semibold text-foreground/75" title={label}>{label}</p>
-                        <span className="flex shrink-0 items-center gap-1.5 text-[9px] text-muted-foreground">
-                          {group.kind === "video" ? <VideoIcon size={12} /> : group.versions.length > 1 ? <span>{group.versions.length}×</span> : null}
-                        </span>
-                      </div>
+                    <div className={cn(isSelected && group.kind === "image" ? "p-2.5" : "p-0")}>
                       {isSelected && group.kind === "image" ? group.visible ? (
                         /* One column: at card width a 2-up grid leaves ~70px for the
                            label, and Slovak/German labels then spill out of the pill. */
