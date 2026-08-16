@@ -1005,7 +1005,7 @@ export default function FloorplanEditor({ draftId, draftData, lang, onClose, onS
       )}
     >
       <Icon size={16} className="shrink-0" />
-      <span className="hidden min-[1180px]:inline">{label}</span>
+      <span className="whitespace-nowrap">{label}</span>
     </button>
   );
 
@@ -1406,8 +1406,13 @@ export default function FloorplanEditor({ draftId, draftData, lang, onClose, onS
           a mode you were in and which was a thing that happens once — and with
           no glyphs the whole bar read as navigation rather than a toolbox. They
           share one bar now, split by a rule: modes on the left, actions on the
-          right. Labels drop below 1180px, where six of them plus five actions
-          stop fitting on one line; the icons and their titles carry it.
+          right.
+
+          Everything keeps its label at every width. The audience is estate
+          agents, not people who have learned a CAD program, so an icon is a way
+          to find a button again after reading it — never a substitute for the
+          word. If the bar runs out of room it scrolls; it does not start
+          hiding names.
         */}
         <div className="flex justify-center">
           <div className="floating-toolbar flex max-w-full items-center gap-1 overflow-x-auto rounded-full p-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
@@ -1442,10 +1447,14 @@ export default function FloorplanEditor({ draftId, draftData, lang, onClose, onS
 /**
  * A one-shot action in the toolbox: rotate, undo, layers, reset, fit.
  *
- * Icon-only with the label as its accessible name and tooltip. These are not
- * modes — nothing stays pressed afterwards except the layers panel — so giving
- * them the same width as the tools made five actions look like five more tools
- * to choose between.
+ * Always labelled, never icon-only. This editor is used by estate agents, not
+ * by anyone who has learned a CAD program, and an unlabelled glyph asks the
+ * user to already know what it means — the one thing a tool for non-specialists
+ * cannot do. The icon is there to make the button findable again once you have
+ * read it, not to replace reading it.
+ *
+ * Kept visually quieter than the tools instead: lighter weight, no fill. These
+ * are things that happen once, not modes you are in.
  */
 function UtilButton({
   onClick,
@@ -1465,11 +1474,10 @@ function UtilButton({
       type="button"
       onClick={onClick}
       disabled={disabled}
-      aria-label={label}
       aria-pressed={active}
       title={label}
       className={cn(
-        "flex h-9 w-9 shrink-0 items-center justify-center rounded-full transition-colors",
+        "flex min-h-9 shrink-0 items-center gap-2 rounded-full px-3 text-[12.5px] font-medium transition-colors",
         "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2",
         disabled
           ? "text-foreground/25"
@@ -1478,7 +1486,8 @@ function UtilButton({
             : "text-foreground/55 hover:bg-foreground/[0.05] hover:text-foreground",
       )}
     >
-      <Icon size={16} />
+      <Icon size={16} className="shrink-0" />
+      <span className="whitespace-nowrap">{label}</span>
     </button>
   );
 }
