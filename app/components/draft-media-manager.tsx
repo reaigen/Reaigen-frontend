@@ -1798,24 +1798,30 @@ export function DraftMediaManager({
                           </StatusPill>
                         ) : null}
                       </span>
+                      {/*
+                        One rule for both corners: which photo this is on the
+                        left, anything extra about it on the right. The position
+                        number used to sit top-right while the cover badge —
+                        which also states a position, "1 · Main photo" — sat top
+                        left, so the same fact appeared in either corner
+                        depending on the photo.
+                      */}
                       {group.visible && !isCover ? (
-                        <StatusPill className="glass-chip pointer-events-none absolute right-2 top-2 min-w-7 justify-center px-2 text-[10px] tabular-nums">
+                        <StatusPill className="glass-chip pointer-events-none absolute left-2 top-2 min-w-7 justify-center px-2 text-[10px] tabular-nums">
                           {visibleIndex + 1}
                         </StatusPill>
                       ) : null}
 
                       {/*
-                        Video and version markers sit on the picture, where the
-                        position badge already is. They used to live in a white
-                        strip under it, alongside the photo's "name" — and that
-                        name is generated, "Photo 3" for the third photo, so the
-                        strip existed to repeat the number in the corner of the
-                        same image. It gave every thumbnail a caption bar
-                        carrying nothing, which is what made this grid read as a
-                        form while the lightbox reads as photographs.
+                        Video and version markers sit on the picture rather than
+                        in a strip beneath it. That strip also carried the
+                        photo's "name", which is generated — "Photo 3" for the
+                        third photo — so it existed to repeat the number in the
+                        corner of the same image, and it is what made this grid
+                        read as a form while the lightbox reads as photographs.
                       */}
                       {group.kind === "video" || group.versions.length > 1 ? (
-                        <StatusPill className="glass-chip pointer-events-none absolute bottom-2 left-2 gap-1 px-2 text-[10px] tabular-nums">
+                        <StatusPill className="glass-chip pointer-events-none absolute right-2 top-2 gap-1 px-2 text-[10px] tabular-nums">
                           {group.kind === "video"
                             ? <VideoIcon size={11} />
                             : <>{group.versions.length}×</>}
@@ -1951,29 +1957,20 @@ export function DraftMediaManager({
           <aside className="floating-panel media-manager-inspector sticky top-0 min-w-0 overflow-hidden">
             {selected ? (
               <>
-                <div className="relative aspect-[16/10] overflow-hidden bg-surface-subtle">
-                  <motion.div
-                    key={selected.id}
-                    initial={{ opacity: 0.45, scale: 1.01 }}
-                    animate={{ opacity: 1, scale: 1 }}
-                    transition={{ duration: 0.18 }}
-                    className="absolute inset-0"
-                  >
-                    {/* Fill the frame like the grid cards do. object-contain letterboxed
-                        portrait photos and stranded the cover badge over empty space. */}
-                    <MediaVisual upload={selected.active} alt={selectedLabel} />
-                  </motion.div>
-                  {replacingId === selected.id ? <LoadingMark label={t("draft.media.uploadingVersion", lang)} /> : null}
-                  {selected.id === coverId ? (
-                    // 16px, matching the p-4 caption block below the image. The
-                    // photo runs edge to edge, so both are measured from the
-                    // same card edge and a 12px badge sat visibly left of the
-                    // text under it.
-                    <StatusPill tone="strong" className="absolute left-4 top-4 border-white/15 bg-black/55 text-[9px] text-white backdrop-blur-xl">
-                      <StarIcon size={11} /> {t("draft.media.cover", lang)}
-                    </StatusPill>
-                  ) : null}
-                </div>
+                {/*
+                  No second copy of the photograph. This panel used to open with
+                  a large repeat of whatever was selected — the picture already
+                  on screen, highlighted, a few hundred pixels to the left — and
+                  it cost the grid a third of the panel to show it. It also
+                  meant the cover photo announced itself three times at once: a
+                  badge on its thumbnail, a badge on the repeat, and the eyebrow
+                  below.
+                */}
+                {replacingId === selected.id ? (
+                  <div className="relative aspect-[16/10] overflow-hidden bg-surface-subtle">
+                    <LoadingMark label={t("draft.media.uploadingVersion", lang)} />
+                  </div>
+                ) : null}
                 <div className="p-4">
                   <p className="text-[9px] font-semibold uppercase tracking-[0.12em] text-muted-foreground">
                     {selected.id === coverId
