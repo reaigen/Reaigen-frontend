@@ -1448,11 +1448,16 @@ export default function FloorplanEditor({ draftId, draftData, lang, onClose, onS
           Everything keeps its label at every width. The audience is estate
           agents, not people who have learned a CAD program, so an icon is a way
           to find a button again after reading it — never a substitute for the
-          word. If the bar runs out of room it scrolls; it does not start
-          hiding names.
+          word.
+
+          And when it runs out of room it wraps. It used to scroll with the
+          scrollbar hidden, which meant the last control was simply sliced in
+          half at the edge — with the agent panel open, "Prispôsobiť" ended
+          mid-word and there was nothing to say it was still there. A second row
+          is honest; a cut-off button is a lost one.
         */}
         <div className="flex justify-center">
-          <div className="floating-toolbar flex max-w-full items-center gap-1 overflow-x-auto rounded-full p-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+          <div className="floating-toolbar flex max-w-full flex-wrap items-center justify-center gap-1 rounded-3xl p-1">
             {toolButton("draw", t("floorplan.editor.draw", lang), DrawWallIcon)}
             {toolButton("erase", t("floorplan.editor.erase", lang), EraseIcon)}
             {toolButton("move", t("floorplan.editor.move", lang), MoveToolIcon)}
