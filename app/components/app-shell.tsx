@@ -525,7 +525,14 @@ function AppShellFrame({
         reaiResizing && "transition-none",
       )}
       style={{
-        paddingRight: reaiOpen && dockedAgentViewport ? "var(--reai-panel-width)" : 0,
+        paddingRight: "var(--reai-docked-width, 0px)",
+        /*
+          How much room the docked agent is actually taking, or 0px when it is
+          closed or overlaying. Padding alone only helps children in normal
+          flow; a full-screen editor is positioned, so it needs the number
+          itself to know where the page now ends.
+        */
+        "--reai-docked-width": reaiOpen && dockedAgentViewport ? "var(--reai-panel-width)" : "0px",
         ...(reaiPanelWidth ? { "--reai-panel-width": `${reaiPanelWidth}px` } : {}),
       } as React.CSSProperties}
     >

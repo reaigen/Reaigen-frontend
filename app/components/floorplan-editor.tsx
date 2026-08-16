@@ -1136,8 +1136,11 @@ export default function FloorplanEditor({ draftId, draftData, lang, onClose, onS
       gated on !compactViewport), so --sidebar-offset is always set.
     */
     <div
-      className="fixed inset-y-0 right-0 z-50 flex flex-col bg-background"
-      style={{ left: "var(--sidebar-offset, 0px)" }}
+      className="fixed inset-y-0 z-50 flex flex-col bg-background transition-[left,right] duration-200"
+      style={{
+        left: "var(--sidebar-offset, 0px)",
+        right: "var(--reai-docked-width, 0px)",
+      }}
     >
       {/* top bar */}
       <div className="flex items-center justify-between border-b border-border/50 px-4 py-3">
