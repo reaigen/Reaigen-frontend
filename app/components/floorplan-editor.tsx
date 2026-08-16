@@ -1078,10 +1078,6 @@ export default function FloorplanEditor({ draftId, draftData, lang, onClose, onS
   const mapW = mapBounds ? mapBounds.maxX - mapBounds.minX : 0;
   const mapZ = mapBounds ? mapBounds.maxZ - mapBounds.minZ : 0;
   const ratioText = mapBounds ? `${fmt(mapW)}m × ${fmt(mapZ)}m` : "n/a";
-  const wallCount = segs.length;
-  const windowCount = windows.length;
-  const doorCount = doors.length;
-  const compassDeg = ((360 - ((rotationDeg % 360) + 360)) % 360);
 
   const toolButton = (tl: Tool, label: string, Icon: (props: IconProps) => React.ReactElement) => (
     <button
@@ -1117,29 +1113,6 @@ export default function FloorplanEditor({ draftId, draftData, lang, onClose, onS
     </button>
   );
 
-  const legendItems = [
-    {
-      label: t("floorplan.walls", lang),
-      mark: <path d="M2 12 H20" stroke={STROKE_COLOR} strokeWidth={2.4} />,
-    },
-    {
-      label: t("floorplan.doors", lang),
-      mark: <path d="M2 12 H14 L20 12" stroke={STROKE_COLOR} strokeWidth={2.4} />,
-    },
-    {
-      label: t("floorplan.windows", lang),
-      mark: <path d="M2 12 H10 M12 8 H20" stroke={STROKE_COLOR} strokeDasharray="3 3" strokeWidth={2} />,
-    },
-    {
-      label: t("floorplan.roomLabels", lang),
-      mark: <circle cx={11} cy={12} r={4} fill="rgba(255,255,255,0.9)" stroke={STROKE_COLOR} strokeWidth={1.4} />,
-    },
-    {
-      label: t("floorplan.editor.furniture", lang),
-      mark: <rect x={5} y={6} width={12} height={10} rx={2} fill="none" stroke={STROKE_COLOR} strokeWidth={1.4} />,
-    },
-  ];
-  const northLabel = "N";
 
   const editingDoorCfg = editingDoor ? resolveDoorConfig(doorConfigs[editingDoor.id]) : null;
 
@@ -1396,86 +1369,29 @@ export default function FloorplanEditor({ draftId, draftData, lang, onClose, onS
           </g>
         </svg>
 
-        <div className="pointer-events-none absolute left-3 top-3 z-20 flex flex-col gap-2">
-          <div className="rounded-xl border border-border/40 bg-card/90 p-2 shadow-card backdrop-blur-md">
-            <div className="mx-auto h-16 w-16 rounded-full border border-border/40 bg-white/85 text-xs text-foreground">
-              <svg viewBox="0 0 64 64" className="h-full w-full">
-                <circle cx={32} cy={32} r={28} fill="white" fillOpacity={0.9} />
-                {/*
-                  All four letters on one ring, with the needle inside them.
-                  N used to be drawn at y=16, underneath an arrowhead spanning
-                  y 6 to 15.5 — so the one letter that matters was painted
-                  behind the needle and the compass showed W, E and S with the
-                  arrow pointing at nothing.
-                */}
-                <g transform={`rotate(${compassDeg} 32 32)`}>
-                  {/*
-                    A two-tone needle, not a hand on a pivot. This was a
-                    vertical line with a filled dot at the centre and a small
-                    arrowhead on top, which is the anatomy of a clock — the dot
-                    reads as the pivot and the line as the hand, so the dial
-                    looked like a grandfather clock rather than a compass.
+        {/*
+          One quiet readout, not three cards of drafting furniture.
 
-                    The needle is one diamond split at its waist instead:
-                    filled toward north, hollow toward south. That is the
-                    convention every compass rose uses, and the two halves say
-                    which end is which without needing the letters at all.
-                  */}
-                  <path d="M32 16.5 L37 33 L27 33 Z" fill={STROKE_COLOR} />
-                  <path
-                    d="M32 49.5 L37 33 L27 33 Z"
-                    fill="white"
-                    stroke={STROKE_COLOR}
-                    strokeWidth={1.1}
-                    strokeLinejoin="round"
-                  />
-                  <text x={32} y={13} textAnchor="middle" fontSize={10} fontWeight={700} fill={STROKE_COLOR}>
-                    {northLabel}
-                  </text>
-                  <text x={32} y={56} textAnchor="middle" fontSize={9} fill={STROKE_COLOR}>
-                    S
-                  </text>
-                  <text x={55} y={35.5} textAnchor="middle" fontSize={9} fill={STROKE_COLOR}>
-                    E
-                  </text>
-                  <text x={9} y={35.5} textAnchor="middle" fontSize={9} fill={STROKE_COLOR}>
-                    W
-                  </text>
-                </g>
-              </svg>
-            </div>
-          </div>
+          The column used to carry a compass rose, a tally of walls/doors/
+          windows, and a legend of line styles. None of it helps someone
+          correcting a scan of a flat: an estate agent does not orient a room
+          plan by north, does not care that the scan produced five wall
+          segments, and does not need a key explaining that a dashed line is a
+          window — the plan is the thing being read, and a legend for it is
+          documentation the reader did not ask for. The compass was also pinned
+          top-left while north points up, so it sat on the opposite side of the
+          drawing from the direction it described.
 
-          {/*
-            What the plan contains, not how it scores. Furniture density per m²,
-            width-to-height ratio and a door:window ratio were also listed here
-            — measurements of the drawing rather than facts about the property,
-            which no one editing a floorplan acts on and which read as debug
-            output left switched on. The dimensions and the counts stay, because
-            they are what you check against the room you are standing in.
-          */}
-          <div className="rounded-xl border border-border/40 bg-card/92 px-3 py-2 text-[11px] leading-5 text-foreground/80 shadow-card backdrop-blur-md">
-            <div className="font-semibold text-foreground/95">
-              {t("floorplan.area", lang)}: {ratioText}
-            </div>
+          What is left is what you check against the room you are standing in:
+          how big it is, and how many rooms the scan found. Layer visibility
+          already has a real control in the toolbar.
+        */}
+        <div className="pointer-events-none absolute left-3 top-3 z-20">
+          <div className="rounded-xl border border-border/40 bg-card/90 px-3 py-2 text-[11px] leading-5 text-foreground/70 shadow-card backdrop-blur-md">
+            <div className="text-[12px] font-semibold text-foreground">{ratioText}</div>
             <div>
-              {t("floorplan.walls", lang)}:{wallCount} · {t("floorplan.doors", lang)}:{doorCount} · {t("floorplan.windows", lang)}:{windowCount}
+              {t("floorplan.rooms", lang)}: {roomNumbers.length}
             </div>
-            <div>{t("floorplan.rooms", lang)}: {roomNumbers.length}</div>
-          </div>
-
-          <div className="rounded-xl border border-border/40 bg-card/92 px-3 py-2 text-[11px] shadow-card backdrop-blur-md">
-            <div className="mb-1 font-semibold text-foreground/95">{t("floorplan.editor.layers", lang)}</div>
-            <ul className="space-y-1">
-              {legendItems.map((item, idx) => (
-                <li key={`${item.label}-${idx}`} className="flex items-center gap-2">
-                  <svg width={24} height={16} viewBox="0 0 24 24" className="shrink-0">
-                    {item.mark}
-                  </svg>
-                  <span className="text-foreground/75">{item.label}</span>
-                </li>
-              ))}
-            </ul>
           </div>
         </div>
 
