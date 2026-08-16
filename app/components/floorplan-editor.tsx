@@ -295,24 +295,47 @@ export default function FloorplanEditor({ draftId, draftData, lang, onClose, onS
   /** Screen px per world metre (with zoom). */
   const pxPerMeter = proj0.s * zoom;
 
+  /**
+   * A client point in viewBox units.
+   *
+   * Both helpers below used to scale the offset inside the element's bounding
+   * box: `(clientX - rect.left) * VIEW / rect.width`. That assumes the viewBox
+   * covers the whole element, which is only true when their aspect ratios
+   * agree. This viewBox is square — 720×720, so a 90° rotation always fits —
+   * while the canvas is a wide panel, and there is no `preserveAspectRatio`, so
+   * SVG applies the default `xMidYMid meet`: the 720 units are scaled to the
+   * *shorter* edge and centred, leaving a letterbox margin left and right.
+   *
+   * So the mapping was wrong twice over — a scale error, plus an offset equal
+   * to the margin — and because both grow with distance from the centre, every
+   * tool landed further from the cursor the further out you drew.
+   *
+   * `getScreenCTM()` is the element's own answer to this. Inverted, it maps
+   * screen to viewBox for whatever viewBox, aspect ratio and CSS transform are
+   * in effect, so this cannot drift again if the canvas changes shape.
+   */
+  const clientToViewBox = useCallback((clientX: number, clientY: number): [number, number] => {
+    const svg = svgRef.current;
+    const ctm = svg?.getScreenCTM();
+    if (!svg || !ctm) return [0, 0];
+    const point = new DOMPoint(clientX, clientY).matrixTransform(ctm.inverse());
+    return [point.x, point.y];
+  }, []);
+
   const screenToWorld = useCallback(
     (clientX: number, clientY: number): V2 => {
-      const svg = svgRef.current!;
-      const rect = svg.getBoundingClientRect();
-      const sx = ((clientX - rect.left) * VIEW) / rect.width;
-      const sy = ((clientY - rect.top) * VIEW) / rect.height;
+      const [sx, sy] = clientToViewBox(clientX, clientY);
       const cx = (sx - pan.x) / zoom;
       const cy = (sy - pan.y) / zoom;
       return unrotW([proj0.cx + (cx - VIEW / 2) / proj0.s, proj0.cz + (cy - VIEW / 2) / proj0.s]);
     },
-    [pan, zoom, proj0, unrotW]
+    [clientToViewBox, pan, zoom, proj0, unrotW]
   );
 
-  const screenPx = useCallback((clientX: number, clientY: number): [number, number] => {
-    const svg = svgRef.current!;
-    const rect = svg.getBoundingClientRect();
-    return [((clientX - rect.left) * VIEW) / rect.width, ((clientY - rect.top) * VIEW) / rect.height];
-  }, []);
+  const screenPx = useCallback(
+    (clientX: number, clientY: number): [number, number] => clientToViewBox(clientX, clientY),
+    [clientToViewBox],
+  );
 
   // ── persistence ───────────────────────────────────────────────────────────
   const persist = useCallback(
@@ -1012,7 +1035,21 @@ export default function FloorplanEditor({ draftId, draftData, lang, onClose, onS
   const editingDoorCfg = editingDoor ? resolveDoorConfig(doorConfigs[editingDoor.id]) : null;
 
   return (
-    <div className="fixed inset-0 z-50 flex flex-col bg-background">
+    /*
+      Starts where the navigation rail ends. `inset-0` put the editor's left
+      edge at viewport 0, underneath the sidebar, which is where its own
+      overlay panels sit — so the compass and the room statistics were drawn
+      into a strip the rail covers and read as clipped mid-word.
+
+      Offset rather than a higher z-index: the rail stays reachable, which is
+      right for a full-screen editor you need to leave, and the canvas then
+      measures the width it is actually given. It is desktop-only (the mount is
+      gated on !compactViewport), so --sidebar-offset is always set.
+    */
+    <div
+      className="fixed inset-y-0 right-0 z-50 flex flex-col bg-background"
+      style={{ left: "var(--sidebar-offset, 0px)" }}
+    >
       {/* top bar */}
       <div className="flex items-center justify-between border-b border-border/50 px-4 py-3">
         <button
