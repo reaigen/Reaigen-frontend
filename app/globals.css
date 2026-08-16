@@ -262,6 +262,10 @@
     .media-manager-card-actions {
       display: none !important;
     }
+
+    .media-manager-card-meta {
+      margin-bottom: 0 !important;
+    }
   }
 
   /*
