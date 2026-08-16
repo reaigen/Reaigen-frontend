@@ -118,6 +118,23 @@ const cloneGraph = (g: WallGraphState): WallGraphState => ({
   vertices: g.vertices.map((v) => [v[0], v[1]]),
   edges: g.edges.map((e) => ({ ...e })),
 });
+/**
+ * Compute once, for the lifetime of the editor.
+ *
+ * `useMemo` is not enough here and that is the whole point. Every edit saves,
+ * the save calls `onSaved`, the page merges the new draft data and hands it
+ * back as a prop — so `base` is rebuilt from the freshly saved walls a moment
+ * after each change. Anything memoised on `base` therefore recomputes on every
+ * edit no matter how narrow its dependency list looks.
+ *
+ * React also treats `useMemo` as a cache it may drop, so it is not a guarantee
+ * of "once" even without that. State initialised lazily is.
+ */
+function useConstant<T>(create: () => T): T {
+  const [value] = useState(create);
+  return value;
+}
+
 /** Was this wall running along Z (vertical in plan) before the drag? */
 const wallWasVertical = (a: V2, b: V2) => Math.abs(b[0] - a[0]) <= Math.abs(b[1] - a[1]);
 
@@ -543,7 +560,7 @@ export default function FloorplanEditor({ draftId, draftData, lang, onClose, onS
    * of it, which is visible and correctable, and is a much smaller problem than
    * the whole room silently reshuffling.
    */
-  const furniture = useMemo(
+  const furniture = useConstant(
     () => {
       const baseGraph = base.initialGraph;
       const baseSegs = graphSegs(baseGraph);
@@ -578,9 +595,6 @@ export default function FloorplanEditor({ draftId, draftData, lang, onClose, onS
         || a.id.localeCompare(b.id)
       );
     },
-    // Deliberately not segs/doors/windows/openings: those are the live edits,
-    // and depending on them is what made an erase reshuffle the room.
-    [base, doorConfigs]
   );
 
   const roomNumbers = useMemo(() => {
