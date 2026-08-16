@@ -118,6 +118,51 @@ const cloneGraph = (g: WallGraphState): WallGraphState => ({
   vertices: g.vertices.map((v) => [v[0], v[1]]),
   edges: g.edges.map((e) => ({ ...e })),
 });
+/**
+ * Keep a dragged corner square with the walls that meet it.
+ *
+ * The draw tool already refuses to make a wall that is not on an axis — it
+ * snaps every new segment to whichever of X or Z it moved further along. Moving
+ * did not: it wrote the raw cursor position straight into the vertex, so a
+ * corner could be dragged to any angle and the room quietly stopped being
+ * rectilinear. One drag was enough to leave a plan no scan would ever produce,
+ * with no indication anything had gone wrong.
+ *
+ * So a dragged vertex snaps back onto the axis of each wall that meets it. A
+ * wall that was vertical keeps its X and the corner slides along it; one that
+ * was horizontal keeps its Z. Where both meet — an ordinary corner — the drag
+ * follows the cursor but each wall lands square again, which is what someone
+ * nudging a mis-scanned corner is trying to do.
+ *
+ * The tolerance is generous on purpose. This is not drafting: the user is
+ * correcting a scan by eye, and being pulled to square is the helpful outcome
+ * far more often than a deliberate 3-degree wall is.
+ */
+const AXIS_SNAP_M = 0.45;
+
+function squareVertexDrag(
+  target: V2,
+  vertexIndex: number,
+  base: WallGraphState,
+): V2 {
+  let [x, z] = target;
+  for (const edge of base.edges) {
+    const otherIndex = edge.a === vertexIndex ? edge.b : edge.b === vertexIndex ? edge.a : null;
+    if (otherIndex == null) continue;
+    const other = base.vertices[otherIndex];
+    const origin = base.vertices[vertexIndex];
+    if (!other || !origin) continue;
+    // Which way did this wall run before the drag started?
+    const wasVertical = Math.abs(other[0] - origin[0]) <= Math.abs(other[1] - origin[1]);
+    if (wasVertical) {
+      if (Math.abs(x - other[0]) <= AXIS_SNAP_M) x = other[0];
+    } else if (Math.abs(z - other[1]) <= AXIS_SNAP_M) {
+      z = other[1];
+    }
+  }
+  return [x, z];
+}
+
 const cloneEdits = (e: OpeningEditsState): OpeningEditsState => ({
   deletedSourceOpeningIDs: [...e.deletedSourceOpeningIDs],
   customOpenings: e.customOpenings.map((o) => ({ ...o, p1: [...o.p1] as V2, p2: [...o.p2] as V2 })),
@@ -788,7 +833,7 @@ export default function FloorplanEditor({ draftId, draftData, lang, onClose, onS
           return;
         case "moveVertex": {
           const next = cloneGraph(g.baseGraph!);
-          next.vertices[g.vertexIndex!] = w;
+          next.vertices[g.vertexIndex!] = squareVertexDrag(w, g.vertexIndex!, g.baseGraph!);
           setGraph(next);
           return;
         }
@@ -1304,22 +1349,29 @@ export default function FloorplanEditor({ draftId, draftData, lang, onClose, onS
             <div className="mx-auto h-16 w-16 rounded-full border border-border/40 bg-white/85 text-xs text-foreground">
               <svg viewBox="0 0 64 64" className="h-full w-full">
                 <circle cx={32} cy={32} r={28} fill="white" fillOpacity={0.9} />
+                {/*
+                  All four letters on one ring, with the needle inside them.
+                  N used to be drawn at y=16, underneath an arrowhead spanning
+                  y 6 to 15.5 — so the one letter that matters was painted
+                  behind the needle and the compass showed W, E and S with the
+                  arrow pointing at nothing.
+                */}
                 <g transform={`rotate(${compassDeg} 32 32)`}>
-                  <path d="M32 6 L35.5 15.5 H28.5 Z" fill={STROKE_COLOR} />
-                  <line x1={32} y1={15} x2={32} y2={30} stroke={STROKE_COLOR} strokeWidth={2.2} />
-                  <text x={32} y={16} textAnchor="middle" fontSize={10} fontWeight={700} fill={STROKE_COLOR}>
+                  <path d="M32 17 L35.2 26 H28.8 Z" fill={STROKE_COLOR} />
+                  <line x1={32} y1={25} x2={32} y2={41} stroke={STROKE_COLOR} strokeWidth={2.2} />
+                  <circle cx={32} cy={32} r={2.6} fill={STROKE_COLOR} />
+                  <text x={32} y={13} textAnchor="middle" fontSize={10} fontWeight={700} fill={STROKE_COLOR}>
                     {northLabel}
                   </text>
-                  <text x={32} y={58} textAnchor="middle" fontSize={9} fill={STROKE_COLOR}>
+                  <text x={32} y={56} textAnchor="middle" fontSize={9} fill={STROKE_COLOR}>
                     S
                   </text>
-                  <text x={58} y={36} textAnchor="middle" fontSize={9} fill={STROKE_COLOR}>
+                  <text x={55} y={35.5} textAnchor="middle" fontSize={9} fill={STROKE_COLOR}>
                     E
                   </text>
-                  <text x={6} y={36} textAnchor="middle" fontSize={9} fill={STROKE_COLOR}>
+                  <text x={9} y={35.5} textAnchor="middle" fontSize={9} fill={STROKE_COLOR}>
                     W
                   </text>
-                  <circle cx={32} cy={32} r={3} fill={STROKE_COLOR} />
                 </g>
               </svg>
             </div>
