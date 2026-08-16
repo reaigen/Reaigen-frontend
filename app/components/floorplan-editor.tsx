@@ -526,25 +526,43 @@ export default function FloorplanEditor({ draftId, draftData, lang, onClose, onS
     return c ? [sx / c, sz / c] : [proj0.cx, proj0.cz];
   }, [segs, proj0]);
 
-  // Solve against the CURRENT edited walls and openings, not the load-time
-  // snapshot — wall/door edits immediately re-place furniture.
+  /*
+   * Solved once, from the capture — not from the walls as they are being
+   * edited.
+   *
+   * This used to re-run on every wall, door and window change, and the effect
+   * was that erasing one wall rearranged the room: the solver is global, so a
+   * changed room boundary re-places every object at once and the sofa, table
+   * and chairs all jump. Nobody erasing a stray wall is asking for the
+   * furniture to be reconsidered, and there is no way to tell from the screen
+   * that it happened or to get the old arrangement back.
+   *
+   * The furniture belongs to the scan. It is laid out once against the walls
+   * the scan produced and then left alone, so an edit changes only the thing
+   * that was edited. A wall moved far enough can leave a piece the wrong side
+   * of it, which is visible and correctable, and is a much smaller problem than
+   * the whole room silently reshuffling.
+   */
   const furniture = useMemo(
     () => {
+      const baseGraph = base.initialGraph;
+      const baseSegs = graphSegs(baseGraph);
+      const baseDoors = (base.geom?.doors ?? []).map((d) => ({ id: d.id, p1: d.p1, p2: d.p2 }));
       const solved = USE_CONSTRAINT_SOLVER
         ? solveReaigenFloorplan({
-            walls: segs,
-            doors,
-            windows,
-            openings,
+            walls: baseSegs,
+            doors: baseDoors,
+            windows: base.geom?.windows ?? [],
+            openings: base.geom?.openings ?? [],
             objects: base.geom?.objects ?? [], // solver conditions internally
             doorConfigs,
             rooms: base.geom?.solverRooms ?? [],
           }).objects
         : solveFurnitureLayout(
-            prepareObjects(base.geom?.objects ?? [], computeBounds(graph.vertices)),
-            graphSegs(graph),
+            prepareObjects(base.geom?.objects ?? [], computeBounds(baseGraph.vertices)),
+            baseSegs,
             base.geom?.interiorCentroid ?? [0, 0],
-            doors,
+            baseDoors,
             base.geom?.rooms ?? []
           );
       const layer = (object: (typeof solved)[number]): number => {
@@ -560,7 +578,9 @@ export default function FloorplanEditor({ draftId, draftData, lang, onClose, onS
         || a.id.localeCompare(b.id)
       );
     },
-    [base, graph, segs, doors, windows, openings, doorConfigs]
+    // Deliberately not segs/doors/windows/openings: those are the live edits,
+    // and depending on them is what made an erase reshuffle the room.
+    [base, doorConfigs]
   );
 
   const roomNumbers = useMemo(() => {
