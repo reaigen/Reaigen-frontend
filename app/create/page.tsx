@@ -24,7 +24,6 @@ import { Button } from "../lib/ui/button";
 import { Input } from "../lib/ui/input";
 import { Label } from "../lib/ui/label";
 import { Textarea } from "../lib/ui/textarea";
-import { cn } from "../lib/utils";
 import type { DraftListingItem } from "../lib/tour-types";
 
 type CreationMode = "draft" | "tour";
@@ -131,19 +130,23 @@ export default function WebCreatePage() {
 
   return (
     <AppShell user={user} onLogout={logout}>
-      <div className="mx-auto w-full max-w-[980px] pb-12">
-        <Button variant="ghost" size="sm" className="mb-5 -ml-2" onClick={() => router.push("/dashboard")}>
-          <ArrowLeftIcon size={14} />
-          {t("common.back", lang)}
-        </Button>
+      <div className="mx-auto w-full max-w-[920px] pb-12">
+        <button
+          type="button"
+          onClick={() => router.push("/dashboard")}
+          aria-label={t("common.back", lang)}
+          title={t("common.back", lang)}
+          className="floating-icon-button pen-touch-target mb-5 border border-border/60 bg-card/75 text-foreground/65 shadow-sm backdrop-blur-xl transition-[background-color,color,box-shadow] hover:bg-foreground hover:text-background hover:shadow-control focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+        >
+          <ArrowLeftIcon size={17} />
+        </button>
         <PageHeader
-          eyebrow={t("webCreate.permissionEyebrow", lang)}
           title={t("webCreate.title", lang)}
           description={t("webCreate.subtitle", lang)}
-          className="mb-7"
+          className="mb-6"
         />
 
-        <div className="grid gap-3 sm:grid-cols-2">
+        <div className="selection-capsule-track grid grid-cols-2" role="group" aria-label={t("webCreate.title", lang)}>
           {([
             ["draft", DocumentIcon, "webCreate.draftTitle", "webCreate.draftDescription"],
             ["tour", TourIcon, "webCreate.tourTitle", "webCreate.tourDescription"],
@@ -152,28 +155,26 @@ export default function WebCreatePage() {
               key={value}
               type="button"
               onClick={() => { setMode(value); setError(null); }}
-              className={cn(
-                "rounded-[1.35rem] border p-5 text-left transition-all",
-                mode === value
-                  ? "border-foreground/20 bg-foreground/[0.045] shadow-control"
-                  : "border-border bg-card hover:border-foreground/15",
-              )}
+              aria-pressed={mode === value}
+              className="selection-capsule-item pen-touch-target min-w-0 px-2 text-[12px] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring sm:px-4 sm:text-[13px]"
             >
-              <Icon size={18} className="text-foreground/55" />
-              <span className="mt-3 block text-[15px] font-semibold">{t(titleKey, lang)}</span>
-              <span className="mt-1 block text-[12px] leading-relaxed text-muted-foreground">
-                {t(descriptionKey, lang)}
-              </span>
+              <Icon size={15} className="shrink-0" />
+              <span className="truncate">{t(titleKey, lang)}</span>
             </button>
           ))}
         </div>
 
-        <div className="mt-5 rounded-[1.5rem] border border-border bg-card p-5 shadow-sm sm:p-7">
+        <div className="mt-4 overflow-hidden rounded-[1.875rem] border border-border/60 bg-card/[0.80] shadow-[0_18px_50px_-42px_rgba(0,0,0,0.32)] backdrop-blur-2xl">
           {mode === "draft" ? (
-            <form onSubmit={submitDraft} className="space-y-5">
-              <div>
-                <h2 className="text-lg font-semibold">{t("webCreate.draftFormTitle", lang)}</h2>
-                <p className="mt-1 text-[13px] text-muted-foreground">{t("webCreate.draftFormHint", lang)}</p>
+            <form onSubmit={submitDraft} className="space-y-5 p-5 sm:p-7">
+              <div className="flex items-start gap-3">
+                <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-foreground/[0.045] text-foreground/55 ring-1 ring-inset ring-border/35">
+                  <DocumentIcon size={17} />
+                </span>
+                <div className="min-w-0 pt-0.5">
+                  <h2 className="text-[17px] font-semibold">{t("webCreate.draftFormTitle", lang)}</h2>
+                  <p className="mt-1 text-[12px] leading-relaxed text-muted-foreground">{t("webCreate.draftFormHint", lang)}</p>
+                </div>
               </div>
               <div className="space-y-2">
                 <Label htmlFor="creation-title">{t("webCreate.listingTitle", lang)}</Label>
@@ -183,6 +184,7 @@ export default function WebCreatePage() {
                   value={title}
                   onChange={(event) => setTitle(event.target.value)}
                   placeholder={t("webCreate.listingTitlePlaceholder", lang)}
+                  className="h-12 rounded-2xl border-border/70 bg-card/75 px-4 shadow-none"
                 />
               </div>
               <div className="space-y-2">
@@ -192,35 +194,41 @@ export default function WebCreatePage() {
                   value={description}
                   onChange={(event) => setDescription(event.target.value)}
                   placeholder={t("webCreate.descriptionPlaceholder", lang)}
+                  className="min-h-[7rem] rounded-2xl border-border/70 bg-card/75 px-4 py-3 shadow-none"
                 />
               </div>
               <div className="grid gap-4 sm:grid-cols-3">
                 <div className="space-y-2 sm:col-span-3">
                   <Label htmlFor="creation-address">{t("webCreate.address", lang)}</Label>
-                  <Input id="creation-address" value={address} onChange={(event) => setAddress(event.target.value)} />
+                  <Input id="creation-address" value={address} onChange={(event) => setAddress(event.target.value)} className="h-12 rounded-2xl border-border/70 bg-card/75 px-4 shadow-none" />
                 </div>
                 <div className="space-y-2 sm:col-span-2">
                   <Label htmlFor="creation-city">{t("webCreate.city", lang)}</Label>
-                  <Input id="creation-city" value={city} onChange={(event) => setCity(event.target.value)} />
+                  <Input id="creation-city" value={city} onChange={(event) => setCity(event.target.value)} className="h-12 rounded-2xl border-border/70 bg-card/75 px-4 shadow-none" />
                 </div>
                 <div className="space-y-2">
                   <Label htmlFor="creation-country">{t("webCreate.country", lang)}</Label>
-                  <Input id="creation-country" value={country} onChange={(event) => setCountry(event.target.value)} />
+                  <Input id="creation-country" value={country} onChange={(event) => setCountry(event.target.value)} className="h-12 rounded-2xl border-border/70 bg-card/75 px-4 shadow-none" />
                 </div>
               </div>
               {error ? <p role="alert" className="text-sm text-destructive">{error}</p> : null}
               <div className="flex justify-end">
-                <Button type="submit" loading={submitting} disabled={!title.trim()}>
+                <Button type="submit" loading={submitting} disabled={!title.trim()} className="h-11 rounded-full px-5 shadow-control">
                   {t("webCreate.createDraft", lang)}
                   <ArrowRightIcon size={14} />
                 </Button>
               </div>
             </form>
           ) : (
-            <form onSubmit={submitTour} className="space-y-5">
-              <div>
-                <h2 className="text-lg font-semibold">{t("webCreate.tourFormTitle", lang)}</h2>
-                <p className="mt-1 text-[13px] text-muted-foreground">{t("webCreate.tourFormHint", lang)}</p>
+            <form onSubmit={submitTour} className="space-y-5 p-5 sm:p-7">
+              <div className="flex items-start gap-3">
+                <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-foreground/[0.045] text-foreground/55 ring-1 ring-inset ring-border/35">
+                  <TourIcon size={17} />
+                </span>
+                <div className="min-w-0 pt-0.5">
+                  <h2 className="text-[17px] font-semibold">{t("webCreate.tourFormTitle", lang)}</h2>
+                  <p className="mt-1 text-[12px] leading-relaxed text-muted-foreground">{t("webCreate.tourFormHint", lang)}</p>
+                </div>
               </div>
               <div className="space-y-2">
                 <Label htmlFor="tour-draft">{t("webCreate.chooseDraft", lang)}</Label>
@@ -229,7 +237,7 @@ export default function WebCreatePage() {
                   required
                   value={selectedDraftId}
                   onChange={(event) => setSelectedDraftId(event.target.value)}
-                  className="flex h-11 w-full rounded-xl border border-input bg-card px-4 text-sm outline-none focus:ring-2 focus:ring-ring"
+                  className="flex h-12 w-full rounded-2xl border border-border/70 bg-card/75 px-4 text-sm outline-none focus:ring-2 focus:ring-ring"
                 >
                   <option value="">
                     {draftsLoading ? t("common.loading", lang) : t("webCreate.chooseDraftPlaceholder", lang)}
@@ -246,6 +254,7 @@ export default function WebCreatePage() {
                   value={tourName}
                   onChange={(event) => setTourName(event.target.value)}
                   placeholder={t("webCreate.tourNamePlaceholder", lang)}
+                  className="h-12 rounded-2xl border-border/70 bg-card/75 px-4 shadow-none"
                 />
               </div>
               <p className="rounded-xl bg-muted/45 px-4 py-3 text-[12px] leading-relaxed text-muted-foreground">
@@ -256,7 +265,7 @@ export default function WebCreatePage() {
                 <Button type="button" variant="ghost" onClick={() => setMode("draft")}>
                   {t("webCreate.needDraft", lang)}
                 </Button>
-                <Button type="submit" loading={submitting} disabled={!selectedDraftId}>
+                <Button type="submit" loading={submitting} disabled={!selectedDraftId} className="h-11 rounded-full px-5 shadow-control">
                   {t("webCreate.openEditor", lang)}
                   <ArrowRightIcon size={14} />
                 </Button>

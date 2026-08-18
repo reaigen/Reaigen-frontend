@@ -21,7 +21,6 @@ import { getSafeApiErrorMessage } from "../lib/api/error-message";
 import { formatDate, t, type LocaleKey } from "../lib/i18n";
 import type { DraftDetailItem, DraftUpload } from "../lib/tour-types";
 import { Button } from "../lib/ui/button";
-import { Tabs, TabsList, TabsTrigger } from "../lib/ui/tabs";
 import { cn } from "../lib/utils";
 import {
   ArrowLeftIcon,
@@ -230,8 +229,8 @@ function MediaManagerSkeleton() {
         ))}
       </section>
       <aside className="floating-panel-shape media-manager-inspector overflow-hidden border border-border/65 bg-card">
-        <div className="aspect-[4/3] animate-pulse bg-muted/60 motion-reduce:animate-none" />
-        <div className="space-y-3 p-4">
+        <div className="media-manager-inspector-visual aspect-[4/3] animate-pulse bg-muted/60 motion-reduce:animate-none" />
+        <div className="media-manager-inspector-body space-y-3 p-4">
           <div className="h-4 w-2/3 rounded-full bg-muted/70" />
           <div className="h-3 w-1/2 rounded-full bg-muted/45" />
           <div className="h-10 rounded-full bg-muted/55" />
@@ -317,6 +316,21 @@ export function DraftMediaManager({
   const [replacingId, setReplacingId] = React.useState<string | null>(null);
   const [editingId, setEditingId] = React.useState<string | null>(null);
   const [notice, setNotice] = React.useState<string | null>(null);
+
+  // Completed actions acknowledge themselves briefly and then leave the
+  // workspace. Requiring a separate dismiss click made every upload leave a
+  // stale green strip above the gallery for the rest of the session.
+  React.useEffect(() => {
+    if (!notice) return;
+    const timer = window.setTimeout(() => setNotice(null), 3_200);
+    return () => window.clearTimeout(timer);
+  }, [notice]);
+
+  React.useEffect(() => {
+    if (!undoOrderIds) return;
+    const timer = window.setTimeout(() => setUndoOrderIds(null), 6_000);
+    return () => window.clearTimeout(timer);
+  }, [undoOrderIds]);
 
   const groups = React.useMemo(() => buildMediaGroups(uploads), [uploads]);
   const visibleGroups = React.useMemo(() => groups.filter((group) => group.visible), [groups]);
@@ -755,6 +769,10 @@ export function DraftMediaManager({
       return { file, item: { id: `${Date.now()}-${index}-${file.name}`, name: `${t("draft.media.photo", lang)} ${index + 1}`, url, file, state: "queued" as const } };
     });
     setPending((current) => [...current, ...items.map(({ item }) => item)]);
+    // Pending cards only render in the gallery, which is also where these
+    // photos land. Switch before the first request rather than after the last
+    // one, so uploading from the hidden tab shows the work instead of nothing.
+    setFilter("gallery");
     setBusy(true);
     let nextSortOrder = Math.max(-1, ...groups.map((group) => group.active.sort_order ?? 0)) + 1;
     let successCount = 0;
@@ -774,7 +792,6 @@ export function DraftMediaManager({
     }
 
     if (successCount > 0) {
-      setFilter("gallery");
       await loadMedia(false);
       await notifyChanged();
     }
@@ -1116,13 +1133,14 @@ export function DraftMediaManager({
       description={draft.title || t("dashboard.untitled", lang)}
       headerMode="editor"
       className={panelWidthClass}
+      contentScrollable={view !== "editor"}
       contentClassName={cn(
         "media-manager-workspace",
         // The editor owns the whole content box and scrolls its own rail, so the
         // page chrome never moves while you grade. Everything else scrolls normally.
         // `sm:px-0` is required as well: an unprefixed `p-0` does not override the
         // panel's `sm:px-6`, which otherwise leaves a bare strip beside the stage.
-        view === "editor" && "flex overflow-hidden p-0 sm:px-0",
+        view === "editor" && "flex p-0 sm:px-0",
       )}
       contentRef={contentRef}
       closeIcon={view === "gallery" ? "close" : "back"}
@@ -1140,6 +1158,7 @@ export function DraftMediaManager({
         type="file"
         accept="image/jpeg,image/png,image/webp,image/heic,image/heif,image/tiff,image/bmp"
         multiple
+        aria-label={t("draft.media.addPhotos", lang)}
         className="sr-only"
         onChange={(event) => void handleFiles(event)}
       />
@@ -1147,6 +1166,7 @@ export function DraftMediaManager({
         ref={versionFileInputRef}
         type="file"
         accept="image/jpeg,image/png,image/webp,image/heic,image/heif,image/tiff,image/bmp"
+        aria-label={t("draft.media.uploadVersion", lang)}
         className="sr-only"
         onChange={(event) => void handleVersionFile(event)}
       />
@@ -1167,7 +1187,6 @@ export function DraftMediaManager({
               label={mediaGroupLabel(editingGroup.kind, Math.max(0, groups.findIndex((group) => group.id === editingGroup.id)), lang)}
               lang={lang}
               busy={versionBusy}
-              onCancel={() => switchView("gallery")}
               onSave={saveEditedVersion}
             />
           </div>
@@ -1369,41 +1388,42 @@ export function DraftMediaManager({
       ) : null}
 
       <div className="mb-3 flex items-center justify-between gap-3">
-        <Tabs
-          value={filter}
-          onValueChange={(value) => {
-            const nextFilter = value as MediaFilter;
-            setFilter(nextFilter);
-            setReorderMode(false);
-            const nextGroups = nextFilter === "gallery" ? visibleGroups : hiddenGroups;
-            setSelectedId(nextGroups[0]?.id ?? null);
-            setConfirmAction(null);
-          }}
-          className="min-w-0 flex-1 sm:max-w-[330px]"
-        >
-          <TabsList className="floating-toolbar grid h-auto w-full grid-cols-2 p-1" aria-label={t("draft.media.filter", lang)}>
-          {(["gallery", "hidden"] as const).map((value) => {
-            const count = value === "gallery" ? visibleGroups.length : hiddenGroups.length;
-            return (
-              <TabsTrigger
-                key={value}
-                value={value}
-                className="floating-control-sm h-auto w-full px-3 text-[11px] data-[state=active]:bg-foreground data-[state=active]:text-background data-[state=active]:shadow-control"
-              >
-                {t(`draft.media.${value}` as LocaleKey, lang)}
-                <span className={cn("ml-1.5 tabular-nums", filter === value ? "text-background/60" : "text-foreground/35")}>{count}</span>
-              </TabsTrigger>
-            );
-          })}
-          </TabsList>
-        </Tabs>
+        <div className="min-w-0 flex-1 sm:max-w-[330px]">
+          <div className="selection-capsule-track grid h-auto w-full grid-cols-2" role="group" aria-label={t("draft.media.filter", lang)}>
+            {(["gallery", "hidden"] as const).map((value) => {
+              const count = value === "gallery" ? visibleGroups.length : hiddenGroups.length;
+              const active = value === filter;
+              return (
+                <button
+                  key={value}
+                  type="button"
+                  aria-pressed={active}
+                  onClick={() => {
+                    const nextFilter: MediaFilter = value;
+                    setFilter(nextFilter);
+                    setReorderMode(false);
+                    const nextGroups = nextFilter === "gallery" ? visibleGroups : hiddenGroups;
+                    setSelectedId(nextGroups[0]?.id ?? null);
+                    setConfirmAction(null);
+                  }}
+                  className={cn(
+                    "selection-capsule-item h-auto w-full px-3 text-[11px] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+                  )}
+                >
+                  {t(`draft.media.${value}` as LocaleKey, lang)}
+                  <span className={cn("ml-1.5 tabular-nums", active ? "text-background/60" : "text-foreground/35")}>{count}</span>
+                </button>
+              );
+            })}
+          </div>
+        </div>
         <div className="grid shrink-0 grid-cols-2 items-center gap-1">
           <Button
             type="button"
             variant={reorderMode ? "default" : "ghost"}
             size="sm"
             className={cn(
-              "pen-touch-target px-3",
+              "h-11 w-11 px-0 min-[520px]:w-auto min-[520px]:px-3",
               (filter !== "gallery" || visibleGroups.length <= 1) && "pointer-events-none invisible",
             )}
             onClick={() => {
@@ -1427,7 +1447,7 @@ export function DraftMediaManager({
             type="button"
             variant="ghost"
             size="sm"
-            className="pen-touch-target px-3"
+            className="h-11 w-11 px-0 min-[620px]:w-auto min-[620px]:px-3"
             onClick={() => switchView("versions")}
             aria-label={t("draft.media.versions", lang)}
             title={`${t("draft.media.versions", lang)} (V)`}
@@ -1496,67 +1516,49 @@ export function DraftMediaManager({
         filled a phone row on their own, and their arrows already say which way
         each goes; the label is a nicety once the width is free.
       */}
-      {reorderMode ? (
-        <div className="floating-panel-shape mb-4 border border-border/65 bg-card shadow-control">
-          <div className="flex items-center gap-3 px-3 py-2.5">
-            <span className="floating-capsule floating-icon-button-sm shrink-0 text-foreground/60">
-              <DragHandleIcon size={15} />
-            </span>
-            <div className="min-w-0 flex-1">
-              <p className="text-[11px] font-semibold text-foreground/80">{t("draft.media.galleryOrder", lang)}</p>
-              <p className="mt-0.5 max-w-xl text-[10px] leading-relaxed text-muted-foreground">
-                {t("draft.media.reorderHint", lang)}
-              </p>
-            </div>
-            <span
-              role="status"
-              className={cn("shrink-0 text-[10px] font-medium text-muted-foreground", !busy && "invisible")}
-              aria-hidden={!busy}
-            >
-              {t("draft.media.saving", lang)}
-            </span>
+      {reorderMode && selected && reorderSelectedIndex >= 0 ? (
+        <div className="floating-toolbar mb-4 flex min-h-13 items-center gap-3 px-3 py-2">
+          <DragHandleIcon size={15} className="shrink-0 text-foreground/45" />
+          <div className="min-w-0 flex-1">
+            <p className="truncate text-[11px] font-semibold text-foreground/80" title={selectedLabel}>{selectedLabel}</p>
+            <p className="mt-0.5 text-[10px] text-muted-foreground">
+              {t("draft.media.position", lang)
+                .replace("{current}", String(reorderSelectedIndex + 1))
+                .replace("{total}", String(activeReorderIds.length))}
+            </p>
           </div>
-
-          {selected && reorderSelectedIndex >= 0 ? (
-            <div className="flex items-center gap-3 border-t border-border/55 px-3 py-2.5">
-              <div className="min-w-0 flex-1">
-                <p className="truncate text-[11px] font-semibold text-foreground/80" title={selectedLabel}>{selectedLabel}</p>
-                <p className="mt-0.5 text-[10px] text-muted-foreground">
-                  {t("draft.media.position", lang)
-                    .replace("{current}", String(reorderSelectedIndex + 1))
-                    .replace("{total}", String(activeReorderIds.length))}
-                </p>
-              </div>
-              <div className="flex shrink-0 items-center gap-2">
+          <span
+            role="status"
+            className={cn("shrink-0 text-[10px] font-medium text-muted-foreground", !busy && "sr-only")}
+          >
+            {t("draft.media.saving", lang)}
+          </span>
+          <div className="flex shrink-0 items-center gap-1">
                 <Button
                   type="button"
-                  variant="outline"
-                  size="sm"
+                  variant="ghost"
+                  size="icon-sm"
                   onClick={() => moveReorderItem(selected.id, -1)}
                   disabled={busy || reorderSelectedIndex === 0}
                   aria-label={t("draft.media.moveEarlier", lang)}
                   title={t("draft.media.moveEarlier", lang)}
-                  className="pen-touch-target min-h-11 min-w-0 px-3"
+                  className="pen-touch-target"
                 >
                   <ArrowLeftIcon size={14} />
-                  <span className="hidden min-[520px]:inline">{t("draft.media.moveEarlier", lang)}</span>
                 </Button>
                 <Button
                   type="button"
-                  variant="outline"
-                  size="sm"
+                  variant="ghost"
+                  size="icon-sm"
                   onClick={() => moveReorderItem(selected.id, 1)}
                   disabled={busy || reorderSelectedIndex === activeReorderIds.length - 1}
                   aria-label={t("draft.media.moveLater", lang)}
                   title={t("draft.media.moveLater", lang)}
-                  className="pen-touch-target min-h-11 min-w-0 px-3"
+                  className="pen-touch-target"
                 >
-                  <span className="hidden min-[520px]:inline">{t("draft.media.moveLater", lang)}</span>
                   <ArrowRightIcon size={14} />
                 </Button>
-              </div>
-            </div>
-          ) : null}
+          </div>
         </div>
       ) : null}
 
@@ -1787,19 +1789,23 @@ export function DraftMediaManager({
                       </button>
 
                       <span className="pointer-events-none absolute left-2 top-2 flex flex-wrap gap-1.5">
-                        {isCover ? (
-                          <StatusPill tone="strong" className="border-white/15 bg-black/65 text-[9px] text-white backdrop-blur-xl">
-                            <StarIcon size={11} /> 1 · {t("draft.media.cover", lang)}
-                          </StatusPill>
-                        ) : null}
                         {!group.visible ? (
                           <StatusPill tone="strong" className="border-white/15 bg-black/65 text-[9px] text-white">
                             <EyeClosedIcon size={11} /> {t("draft.media.hidden", lang)}
                           </StatusPill>
                         ) : null}
                       </span>
-                      {group.visible && !isCover ? (
-                        <StatusPill className="glass-chip pointer-events-none absolute right-2 top-2 min-w-7 justify-center px-2 text-[10px] tabular-nums">
+                      {group.visible ? (
+                        <StatusPill
+                          tone={isCover ? "strong" : undefined}
+                          className={cn(
+                            "pointer-events-none absolute right-2 top-2 min-w-7 justify-center px-2 text-[10px] tabular-nums",
+                            isCover
+                              ? "border-white/15 bg-black/65 text-white backdrop-blur-xl"
+                              : "glass-chip",
+                          )}
+                        >
+                          {isCover ? <StarIcon size={10} /> : null}
                           {visibleIndex + 1}
                         </StatusPill>
                       ) : null}
@@ -1818,12 +1824,13 @@ export function DraftMediaManager({
                            label, and Slovak/German labels then spill out of the pill. */
                         <div className="media-manager-card-actions grid gap-1.5">
                           <Button
+                            data-testid="draft-media-edit-photo"
                             type="button"
                             size="sm"
                             variant="secondary"
                             onClick={() => openImageEditor(group)}
                             disabled={busy}
-                            className="min-h-10 w-full justify-start px-3 text-[11px]"
+                            className="h-11 w-full justify-start px-3 text-[11px]"
                           >
                             <EditIcon size={13} /> {t("draft.media.editPhoto", lang)}
                           </Button>
@@ -1833,7 +1840,7 @@ export function DraftMediaManager({
                             variant="secondary"
                             onClick={() => requestVersionUpload(group)}
                             disabled={galleryActionDisabled}
-                            className="min-h-10 w-full justify-start px-3 text-[11px]"
+                            className="h-11 w-full justify-start px-3 text-[11px]"
                           >
                             <UploadIcon size={13} /> {t("draft.media.uploadVersion", lang)}
                           </Button>
@@ -1858,7 +1865,7 @@ export function DraftMediaManager({
                                 switchView("versions");
                               }}
                               disabled={busy}
-                              className="min-h-10 w-full justify-between px-3 text-[11px]"
+                              className="h-11 w-full justify-between px-3 text-[11px]"
                             >
                               <span className="inline-flex items-center gap-2">
                                 <VersionsIcon size={13} /> {t("draft.media.versions", lang)}
@@ -1873,7 +1880,7 @@ export function DraftMediaManager({
                             onClick={() => void makeCover(group)}
                             disabled={busy || isCover}
                             className={cn(
-                              "min-h-10 w-full px-2 text-[10px] disabled:opacity-100",
+                              "h-11 w-full px-2 text-[10px] disabled:opacity-100",
                               isCover && "bg-foreground text-background",
                             )}
                             aria-label={isCover ? t("draft.media.cover", lang) : t("draft.media.setCover", lang)}
@@ -1889,7 +1896,7 @@ export function DraftMediaManager({
                               setConfirmAction({ kind: "hide", groupId: group.id });
                             }}
                             disabled={galleryActionDisabled}
-                            className="min-h-10 w-full justify-start px-3 text-[11px]"
+                            className="h-11 w-full justify-start px-3 text-[11px]"
                             aria-label={t("draft.media.hideFromGallery", lang)}
                             title={t("draft.media.hideFromGallery", lang)}
                           >
@@ -1902,7 +1909,7 @@ export function DraftMediaManager({
                           size="sm"
                           onClick={() => void showGroup(group)}
                           disabled={galleryActionDisabled}
-                          className="media-manager-card-actions min-h-10 w-full px-3 text-[11px]"
+                          className="media-manager-card-actions h-11 w-full px-3 text-[11px]"
                         >
                           <EyeOpenIcon size={14} /> {t("draft.media.restoreToGallery", lang)}
                         </Button>
@@ -1937,10 +1944,10 @@ export function DraftMediaManager({
             )}
           </section>
 
-          <aside className="floating-panel media-manager-inspector sticky top-0 min-w-0 overflow-hidden">
+          <aside className="floating-panel media-manager-inspector min-w-0 overflow-hidden">
             {selected ? (
               <>
-                <div className="relative aspect-[16/10] overflow-hidden bg-surface-subtle">
+                <div className="media-manager-inspector-visual relative aspect-[16/10] overflow-hidden bg-surface-subtle">
                   <motion.div
                     key={selected.id}
                     initial={{ opacity: 0.45, scale: 1.01 }}
@@ -1963,68 +1970,68 @@ export function DraftMediaManager({
                     </StatusPill>
                   ) : null}
                 </div>
-                <div className="p-4">
-                  <p className="text-[9px] font-semibold uppercase tracking-[0.12em] text-muted-foreground">
-                    {selected.id === coverId
-                      ? t("draft.media.cover", lang)
-                      : selected.visible
-                        ? t("draft.media.position", lang)
-                          .replace("{current}", String(visibleGroups.findIndex((group) => group.id === selected.id) + 1))
-                          .replace("{total}", String(visibleGroups.length))
-                        : t("draft.media.hidden", lang)}
-                  </p>
-                  <p className="truncate text-[13px] font-semibold" title={selectedLabel}>{selectedLabel}</p>
-                  <div className="mt-2 flex flex-wrap gap-x-3 gap-y-1 text-[10px] text-muted-foreground">
-                    <span>{selected.kind === "video" ? t("draft.media.video", lang) : t("draft.media.photo", lang)}</span>
-                    {selected.active.file_size ? <span>{formatBytes(selected.active.file_size, lang)}</span> : null}
-                    {selected.active.uploaded_at ? <span>{formatDate(selected.active.uploaded_at, undefined, lang)}</span> : null}
-                  </div>
-                  {selected.id === coverId ? (
-                    <p className="mt-3 text-[10px] leading-relaxed text-muted-foreground">
-                      {t("draft.media.primaryPhotoHint", lang)}
+                <div className="media-manager-inspector-body p-4">
+                  <div className="media-manager-inspector-summary min-w-0">
+                    <p className="text-[9px] font-semibold uppercase tracking-[0.12em] text-muted-foreground">
+                      {selected.id === coverId
+                        ? t("draft.media.cover", lang)
+                        : selected.visible
+                          ? t("draft.media.position", lang)
+                            .replace("{current}", String(visibleGroups.findIndex((group) => group.id === selected.id) + 1))
+                            .replace("{total}", String(visibleGroups.length))
+                          : t("draft.media.hidden", lang)}
                     </p>
-                  ) : null}
-                  {selected.kind === "image" ? (
-                    /* Stacked, not side by side: the inspector is 17rem, which leaves
-                       ~72px per column for the label. "Nahrať novú verziu" and the
-                       German equivalent overflow the pill, since Button is nowrap. */
-                    <div className="mt-4 grid gap-2">
-                      <Button type="button" variant="secondary" className="w-full justify-start px-3 text-[11px]" onClick={() => openImageEditor(selected)} disabled={busy}>
+                    <p className="truncate text-[13px] font-semibold" title={selectedLabel}>{selectedLabel}</p>
+                    <div className="mt-2 flex flex-wrap gap-x-3 gap-y-1 text-[10px] text-muted-foreground">
+                      <span>{selected.kind === "video" ? t("draft.media.video", lang) : t("draft.media.photo", lang)}</span>
+                      {selected.active.file_size ? <span>{formatBytes(selected.active.file_size, lang)}</span> : null}
+                      {selected.active.uploaded_at ? <span>{formatDate(selected.active.uploaded_at, undefined, lang)}</span> : null}
+                    </div>
+                    {selected.id === coverId ? (
+                      <p className="mt-3 text-[10px] leading-relaxed text-muted-foreground">
+                        {t("draft.media.primaryPhotoHint", lang)}
+                      </p>
+                    ) : null}
+                  </div>
+
+                  <div className="media-manager-inspector-actions mt-4 grid gap-2">
+                    {selected.kind === "image" ? (
+                      <>
+                      <Button data-testid="draft-media-edit-photo" type="button" variant="secondary" className="w-full justify-start px-3 text-[11px]" onClick={() => openImageEditor(selected)} disabled={busy}>
                         <EditIcon size={14} /> {t("draft.media.editPhoto", lang)}
                       </Button>
                       <Button type="button" variant="secondary" className="w-full justify-start px-3 text-[11px]" onClick={() => requestVersionUpload(selected)} disabled={busy || !selected.active.logical_asset_id} title={t("draft.media.uploadVersionHint", lang)}>
                         <UploadIcon size={14} /> {t("draft.media.uploadVersion", lang)}
                       </Button>
-                    </div>
-                  ) : null}
-                  <Button
-                    type="button"
-                    variant="secondary"
-                    onClick={() => switchView("versions")}
-                    className="mt-2 w-full justify-between !bg-card/65 px-3.5 text-left backdrop-blur-xl hover:!bg-card/85"
-                  >
-                    <span className="inline-flex items-center gap-1.5 text-[10px] font-medium text-muted-foreground">
-                      <VersionsIcon size={13} /> {t("draft.media.versions", lang)}
-                    </span>
-                    <span className="text-[12px] font-semibold tabular-nums">{selected.versions.length}</span>
-                  </Button>
-                  <div className="mt-4 space-y-2">
+                      </>
+                    ) : null}
+                    <Button
+                      type="button"
+                      variant="secondary"
+                      onClick={() => switchView("versions")}
+                      className="w-full justify-between px-3 text-left"
+                    >
+                      <span className="inline-flex items-center gap-1.5 text-[11px] font-medium">
+                        <VersionsIcon size={13} /> {t("draft.media.versions", lang)}
+                      </span>
+                      <span className="text-[11px] font-semibold tabular-nums">{selected.versions.length}</span>
+                    </Button>
                     {selected.visible && selected.kind === "image" && selected.id !== coverId ? (
-                      <Button type="button" variant="outline" className="w-full" onClick={() => void makeCover(selected)} disabled={busy}>
+                      <Button type="button" variant="outline" className="w-full px-3 text-[11px]" onClick={() => void makeCover(selected)} disabled={busy}>
                         <StarIcon size={15} /> {t("draft.media.setCover", lang)}
                       </Button>
                     ) : null}
                     {selected.kind === "image" && selected.visible ? (
-                      <Button type="button" variant="outline" className="w-full" onClick={() => setConfirmAction({ kind: "hide", groupId: selected.id })} disabled={busy || !selected.active.logical_asset_id}>
+                      <Button type="button" variant="outline" className="w-full px-3 text-[11px]" onClick={() => setConfirmAction({ kind: "hide", groupId: selected.id })} disabled={busy || !selected.active.logical_asset_id}>
                         <EyeClosedIcon size={15} /> {t("draft.media.hideFromGallery", lang)}
                       </Button>
                     ) : selected.kind === "image" ? (
-                      <Button type="button" className="w-full" onClick={() => void showGroup(selected)} disabled={busy || !selected.active.logical_asset_id}>
+                      <Button type="button" className="w-full px-3 text-[11px]" onClick={() => void showGroup(selected)} disabled={busy || !selected.active.logical_asset_id}>
                         <EyeOpenIcon size={15} /> {t("draft.media.restoreToGallery", lang)}
                       </Button>
                     ) : null}
                   </div>
-                  {renderHideConfirmation("mt-4")}
+                  {renderHideConfirmation("media-manager-inspector-confirm mt-4")}
                 </div>
               </>
             ) : null}

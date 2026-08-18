@@ -471,12 +471,12 @@ export function DraftVersionManager({
       title={t("draft.versions.title", lang)}
       description={draft.title}
       headerMode="editor"
-      className="sm:max-w-[700px]"
+      className="sm:max-w-[720px]"
       lang={lang}
     >
       <Tabs value={activeTab} onValueChange={(value) => setActiveTab(value as VersionTab)}>
         <div className="mb-1">
-          <TabsList className="floating-toolbar grid h-auto w-full grid-cols-3">
+          <TabsList className="selection-capsule-track grid h-auto w-full grid-cols-3">
             {/*
               Listing, then tour, then media — the order the work is done in.
               The listing is the thing being published; the tour and the photos
@@ -509,7 +509,7 @@ export function DraftVersionManager({
                 {versions.length > 1 ? automaticTourSelection ? (
                   <StatusPill><CheckIcon size={11} />{t("draft.versions.useNewest", lang)}</StatusPill>
                 ) : (
-                  <Button type="button" variant="outline" size="xs" disabled={tourBusy} onClick={() => setTourCandidate("auto")}>{t("draft.versions.useNewest", lang)}</Button>
+                  <Button type="button" variant="outline" size="xs" className="h-11" disabled={tourBusy} onClick={() => setTourCandidate("auto")}>{t("draft.versions.useNewest", lang)}</Button>
                 ) : null}
               </div>
 
@@ -543,8 +543,10 @@ export function DraftVersionManager({
                             <TourIcon size={22} className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 text-foreground/20" />
                           )}
                           {ready ? (
-                            <Link href={`/tour/${id}`} aria-label={t("tours.open", lang)} className="floating-icon-button-sm absolute right-2 top-2 flex items-center justify-center border border-white/20 bg-black/55 text-white backdrop-blur-md transition-colors hover:bg-black/75 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white">
-                              <ExternalLinkIcon size={13} />
+                            <Link href={`/tour/${id}`} aria-label={t("tours.open", lang)} className="absolute right-0 top-0 flex h-11 w-11 items-center justify-center rounded-full focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white">
+                              <span className="floating-icon-button-sm border border-white/20 bg-black/55 text-white backdrop-blur-md transition-colors hover:bg-black/75">
+                                <ExternalLinkIcon size={13} />
+                              </span>
                             </Link>
                           ) : null}
                         </div>
@@ -561,7 +563,7 @@ export function DraftVersionManager({
                             <p className="mt-1 text-[11px] text-muted-foreground">{version.delivery_versions_count} {t("tours.versions", lang)}</p>
                           ) : null}
                           {!active && ready ? (
-                            <Button type="button" variant="outline" size="xs" className="mt-3" disabled={tourBusy} onClick={() => setTourCandidate(id)}>{t("draft.versions.makeLive", lang)}</Button>
+                            <Button type="button" variant="outline" size="xs" className="mt-3 h-11" disabled={tourBusy} onClick={() => setTourCandidate(id)}>{t("draft.versions.makeLive", lang)}</Button>
                           ) : null}
                         </div>
                       </div>
@@ -771,7 +773,7 @@ function VersionTabTrigger({
   count: number;
 }) {
   return (
-    <TabsTrigger value={value} className="floating-control group h-auto w-full gap-1.5 px-2 text-[11px] data-[state=active]:bg-foreground data-[state=active]:text-background data-[state=active]:shadow-sm sm:text-[12px]">
+    <TabsTrigger value={value} className="selection-capsule-item pen-touch-target group h-auto w-full gap-1.5 px-2 text-[11px] data-[state=active]:!bg-foreground data-[state=active]:!text-background data-[state=active]:shadow-sm sm:text-[12px]">
       <Icon size={14} />
       <span>{label}</span>
       {count > 0 ? <span className="hidden min-w-5 rounded-full bg-foreground/[0.07] px-1.5 py-0.5 text-[9px] font-semibold tabular-nums group-data-[state=active]:bg-background/15 min-[430px]:inline-flex">{count}</span> : null}

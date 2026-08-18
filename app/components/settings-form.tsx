@@ -288,6 +288,7 @@ function ProfileTab({ user, onSaved, lang }: { user: UserProfile; onSaved: () =>
                 type="button"
                 variant="outline"
                 size="sm"
+                className="h-11"
                 loading={avatarUploading}
                 onClick={() => avatarInputRef.current?.click()}
               >
@@ -339,7 +340,7 @@ function ProfileTab({ user, onSaved, lang }: { user: UserProfile; onSaved: () =>
           {error && <p className="text-[12px] text-destructive">{error}</p>}
           {success && <p className="text-[12px] text-success">{t("settings.profile.saved", lang)}</p>}
           <div className="pt-2">
-            <Button type="submit" size="sm" loading={loading}>{t("settings.profile.save", lang)}</Button>
+            <Button type="submit" size="sm" className="h-11" loading={loading}>{t("settings.profile.save", lang)}</Button>
           </div>
         </form>
       </CardContent>
@@ -486,7 +487,10 @@ function SellerTab({ user, onSaved, lang }: { user: UserProfile; onSaved: () => 
         <form className="space-y-4" onSubmit={handleSubmit}>
           {/* Cover Image */}
           <div className="relative">
-            <div className="h-28 w-full overflow-hidden rounded-lg bg-muted sm:h-36">
+            <div className={cn(
+              "w-full overflow-hidden rounded-xl bg-muted",
+              p?.cover_image_url ? "h-28 sm:h-36" : "h-24 sm:h-28",
+            )}>
               {p?.cover_image_url ? (
                 // User-owned signed media URLs are not compatible with a fixed Next image host.
                 // eslint-disable-next-line @next/next/no-img-element
@@ -511,40 +515,41 @@ function SellerTab({ user, onSaved, lang }: { user: UserProfile; onSaved: () => 
           {/* Contact */}
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div className="space-y-1.5">
-              <Label>{t("settings.seller.phone", lang)}</Label>
-              <Input value={phone} onChange={(e) => setPhone(e.target.value)} placeholder="+421 900 123 456" />
+              <Label htmlFor="seller-phone">{t("settings.seller.phone", lang)}</Label>
+              <Input id="seller-phone" value={phone} onChange={(e) => setPhone(e.target.value)} placeholder="+421 900 123 456" />
             </div>
             <div className="space-y-1.5">
-              <Label>{t("settings.seller.company", lang)}</Label>
-              <Input value={company} onChange={(e) => setCompany(e.target.value)} />
-            </div>
-          </div>
-
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            <div className="space-y-1.5">
-              <Label>{t("settings.seller.publicEmail", lang)}</Label>
-              <Input value={publicEmail} onChange={(e) => setPublicEmail(e.target.value)} type="email" />
-            </div>
-            <div className="space-y-1.5">
-              <Label>{t("settings.seller.secondaryPhone", lang)}</Label>
-              <Input value={secondaryPhone} onChange={(e) => setSecondaryPhone(e.target.value)} placeholder="+421 900 123 456" />
+              <Label htmlFor="seller-company">{t("settings.seller.company", lang)}</Label>
+              <Input id="seller-company" value={company} onChange={(e) => setCompany(e.target.value)} />
             </div>
           </div>
 
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div className="space-y-1.5">
-              <Label>{t("settings.seller.jobTitle", lang)}</Label>
-              <Input value={jobTitle} onChange={(e) => setJobTitle(e.target.value)} />
+              <Label htmlFor="seller-public-email">{t("settings.seller.publicEmail", lang)}</Label>
+              <Input id="seller-public-email" value={publicEmail} onChange={(e) => setPublicEmail(e.target.value)} type="email" />
             </div>
             <div className="space-y-1.5">
-              <Label>{t("settings.seller.website", lang)}</Label>
-              <Input value={website} onChange={(e) => setWebsite(e.target.value)} placeholder="https://www.example.com" />
+              <Label htmlFor="seller-secondary-phone">{t("settings.seller.secondaryPhone", lang)}</Label>
+              <Input id="seller-secondary-phone" value={secondaryPhone} onChange={(e) => setSecondaryPhone(e.target.value)} placeholder="+421 900 123 456" />
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div className="space-y-1.5">
+              <Label htmlFor="seller-job-title">{t("settings.seller.jobTitle", lang)}</Label>
+              <Input id="seller-job-title" value={jobTitle} onChange={(e) => setJobTitle(e.target.value)} />
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="seller-website">{t("settings.seller.website", lang)}</Label>
+              <Input id="seller-website" value={website} onChange={(e) => setWebsite(e.target.value)} placeholder="https://www.example.com" />
             </div>
           </div>
 
           <div className="space-y-1.5">
-            <Label>{t("settings.seller.bio", lang)}</Label>
+            <Label htmlFor="seller-bio">{t("settings.seller.bio", lang)}</Label>
             <Textarea
+              id="seller-bio"
               value={bio}
               onChange={(e) => setBio(e.target.value)}
               rows={3}
@@ -557,16 +562,16 @@ function SellerTab({ user, onSaved, lang }: { user: UserProfile; onSaved: () => 
           <CollapsibleSection title={t("settings.seller.sectionSocial", lang)} defaultOpen={hasSocial}>
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
               <div className="space-y-1.5">
-                <Label>{t("settings.seller.linkedin", lang)}</Label>
-                <Input value={linkedin} onChange={(e) => setLinkedin(e.target.value)} placeholder="https://linkedin.com/in/your-name" />
+                <Label htmlFor="seller-linkedin">{t("settings.seller.linkedin", lang)}</Label>
+                <Input id="seller-linkedin" value={linkedin} onChange={(e) => setLinkedin(e.target.value)} placeholder="https://linkedin.com/in/your-name" />
               </div>
               <div className="space-y-1.5">
-                <Label>{t("settings.seller.twitter", lang)}</Label>
-                <Input value={twitter} onChange={(e) => setTwitter(e.target.value)} placeholder="@yourhandle" />
+                <Label htmlFor="seller-twitter">{t("settings.seller.twitter", lang)}</Label>
+                <Input id="seller-twitter" value={twitter} onChange={(e) => setTwitter(e.target.value)} placeholder="@yourhandle" />
               </div>
               <div className="space-y-1.5">
-                <Label>{t("settings.seller.instagram", lang)}</Label>
-                <Input value={instagram} onChange={(e) => setInstagram(e.target.value)} placeholder="@yourhandle" />
+                <Label htmlFor="seller-instagram">{t("settings.seller.instagram", lang)}</Label>
+                <Input id="seller-instagram" value={instagram} onChange={(e) => setInstagram(e.target.value)} placeholder="@yourhandle" />
               </div>
             </div>
           </CollapsibleSection>
@@ -577,18 +582,18 @@ function SellerTab({ user, onSaved, lang }: { user: UserProfile; onSaved: () => 
             <div className="min-w-0">
               <p className="text-sm font-medium">{t("settings.seller.reAgent", lang)}</p>
             </div>
-            <Switch checked={isRePro} onCheckedChange={setIsRePro} />
+            <Switch aria-label={t("settings.seller.reAgent", lang)} checked={isRePro} onCheckedChange={setIsRePro} />
           </div>
 
           {isRePro && (
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div className="space-y-1.5">
-                <Label>{t("settings.seller.license", lang)}</Label>
-                <Input value={license} onChange={(e) => setLicense(e.target.value)} />
+                <Label htmlFor="seller-license">{t("settings.seller.license", lang)}</Label>
+                <Input id="seller-license" value={license} onChange={(e) => setLicense(e.target.value)} />
               </div>
               <div className="space-y-1.5">
-                <Label>{t("settings.seller.agency", lang)}</Label>
-                <Input value={agency} onChange={(e) => setAgency(e.target.value)} />
+                <Label htmlFor="seller-agency">{t("settings.seller.agency", lang)}</Label>
+                <Input id="seller-agency" value={agency} onChange={(e) => setAgency(e.target.value)} />
               </div>
             </div>
           )}
@@ -597,25 +602,25 @@ function SellerTab({ user, onSaved, lang }: { user: UserProfile; onSaved: () => 
           <Separator />
           <CollapsibleSection title={t("settings.seller.sectionAddress", lang)} defaultOpen={hasAddress}>
             <div className="space-y-1.5">
-              <Label>{t("settings.seller.address", lang)}</Label>
-              <Input value={address} onChange={(e) => setAddress(e.target.value)} />
+              <Label htmlFor="seller-address">{t("settings.seller.address", lang)}</Label>
+              <Input id="seller-address" value={address} onChange={(e) => setAddress(e.target.value)} />
             </div>
             <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
               <div className="space-y-1.5">
-                <Label>{t("settings.seller.city", lang)}</Label>
-                <Input value={city} onChange={(e) => setCity(e.target.value)} />
+                <Label htmlFor="seller-city">{t("settings.seller.city", lang)}</Label>
+                <Input id="seller-city" value={city} onChange={(e) => setCity(e.target.value)} />
               </div>
               <div className="space-y-1.5">
-                <Label>{t("settings.seller.state", lang)}</Label>
-                <Input value={state} onChange={(e) => setState(e.target.value)} />
+                <Label htmlFor="seller-state">{t("settings.seller.state", lang)}</Label>
+                <Input id="seller-state" value={state} onChange={(e) => setState(e.target.value)} />
               </div>
               <div className="space-y-1.5">
-                <Label>{t("settings.seller.country", lang)}</Label>
-                <Input value={country} onChange={(e) => setCountry(e.target.value)} maxLength={2} placeholder="SK" />
+                <Label htmlFor="seller-country">{t("settings.seller.country", lang)}</Label>
+                <Input id="seller-country" value={country} onChange={(e) => setCountry(e.target.value)} maxLength={2} placeholder="SK" />
               </div>
               <div className="space-y-1.5">
-                <Label>{t("settings.seller.postalCode", lang)}</Label>
-                <Input value={postalCode} onChange={(e) => setPostalCode(e.target.value)} />
+                <Label htmlFor="seller-postal-code">{t("settings.seller.postalCode", lang)}</Label>
+                <Input id="seller-postal-code" value={postalCode} onChange={(e) => setPostalCode(e.target.value)} />
               </div>
             </div>
           </CollapsibleSection>
@@ -768,7 +773,7 @@ function ReaiTab({ lang }: { lang: string }) {
                 </div>
                 <span className={cn(
                   "w-fit rounded-full px-2.5 py-0.5 text-[11px] font-medium",
-                  consent.consented ? "bg-success/10 text-success" : "bg-foreground/10 text-foreground/60",
+                  consent.consented ? "bg-success/10 text-emerald-800" : "bg-foreground/10 text-foreground/60",
                 )}>
                   {consent.consented ? t("common.allowed", lang) : t("common.notAllowed", lang)}
                 </span>
@@ -1566,7 +1571,7 @@ function LocalizationTab({ user, lang }: { user: UserProfile; lang: string }) {
           <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
             <SettingsField label={t("settings.localization.language", lang)} hint={optionName(languages, language)}>
               <Select value={language} onValueChange={setLanguage}>
-                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectTrigger aria-label={t("settings.localization.language", lang)}><SelectValue /></SelectTrigger>
                 <SelectContent>
                   {languages.map((l) => (
                     <SelectItem key={l.code} value={l.code}>{stableOptionLabel(l)}</SelectItem>
@@ -1576,7 +1581,7 @@ function LocalizationTab({ user, lang }: { user: UserProfile; lang: string }) {
             </SettingsField>
             <SettingsField label={t("settings.localization.timezone", lang)} hint={timezone}>
               <Select value={timezone} onValueChange={setTimezone}>
-                <SelectTrigger><SelectValue placeholder={timezone || "—"} /></SelectTrigger>
+                <SelectTrigger aria-label={t("settings.localization.timezone", lang)}><SelectValue placeholder={timezone || "—"} /></SelectTrigger>
                 <SelectContent>
                   {timezones.map((tz) => (
                     <SelectItem key={tz.code} value={tz.code}>{tz.name}</SelectItem>
@@ -1591,7 +1596,7 @@ function LocalizationTab({ user, lang }: { user: UserProfile; lang: string }) {
           <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
             <SettingsField label={t("settings.localization.currency", lang)} hint={optionName(currencies, currency)}>
               <Select value={currency} onValueChange={setCurrency}>
-                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectTrigger aria-label={t("settings.localization.currency", lang)}><SelectValue /></SelectTrigger>
                 <SelectContent>
                   {currencies.map((c) => (
                     <SelectItem key={c.code} value={c.code}>
@@ -1603,7 +1608,7 @@ function LocalizationTab({ user, lang }: { user: UserProfile; lang: string }) {
             </SettingsField>
             <SettingsField label={t("settings.localization.dateFormat", lang)} hint={formattedDateSample}>
               <Select value={dateFormat} onValueChange={setDateFormat}>
-                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectTrigger aria-label={t("settings.localization.dateFormat", lang)}><SelectValue /></SelectTrigger>
                 <SelectContent>
                   {dateFormats.map((d) => (
                     <SelectItem key={d.code} value={d.code}>{d.code} · {d.name}</SelectItem>
@@ -1616,7 +1621,7 @@ function LocalizationTab({ user, lang }: { user: UserProfile; lang: string }) {
           <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
             <SettingsField label={t("settings.localization.areaUnit", lang)} hint={formattedAreaSample}>
               <Select value={areaUnit} onValueChange={setAreaUnit}>
-                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectTrigger aria-label={t("settings.localization.areaUnit", lang)}><SelectValue /></SelectTrigger>
                 <SelectContent>
                   {areaUnits.map((u) => (
                     <SelectItem key={u.code} value={u.code}>
@@ -1628,7 +1633,7 @@ function LocalizationTab({ user, lang }: { user: UserProfile; lang: string }) {
             </SettingsField>
             <SettingsField label={t("settings.localization.distanceUnit", lang)} hint={formattedDistanceSample}>
               <Select value={distanceUnit} onValueChange={setDistanceUnit}>
-                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectTrigger aria-label={t("settings.localization.distanceUnit", lang)}><SelectValue /></SelectTrigger>
                 <SelectContent>
                   {distanceUnits.map((u) => (
                     <SelectItem key={u.code} value={u.code}>
@@ -1675,7 +1680,7 @@ function UsageBar({ current, max, label, unit }: { current: number; max: number;
 const tierBadgeColors: Record<string, string> = {
   FREE: "bg-muted text-muted-foreground",
   TRIAL: "bg-blue-100 text-blue-700",
-  LITE: "bg-success/10 text-success",
+  LITE: "bg-success/10 text-emerald-800",
   PRO: "bg-purple-100 text-purple-700",
   ENTERPRISE: "bg-amber-100 text-amber-700",
 };
@@ -2143,7 +2148,7 @@ function TwoFactorSection({ lang }: { lang: string }) {
           <div className="flex items-center justify-between">
             <span className={cn("rounded-full px-2.5 py-0.5 text-[11px] font-semibold",
               status?.enabled
-                ? "bg-success/10 text-success"
+                ? "bg-success/10 text-emerald-800"
                 : "bg-muted text-muted-foreground"
             )}>
               {status?.enabled ? t("settings.security.twoFaEnabled", lang) : t("settings.security.twoFaDisabled", lang)}
@@ -2325,7 +2330,7 @@ function PhoneSection({ user, onSaved, lang }: { user: UserProfile; onSaved: () 
               <span className="text-sm font-medium">{phone}</span>
               <span className={cn("rounded-full px-2.5 py-0.5 text-[11px] font-semibold",
                 verified
-                  ? "bg-success/10 text-success"
+                  ? "bg-success/10 text-emerald-800"
                   : "bg-amber-100 text-amber-700"
               )}>
                 {verified ? t("settings.security.phoneVerified", lang) : t("settings.security.phoneUnverified", lang)}
@@ -2441,7 +2446,7 @@ export function SettingsForm({ user, onSaved }: { user: UserProfile; onSaved: ()
           ))}
         </TabsList>
       </div>
-      <div className="min-w-0">
+      <div className="min-w-0 max-lg:[&_button]:min-h-11">
         <TabsContent value="profile" className="mt-0">
           <ProfileTab user={user} onSaved={onSaved} lang={lang} />
         </TabsContent>

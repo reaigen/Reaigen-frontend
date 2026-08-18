@@ -191,7 +191,7 @@ function GalleryLightbox({
       aria-label={alt}
       className="fixed inset-0 z-[9999] flex overscroll-contain bg-surface text-foreground animate-in fade-in duration-200"
     >
-      <header className="pointer-events-none absolute inset-x-0 top-0 z-40 grid h-20 grid-cols-[1fr_auto_1fr] items-center px-3 pt-safe sm:h-24 sm:px-8">
+      <div className="pointer-events-none absolute inset-x-0 top-0 z-40 grid h-20 grid-cols-[1fr_auto_1fr] items-center px-3 pt-safe sm:h-24 sm:px-8">
         <div className="flex min-w-0 justify-start">
           <button
             ref={closeRef}
@@ -249,7 +249,7 @@ function GalleryLightbox({
             </button>
           ) : null}
         </div>
-      </header>
+      </div>
 
       {viewMode === "photo" && count > 1 ? (
         <>
@@ -301,8 +301,8 @@ function GalleryLightbox({
           ))}
         </div>
       ) : (
-        <div className="h-full w-full overflow-y-auto overscroll-y-contain px-3 pb-8 pt-20 scrollbar-none sm:px-8 sm:pb-12 sm:pt-24">
-          <div className="mx-auto grid max-w-[100rem] grid-flow-dense auto-rows-[clamp(8rem,34vw,13rem)] grid-cols-2 gap-2 sm:gap-3 md:auto-rows-[clamp(9.5rem,14vw,16rem)] md:grid-cols-4">
+        <div className="flex h-full w-full flex-col overflow-y-auto overscroll-y-contain px-3 pb-8 pt-20 scrollbar-none sm:px-8 sm:pb-12 sm:pt-24">
+          <div className="mx-auto mt-3 grid w-full max-w-[100rem] grid-flow-dense auto-rows-[clamp(8rem,34vw,13rem)] grid-cols-2 gap-2 sm:mt-4 sm:gap-3 md:auto-rows-[clamp(9.5rem,14vw,16rem)] md:grid-cols-4">
             {images.map((image, imageIndex) => {
               const isFeatureTile = imageIndex % 5 === 0;
               return (
@@ -335,7 +335,7 @@ function GalleryLightbox({
                   aria-current={imageIndex === index ? "true" : undefined}
                 >
                   <Thumbnail
-                    src={image.thumbnail_url || image.url}
+                    src={isFeatureTile ? image.url : image.thumbnail_url || image.url}
                     alt={`${alt} ${imageIndex + 1}`}
                     className="absolute inset-0 h-full w-full select-none object-cover transition-transform duration-500 ease-out group-hover:scale-[1.015] motion-reduce:transition-none"
                     priority={imageIndex < 5}
@@ -528,7 +528,7 @@ export function DraftImageGallery({ images, alt, fallbackUrl, lang = "en", onAct
                 aria-label={`${t("draft.gallery.photoView", lang)}: ${counterLabel(imageIndex, count, lang)}`}
               >
                 <Thumbnail
-                  src={image.thumbnail_url || image.url}
+                  src={imageIndex === 0 ? image.url : image.thumbnail_url || image.url}
                   alt={`${alt} ${imageIndex + 1}`}
                   className="absolute inset-0 h-full w-full select-none object-cover transition-transform duration-500 ease-out group-hover/tile:scale-[1.012] motion-reduce:transition-none"
                   priority
@@ -543,7 +543,7 @@ export function DraftImageGallery({ images, alt, fallbackUrl, lang = "en", onAct
           <button
             type="button"
             onClick={onManage}
-            className="floating-control pen-touch-target absolute left-3 top-3 gap-2 border border-black/10 bg-white/90 px-3.5 text-[11px] text-black/70 shadow-sm backdrop-blur-xl hover:bg-black hover:text-white hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-black/25"
+            className="floating-capsule floating-control pen-touch-target absolute left-3 top-3 gap-2 border border-black/10 bg-white/90 px-4 text-[12px] font-medium text-black/70 shadow-sm backdrop-blur-xl transition-[background-color,color,box-shadow] hover:bg-black hover:text-white hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-black/25"
             aria-label={manageLabel}
           >
             <EditIcon size={15} />
@@ -553,21 +553,23 @@ export function DraftImageGallery({ images, alt, fallbackUrl, lang = "en", onAct
 
         <button
           type="button"
-          onClick={() => openLightbox(activeIndex)}
+          data-testid="draft-gallery-icon-overview-open"
+          onClick={() => openLightbox(activeIndex, true)}
           className={cn(
             "floating-icon-button pen-touch-target absolute right-3 top-3 border border-black/10 bg-white/90 text-black/70 shadow-sm backdrop-blur-xl hover:bg-black hover:text-white hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-black/25",
             mosaicAvailable && "lg:hidden",
           )}
-          aria-label={t("draft.gallery.fullscreen", lang)}
+          aria-label={t("draft.gallery.allPhotos", lang)}
         >
-          <ExpandIcon />
+          <GridIcon size={16} />
         </button>
 
         {mosaicAvailable ? (
-          <button
-            type="button"
-            onClick={() => openLightbox(activeIndex, true)}
-            className="floating-capsule floating-control pen-touch-target absolute bottom-3 right-3 z-10 hidden gap-2 bg-card/92 px-4 text-[12px] text-foreground shadow-control backdrop-blur-xl hover:bg-foreground hover:text-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 lg:inline-flex"
+        <button
+          type="button"
+          data-testid="draft-gallery-overview-open"
+          onClick={() => openLightbox(activeIndex, true)}
+            className="floating-capsule floating-control pen-touch-target absolute bottom-3 right-3 z-10 hidden gap-2 border border-black/10 bg-white/90 px-4 text-[12px] font-medium text-black/70 shadow-sm backdrop-blur-xl transition-[background-color,color,box-shadow] hover:bg-black hover:text-white hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-black/25 lg:inline-flex"
             aria-label={t("draft.gallery.allPhotos", lang)}
           >
             <GridIcon size={16} />
@@ -622,23 +624,20 @@ export function DraftImageGallery({ images, alt, fallbackUrl, lang = "en", onAct
             mosaicAvailable && "lg:hidden",
           )}>
             {count <= 10 ? (
-              <div className="pointer-events-auto flex items-center rounded-full border border-black/[0.07] bg-white/90 px-1 py-0.5 shadow-sm backdrop-blur-xl">
+              <div
+                role="status"
+                aria-label={counterLabel(activeIndex, count, lang)}
+                className="flex h-8 items-center gap-2 rounded-full border border-black/[0.06] bg-white/[0.88] px-3 shadow-[0_4px_14px_rgba(0,0,0,0.08)] backdrop-blur-xl"
+              >
                 {displayImages.map((image, imageIndex) => (
-                  <button
+                  <span
                     key={`${image.id ?? image.url}-indicator`}
-                    type="button"
-                    onClick={() => goTo(imageIndex)}
-                    className="group/dot rounded-full p-1.5 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-black/25"
-                    aria-label={counterLabel(imageIndex, count, lang)}
-                    aria-current={imageIndex === activeIndex ? "true" : undefined}
-                  >
-                    <span
-                      className={cn(
-                        "block h-1.5 rounded-full transition-all duration-200",
-                        imageIndex === activeIndex ? "w-4 bg-black/75" : "w-1.5 bg-black/25 group-hover/dot:bg-black/45",
-                      )}
-                    />
-                  </button>
+                    aria-hidden="true"
+                    className={cn(
+                      "block h-1.5 rounded-full transition-all duration-200",
+                      imageIndex === activeIndex ? "w-4 bg-black/75" : "w-1.5 bg-black/25",
+                    )}
+                  />
                 ))}
               </div>
             ) : (

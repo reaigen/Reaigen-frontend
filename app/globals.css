@@ -41,7 +41,7 @@
     --destructive:            0 84% 50%;
     --destructive-foreground: 0 0% 99%;
 
-    --success:                142 72% 40%;
+    --success:                142 64% 31%;
     --success-foreground:     0 0% 99%;
 
     --border:                 220 8% 84%;
@@ -180,11 +180,14 @@
   .camera-editor-workspace [class~="text-white/70"],
   .camera-editor-workspace [class~="text-white/65"],
   .camera-editor-workspace [class~="text-white/60"],
-  .camera-editor-workspace [class~="text-white/55"],
+  .camera-editor-workspace [class~="text-white/55"] {
+    color: hsl(var(--foreground) / 0.78) !important;
+  }
+
   .camera-editor-workspace [class~="text-white/50"],
   .camera-editor-workspace [class~="text-white/45"],
   .camera-editor-workspace [class~="text-white/40"] {
-    color: hsl(var(--foreground) / 0.72) !important;
+    color: hsl(var(--foreground) / 0.62) !important;
   }
 
   .camera-editor-workspace [class~="border-white/15"],
@@ -240,11 +243,37 @@
 
   @container (min-width: 700px) {
     .media-manager-layout {
-      grid-template-columns: minmax(0, 1fr) 17rem;
+      grid-template-columns: minmax(0, 1fr);
     }
 
     .media-manager-inspector {
-      display: block;
+      order: -1;
+      display: grid;
+      grid-template-columns: minmax(11rem, 13rem) minmax(0, 1fr);
+    }
+
+    .media-manager-inspector-visual {
+      width: 100%;
+      min-height: 11rem;
+      aspect-ratio: auto !important;
+    }
+
+    .media-manager-inspector-body {
+      display: grid;
+      grid-template-columns: minmax(9rem, 0.72fr) minmax(0, 1.65fr);
+      align-content: center;
+      gap: 1rem;
+    }
+
+    .media-manager-inspector-actions {
+      margin-top: 0;
+      grid-template-columns: repeat(auto-fit, minmax(9.5rem, 1fr));
+      align-content: center;
+    }
+
+    .media-manager-inspector-confirm {
+      grid-column: 1 / -1;
+      margin-top: 0;
     }
 
     .media-manager-layout-reorder {
@@ -375,6 +404,60 @@
     border-radius: 9999px;
   }
 
+  /* Segmented choices in sidebars share one material. This is deliberately
+     narrower than `floating-toolbar`: action docks keep their own hierarchy,
+     while mutually exclusive choices get one predictable glass track. */
+  .selection-capsule-track {
+    display: flex;
+    min-width: 0;
+    min-height: 52px;
+    align-items: stretch;
+    gap: 0.25rem;
+    padding: 0.3125rem;
+    border: 1px solid hsl(var(--border) / 0.66);
+    border-radius: 9999px;
+    background: linear-gradient(
+      180deg,
+      hsl(var(--card) / 0.84),
+      hsl(var(--muted) / 0.62)
+    );
+    box-shadow:
+      inset 0 1px 0 hsl(var(--card) / 0.96),
+      0 7px 24px hsl(var(--foreground) / 0.075);
+    -webkit-backdrop-filter: blur(18px) saturate(1.1);
+    backdrop-filter: blur(18px) saturate(1.1);
+  }
+
+  .selection-capsule-item {
+    display: inline-flex;
+    min-width: 0;
+    min-height: 44px;
+    align-items: center;
+    justify-content: center;
+    gap: 0.5rem;
+    border-radius: 9999px;
+    color: hsl(var(--foreground) / 0.58);
+    font-weight: 600;
+    transition:
+      color 150ms ease,
+      background-color 150ms ease,
+      box-shadow 150ms ease;
+  }
+
+  .selection-capsule-item:hover {
+    background: hsl(var(--card) / 0.62);
+    color: hsl(var(--foreground) / 0.82);
+  }
+
+  .selection-capsule-item[aria-pressed="true"],
+  .selection-capsule-item[data-state="active"] {
+    background: hsl(var(--foreground));
+    color: hsl(var(--background));
+    box-shadow:
+      inset 0 1px 0 hsl(var(--background) / 0.12),
+      0 4px 14px hsl(var(--foreground) / 0.16);
+  }
+
   .floating-capsule {
     min-height: var(--floating-control);
     border-width: 1px;
@@ -470,8 +553,8 @@
    * compact while tablet interactions retain a reliable 44px hit area.
    */
   .pen-touch-target {
-    min-width: 2.75rem;
-    min-height: 2.75rem;
+    min-width: 44px;
+    min-height: 44px;
     touch-action: manipulation;
     -webkit-tap-highlight-color: transparent;
     user-select: none;

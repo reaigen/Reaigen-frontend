@@ -26,12 +26,8 @@ import { WebVitalsReporter } from "./components/web-vitals-reporter";
 export const viewport: Viewport = {
   width: "device-width",
   initialScale: 1,
-  // Pinch-zooming the shell fought the app's own gestures — the gallery
-  // carousel, the floorplan canvas and the panel drags all pan and scale
-  // themselves, and a stray two-finger touch left the whole page zoomed with
-  // no obvious way back. Surfaces that need magnification do it internally.
-  maximumScale: 1,
-  userScalable: false,
+  // Keep browser zoom available. Gesture-heavy editors constrain their own
+  // canvases; the document itself must remain magnifiable for low-vision users.
   viewportFit: "cover",
   interactiveWidget: "resizes-content",
   themeColor: "#ffffff",

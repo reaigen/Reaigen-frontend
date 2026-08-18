@@ -57,7 +57,7 @@ import { AgentMiniUi } from "./agent-mini-ui";
 import { MediaVersionCard, type MediaAction } from "./draft-version-manager";
 import { useAuth } from "./hooks/use-auth";
 import { StatusPill } from "./status-pill";
-import { SearchIcon, VersionsIcon, LayoutIcon, SparklesIcon, CheckIcon, CloseIcon, EditIcon, LockIcon, InfoIcon } from "./icons";
+import { AgentIcon, SearchIcon, VersionsIcon, LayoutIcon, SparklesIcon, CheckIcon, CloseIcon, EditIcon, LockIcon, InfoIcon } from "./icons";
 
 // Maps a quick-action key to its icon, so the agent suggestions read as
 // distinct, recognisable actions rather than flat text rows.
@@ -408,6 +408,12 @@ export function ReaiAgentCard({
   const [unitCatalog, setUnitCatalog] = useState<UnitLookup[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [copiedShareUrl, setCopiedShareUrl] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!historyNotice) return;
+    const timer = window.setTimeout(() => setHistoryNotice(null), 3_200);
+    return () => window.clearTimeout(timer);
+  }, [historyNotice]);
   const [consentReloadKey, setConsentReloadKey] = useState(0);
   const [composerFocused, setComposerFocused] = useState(false);
   const [transcriptRestored, setTranscriptRestored] = useState(false);
@@ -930,13 +936,12 @@ export function ReaiAgentCard({
       ) : (
         <div className={cn("mt-4", panel ? "flex min-h-0 flex-1 flex-col" : "space-y-3", compactPanel ? "mt-1 gap-2" : panel && "gap-3")}>
           {draftId && compactPanel && !composerFocused && (
-            <nav className="grid grid-cols-3 border-b border-border/60" aria-label={t("reai.title", lang)}>
+            <nav className="selection-capsule-track grid grid-cols-3" aria-label={t("reai.title", lang)}>
               <button
                 type="button"
                 aria-pressed={!showHistory && !showMediaHistory}
                 className={cn(
-                  "min-w-0 overflow-hidden rounded-none border-b-2 px-1 py-2 text-[11px] font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring",
-                  !showHistory && !showMediaHistory ? "border-foreground text-foreground" : "border-transparent text-foreground/50",
+                  "selection-capsule-item min-w-0 overflow-hidden px-1 text-[11px] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
                 )}
                 onClick={() => {
                   setShowHistory(false);
@@ -950,8 +955,7 @@ export function ReaiAgentCard({
                 aria-label={t("reai.mediaVersions", lang)}
                 aria-pressed={showMediaHistory}
                 className={cn(
-                  "min-w-0 overflow-hidden rounded-none border-b-2 px-1 py-2 text-[11px] font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring",
-                  showMediaHistory ? "border-foreground text-foreground" : "border-transparent text-foreground/50",
+                  "selection-capsule-item min-w-0 overflow-hidden px-1 text-[11px] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
                 )}
                 onClick={() => {
                   if (!showMediaHistory) void loadMediaHistory();
@@ -966,8 +970,7 @@ export function ReaiAgentCard({
                 aria-label={t("reai.editHistory", lang)}
                 aria-pressed={showHistory}
                 className={cn(
-                  "min-w-0 overflow-hidden rounded-none border-b-2 px-1 py-2 text-[11px] font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring",
-                  showHistory ? "border-foreground text-foreground" : "border-transparent text-foreground/50",
+                  "selection-capsule-item min-w-0 overflow-hidden px-1 text-[11px] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
                 )}
                 onClick={() => {
                   if (!showHistory) void loadHistory();
@@ -986,17 +989,14 @@ export function ReaiAgentCard({
             // active segment is a lifted card on a muted track instead of the
             // solid high-contrast capsule it used to be.
             <nav
-              className="mx-auto grid w-full max-w-[24rem] grid-cols-3 gap-0.5 rounded-full border border-border/60 bg-muted/50 p-0.5"
+              className="selection-capsule-track mx-auto grid w-full max-w-[24rem] grid-cols-3"
               aria-label={t("reai.title", lang)}
             >
               <button
                 type="button"
                 aria-pressed={!showHistory && !showMediaHistory}
                 className={cn(
-                  "floating-control-sm w-full focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
-                  !showHistory && !showMediaHistory
-                    ? "bg-card text-foreground shadow-control"
-                    : "text-foreground/55 hover:bg-background/60 hover:text-foreground",
+                  "selection-capsule-item w-full text-[11px] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
                 )}
                 onClick={() => {
                   setShowHistory(false);
@@ -1010,10 +1010,7 @@ export function ReaiAgentCard({
                 aria-label={t("reai.mediaVersions", lang)}
                 aria-pressed={showMediaHistory}
                 className={cn(
-                  "floating-control-sm w-full focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
-                  showMediaHistory
-                    ? "bg-card text-foreground shadow-control"
-                    : "text-foreground/55 hover:bg-background/60 hover:text-foreground",
+                  "selection-capsule-item w-full text-[11px] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
                 )}
                 onClick={() => {
                   if (!showMediaHistory) void loadMediaHistory();
@@ -1028,10 +1025,7 @@ export function ReaiAgentCard({
                 aria-label={t("reai.editHistory", lang)}
                 aria-pressed={showHistory}
                 className={cn(
-                  "floating-control-sm w-full focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
-                  showHistory
-                    ? "bg-card text-foreground shadow-control"
-                    : "text-foreground/55 hover:bg-background/60 hover:text-foreground",
+                  "selection-capsule-item w-full text-[11px] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
                 )}
                 onClick={() => {
                   if (!showHistory) void loadHistory();
@@ -1631,15 +1625,31 @@ export function ReaiAgentCard({
             </div>
           )}
           {!showHistory && !showMediaHistory && turns.length === 0 && (
-            <div className={cn("flex flex-col", panel ? "min-h-0 flex-1" : "py-2", panel && !compactPanel && "items-center justify-start px-5 pt-12 text-center")}>
-              <p className={cn("text-[14px] leading-relaxed text-foreground/70", panel && "max-w-[280px] text-[13px]", compactPanel && "hidden")}>
+            <div className={cn(
+              "flex flex-col",
+              panel ? "min-h-0 flex-1 items-center justify-center px-6 pb-8 text-center" : "py-2",
+            )}>
+              {panel ? (
+                <span
+                  aria-hidden="true"
+                  className="mb-4 flex h-12 w-12 items-center justify-center rounded-full border border-border/65 bg-card text-foreground shadow-control"
+                >
+                  <AgentIcon size={22} strokeWidth={1.7} />
+                </span>
+              ) : null}
+              <p className={cn("text-[14px] leading-relaxed text-foreground/70", panel && "max-w-[300px] text-[13px]")}>
                 {t(workspaceContext === "settings" ? "reai.startSettingsConversation" : (draftId ? "reai.startDraftConversation" : "reai.startConversation"), lang)}
               </p>
             </div>
           )}
           {error && <p role="alert" className="rounded-2xl border border-destructive/20 bg-destructive/[0.045] px-3 py-2.5 text-[12px] text-destructive">{error}</p>}
           {!showHistory && !showMediaHistory && turns.length === 0 && (!panel || (!composerFocused && !message.trim())) && (
-            <div className={cn("flex gap-2", compactPanel ? "overflow-x-auto pb-0.5 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden" : "flex-wrap")}>
+            <div className={cn(
+              "flex gap-2",
+              compactPanel
+                ? "overflow-x-auto pb-0.5 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+                : "flex-wrap justify-center",
+            )}>
               {quickActions.map((key, index) => {
                 const Icon = ACTION_ICON[key] ?? SparklesIcon;
                 return (
@@ -1650,7 +1660,7 @@ export function ReaiAgentCard({
                     onClick={() => void ask(t(key, lang))}
                     className={cn(
                       "group inline-flex shrink-0 items-center gap-1.5 rounded-2xl border border-transparent bg-foreground/[0.04] px-3 text-[12px] font-medium text-foreground/75 transition-colors hover:bg-foreground/[0.06] hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50",
-                      compactPanel ? "h-10" : "h-8",
+                      "h-11",
                       compactPanel && index > 1 && "hidden",
                       compactPanel && index > 0 && "max-[359px]:hidden",
                     )}

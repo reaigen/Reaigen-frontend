@@ -8,6 +8,8 @@
     "start": "next start --port 3055",
     "lint": "eslint .",
     "typecheck": "tsc --noEmit",
+    "ux:audit": "node scripts/ux-audit.mjs",
+    "ux:audit:full": "node scripts/ux-audit-full.mjs",
     "analyze-floorplan-patterns": "node scripts/analyze-floorplan-patterns.mjs",
     "validate-floorplan": "node --test \"$PWD/node_modules/@reaigen/floorplan-solver/test/solver.test.mjs\"",
     "validate-floorplan-integration": "node --experimental-strip-types --test scripts/validate-floorplan-integration.mjs",
@@ -48,6 +50,8 @@
     "three": "^0.185.1"
   },
   "devDependencies": {
+    "@axe-core/playwright": "^4.13.0",
+    "@playwright/test": "^1.62.1",
     "@types/node": "^22.15.0",
     "@types/react": "^19.2.14",
     "@types/react-dom": "^19.2.3",

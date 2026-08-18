@@ -38,7 +38,6 @@ import {
   CopyIcon,
   ExternalLinkIcon,
   LockIcon,
-  PlusIcon,
 } from "./icons";
 import {
   ShareCreateForm,
@@ -51,7 +50,6 @@ import { StatusPill } from "./status-pill";
 
 const LINKS_TIMEOUT_MS = 10_000;
 const FEEDBACK_TIMEOUT_MS = 2_500;
-const SHARE_FORM_ID = "draft-share-form";
 
 /**
  * One channel for every "did that work?" answer in this surface. Copying,
@@ -163,7 +161,6 @@ export function DraftSharingDock({
   const [linksLoaded, setLinksLoaded] = React.useState(false);
   const [linksError, setLinksError] = React.useState(false);
   const [selectedShareId, setSelectedShareId] = React.useState<number | null>(null);
-  const [creating, setCreating] = React.useState(false);
   const [editingShare, setEditingShare] = React.useState<ShareData | null>(null);
   const [scope, setScope] = React.useState<ContentScope>(() => (
     defaultContentScope(hasTour, hasPhotos, hasFloorplan)
@@ -172,13 +169,13 @@ export function DraftSharingDock({
   const [saving, setSaving] = React.useState(false);
   const [feedback, setFeedback] = React.useState<ShareFeedback | null>(null);
   const [formVersion, setFormVersion] = React.useState(0);
-  const [formValid, setFormValid] = React.useState(true);
   const [stats, setStats] = React.useState<ShareStats | null>(null);
   const [actionLoading, setActionLoading] = React.useState(false);
   const [actionError, setActionError] = React.useState(false);
   const [confirmRevoke, setConfirmRevoke] = React.useState(false);
   const wasOpenRef = React.useRef(false);
   const headingRef = React.useRef<HTMLHeadingElement | null>(null);
+  const formSectionRef = React.useRef<HTMLDivElement | null>(null);
   const requestIdRef = React.useRef(0);
   const feedbackTimerRef = React.useRef<number | null>(null);
 
@@ -203,7 +200,6 @@ export function DraftSharingDock({
           ? current
           : draftShares[0]?.id ?? null
       ));
-      if (!draftShares.length) setCreating(true);
     } catch {
       if (requestId === requestIdRef.current) setLinksError(true);
     } finally {
@@ -212,12 +208,20 @@ export function DraftSharingDock({
   }, [draftId]);
 
   React.useEffect(() => {
-    const becameOpen = open && !wasOpenRef.current;
-    wasOpenRef.current = open;
-    if (!becameOpen) return;
-    headingRef.current?.focus({ preventScroll: true });
-    if (!linksLoaded) void loadLinks();
-  }, [linksLoaded, loadLinks, open]);
+    if (!open) {
+      // Reset on close, otherwise a remount looks like "already handled" and
+      // the panel never asks for links again.
+      wasOpenRef.current = false;
+      return;
+    }
+    if (!wasOpenRef.current) {
+      wasOpenRef.current = true;
+      headingRef.current?.focus({ preventScroll: true });
+    }
+    // Open, nothing loaded, nothing in flight and no error to show means the
+    // previous attempt was dropped — ask again rather than sit on a skeleton.
+    if (!linksLoaded && !linksLoading && !linksError) void loadLinks();
+  }, [linksError, linksLoaded, linksLoading, loadLinks, open]);
 
   React.useEffect(() => {
     const refresh = () => {
@@ -243,8 +247,15 @@ export function DraftSharingDock({
     return () => { current = false; };
   }, [open, selectedShareId]);
 
+  /*
+    This cleanup used to bump requestIdRef to cancel in-flight work. React's
+    StrictMode runs it on the simulated unmount as well, so the very first
+    links fetch came back with a stale id, was discarded, and left the panel
+    on "Loading…" permanently. A late setState on an unmounted component is a
+    harmless no-op, so the id only needs to advance when a newer loadLinks
+    supersedes an older one — which loadLinks already does itself.
+  */
   React.useEffect(() => () => {
-    requestIdRef.current += 1;
     if (feedbackTimerRef.current) window.clearTimeout(feedbackTimerRef.current);
   }, []);
 
@@ -269,8 +280,8 @@ export function DraftSharingDock({
     );
   }, [showFeedback]);
 
-  const openCreate = React.useCallback(() => {
-    setCreating(true);
+  /** Returns the always-present form to a blank new-link state. */
+  const resetForm = React.useCallback(() => {
     setEditingShare(null);
     setFormError(null);
     showFeedback(null);
@@ -280,17 +291,8 @@ export function DraftSharingDock({
 
   const selectShare = React.useCallback((shareId: number) => {
     setSelectedShareId(shareId);
-    setCreating(false);
-    setEditingShare(null);
     setFormError(null);
     showFeedback(null);
-  }, [showFeedback]);
-
-  const cancelCreate = React.useCallback(() => {
-    setEditingShare(null);
-    setFormError(null);
-    showFeedback(null);
-    setCreating(false);
   }, [showFeedback]);
 
   const editSelectedShare = React.useCallback(() => {
@@ -304,7 +306,7 @@ export function DraftSharingDock({
       floorplan: hasFloorplan,
     }));
     setFormVersion((version) => version + 1);
-    setCreating(true);
+    formSectionRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
   }, [hasFloorplan, hasPhotos, hasTour, selectedShare, showFeedback]);
 
   const handleSubmit = React.useCallback(async (formData: ShareFormData) => {
@@ -335,7 +337,8 @@ export function DraftSharingDock({
         )));
         setSelectedShareId(updated.id);
         setEditingShare(null);
-        setCreating(false);
+        setScope(defaultContentScope(hasTour, hasPhotos, hasFloorplan));
+        setFormVersion((version) => version + 1);
         showFeedback({ kind: "saved" });
         return;
       }
@@ -349,7 +352,9 @@ export function DraftSharingDock({
       setShares((current) => [created, ...current]);
       setLinksLoaded(true);
       setSelectedShareId(created.id);
-      setCreating(false);
+      // The form stays on screen, so hand it back blank for the next link
+      // instead of leaving the settings of the one just created.
+      setScope(defaultContentScope(hasTour, hasPhotos, hasFloorplan));
       setFormVersion((version) => version + 1);
       await copyShare(created);
     } catch (error) {
@@ -364,6 +369,9 @@ export function DraftSharingDock({
     copyShare,
     draftId,
     editingShare,
+    hasFloorplan,
+    hasPhotos,
+    hasTour,
     lang,
     primarySplatId,
     scope.tour,
@@ -391,7 +399,6 @@ export function DraftSharingDock({
         const remaining = shares.filter((share) => share.id !== selectedShare.id);
         setShares(remaining);
         setSelectedShareId(remaining[0]?.id ?? null);
-        if (!remaining.length) setCreating(true);
       }
     } catch {
       setActionError(true);
@@ -429,41 +436,42 @@ export function DraftSharingDock({
       open={open}
       onOpenChange={(nextOpen) => {
         if (nextOpen) return;
-        cancelCreate();
+        resetForm();
         onOpenChange(false);
       }}
-      title={t(creating ? (editingShare ? "shares.editSettings" : "sharing.createNewLink") : "sharing.pageTitle", lang)}
-      description={creating
-        ? (draft.title || t("dashboard.untitled", lang))
-        : (linksLoaded ? `${shares.length} · ${t("shares.title", lang)}` : (draft.title || t("dashboard.untitled", lang)))}
+      title={t("sharing.pageTitle", lang)}
+      description={linksLoaded
+        ? `${shares.length} · ${t("shares.title", lang)}`
+        : (draft.title || t("dashboard.untitled", lang))}
       headerMode="editor"
-      closeIcon={creating ? "back" : "close"}
-      onBack={creating ? cancelCreate : undefined}
-      headerAction={!creating && (shares.length > 0 || linksError) ? (
-        <Button type="button" variant="ghost" size="icon" aria-label={t("shares.createLink", lang)} onClick={openCreate}>
-          <PlusIcon size={18} />
-        </Button>
-      ) : undefined}
-      className="sm:max-w-[580px]"
+      closeIcon="close"
+      className="sm:max-w-[640px]"
+      initialFocusRef={headingRef}
       lang={lang}
-      footer={creating ? (
-        <div className="flex w-full gap-2">
+    >
+      {/*
+        One scrolling surface: the form to make a link, then the links that
+        exist. Swapping the panel between a "create" view and a "list" view
+        meant the same state could land you in either one depending on whether
+        the panel had been opened before, and there was no way to read your
+        existing links while setting up a new one.
+      */}
+      <div className="space-y-7">
+      <h2 ref={headingRef} tabIndex={-1} className="sr-only outline-none">{t("sharing.pageTitle", lang)}</h2>
+
+      <section ref={formSectionRef} className="space-y-3 scroll-mt-4">
+        <div className="flex items-center justify-between gap-3 px-0.5">
+          <h3 className="text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">
+            {t(editingShare ? "shares.editSettings" : "sharing.createNewLink", lang)}
+          </h3>
           {editingShare ? (
-            <Button type="button" variant="outline" className="flex-1" onClick={cancelCreate} disabled={saving}>
+            <Button type="button" variant="ghost" size="xs" onClick={resetForm} disabled={saving}>
               {t("common.cancel", lang)}
             </Button>
           ) : null}
-          <Button type="submit" form={SHARE_FORM_ID} className="flex-1" disabled={saving || !formValid} loading={saving}>
-            {t(editingShare ? "shareDialog.save" : "sharing.createAndCopy", lang)}
-          </Button>
         </div>
-      ) : undefined}
-    >
-      {creating ? (
         <ShareCreateForm
           key={`${editingShare?.id ?? "new"}-${formVersion}`}
-          formId={SHARE_FORM_ID}
-          onValidityChange={setFormValid}
           scope={scope}
           onScopeChange={setScope}
           hasTour={hasTour}
@@ -474,12 +482,17 @@ export function DraftSharingDock({
           saving={saving}
           error={formError}
           initialShare={editingShare}
+          onCancelEdit={editingShare ? resetForm : undefined}
           layout="stacked"
           detailsMode="inline"
+          stickyActions={false}
         />
-      ) : (
+      </section>
+
       <div className="space-y-4">
-      <h2 ref={headingRef} tabIndex={-1} className="sr-only outline-none">{t("sharing.pageTitle", lang)}</h2>
+      <h3 className="px-0.5 text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">
+        {t("shares.title", lang)}{linksLoaded ? ` · ${shares.length}` : ""}
+      </h3>
 
       {/*
         A 64px progress hairline alone in an empty panel read as a rendering
@@ -692,26 +705,15 @@ export function DraftSharingDock({
           )}
         </div>
       ) : linksLoaded && !linksError ? (
-        <div className="rounded-2xl border border-dashed border-border/70 px-5 py-9 text-center">
+        /* The create form is directly above, so this only has to say the
+           shelf is empty — it no longer needs its own call to action. */
+        <div className="flex min-h-40 flex-col items-center justify-center rounded-[1.75rem] border border-dashed border-border/70 bg-card/45 px-6 py-7 text-center">
           <p className="text-[12px] font-medium">{t("shares.noShares", lang)}</p>
           <p className="mx-auto mt-1 max-w-[22rem] text-[11px] leading-relaxed text-muted-foreground">{t("shares.noSharesHint", lang)}</p>
-          <Button type="button" className="mt-4" onClick={openCreate}>
-            <PlusIcon size={15} /> {t("shares.createLink", lang)}
-          </Button>
         </div>
       ) : null}
-
-      {/*
-        Adding a second link is a first-class action, not a header affordance —
-        the icon in the title bar is a shortcut, this is the one you can hit.
-      */}
-      {shares.length ? (
-        <Button type="button" variant="outline" size="lg" className="w-full" onClick={openCreate}>
-          <PlusIcon size={16} /> {t("sharing.createNewLink", lang)}
-        </Button>
-      ) : null}
       </div>
-      )}
+      </div>
     </SidePanel>
   );
 }

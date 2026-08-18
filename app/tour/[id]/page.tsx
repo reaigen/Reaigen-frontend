@@ -373,8 +373,10 @@ export default function TourPage({
   if (!viewer) return null;
 
   return (
-    <div className="relative h-[100dvh] w-screen overflow-hidden bg-white">
+    <main className="relative h-[100dvh] w-screen overflow-hidden bg-white">
+      <h1 className="sr-only">{t("nav.tours", lang)}</h1>
       <SplatViewer
+        key={`${resolvedSplatId}:${activeRenderUrl ?? viewer.asset.url}:${retryCount}`}
         ref={splatRef}
         gaussianRenderer={useSparkRenderer ? "spark" : "spinoff"}
         splatUrl={activeRenderUrl ?? viewer.asset.url}
@@ -394,6 +396,8 @@ export default function TourPage({
             setActiveRenderUrl(fallbackRenderUrl);
           }
         }}
+        onRetry={() => setRetryCount((count) => count + 1)}
+        onCancel={() => router.push(viewer.draft_id ? `/draft/${viewer.draft_id}` : "/tours")}
         onShotChange={handleShotChange}
         spatialViewMode="surface"
         roomKitCage={roomKitCage}
@@ -449,6 +453,6 @@ export default function TourPage({
             lang={lang}
           />
       </>
-    </div>
+    </main>
   );
 }

@@ -13,37 +13,41 @@ interface GridLayoutToggleProps {
 export function GridLayoutToggle({ value, onChange, lang = "en" }: GridLayoutToggleProps) {
   return (
     <div
-      className="floating-toolbar hidden border-border/65 bg-secondary/80 md:flex"
+      className="floating-toolbar hidden shrink-0 border-border/65 bg-secondary/70 md:flex"
       role="group"
-      aria-label={`${t("dashboard.gridSingle", lang)} / ${t("dashboard.gridDouble", lang)}`}
+      aria-label={`${t("dashboard.gridSingle", lang)} / ${t("dashboard.gridCompact", lang)}`}
     >
       <button
         type="button"
+        data-testid="layout-single"
         onClick={() => onChange(1)}
         className={cn(
-          "floating-icon-button-sm flex items-center justify-center transition-[background-color,color,box-shadow] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2",
+          "floating-icon-button-sm transition-[background-color,color,box-shadow] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2",
           value === 1
             ? "bg-card text-foreground shadow-control"
-            : "text-foreground/45 hover:text-foreground/75",
+            : "text-foreground/65 hover:text-foreground/85",
         )}
         aria-label={t("dashboard.gridSingle", lang)}
         aria-pressed={value === 1}
+        title={t("dashboard.gridSingle", lang)}
       >
-        <ViewHorizontalIcon width={14} height={14} aria-hidden="true" />
+        <ViewHorizontalIcon width={16} height={16} aria-hidden="true" />
       </button>
       <button
         type="button"
+        data-testid="layout-compact"
         onClick={() => onChange(2)}
         className={cn(
-          "floating-icon-button-sm flex items-center justify-center transition-[background-color,color,box-shadow] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2",
+          "floating-icon-button-sm transition-[background-color,color,box-shadow] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2",
           value === 2
             ? "bg-card text-foreground shadow-control"
-            : "text-foreground/45 hover:text-foreground/75",
+            : "text-foreground/65 hover:text-foreground/85",
         )}
-        aria-label={t("dashboard.gridDouble", lang)}
+        aria-label={t("dashboard.gridCompact", lang)}
         aria-pressed={value === 2}
+        title={t("dashboard.gridCompact", lang)}
       >
-        <ViewGridIcon width={14} height={14} aria-hidden="true" />
+        <ViewGridIcon width={16} height={16} aria-hidden="true" />
       </button>
     </div>
   );

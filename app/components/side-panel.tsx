@@ -25,6 +25,7 @@ export function SidePanel({
   className,
   style,
   contentClassName,
+  contentScrollable = true,
   contentRef,
   initialFocusRef,
   closeIcon = "close",
@@ -42,6 +43,12 @@ export function SidePanel({
   className?: string;
   style?: React.CSSProperties;
   contentClassName?: string;
+  /**
+   * Most panels have one scrolling content region. Full workspaces such as the
+   * photo editor own their internal rail instead, so the shell must not create
+   * a second scrollbar around it.
+   */
+  contentScrollable?: boolean;
   contentRef?: React.RefObject<HTMLDivElement | null>;
   initialFocusRef?: React.RefObject<HTMLElement | null>;
   closeIcon?: "close" | "back";
@@ -117,10 +124,6 @@ export function SidePanel({
             "data-[state=closed]:animate-[panelOut_180ms_ease-in] data-[state=open]:animate-[panelIn_220ms_var(--motion-ease-smooth)]",
             "sm:max-w-[520px]",
             headerMode === "editor"
-              // Once it detaches from the edge it is a floating card, so the
-              // elevation has to come from underneath rather than staying the
-              // sideways drawer shadow, which lit only its left edge and left
-              // the other three sitting flat on the page.
               ? "bg-background/90 backdrop-blur-2xl sm:inset-y-3 sm:right-3 sm:w-[calc(100%-1.5rem)] sm:overflow-hidden sm:rounded-[var(--floating-frame-radius)] sm:border sm:shadow-[0_24px_70px_-24px_rgba(0,0,0,0.32)]"
               : "bg-background",
             className,
@@ -171,7 +174,11 @@ export function SidePanel({
           <div
             ref={contentRef}
             data-side-panel-scroll
-            className={cn("min-h-0 flex-1 overscroll-contain overflow-y-auto px-5 pb-[max(1.25rem,env(safe-area-inset-bottom))] pt-5 scrollbar-thin sm:px-6", contentClassName)}
+            className={cn(
+              "min-h-0 flex-1 px-5 pb-[max(1.25rem,env(safe-area-inset-bottom))] pt-5 sm:px-6",
+              contentScrollable ? "overflow-y-auto overscroll-contain scrollbar-thin" : "overflow-hidden",
+              contentClassName,
+            )}
           >
             {children}
           </div>

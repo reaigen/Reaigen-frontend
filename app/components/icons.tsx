@@ -12,8 +12,8 @@ import {
   DashboardIcon,
   DotsHorizontalIcon,
   DragHandleDots2Icon,
+  ExitIcon,
   FileTextIcon,
-  EyeClosedIcon as RadixEyeClosedIcon,
   EyeOpenIcon as RadixEyeOpenIcon,
   GearIcon,
   GridIcon as RadixGridIcon,
@@ -72,6 +72,7 @@ export const TourIcon = fromRadix(LayersIcon, "TourIcon");
 export const ShareIcon = fromRadix(Share2Icon, "ShareIcon");
 export const LinkIcon = fromRadix(Link2Icon, "LinkIcon");
 export const SettingsIcon = fromRadix(GearIcon, "SettingsIcon");
+export const SignOutIcon = fromRadix(ExitIcon, "SignOutIcon");
 export const SearchIcon = fromRadix(MagnifyingGlassIcon, "SearchIcon");
 
 /**
@@ -251,7 +252,27 @@ export const ImageIcon = fromRadix(RadixImageIcon, "ImageIcon");
 export const VideoIcon = fromRadix(RadixVideoIcon, "VideoIcon");
 export const UploadIcon = fromRadix(RadixUploadIcon, "UploadIcon");
 export const EyeOpenIcon = fromRadix(RadixEyeOpenIcon, "EyeOpenIcon");
-export const EyeClosedIcon = fromRadix(RadixEyeClosedIcon, "EyeClosedIcon");
+export function EyeClosedIcon({ size = 18, width, height, ...props }: IconProps) {
+  return (
+    <svg
+      width={width ?? size}
+      height={height ?? size}
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.75"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden={props["aria-hidden"] ?? true}
+      {...props}
+    >
+      <path d="M2.75 12s3.45-5.75 9.25-5.75S21.25 12 21.25 12 17.8 17.75 12 17.75 2.75 12 2.75 12Z" />
+      <circle cx="12" cy="12" r="2.6" />
+      <path d="m4 4 16 16" />
+    </svg>
+  );
+}
+EyeClosedIcon.displayName = "EyeClosedIcon";
 export const FloorplanIcon = fromRadix(RadixLayoutIcon, "FloorplanIcon");
 export const GridIcon = fromRadix(RadixGridIcon, "GridIcon");
 export const LockIcon = fromRadix(LockClosedIcon, "LockIcon");

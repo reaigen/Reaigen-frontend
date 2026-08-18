@@ -75,6 +75,17 @@ const nextConfig: NextConfig = {
           { key: "Expires", value: "0" },
         ],
       },
+      {
+        // Authenticated SOGs are immutable by fingerprint (`?v=`). Let the
+        // browser retain range responses while keeping them private to the
+        // signed-in session; the general API no-store rule above otherwise
+        // forces every viewer/editor transition to fetch the scene again.
+        source: "/api/sog/:path*",
+        headers: [
+          ...securityHeaders,
+          { key: "Cache-Control", value: "private, max-age=3600" },
+        ],
+      },
       ...[
         "/",
         "/forgot-password",

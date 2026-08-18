@@ -33,7 +33,7 @@ export function SegmentedControl<T extends string | number>({
       role="group"
       aria-label={ariaLabel}
       className={cn(
-        "floating-toolbar min-w-0 overflow-x-auto scrollbar-hide",
+        "selection-capsule-track overflow-x-auto scrollbar-hide",
         className,
       )}
     >
@@ -47,11 +47,8 @@ export function SegmentedControl<T extends string | number>({
             aria-label={option.ariaLabel}
             aria-pressed={active}
             className={cn(
-              "floating-control min-w-0 gap-2 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2",
+              "selection-capsule-item min-w-0 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2",
               iconOnly && "w-11 px-0",
-              active
-                ? "bg-foreground text-background shadow-sm"
-                : "text-foreground/55 hover:bg-foreground/[0.045] hover:text-foreground",
               itemClassName,
             )}
           >

@@ -134,11 +134,11 @@ export function ContentScopeSelector({
 
   return (
     <div className="space-y-3.5">
-      <h3 className="px-0.5 text-[12px] font-semibold text-foreground/65">
+      <h3 className="px-0.5 text-[13px] font-semibold text-foreground/70">
         {t("sharing.whatToShare", lang)}
       </h3>
 
-      <div className={cn("grid grid-cols-2 gap-2", layout === "workspace" && "sm:grid-cols-4")}>
+      <div className={cn("grid grid-cols-1 gap-2 min-[480px]:grid-cols-2", layout === "workspace" && "sm:grid-cols-4")}>
         {cards.map((card) => {
           const active = card.available && scope[card.key];
           return (
@@ -151,7 +151,7 @@ export function ContentScopeSelector({
               onClick={() => toggleCard(card.key)}
               className={`floating-panel-shape pen-touch-target group relative flex min-h-16 w-full items-center gap-2.5 border px-3 py-2 text-left transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 ${
                 !card.available
-                  ? "cursor-not-allowed border-border/30 bg-surface-subtle/65 text-foreground/30"
+                  ? "cursor-not-allowed border-border/45 bg-surface-subtle/70 text-foreground/45"
                   : `editor-control-capsule border-border/55 ${active ? "text-foreground" : "text-foreground/55 hover:bg-card hover:text-foreground"}`
               }`}
             >
@@ -165,15 +165,19 @@ export function ContentScopeSelector({
                 instead of wrapping, running straight under the badge. Its slot
                 is always present so toggling does not reflow the label.
               */}
-              <span className="min-w-0 flex-1 hyphens-auto break-words text-[11px] font-semibold leading-[1.2] sm:text-[12px]">
+              <span className="min-w-0 flex-1 hyphens-auto break-words text-[12px] font-semibold leading-[1.25] sm:text-[13px]">
                 {t(card.labelKey, lang)}
               </span>
-              <span className="flex h-4 w-4 shrink-0 items-center justify-center" aria-hidden="true">
-                {active ? (
-                  <span className="flex h-4 w-4 items-center justify-center rounded-full bg-foreground text-background">
-                    <CheckIcon size={9} />
-                  </span>
-                ) : null}
+              <span
+                aria-hidden="true"
+                className={cn(
+                  "flex h-5 w-5 shrink-0 items-center justify-center rounded-full border transition-colors",
+                  active
+                    ? "border-foreground bg-foreground text-background"
+                    : "border-foreground/25 bg-card/65 text-transparent",
+                )}
+              >
+                <CheckIcon size={12} />
               </span>
             </button>
           );
@@ -183,18 +187,14 @@ export function ContentScopeSelector({
       {/* Details sub-section — bundle pills inline + optional custom toggles */}
       {scope.details && (
         <div className="space-y-1.5">
-          <div className="floating-toolbar grid grid-cols-3">
+          <div className="selection-capsule-track grid grid-cols-3">
             {BUNDLE_OPTIONS.map(({ name, labelKey }) => (
               <button
                 key={name}
                 type="button"
                 aria-pressed={activeBundle === name}
                 onClick={() => handleBundleClick(name)}
-                className={`floating-control pen-touch-target min-w-0 px-2 text-[11px] font-semibold leading-tight transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ${
-                  activeBundle === name
-                    ? "bg-foreground text-background"
-                    : "text-foreground/50 hover:bg-card/70 hover:text-foreground/75"
-                }`}
+                className="selection-capsule-item pen-touch-target min-w-0 px-2 text-[12px] leading-tight focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
               >
                 <span className="block truncate">{t(labelKey, lang)}</span>
               </button>
@@ -206,7 +206,7 @@ export function ContentScopeSelector({
             aria-expanded={detailsExpanded}
             aria-haspopup={detailsMode === "panel" ? "dialog" : undefined}
             onClick={() => setDetailsExpanded((v) => !v)}
-            className="floating-control pen-touch-target flex w-full items-center justify-between px-3.5 text-[11px] font-semibold text-foreground/55 transition-colors hover:bg-foreground/[0.04] hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+            className="floating-control pen-touch-target flex w-full items-center justify-between px-3.5 text-[12px] font-semibold text-foreground/70 transition-colors hover:bg-foreground/[0.04] hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
           >
             <span>{t("shareDialog.customizeFields", lang)}</span>
             <span className="flex items-center gap-2">

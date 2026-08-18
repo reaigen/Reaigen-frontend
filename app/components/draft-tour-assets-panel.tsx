@@ -32,6 +32,8 @@ import {
   InfoIcon,
   PlayIcon,
   PlusIcon,
+  SettingsIcon,
+  ShareIcon,
   TrashIcon,
   TourIcon,
 } from "./icons";
@@ -105,6 +107,10 @@ const COPY = {
     saveShort: "Publish",
     saveChanges: "Save changes",
     unpublish: "Unpublish",
+    unpublishAll: "Unpublish all tours",
+    unpublishAllHint: "Removes every tour from client delivery. Existing links stop showing the 3D tour. You can publish again at any time.",
+    openSharing: "Share this listing",
+    openSharingHint: "Opens the share settings, where you create the link and choose who can open it — protection level, PIN and expiry.",
     saved: "Tour delivery was published as a new immutable revision.",
     emptyTitle: "No virtual tour yet",
     empty: "Capture the property in the Reaigen iPhone or iPad app. The tour will appear here after its upload is validated.",
@@ -186,6 +192,10 @@ const COPY = {
     saveShort: "Zverejniť",
     saveChanges: "Uložiť zmeny",
     unpublish: "Zrušiť zverejnenie",
+    unpublishAll: "Zrušiť zverejnenie všetkých prehliadok",
+    unpublishAllHint: "Odstráni všetky prehliadky z doručenia klientom. Existujúce odkazy prestanú zobrazovať 3D prehliadku. Zverejniť môžete kedykoľvek znova.",
+    openSharing: "Zdieľať nehnuteľnosť",
+    openSharingHint: "Otvorí nastavenia zdieľania, kde vytvoríte odkaz a určíte, kto ho môže otvoriť — ochrana, PIN a platnosť.",
     saved: "Doručenie prehliadok bolo uložené ako nová nemenná verzia.",
     emptyTitle: "Zatiaľ bez virtuálnej prehliadky",
     empty: "Nehnuteľnosť nasnímajte v aplikácii Reaigen pre iPhone alebo iPad. Po overení nahrávania sa prehliadka zobrazí tu.",
@@ -447,6 +457,7 @@ export function DraftTourAssetsPanel({
   initialPayload = null,
   onPayloadChanged,
   onPrimaryChanged,
+  onOpenSharing,
 }: {
   draftId: number;
   lang: string;
@@ -454,6 +465,8 @@ export function DraftTourAssetsPanel({
   initialPayload?: DraftTourAssetsPayload | null;
   onPayloadChanged?: (payload: DraftTourAssetsPayload) => void;
   onPrimaryChanged?: (splatId: number | null) => void;
+  /** Hands off to the share settings — link, protection level, PIN, expiry. */
+  onOpenSharing?: () => void;
 }) {
   const text = copyFor(lang);
   const router = useRouter();
@@ -476,8 +489,18 @@ export function DraftTourAssetsPanel({
   const [removingId, setRemovingId] = React.useState<number | null>(null);
   const [confirmRemoveId, setConfirmRemoveId] = React.useState<number | null>(null);
   const [applyToShares, setApplyToShares] = React.useState(true);
+  const [confirmUnpublish, setConfirmUnpublish] = React.useState(false);
   const [error, setError] = React.useState<string | null>(null);
   const [notice, setNotice] = React.useState<string | null>(null);
+
+  // Confirmations describe work that is already finished, so they retire
+  // themselves rather than sitting above the list until the next action.
+  React.useEffect(() => {
+    if (!notice) return;
+    const timer = setTimeout(() => setNotice(null), 4000);
+    return () => clearTimeout(timer);
+  }, [notice]);
+
   // Rendered on the draft detail page, which is behind AppShell and therefore
   // already authenticated.
   const {
@@ -689,6 +712,30 @@ export function DraftTourAssetsPanel({
     }
   };
 
+  /*
+    Unpublishing used to be reachable only by switching every target off one
+    by one and noticing that the header button had relabelled itself, so a
+    listing stayed "available to clients" because nobody found the way back.
+    It gets its own action.
+  */
+  const unpublishAll = async () => {
+    if (saving) return;
+    setSaving(true);
+    setError(null);
+    setNotice(null);
+    try {
+      const result = await updateDraftTourPublication(draftId, [], applyToShares);
+      applyPayload(result);
+      onPrimaryChanged?.(null);
+      setNotice(text.saved);
+      setConfirmUnpublish(false);
+    } catch (caught) {
+      setError(getSafeApiErrorMessage(caught, lang));
+    } finally {
+      setSaving(false);
+    }
+  };
+
   const removeTour = async (asset: DraftTourAsset) => {
     if (!asset.lifecycle?.can_remove || removingId != null) return;
     setRemovingId(asset.id);
@@ -749,16 +796,10 @@ export function DraftTourAssetsPanel({
   };
 
   return (
-    <section className="mt-5 overflow-hidden rounded-[1.5rem] border border-border/70 bg-card shadow-card sm:mt-8 sm:rounded-2xl">
-      <header className="flex items-center gap-3 border-b border-border/60 px-3.5 py-3 sm:justify-between sm:px-5 sm:py-4">
-        <button
-          type="button"
-          disabled={!payload?.assets.length}
-          onClick={() => setOpen(true)}
-          className="-m-1 flex min-w-0 flex-1 items-center gap-3 rounded-xl p-1 text-left transition-colors enabled:hover:bg-foreground/[0.035] disabled:cursor-default"
-          aria-label={payload?.assets.length ? text.manage : undefined}
-        >
-          <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-foreground/[0.045] text-foreground/55 sm:h-9 sm:w-9">
+    <section className="mt-5 overflow-hidden rounded-[1.75rem] border border-border/65 bg-card/[0.68] shadow-control backdrop-blur-xl sm:mt-7">
+      <header className="flex items-center gap-3 border-b border-border/55 px-4 py-4 sm:justify-between sm:px-5">
+        <div className="flex min-w-0 flex-1 items-center gap-3">
+          <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-foreground/[0.045] text-foreground/55 ring-1 ring-inset ring-border/35">
             <TourIcon size={17} />
           </span>
           <div className="min-w-0">
@@ -772,18 +813,21 @@ export function DraftTourAssetsPanel({
               )}
             </p>
           </div>
-        </button>
+        </div>
         <div className="flex shrink-0 items-center gap-1.5">
           {payload?.assets.length ? (
             <Button
               type="button"
+              data-testid="draft-tour-assets-open"
               variant="ghost"
               size="sm"
-              className="hidden h-9 sm:inline-flex"
+              className="h-11 w-11 shrink-0 px-0 sm:w-auto sm:px-3"
               onClick={() => setOpen(true)}
+              aria-label={text.manage}
+              title={text.manage}
             >
-              <TourIcon size={14} />
-              {text.manage}
+              <SettingsIcon size={14} />
+              <span className="hidden sm:inline">{text.manage}</span>
             </Button>
           ) : null}
           {createAccessLoading ? (
@@ -796,7 +840,7 @@ export function DraftTourAssetsPanel({
               type="button"
               variant="outline"
               size="sm"
-              className="h-9 w-9 shrink-0 px-0 sm:w-auto sm:px-3"
+              className="pen-touch-target h-11 w-11 shrink-0 px-0 sm:w-auto sm:px-3"
               loading={creatingInWeb}
               onClick={() => { void createInWeb(); }}
               aria-label={t("webCreate.tourAction", lang)}
@@ -840,7 +884,7 @@ export function DraftTourAssetsPanel({
           </div>
         </div>
       ) : (
-        <div className="divide-y divide-border/55">
+        <div className="divide-y divide-border/50 bg-card/30">
           {overviewAssets.map((asset, index) => {
             const selection = selections[asset.id];
             const state = assetStatus(asset, selection, text, lang);
@@ -872,9 +916,12 @@ export function DraftTourAssetsPanel({
                   one now that the platform badges no longer force a second row
                   of pills beside it; desktop keeps actions on their own column.
                 */
-                className="grid grid-cols-[96px_minmax(0,1fr)] items-start gap-3.5 p-3.5 sm:grid-cols-[132px_minmax(0,1fr)_auto] sm:items-center sm:gap-5 sm:px-5 sm:py-4"
+                className="grid grid-cols-[auto_minmax(0,1fr)] items-center gap-3 px-4 py-4 sm:grid-cols-[auto_minmax(0,1fr)_auto] sm:gap-4 sm:px-5"
               >
-                <div className="relative aspect-[16/10] overflow-hidden rounded-xl bg-surface-subtle ring-1 ring-inset ring-border/45">
+                <div className={cn(
+                  "relative shrink-0 overflow-hidden bg-surface-subtle ring-1 ring-inset ring-border/45",
+                  "h-16 w-24 rounded-[1rem] sm:h-[72px] sm:w-28",
+                )}>
                   {thumbnail ? (
                     <Thumbnail
                       src={thumbnail}
@@ -889,8 +936,7 @@ export function DraftTourAssetsPanel({
                   )}
                 </div>
 
-                {/* Title aligns to the top of the thumbnail on phones, centres beside it on desktop. */}
-                <div className="min-w-0 self-start sm:self-center">
+                <div className="min-w-0">
                   {/*
                     `justify-start`, and the heading sized by its text rather
                     than `flex-1`: this column is everything between the
@@ -959,7 +1005,7 @@ export function DraftTourAssetsPanel({
                 </div>
 
                 {(canOpen || canEdit || createAccessLoading) ? (
-                  <div className="col-span-2 grid grid-cols-2 gap-2 sm:col-span-1 sm:flex sm:flex-nowrap sm:justify-end sm:pt-0">
+                  <div className="col-span-2 grid grid-cols-2 gap-2 sm:col-span-1 sm:w-[21rem] sm:justify-self-end">
                     {createAccessLoading ? (
                       <span
                         aria-hidden="true"
@@ -971,7 +1017,7 @@ export function DraftTourAssetsPanel({
                         variant="outline"
                         size="sm"
                         className={cn(
-                          "order-2 w-full sm:order-1 sm:w-auto",
+                          "pen-touch-target order-2 w-full sm:order-1",
                           !canOpen && "col-span-2",
                         )}
                       >
@@ -987,7 +1033,7 @@ export function DraftTourAssetsPanel({
                         asChild
                         size="sm"
                         className={cn(
-                          "order-1 w-full sm:order-2 sm:w-auto",
+                          "pen-touch-target order-1 w-full sm:order-2",
                           !canEdit && "col-span-2",
                         )}
                       >
@@ -1015,7 +1061,7 @@ export function DraftTourAssetsPanel({
             <button
               type="button"
               onClick={() => setOpen(true)}
-              className="flex w-full items-center justify-center bg-surface-subtle px-4 py-3 text-[11px] font-semibold text-foreground/65 transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
+                    className="mx-auto my-3 flex min-h-10 items-center justify-center rounded-full px-4 text-[11px] font-semibold text-foreground/60 transition-colors hover:bg-foreground/[0.045] hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
             >
               {text.more(remainingAssets)}
             </button>
@@ -1034,25 +1080,31 @@ export function DraftTourAssetsPanel({
         headerMode="editor"
         className="sm:max-w-[640px]"
         lang={lang}
-        headerAction={(
+        /*
+          Only rendered once there is something to save. It is a save button,
+          not a share button — with nothing toggled it had nothing to do, and
+          sitting there greyed out it read as "sharing is disabled". Appears
+          the moment a target is switched.
+        */
+        headerAction={changed ? (
           <Button
             size="xs"
-            className="h-11 min-w-[4.75rem] px-3 sm:h-9"
+            className="h-11 min-w-[4.75rem] px-3"
             loading={saving}
-            disabled={!changed || saving || loading}
+            disabled={saving || loading}
             onClick={() => { void save(); }}
           >
-            {isUnpublishing
-              ? text.unpublish
-              : changed
-                ? text.saveChanges
-                : text.saveShort}
+            {isUnpublishing ? text.unpublish : text.saveChanges}
           </Button>
-        )}
+        ) : undefined}
       >
         <div className="space-y-5">
           {notice ? (
-            <div role="status" className="floating-panel-shape border border-success/20 bg-success/[0.055] px-4 py-3 text-[12px] leading-relaxed text-success">
+            /* A rename that worked needs an acknowledgement, not a banner. The
+               full-width tinted panel read as an empty container the width of
+               the dock; a quiet line under the header says the same thing. */
+            <div role="status" className="flex items-center gap-1.5 text-[12px] font-medium text-success">
+              <CheckIcon size={13} className="shrink-0" />
               {notice}
             </div>
           ) : null}
@@ -1189,7 +1241,7 @@ export function DraftTourAssetsPanel({
                                     type="button"
                                     aria-label={`${text.editName}: ${displayName}`}
                                     title={text.editName}
-                                    className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-foreground/35 transition-colors hover:bg-foreground/[0.055] hover:text-foreground"
+                                    className="pen-touch-target flex shrink-0 items-center justify-center rounded-full text-foreground/45 transition-colors hover:bg-foreground/[0.055] hover:text-foreground"
                                     onClick={() => beginRename(asset)}
                                   >
                                     <EditIcon size={12} />
@@ -1210,30 +1262,32 @@ export function DraftTourAssetsPanel({
 
                           {state.ready ? (
                             <div className="mt-4 space-y-3 border-t border-border/55 pt-4">
-                              <label className="flex items-center gap-3">
-                                <span className="min-w-0 flex-1">
-                                  <span className="block text-[12px] font-semibold">{text.web}</span>
-                                  <span className="block text-[10px] text-muted-foreground">{text.webHint}</span>
-                                </span>
-                                <Switch
-                                  size="sm"
-                                  checked={selection?.web ?? false}
-                                  onCheckedChange={(checked) => setTarget(asset.id, "web", checked)}
-                                  aria-label={`${text.web}: ${displayName}`}
-                                />
-                              </label>
-                              <label className="flex items-center gap-3">
-                                <span className="min-w-0 flex-1">
-                                  <span className="block text-[12px] font-semibold">{text.ios}</span>
-                                  <span className="block text-[10px] text-muted-foreground">{text.iosHint}</span>
-                                </span>
-                                <Switch
-                                  size="sm"
-                                  checked={selection?.ios ?? false}
-                                  onCheckedChange={(checked) => setTarget(asset.id, "ios", checked)}
-                                  aria-label={`${text.ios}: ${displayName}`}
-                                />
-                              </label>
+                              <div className="grid gap-3 sm:grid-cols-2 sm:gap-4">
+                                <label className="flex min-h-11 items-center gap-3">
+                                  <span className="min-w-0 flex-1">
+                                    <span className="block text-[12px] font-semibold">{text.web}</span>
+                                    <span className="block text-[10px] text-muted-foreground">{text.webHint}</span>
+                                  </span>
+                                  <Switch
+                                    size="sm"
+                                    checked={selection?.web ?? false}
+                                    onCheckedChange={(checked) => setTarget(asset.id, "web", checked)}
+                                    aria-label={`${text.web}: ${displayName}`}
+                                  />
+                                </label>
+                                <label className="flex min-h-11 items-center gap-3 sm:border-l sm:border-border/45 sm:pl-4">
+                                  <span className="min-w-0 flex-1">
+                                    <span className="block text-[12px] font-semibold">{text.ios}</span>
+                                    <span className="block text-[10px] text-muted-foreground">{text.iosHint}</span>
+                                  </span>
+                                  <Switch
+                                    size="sm"
+                                    checked={selection?.ios ?? false}
+                                    onCheckedChange={(checked) => setTarget(asset.id, "ios", checked)}
+                                    aria-label={`${text.ios}: ${displayName}`}
+                                  />
+                                </label>
+                              </div>
                               {state.visible ? (
                                 <button
                                   type="button"
@@ -1257,7 +1311,7 @@ export function DraftTourAssetsPanel({
                                 </button>
                               ) : null}
                               {asset.source_splat_id ? (
-                                <Button asChild variant="outline" size="sm" className="w-full">
+                                <Button asChild variant="outline" size="sm" className="h-11 w-full">
                                   <Link href={`/tour/${asset.source_splat_id}?tourId=${asset.id}`}>
                                     <ExternalLinkIcon size={13} />
                                     {text.view}
@@ -1291,7 +1345,7 @@ export function DraftTourAssetsPanel({
                                 </div>
                               ) : null}
                               {canPreview && asset.source_splat_id ? (
-                                <Button asChild variant="outline" size="sm" className="mt-3 w-full">
+                                <Button asChild variant="outline" size="sm" className="mt-3 h-11 w-full">
                                   <Link href={`/tour/${asset.source_splat_id}`}>
                                     <ExternalLinkIcon size={13} />
                                     {text.preview}
@@ -1299,7 +1353,7 @@ export function DraftTourAssetsPanel({
                                 </Button>
                               ) : null}
                               {canCreateInWeb && (asset.editor_workspace || asset.source_splat_id) ? (
-                                <Button asChild variant="outline" size="sm" className="mt-3 w-full">
+                                <Button asChild variant="outline" size="sm" className="mt-3 h-11 w-full">
                                   <Link href={`/create/tour/${asset.id}`}>
                                     <EditIcon size={13} />
                                     {t("webCreate.openEditor", lang)}
@@ -1370,7 +1424,7 @@ export function DraftTourAssetsPanel({
                                   type="button"
                                   variant="ghost"
                                   size="xs"
-                                  className="text-foreground/55 hover:bg-foreground/[0.045] hover:text-foreground"
+                                  className="pen-touch-target text-foreground/70 hover:bg-foreground/[0.045] hover:text-foreground"
                                   onClick={() => setConfirmRemoveId(asset.id)}
                                 >
                                   <TrashIcon size={13} />
@@ -1392,7 +1446,36 @@ export function DraftTourAssetsPanel({
             )}
           </div>
 
-          <label className="floating-panel flex items-center gap-3 p-4">
+          {/*
+            Publishing is delivery, not sharing — it mints no link and shows no
+            recipient controls. Without this hand-off the panel dead-ends: the
+            tour reads "Published" and there is nowhere to get a URL or set a
+            PIN. It only routes; it never creates a share by itself.
+          */}
+          <div className="floating-panel overflow-hidden p-0">
+          {onOpenSharing ? (
+            <div className="p-4">
+              <p className="text-[10px] leading-relaxed text-muted-foreground">
+                {text.openSharingHint}
+              </p>
+              {/*
+                Sized above the card's own "Otvoriť prehliadku" (sm): this is
+                the panel's primary action, and at xs it read as a footnote.
+              */}
+              <Button
+                className="mt-3 w-full"
+                onClick={() => {
+                  setOpen(false);
+                  onOpenSharing();
+                }}
+              >
+                <ShareIcon size={15} />
+                {text.openSharing}
+              </Button>
+            </div>
+          ) : null}
+
+          <label className={cn("flex items-center gap-3 p-4", onOpenSharing && "border-t border-border/55")}>
             <span className="min-w-0 flex-1">
               <span className="block text-[12px] font-semibold">{text.shareTitle}</span>
               <span className="mt-0.5 block text-[10px] leading-relaxed text-muted-foreground">{text.shareHint}</span>
@@ -1404,6 +1487,50 @@ export function DraftTourAssetsPanel({
               aria-label={text.shareTitle}
             />
           </label>
+          </div>
+
+          {(payload?.publication?.entries.length ?? 0) > 0 ? (
+            <div className="floating-panel p-4">
+              <p className="text-[10px] leading-relaxed text-muted-foreground">
+                {text.unpublishAllHint}
+              </p>
+              <div className="mt-3 flex gap-2">
+                {confirmUnpublish ? (
+                  <>
+                    <Button
+                      size="xs"
+                      variant="ghost"
+                      className="flex-1"
+                      disabled={saving}
+                      onClick={() => setConfirmUnpublish(false)}
+                    >
+                      {t("common.cancel", lang)}
+                    </Button>
+                    <Button
+                      size="xs"
+                      variant="destructive"
+                      className="flex-1"
+                      loading={saving}
+                      disabled={saving}
+                      onClick={() => { void unpublishAll(); }}
+                    >
+                      {text.unpublish}
+                    </Button>
+                  </>
+                ) : (
+                  <Button
+                    size="xs"
+                    variant="outline"
+                    className="w-full"
+                    disabled={saving || loading}
+                    onClick={() => setConfirmUnpublish(true)}
+                  >
+                    {text.unpublishAll}
+                  </Button>
+                )}
+              </div>
+            </div>
+          ) : null}
         </div>
       </SidePanel>
     </section>

@@ -282,7 +282,7 @@ export default function DashboardPage() {
 
   return (
     <AppShell user={user} onLogout={logout}>
-      <div className="mx-auto w-full max-w-[1180px]">
+      <div className="mx-auto w-full max-w-[1360px]">
         {/*
           The count goes to `meta`, not `actions`. In the action row it was not
           just competing with the create button for weight, it was holding that
@@ -297,14 +297,14 @@ export default function DashboardPage() {
           className="mb-4 sm:mb-8"
         />
         {/* Search bar */}
-        <div className="mb-4 flex items-center gap-3 rounded-full border border-border/80 bg-card px-4 py-0.5 shadow-control sm:mb-7 md:rounded-none md:border-x-0 md:border-t-0 md:bg-transparent md:px-0 md:pb-2 md:pt-0 md:shadow-none">
+        <div className="mb-4 flex items-center gap-2 border-b border-border/75 pb-2 sm:mb-6">
           <SearchField
             value={searchInput}
             onChange={setSearchInput}
             onClear={() => setSearchQuery("")}
             placeholder={t("dashboard.searchPlaceholder", lang)}
             clearLabel={t("dashboard.clearSearch", lang)}
-            className="flex-1"
+            className="flex-1 px-1"
             appearance="toolbar"
           />
           <GridLayoutToggle value={gridCols} onChange={handleGridCols} lang={lang} />
@@ -348,7 +348,7 @@ export default function DashboardPage() {
           />
         ) : (
           <>
-          <div className={`grid grid-cols-1 gap-7 ${gridCols === 2 ? "md:grid-cols-2" : "mx-auto max-w-2xl"}`}>
+          <div className={`grid grid-cols-1 gap-5 xl:gap-6 ${gridCols === 2 ? "md:grid-cols-2" : "mx-auto max-w-2xl"}`}>
             {drafts.map((draft, idx) => {
               const preferredCurrency = resolveUnit(unitCatalog, draft.price_preferred_currency, "CURRENCY");
               const storedCurrency = resolveUnit(unitCatalog, draft.currency, "CURRENCY");
@@ -371,18 +371,18 @@ export default function DashboardPage() {
                 <CollectionCard key={draft.id}>
                   <Link
                     href={`/draft/${draft.id}`}
+                    data-testid="draft-card-link"
                     className="block focus-visible:outline-none"
                     onMouseEnter={() => router.prefetch(`/draft/${draft.id}`)}
                   >
-                    {/* A step taller than the 16/10 used elsewhere, so the overlaid title,
-                        address, portfolio line and price have room — but still landscape. */}
-                    <div className="relative aspect-[3/2] overflow-hidden bg-surface-subtle">
+                    <div className="relative aspect-[16/10] overflow-hidden bg-surface-subtle">
                       {thumbUrl ? (
                         <Thumbnail src={thumbUrl} alt={draft.title} className="absolute inset-0 h-full w-full object-cover [@media(hover:hover)]:transition-transform [@media(hover:hover)]:duration-500 [@media(hover:hover)]:ease-out [@media(hover:hover)]:group-hover:scale-[1.03]" priority={idx < 4} />
                       ) : (
-                        <div className="absolute inset-0 flex items-center justify-center bg-gradient-to-br from-surface-subtle via-muted/55 to-muted/80">
-                          <ImageIcon size={42} className="text-foreground/15" />
-                        </div>
+                        <div
+                          aria-hidden="true"
+                          className="absolute inset-0 bg-gradient-to-br from-surface-subtle via-muted/45 to-foreground/[0.14]"
+                        />
                       )}
                       <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/5 to-black/15" aria-hidden="true" />
                       <StatusPill
@@ -411,7 +411,7 @@ export default function DashboardPage() {
                           {address && (
                             <p className="mt-1 truncate text-[12px] text-white/70">{address}</p>
                           )}
-                          <p className="mt-2 flex min-w-0 items-center gap-2 truncate text-[10px] font-medium text-white/65">
+                          <p className="mt-2 flex min-w-0 items-center gap-2 truncate text-[12px] font-medium text-white/75">
                             <span className={`h-1.5 w-1.5 shrink-0 rounded-full ${draft.is_portfolio_visible ? "bg-emerald-400" : "bg-white/35"}`} aria-hidden="true" />
                             <span className="truncate">{draft.is_portfolio_visible ? t("dashboard.portfolioVisible", lang) : t("dashboard.notInPortfolio", lang)}</span>
                           </p>
@@ -440,7 +440,7 @@ export default function DashboardPage() {
                     href={`/draft/${draft.id}?sharing=1`}
                     prefetch
                     // No backdrop blur: one per card puts a blurred region per row on the scroll path.
-                    className="floating-icon-button-sm absolute right-4 top-4 z-10 flex items-center justify-center border border-white/15 bg-black/55 text-white/85 shadow-sm sm:right-5 sm:top-5 transition-[background-color,color,opacity] hover:bg-black/75 hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white focus-visible:ring-offset-2 focus-visible:ring-offset-black md:opacity-0 md:group-hover:opacity-100 md:group-focus-within:opacity-100"
+                    className="floating-icon-button-sm pen-touch-target absolute right-4 top-4 z-10 flex items-center justify-center border border-white/15 bg-black/55 text-white/85 shadow-sm sm:right-5 sm:top-5 transition-[background-color,color,opacity] hover:bg-black/75 hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white focus-visible:ring-offset-2 focus-visible:ring-offset-black md:opacity-0 md:group-hover:opacity-100 md:group-focus-within:opacity-100"
                     aria-label={t("draft.share", lang)}
                   >
                     <ShareIcon size={14} />

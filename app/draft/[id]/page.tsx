@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState, use, type ReactNode } from "react";
+import * as Dialog from "@radix-ui/react-dialog";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { useAuth } from "../../components/hooks/use-auth";
@@ -36,6 +37,7 @@ import {
   InfoIcon,
   ImageIcon,
   MapPinIcon,
+  MoreIcon,
   PlusIcon,
   PriceIcon,
   SearchIcon,
@@ -523,6 +525,7 @@ export default function DraftPreviewPage({
   const [versionsOpen, setVersionsOpen] = useState(false);
   const [mediaOpen, setMediaOpen] = useState(false);
   const [sharingOpen, setSharingOpen] = useState(sharingRequested);
+  const [mobileActionsOpen, setMobileActionsOpen] = useState(false);
   const [usingCachedDraft, setUsingCachedDraft] = useState(false);
   const [retryAttempt, setRetryAttempt] = useState(0);
   const [reloadNonce, setReloadNonce] = useState(0);
@@ -774,21 +777,21 @@ export default function DraftPreviewPage({
         writeDraftDetailCache(user.id, draftId, updatedDraft);
       }}
     >
-      <div className="relative mx-auto w-full max-w-[980px] pb-24 md:pb-12">
+      <div className="relative mx-auto w-full max-w-[1120px] pb-24 md:pb-12">
         {/*
           Creation toolbar. Back stays the first thing on the page at every
           width — the stale-listing notice below must never displace the way
           out of this screen.
         */}
         <div className="mb-4 flex items-center justify-between gap-3 md:mb-6">
-          {/* Bare muted text read as a caption, not the way out. Give it a real control's chrome. */}
           <button
             type="button"
             onClick={() => router.push("/dashboard")}
-            className="floating-capsule floating-control inline-flex items-center gap-2 px-4 text-[13px] font-semibold text-foreground transition-colors hover:bg-card hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+            aria-label={t("common.back", lang)}
+            title={t("common.back", lang)}
+            className="floating-icon-button pen-touch-target border border-border/60 bg-card/75 text-foreground/65 shadow-sm backdrop-blur-xl transition-[background-color,color,box-shadow] hover:bg-foreground hover:text-background hover:shadow-control focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
           >
             <ArrowLeftIcon size={17} />
-            {t("common.back", lang)}
           </button>
         </div>
 
@@ -869,9 +872,9 @@ export default function DraftPreviewPage({
           <section className={cn("min-w-0", !hasMedia && "max-w-3xl")}>
             <div className="flex flex-wrap items-center gap-2">
               {offerType ? (
-                <span className="inline-flex h-6 items-center rounded-full bg-secondary px-2.5 text-[10px] font-semibold uppercase tracking-[0.09em] text-foreground/60">
+                <StatusPill className="uppercase tracking-[0.09em]">
                   {enumT("offer", offerType, lang)}
-                </span>
+                </StatusPill>
               ) : null}
               <StatusPill tone={draft.is_complete ? "success" : "neutral"} dot>
                 {t(draft.is_complete ? "dashboard.listingComplete" : "dashboard.listingDraft", lang)}
@@ -879,9 +882,23 @@ export default function DraftPreviewPage({
               {hasTour ? <StatusPill tone="strong">{t("dashboard.tourReady", lang)}</StatusPill> : null}
             </div>
 
-            <h1 className="mt-3 select-text text-[28px] font-semibold leading-[1.08] tracking-[-0.03em] sm:text-[30px] lg:text-[34px]">
-              {draft.title || t("dashboard.untitled", lang)}
-            </h1>
+            <div className="mt-3 flex items-start justify-between gap-3">
+              <h1 className="min-w-0 select-text text-[28px] font-semibold leading-[1.08] tracking-[-0.03em] sm:text-[30px] lg:text-[34px]">
+                {draft.title || t("dashboard.untitled", lang)}
+              </h1>
+              <Button
+                type="button"
+                data-testid="draft-mobile-more"
+                variant="outline"
+                size="icon"
+                aria-label={t("common.more", lang)}
+                title={t("common.more", lang)}
+                className="-mt-1 h-11 w-11 shrink-0 rounded-full border-border/65 bg-card p-0 text-foreground/65 shadow-control md:hidden"
+                onClick={() => setMobileActionsOpen(true)}
+              >
+                <MoreIcon size={16} />
+              </Button>
+            </div>
             {address && (
               <p className="mt-2 flex select-text items-start gap-1.5 text-[13px] leading-relaxed text-muted-foreground">
                 <MapPinIcon size={14} className="mt-0.5 shrink-0 text-foreground/40" />
@@ -896,35 +913,6 @@ export default function DraftPreviewPage({
                 )}
               </p>
             )}
-
-            {/*
-              Section switcher, not an action bar. It used to be an elevated
-              white card, which made it read as a peer of the floating Edit /
-              Share bar at the bottom of the screen. Recessed onto the canvas
-              instead, so weight matches role: this navigates, that acts.
-            */}
-            <div className="mt-5 grid grid-cols-2 overflow-hidden rounded-2xl border border-border/50 bg-surface-subtle p-1 md:hidden">
-              <Button
-                type="button"
-                variant="ghost"
-                size="sm"
-                className="h-10 min-w-0 rounded-xl px-2"
-                onClick={() => setMediaOpen(true)}
-              >
-                <ImageIcon size={15} />
-                <span className="truncate">{t("draft.media.gallery", lang)}</span>
-              </Button>
-              <Button
-                type="button"
-                variant="ghost"
-                size="sm"
-                className="h-10 min-w-0 rounded-xl border-l border-border/50 px-2"
-                onClick={() => setVersionsOpen(true)}
-              >
-                <VersionsIcon size={15} />
-                <span className="truncate">{t("draft.versions.short", lang)}</span>
-              </Button>
-            </div>
 
             {facts.length > 0 && (
               <div className="mt-5 grid grid-cols-2 gap-2.5 border-t border-border/70 pt-5 sm:grid-cols-3">
@@ -960,43 +948,35 @@ export default function DraftPreviewPage({
               </div>
             )}
 
-            {/*
-              The primary action stands on its own rather than living inside the
-              capsule. Its fill reaches its own edge, so within the capsule it
-              took only the 4px container padding while the ghost buttons beside
-              it contributed 12px of their own — the left end read tight and the
-              right end loose. Outside, the split also states the hierarchy: one
-              headline action, then the tools that act on the listing.
-            */}
-            <div className="mt-6 hidden flex-wrap items-center gap-3 border-t border-border/70 pt-5 md:flex">
-              {hasTour && (
-                <Button asChild size="sm" className="shrink-0">
-                  <Link href={`/tour/${primarySplatId}?tourId=${shareableTour?.id}`}>
-                    <TourIcon size={15} />
-                    {t("draft.viewTour", lang)}
-                  </Link>
-                </Button>
-              )}
-              {/*
-                Anchored to the right edge so the row spans the same width as
-                the cards below it. Sized to its content and left-aligned, the
-                group trailed off mid-column while everything under it ran full
-                width — the row read as unfinished rather than as a toolbar.
-              */}
-              <div className="inline-flex max-w-full items-center gap-0.5 overflow-x-auto rounded-full border border-border/70 bg-card p-1 shadow-control lg:ml-auto">
-                <Button type="button" variant="ghost" size="sm" className="shrink-0" onClick={() => setMediaOpen(true)}>
-                  <ImageIcon size={15} /> {t("draft.media.manage", lang)}
-                </Button>
-                <Button type="button" variant="ghost" size="sm" className="shrink-0" onClick={() => setEditorOpen(true)}>
-                  <EditIcon size={14} /> {t("shareDialog.edit", lang)}
-                </Button>
-                <Button type="button" variant="ghost" size="sm" className="shrink-0" onClick={() => handleSharingOpenChange(true)}>
-                  <ShareIcon size={14} /> {t("draft.share", lang)}
-                </Button>
-                <span aria-hidden="true" className="mx-1.5 h-5 w-px shrink-0 bg-border/70" />
-                <Button type="button" variant="ghost" size="sm" className="shrink-0" onClick={() => setVersionsOpen(true)}>
-                  <VersionsIcon size={15} /> {t("draft.versions.title", lang)}
-                </Button>
+            {/* One rail gives every listing action the same baseline and one
+                visual centre. The tour remains the dark primary segment; the
+                authoring tools divide the remaining width evenly instead of
+                forming a second, unrelated capsule on the opposite edge. */}
+            <div className="mt-5 hidden border-t border-border/70 pt-5 md:block">
+              <div className="floating-toolbar h-12 w-full overflow-x-auto p-1 scrollbar-hide">
+                {hasTour && (
+                  <Button asChild size="sm" className="h-10 min-w-[12rem] shrink-0 px-4 shadow-none">
+                    <Link href={`/tour/${primarySplatId}?tourId=${shareableTour?.id}`}>
+                      <TourIcon size={15} />
+                      {t("draft.viewTour", lang)}
+                    </Link>
+                  </Button>
+                )}
+                {hasTour ? <span aria-hidden="true" className="mx-1 h-5 w-px shrink-0 bg-border/70" /> : null}
+                <div className="flex min-w-[25rem] flex-1 items-center gap-0.5">
+                  <Button type="button" data-testid="draft-media-open" variant="ghost" size="sm" className="h-10 min-w-0 flex-1 shrink-0" aria-label={t("draft.media.manage", lang)} onClick={() => setMediaOpen(true)}>
+                    <ImageIcon size={15} /> {t("draft.media.gallery", lang)}
+                  </Button>
+                  <Button type="button" data-testid="draft-editor-open" variant="ghost" size="sm" className="h-10 min-w-0 flex-1 shrink-0" onClick={() => setEditorOpen(true)}>
+                    <EditIcon size={14} /> {t("shareDialog.edit", lang)}
+                  </Button>
+                  <Button type="button" data-testid="draft-sharing-open" variant="ghost" size="sm" className="h-10 min-w-0 flex-1 shrink-0" onClick={() => handleSharingOpenChange(true)}>
+                    <ShareIcon size={14} /> {t("draft.share", lang)}
+                  </Button>
+                  <Button type="button" data-testid="draft-versions-open" variant="ghost" size="sm" className="h-10 min-w-0 flex-1 shrink-0" onClick={() => setVersionsOpen(true)}>
+                    <VersionsIcon size={15} /> {t("draft.versions.short", lang)}
+                  </Button>
+                </div>
               </div>
             </div>
           </section>
@@ -1022,6 +1002,7 @@ export default function DraftPreviewPage({
           onPrimaryChanged={(activeSplatId) => setSplatData((current) => (
             current ? { ...current, parent_splat_id: activeSplatId } : current
           ))}
+          onOpenSharing={() => handleSharingOpenChange(true)}
         />
 
         {(hasNarrative || hasSupportingDetails) && (
@@ -1240,49 +1221,41 @@ export default function DraftPreviewPage({
         onDraftRestored={setDraft}
       />
 
-      {/* Sticky mobile action bar */}
-      <div className="pointer-events-none fixed inset-x-0 bottom-0 z-40 px-3 pb-[max(0.625rem,env(safe-area-inset-bottom))] md:hidden">
-        {/*
-          `shadow-floating` is not a token in the theme, so this bar was
-          rendering with no elevation at all — indistinguishable from the inline
-          card above it. Uses the real elevated token, and stays opaque rather
-          than blurred because it sits over content for every scrolled frame.
-        */}
-        <div className={cn(
-          "pointer-events-auto mx-auto grid max-w-md gap-1 rounded-[1.35rem] border border-border/80 bg-card p-1.5 shadow-elevated",
-          // Slovak and Czech labels are the longest; give the tour column the slack.
-          hasTour ? "grid-cols-[0.8fr_0.8fr_1.4fr]" : "grid-cols-2",
-        )}>
-        <Button type="button" variant="ghost" size="sm" className="h-11 min-w-0 rounded-2xl px-2" onClick={() => setEditorOpen(true)}>
-          <EditIcon size={15} /> {t("shareDialog.edit", lang)}
-        </Button>
-        {/*
-          With a tour present that button is the headline action, so sharing
-          stays quiet beside it. With no tour, nothing in this bar carried any
-          weight — sharing becomes the anchor rather than leaving two identical
-          ghosts side by side.
-        */}
-        <Button
-          type="button"
-          variant={hasTour ? "ghost" : "default"}
-          size="sm"
-          className="h-11 min-w-0 rounded-2xl px-2"
-          aria-label={t("draft.share", lang)}
-          onClick={() => handleSharingOpenChange(true)}
-        >
-          <ShareIcon size={15} />
-          <span className="truncate">{t("draft.share", lang)}</span>
-        </Button>
-        {hasTour && (
-          <Button asChild variant="default" size="sm" className="h-11 min-w-0 rounded-2xl px-2">
-            <Link href={`/tour/${primarySplatId}?tourId=${shareableTour?.id}`}>
-              <TourIcon size={15} />
-              <span className="truncate">{t("draft.viewTourShort", lang)}</span>
-            </Link>
-          </Button>
-        )}
-        </div>
-      </div>
+      {/* Secondary phone actions live in a focus-trapped sheet, opened from
+          the title. Nothing floats over or obscures the listing content. */}
+      <Dialog.Root open={mobileActionsOpen} onOpenChange={setMobileActionsOpen}>
+        <Dialog.Portal>
+          <Dialog.Overlay className="fixed inset-0 z-[80] bg-black/25 backdrop-blur-[2px] md:hidden" />
+          <Dialog.Content className="fixed inset-x-0 bottom-0 z-[90] rounded-t-[1.75rem] border border-b-0 border-border/70 bg-card px-4 pb-[max(1rem,env(safe-area-inset-bottom))] pt-3 shadow-elevated outline-none md:hidden">
+            <div aria-hidden="true" className="mx-auto mb-3 h-1 w-10 rounded-full bg-foreground/15" />
+            <Dialog.Title className="mb-3 text-center text-[15px] font-semibold">{t("common.more", lang)}</Dialog.Title>
+            <div className="grid gap-1">
+              <Dialog.Close asChild>
+                <Button type="button" data-testid="draft-mobile-editor-open" variant="ghost" className="h-12 justify-start rounded-xl px-4" onClick={() => setEditorOpen(true)}>
+                  <EditIcon size={16} /> {t("shareDialog.edit", lang)}
+                </Button>
+              </Dialog.Close>
+              {hasTour && (
+                <Dialog.Close asChild>
+                  <Button type="button" data-testid="draft-mobile-sharing-open" variant="ghost" className="h-12 justify-start rounded-xl px-4" onClick={() => handleSharingOpenChange(true)}>
+                    <ShareIcon size={16} /> {t("draft.share", lang)}
+                  </Button>
+                </Dialog.Close>
+              )}
+              <Dialog.Close asChild>
+                <Button type="button" data-testid="draft-mobile-media-open" variant="ghost" className="h-12 justify-start rounded-xl px-4" onClick={() => setMediaOpen(true)}>
+                  <ImageIcon size={16} /> {t("draft.media.gallery", lang)}
+                </Button>
+              </Dialog.Close>
+              <Dialog.Close asChild>
+                <Button type="button" data-testid="draft-mobile-versions-open" variant="ghost" className="h-12 justify-start rounded-xl px-4" onClick={() => setVersionsOpen(true)}>
+                  <VersionsIcon size={16} /> {t("draft.versions.title", lang)}
+                </Button>
+              </Dialog.Close>
+            </div>
+          </Dialog.Content>
+        </Dialog.Portal>
+      </Dialog.Root>
     </AppShell>
   );
 }

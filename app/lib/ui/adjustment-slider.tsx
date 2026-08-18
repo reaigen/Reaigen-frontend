@@ -273,7 +273,7 @@ export function AdjustmentSlider({
   return (
     <div className={cn("select-none py-0.5", disabled && "opacity-45")}>
       <div className="flex items-baseline justify-between gap-3">
-        <span id={labelId} className={cn("text-[11px] font-medium", palette.label)}>
+        <span id={labelId} className={cn("text-[12px] font-medium", palette.label)}>
           {label}
         </span>
         {/* Always the same element and padding: swapping span/button here shifted
@@ -284,7 +284,7 @@ export function AdjustmentSlider({
           onClick={() => onChange(detent)}
           aria-label={isNeutral ? undefined : `${label} · ${resetLabel}`}
           className={cn(
-            "rounded-md px-1 py-0.5 text-[11px] font-medium tabular-nums transition-colors",
+            "inline-flex min-h-11 min-w-11 items-center justify-center rounded-md px-1 py-0.5 text-[12px] font-medium tabular-nums transition-colors sm:min-h-9 sm:min-w-9",
             "focus-visible:outline-none focus-visible:ring-2",
             palette.focus,
             isNeutral || disabled ? palette.readoutIdle : palette.readoutActive,
@@ -315,7 +315,7 @@ export function AdjustmentSlider({
           // fingertip has to find, and a 24px row inside a scrolling tray is a
           // coin toss between grabbing the control and scrolling past it. The
           // rail and knob keep their own sizes inside it.
-          "group relative flex h-9 touch-none items-center rounded-md outline-none",
+          "group relative flex h-11 touch-none items-center rounded-md outline-none",
           "focus-visible:ring-2",
           palette.focus,
           disabled ? "cursor-not-allowed" : dragging ? "cursor-grabbing" : "cursor-grab",

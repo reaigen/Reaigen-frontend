@@ -3,7 +3,7 @@
 import * as React from "react";
 import { Input } from "../../lib/ui/input";
 import { t, type LocaleKey } from "../../lib/i18n";
-import { CheckIcon, LinkIcon, LockIcon } from "../icons";
+import { LinkIcon, LockIcon } from "../icons";
 
 export type PrivacyLevel = "open" | "pin";
 
@@ -33,7 +33,7 @@ export function PrivacyLevelSelector({ level, pin, onLevelChange, onPinChange, l
 
   return (
     <div className="space-y-3.5">
-      <h3 className="px-0.5 text-[12px] font-semibold text-foreground/65">
+      <h3 className="px-0.5 text-[13px] font-semibold text-foreground/70">
         {t("sharing.protection", lang)}
       </h3>
 
@@ -56,15 +56,16 @@ export function PrivacyLevelSelector({ level, pin, onLevelChange, onPinChange, l
               </span>
               {/* Check sits in the flow, so wrapping copy can never run under it. */}
               <span className="min-w-0 flex-1">
-                <span className="block break-words text-[12px] font-semibold leading-snug text-foreground/85">{t(option.labelKey as LocaleKey, lang)}</span>
-                <span className="mt-0.5 block break-words text-[11px] leading-snug text-muted-foreground">{t(option.descriptionKey as LocaleKey, lang)}</span>
+                <span className="block break-words text-[13px] font-semibold leading-snug text-foreground/90">{t(option.labelKey as LocaleKey, lang)}</span>
+                <span className="mt-0.5 block break-words text-[12px] leading-snug text-foreground/60">{t(option.descriptionKey as LocaleKey, lang)}</span>
               </span>
-              <span className="flex h-4 w-4 shrink-0 items-center justify-center" aria-hidden="true">
-                {active ? (
-                  <span className="flex h-4 w-4 items-center justify-center rounded-full bg-foreground text-background">
-                    <CheckIcon size={9} />
-                  </span>
-                ) : null}
+              <span
+                aria-hidden="true"
+                className={`flex h-5 w-5 shrink-0 items-center justify-center rounded-full border transition-colors ${
+                  active ? "border-foreground" : "border-foreground/25 bg-card/65"
+                }`}
+              >
+                {active ? <span className="h-2.5 w-2.5 rounded-full bg-foreground" /> : null}
               </span>
             </button>
           );

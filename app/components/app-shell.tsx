@@ -19,8 +19,8 @@ function getInitials(user: UserProfile): string {
   return (f + l).toUpperCase() || (user.email?.[0] ?? "?").toUpperCase();
 }
 
-const SIDEBAR_COLLAPSED_W = 88;
-const SIDEBAR_EXPANDED_W = 260;
+const SIDEBAR_W = 88;
+const SIDEBAR_WIDE_W = 260;
 const REAI_PANEL_MIN_W = 420;
 const REAI_PANEL_MAX_W = 960;
 const REAI_PANEL_WIDTH_KEY = "reaigen:agentPanelWidth.v2";
@@ -57,7 +57,7 @@ const AGENT_PANEL_BASE_W = 480;
  * and the overlay is the right composition.
  */
 const AGENT_DOCK_MIN_W =
-  SIDEBAR_COLLAPSED_W + AGENT_PANEL_BASE_W + AGENT_MIN_CONTENT_W;
+  SIDEBAR_W + AGENT_PANEL_BASE_W + AGENT_MIN_CONTENT_W;
 
 function clampAgentPanelWidth(width: number) {
   const viewportLimit = typeof window === "undefined"
@@ -67,7 +67,7 @@ function clampAgentPanelWidth(width: number) {
       Math.min(
         window.innerWidth * 0.58,
         window.innerWidth
-          - (window.innerWidth >= 1728 ? SIDEBAR_EXPANDED_W : SIDEBAR_COLLAPSED_W)
+          - (window.innerWidth >= 1280 ? SIDEBAR_WIDE_W : SIDEBAR_W)
           - AGENT_MIN_CONTENT_W,
       ),
     );
@@ -203,7 +203,7 @@ function AppShellFrame({
   const [dockedAgentViewport, setDockedAgentViewport] = React.useState(false);
   const [reaiPanelWidth, setReaiPanelWidth] = React.useState<number | null>(null);
   const [reaiResizing, setReaiResizing] = React.useState(false);
-  const reaiPanelRef = React.useRef<HTMLElement>(null);
+  const reaiPanelRef = React.useRef<HTMLDivElement>(null);
   const reaiCloseRef = React.useRef<HTMLButtonElement>(null);
   const reaiReturnFocusRef = React.useRef<HTMLElement | null>(null);
   const reaiPanelWidthRef = React.useRef<number | null>(null);
@@ -456,16 +456,17 @@ function AppShellFrame({
   const reaiLauncher = (variant: "header" | "floating") => reaiEnabled ? (
     <button
       type="button"
+      data-testid="agent-launcher"
       onClick={openReai}
       title={t("reai.openAgent", lang)}
       aria-label={t("reai.openAgent", lang)}
       aria-expanded={reaiOpen}
       className={cn(
-        "group inline-flex shrink-0 items-center justify-center gap-2 rounded-full font-semibold transition-colors",
+        "group inline-flex shrink-0 items-center justify-center gap-2 rounded-full font-semibold transition-[transform,box-shadow,background-color,color] duration-200",
         "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2",
         variant === "header"
-          // Phone header: glass, so it lifts off a bar that shares its fill.
-          ? "floating-capsule px-3.5 text-[12px] text-foreground/80 hover:bg-card hover:text-foreground"
+          // Phone header: a circle beside the avatar, not a second text pill.
+          ? "floating-capsule h-11 w-11 gap-0 p-0 text-foreground/80 shadow-control hover:bg-card hover:text-foreground"
           /*
            * Desktop: solid and inverted. Glass over the grey canvas of a large
            * display gave it almost nothing to separate from, so on a 27" screen
@@ -474,10 +475,10 @@ function AppShellFrame({
            * 2560px viewport a scaled 27" display never reports.
            */
           : cn(
-            "fixed bottom-6 right-6 z-40 hidden h-12 gap-2.5 bg-foreground px-5 text-[13px] text-background shadow-elevated md:inline-flex",
-            "hover:bg-foreground/90 hover:-translate-y-0.5 active:translate-y-0",
-            "xl:h-[3.25rem] xl:px-6 xl:text-[14px]",
-            "min-[1728px]:bottom-8 min-[1728px]:right-8 min-[1728px]:h-14 min-[1728px]:gap-3 min-[1728px]:px-7 min-[1728px]:text-[15px]",
+            "fixed bottom-6 right-6 z-40 hidden h-14 w-14 gap-0 overflow-visible border border-white/20 bg-black p-0 text-white md:inline-flex",
+            "shadow-[inset_0_1px_0_rgba(255,255,255,0.18),0_0_0_1px_rgba(0,0,0,0.12),0_0_20px_5px_rgba(255,255,255,0.32),0_14px_34px_rgba(0,0,0,0.24)]",
+            "hover:-translate-y-0.5 hover:shadow-[inset_0_1px_0_rgba(255,255,255,0.22),0_0_0_1px_rgba(0,0,0,0.12),0_0_26px_7px_rgba(255,255,255,0.42),0_16px_38px_rgba(0,0,0,0.28)] active:translate-y-0",
+            "min-[1728px]:bottom-8 min-[1728px]:right-8 min-[1728px]:h-16 min-[1728px]:w-16",
           ),
       )}
     >
@@ -488,10 +489,9 @@ function AppShellFrame({
           "shrink-0 transition-colors",
           variant === "header"
             ? "text-foreground/75 group-hover:text-foreground"
-            : "text-current min-[1728px]:h-6 min-[1728px]:w-6",
+            : "h-[23px] w-[23px] text-current drop-shadow-[0_0_7px_rgba(255,255,255,0.52)] min-[1728px]:h-7 min-[1728px]:w-7",
         )}
       />
-      <span>{t("reai.title", lang)}</span>
     </button>
   ) : null;
 
@@ -538,25 +538,25 @@ function AppShellFrame({
     >
       {/* ── Desktop sidebar ──────────────────────────────────────── */}
       <aside
-        className="fixed inset-y-0 left-0 z-40 hidden w-[88px] border-r border-border bg-card pl-safe text-foreground transition-[width] duration-200 md:flex md:flex-col min-[1728px]:w-[260px]"
+        className="fixed inset-y-0 left-0 z-40 hidden w-[88px] border-r border-border bg-card pl-safe text-foreground md:flex md:flex-col xl:w-[260px]"
       >
         {/* Brand */}
         <div className="px-3 pb-6 pt-4">
           <Link
             href="/dashboard"
             aria-label="Reaigen"
-            className="mx-auto flex h-12 w-16 items-center justify-center rounded-xl transition-colors hover:bg-foreground/[0.04] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 min-[1728px]:w-full min-[1728px]:justify-start min-[1728px]:px-2"
+            className="flex h-12 w-full items-center justify-center rounded-xl transition-colors hover:bg-foreground/[0.04] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 xl:justify-start xl:px-2"
           >
             <span
               aria-hidden="true"
-              className="text-[23px] leading-none text-foreground min-[1728px]:hidden"
+              className="text-[28px] leading-none text-foreground xl:hidden"
               style={{ fontFamily: 'var(--font-brand), ui-serif, Georgia, serif', fontWeight: 400, letterSpacing: '-0.01em' }}
             >
               Re
             </span>
             <span
               aria-hidden="true"
-              className="hidden text-[28px] leading-none text-foreground min-[1728px]:inline"
+              className="hidden text-[28px] leading-none text-foreground xl:block"
               style={{ fontFamily: 'var(--font-brand), ui-serif, Georgia, serif', fontWeight: 400, letterSpacing: '-0.01em' }}
             >
               Reaigen
@@ -565,7 +565,7 @@ function AppShellFrame({
         </div>
 
         {/* Nav links */}
-        <nav className="flex-1 space-y-1 px-3">
+        <nav className="flex-1 space-y-1 px-5 xl:px-3">
           {NAV_ITEMS.map((item) => {
             const active = pathname === item.href || pathname.startsWith(item.href + "/") || (item.href === "/dashboard" && pathname.startsWith("/draft/"));
             const Icon = item.icon;
@@ -582,7 +582,7 @@ function AppShellFrame({
                   // selection. Now the filled icon carries the selected state
                   // and the chip just sits under it. Label is 11px — the
                   // documented floor — where it used to be 10.
-                  "mx-auto flex min-h-[58px] w-16 flex-col items-center justify-center gap-1.5 rounded-2xl text-[11px] leading-none transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 min-[1728px]:h-12 min-[1728px]:min-h-0 min-[1728px]:w-full min-[1728px]:flex-row min-[1728px]:justify-start min-[1728px]:gap-3.5 min-[1728px]:px-3 min-[1728px]:text-[14px] min-[1728px]:leading-normal",
+                  "flex h-12 w-12 items-center justify-center rounded-2xl text-[14px] leading-normal transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 xl:w-full xl:justify-start xl:gap-3.5 xl:px-3",
                   active
                     ? "bg-foreground/[0.06] font-semibold text-foreground"
                     : "font-medium text-muted-foreground hover:bg-foreground/[0.04] hover:text-foreground"
@@ -596,41 +596,41 @@ function AppShellFrame({
                   tab bar now carries.
                 */}
                 <Icon size={25} filled={active} strokeWidth={1.9} className={cn("shrink-0", active ? "text-foreground" : "text-foreground/55")} />
-                <span className="max-w-full truncate min-[1728px]:block">{item.label}</span>
+                <span className="hidden max-w-full truncate xl:block">{item.label}</span>
               </Link>
             );
           })}
         </nav>
 
         {/* ReaUI utility stack with an X-like account position at the bottom. */}
-        <div className="space-y-1 px-3 pb-4">
+        <div className="space-y-1 px-5 pb-4 xl:px-3">
           <Link
             href="/settings"
             title={t("nav.settings", lang)}
             aria-current={settingsActive ? "page" : undefined}
             className={cn(
               // Matches the primary nav items above — same chip, same floor.
-              "mx-auto flex min-h-[58px] w-16 flex-col items-center justify-center gap-1.5 rounded-2xl text-[11px] leading-none transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 min-[1728px]:h-12 min-[1728px]:min-h-0 min-[1728px]:w-full min-[1728px]:flex-row min-[1728px]:justify-start min-[1728px]:gap-3.5 min-[1728px]:px-3 min-[1728px]:text-[14px] min-[1728px]:leading-normal",
+              "flex h-12 w-12 items-center justify-center rounded-2xl text-[14px] leading-normal transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 xl:w-full xl:justify-start xl:gap-3.5 xl:px-3",
               settingsActive
                 ? "bg-foreground/[0.06] font-semibold text-foreground"
                 : "font-medium text-muted-foreground hover:bg-foreground/[0.04] hover:text-foreground"
             )}
           >
             <MainSettingsIcon size={25} filled={settingsActive} strokeWidth={1.9} className={cn("shrink-0", settingsActive ? "text-foreground" : "text-foreground/55")} />
-            <span className="max-w-full truncate min-[1728px]:block">{t("nav.settings", lang)}</span>
+            <span className="hidden max-w-full truncate xl:block">{t("nav.settings", lang)}</span>
           </Link>
 
           <Link
             href="/settings"
             title={displayName}
             aria-label={displayName}
-            className="mx-auto flex h-12 w-12 items-center justify-center rounded-xl transition-colors hover:bg-foreground/[0.04] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 min-[1728px]:w-full min-[1728px]:justify-start min-[1728px]:gap-3 min-[1728px]:px-2"
+            className="flex h-12 w-12 items-center justify-center rounded-xl transition-colors hover:bg-foreground/[0.04] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 xl:min-h-12 xl:w-full xl:justify-start xl:gap-3 xl:px-2 xl:py-2"
           >
             <Avatar size="sm" className="shrink-0">
               {avatarUrl && <AvatarImage src={avatarUrl as string} />}
               <AvatarFallback>{getInitials(user)}</AvatarFallback>
             </Avatar>
-            <span className="hidden min-w-0 min-[1728px]:block">
+            <span className="hidden min-w-0 xl:block">
               <span className="block truncate text-[13px] font-semibold leading-tight">{displayName}</span>
               <span className="mt-0.5 block truncate text-[11px] text-muted-foreground">{user.email}</span>
             </span>
@@ -641,10 +641,10 @@ function AppShellFrame({
             onClick={onLogout}
             title={t("nav.signout", lang)}
             aria-label={t("nav.signout", lang)}
-            className="mx-auto flex h-12 w-12 items-center justify-center rounded-full text-foreground/55 transition-colors hover:bg-accent/80 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 min-[1728px]:w-full min-[1728px]:justify-start min-[1728px]:gap-3.5 min-[1728px]:px-3 min-[1728px]:text-[13px] min-[1728px]:font-medium"
+            className="flex h-12 w-12 items-center justify-center rounded-2xl text-[13px] font-medium text-foreground/65 transition-colors hover:bg-accent/80 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 xl:w-full xl:justify-start xl:gap-3.5 xl:px-3"
           >
             <MainSignOutIcon size={25} strokeWidth={1.9} className="shrink-0" />
-            <span className="hidden min-[1728px]:block">{t("nav.signout", lang)}</span>
+            <span className="hidden xl:block">{t("nav.signout", lang)}</span>
           </button>
         </div>
       </aside>
@@ -665,7 +665,7 @@ function AppShellFrame({
           6px of air between them and the rules above and below.
         */}
         <div className="flex h-[var(--header-h)] items-center justify-between gap-3 pl-[max(1rem,env(safe-area-inset-left))] pr-[max(1rem,env(safe-area-inset-right))]">
-          <Link href="/dashboard" className="flex min-w-0 items-center">
+          <Link href="/dashboard" className="flex min-h-11 min-w-0 items-center">
             {/*
               The wordmark sat at 22px while the page title below it ran at
               32px, so the brand read as secondary to whatever screen you
@@ -693,6 +693,7 @@ function AppShellFrame({
               <button
                 ref={mobileAccountButtonRef}
                 type="button"
+                data-testid="mobile-account-open"
                 aria-label={displayName}
                 aria-haspopup="menu"
                 aria-expanded={mobileAccountOpen}
@@ -708,6 +709,7 @@ function AppShellFrame({
               {mobileAccountOpen && (
                 <div
                   id="mobile-account-menu"
+                  data-testid="mobile-account-menu"
                   role="menu"
                   aria-label={displayName}
                   className="floating-panel absolute right-0 top-[calc(100%+0.5rem)] w-72 max-w-[calc(100vw-2rem)] overflow-hidden border-border bg-card p-2 animate-fade-in"
@@ -758,12 +760,8 @@ function AppShellFrame({
           // Derived from the header token so the two can never drift apart.
           "min-h-[calc(100dvh-var(--header-h))] pb-24 pt-6 pl-[max(1rem,env(safe-area-inset-left))] pr-[max(1rem,env(safe-area-inset-right))]",
           "md:min-h-dvh md:px-8 md:py-7 xl:px-10 2xl:px-12",
-          // The rail glides between its 88px and 260px widths over 200ms, but
-          // this margin is driven by --sidebar-offset, which flips at the
-          // breakpoint with no transition of its own — the content jumped to
-          // the wide position while the rail was still travelling. Same
-          // duration as the aside so the two move as one edge.
-          "transition-[margin] duration-200",
+          // The labeled rail stays stable across desktop widths. Only its
+          // outer gutter grows slightly on a wide canvas.
         )}
         style={{ marginLeft: `var(--sidebar-offset, 0px)` }}
       >
@@ -796,7 +794,7 @@ function AppShellFrame({
                   "flex flex-col items-center justify-center gap-1.5 rounded-lg text-[11px] font-medium leading-none transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2",
                   active
                     ? "font-semibold text-foreground"
-                    : "text-foreground/55 hover:text-foreground"
+                    : "text-foreground/70 hover:text-foreground"
                 )}
               >
                 {/*
@@ -828,8 +826,9 @@ function AppShellFrame({
               className="fixed inset-0 z-[65] bg-black/25 backdrop-blur-[1px]"
             />
           )}
-          <aside
+          <div
             ref={reaiPanelRef}
+            data-testid="agent-panel"
             role={compactAgentViewport ? "dialog" : "complementary"}
             aria-modal={compactAgentViewport ? true : undefined}
             aria-labelledby="reai-panel-title"
@@ -851,7 +850,7 @@ function AppShellFrame({
                   : "min(460px, calc(100vw - 4rem))",
             }}
             className={cn(
-              "agent-canvas fixed inset-y-0 right-0 z-[70] flex w-full flex-col border-l border-border transition-[transform,visibility] duration-200",
+              "agent-canvas fixed inset-y-0 right-0 z-[70] flex w-full flex-col border-l border-border bg-background transition-[transform,visibility] duration-200",
               dockedAgentViewport ? "shadow-none" : "shadow-[-18px_0_48px_-30px_rgba(0,0,0,0.28)]",
               reaiOpen ? "visible translate-x-0" : "pointer-events-none invisible translate-x-full",
             )}
@@ -866,7 +865,7 @@ function AppShellFrame({
                 aria-valuemax={REAI_PANEL_MAX_W}
                 aria-valuenow={reaiPanelWidth ?? 560}
                 title={t("reai.resizePanel", lang)}
-                className="group absolute inset-y-0 left-0 z-20 w-7 -translate-x-1/2 cursor-col-resize touch-none focus-visible:outline-none"
+                className="group absolute inset-y-0 left-0 z-20 w-11 -translate-x-1/2 cursor-col-resize touch-none focus-visible:outline-none"
                 onPointerDown={(event) => {
                   if (event.button !== 0) return;
                   event.preventDefault();
@@ -914,7 +913,7 @@ function AppShellFrame({
                 />
               </button>
             ) : null}
-            <div className="flex h-14 shrink-0 items-center justify-between border-b border-border bg-card px-4 pt-safe">
+            <div className="flex min-h-16 shrink-0 items-center justify-between border-b border-border/55 bg-card px-4 pt-safe">
               <div className="flex min-w-0 items-center gap-2.5">
                 <span className="flex h-8 w-8 shrink-0 items-center justify-center text-foreground">
                   <AgentIcon size={20} strokeWidth={1.8} />
@@ -954,7 +953,7 @@ function AppShellFrame({
             <div className="min-h-0 flex-1">
               <ReaiAgentCard draftId={reaiDraftId} currentUploadId={reaiUploadId} workspaceContext={reaiContext} lang={lang} onDraftUpdated={onReaiDraftUpdated} panel compact={compactAgentViewport} />
             </div>
-          </aside>
+          </div>
         </>
       )}
 
@@ -962,15 +961,13 @@ function AppShellFrame({
       <style>{`
         :root { --reai-panel-width: clamp(${AGENT_PANEL_BASE_W}px, 33vw, 720px); }
         @media (min-width: 768px) {
-          :root { --sidebar-offset: ${SIDEBAR_COLLAPSED_W}px; }
+          :root { --sidebar-offset: ${SIDEBAR_W}px; }
+        }
+        @media (min-width: 1280px) {
+          :root { --sidebar-offset: ${SIDEBAR_WIDE_W}px; }
         }
         /* The Agent width is consumed by the app canvas in desktop-width
            workspaces; phones and tablets keep the focused drawer composition. */
-        @media (min-width: 1728px) {
-          :root {
-            --sidebar-offset: ${SIDEBAR_EXPANDED_W}px;
-          }
-        }
       `}</style>
     </div>
   );

@@ -120,14 +120,12 @@ export function DraftImageEditor({
   label,
   lang,
   busy,
-  onCancel,
   onSave,
 }: {
   upload: DraftUpload;
   label: string;
   lang: string;
   busy: boolean;
-  onCancel: () => void;
   onSave: (operations: ReaiImageEditOperations) => void | Promise<void>;
 }) {
   const [edit, setEdit] = React.useState<EditState>(DEFAULT_EDIT);
@@ -433,7 +431,7 @@ export function DraftImageEditor({
       onClick={() => setShowOriginal(originalView)}
       aria-pressed={showOriginal === originalView}
       className={cn(
-        "h-7 rounded-full px-3 text-[11px] font-medium transition-colors",
+        "h-11 rounded-full px-3 text-[12px] font-medium transition-colors",
         "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
         showOriginal === originalView
           ? "bg-foreground text-background"
@@ -459,7 +457,7 @@ export function DraftImageEditor({
       disabled={busy || !pipeline}
       aria-busy={pipelineState === "loading" || undefined}
       className={cn(
-        "flex h-11 w-full items-center gap-2 rounded-xl border px-3 text-left text-[12px] font-medium transition-colors",
+        "flex h-11 w-full items-center gap-2 rounded-xl border px-3 text-left text-[13px] font-medium transition-colors",
         "border-border/70 bg-surface text-foreground/80",
         "hover:border-foreground/30 hover:bg-foreground/[0.035] hover:text-foreground",
         "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
@@ -509,7 +507,7 @@ export function DraftImageEditor({
   );
 
   const cropChips = (
-    <div className="grid grid-cols-5 gap-1">
+    <div className="selection-capsule-track grid grid-cols-[1.25fr_repeat(4,minmax(0,1fr))]">
       {CROP_ASPECTS.map((option) => (
         <button
           key={option.value}
@@ -522,12 +520,7 @@ export function DraftImageEditor({
           }))}
           disabled={busy}
           aria-pressed={edit.cropAspect === option.value}
-          className={cn(
-            "min-h-11 rounded-full border px-1.5 text-[11px] font-medium transition-colors disabled:opacity-45",
-            edit.cropAspect === option.value
-              ? "border-foreground bg-foreground text-background"
-              : "border-border/70 text-muted-foreground hover:border-foreground/35 hover:text-foreground",
-          )}
+          className="selection-capsule-item pen-touch-target min-w-0 px-1.5 text-[12px] leading-none focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-45"
         >
           {option.value === "original" ? t("draft.media.cropOriginal", lang) : option.value}
         </button>
@@ -557,13 +550,13 @@ export function DraftImageEditor({
 
   const sectionHeading = (text: string, trailing?: React.ReactNode) => (
     <div className="flex items-center justify-between gap-3">
-      <p className="text-[11px] font-semibold uppercase tracking-[0.11em] text-muted-foreground">{text}</p>
+      <p className="text-[12px] font-semibold uppercase tracking-[0.11em] text-foreground/60">{text}</p>
       {trailing}
     </div>
   );
 
   const rotationReadout = (
-    <span className="w-10 text-right text-[11px] tabular-nums text-muted-foreground">
+    <span className="w-10 text-right text-[12px] tabular-nums text-foreground/60">
       {edit.rotation}°
     </span>
   );
@@ -582,7 +575,7 @@ export function DraftImageEditor({
             <p className="truncate text-[11px] font-medium text-muted-foreground" title={label}>
               {label}
             </p>
-            <div className="flex shrink-0 items-center gap-0.5 rounded-full border border-border/60 bg-background/70 p-0.5">
+            <div className="flex shrink-0 items-center gap-0.5 rounded-full border border-border/60 bg-background/70 p-0">
               {compareButton(true, t("reai.mediaOriginal", lang))}
               {compareButton(false, t("draft.media.editedPreview", lang))}
             </div>
@@ -591,7 +584,7 @@ export function DraftImageEditor({
 
         <div className="relative min-h-0 flex-1">
           {stacked ? (
-            <div className="floating-capsule absolute right-2 top-2 z-10 flex items-center gap-0.5 !bg-card/85 p-0.5 shadow-control backdrop-blur-xl">
+            <div className="floating-capsule absolute right-2 top-2 z-10 flex items-center gap-0.5 !bg-card/85 p-0 shadow-control backdrop-blur-xl">
               {compareButton(true, t("reai.mediaOriginal", lang))}
               {compareButton(false, t("draft.media.editedPreview", lang))}
             </div>
@@ -703,10 +696,10 @@ export function DraftImageEditor({
             onValueChange={(next) => setTab(next as ControlTab)}
             className="flex min-h-0 flex-1 flex-col"
           >
-            <TabsList className="mx-3 mt-2.5 grid h-11 shrink-0 grid-cols-3">
-              <TabsTrigger value="light" className="text-[12px]">{t("draft.media.tabLight", lang)}</TabsTrigger>
-              <TabsTrigger value="colour" className="text-[12px]">{t("draft.media.tabColour", lang)}</TabsTrigger>
-              <TabsTrigger value="crop" className="text-[12px]">{t("draft.media.tabCrop", lang)}</TabsTrigger>
+            <TabsList className="selection-capsule-track mx-3 mt-2.5 grid shrink-0 grid-cols-3">
+              <TabsTrigger value="light" className="selection-capsule-item text-[12px]">{t("draft.media.tabLight", lang)}</TabsTrigger>
+              <TabsTrigger value="colour" className="selection-capsule-item text-[12px]">{t("draft.media.tabColour", lang)}</TabsTrigger>
+              <TabsTrigger value="crop" className="selection-capsule-item text-[12px]">{t("draft.media.tabCrop", lang)}</TabsTrigger>
             </TabsList>
 
             <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-3.5 pb-2 scrollbar-thin">
@@ -775,13 +768,8 @@ export function DraftImageEditor({
               {t("draft.media.saveAsVersion", lang)}
             </Button>
           </div>
-          {/* Stacked, the panel header already carries a back arrow one thumb
-              away, and a third full-width button cost more stage than it earned. */}
-          {stacked ? null : (
-            <Button type="button" variant="ghost" size="sm" onClick={onCancel} disabled={busy} className="mt-1.5 w-full">
-              {t("common.cancel", lang)}
-            </Button>
-          )}
+          {/* The panel header is the single way back. Repeating Cancel here made
+              the rail look like it had three competing footers. */}
         </div>
       </aside>
     </div>

@@ -191,7 +191,7 @@ function TransformNumberField({
   return (
     <label className="relative">
       <span className={cn(
-        "pointer-events-none absolute left-2 top-1/2 z-10 -translate-y-1/2 text-[8px] font-bold",
+        "pointer-events-none absolute left-2 top-1/2 z-10 -translate-y-1/2 text-[10px] font-bold",
         axis === "X" ? "text-red-600" : axis === "Y" ? "text-green-600" : "text-blue-600",
       )}>
         {axis}
@@ -269,7 +269,7 @@ function TransformNumberField({
           const direction: 1 | -1 = event.key === "ArrowUp" ? 1 : -1;
           increment(direction, multiplier);
         }}
-        className="h-8 rounded-lg border-border/75 bg-background/75 py-1 pl-5 pr-2 text-right text-[11px] tabular-nums shadow-none hover:cursor-ns-resize hover:border-foreground/25 focus-visible:border-foreground/35 focus-visible:ring-1"
+        className="h-9 rounded-lg border-border/75 bg-background/75 py-1 pl-5 pr-2 text-right text-[12px] tabular-nums shadow-none hover:cursor-ns-resize hover:border-foreground/25 focus-visible:border-foreground/35 focus-visible:ring-1"
         aria-label={`${label} ${axis}`}
       />
     </label>
@@ -351,6 +351,9 @@ export default function WebTourEditorPage({
   const selectedIdRef = useRef<string | null>(null);
   const pendingPruneMasksRef = useRef<Record<string, SplatPruneMask>>({});
   const thumbnailCaptureRef = useRef<Promise<unknown>>(Promise.resolve());
+  // Workspace revision whose missing cover we have already tried to backfill,
+  // so a viewer remount cannot retry the render on a loop.
+  const coverBackfillRef = useRef<number | null>(null);
   const fileDragDepthRef = useRef(0);
   const fileDragWatchdogRef = useRef<number | null>(null);
 
@@ -740,6 +743,26 @@ export default function WebTourEditorPage({
     return task;
   }, [tourId]);
 
+  // A tour imported from iOS is never saved through this editor, so the
+  // save-triggered capture above never runs for it and its row keeps the
+  // placeholder icon forever. Backfill the one case that cannot resolve
+  // itself: a tour that has cameras but no cover at all. Stale covers are
+  // left to the save path, which knows the edit that invalidated them.
+  const backfillMissingCover = useCallback(() => {
+    const current = workspaceRef.current;
+    if (!current || current.thumbnail_url) return;
+    if (coverBackfillRef.current === current.revision) return;
+    if (!selectTourThumbnailCamera(current.cameras)) return;
+    const revision = current.revision;
+    coverBackfillRef.current = revision;
+    // onReady already waits for the Gaussian to settle; this margin is for the
+    // first interactive frames, since capture borrows the live camera.
+    window.setTimeout(() => {
+      if (workspaceRef.current?.revision !== revision) return;
+      void captureAutomaticThumbnail(revision);
+    }, 600);
+  }, [captureAutomaticThumbnail]);
+
   const uploadFile = async (file: File) => {
     const extension = file.name.split(".").pop()?.toLowerCase();
     if (extension !== "ply" && extension !== "sog") {
@@ -1108,14 +1131,21 @@ export default function WebTourEditorPage({
         <SplatViewer
           key={`${selected.id}:${selectedAssetUrl}:${viewerReloadKey}`}
           ref={viewerRef}
-          // Loading a scene must be a read-only operation. Cover rendering is
-          // scheduled after an explicit workspace/camera save; doing it here
-          // moved the live Gaussian sort to a hidden camera immediately after
-          // the first frame and could leave an otherwise healthy scene blank.
+          // Cover rendering is normally scheduled after an explicit save. It
+          // used to be unsafe here too: capture borrows the live camera, and
+          // running it right after the first frame moved the Gaussian sort to
+          // a hidden pose and could leave a healthy scene blank. Two things
+          // make the backfill safe now — onReady fires only after
+          // settleHiddenGaussian, and captureThumbnail forces and awaits the
+          // restored-camera sort before resuming the render loop. It still
+          // only runs for a tour that has no cover at all.
           onReady={() => {
             setViewerFailed(false);
             setViewerErrorDetail(null);
+            backfillMissingCover();
           }}
+          onRetry={() => setViewerReloadKey((value) => value + 1)}
+          onCancel={() => router.push(`/draft/${workspace.draft_id}`)}
           gaussianRenderer={sparkRenderer ? "spark" : "spinoff"}
           splatUrl={selectedAssetUrl}
           splatId={selected.splat_id}
@@ -1308,6 +1338,7 @@ export default function WebTourEditorPage({
         ref={fileInputRef}
         type="file"
         accept=".ply,.sog"
+        aria-label={t("webEditor.addSplat", lang)}
         className="sr-only"
         onChange={(event) => {
           const file = event.target.files?.[0];
@@ -1316,7 +1347,7 @@ export default function WebTourEditorPage({
         }}
       />
 
-      <aside className={cn(
+      <aside data-testid="tour-editor-scene-panel" className={cn(
         "floating-panel absolute inset-x-3 bottom-[calc(5.25rem+env(safe-area-inset-bottom,0px))] z-30 max-h-[45dvh] overflow-hidden transition-[transform,opacity] duration-200 md:inset-x-auto md:bottom-auto md:left-4 md:top-20 md:z-20 md:max-h-[calc(100dvh-10rem)] md:w-[16.5rem]",
         !scenePanelOpen
           && "pointer-events-none translate-y-[calc(100%+6rem)] opacity-0 md:translate-y-0 md:-translate-x-[calc(100%+1rem)] md:opacity-100",
@@ -1324,8 +1355,8 @@ export default function WebTourEditorPage({
         <div aria-hidden="true" className="mx-auto mt-2 h-1 w-9 rounded-full bg-foreground/15 md:hidden" />
         <div className="flex items-center justify-between border-b border-border/65 px-3 py-2.5">
           <span>
-            <span className="block text-[10px] font-semibold">{t("webEditor.sceneGraph", lang)}</span>
-            <span className="block text-[8px] text-muted-foreground">
+            <span className="block text-[12px] font-semibold">{t("webEditor.sceneGraph", lang)}</span>
+            <span className="block text-[10px] text-muted-foreground">
               {workspace.nodes.length} {t("webEditor.nodes", lang)}
             </span>
           </span>
@@ -1349,17 +1380,17 @@ export default function WebTourEditorPage({
           </span>
         </div>
         <div className="max-h-[calc(45dvh-3.75rem)] overflow-y-auto p-2 md:max-h-[calc(100dvh-14rem)]">
-          <div className="flex items-center gap-2 border-b border-border/50 px-2 py-2 text-[10px] font-semibold">
+          <div className="flex items-center gap-2 border-b border-border/50 px-2 py-2 text-[11px] font-semibold">
             <TourIcon size={12} />
             /World
-            <span className="ml-auto text-[8px] font-normal text-muted-foreground">USD</span>
+            <span className="ml-auto text-[10px] font-normal text-muted-foreground">USD</span>
           </div>
           <div className="ml-3 border-l border-foreground/[0.1] pl-1.5 pt-1">
             {workspace.nodes.map((node) => (
               <div
                 key={node.id}
                 className={cn(
-                  "group flex w-full items-center gap-1.5 rounded-md px-2 py-2 text-left transition-colors",
+                  "group flex min-h-9 w-full items-center gap-1.5 rounded-md px-1 py-1 text-left transition-colors",
                   node.id === selectedId
                     ? "bg-foreground/[0.09] text-foreground"
                     : "text-foreground/65 hover:bg-foreground/[0.06] hover:text-foreground",
@@ -1376,7 +1407,7 @@ export default function WebTourEditorPage({
                     }
                     updateNode(node.id, (current) => ({ ...current, visible: !current.visible }));
                   }}
-                  className="flex shrink-0 items-center justify-center rounded-md p-1"
+                  className="flex h-9 w-9 shrink-0 items-center justify-center rounded-md text-foreground/65 hover:bg-foreground/[0.06] hover:text-foreground"
                   aria-label={node.visible ? t("common.hide", lang) : t("common.show", lang)}
                 >
                   {node.visible ? <EyeOpenIcon size={12} /> : <EyeClosedIcon size={12} />}
@@ -1384,7 +1415,7 @@ export default function WebTourEditorPage({
                 <button
                   type="button"
                   onClick={() => selectNode(node.id)}
-                  className="min-w-0 flex-1 truncate text-left text-[10px] font-medium"
+                  className="flex min-h-9 min-w-0 flex-1 items-center truncate text-left text-[11px] font-medium"
                 >
                   {node.name}
                 </button>
@@ -1409,7 +1440,7 @@ export default function WebTourEditorPage({
                 }
               }}
               className={cn(
-                "mt-1 flex w-full items-center gap-2 rounded-md px-2 py-2 text-left text-[10px] font-medium transition-colors disabled:opacity-40",
+                "mt-1 flex min-h-9 w-full items-center gap-2 rounded-md px-2 py-1 text-left text-[11px] font-medium transition-colors disabled:opacity-40",
                 cameraEditorOpen
                   ? "bg-foreground/[0.09] text-foreground"
                   : "text-foreground/65 hover:bg-foreground/[0.06] hover:text-foreground",
@@ -1417,7 +1448,7 @@ export default function WebTourEditorPage({
             >
               <CameraIcon size={13} />
               <span className="min-w-0 flex-1">{t("webEditor.cameras", lang)}</span>
-              <span className="rounded-md bg-foreground/[0.055] px-1.5 py-0.5 text-[8px] tabular-nums">
+              <span className="rounded-md bg-foreground/[0.055] px-1.5 py-0.5 text-[10px] tabular-nums">
                 {workspace.cameras.length}
               </span>
             </button>
@@ -1428,6 +1459,7 @@ export default function WebTourEditorPage({
       {!scenePanelOpen && (!compactLayout || !inspectorOpen) ? (
         <button
           type="button"
+          data-testid="tour-editor-scene-open"
           onClick={() => {
             if (pruneEditorOpen) requestClosePruneEditor();
             setCameraEditorOpen(false);
@@ -1443,19 +1475,19 @@ export default function WebTourEditorPage({
       ) : null}
 
       {selected && draftTransform && inspectorOpen && !cameraEditorOpen && (!compactLayout || !scenePanelOpen) ? (
-        <section className="floating-panel absolute inset-x-3 bottom-[calc(5.25rem+env(safe-area-inset-bottom,0px))] z-30 max-h-[56dvh] overflow-y-auto p-3 md:inset-x-auto md:bottom-auto md:right-4 md:top-20 md:z-20 md:max-h-[calc(100dvh-10rem)] md:w-[19.5rem]">
+        <section data-testid="tour-editor-inspector-panel" className="floating-panel absolute inset-x-3 bottom-[calc(5.25rem+env(safe-area-inset-bottom,0px))] z-30 max-h-[56dvh] overflow-y-auto p-3 md:inset-x-auto md:bottom-auto md:right-4 md:top-20 md:z-20 md:max-h-[calc(100dvh-10rem)] md:w-[19.5rem]">
           <div aria-hidden="true" className="mx-auto mb-2 h-1 w-9 rounded-full bg-foreground/15 md:hidden" />
           <div className="flex items-center justify-between gap-3 border-b border-border/60 pb-2.5">
             <span className="min-w-0">
-              <span className="block text-[9px] font-semibold uppercase tracking-[0.11em] text-foreground/55">
+              <span className="block text-[11px] font-semibold uppercase tracking-[0.11em] text-foreground/65">
                 {t("spatialEditor.inspector", lang)}
               </span>
-              <span className="mt-0.5 block truncate font-mono text-[8px] text-muted-foreground">
+              <span className="mt-0.5 block truncate font-mono text-[10px] text-muted-foreground">
                 {selected.prim_path}
               </span>
             </span>
             <span className="flex items-center gap-1">
-              <span className="rounded-md bg-foreground/[0.055] px-2 py-1 text-[8px] font-medium uppercase tracking-[0.08em] text-foreground/45">
+              <span className="rounded-md bg-foreground/[0.055] px-2 py-1 text-[10px] font-medium uppercase tracking-[0.08em] text-foreground/55">
                 {selected.asset.format ?? "…"}
               </span>
               <button
@@ -1486,7 +1518,7 @@ export default function WebTourEditorPage({
                 aria-pressed={transformSpace === space}
                 onClick={() => setTransformSpace(space)}
                 className={cn(
-                  "h-7 rounded-md text-[9px] font-medium transition-colors",
+                  "h-9 rounded-md text-[11px] font-medium transition-colors",
                   transformSpace === space
                     ? "bg-card text-foreground shadow-sm"
                     : "text-muted-foreground hover:text-foreground",
@@ -1503,14 +1535,14 @@ export default function WebTourEditorPage({
             onClick={() => setSnapEnabled((value) => !value)}
             aria-pressed={snapEnabled}
             className={cn(
-              "mt-1.5 flex h-8 w-full items-center justify-between rounded-lg border px-2.5 text-[9px] font-medium transition-colors",
+              "mt-1.5 flex h-9 w-full items-center justify-between rounded-lg border px-2.5 text-[11px] font-medium transition-colors",
               snapEnabled
                 ? "bg-foreground text-background"
                 : "border-border/60 bg-transparent text-muted-foreground hover:bg-foreground/[0.035] hover:text-foreground",
             )}
           >
             <span>{t("spatialEditor.snap", lang)}</span>
-            <span className="font-mono text-[8px] opacity-65">
+            <span className="font-mono text-[10px] opacity-70">
               {tool === "rotate" ? "5°" : tool === "scale" ? "0.05×" : "0.10 m"}
             </span>
           </button>
@@ -1521,11 +1553,11 @@ export default function WebTourEditorPage({
             ] as const).map(([key, label, values, step]) => (
               <div key={key} className="border-b border-border/55 p-2.5">
                 <div className="mb-1.5 flex items-center justify-between">
-                  <span className="text-[9px] font-semibold">{label}</span>
+                  <span className="text-[11px] font-semibold">{label}</span>
                   <button
                     type="button"
                     onClick={() => resetTransform(key)}
-                    className="rounded-md px-1.5 py-0.5 text-[8px] font-medium text-muted-foreground hover:bg-foreground/[0.05] hover:text-foreground"
+                    className="min-h-9 rounded-md px-2 text-[10px] font-medium text-muted-foreground hover:bg-foreground/[0.05] hover:text-foreground"
                   >
                     {t("spatialEditor.reset", lang)}
                   </button>
@@ -1556,11 +1588,11 @@ export default function WebTourEditorPage({
             ))}
             <div className="border-b border-border/55 p-2.5">
               <div className="mb-1.5 flex items-center justify-between">
-                <span className="text-[9px] font-semibold">{t("spatialEditor.scale", lang)}</span>
+                <span className="text-[11px] font-semibold">{t("spatialEditor.scale", lang)}</span>
                 <button
                   type="button"
                   onClick={() => resetTransform("scale")}
-                  className="rounded-md px-1.5 py-0.5 text-[8px] font-medium text-muted-foreground hover:bg-foreground/[0.05] hover:text-foreground"
+                  className="min-h-9 rounded-md px-2 text-[10px] font-medium text-muted-foreground hover:bg-foreground/[0.05] hover:text-foreground"
                 >
                   {t("spatialEditor.reset", lang)}
                 </button>
@@ -1605,12 +1637,12 @@ export default function WebTourEditorPage({
               <button
                 type="button"
                 onClick={() => resetTransform("all")}
-                className="text-[8px] font-medium text-muted-foreground hover:text-foreground"
+                className="min-h-9 rounded-md px-2 text-[10px] font-medium text-muted-foreground hover:bg-foreground/[0.05] hover:text-foreground"
               >
                 {t("spatialEditor.resetAll", lang)}
               </button>
               <span className={cn(
-                "flex items-center gap-1.5 text-[8px]",
+                "flex items-center gap-1.5 text-[10px]",
                 workspaceDirty || transformDirty ? "text-amber-700" : "text-muted-foreground",
               )}>
                 <span className={cn(
@@ -1629,6 +1661,7 @@ export default function WebTourEditorPage({
       {selected && !inspectorOpen && !cameraEditorOpen && (!compactLayout || !scenePanelOpen) ? (
         <button
           type="button"
+          data-testid="tour-editor-inspector-open"
           onClick={() => {
             if (pruneEditorOpen) requestClosePruneEditor();
             setScenePanelOpen(false);
@@ -1856,6 +1889,7 @@ export default function WebTourEditorPage({
           </button>
           <button
             type="button"
+            data-testid="tour-editor-camera-open"
             onClick={() => {
               if (pruneEditorOpen) requestClosePruneEditor();
               setScenePanelOpen(false);
@@ -1920,6 +1954,7 @@ export default function WebTourEditorPage({
         <span className="mx-1 h-6 w-px bg-foreground/[0.1]" />
         <button
           type="button"
+          data-testid="tour-editor-prune-open"
           disabled={!selected || !selectedAssetUrl}
           onClick={() => {
             if (pruneEditorOpen) {
@@ -1987,6 +2022,7 @@ export default function WebTourEditorPage({
         <span className="mx-1 h-6 w-px bg-foreground/[0.1]" />
         <button
           type="button"
+          data-testid="tour-editor-camera-open"
           disabled={!selected || !selectedAssetUrl}
           onClick={() => {
             if (pruneEditorOpen) requestClosePruneEditor();

@@ -1170,7 +1170,7 @@ export function DraftEditor({
           type="submit"
           form="draft-editor-form"
           size="xs"
-          className="h-11 min-w-[4.75rem] px-3 sm:h-9"
+          className="h-11 min-w-[4.75rem] px-3"
           loading={saving}
           disabled={!dirty || !values.title.trim() || !numbersValid}
           aria-label={t("draft.editor.save", lang)}
@@ -1185,7 +1185,7 @@ export function DraftEditor({
           <Button type="button" variant="destructive" size="sm" className="w-full sm:w-auto" onClick={() => onOpenChange(false)}>{t("draft.editor.discard", lang)}</Button>
         </div>
       ) : undefined}
-      className="sm:max-w-[640px]"
+      className="sm:max-w-[720px] xl:max-w-[760px]"
     >
       <form
         ref={editorFormRef}
@@ -1473,7 +1473,7 @@ export function DraftEditor({
         <Button
           type="button"
           size="xs"
-          className="h-11 min-w-[4.75rem] px-3 sm:h-9"
+          className="h-11 min-w-[4.75rem] px-3"
           onClick={applyDescriptionDraft}
         >
           {t("draft.editor.descriptionDone", lang)}

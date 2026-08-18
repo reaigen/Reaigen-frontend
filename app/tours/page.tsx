@@ -138,7 +138,7 @@ export default function ToursPage() {
 
   return (
     <AppShell user={user} onLogout={logout}>
-      <div className="mx-auto w-full max-w-[1180px] pb-10">
+      <div className="mx-auto w-full max-w-[1360px] pb-10">
         <PageHeader
           title={t("tours.title", lang)}
           description={t("tours.subtitle", lang)}
@@ -146,14 +146,14 @@ export default function ToursPage() {
           className="mb-5 sm:mb-8"
         />
 
-        <div className="mb-5 flex min-w-0 items-center gap-3 rounded-full border border-border/80 bg-card px-4 py-0.5 shadow-control sm:mb-7 md:rounded-none md:border-x-0 md:border-t-0 md:bg-transparent md:px-0 md:pb-2 md:pt-0 md:shadow-none">
+        <div className="mb-5 flex min-w-0 items-center gap-2 border-b border-border/75 pb-2 sm:mb-6">
           <SearchField
             value={query}
             onChange={setQuery}
             onClear={() => setQuery("")}
             placeholder={t("tours.search", lang)}
             clearLabel={t("dashboard.clearSearch", lang)}
-            className="flex-1"
+            className="flex-1 px-1"
             appearance="toolbar"
           />
           <GridLayoutToggle value={gridCols} onChange={handleGridCols} lang={lang} />
@@ -178,13 +178,13 @@ export default function ToursPage() {
           />
             ) : (
           <>
-          <div className={`grid grid-cols-1 gap-7 ${gridCols === 2 ? "md:grid-cols-2" : "mx-auto max-w-2xl"}`}>
+          <div className={`grid grid-cols-1 gap-5 xl:gap-6 ${gridCols === 2 ? "md:grid-cols-2" : "mx-auto max-w-2xl"}`}>
             {items.map((item, index) => {
               const ready = tourState(item) === "ready";
               const href = ready ? `/tour/${item.id}` : `/draft/${item.source_draft}`;
               return (
                 <CollectionCard key={item.id}>
-                  <Link href={href} prefetch={ready} className="block focus-visible:outline-none">
+                  <Link href={href} data-testid={ready ? "tour-card-link" : "draft-card-link"} prefetch={ready} className="block focus-visible:outline-none">
                   <div className="relative aspect-[16/10] overflow-hidden bg-surface-subtle">
                     {item.thumbnail_url ? (
                       <Thumbnail src={item.thumbnail_url} alt={item.title} className="absolute inset-0 h-full w-full object-cover [@media(hover:hover)]:transition-transform [@media(hover:hover)]:duration-500 [@media(hover:hover)]:ease-out [@media(hover:hover)]:group-hover:scale-[1.03]" priority={index < 4} />
@@ -216,7 +216,7 @@ export default function ToursPage() {
           </div>
           {hasMore ? (
             <div className="mt-8 flex justify-center">
-              <Button type="button" variant="outline" size="sm" disabled={loadingMore} onClick={() => void loadMore()}>
+              <Button type="button" variant="outline" size="sm" className="h-11" disabled={loadingMore} onClick={() => void loadMore()}>
                 {loadingMore ? t("common.loading", lang) : t("dashboard.loadMore", lang)}
               </Button>
             </div>

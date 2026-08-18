@@ -1559,6 +1559,8 @@ interface Props {
   onShotChange?: (idx: number, shot: TourShot | null) => void;
   onReady?: () => void;
   onError?: (msg: string) => void;
+  onRetry?: () => void;
+  onCancel?: () => void;
   onTourLoaded?: (tour: TourData) => void;
   spatialViewMode?: SpatialViewMode;
   roomKitCage?: RoomKitCageWall[];
@@ -1643,6 +1645,8 @@ const SplatViewer = forwardRef<SplatViewerHandle, Props>(function SplatViewer(
     onShotChange,
     onReady,
     onError,
+    onRetry,
+    onCancel,
     onTourLoaded,
     spatialViewMode = "surface",
     roomKitCage = EMPTY_ROOM_KIT_CAGE,
@@ -7010,12 +7014,12 @@ const SplatViewer = forwardRef<SplatViewerHandle, Props>(function SplatViewer(
       // as a style rather than a class so a caller's className cannot silently
       // put the page white back underneath the splats.
       style={{ backgroundColor: SPLAT_BACKDROP_CSS }}
-      tabIndex={0}
       aria-busy={!visibleReady}
     >
       <canvas
         ref={canvasRef}
         tabIndex={0}
+        aria-label={t("viewer.canvas", lang)}
         onPointerDown={(event) => {
           // Keyboard focus is useful for desktop shortcuts, but focusing a
           // canvas during a phone touch can cancel the gesture before its
@@ -7151,8 +7155,16 @@ const SplatViewer = forwardRef<SplatViewerHandle, Props>(function SplatViewer(
           visibleReady ? "pointer-events-none opacity-0" : "opacity-100"
         }`}
         aria-hidden={visibleReady}
+        inert={visibleReady ? true : undefined}
       >
-        <ReaigenLoadingMark status={status} />
+        <ReaigenLoadingMark
+          status={status}
+          slowStatus={t("viewer.status.slow", lang)}
+          retryLabel={t("common.tryAgain", lang)}
+          cancelLabel={t("common.back", lang)}
+          onRetry={onRetry}
+          onCancel={onCancel}
+        />
       </div>
     </div>
   );
