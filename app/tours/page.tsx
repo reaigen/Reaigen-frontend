@@ -46,6 +46,40 @@ function statusTone(item: SplatListItem): "success" | "warning" | "danger" {
   return "warning";
 }
 
+/**
+ * One card per post. A draft's re-trained versions belong to the version
+ * manager inside its detail, not the tours grid — listing every splat gave
+ * the same property several identical cards. Keep the strongest candidate
+ * per draft: a ready tour beats a processing one, then the newest wins.
+ * Opening the card normalises to the draft's canonical tour anyway.
+ */
+function dedupeByDraft(list: SplatListItem[]): SplatListItem[] {
+  const rank = (item: SplatListItem) => {
+    const state = tourState(item);
+    return state === "ready" ? 2 : state === "processing" ? 1 : 0;
+  };
+  const byDraft = new Map<number, SplatListItem>();
+  for (const item of list) {
+    const current = byDraft.get(item.source_draft);
+    if (
+      !current
+      || rank(item) > rank(current)
+      || (rank(item) === rank(current) && item.updated_at > current.updated_at)
+    ) {
+      byDraft.set(item.source_draft, item);
+    }
+  }
+  const seen = new Set<number>();
+  const ordered: SplatListItem[] = [];
+  for (const item of list) {
+    if (seen.has(item.source_draft)) continue;
+    seen.add(item.source_draft);
+    const kept = byDraft.get(item.source_draft);
+    if (kept) ordered.push(kept);
+  }
+  return ordered;
+}
+
 function formatUpdated(value: string, lang: string) {
   try {
     return new Intl.DateTimeFormat(lang || "en", { day: "numeric", month: "short", year: "numeric" }).format(new Date(value));
@@ -67,6 +101,10 @@ export default function ToursPage() {
   const [gridCols, setGridCols] = React.useState<1 | 2>(2);
   const pageRef = React.useRef(1);
   const requestRef = React.useRef(0);
+  // Raw pages as fetched; `items` is always the deduped view of this list,
+  // so a later page carrying a better version of an already-shown draft can
+  // still replace its card.
+  const rawItemsRef = React.useRef<SplatListItem[]>([]);
 
   React.useLayoutEffect(() => {
     const cached = localStorage.getItem("reaigen:gridCols");
@@ -86,7 +124,8 @@ export default function ToursPage() {
     try {
       const data = await listSplats(1, TOURS_PAGE_SIZE, searchQuery);
       if (requestId !== requestRef.current) return;
-      setItems(data.results ?? []);
+      rawItemsRef.current = data.results ?? [];
+      setItems(dedupeByDraft(rawItemsRef.current));
       setHasMore(!!data.next);
       pageRef.current = 1;
     } catch {
@@ -104,10 +143,12 @@ export default function ToursPage() {
       const nextPage = pageRef.current + 1;
       const data = await listSplats(nextPage, TOURS_PAGE_SIZE, searchQuery);
       if (requestId !== requestRef.current) return;
-      setItems((current) => {
-        const seen = new Set(current.map((item) => item.id));
-        return [...current, ...(data.results ?? []).filter((item) => !seen.has(item.id))];
-      });
+      const seen = new Set(rawItemsRef.current.map((item) => item.id));
+      rawItemsRef.current = [
+        ...rawItemsRef.current,
+        ...(data.results ?? []).filter((item) => !seen.has(item.id)),
+      ];
+      setItems(dedupeByDraft(rawItemsRef.current));
       setHasMore(!!data.next);
       pageRef.current = nextPage;
     } catch {
