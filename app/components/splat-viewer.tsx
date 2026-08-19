@@ -6678,9 +6678,13 @@ const SplatViewer = forwardRef<SplatViewerHandle, Props>(function SplatViewer(
           const dpr = window.devicePixelRatio || 1;
           const cssW = Math.max(1, canvas.clientWidth);
           const cssH = Math.max(1, canvas.clientHeight);
-          const budget = window.matchMedia("(pointer: coarse)").matches
-            ? 1_000_000
-            : 2_500_000;
+          // One budget for every device. Spinoff halves it on mobile as a
+          // guard for multi-million-splat scenes, but our room captures are
+          // ~150k splats and fill-cheap, while the upscale from a partial
+          // buffer is exactly the moiré being fought — a 2.4M-px phone at
+          // the 1M mobile budget still stretched 54%. 2.5M covers full
+          // native DPR on phones and caps only very large desktop windows.
+          const budget = 2_500_000;
           const scale = Math.min(1, Math.sqrt(budget / (cssW * cssH * dpr * dpr)));
           return Math.max(1, dpr * scale);
         };
