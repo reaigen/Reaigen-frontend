@@ -6548,7 +6548,15 @@ const SplatViewer = forwardRef<SplatViewerHandle, Props>(function SplatViewer(
             yaw: viewerHint.yawRadians,
             pitch: viewerHint.pitchRadians,
           };
-        } else if (metadataFrame) {
+        } else if (
+          metadataFrame
+          // Frame from metadata only when nothing has placed the camera yet
+          // (same guard as the Spark path). The tour page flies to its first
+          // saved camera before this loader finishes; re-framing here stomped
+          // that held pose with the exporter's exterior overview, so delivery
+          // opened on a dollhouse view of the room from outside.
+          && babylonCamera.position.lengthSquared() < 1e-6
+        ) {
           const framed = editorFramePose(
             metadataFrame,
             globalSceneTransformRef.current,
@@ -6583,6 +6591,14 @@ const SplatViewer = forwardRef<SplatViewerHandle, Props>(function SplatViewer(
         canvas.dataset.spinoffStatus = "ready";
         canvas.dataset.spinoffBackend = renderer.stats.backend;
         canvas.dataset.spinoffSplats = String(renderer.stats.sceneSplats);
+        // Live settle diagnostics: motionPreview true means the backend is
+        // still drawing its degraded moving-camera pass (depth slices on
+        // WebGL2). A camera at rest must read false here — if it does not,
+        // something upstream is invalidating the pose every frame.
+        renderer.addEventListener("stats", () => {
+          canvas.dataset.spinoffMotionPreview = String(renderer.stats.motionPreview);
+          canvas.dataset.spinoffFrame = String(renderer.stats.frame);
+        });
         canvas.dataset.spinoffGaussianEngines = "1";
         setSpinoffStatus("ready");
         setStatus("");
