@@ -1691,6 +1691,9 @@ const SplatViewer = forwardRef<SplatViewerHandle, Props>(function SplatViewer(
   // depending on it.
   const applyEngineModelTransformRef = useRef<(() => void) | null>(null);
   const spinoffRendererRef = useRef<SpinoffRenderer | null>(null);
+  // Pushes the Babylon camera pose into the Spinoff camera outside the render
+  // loop, so captureThumbnail can pose and shoot while the loop is paused.
+  const spinoffCameraSyncRef = useRef<(() => void) | null>(null);
   const spinoffSourceRef = useRef<SpinoffSogSource | null>(null);
   const engineRef = useRef<any>(null);
   const cameraRef = useRef<any>(null);
@@ -2872,6 +2875,24 @@ const SplatViewer = forwardRef<SplatViewerHandle, Props>(function SplatViewer(
         );
         renderCamera = camera;
       }
+      // Delivery and editor Gaussians draw in the external engine, not in
+      // Babylon — a Babylon render-target screenshot of this scene is empty
+      // chrome, which is why covers silently stopped generating the moment
+      // Spinoff became the renderer. Shoot the engine canvas instead: push
+      // the posed camera into the Spinoff camera, draw settled frames, read
+      // the canvas back. The backend re-fits whatever size it receives.
+      const spinoffRenderer = spinoffRendererRef.current;
+      const spinoffCanvas = spinoffCanvasRef.current;
+      if (spinoffRenderer && spinoffCanvas) {
+        spinoffCameraSyncRef.current?.();
+        spinoffRenderer.renderOnce();
+        await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
+        // The readback must share the task with the final draw: a WebGPU
+        // canvas may hand its buffer to the compositor at frame end and
+        // read back empty afterwards.
+        spinoffRenderer.renderOnce();
+        return spinoffCanvas.toDataURL("image/webp", 0.84);
+      }
       const { CreateScreenshotUsingRenderTargetAsync } = await import(
         "@babylonjs/core/Misc/screenshotTools.pure"
       );
@@ -2934,6 +2955,10 @@ const SplatViewer = forwardRef<SplatViewerHandle, Props>(function SplatViewer(
       }
       scene.activeCamera = previousActiveCamera;
       hidden.forEach(({ mesh, enabled }) => mesh.setEnabled?.(enabled));
+      // Push the restored pose back into the Spinoff camera, or the visible
+      // engine view would hold the off-screen cover pose until the next move.
+      spinoffCameraSyncRef.current?.();
+      spinoffRendererRef.current?.renderOnce();
       if (gizmoManager && attachedRoot && !attachedRoot.isDisposed?.()) {
         gizmoManager.attachToNode(attachedRoot);
       }
@@ -6598,6 +6623,7 @@ const SplatViewer = forwardRef<SplatViewerHandle, Props>(function SplatViewer(
 
         const syncCamera = () => synchronizeSpinoffCamera(camera, babylonCamera);
         cameraObserver = scene.onBeforeRenderObservable.add(syncCamera);
+        spinoffCameraSyncRef.current = syncCamera;
         syncCamera();
         renderer.renderOnce();
         canvas.dataset.spinoffStatus = "ready";
@@ -6634,6 +6660,7 @@ const SplatViewer = forwardRef<SplatViewerHandle, Props>(function SplatViewer(
       if (cameraObserver) scene.onBeforeRenderObservable.remove(cameraObserver);
       spinoffRendererRef.current?.dispose();
       spinoffRendererRef.current = null;
+      spinoffCameraSyncRef.current = null;
     };
   }, [compactTouch, lang, outputsVersion, performanceProfile, ready, spatialNavigation, spinoffEligible, splatUrl]); // eslint-disable-line react-hooks/exhaustive-deps
 
