@@ -28,10 +28,10 @@ import type {
   TourShot,
 } from "@/app/lib/tour-types";
 import {
+  GAUSSIAN_MIP_VARIANCE,
   SPINOFF_NATIVE_MIP_SIGMA,
   SPLAT_MAX_STD_DEV,
   chooseClearAzimuth,
-  deliveryKernelVariance,
   eyeFromSogViewer,
   fallbackOverviewCamera,
   parseRenderTuning,
@@ -196,8 +196,11 @@ function setCameraDepthRange(
   camera.maxZ = authoring ? EDITOR_FAR_PLANE : deliveryFar;
 }
 
-/** /view renders at most 1.5x CSS pixels so the splat sort keeps up. */
-const VIEW_DPR_CAP = 1.5;
+/**
+ * /view resolution follows Spinoff's budget policy (1M physical px on
+ * mobile, 2.5M on desktop, floored at 1.0 DPR) — see resolveSparkPixelRatio
+ * in the Spark setup. The old flat 1.5 DPR cap lived here.
+ */
 
 /**
  * Backdrop the Gaussians composite against.
@@ -6665,38 +6668,45 @@ const SplatViewer = forwardRef<SplatViewerHandle, Props>(function SplatViewer(
 
         const renderer = new THREE.WebGLRenderer({ canvas, antialias: false, alpha: true });
         renderer.setClearColor(0x000000, 0);
-        // /view caps effective resolution at 1.5x CSS pixels so the sort keeps
-        // up with the camera on retina displays; 2x costs motion stability.
-        renderer.setPixelRatio(Math.min(window.devicePixelRatio, VIEW_DPR_CAP));
+        // Spinoff's resolution policy, not a DPR cap: a physical-pixel budget
+        // (1M mobile / 2.5M desktop) with a hard floor at 1.0 DPR, so CSS
+        // never upscales more than the budget demands. The old flat 1.5 cap
+        // rendered a third of a 2.6-DPR phone's pixels and the upscale beat
+        // against fine texture — the moiré. Sort cost scales with splat
+        // count, not pixels, so the budget only spends GPU fill.
+        const resolveSparkPixelRatio = () => {
+          const dpr = window.devicePixelRatio || 1;
+          const cssW = Math.max(1, canvas.clientWidth);
+          const cssH = Math.max(1, canvas.clientHeight);
+          const budget = window.matchMedia("(pointer: coarse)").matches
+            ? 1_000_000
+            : 2_500_000;
+          const scale = Math.min(1, Math.sqrt(budget / (cssW * cssH * dpr * dpr)));
+          return Math.max(1, dpr * scale);
+        };
+        renderer.setPixelRatio(resolveSparkPixelRatio());
 
         const threeScene = new THREE.Scene();
         const threeCamera = new THREE.PerspectiveCamera(60, 1, 0.05, 1000);
-        // Two independent terms decide how a SOG rasterises here.
+        // Where each Gaussian's edge falls: Spark draws out to `maxStdDev`
+        // sigma and hard-discards, so this decides whether a splat ends
+        // gradually or in a visible rim. It tracks Spinoff's own cutoff —
+        // see SPLAT_MAX_STD_DEV for why sqrt(8) and not 2.0.
         //
-        // 1. Screen-space dilation. Spark defaults both blur terms to 0 — no
-        //    dilation at all — so carry the same kernel Spinoff used. Which
-        //    term applies depends on training: antialiased scenes want
-        //    blurAmount (dilation *plus* Mip-Splatting opacity compensation),
-        //    others want preBlurAmount (dilation only).
-        //
-        //    Spark's blurAmount is added straight onto the projected covariance
-        //    diagonal, so it is a variance in px² — the same unit the SOG
-        //    contract specifies and the same quantity Spinoff arrives at after
-        //    squaring its `mipSigmaPixels`. A file trained with antialiasing
-        //    therefore wants the full 0.30, not the /view library default: the
-        //    Mip-Splatting opacity compensation is derived from this very
-        //    kernel, so an undersized one under-compensates and the splats come
-        //    out brighter than the exporter intended. That is the hazy,
-        //    washed-out render, and it is why this now follows the file rather
-        //    than a single constant.
-        //
-        // 2. Where each Gaussian's edge falls. Spark draws out to `maxStdDev`
-        //    sigma and then hard-discards, so this decides whether a splat ends
-        //    gradually or in a visible rim. It tracks Spinoff's own cutoff —
-        //    see SPLAT_MAX_STD_DEV for why sqrt(8) and not 2.0.
-        //
-        // ?kernel= still overrides for A/B against SuperSplat.
-        const kernel = deliveryKernelVariance(sogAntialiasRef.current, renderTuning());
+        // Spinoff parity, measured from its shaders rather than inferred from
+        // the SOG contract: Spinoff adds sigma 0.3px of dilation — 0.09px² of
+        // VARIANCE, not the 0.30 this path used to pass — with Mip-Splatting
+        // opacity compensation, unconditionally; it never reads the file's
+        // antialias flag. Spark's blurAmount+compensation math is the same
+        // sqrt(detBefore/detAfter), so handing it the same 0.09 reproduces
+        // Spinoff's density and edge weight exactly. The old 0.15/0.30 values
+        // were ~1.7-3.3x too wide in variance, which is haze, and paired with
+        // compensation they dimmed every small splat — the patchy, mushy
+        // "compression" look. ?kernel= still overrides for A/B.
+        const kernelOverride = renderTuning().kernel;
+        const kernel = typeof kernelOverride === "number" && kernelOverride >= 0
+          ? kernelOverride
+          : GAUSSIAN_MIP_VARIANCE;
         // 3. Which splats are considered at all. Spark discards a splat on its
         //    centre alone — `abs(clipCenter.xy) > clipXY * w` — and defaults
         //    clipXY to 1.4. That is fine at a distance, where a splat's
@@ -6722,6 +6732,13 @@ const SplatViewer = forwardRef<SplatViewerHandle, Props>(function SplatViewer(
           preBlurAmount: 0,
           maxStdDev: SPLAT_MAX_STD_DEV,
           clipXY: SPLAT_CLIP_XY,
+          // Spinoff's sub-pixel cull, its primary moiré suppressor: a splat
+          // whose kernel-support radius projects under one physical pixel is
+          // dropped, not shrunk. Spark's predicate (both axes below the
+          // threshold, and scale1 is the major axis) matches Spinoff's
+          // major-axis test exactly at 1.0. Spark defaults this to 0 and
+          // keeps rasterising sub-pixel splats, which shimmer at any DPR.
+          minPixelRadius: 1.0,
         });
         threeScene.add(sparkRenderer);
 
@@ -6977,6 +6994,12 @@ const SplatViewer = forwardRef<SplatViewerHandle, Props>(function SplatViewer(
           const height = canvas.clientHeight || 1;
           threeCamera.aspect = width / height;
           threeCamera.updateProjectionMatrix();
+          // The budget-derived ratio depends on the CSS size, so a resize or
+          // rotation must re-resolve it before setSize allocates the buffer.
+          const nextRatio = resolveSparkPixelRatio();
+          if (Math.abs(renderer.getPixelRatio() - nextRatio) > 0.01) {
+            renderer.setPixelRatio(nextRatio);
+          }
           renderer.setSize(width, height, false);
           canvas.dataset.sparkCamera = [
             threeCamera.position.x, threeCamera.position.y, threeCamera.position.z,
