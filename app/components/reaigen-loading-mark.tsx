@@ -40,9 +40,15 @@ export function ReaigenLoadingMark({
 
   useEffect(() => {
     if (!slowStatus) return undefined;
-    const timer = window.setTimeout(() => setSlow(true), 12_000);
+    // "Slow" means stuck, not merely long: a large scene on mobile data
+    // legitimately spends the better part of a minute downloading, and the
+    // old flat 12s-from-mount timer showed the warning over perfectly
+    // healthy loads. The timer restarts every time the load advances to a
+    // new phase, so the warning only appears after 30s with no progress.
+    setSlow(false);
+    const timer = window.setTimeout(() => setSlow(true), 30_000);
     return () => window.clearTimeout(timer);
-  }, [slowStatus]);
+  }, [slowStatus, status]);
 
   return (
     <div className={cn("absolute inset-0 flex items-center justify-center px-6", className)}>
