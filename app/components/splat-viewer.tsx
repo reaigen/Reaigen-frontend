@@ -1856,12 +1856,13 @@ const SplatViewer = forwardRef<SplatViewerHandle, Props>(function SplatViewer(
       yawOffset: 0,
       pitchOffset: 0,
       dolly: 0,
-      // Until wall collision is shared with the production renderer, keep
-      // translation intentionally conservative while still exposing parallax.
-      maxDolly: Math.min(
-        1.25 * globalSceneTransform.scale,
-        Math.max(0.35 * globalSceneTransform.scale, sceneRadius * globalSceneTransform.scale * 0.08),
-      ),
+      // Room-scale travel. The old cap topped out at ~0.35m "until wall
+      // collision is shared", which read as colliding with whatever stood
+      // ahead — a phantom furniture bump, everywhere. Walls are still
+      // honoured where the capture provides them (RoomKit cage) and by the
+      // reconstruction-footprint clamp otherwise; furniture is deliberately
+      // walkable-through, as the tour is meant to flow.
+      maxDolly: Math.max(0.75, sceneRadius * 0.85) * globalSceneTransform.scale,
       fov: typeof fov === "number" && Number.isFinite(fov) ? fov : 0.66,
     };
     immersiveCoastRef.current = { yaw: 0, pitch: 0 };
