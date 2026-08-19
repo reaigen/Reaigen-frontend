@@ -80,11 +80,13 @@ export default function TourPage({
   const splatId = parseInt(id, 10);
   const rawTourId = Array.isArray(query.tourId) ? query.tourId[0] : query.tourId;
   const requestedTourId = rawTourId ? parseInt(rawTourId, 10) : undefined;
-  // SparkJS is the delivery renderer: it is WebGL2-only, so it renders on
-  // phones and on insecure dev origins where navigator.gpu does not exist and
-  // Spinoff draws nothing. ?renderer=spinoff opts back for comparison.
+  // Spinoff is the delivery renderer — the same engine and settled-viewport
+  // recipe as Splatfiction. Its backendPreference "auto" falls back to the
+  // WebGL2 backend on phones and insecure dev origins, so the old premise
+  // for defaulting to Spark ("Spinoff draws nothing without navigator.gpu")
+  // no longer holds. ?renderer=spark opts back for comparison.
   const rawRenderer = Array.isArray(query.renderer) ? query.renderer[0] : query.renderer;
-  const useSparkRenderer = rawRenderer !== "spinoff";
+  const useSparkRenderer = rawRenderer === "spark";
   const { isAuthenticated, isLoading, user } = useAuth();
   const router = useRouter();
   const [spatialEditorAllowed, setSpatialEditorAllowed] = useState(false);
@@ -117,6 +119,9 @@ export default function TourPage({
   const [shotIdx, setShotIdx] = useState(0);
   const [activeRenderUrl, setActiveRenderUrl] = useState<string | null>(null);
   const [retryCount, setRetryCount] = useState(0);
+  // Set once when the Spinoff engine fails on this device; remounts the
+  // viewer on Spark with the same asset.
+  const [engineFallback, setEngineFallback] = useState(false);
   const [draft, setDraft] = useState<DraftDetailItem | null>(null);
   const [roomKitCage, setRoomKitCage] = useState<RoomKitCageWall[]>([]);
   const [globalSceneTransform, setGlobalSceneTransform] = useState<GlobalSceneTransform>(
@@ -382,9 +387,9 @@ export default function TourPage({
     >
       <h1 className="sr-only">{t("nav.tours", lang)}</h1>
       <SplatViewer
-        key={`${resolvedSplatId}:${activeRenderUrl ?? viewer.asset.url}:${retryCount}`}
+        key={`${resolvedSplatId}:${activeRenderUrl ?? viewer.asset.url}:${retryCount}:${engineFallback ? "spark-fallback" : "primary"}`}
         ref={splatRef}
-        gaussianRenderer={useSparkRenderer ? "spark" : "spinoff"}
+        gaussianRenderer={useSparkRenderer || engineFallback ? "spark" : "spinoff"}
         splatUrl={activeRenderUrl ?? viewer.asset.url}
         splatId={resolvedSplatId}
         initialCameras={viewerCameras}
@@ -398,6 +403,14 @@ export default function TourPage({
           // to one that simply had no 3D, and with no fallback the viewport
           // just stayed blank. Keep the recovery, record the cause.
           if (msg) console.error("[REAI] splat viewer failed:", msg);
+          // An engine that cannot start on this device is not a scene
+          // failure. Spinoff is the delivery engine; if it errors, retry the
+          // same asset on Spark before degrading to the flat PLY render, so
+          // no phone ever trades the tour for a blank viewport.
+          if (!useSparkRenderer && !engineFallback) {
+            setEngineFallback(true);
+            return;
+          }
           if (fallbackRenderUrl && activeRenderUrl !== fallbackRenderUrl) {
             setActiveRenderUrl(fallbackRenderUrl);
           }

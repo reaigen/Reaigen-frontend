@@ -28,8 +28,8 @@ import type {
   TourShot,
 } from "@/app/lib/tour-types";
 import {
-  GAUSSIAN_MIP_VARIANCE,
-  SPINOFF_NATIVE_MIP_SIGMA,
+  SPLATFICTION_VIEWPORT_SIGMA,
+  SPLATFICTION_VIEWPORT_VARIANCE,
   SPLAT_MAX_STD_DEV,
   chooseClearAzimuth,
   eyeFromSogViewer,
@@ -6454,10 +6454,15 @@ const SplatViewer = forwardRef<SplatViewerHandle, Props>(function SplatViewer(
           modelRotationRadians: currentTransform.rotationRadians,
           modelTranslation: currentTransform.translation,
           renderMode: "deterministic",
-          // Match Splatfiction-web exactly: SOG specifies 0.30 px² variance,
-          // while Spinoff's public option is sigma in physical pixels.
-          mipSigmaPixels: SPINOFF_NATIVE_MIP_SIGMA,
-          mipOpacityCompensation: true,
+          // Splatfiction's actual settled-viewport recipe (app/page.tsx +
+          // lib/viewport-quality.ts), which overrides the engine defaults:
+          // a crisp 0.075px² dilation floor, and compensation OFF — their
+          // source calls it "a faint full-frame softness layer". The old
+          // sqrt(0.30) sigma here squared to 0.30px² of variance, 4x wider
+          // than the reference, which is why even ?renderer=spinoff looked
+          // hazier than Splatfiction with the same file.
+          mipSigmaPixels: SPLATFICTION_VIEWPORT_SIGMA,
+          mipOpacityCompensation: false,
           // Spinoff's own answer to the oversized, nearly isotropic Gaussians
           // that a reconstruction leaves behind in under-observed regions —
           // ceilings, windows, anywhere few training views looked. Approach one
@@ -6697,20 +6702,18 @@ const SplatViewer = forwardRef<SplatViewerHandle, Props>(function SplatViewer(
         // gradually or in a visible rim. It tracks Spinoff's own cutoff —
         // see SPLAT_MAX_STD_DEV for why sqrt(8) and not 2.0.
         //
-        // Spinoff parity, measured from its shaders rather than inferred from
-        // the SOG contract: Spinoff adds sigma 0.3px of dilation — 0.09px² of
-        // VARIANCE, not the 0.30 this path used to pass — with Mip-Splatting
-        // opacity compensation, unconditionally; it never reads the file's
-        // antialias flag. Spark's blurAmount+compensation math is the same
-        // sqrt(detBefore/detAfter), so handing it the same 0.09 reproduces
-        // Spinoff's density and edge weight exactly. The old 0.15/0.30 values
-        // were ~1.7-3.3x too wide in variance, which is haze, and paired with
-        // compensation they dimmed every small splat — the patchy, mushy
-        // "compression" look. ?kernel= still overrides for A/B.
+        // Splatfiction parity — the image the user actually accepts — not the
+        // engine defaults. Splatfiction's settled viewport overrides Spinoff
+        // with a 0.075px² dilation floor and compensation OFF ("compensation
+        // reduced sub-pixel opacity across the entire image and presented as
+        // a faint full-frame softness layer"). In Spark terms that means the
+        // kernel goes into preBlurAmount (added before the compensation
+        // determinant is captured → dilation only) and blurAmount stays 0.
+        // ?kernel= still overrides for A/B.
         const kernelOverride = renderTuning().kernel;
         const kernel = typeof kernelOverride === "number" && kernelOverride >= 0
           ? kernelOverride
-          : GAUSSIAN_MIP_VARIANCE;
+          : SPLATFICTION_VIEWPORT_VARIANCE;
         // 3. Which splats are considered at all. Spark discards a splat on its
         //    centre alone — `abs(clipCenter.xy) > clipXY * w` — and defaults
         //    clipXY to 1.4. That is fine at a distance, where a splat's
@@ -6732,8 +6735,8 @@ const SplatViewer = forwardRef<SplatViewerHandle, Props>(function SplatViewer(
         //    hard-edged discs.
         const sparkRenderer = new SparkRenderer({
           renderer,
-          blurAmount: kernel,
-          preBlurAmount: 0,
+          blurAmount: 0,
+          preBlurAmount: kernel,
           maxStdDev: SPLAT_MAX_STD_DEV,
           clipXY: SPLAT_CLIP_XY,
           // Spinoff's sub-pixel cull, its primary moiré suppressor: a splat

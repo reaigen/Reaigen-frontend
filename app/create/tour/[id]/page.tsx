@@ -289,11 +289,14 @@ export default function WebTourEditorPage({
   const { confirm, dialog: confirmDialog } = useConfirm();
   const router = useRouter();
   const viewerRef = useRef<SplatViewerHandle | null>(null);
-  // SparkJS draws the Gaussians; Babylon keeps the gizmos, grid and selection.
-  // ?renderer=spinoff opts back to the WebGPU engine for comparison.
+  // Spinoff draws the Gaussians (auto backend: WebGPU, or its WebGL2
+  // fallback); Babylon keeps the gizmos, grid and selection. Scenes Spinoff
+  // cannot represent (prune masks, compositions, incompatible transforms)
+  // already fall back to Babylon's own decode via spinoffEligible.
+  // ?renderer=spark opts back for comparison.
   const [sparkRenderer] = useState(
-    () => typeof window === "undefined"
-      || new URLSearchParams(window.location.search).get("renderer") !== "spinoff",
+    () => typeof window !== "undefined"
+      && new URLSearchParams(window.location.search).get("renderer") === "spark",
   );
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const [workspace, setWorkspace] = useState<WebTourWorkspace | null>(null);

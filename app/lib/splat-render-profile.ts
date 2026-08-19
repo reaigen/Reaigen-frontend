@@ -39,6 +39,20 @@ export const SPINOFF_NATIVE_MIP_SIGMA = Math.sqrt(
   GAUSSIAN_ANTIALIASED_VARIANCE,
 );
 
+/**
+ * The dilation Splatfiction's settled viewport actually ships: a crisp
+ * 0.075px² covariance floor with Mip-Splatting opacity compensation OFF —
+ * their source calls compensation "a faint full-frame softness layer" and
+ * matches SuperSplat's ordinary-3DGS look instead. This is the accepted
+ * image reference for delivery, measured from Splatfiction-web
+ * `lib/viewport-quality.ts` + `app/page.tsx`, not from the engine defaults
+ * (sigma 0.3, compensation on), which Splatfiction itself overrides.
+ */
+export const SPLATFICTION_VIEWPORT_VARIANCE = 0.075;
+export const SPLATFICTION_VIEWPORT_SIGMA = Math.sqrt(
+  SPLATFICTION_VIEWPORT_VARIANCE,
+);
+
 /** Spinoff Web's authored default vertical field of view. */
 export const SPINOFF_DEFAULT_VERTICAL_FOV = 68 * Math.PI / 180;
 
