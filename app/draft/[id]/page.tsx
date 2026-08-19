@@ -869,7 +869,11 @@ export default function DraftPreviewPage({
             </div>
           )}
 
-          <section className={cn("min-w-0", !hasMedia && "max-w-3xl")}>
+          {/* One column width whether or not photos exist. The old max-w-3xl
+              cap for photo-less drafts left the action rail ending mid-page
+              while the tour panel below ran the full column — two ragged
+              right edges stacked on top of each other. */}
+          <section className="min-w-0">
             <div className="flex flex-wrap items-center gap-2">
               {offerType ? (
                 <StatusPill className="uppercase tracking-[0.09em]">
@@ -953,7 +957,10 @@ export default function DraftPreviewPage({
                 authoring tools divide the remaining width evenly instead of
                 forming a second, unrelated capsule on the opposite edge. */}
             <div className="mt-5 hidden border-t border-border/70 pt-5 md:block">
-              <div className="floating-toolbar h-12 w-full overflow-x-auto p-1 scrollbar-hide">
+              {/* No fixed height: h-12 gave the 40px buttons a 38px inner box
+                  (p-1 wins over the class padding), so the active pill clipped
+                  against the capsule instead of floating centred in it. */}
+              <div className="floating-toolbar w-full overflow-x-auto p-1 scrollbar-hide">
                 {hasTour && (
                   <Button asChild size="sm" className="h-10 min-w-[12rem] shrink-0 px-4 shadow-none">
                     <Link href={`/tour/${primarySplatId}?tourId=${shareableTour?.id}`}>
