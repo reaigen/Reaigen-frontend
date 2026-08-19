@@ -1809,38 +1809,40 @@ const SplatViewer = forwardRef<SplatViewerHandle, Props>(function SplatViewer(
     return () => query.removeEventListener("change", sync);
   }, []);
 
+  const transformSpatialDirection = useCallback((direction: Vec3): Vec3 => {
+    const B = babylonRef.current;
+    const root = spatialRootRef.current;
+    if (!B || !root) return [...direction] as Vec3;
+    root.computeWorldMatrix(true);
+    const value = B.Vector3.TransformNormal(
+      new B.Vector3(direction[0], direction[1], direction[2]),
+      root.getWorldMatrix(),
+    ).normalize();
+    return [value.x, value.y, value.z];
+  }, []);
+
   const setImmersiveBase = useCallback((
     pos: Vec3,
     fwd: Vec3,
     fov?: number,
     authoredUp: Vec3 = cameraUpRef.current,
   ) => {
+    // iOS parity (VirtualTourSheet keeps cameras as world yaw/pitch and lets
+    // gravity own the axes): the look-around base up is the SCENE's up,
+    // full stop — not the saved camera's up, and not that up projected
+    // perpendicular to the shot's forward. The projection was the phone-tour
+    // bug: saved shots pitch downward, so the projected axis leaned with
+    // them, a horizontal slide yawed around a tilted axis ("offsets in a
+    // weird axis"), apparent roll grew with the turn, and the walk plane
+    // derived from the same vector tilted too. Yawing around the scene up is
+    // gravity-locked and roll-free by construction; a globally rotated scene
+    // still tilts with its transform because this is the transformed
+    // canonical up. Degenerate look-straight-down poses are handled where
+    // the basis is derived, matching iOS's ±85° pitch clamp.
+    void authoredUp;
+    const up = transformSpatialDirection([0, 1, 0]);
     const length = Math.hypot(fwd[0], fwd[1], fwd[2]) || 1;
     const forward: Vec3 = [fwd[0] / length, fwd[1] / length, fwd[2] / length];
-    const upDot = authoredUp[0] * forward[0]
-      + authoredUp[1] * forward[1]
-      + authoredUp[2] * forward[2];
-    const projectedUp: Vec3 = [
-      authoredUp[0] - forward[0] * upDot,
-      authoredUp[1] - forward[1] * upDot,
-      authoredUp[2] - forward[2] * upDot,
-    ];
-    let upLength = Math.hypot(...projectedUp);
-    if (upLength < 1e-6) {
-      const fallback: Vec3 = Math.abs(forward[1]) < 0.98 ? [0, 1, 0] : [0, 0, 1];
-      const fallbackDot = fallback[0] * forward[0]
-        + fallback[1] * forward[1]
-        + fallback[2] * forward[2];
-      projectedUp[0] = fallback[0] - forward[0] * fallbackDot;
-      projectedUp[1] = fallback[1] - forward[1] * fallbackDot;
-      projectedUp[2] = fallback[2] - forward[2] * fallbackDot;
-      upLength = Math.hypot(...projectedUp) || 1;
-    }
-    const up: Vec3 = [
-      projectedUp[0] / upLength,
-      projectedUp[1] / upLength,
-      projectedUp[2] / upLength,
-    ];
     const sceneRadius = fallbackSceneRef.current?.radius ?? 8;
     immersivePoseRef.current = {
       enabled: true,
@@ -1862,7 +1864,7 @@ const SplatViewer = forwardRef<SplatViewerHandle, Props>(function SplatViewer(
     immersiveCoastRef.current = { yaw: 0, pitch: 0 };
     immersiveRenderBurstUntilRef.current = performance.now() + 350;
     setImmersiveAdjusted(false);
-  }, [globalSceneTransform.scale]);
+  }, [globalSceneTransform.scale, transformSpatialDirection]);
 
   const applyImmersivePose = useCallback(() => {
     const cam = cameraRef.current;
@@ -2076,18 +2078,6 @@ const SplatViewer = forwardRef<SplatViewerHandle, Props>(function SplatViewer(
     return [value.x, value.y, value.z];
   }, []);
 
-  const transformSpatialDirection = useCallback((direction: Vec3): Vec3 => {
-    const B = babylonRef.current;
-    const root = spatialRootRef.current;
-    if (!B || !root) return [...direction] as Vec3;
-    root.computeWorldMatrix(true);
-    const value = B.Vector3.TransformNormal(
-      new B.Vector3(direction[0], direction[1], direction[2]),
-      root.getWorldMatrix(),
-    ).normalize();
-    return [value.x, value.y, value.z];
-  }, []);
-
   const inverseTransformSpatialPoint = useCallback((point: Vec3): Vec3 => {
     const B = babylonRef.current;
     const root = spatialRootRef.current;
@@ -2278,7 +2268,12 @@ const SplatViewer = forwardRef<SplatViewerHandle, Props>(function SplatViewer(
     const tFwd = worldPath.forwards[shot.startIdx];
     const tUp = worldPath.ups[shot.startIdx];
     const targetForward = normalizeVec3(tFwd);
-    const targetUp = stableCameraReferenceUp(tUp, cameraUpRef.current);
+    // Immersive playback levels the horizon like the iOS tour: flying into a
+    // shot whose captured up is banked would otherwise land tilted and then
+    // snap level the moment the look-around pose takes over.
+    const targetUp = immersiveControls
+      ? stableCameraReferenceUp(transformSpatialDirection([0, 1, 0]), cameraUpRef.current)
+      : stableCameraReferenceUp(tUp, cameraUpRef.current);
     const useExactForward = isSavedCameraTour(data);
 
     const cam = cameraRef.current;
@@ -2336,7 +2331,7 @@ const SplatViewer = forwardRef<SplatViewerHandle, Props>(function SplatViewer(
     progressRef.current = pathDataRef.current?.arcLens?.[shot.startIdx] ?? progressRef.current;
     shotIdxRef.current = idx;
     onShotChange?.(idx, shot);
-  }, [tourData, onShotChange, immersiveControls, setImmersiveBase]);
+  }, [tourData, onShotChange, immersiveControls, setImmersiveBase, transformSpatialDirection]);
 
   const goToPrev = useCallback(() => {
     const n = tourData?.shots.length ?? 0;
@@ -2415,7 +2410,11 @@ const SplatViewer = forwardRef<SplatViewerHandle, Props>(function SplatViewer(
     if (!cam || !B) return;
     const targetFov = typeof fov === "number" && Number.isFinite(fov) ? fov : cam.fov;
     const targetForward = normalizeVec3(fwd);
-    const targetUp = stableCameraReferenceUp(up, cameraUpRef.current);
+    // Same iOS-parity levelling as goToShot: immersive surfaces never adopt a
+    // saved camera's bank; the editor keeps the exact authored basis.
+    const targetUp = immersiveControls
+      ? stableCameraReferenceUp(transformSpatialDirection([0, 1, 0]), cameraUpRef.current)
+      : stableCameraReferenceUp(up, cameraUpRef.current);
 
     // Stop everything — no hold phase, no scroll, no path scrub
     pathScrubRef.current = null;
@@ -2486,7 +2485,7 @@ const SplatViewer = forwardRef<SplatViewerHandle, Props>(function SplatViewer(
     anim.active = true;
     anim.holdActive = false;
     anim.holdDuration = 0;
-  }, [immersiveControls, setImmersiveBase, syncSpatialOrbitToCamera]);
+  }, [immersiveControls, setImmersiveBase, syncSpatialOrbitToCamera, transformSpatialDirection]);
 
   const navigateToCamera = useCallback((
     pos: Vec3,
@@ -4194,7 +4193,12 @@ const SplatViewer = forwardRef<SplatViewerHandle, Props>(function SplatViewer(
       const up = B.Vector3.Cross(forward, right).normalize();
       const viewportHeight = Math.max(1, canvas.clientHeight);
       const scale = 2 * pose.radius * Math.tan(camera.fov * 0.5) / viewportHeight;
-      const movement = right.scale(-dx * scale).add(up.scale(dy * scale));
+      // The rendered scene is mirrored horizontally relative to Babylon's
+      // basis (same flip the rotation handlers compensate). Track with +dx so
+      // the content follows the pointer on screen; with -dx a middle-drag
+      // right pushed the room left while the vertical axis followed the
+      // pointer, which read as panning on "some weird axis".
+      const movement = right.scale(dx * scale).add(up.scale(dy * scale));
       pose.target = [
         pose.target[0] + movement.x,
         pose.target[1] + movement.y,
@@ -4236,7 +4240,8 @@ const SplatViewer = forwardRef<SplatViewerHandle, Props>(function SplatViewer(
       const sceneRadius = fallbackSceneRef.current?.radius ?? 2;
       const viewportHeight = Math.max(1, canvas.clientHeight);
       const scale = 2 * sceneRadius * Math.tan(camera.fov * 0.5) / viewportHeight;
-      const movement = right.scale(-dx * scale).add(up.scale(dy * scale));
+      // Same +dx mirror compensation as panOrbit: content follows the pointer.
+      const movement = right.scale(dx * scale).add(up.scale(dy * scale));
       camera.position.addInPlace(movement);
       camera.upVector.copyFrom(authoredUp);
       camera.setTarget(target.add(movement));
@@ -4308,6 +4313,13 @@ const SplatViewer = forwardRef<SplatViewerHandle, Props>(function SplatViewer(
 
       const dx = event.clientX - previous.x;
       const dy = event.clientY - previous.y;
+      // A finger grabs the scene (it follows the drag), which is what touch
+      // expects. A mouse drag steers the view instead: dragging left turns
+      // the camera left. With the grab mapping on a mouse, a drag left swung
+      // the heading right — the inversion reported as "I rotate left, it
+      // goes right" — because inside a room the grab metaphor reads as the
+      // room spinning, not as you turning.
+      const steer = event.pointerType === "touch" ? -1 : 1;
       if (spatialCameraMode === "orbit") {
         if (previous.action === "pan") {
           panOrbit(dx, dy);
@@ -4315,15 +4327,22 @@ const SplatViewer = forwardRef<SplatViewerHandle, Props>(function SplatViewer(
           dollyOrbit(dy * 0.008);
         } else {
           const pose = spatialOrbitRef.current;
-          pose.yaw -= dx * ORBIT_RADIANS_PER_PIXEL;
+          pose.yaw += steer * dx * ORBIT_RADIANS_PER_PIXEL;
           pose.pitch = Math.max(
             -Math.PI * 0.485,
             Math.min(Math.PI * 0.485, pose.pitch + dy * ORBIT_RADIANS_PER_PIXEL),
           );
           applySpatialOrbitPose();
         }
+      } else if (previous.action === "pan") {
+        // Fly mode used to ignore the button and rotate on every drag, so a
+        // middle-drag track — muscle memory from every DCC — spun the view.
+        panFly(dx, dy);
+      } else if (previous.action === "dolly") {
+        const sceneRadius = fallbackSceneRef.current?.radius ?? 2;
+        moveFly(-dy * sceneRadius * 0.004);
       } else {
-        flyYaw -= dx * 0.0045;
+        flyYaw += steer * dx * 0.0045;
         flyPitch = Math.max(-Math.PI * 0.485, Math.min(Math.PI * 0.485, flyPitch - dy * 0.0045));
         applyFlyAngles();
       }
@@ -5162,7 +5181,11 @@ const SplatViewer = forwardRef<SplatViewerHandle, Props>(function SplatViewer(
         const sensitivity = 0.004; // ≈ 0.23° per CSS pixel, matching iOS.
         const now = performance.now();
         const elapsedSeconds = Math.max(1 / 120, Math.min(0.08, (now - lastMoveAt) / 1000));
-        pose.yawOffset -= dx * sensitivity;
+        // Same steer-vs-grab split as the spatial editor: a finger drags the
+        // scene with it (phone tours), a mouse turns the camera the way it
+        // moves, so desktop shot framing no longer looks right on a drag left.
+        const steer = previous.pointerType === "touch" ? -1 : 1;
+        pose.yawOffset += steer * dx * sensitivity;
         const pitchLimit = 85 * Math.PI / 180;
         pose.pitchOffset = Math.max(
           -pitchLimit,
@@ -5177,7 +5200,7 @@ const SplatViewer = forwardRef<SplatViewerHandle, Props>(function SplatViewer(
         immersiveCoastRef.current = previous.pointerType === "touch"
           ? { yaw: 0, pitch: 0 }
           : {
-              yaw: boundedAngularVelocity(-dx * sensitivity, elapsedSeconds),
+              yaw: boundedAngularVelocity(steer * dx * sensitivity, elapsedSeconds),
               pitch: boundedAngularVelocity(-dy * sensitivity, elapsedSeconds),
             };
         lastCentroid = pointerCentroid();
@@ -5474,20 +5497,16 @@ const SplatViewer = forwardRef<SplatViewerHandle, Props>(function SplatViewer(
 
         if (!immersiveControls) camera.attachControl(canvas, true);
         /*
-          Undo Babylon's handedness flip on mouse look.
-          FreeCameraMouseInput multiplies the drag delta by
-          `useRightHandedSystem ? -1 : 1`, and this scene is right-handed on
-          purpose — the reconstruction, the saved cameras and the USD workspace
-          all are. The result was a tour that dragged backwards: pull left and
-          the room went right. The editor never showed it because it detaches
-          Babylon's input and rotates from its own pointer handlers.
-
-          Negating the sensibility cancels that factor. It applies to both axes
-          because the input divides one value into each, which is also the
-          convention the reference viewers use: the drag carries the scene with
-          it rather than turning the head against it.
+          This attachControl path only ever serves a desktop pointer: phones
+          and read-only pages take the immersive controls branch instead. The
+          sensibility used to be negated here so the drag carried the scene
+          with it (grab style), but with a mouse that swings the heading the
+          opposite way — "I rotate left, it goes right" — which made framing
+          shots in the tour editor painful. Babylon's positive default steers:
+          drag left, look left, matching the spatial editor's mouse mapping.
+          Touch keeps grab style in the immersive branch.
         */
-        camera.angularSensibility = -Math.abs(camera.angularSensibility);
+        camera.angularSensibility = Math.abs(camera.angularSensibility);
         // Restore the native FreeCamera bindings used by the known-good July
         // tour viewer. Spatial and immersive modes detach Babylon and keep
         // their dedicated transform-aware movement implementations.

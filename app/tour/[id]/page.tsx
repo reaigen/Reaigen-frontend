@@ -373,7 +373,13 @@ export default function TourPage({
   if (!viewer) return null;
 
   return (
-    <main className="relative h-[100dvh] w-screen overflow-hidden bg-white">
+    <main
+      className={
+        // w-full, not w-screen: 100vw includes the reserved scrollbar gutter,
+        // which clipped right-anchored chrome under classic scrollbars.
+        "relative h-[100dvh] w-full overflow-hidden bg-white"
+      }
+    >
       <h1 className="sr-only">{t("nav.tours", lang)}</h1>
       <SplatViewer
         key={`${resolvedSplatId}:${activeRenderUrl ?? viewer.asset.url}:${retryCount}`}
