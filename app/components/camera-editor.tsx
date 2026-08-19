@@ -31,7 +31,11 @@ function newCameraId() {
 
 function cameraDisplayLabel(shot: CameraShot | undefined, index: number, lang: string) {
   const label = shot?.label?.trim();
-  if (!label || label === "|" || label === String(index + 1)) {
+  // Generated labels are positional and were baked in whatever language the
+  // capture session ran in, so a list can read "Kamera 1, Camera 2". Treat
+  // every generated form as generated and render it in the current language;
+  // only a label the user actually typed passes through.
+  if (!label || label === "|" || label === String(index + 1) || /^(camera|kamera)\s+\d+$/i.test(label)) {
     return `${t("cameraEditor.camera", lang)} ${index + 1}`;
   }
   return label;
@@ -113,6 +117,18 @@ export default function CameraEditor({ splatId, viewerRef, activeShotIdx, initia
   // prop for API compatibility with other editor surfaces, but never apply the
   // scene inverse a second time.
   void sceneTransform;
+
+  // The workspace remap in globals.css flattens the pill onto light glass but
+  // only rewrites the white/* steps it lists. The shot dots sit outside that
+  // list (bg-white, bg-white/30), which left them white-on-white in the
+  // advanced editor, so they pick their ink from the appearance directly.
+  const shotDotClass = (active: boolean) => active
+    ? `w-4 ${appearance === "workspace" ? "bg-foreground/80" : "bg-white"}`
+    : `w-1.5 ${
+      appearance === "workspace"
+        ? "bg-foreground/30 group-hover/dot:bg-foreground/55"
+        : "bg-white/30 group-hover/dot:bg-white/55"
+    }`;
 
   // Load existing saved cameras on mount. New camera payloads use identity
   // scene space; historical edited payloads are migrated once on read.
@@ -554,7 +570,7 @@ export default function CameraEditor({ splatId, viewerRef, activeShotIdx, initia
   // ── Preview mode: floating pill with arrows ─────────────────────────────
   if (mode === "preview") {
     return (
-      <div data-testid="camera-editor-preview" className={`absolute inset-x-2 bottom-[calc(0.75rem+env(safe-area-inset-bottom,0px))] z-30 flex justify-center animate-fade-in md:inset-x-6 ${dockBottom} xl:inset-x-auto xl:bottom-auto xl:right-4 xl:justify-end ${appearance === "workspace" ? "camera-editor-workspace xl:top-20" : "xl:top-4"}`}>
+      <div data-testid="camera-editor-preview" className={`absolute inset-x-2 bottom-[calc(0.75rem+env(safe-area-inset-bottom,0px))] z-30 flex justify-center animate-fade-in md:inset-x-6 ${dockBottom} xl:inset-x-auto xl:bottom-auto xl:right-4 xl:justify-end ${appearance === "workspace" ? "camera-editor-workspace xl:top-[3.75rem]" : "xl:top-4"}`}>
         <div className="floating-toolbar-shape max-w-full border border-white/[0.1] bg-black/70 text-white shadow-2xl backdrop-blur-2xl">
           {/* Play / Pause */}
           <button
@@ -604,9 +620,7 @@ export default function CameraEditor({ splatId, viewerRef, activeShotIdx, initia
                   aria-current={i === previewIdx ? "true" : undefined}
                 >
                   <span
-                    className={`block h-1.5 rounded-full transition-all duration-300 ${
-                      i === previewIdx ? "w-4 bg-white" : "w-1.5 bg-white/30 group-hover/dot:bg-white/55"
-                    }`}
+                    className={`block h-1.5 rounded-full transition-all duration-300 ${shotDotClass(i === previewIdx)}`}
                   />
                 </button>
               ))}
@@ -660,7 +674,7 @@ export default function CameraEditor({ splatId, viewerRef, activeShotIdx, initia
   // ── Edit collapsed: compact pill ────────────────────────────────────────
   if (isCollapsed) {
     return (
-      <div data-testid="camera-editor-collapsed" className={`absolute inset-x-2 bottom-[calc(0.75rem+env(safe-area-inset-bottom,0px))] z-30 flex justify-center animate-fade-in md:inset-x-6 ${dockBottom} xl:inset-x-auto xl:bottom-auto xl:right-4 xl:justify-end ${appearance === "workspace" ? "camera-editor-workspace xl:top-20" : "xl:top-4"}`}>
+      <div data-testid="camera-editor-collapsed" className={`absolute inset-x-2 bottom-[calc(0.75rem+env(safe-area-inset-bottom,0px))] z-30 flex justify-center animate-fade-in md:inset-x-6 ${dockBottom} xl:inset-x-auto xl:bottom-auto xl:right-4 xl:justify-end ${appearance === "workspace" ? "camera-editor-workspace xl:top-[3.75rem]" : "xl:top-4"}`}>
         <div className="floating-toolbar-shape max-w-full border border-white/[0.1] bg-black/70 text-white shadow-2xl backdrop-blur-2xl">
           <button
             type="button"
@@ -701,9 +715,7 @@ export default function CameraEditor({ splatId, viewerRef, activeShotIdx, initia
                   aria-current={i === selectedIdx ? "true" : undefined}
                 >
                   <span
-                    className={`block h-1.5 rounded-full transition-all duration-300 ${
-                      i === selectedIdx ? "w-4 bg-white" : "w-1.5 bg-white/30 group-hover/dot:bg-white/55"
-                    }`}
+                    className={`block h-1.5 rounded-full transition-all duration-300 ${shotDotClass(i === selectedIdx)}`}
                   />
                 </button>
               ))}
@@ -755,8 +767,8 @@ export default function CameraEditor({ splatId, viewerRef, activeShotIdx, initia
 
   // ── Edit mode expanded: full camera panel ───────────────────────────────
   return (
-    <div data-testid="camera-editor-expanded" className={`absolute inset-x-0 bottom-0 z-30 animate-fade-in md:inset-x-6 ${dockBottom} md:mx-auto md:max-w-[42rem] xl:inset-x-auto xl:bottom-auto xl:right-4 xl:mx-0 xl:w-[20rem] ${appearance === "workspace" ? "camera-editor-workspace xl:top-20" : "xl:top-4"}`}>
-      <div className="max-h-[56dvh] overflow-hidden rounded-t-[var(--floating-panel-radius)] border border-white/[0.1] bg-black/70 pb-[env(safe-area-inset-bottom,0px)] text-white shadow-2xl backdrop-blur-2xl md:max-h-[60dvh] md:rounded-[var(--floating-panel-radius)] md:pb-0 xl:max-h-[calc(100dvh-4.5rem)]">
+    <div data-testid="camera-editor-expanded" className={`absolute inset-x-0 bottom-0 z-30 animate-fade-in md:inset-x-6 ${dockBottom} md:mx-auto md:max-w-[42rem] xl:inset-x-auto xl:bottom-auto xl:right-4 xl:mx-0 xl:w-[20rem] ${appearance === "workspace" ? "camera-editor-workspace xl:top-[3.75rem]" : "xl:top-4"}`}>
+      <div className="max-h-[56dvh] overflow-hidden rounded-t-[var(--floating-panel-radius)] border border-white/[0.1] bg-black/70 pb-[env(safe-area-inset-bottom,0px)] text-white shadow-2xl backdrop-blur-2xl md:max-h-[60dvh] md:rounded-[var(--floating-panel-radius)] md:pb-0 xl:max-h-[calc(100dvh-6.5rem)]">
         <div className="flex h-4 items-center justify-center md:hidden" aria-hidden="true">
           <span className="h-1 w-9 rounded-full bg-white/25" />
         </div>

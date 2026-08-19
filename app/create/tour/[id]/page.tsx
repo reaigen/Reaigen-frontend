@@ -30,6 +30,7 @@ import { PageLoading } from "../../../components/page-loading";
 import { ReaigenLoadingMark } from "../../../components/reaigen-loading-mark";
 import type { SplatViewerHandle } from "../../../components/splat-viewer";
 import {
+  ApiError,
   getWebTourAssetStatus,
   getWebTourWorkspace,
   saveWebTourThumbnail,
@@ -351,6 +352,13 @@ export default function WebTourEditorPage({
   const selectedIdRef = useRef<string | null>(null);
   const pendingPruneMasksRef = useRef<Record<string, SplatPruneMask>>({});
   const thumbnailCaptureRef = useRef<Promise<unknown>>(Promise.resolve());
+  // Two components author this workspace: the page's Save (and ⌘S) and the
+  // camera editor's debounced autosave. Both PATCH the same revisioned
+  // endpoint, so overlapping requests made the loser's base_revision stale
+  // and the backend answered 409 for an edit that did save — the user saw
+  // "could not be saved" over persisted work. Every save runs through this
+  // queue and reads workspaceRef only once the previous response has landed.
+  const workspaceSaveQueueRef = useRef<Promise<unknown>>(Promise.resolve());
   // Workspace revision whose missing cover we have already tried to backfill,
   // so a viewer remount cannot retry the render on a loop.
   const coverBackfillRef = useRef<number | null>(null);
@@ -637,15 +645,23 @@ export default function WebTourEditorPage({
         void saveEditorRef.current(false);
         return;
       }
+      // Plain-key tools must not shadow browser chords (⌘F find, ⌘G, …).
+      if (event.metaKey || event.ctrlKey || event.altKey) return;
       if (key === "1") setTool("select");
       else if (key === "2") setTool("move");
       else if (key === "3") setTool("rotate");
       else if (key === "4") setTool("scale");
+      // F (frame) and V (orbit/fly) belong to the viewer's own key handler —
+      // adding them here made V toggle twice per press and cancel itself.
       else if (key === "g") setShowGrid((value) => !value);
       else if (key === "escape") {
-        setTool("select");
-        setCameraEditorOpen(false);
+        // One layer per press, like a DCC: the armed surface closes first,
+        // then the tool disarms. Everything at once made Escape feel like a
+        // reset button that threw away panel state the user still wanted.
         if (pruneEditorOpen) requestClosePruneEditor();
+        else if (cameraEditorOpen) setCameraEditorOpen(false);
+        else if (tool !== "select") setTool("select");
+        else return;
       } else {
         return;
       }
@@ -654,9 +670,11 @@ export default function WebTourEditorPage({
     window.addEventListener("keydown", handleEditorShortcut);
     return () => window.removeEventListener("keydown", handleEditorShortcut);
   }, [
+    cameraEditorOpen,
     pruneEditorOpen,
     requestClosePruneEditor,
     stageCurrentPruneDraft,
+    tool,
   ]);
 
   useEffect(() => {
@@ -849,11 +867,14 @@ export default function WebTourEditorPage({
   };
 
   const selectNode = (nodeId: string) => {
+    // The right rail belongs to one surface at a time. Picking a node is a
+    // request for its properties, so the camera panel yields; previously the
+    // inspector stayed suppressed behind the open camera editor and the click
+    // appeared to do nothing.
+    setCameraEditorOpen(false);
     if (nodeId === selectedId) {
-      if (compactLayout) {
-        setScenePanelOpen(false);
-        setInspectorOpen(true);
-      }
+      if (compactLayout) setScenePanelOpen(false);
+      setInspectorOpen(true);
       return;
     }
     stageCurrentPruneDraft(true);
@@ -873,38 +894,48 @@ export default function WebTourEditorPage({
     setInspectorOpen(true);
   };
 
+  const enqueueWorkspaceSave = useCallback(<T,>(task: () => Promise<T>): Promise<T> => {
+    const run = workspaceSaveQueueRef.current.then(task, task);
+    workspaceSaveQueueRef.current = run.then(() => undefined, () => undefined);
+    return run;
+  }, []);
+
   const saveEditorEdits = async (exitAfterSave: boolean): Promise<boolean> => {
-    const currentWorkspace = workspaceRef.current ?? workspace;
-    if (!currentWorkspace || saving) return false;
+    if (!(workspaceRef.current ?? workspace) || saving) return false;
     setSaving(true);
     setError(null);
     try {
       if (!stageCurrentPruneDraft(false)) {
         throw new Error("The local prune draft could not be prepared.");
       }
-      const pendingPrunes = pendingPruneMasksRef.current;
-      const hasChanges = (
-        workspaceDirty
-        || transformDirty
-        || Object.keys(pendingPrunes).length > 0
-      );
-      const nodes = currentWorkspace.nodes.map((node) => ({
-        id: node.id,
-        name: node.name,
-        visible: node.visible,
-        transform: node.id === selected?.id && draftTransform
-          ? workspaceTransform(draftTransform)
-          : node.transform,
-        prune: pendingPrunes[node.id] ?? node.prune ?? null,
-      }));
-      const saved = hasChanges
-        ? await saveWebTourWorkspace(tourId, {
-            base_revision: currentWorkspace.revision,
-            name: currentWorkspace.name,
-            nodes,
-            cameras: currentWorkspace.cameras as unknown as Array<Record<string, unknown>>,
-          })
-        : currentWorkspace;
+      const saved = await enqueueWorkspaceSave(() => {
+        // Read the workspace inside the queue: a camera autosave ahead of us
+        // may have just bumped the revision this request must build on.
+        const currentWorkspace = workspaceRef.current;
+        if (!currentWorkspace) throw new Error("Workspace is not loaded");
+        const pendingPrunes = pendingPruneMasksRef.current;
+        const hasChanges = (
+          workspaceDirty
+          || transformDirty
+          || Object.keys(pendingPrunes).length > 0
+        );
+        if (!hasChanges) return Promise.resolve(currentWorkspace);
+        const nodes = currentWorkspace.nodes.map((node) => ({
+          id: node.id,
+          name: node.name,
+          visible: node.visible,
+          transform: node.id === selected?.id && draftTransform
+            ? workspaceTransform(draftTransform)
+            : node.transform,
+          prune: pendingPrunes[node.id] ?? node.prune ?? null,
+        }));
+        return saveWebTourWorkspace(tourId, {
+          base_revision: currentWorkspace.revision,
+          name: currentWorkspace.name,
+          nodes,
+          cameras: currentWorkspace.cameras as unknown as Array<Record<string, unknown>>,
+        });
+      });
       // The write has landed. Everything below is local bookkeeping, and it
       // must not be able to report a failed save: a throw here previously
       // surfaced "workspace could not be saved" for a workspace that was
@@ -929,7 +960,14 @@ export default function WebTourEditorPage({
     } catch (error) {
       // A bare catch made this undiagnosable: the reason never reached anyone.
       console.error("[REAI] workspace save failed:", error);
-      setError(t("webEditor.saveFailed", lang));
+      // With same-tab saves serialized, a 409 now means another session
+      // really did edit this tour — say that instead of the generic line,
+      // which reads as data loss when the other session's save went through.
+      setError(
+        error instanceof ApiError && error.status === 409
+          ? t("webEditor.saveConflict", lang)
+          : t("webEditor.saveFailed", lang),
+      );
       return false;
     } finally {
       setSaving(false);
@@ -1035,23 +1073,29 @@ export default function WebTourEditorPage({
   }, []);
 
   const saveWorkspaceCameras = async (cameraData: CameraData): Promise<CameraData> => {
-    const currentWorkspace = workspaceRef.current;
-    if (!currentWorkspace) throw new Error("Workspace is not loaded");
-    const currentSelectedId = selectedIdRef.current;
-    const currentTransform = draftTransformRef.current;
-    const nodes = currentWorkspace.nodes.map((node) => ({
-      id: node.id,
-      name: node.name,
-      visible: node.visible,
-      transform: node.id === currentSelectedId && currentTransform
-        ? workspaceTransform(currentTransform)
-        : node.transform,
-    }));
-    const saved = await saveWebTourWorkspace(tourId, {
-      base_revision: currentWorkspace.revision,
-      name: currentWorkspace.name,
-      nodes,
-      cameras: cameraData.cameras as unknown as Array<Record<string, unknown>>,
+    if (!workspaceRef.current) throw new Error("Workspace is not loaded");
+    const saved = await enqueueWorkspaceSave(() => {
+      // Same queue as the page's Save: revision is read once the save ahead
+      // of this one has answered, so the two paths can no longer 409 each
+      // other out of a base_revision they both started from.
+      const currentWorkspace = workspaceRef.current;
+      if (!currentWorkspace) throw new Error("Workspace is not loaded");
+      const currentSelectedId = selectedIdRef.current;
+      const currentTransform = draftTransformRef.current;
+      const nodes = currentWorkspace.nodes.map((node) => ({
+        id: node.id,
+        name: node.name,
+        visible: node.visible,
+        transform: node.id === currentSelectedId && currentTransform
+          ? workspaceTransform(currentTransform)
+          : node.transform,
+      }));
+      return saveWebTourWorkspace(tourId, {
+        base_revision: currentWorkspace.revision,
+        name: currentWorkspace.name,
+        nodes,
+        cameras: cameraData.cameras as unknown as Array<Record<string, unknown>>,
+      });
     });
     workspaceRef.current = saved;
     setWorkspace(saved);
@@ -1087,7 +1131,13 @@ export default function WebTourEditorPage({
 
   return (
     <main
-      className="relative h-[100dvh] w-screen overflow-hidden bg-background text-foreground"
+      className={
+        // w-full, not w-screen: 100vw includes the scrollbar gutter that
+        // `html { scrollbar-gutter: stable }` reserves, so on browsers with
+        // classic scrollbars the page rendered wider than the viewport and
+        // the right dock, Save cluster and status readouts were clamped.
+        "relative h-[100dvh] w-full overflow-hidden bg-background text-foreground"
+      }
       onDragEnter={(event) => {
         if (uploading || !hasActualFileDrag(event.dataTransfer)) {
           clearFileDrag();
@@ -1254,8 +1304,12 @@ export default function WebTourEditorPage({
         </div>
       )}
 
-      <header className="pointer-events-none absolute inset-x-3 top-3 z-30 flex items-start justify-between gap-2 sm:inset-x-4">
-        <div className="floating-panel pointer-events-auto flex h-11 min-w-0 flex-1 items-center gap-1 p-1 md:flex-none">
+      {/* Application frame, not windows: the title row is a solid strip fused
+          to the viewport's top edge, the way the Splatfiction studio anchors
+          its chrome. Floating capsules over the scene are reserved for the
+          tool rail and the view cluster. */}
+      <header className="absolute inset-x-0 top-0 z-30 flex h-12 items-center justify-between gap-2 border-b border-border/70 bg-card/95 px-2 backdrop-blur-xl sm:px-3">
+        <div className="flex h-11 min-w-0 flex-1 items-center gap-1 md:flex-none">
           <button
             type="button"
             onClick={async () => {
@@ -1311,7 +1365,7 @@ export default function WebTourEditorPage({
             </Button>
           </span>
         </div>
-        <div className="floating-panel pointer-events-auto hidden h-11 shrink-0 items-center gap-0.5 p-1 md:flex">
+        <div className="hidden h-11 shrink-0 items-center gap-0.5 md:flex">
           <Button
             size="icon-sm"
             variant="ghost"
@@ -1347,10 +1401,13 @@ export default function WebTourEditorPage({
         }}
       />
 
+      {/* On desktop this is a docked column, fused to the header and status
+          strips — square, shadowless, edge-to-edge — not a floating card.
+          Phones keep the bottom sheet. */}
       <aside data-testid="tour-editor-scene-panel" className={cn(
-        "floating-panel absolute inset-x-3 bottom-[calc(5.25rem+env(safe-area-inset-bottom,0px))] z-30 max-h-[45dvh] overflow-hidden transition-[transform,opacity] duration-200 md:inset-x-auto md:bottom-auto md:left-4 md:top-20 md:z-20 md:max-h-[calc(100dvh-10rem)] md:w-[16.5rem]",
+        "floating-panel absolute inset-x-3 bottom-[calc(5.25rem+env(safe-area-inset-bottom,0px))] z-30 max-h-[45dvh] overflow-hidden transition-[transform,opacity] duration-200 md:inset-x-auto md:bottom-7 md:left-0 md:top-12 md:z-20 md:max-h-none md:w-[16.5rem] md:rounded-none md:border-y-0 md:border-l-0 md:border-r md:bg-card md:shadow-none md:backdrop-blur-none",
         !scenePanelOpen
-          && "pointer-events-none translate-y-[calc(100%+6rem)] opacity-0 md:translate-y-0 md:-translate-x-[calc(100%+1rem)] md:opacity-100",
+          && "pointer-events-none translate-y-[calc(100%+6rem)] opacity-0 md:translate-y-0 md:-translate-x-full md:opacity-100",
       )}>
         <div aria-hidden="true" className="mx-auto mt-2 h-1 w-9 rounded-full bg-foreground/15 md:hidden" />
         <div className="flex items-center justify-between border-b border-border/65 px-3 py-2.5">
@@ -1379,7 +1436,7 @@ export default function WebTourEditorPage({
             </button>
           </span>
         </div>
-        <div className="max-h-[calc(45dvh-3.75rem)] overflow-y-auto p-2 md:max-h-[calc(100dvh-14rem)]">
+        <div className="max-h-[calc(45dvh-3.75rem)] overflow-y-auto p-2 md:max-h-[calc(100dvh-8.5rem)]">
           <div className="flex items-center gap-2 border-b border-border/50 px-2 py-2 text-[11px] font-semibold">
             <TourIcon size={12} />
             /World
@@ -1466,7 +1523,7 @@ export default function WebTourEditorPage({
             setInspectorOpen(false);
             setScenePanelOpen(true);
           }}
-          className="floating-panel floating-control absolute left-3 top-20 z-20 h-10 gap-2 px-3 text-foreground/60 shadow-control sm:left-4 md:h-[var(--floating-control)] md:w-[var(--floating-control)] md:px-0"
+          className="floating-panel floating-control absolute left-3 top-20 z-20 h-10 gap-2 px-3 text-foreground/60 shadow-control sm:left-4 md:top-[3.75rem] md:h-[var(--floating-control)] md:w-[var(--floating-control)] md:px-0"
           aria-label={t("webEditor.sceneGraph", lang)}
         >
           <TourIcon size={14} />
@@ -1475,7 +1532,7 @@ export default function WebTourEditorPage({
       ) : null}
 
       {selected && draftTransform && inspectorOpen && !cameraEditorOpen && (!compactLayout || !scenePanelOpen) ? (
-        <section data-testid="tour-editor-inspector-panel" className="floating-panel absolute inset-x-3 bottom-[calc(5.25rem+env(safe-area-inset-bottom,0px))] z-30 max-h-[56dvh] overflow-y-auto p-3 md:inset-x-auto md:bottom-auto md:right-4 md:top-20 md:z-20 md:max-h-[calc(100dvh-10rem)] md:w-[19.5rem]">
+        <section data-testid="tour-editor-inspector-panel" className="floating-panel absolute inset-x-3 bottom-[calc(5.25rem+env(safe-area-inset-bottom,0px))] z-30 max-h-[56dvh] overflow-y-auto p-3 md:inset-x-auto md:bottom-7 md:right-0 md:top-12 md:z-20 md:max-h-none md:w-[19.5rem] md:rounded-none md:border-y-0 md:border-l md:border-r-0 md:bg-card md:shadow-none md:backdrop-blur-none">
           <div aria-hidden="true" className="mx-auto mb-2 h-1 w-9 rounded-full bg-foreground/15 md:hidden" />
           <div className="flex items-center justify-between gap-3 border-b border-border/60 pb-2.5">
             <span className="min-w-0">
@@ -1667,7 +1724,7 @@ export default function WebTourEditorPage({
             setScenePanelOpen(false);
             setInspectorOpen(true);
           }}
-          className="floating-panel floating-control absolute right-3 top-20 z-20 h-10 gap-2 px-3 text-foreground/60 shadow-control sm:right-4 md:h-[var(--floating-control)] md:w-[var(--floating-control)] md:px-0"
+          className="floating-panel floating-control absolute right-3 top-20 z-20 h-10 gap-2 px-3 text-foreground/60 shadow-control sm:right-4 md:top-[3.75rem] md:h-[var(--floating-control)] md:w-[var(--floating-control)] md:px-0"
           aria-label={t("spatialEditor.inspector", lang)}
         >
           <TechnicalIcon size={14} />
@@ -1676,7 +1733,10 @@ export default function WebTourEditorPage({
       ) : null}
 
       {pruneEditorOpen && selected ? (
-        <section className="floating-panel absolute bottom-20 left-3 z-30 w-[min(23rem,calc(100vw-1.5rem))] overflow-hidden p-3 shadow-control sm:left-4">
+        <section className={cn(
+          "floating-panel absolute bottom-20 left-3 z-30 w-[min(23rem,calc(100vw-1.5rem))] overflow-hidden p-3 shadow-control sm:left-4 md:bottom-[2.5rem]",
+          scenePanelOpen ? "md:left-[21.75rem]" : "md:left-[4.5rem]",
+        )}>
           <div className="flex items-center justify-between gap-3">
             <div>
               <h2 className="text-[11px] font-semibold">{t("webEditor.splatEditing", lang)}</h2>
@@ -1904,8 +1964,18 @@ export default function WebTourEditorPage({
         </nav>
       ) : null}
 
+      {/* DCC split, after the Splatfiction reference: manipulation lives in a
+          vertical rail on the left edge, view controls in a pill at the
+          bottom-right, and nothing sits between the author and the scene. The
+          rail is icon-only — names and shortcuts ride in the tooltips. */}
       {selectedRenderable ? (
-      <nav className="floating-toolbar scrollbar-hide absolute bottom-4 left-1/2 z-30 hidden max-w-[calc(100vw-1rem)] -translate-x-1/2 overflow-x-auto md:flex">
+      <nav
+        aria-label={t("webEditor.tools", lang)}
+        className={cn(
+          "floating-toolbar scrollbar-hide absolute top-1/2 z-30 hidden max-h-[calc(100dvh-8rem)] -translate-y-1/2 flex-col overflow-y-auto rounded-[1.4rem] md:flex",
+          scenePanelOpen ? "left-[17.5rem]" : "left-3 sm:left-4",
+        )}
+      >
         <button
           type="button"
           onClick={undoTransform}
@@ -1926,7 +1996,7 @@ export default function WebTourEditorPage({
         >
           <VersionsIcon size={14} className="scale-x-[-1]" />
         </button>
-        <span className="mx-1 h-6 w-px bg-foreground/[0.1]" />
+        <span className="my-1 h-px w-6 self-center bg-foreground/[0.1]" />
         {([
           ["select", TechnicalIcon, "spatialEditor.selectTool", "1"],
           ["move", MoveIcon, "spatialEditor.moveTool", "2"],
@@ -1939,19 +2009,18 @@ export default function WebTourEditorPage({
             onClick={() => setTool(value)}
             title={`${t(label, lang)} · ${shortcut}`}
             aria-keyshortcuts={shortcut}
+            aria-pressed={tool === value}
             className={cn(
+              "floating-icon-button",
               tool === value
-                ? "floating-control gap-2 bg-foreground px-3 text-background"
-                : "floating-icon-button text-foreground/50 hover:bg-foreground/[0.06] hover:text-foreground",
+                ? "bg-foreground text-background"
+                : "text-foreground/50 hover:bg-foreground/[0.06] hover:text-foreground",
             )}
           >
             <Icon size={14} />
-            {tool === value ? (
-              <span className="hidden text-[10px] font-medium sm:inline">{t(label, lang)}</span>
-            ) : null}
           </button>
         ))}
-        <span className="mx-1 h-6 w-px bg-foreground/[0.1]" />
+        <span className="my-1 h-px w-6 self-center bg-foreground/[0.1]" />
         <button
           type="button"
           data-testid="tour-editor-prune-open"
@@ -1970,22 +2039,30 @@ export default function WebTourEditorPage({
             }
           }}
           title={t("webEditor.splatEditing", lang)}
+          aria-pressed={pruneEditorOpen}
           className={cn(
-            "floating-control gap-2 px-3 disabled:opacity-35",
+            "floating-icon-button disabled:opacity-35",
             pruneEditorOpen
               ? "bg-foreground text-background"
-              : "bg-card text-foreground shadow-control hover:bg-foreground/[0.06]",
+              : "text-foreground/50 hover:bg-foreground/[0.06] hover:text-foreground",
           )}
         >
           <SelectIcon size={14} />
-          <span className="hidden text-[10px] font-medium xl:inline">
-            {t("webEditor.prune", lang)}
-          </span>
         </button>
+      </nav>
+      ) : null}
+
+      {selectedRenderable ? (
+      <nav className={cn(
+        "floating-toolbar absolute z-30 hidden md:bottom-[2.5rem] md:flex",
+        selected && draftTransform && inspectorOpen && !cameraEditorOpen
+          ? "md:right-[20.5rem]"
+          : "md:right-3",
+      )}>
         <button
           type="button"
           onClick={() => setCameraMode((value) => value === "orbit" ? "fly" : "orbit")}
-          title={t(cameraMode === "orbit" ? "spatialEditor.orbit" : "spatialEditor.fly", lang)}
+          title={`${t(cameraMode === "orbit" ? "spatialEditor.orbit" : "spatialEditor.fly", lang)} · V`}
           aria-pressed={cameraMode === "orbit"}
           aria-keyshortcuts="V"
           className="floating-control gap-2 bg-card px-3 text-foreground shadow-control hover:bg-foreground/[0.06]"
@@ -1998,7 +2075,7 @@ export default function WebTourEditorPage({
         <button
           type="button"
           onClick={() => setShowGrid((value) => !value)}
-          title={t("spatialEditor.grid", lang)}
+          title={`${t("spatialEditor.grid", lang)} · G`}
           aria-pressed={showGrid}
           aria-keyshortcuts="G"
           className={cn(
@@ -2013,7 +2090,7 @@ export default function WebTourEditorPage({
         <button
           type="button"
           onClick={() => viewerRef.current?.frameScene()}
-          title={t("spatialEditor.frame", lang)}
+          title={`${t("spatialEditor.frame", lang)} · F`}
           aria-keyshortcuts="F"
           className="floating-icon-button text-foreground/50 hover:bg-foreground/[0.06]"
         >
@@ -2051,12 +2128,25 @@ export default function WebTourEditorPage({
       </nav>
       ) : null}
 
-      <div className="floating-capsule pointer-events-none absolute bottom-4 right-3 z-20 hidden min-h-9 items-center gap-2 px-3 text-[9px] font-semibold shadow-control sm:flex sm:right-4">
-        <span className="text-muted-foreground">Y up</span>
-        <span className="text-[#ff334f]">X</span>
-        <span className="text-[#18d968]">Y</span>
-        <span className="text-[#2f8cff]">Z</span>
-      </div>
+      {/* Status strip: the frame's bottom edge carries the passive readouts
+          (nav hints, scene counts, world orientation) that used to float over
+          the scene as their own capsules. */}
+      <footer className="pointer-events-none absolute inset-x-0 bottom-0 z-20 hidden h-7 items-center gap-4 border-t border-border/70 bg-card/95 px-3 text-[10px] font-medium text-muted-foreground backdrop-blur-xl md:flex">
+        {selectedRenderable ? (
+          <span className="hidden truncate lg:block">{t("webEditor.navHints", lang)}</span>
+        ) : null}
+        <span className="ml-auto flex shrink-0 items-center gap-4">
+          <span className="tabular-nums">
+            {workspace.nodes.length} {t("webEditor.nodes", lang)} · {workspace.cameras.length} {t("webEditor.cameras", lang)}
+          </span>
+          <span className="flex items-center gap-1.5 text-[9px] font-semibold">
+            <span>Y up</span>
+            <span className="text-[#ff334f]">X</span>
+            <span className="text-[#18d968]">Y</span>
+            <span className="text-[#2f8cff]">Z</span>
+          </span>
+        </span>
+      </footer>
 
       {selected && selectedAssetUrl ? (
         <div className={cameraEditorOpen && selected.visible ? undefined : "hidden"}>
