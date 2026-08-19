@@ -6482,10 +6482,14 @@ const SplatViewer = forwardRef<SplatViewerHandle, Props>(function SplatViewer(
           // Footprint only: the SOG bytes and the lossless tensors are untouched.
           reconstructionFogGuard: true,
           motionSmoothing: false,
+          // Delivery budgets track Splatfiction's runtime profiles: full
+          // native DPR on phones (2.25M cut a 2.4M-px handset short of
+          // native and reintroduced a sliver of upscaling) and the 5.5M
+          // desktop profile so a retina laptop keeps ~1:1 physical pixels.
           maxCanvasPixels: spatialNavigation
             ? compactTouch ? 3_000_000 : 8_000_000
             : performanceProfile === "balanced"
-              ? compactTouch ? 2_250_000 : 4_500_000
+              ? compactTouch ? 2_600_000 : 5_500_000
               : compactTouch ? 3_500_000 : 9_000_000,
           // Spinoff contributes no application theme or UI chrome; this is the
           // surface the Gaussians are composited onto, and it has to match the
