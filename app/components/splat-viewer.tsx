@@ -5510,6 +5510,13 @@ const SplatViewer = forwardRef<SplatViewerHandle, Props>(function SplatViewer(
           Touch keeps grab style in the immersive branch.
         */
         camera.angularSensibility = Math.abs(camera.angularSensibility);
+        // Babylon's defaults are tuned for scene orbiting, not a walkthrough:
+        // inertia 0.9 keeps the view drifting after the mouse stops (the
+        // sluggish "finishes after you" feel) and 2000 px/radian is ~8x
+        // slower than the editor's tuned look rate. Track the pointer 1:1
+        // and turn at a rate close to Splatfiction's viewport (~375 px/rad).
+        camera.inertia = 0;
+        camera.angularSensibility = 400;
         // Restore the native FreeCamera bindings used by the known-good July
         // tour viewer. Spatial and immersive modes detach Babylon and keep
         // their dedicated transform-aware movement implementations.
