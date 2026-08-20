@@ -4,6 +4,8 @@ import * as React from "react";
 import { useRouter } from "next/navigation";
 import { AppShell } from "../components/app-shell";
 import { useAuth } from "../components/hooks/use-auth";
+import { useLiveSplatAccess } from "../components/hooks/use-live-splat-access";
+import { useLiveScanCaptureDevice } from "../components/hooks/use-live-scan-device";
 import { useWebAuthoringAccess } from "../components/hooks/use-web-authoring-access";
 import {
   ArrowLeftIcon,
@@ -11,6 +13,7 @@ import {
   DocumentIcon,
   LockIcon,
   TourIcon,
+  VideoIcon,
 } from "../components/icons";
 import { PageHeader } from "../components/page-header";
 import { PageLoading } from "../components/page-loading";
@@ -36,6 +39,8 @@ export default function WebCreatePage() {
   const { isAuthenticated, isLoading, user, logout } = useAuth();
   const router = useRouter();
   const { allowed, loading: accessLoading } = useWebAuthoringAccess(isAuthenticated);
+  const { allowed: liveScanAllowed } = useLiveSplatAccess(isAuthenticated);
+  const { supported: liveScanDevice } = useLiveScanCaptureDevice();
   const [mode, setMode] = React.useState<CreationMode>("draft");
   const [drafts, setDrafts] = React.useState<DraftListingItem[]>([]);
   const [draftsLoading, setDraftsLoading] = React.useState(false);
@@ -158,11 +163,15 @@ export default function WebCreatePage() {
           className="mb-6"
         />
 
-        <div className="selection-capsule-track grid grid-cols-2" role="group" aria-label={t("webCreate.title", lang)}>
+        <div
+          className={`selection-capsule-track grid ${liveScanAllowed && liveScanDevice ? "grid-cols-3" : "grid-cols-2"}`}
+          role="group"
+          aria-label={t("webCreate.title", lang)}
+        >
           {([
-            ["draft", DocumentIcon, "webCreate.draftTitle", "webCreate.draftDescription"],
-            ["tour", TourIcon, "webCreate.tourTitle", "webCreate.tourDescription"],
-          ] as const).map(([value, Icon, titleKey, descriptionKey]) => (
+            ["draft", DocumentIcon, "webCreate.draftTitle"],
+            ["tour", TourIcon, "webCreate.tourTitle"],
+          ] as const).map(([value, Icon, titleKey]) => (
             <button
               key={value}
               type="button"
@@ -174,6 +183,16 @@ export default function WebCreatePage() {
               <span className="truncate">{t(titleKey, lang)}</span>
             </button>
           ))}
+          {liveScanAllowed && liveScanDevice ? (
+            <button
+              type="button"
+              onClick={() => router.push("/create/live-scan")}
+              className="selection-capsule-item pen-touch-target min-w-0 px-2 text-[12px] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring sm:px-4 sm:text-[13px]"
+            >
+              <VideoIcon size={15} className="shrink-0" />
+              <span className="truncate">{t("liveScan.title", lang)}</span>
+            </button>
+          ) : null}
         </div>
 
         <div className="mt-4 overflow-hidden rounded-[1.875rem] border border-border/60 bg-card/[0.80] shadow-[0_18px_50px_-42px_rgba(0,0,0,0.32)] backdrop-blur-2xl">

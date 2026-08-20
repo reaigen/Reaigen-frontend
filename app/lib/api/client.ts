@@ -1267,6 +1267,189 @@ export async function hasWebCreationAccess(): Promise<boolean> {
   }
 }
 
+export interface LiveSplatRuntimeIdentity {
+  release: string;
+  commit: string;
+  profile: "production" | "contract-test" | string;
+  modal_app: string;
+  modal_app_version?: string | null;
+  image_id?: string | null;
+  checkpoint_schema: string;
+  active?: boolean;
+  software?: {
+    schema: string;
+    profile: string;
+    release: string;
+    commit: string;
+    capabilities?: string[];
+    missing_production_capabilities?: string[];
+    update_policy?: {
+      channel?: string;
+      hot_patch_allowed?: boolean;
+      checkpoint_compatibility_required?: boolean;
+    };
+  } | null;
+}
+
+export interface LiveSplatAccess {
+  allowed: boolean;
+  feature: "live_splatting";
+  runtime: LiveSplatRuntimeIdentity;
+  runtime_available: boolean;
+  capture: {
+    accepted_content_types: Array<"image/jpeg" | "image/webp">;
+    max_frame_size: number;
+    max_frame_dimension: number;
+  };
+  capabilities: {
+    browser_capture: boolean;
+    durable_wasabi_frames: boolean;
+    last_good_preview: boolean;
+    automatic_floor_retry: boolean;
+    manual_floor_revision: boolean;
+    dragon_refinement: boolean;
+    contract_test?: boolean;
+  };
+}
+
+export interface LiveSplatSession {
+  id: string;
+  status: "created" | "starting" | "capturing" | "draining" | "refining" | "completed" | "failed" | "cancelled";
+  floor_status: "pending" | "locked" | "manual" | "rejected";
+  draft_id: number | null;
+  tour_id: number | null;
+  runtime: LiveSplatRuntimeIdentity;
+  progress: {
+    allocated_frames: number;
+    ready_frames: number;
+    processed_frames: number;
+    last_good_epoch: number;
+    revision: number;
+  };
+  error: { code: string } | null;
+  options: {
+    quality: "fast" | "balanced" | "quality";
+    floor_preview: boolean;
+    dragon_refinement: boolean;
+    output_format: "ply" | "sog";
+  };
+  telemetry?: Record<string, unknown> | null;
+  created_at: string;
+  started_at: string | null;
+  completed_at: string | null;
+  updated_at: string;
+}
+
+export interface LiveSplatPreview {
+  epoch: number;
+  trust: "provisional" | "qualified";
+  floor_status: LiveSplatSession["floor_status"];
+  show_floor_grid: boolean;
+  format: "ply" | "sog";
+  splat_url: string;
+  expires_in: number;
+}
+
+export interface LiveSplatFramePresign {
+  frame_id: string;
+  sequence: number;
+  upload_url: string;
+  expires_in: number;
+  required_headers: Record<string, string>;
+  confirm_endpoint: string;
+}
+
+export async function getLiveSplatAccess(): Promise<LiveSplatAccess> {
+  return request("/api/reaigen/live-splat/access/");
+}
+
+export async function hasLiveSplatAccess(): Promise<boolean> {
+  try {
+    return (await getLiveSplatAccess()).allowed;
+  } catch (error) {
+    if (error instanceof ApiError && (error.status === 401 || error.status === 403)) {
+      return false;
+    }
+    throw error;
+  }
+}
+
+export async function listLiveSplatSessions(): Promise<{ results: LiveSplatSession[] }> {
+  return request("/api/reaigen/live-splat/sessions/");
+}
+
+export async function createLiveSplatSession(data: {
+  draft_id?: number;
+  tour_id?: number;
+  postprocess?: LiveSplatSession["options"];
+} = {}): Promise<LiveSplatSession> {
+  return request("/api/reaigen/live-splat/sessions/", {
+    method: "POST",
+    body: JSON.stringify(data),
+  });
+}
+
+export async function getLiveSplatSession(sessionId: string): Promise<LiveSplatSession> {
+  return request(`/api/reaigen/live-splat/sessions/${encodeURIComponent(sessionId)}/`);
+}
+
+export async function startLiveSplatSession(sessionId: string): Promise<LiveSplatSession> {
+  return request(`/api/reaigen/live-splat/sessions/${encodeURIComponent(sessionId)}/start/`, {
+    method: "POST",
+    body: "{}",
+  });
+}
+
+export async function syncLiveSplatSession(sessionId: string): Promise<LiveSplatSession> {
+  return request(`/api/reaigen/live-splat/sessions/${encodeURIComponent(sessionId)}/sync/`, {
+    method: "POST",
+    body: "{}",
+  });
+}
+
+export async function finishLiveSplatSession(sessionId: string): Promise<LiveSplatSession> {
+  return request(`/api/reaigen/live-splat/sessions/${encodeURIComponent(sessionId)}/finish/`, {
+    method: "POST",
+    body: "{}",
+  });
+}
+
+export async function getLiveSplatPreview(
+  sessionId: string,
+  revision: number,
+): Promise<{ preview: LiveSplatPreview | null }> {
+  return request(
+    `/api/reaigen/live-splat/sessions/${encodeURIComponent(sessionId)}/preview/?revision=${encodeURIComponent(revision)}`,
+  );
+}
+
+export async function presignLiveSplatFrame(
+  sessionId: string,
+  data: {
+    content_type: "image/jpeg" | "image/webp";
+    file_size: number;
+    width: number;
+    height: number;
+    sha256: string;
+    captured_at?: string;
+  },
+): Promise<LiveSplatFramePresign> {
+  return request(
+    `/api/reaigen/live-splat/sessions/${encodeURIComponent(sessionId)}/frames/presign/`,
+    { method: "POST", body: JSON.stringify(data) },
+  );
+}
+
+export async function confirmLiveSplatFrame(
+  sessionId: string,
+  frameId: string,
+): Promise<{ frame_id: string; sequence: number; status: string; session?: LiveSplatSession }> {
+  return request(
+    `/api/reaigen/live-splat/sessions/${encodeURIComponent(sessionId)}/frames/${encodeURIComponent(frameId)}/confirm/`,
+    { method: "POST", body: "{}" },
+  );
+}
+
 export async function createWebDraft(
   data: DraftUpdatePayload & { title: string },
 ): Promise<DraftDetailItem> {
