@@ -151,6 +151,8 @@ function resolveTarget(baseUrl: string, joined: string): string {
     "content",
     "notification-devices",
     "notifications",
+    // Back-office management API (Django staff/superuser only)
+    "admin",
   ];
   for (const prefix of coreRoutes) {
     if (joined.startsWith(prefix)) {

@@ -41,6 +41,10 @@ import {
   type WebTourWorkspaceNode,
 } from "../../../lib/api/client";
 import { useWebAuthoringAccess } from "../../../components/hooks/use-web-authoring-access";
+import {
+  getSafeApiErrorMessage,
+  isInsufficientComputeCredits,
+} from "../../../lib/api/error-message";
 import { useConfirm } from "../../../lib/ui/confirm-dialog";
 import { getUserLanguage, t } from "../../../lib/i18n";
 import type {
@@ -849,8 +853,12 @@ export default function WebTourEditorPage({
         });
       }
       setSelectedId(addedNode?.id ?? null);
-    } catch {
-      setError(t("webEditor.uploadFailed", lang));
+    } catch (err) {
+      setError(
+        isInsufficientComputeCredits(err)
+          ? t("errors.needMoreCredits", lang)
+          : getSafeApiErrorMessage(err, lang, "webEditor.uploadFailed"),
+      );
     } finally {
       setUploading(false);
       setUploadName("");
@@ -969,7 +977,11 @@ export default function WebTourEditorPage({
       setError(
         error instanceof ApiError && error.status === 409
           ? t("webEditor.saveConflict", lang)
-          : t("webEditor.saveFailed", lang),
+          : isInsufficientComputeCredits(error)
+            ? t("errors.needMoreCredits", lang)
+            : error instanceof ApiError && error.status === 403
+              ? getSafeApiErrorMessage(error, lang, "webEditor.saveFailed")
+              : t("webEditor.saveFailed", lang),
       );
       return false;
     } finally {

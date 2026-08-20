@@ -139,8 +139,10 @@ async function fetchGetData(path: string, options: RequestInit): Promise<unknown
 }
 
 function ttlForPath(path: string): number {
-  if (path.startsWith("/api/reaigen/users/") || path.startsWith("/api/reaigen/profiles/") || path.startsWith("/api/reaigen/personalized-data/") || path.startsWith("/api/reaigen/billing/")) return LONG_TTL;
+  if (path.startsWith("/api/reaigen/users/") || path.startsWith("/api/reaigen/profiles/") || path.startsWith("/api/reaigen/personalized-data/")) return LONG_TTL;
   if (path.startsWith("/api/reaigen/content/")) return CONTENT_TTL;
+  // Billing carries the live compute-credit balance now — keep it on the
+  // short default TTL so spends and top-ups appear promptly.
   return CACHE_TTL;
 }
 
@@ -454,14 +456,28 @@ export interface NotificationMessage {
   created_at: string;
 }
 
+export interface ComputeCredits {
+  unlimited: boolean;
+  included: number;
+  purchased: number;
+  total: number;
+  monthly_allowance: number;
+  period_start: string | null;
+}
+
 export interface BillingAccount {
   id: number;
   subscription_tier_detail: {
     code: string;
     name: string;
+    is_custom_pricing?: boolean;
+    /** @deprecated display mirror — runtime posts limit lives in TierLimit */
     max_posts: number;
+    /** @deprecated storage is not tiered; value is 0 (not applicable) */
     max_storage_gb: number;
+    /** @deprecated display mirror — runtime features come from TierFeature */
     can_use_ai_processing: boolean;
+    /** @deprecated display mirror — runtime features come from TierFeature */
     can_use_3d_processing: boolean;
   } | null;
   subscription_status: string;
@@ -471,6 +487,8 @@ export interface BillingAccount {
   has_reached_post_limit: boolean;
   has_reached_storage_limit: boolean;
   days_until_expiry: number | null;
+  trial_ends_at?: string | null;
+  compute_credits?: ComputeCredits;
   current_storage_gb: string;
   current_posts_count: number;
   payment_provider: string;

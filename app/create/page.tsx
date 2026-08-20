@@ -19,6 +19,10 @@ import {
   createWebTour,
   listDrafts,
 } from "../lib/api/client";
+import {
+  getSafeApiErrorMessage,
+  isInsufficientComputeCredits,
+} from "../lib/api/error-message";
 import { getUserLanguage, t } from "../lib/i18n";
 import { Button } from "../lib/ui/button";
 import { Input } from "../lib/ui/input";
@@ -105,8 +109,12 @@ export default function WebCreatePage() {
         country: country.trim(),
       });
       router.push(`/draft/${draft.id}`);
-    } catch {
-      setError(t("webCreate.createFailed", lang));
+    } catch (err) {
+      setError(
+        isInsufficientComputeCredits(err)
+          ? t("errors.needMoreCredits", lang)
+          : getSafeApiErrorMessage(err, lang, "webCreate.createFailed"),
+      );
       setSubmitting(false);
     }
   };
@@ -122,8 +130,12 @@ export default function WebCreatePage() {
         name: tourName.trim() || undefined,
       });
       router.push(`/create/tour/${workspace.tour_id}`);
-    } catch {
-      setError(t("webCreate.createFailed", lang));
+    } catch (err) {
+      setError(
+        isInsufficientComputeCredits(err)
+          ? t("errors.needMoreCredits", lang)
+          : getSafeApiErrorMessage(err, lang, "webCreate.createFailed"),
+      );
       setSubmitting(false);
     }
   };

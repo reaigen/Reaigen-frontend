@@ -1659,7 +1659,8 @@ function LocalizationTab({ user, lang }: { user: UserProfile; lang: string }) {
 /* ── Billing Tab ─────────────────────────────────────────────────────── */
 
 function UsageBar({ current, max, label, unit }: { current: number; max: number; label: string; unit?: string }) {
-  const unlimited = max === 0;
+  // 0 = not applicable and -1 = unlimited; neither draws a fill.
+  const unlimited = max <= 0;
   const pct = unlimited ? 0 : Math.min((current / max) * 100, 100);
   const color = pct >= 100 ? "bg-destructive" : pct >= 75 ? "bg-amber-500" : "bg-success";
   return (
@@ -1679,8 +1680,7 @@ function UsageBar({ current, max, label, unit }: { current: number; max: number;
 
 const tierBadgeColors: Record<string, string> = {
   FREE: "bg-muted text-muted-foreground",
-  TRIAL: "bg-blue-100 text-blue-700",
-  LITE: "bg-success/10 text-emerald-800",
+  STANDARD: "bg-blue-100 text-blue-700",
   PRO: "bg-purple-100 text-purple-700",
   ENTERPRISE: "bg-amber-100 text-amber-700",
 };
@@ -1688,8 +1688,7 @@ const tierBadgeColors: Record<string, string> = {
 function tierBadgeKey(code: string, lang: string): string {
   const map: Record<string, string> = {
     FREE: t("settings.billing.badgeFree", lang),
-    TRIAL: t("settings.billing.badgeTrial", lang),
-    LITE: t("settings.billing.badgeLite", lang),
+    STANDARD: t("settings.billing.badgeStandard", lang),
     PRO: t("settings.billing.badgePro", lang),
     ENTERPRISE: t("settings.billing.badgeEnterprise", lang),
   };
@@ -1757,9 +1756,18 @@ function BillingTab({ user, onSaved, lang }: { user: UserProfile; onSaved: () =>
       : t("settings.billing.cycleNa", lang);
 
   const maxPosts = tier?.max_posts ?? 0;
-  const maxStorage = tier?.max_storage_gb ?? 0;
   const currentPosts = ba?.current_posts_count ?? 0;
-  const currentStorage = parseFloat(ba?.current_storage_gb ?? "0");
+  const credits = ba?.compute_credits ?? null;
+  const trialActive = ba?.subscription_status === "trial" && !!ba?.trial_ends_at;
+  const trialDaysLeft = trialActive
+    ? Math.max(
+        0,
+        Math.ceil(
+          (new Date(ba!.trial_ends_at as string).getTime() - Date.now()) /
+            86_400_000,
+        ),
+      )
+    : null;
 
   return (
     <div className="space-y-6">
@@ -1784,15 +1792,19 @@ function BillingTab({ user, onSaved, lang }: { user: UserProfile; onSaved: () =>
             />
             <DataRow label={t("settings.billing.status", lang)} value={ba?.subscription_status ?? "—"} />
             <DataRow label={t("settings.billing.cycle", lang)} value={cycleLabel} />
-            {ba?.is_trial && ba.days_until_expiry != null && (
-              <DataRow label={t("settings.billing.trial", lang)} value={`${ba.days_until_expiry} ${t("settings.billing.trialDaysLeft", lang)}`} />
+            {trialActive && trialDaysLeft != null && (
+              <DataRow label={t("settings.billing.trial", lang)} value={`${trialDaysLeft} ${t("settings.billing.trialDaysLeft", lang)}`} />
+            )}
+            {tier?.is_custom_pricing && (
+              <DataRow label={t("settings.billing.pricing", lang)} value={t("settings.billing.customPricing", lang)} />
             )}
             <DataRow label={t("settings.billing.provider", lang)} value={ba?.payment_provider || t("common.none", lang)} />
           </dl>
         </CardContent>
       </Card>
 
-      {/* Usage */}
+      {/* Usage — storage is intentionally absent: it is counted internally
+          but is not a tier limit. */}
       <Card>
         <CardHeader>
           <CardTitle>{t("settings.billing.usageTitle", lang)}</CardTitle>
@@ -1800,10 +1812,43 @@ function BillingTab({ user, onSaved, lang }: { user: UserProfile; onSaved: () =>
         <CardContent>
           <div className="space-y-4 rounded-lg border border-border/60 p-4">
             <UsageBar current={currentPosts} max={maxPosts} label={t("settings.billing.posts", lang)} />
-            <UsageBar current={currentStorage} max={maxStorage} label={t("settings.billing.storage", lang)} unit="GB" />
           </div>
         </CardContent>
       </Card>
+
+      {/* Compute credits */}
+      {credits && (
+        <Card>
+          <CardHeader>
+            <CardTitle>{t("settings.billing.creditsTitle", lang)}</CardTitle>
+            <CardDescription>{t("settings.billing.creditsSubtitle", lang)}</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <dl className="rounded-lg border border-border/60 px-4">
+              <DataRow
+                label={t("settings.billing.creditsTotal", lang)}
+                value={
+                  credits.unlimited
+                    ? t("settings.billing.creditsUnlimited", lang)
+                    : String(credits.total)
+                }
+              />
+              {!credits.unlimited && (
+                <>
+                  <DataRow
+                    label={t("settings.billing.creditsIncluded", lang)}
+                    value={`${credits.included} / ${credits.monthly_allowance}`}
+                  />
+                  <DataRow
+                    label={t("settings.billing.creditsPurchased", lang)}
+                    value={String(credits.purchased)}
+                  />
+                </>
+              )}
+            </dl>
+          </CardContent>
+        </Card>
+      )}
 
       {/* Billing Address */}
       <Card>
