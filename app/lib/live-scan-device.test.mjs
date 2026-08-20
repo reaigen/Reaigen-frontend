@@ -55,3 +55,30 @@ test("production permits only same-origin camera and opens it only on explicit a
   assert.ok(workspace.indexOf("getUserMedia(") > workspace.indexOf("const enableCamera = async"));
   assert.doesNotMatch(startPage, /getUserMedia\(/);
 });
+
+test("scanning UI hides implementation names and remains standalone", () => {
+  const startPage = readFileSync(
+    new URL("../create/live-scan/page.tsx", import.meta.url),
+    "utf8",
+  );
+  const workspace = readFileSync(
+    new URL("../create/live-scan/[id]/page.tsx", import.meta.url),
+    "utf8",
+  );
+  const localeFiles = ["en", "de", "sk", "cs"].map((locale) => readFileSync(
+    new URL(`../lib/locales/${locale}.ts`, import.meta.url),
+    "utf8",
+  ));
+  const scanningCopy = localeFiles
+    .flatMap((source) => source.split("\n"))
+    .filter((line) => line.includes('"liveScan.'))
+    .map((line) => line.slice(line.indexOf(":")))
+    .join("\n");
+
+  assert.doesNotMatch(scanningCopy, /\b(?:Otter|Dragon|GLOMAP|Modal|Wasabi|DA3|GPU|runtime|checkpoint|epoch)\b/i);
+  assert.doesNotMatch(startPage, /draft_id|tour_id|listSplats/);
+  assert.doesNotMatch(startPage, /access\.runtime\.(?:release|commit)/);
+  assert.doesNotMatch(workspace, /session\.runtime\.(?:release|commit)/);
+  assert.match(workspace, /splatUrl=\{preview\.splat_url\}/);
+  assert.match(workspace, /readOnly/);
+});

@@ -322,7 +322,6 @@ export default function LiveScanWorkspacePage() {
               </button>
               <div className="min-w-0">
                 <h1 className="truncate text-[15px] font-semibold">{t("liveScan.workspaceTitle", lang)}</h1>
-                <p className="truncate text-[11px] text-muted-foreground">{session.runtime.release} · {session.id.slice(0, 8)}</p>
               </div>
             </div>
             <div className="flex shrink-0 items-center gap-2">

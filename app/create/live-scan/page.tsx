@@ -135,11 +135,6 @@ export default function LiveScanStartPage() {
               <p className="mt-1 max-w-2xl text-sm leading-relaxed text-muted-foreground">
                 {t("liveScan.readyDescription", lang)}
               </p>
-              {access ? (
-                <p className="mt-3 text-[11px] font-medium text-muted-foreground">
-                  {t("liveScan.runtime", lang)} {access.runtime.release} · {access.runtime.commit.slice(0, 8)}
-                </p>
-              ) : null}
               {error ? <p role="alert" className="mt-3 text-sm text-destructive">{error}</p> : null}
             </div>
             <div className="flex shrink-0 flex-col gap-2 sm:items-end">
