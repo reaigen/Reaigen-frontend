@@ -75,6 +75,10 @@ async function proxy(
         "Content-Type": "application/json",
       };
       if (accessToken) headers["Authorization"] = `Bearer ${accessToken}`;
+      const logoutUserAgent = req.headers.get("user-agent");
+      if (logoutUserAgent) headers["User-Agent"] = logoutUserAgent;
+      const logoutForwardedFor = req.headers.get("x-forwarded-for");
+      if (logoutForwardedFor) headers["X-Forwarded-For"] = logoutForwardedFor;
       for (const baseUrl of backendCandidates()) {
         try {
           await fetchBackend(
@@ -106,6 +110,12 @@ async function proxy(
   const headers: Record<string, string> = {};
   const ct = req.headers.get("Content-Type");
   if (ct) headers["Content-Type"] = ct;
+  // Device-session bookkeeping on the backend parses these: without them a
+  // login is recorded as the proxy's own fetch ("Unknown OS", proxy IP).
+  const clientUserAgent = req.headers.get("user-agent");
+  if (clientUserAgent) headers["User-Agent"] = clientUserAgent;
+  const forwardedFor = req.headers.get("x-forwarded-for");
+  if (forwardedFor) headers["X-Forwarded-For"] = forwardedFor;
 
   const sessionPath = authPathCarriesSession(joined);
   const accessToken = sessionPath ? req.cookies.get(ACCESS_COOKIE_NAME)?.value ?? null : null;
