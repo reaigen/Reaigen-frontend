@@ -41,6 +41,8 @@ import {
   TrashIcon as RadixTrashIcon,
   UploadIcon as RadixUploadIcon,
   VideoIcon as RadixVideoIcon,
+  MobileIcon as RadixMobileIcon,
+  DesktopIcon as RadixDesktopIcon,
 } from "@radix-ui/react-icons";
 
 /**
@@ -251,6 +253,8 @@ export const VersionsIcon = fromRadix(CounterClockwiseClockIcon, "VersionsIcon")
 export const ImageIcon = fromRadix(RadixImageIcon, "ImageIcon");
 export const VideoIcon = fromRadix(RadixVideoIcon, "VideoIcon");
 export const UploadIcon = fromRadix(RadixUploadIcon, "UploadIcon");
+export const DeviceMobileIcon = fromRadix(RadixMobileIcon, "DeviceMobileIcon");
+export const DeviceDesktopIcon = fromRadix(RadixDesktopIcon, "DeviceDesktopIcon");
 export const EyeOpenIcon = fromRadix(RadixEyeOpenIcon, "EyeOpenIcon");
 export function EyeClosedIcon({ size = 18, width, height, ...props }: IconProps) {
   return (

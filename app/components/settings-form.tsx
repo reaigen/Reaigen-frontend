@@ -66,6 +66,7 @@ import {
   getWebPushStateForUser,
   type WebPushState,
 } from "../lib/web-push";
+import { DeviceDesktopIcon, DeviceMobileIcon } from "./icons";
 import { t, getUserLanguage, formatDate as fmtDate } from "../lib/i18n";
 import { cn } from "../lib/utils";
 import { ManagedLegalDocuments } from "./content-documents";
@@ -2120,53 +2121,69 @@ function DevicesSection({ lang }: { lang: string }) {
           </div>
         )}
         {!error && (
-        <ul className="divide-y divide-border/60 rounded-lg border border-border/60">
+        <ul className="space-y-2.5">
           {rows.map((session) => (
-            <li key={session.id} className="flex items-center justify-between gap-4 px-4 py-3">
-              <div className="min-w-0">
-                <p className="flex items-center gap-2 text-[13px] font-medium">
-                  <span className="truncate">{session.device_label}</span>
-                  {session.current && (
-                    <span className="rounded-full bg-success/10 px-2 py-0.5 text-[11px] font-semibold text-emerald-800">
-                      {t("settings.security.devicesThisDevice", lang)}
-                    </span>
-                  )}
-                </p>
-                <p className="truncate text-[12px] text-muted-foreground">
-                  {session.ip_address ? `${session.ip_address} · ` : ""}
-                  {t("settings.security.devicesLastActive", lang)}{" "}
-                  {formatAccountDate(session.last_seen_at, lang)}
-                </p>
+            <li
+              key={session.id}
+              className="rounded-2xl border border-border/60 bg-background/60 p-4"
+            >
+              <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                <div className="flex min-w-0 items-start gap-3">
+                  <span className="mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-muted/70 text-foreground/70">
+                    {session.platform === "ios" ? (
+                      <DeviceMobileIcon size={16} />
+                    ) : (
+                      <DeviceDesktopIcon size={16} />
+                    )}
+                  </span>
+                  <div className="min-w-0">
+                    <p className="flex flex-wrap items-center gap-x-2 gap-y-1 text-[13px] font-medium">
+                      <span className="truncate">{session.device_label}</span>
+                      {session.current && (
+                        <span className="whitespace-nowrap rounded-full bg-success/10 px-2.5 py-0.5 text-[11px] font-semibold text-emerald-800">
+                          {t("settings.security.devicesThisDevice", lang)}
+                        </span>
+                      )}
+                    </p>
+                    <p className="mt-0.5 break-words text-[12px] leading-relaxed text-muted-foreground">
+                      {session.ip_address ? `${session.ip_address} · ` : ""}
+                      {t("settings.security.devicesLastActive", lang)}{" "}
+                      {formatAccountDate(session.last_seen_at, lang)}
+                    </p>
+                  </div>
+                </div>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  className="w-full shrink-0 whitespace-nowrap rounded-full sm:w-auto"
+                  disabled={busyId !== null}
+                  onClick={() => handleRevoke(session)}
+                >
+                  {busyId === session.id
+                    ? t("common.loading", lang)
+                    : session.current
+                      ? t("settings.security.devicesSignOut", lang)
+                      : t("settings.security.devicesRevoke", lang)}
+                </Button>
               </div>
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                disabled={busyId !== null}
-                onClick={() => handleRevoke(session)}
-              >
-                {busyId === session.id
-                  ? t("common.loading", lang)
-                  : session.current
-                    ? t("settings.security.devicesSignOut", lang)
-                    : t("settings.security.devicesRevoke", lang)}
-              </Button>
             </li>
           ))}
           {rows.length === 0 && (
-            <li className="px-4 py-3 text-[13px] text-muted-foreground">
+            <li className="rounded-2xl border border-border/60 bg-background/60 p-4 text-[13px] text-muted-foreground">
               {t("settings.security.devicesEmpty", lang)}
             </li>
           )}
         </ul>
         )}
         {!error && (
-        <div className="flex flex-wrap gap-2">
+        <div className="flex flex-col gap-2 pt-1 sm:flex-row sm:flex-wrap">
           {others.length > 0 && (
             <Button
               type="button"
               variant="outline"
               size="sm"
+              className="w-full whitespace-nowrap rounded-full sm:w-auto"
               disabled={busyId !== null}
               onClick={handleRevokeOthers}
             >
@@ -2179,7 +2196,7 @@ function DevicesSection({ lang }: { lang: string }) {
             type="button"
             variant="outline"
             size="sm"
-            className="text-destructive hover:text-destructive"
+            className="w-full whitespace-nowrap rounded-full text-destructive hover:text-destructive sm:w-auto"
             disabled={busyId !== null}
             onClick={handleRevokeAll}
           >
