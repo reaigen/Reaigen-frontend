@@ -85,13 +85,17 @@ export type AppShellProps = {
   reaiDraftTitle?: string;
   /** Exact current gallery photo; never inferred from URL or pixels. */
   reaiUploadId?: number;
+  /** Viewer surface currently controlled by Agent. */
+  reaiWorkspaceContext?: "creator" | "draft" | "settings" | "floorplan" | "virtual_tour";
+  /** Owner-scoped tour resource currently open in the viewer. */
+  reaiTourId?: number;
   onReaiDraftUpdated?: (draft: DraftDetailItem) => void;
   children: React.ReactNode;
 };
 
 type AppShellOverrides = Pick<
   AppShellProps,
-  "hideMobileNav" | "reaiDraftId" | "reaiDraftTitle" | "reaiUploadId" | "onReaiDraftUpdated"
+  "hideMobileNav" | "reaiDraftId" | "reaiDraftTitle" | "reaiUploadId" | "reaiWorkspaceContext" | "reaiTourId" | "onReaiDraftUpdated"
 >;
 
 type PersistentShellBridge = {
@@ -105,6 +109,8 @@ function NestedAppShell({
   reaiDraftId,
   reaiDraftTitle,
   reaiUploadId,
+  reaiWorkspaceContext,
+  reaiTourId,
   onReaiDraftUpdated,
   children,
 }: AppShellProps) {
@@ -125,6 +131,8 @@ function NestedAppShell({
       reaiDraftId,
       reaiDraftTitle,
       reaiUploadId,
+      reaiWorkspaceContext,
+      reaiTourId,
       onReaiDraftUpdated: registeredDraftUpdate,
     });
   }, [
@@ -134,7 +142,9 @@ function NestedAppShell({
     registeredDraftUpdate,
     reaiDraftId,
     reaiDraftTitle,
+    reaiTourId,
     reaiUploadId,
+    reaiWorkspaceContext,
   ]);
 
   return <>{children}</>;
@@ -176,6 +186,8 @@ export function PersistentAppShell({
         reaiDraftId={overrides.reaiDraftId}
         reaiDraftTitle={overrides.reaiDraftTitle}
         reaiUploadId={overrides.reaiUploadId}
+        reaiWorkspaceContext={overrides.reaiWorkspaceContext}
+        reaiTourId={overrides.reaiTourId}
         onReaiDraftUpdated={overrides.onReaiDraftUpdated}
       >
         {children}
@@ -191,6 +203,8 @@ function AppShellFrame({
   reaiDraftId,
   reaiDraftTitle,
   reaiUploadId,
+  reaiWorkspaceContext,
+  reaiTourId,
   onReaiDraftUpdated,
   children,
 }: AppShellProps) {
@@ -219,7 +233,8 @@ function AppShellFrame({
     { href: "/dashboard", label: t("nav.dashboard", lang), icon: MainHomeIcon },
     { href: "/tours", label: t("nav.tours", lang), icon: MainTourIcon },
   ];
-  const reaiContext = pathname.startsWith("/settings") ? "settings" : (reaiDraftId ? "draft" : "creator");
+  const reaiContext = reaiWorkspaceContext
+    ?? (pathname.startsWith("/settings") ? "settings" : (reaiDraftId ? "draft" : "creator"));
   const reaiContextLabel = reaiContext === "settings"
     ? t("reai.settingsContext", lang)
     : reaiDraftId
@@ -951,7 +966,7 @@ function AppShellFrame({
               </div>
             </div>
             <div className="min-h-0 flex-1">
-              <ReaiAgentCard draftId={reaiDraftId} currentUploadId={reaiUploadId} workspaceContext={reaiContext} lang={lang} onDraftUpdated={onReaiDraftUpdated} panel compact={compactAgentViewport} />
+              <ReaiAgentCard draftId={reaiDraftId} currentUploadId={reaiUploadId} currentTourId={reaiTourId} workspaceContext={reaiContext} lang={lang} onDraftUpdated={onReaiDraftUpdated} panel compact={compactAgentViewport} />
             </div>
           </div>
         </>

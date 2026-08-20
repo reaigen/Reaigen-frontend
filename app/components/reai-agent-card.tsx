@@ -50,10 +50,12 @@ import type { LocaleKey } from "../lib/locales";
 import { PROPERTY_FIELD_SECTIONS, subtypeOptions, type PropertyFieldDefinition, type PropertyType } from "../lib/property-field-registry";
 import type { DraftDetailItem, DraftUpload } from "../lib/tour-types";
 import { copyToClipboard } from "../lib/share-ui";
+import { dispatchReaiViewerAction } from "../lib/reai-viewer-actions";
 import { baseUnitForCategory, resolveUnit, unitLabel, type UnitLookup } from "../lib/unit-catalog";
 import { Button } from "../lib/ui/button";
 import { cn } from "../lib/utils";
 import { AgentMiniUi } from "./agent-mini-ui";
+import { AgentTinyUi } from "./agent-tiny-ui";
 import { MediaVersionCard, type MediaAction } from "./draft-version-manager";
 import { useAuth } from "./hooks/use-auth";
 import { StatusPill } from "./status-pill";
@@ -372,6 +374,7 @@ function isExplicitProposalConfirmation(value: string): boolean {
 export function ReaiAgentCard({
   draftId,
   currentUploadId,
+  currentTourId,
   workspaceContext = draftId ? "draft" : "creator",
   lang,
   onDraftUpdated,
@@ -380,7 +383,8 @@ export function ReaiAgentCard({
 }: {
   draftId?: number;
   currentUploadId?: number;
-  workspaceContext?: "creator" | "draft" | "settings";
+  currentTourId?: number;
+  workspaceContext?: "creator" | "draft" | "settings" | "floorplan" | "virtual_tour";
   lang: string;
   onDraftUpdated?: (draft: DraftDetailItem) => void;
   panel?: boolean;
@@ -610,6 +614,7 @@ export function ReaiAgentCard({
         workspaceContext,
         currentUploadId,
         poolItemsForRequest(pool),
+        currentTourId,
       );
       if (!draftId && response.operation === "list" && response.search_query) {
         window.dispatchEvent(new CustomEvent("reai-workspace-search", {
@@ -631,6 +636,9 @@ export function ReaiAgentCard({
         window.location.hash = "localization";
         window.location.reload();
         return;
+      }
+      if (response.client_action) {
+        dispatchReaiViewerAction(response.client_action, { draftId, tourId: currentTourId });
       }
       if (response.improvement_conversation_id) setImprovementConversationId(response.improvement_conversation_id);
       setTurns((current) => [
@@ -1214,17 +1222,20 @@ export function ReaiAgentCard({
                   >
                     <p className={cn("whitespace-pre-line text-[14px] leading-6", turn.role === "user" ? "text-background" : "text-foreground")}>{turn.content}</p>
                     {answer && (
-                      <AgentMiniUi
-                        answer={answer}
-                        currentDraftId={draftId}
-                        lang={lang}
-                        busy={busy}
-                        formatDraftMeta={(draft) => [
-                          localizedLookupMetric(draft.creation_data.area, draft.creation_data.area_unit, "AREA", unitCatalog, lang),
-                          localizedLookupMetric(draft.creation_data.price, draft.creation_data.currency, "CURRENCY", unitCatalog, lang),
-                        ].filter(Boolean).join(" · ")}
-                        onPrompt={(prompt) => void ask(prompt)}
-                      />
+                      <>
+                        <AgentMiniUi
+                          answer={answer}
+                          currentDraftId={draftId}
+                          lang={lang}
+                          busy={busy}
+                          formatDraftMeta={(draft) => [
+                            localizedLookupMetric(draft.creation_data.area, draft.creation_data.area_unit, "AREA", unitCatalog, lang),
+                            localizedLookupMetric(draft.creation_data.price, draft.creation_data.currency, "CURRENCY", unitCatalog, lang),
+                          ].filter(Boolean).join(" · ")}
+                          onPrompt={(prompt) => void ask(prompt)}
+                        />
+                        <AgentTinyUi answer={answer} busy={busy} onPrompt={(prompt) => void ask(prompt)} lang={lang} />
+                      </>
                     )}
                     {answer && !!answer.knowledge_sources?.length && (
                       <div className="mt-3 border-t border-border/30 pt-2">

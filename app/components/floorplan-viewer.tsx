@@ -94,6 +94,10 @@ interface Props {
    * the column is wide. Callers bound it; the SVG letterboxes inside.
    */
   planClassName?: string;
+  /** Ephemeral measuring mode selected by Agent; it never changes the plan. */
+  measurementMode?: "distance" | "area" | null;
+  /** Incremented for a fresh measurement, including repeated same-mode requests. */
+  measurementSession?: number;
 }
 
 const SVG_W = 400;
@@ -229,6 +233,8 @@ export default function FloorplanViewer({
   units,
   targetAreaUnit,
   planClassName,
+  measurementMode,
+  measurementSession,
 }: Props) {
   const [rendering, setRendering] = useState<FloorplanRenderingData | null>(null);
   const [renderingLoading, setRenderingLoading] = useState(Boolean(floorplanId && !publicFloorplan));
@@ -325,7 +331,15 @@ export default function FloorplanViewer({
 
   let plan: React.ReactNode = null;
   if (model.local) {
-    plan = <LocalPlan model={model.local} legendEntries={legendEntries} className={planClassName} />;
+    plan = (
+      <LocalPlan
+        model={model.local}
+        legendEntries={legendEntries}
+        className={planClassName}
+        measurementMode={measurementMode}
+        measurementSession={measurementSession}
+      />
+    );
   } else if (hasMesh) {
     plan = (
       <div className={cn("mx-auto aspect-[4/3] w-full overflow-hidden bg-white", planClassName)}>
@@ -389,6 +403,7 @@ interface LocalModel {
   interior: V2;
   svgH: number;
   proj: (x: number, z: number) => [number, number];
+  unproj: (x: number, y: number) => V2;
   pivot: V2;
   rotW: (p: V2) => V2;
   centresByIndex: Record<number, V2>;
@@ -562,6 +577,10 @@ function buildLocalModel(
     ox + (x - bounds.minX) * s,
     oy + (z - bounds.minZ) * s,
   ];
+  const unproj = (x: number, y: number): V2 => [
+    (x - ox) / s + bounds.minX,
+    (y - oy) / s + bounds.minZ,
+  ];
 
   // Label plumbing (kept unrotated; positions get rotW at render time).
   const markersRaw = parseRoomMarkers(textData);
@@ -604,6 +623,7 @@ function buildLocalModel(
       interior: interiorR,
       svgH,
       proj,
+      unproj,
       pivot,
       rotW,
       centresByIndex,
@@ -623,13 +643,46 @@ function LocalPlan({
   model,
   legendEntries,
   className,
+  measurementMode,
+  measurementSession,
 }: {
   model: LocalModel;
   legendEntries: LegendEntry[];
   className?: string;
+  measurementMode?: "distance" | "area" | null;
+  measurementSession?: number;
 }) {
   const maskId = useId();
   const { proj, svgH } = model;
+  const [measurementPoints, setMeasurementPoints] = useState<V2[]>([]);
+  useEffect(() => setMeasurementPoints([]), [measurementMode, measurementSession]);
+
+  const addMeasurementPoint = (event: React.MouseEvent<SVGSVGElement>) => {
+    if (!measurementMode) return;
+    const matrix = event.currentTarget.getScreenCTM();
+    if (!matrix) return;
+    const svgPoint = new DOMPoint(event.clientX, event.clientY).matrixTransform(matrix.inverse());
+    const worldPoint = model.unproj(svgPoint.x, svgPoint.y);
+    setMeasurementPoints((current) => (
+      measurementMode === "distance"
+        ? (current.length >= 2 ? [worldPoint] : [...current, worldPoint])
+        : [...current.slice(0, 63), worldPoint]
+    ));
+    event.stopPropagation();
+  };
+
+  const measurementScreenPoints = measurementPoints.map(([x, z]) => proj(x, z));
+  const measurementValue = measurementMode === "distance" && measurementPoints.length === 2
+    ? Math.hypot(
+        measurementPoints[1][0] - measurementPoints[0][0],
+        measurementPoints[1][1] - measurementPoints[0][1],
+      )
+    : measurementMode === "area" && measurementPoints.length >= 3
+      ? Math.abs(measurementPoints.reduce((sum, point, index) => {
+          const next = measurementPoints[(index + 1) % measurementPoints.length];
+          return sum + point[0] * next[1] - next[0] * point[1];
+        }, 0)) / 2
+      : null;
   const toPts = (poly: V2[]) => poly.map((p) => proj(p[0], p[1]).join(",")).join(" ");
 
   // Numbered label positions — iOS resolveLabelWorldPositions + rotation.
@@ -766,7 +819,12 @@ function LocalPlan({
         aspectRatio: `${SVG_W} / ${svgH}`,
       }}
     >
-    <svg viewBox={`0 0 ${SVG_W} ${svgH}`} className="block h-full w-full" xmlns="http://www.w3.org/2000/svg">
+    <svg
+      viewBox={`0 0 ${SVG_W} ${svgH}`}
+      className={cn("block h-full w-full", measurementMode && "cursor-crosshair")}
+      xmlns="http://www.w3.org/2000/svg"
+      onClick={addMeasurementPoint}
+    >
       <rect width={SVG_W} height={svgH} fill="white" />
 
       {/* Walls with door/window holes (destination-out via mask) */}
@@ -857,6 +915,34 @@ function LocalPlan({
         );
       })}
 
+      {measurementScreenPoints.length > 0 && (
+        <g aria-label="Floor-plan measurement" pointerEvents="none">
+          {measurementScreenPoints.length > 1 && (
+            <polyline
+              points={measurementScreenPoints.map((point) => point.join(",")).join(" ")}
+              fill={measurementMode === "area" ? "rgba(37,99,235,0.12)" : "none"}
+              stroke="#2563eb"
+              strokeWidth={2}
+              strokeDasharray="5 4"
+              strokeLinejoin="round"
+            />
+          )}
+          {measurementScreenPoints.map((point, index) => (
+            <circle key={`${point.join(":")}:${index}`} cx={point[0]} cy={point[1]} r={4} fill="#2563eb" stroke="white" strokeWidth={1.5} />
+          ))}
+          {measurementValue !== null && (() => {
+            const labelPoint = measurementScreenPoints[Math.floor(measurementScreenPoints.length / 2)];
+            const label = `${measurementValue.toFixed(2)} ${measurementMode === "area" ? "m²" : "m"}`;
+            return (
+              <g transform={`translate(${labelPoint[0]} ${labelPoint[1] - 14})`}>
+                <rect x={-32} y={-11} width={64} height={22} rx={8} fill="#111827" />
+                <text textAnchor="middle" dominantBaseline="central" fill="white" fontSize={11} fontWeight={700}>{label}</text>
+              </g>
+            );
+          })()}
+        </g>
+      )}
+
     </svg>
 
     {/*
@@ -873,6 +959,7 @@ function LocalPlan({
       return (
         <div
           key={`rl${number}`}
+          data-floorplan-room-number={number}
           className="pointer-events-none absolute flex -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-full border border-black/15 bg-white/95 font-semibold tabular-nums text-slate-700"
           style={{
             left: `${(screen[0] / SVG_W) * 100}%`,

@@ -5,9 +5,11 @@ import dynamic from "next/dynamic";
 import { use, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import CameraEditor from "../../../components/camera-editor";
+import { ReaiAgentCard } from "../../../components/reai-agent-card";
 import { useAuth } from "../../../components/hooks/use-auth";
 import {
   ArrowLeftIcon,
+  AgentIcon,
   CameraIcon,
   CheckIcon,
   CloseIcon,
@@ -31,6 +33,7 @@ import { ReaigenLoadingMark } from "../../../components/reaigen-loading-mark";
 import type { SplatViewerHandle } from "../../../components/splat-viewer";
 import {
   ApiError,
+  getReaiAgentConsent,
   getWebTourAssetStatus,
   getWebTourWorkspace,
   saveWebTourThumbnail,
@@ -69,6 +72,10 @@ import { AdjustmentSlider } from "../../../lib/ui/adjustment-slider";
 import { Button } from "../../../lib/ui/button";
 import { Input } from "../../../lib/ui/input";
 import { cn } from "../../../lib/utils";
+import {
+  REAI_VIEWER_ACTION_EVENT,
+  readReaiViewerAction,
+} from "../../../lib/reai-viewer-actions";
 
 function EditorViewportLoading() {
   return (
@@ -293,6 +300,7 @@ export default function WebTourEditorPage({
   const { confirm, dialog: confirmDialog } = useConfirm();
   const router = useRouter();
   const viewerRef = useRef<SplatViewerHandle | null>(null);
+  const selectNodeRef = useRef<(nodeId: string) => void>(() => undefined);
   // Spinoff draws the Gaussians (auto backend: WebGPU, or its WebGL2
   // fallback); Babylon keeps the gizmos, grid and selection. Scenes Spinoff
   // cannot represent (prune masks, compositions, incompatible transforms)
@@ -304,6 +312,9 @@ export default function WebTourEditorPage({
   );
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const [workspace, setWorkspace] = useState<WebTourWorkspace | null>(null);
+  const [agentEnabled, setAgentEnabled] = useState(false);
+  const [agentOpen, setAgentOpen] = useState(false);
+  const agentShotIndexRef = useRef(0);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [tool, setTool] = useState<SpatialTransformTool>("select");
   const [transformSpace, setTransformSpace] = useState<"world" | "local">("world");
@@ -342,6 +353,24 @@ export default function WebTourEditorPage({
     pruned: 0,
     dirty: false,
   });
+
+  useEffect(() => {
+    let active = true;
+    getReaiAgentConsent()
+      .then((consent) => {
+        if (active) setAgentEnabled(consent.consented);
+      })
+      .catch(() => {
+        if (active) setAgentEnabled(false);
+      });
+    return () => { active = false; };
+  }, []);
+
+  const viewerCameraData = useMemo(() => workspace ? ({
+    cameras: workspace.cameras as unknown as SavedCamera[],
+    sceneRevision: workspace.revision,
+    source: "web-tour-workspace",
+  }) : null, [workspace]);
   const [pendingPruneMasks, setPendingPruneMasks] =
     useState<Record<string, SplatPruneMask>>({});
   const [compactLayout, setCompactLayout] = useState(false);
@@ -904,6 +933,61 @@ export default function WebTourEditorPage({
     if (compactLayout) setScenePanelOpen(false);
     setInspectorOpen(true);
   };
+  selectNodeRef.current = selectNode;
+
+  useEffect(() => {
+    const handleViewerAction = (event: Event) => {
+      const action = readReaiViewerAction(event);
+      if (
+        !workspace
+        || action?.surface !== "virtual_tour"
+        || action.resource.draft_id !== workspace.draft_id
+        || action.resource.tour_id !== tourId
+      ) return;
+
+      const cameras = workspace.cameras as unknown as SavedCamera[];
+      if (action.command === "go_to_room" && action.target) {
+        const requested = `${action.target.id} ${action.target.label}`.toLocaleLowerCase();
+        const cameraIndex = cameras.findIndex((camera) => [camera.id, camera.label, camera.name]
+          .filter(Boolean)
+          .some((value) => requested.includes(String(value).toLocaleLowerCase())));
+        if (cameraIndex >= 0) {
+          agentShotIndexRef.current = cameraIndex;
+          viewerRef.current?.goToShot(cameraIndex, true);
+          return;
+        }
+        const node = workspace.nodes.find((candidate) => (
+          String(candidate.id) === String(action.target?.id)
+          || requested.includes(candidate.name.toLocaleLowerCase())
+        ));
+        if (node) {
+          selectNodeRef.current(node.id);
+          window.requestAnimationFrame(() => viewerRef.current?.frameScene(true));
+        }
+        return;
+      }
+      if ((action.command === "next_scene" || action.command === "previous_scene") && cameras.length) {
+        const delta = action.command === "next_scene" ? 1 : -1;
+        const next = (agentShotIndexRef.current + delta + cameras.length) % cameras.length;
+        agentShotIndexRef.current = next;
+        viewerRef.current?.goToShot(next);
+        return;
+      }
+      if ([
+        "turn_left",
+        "turn_right",
+        "look_up",
+        "look_down",
+        "move_forward",
+        "move_backward",
+        "reset_view",
+      ].includes(action.command)) {
+        viewerRef.current?.nudgeView(action.command as Parameters<SplatViewerHandle["nudgeView"]>[0]);
+      }
+    };
+    window.addEventListener(REAI_VIEWER_ACTION_EVENT, handleViewerAction);
+    return () => window.removeEventListener(REAI_VIEWER_ACTION_EVENT, handleViewerAction);
+  }, [tourId, workspace]);
 
   const enqueueWorkspaceSave = useCallback(<T,>(task: () => Promise<T>): Promise<T> => {
     const run = workspaceSaveQueueRef.current.then(task, task);
@@ -1214,6 +1298,8 @@ export default function WebTourEditorPage({
           gaussianRenderer={sparkRenderer ? "spark" : "spinoff"}
           splatUrl={selectedAssetUrl}
           splatId={selected.splat_id}
+          initialCameras={viewerCameraData}
+          preferSavedCameras
           outputsVersion={selected.asset.fingerprint}
           initialPruneMask={selectedPruneMask}
           globalSceneTransform={viewportTransform}
@@ -2269,6 +2355,52 @@ export default function WebTourEditorPage({
             </div>
           </div>
         </div>
+      ) : null}
+
+      {agentEnabled && !agentOpen ? (
+        <button
+          type="button"
+          onClick={() => setAgentOpen(true)}
+          aria-label={t("reai.openAgent", lang)}
+          title={t("reai.openAgent", lang)}
+          className="floating-icon-button absolute right-3 top-14 z-40 bg-card text-foreground shadow-control hover:bg-foreground hover:text-background"
+        >
+          <AgentIcon size={18} />
+        </button>
+      ) : null}
+
+      {agentEnabled && agentOpen ? (
+        <aside
+          aria-label={t("reai.title", lang)}
+          className="absolute inset-x-3 bottom-[calc(1.75rem+env(safe-area-inset-bottom,0px))] top-14 z-40 flex overflow-hidden rounded-2xl border border-border/70 bg-card shadow-elevated sm:inset-x-auto sm:right-3 sm:w-[min(32rem,calc(100vw-1.5rem))]"
+        >
+          <div className="flex min-w-0 flex-1 flex-col">
+            <div className="flex h-11 shrink-0 items-center justify-between border-b border-border/70 px-3">
+              <span className="flex min-w-0 items-center gap-2 text-[13px] font-semibold">
+                <AgentIcon size={16} />
+                <span className="truncate">{t("reai.title", lang)} · {workspace.name}</span>
+              </span>
+              <button
+                type="button"
+                onClick={() => setAgentOpen(false)}
+                aria-label={t("reai.closeAgent", lang)}
+                className="floating-icon-button-sm text-foreground/50 hover:bg-foreground/[0.06] hover:text-foreground"
+              >
+                <CloseIcon size={12} />
+              </button>
+            </div>
+            <div className="min-h-0 flex-1">
+              <ReaiAgentCard
+                draftId={workspace.draft_id}
+                currentTourId={tourId}
+                workspaceContext="virtual_tour"
+                lang={lang}
+                panel
+                compact={compactLayout}
+              />
+            </div>
+          </div>
+        </aside>
       ) : null}
 
       {error && error !== "load" ? (

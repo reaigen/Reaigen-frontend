@@ -6,6 +6,7 @@ import { createPortal } from "react-dom";
 import { t } from "../lib/i18n";
 import type { DraftDataEntry } from "../lib/tour-types";
 import type { UnitLookup } from "../lib/unit-catalog";
+import type { ReaiViewerAction } from "../lib/reai-viewer-actions";
 import FloorplanViewer from "./floorplan-viewer";
 import { CloseIcon } from "./icons";
 
@@ -23,6 +24,7 @@ export function FloorplanLightbox({
   lang,
   units,
   targetAreaUnit,
+  agentAction,
 }: {
   open: boolean;
   onClose: () => void;
@@ -31,6 +33,7 @@ export function FloorplanLightbox({
   lang: string;
   units?: readonly UnitLookup[];
   targetAreaUnit?: number | string | null;
+  agentAction?: ReaiViewerAction | null;
 }) {
   const closeRef = React.useRef<HTMLButtonElement>(null);
   const returnFocusRef = React.useRef<HTMLElement | null>(null);
@@ -47,6 +50,9 @@ export function FloorplanLightbox({
   const [scale, setScale] = React.useState(1);
   const [offset, setOffset] = React.useState({ x: 0, y: 0 });
   const [gesturing, setGesturing] = React.useState(false);
+  const [rotationDeg, setRotationDeg] = React.useState(0);
+  const [measurementMode, setMeasurementMode] = React.useState<"distance" | "area" | null>(null);
+  const [measurementSession, setMeasurementSession] = React.useState(0);
 
   const commit = React.useCallback((nextScale: number, nextOffset: { x: number; y: number }) => {
     scaleRef.current = nextScale;
@@ -150,6 +156,55 @@ export function FloorplanLightbox({
     resetZoom();
   }, [open, resetZoom]);
 
+  React.useEffect(() => {
+    if (!open || agentAction?.surface !== "floorplan") return;
+    const command = agentAction.command;
+    if (command === "fit_floorplan" || command === "show_measurements") {
+      resetZoom();
+      setMeasurementMode(null);
+      return;
+    }
+    if (command === "zoom_in") {
+      applyScale(scaleRef.current * 1.5);
+      return;
+    }
+    if (command === "zoom_out") {
+      applyScale(scaleRef.current / 1.5);
+      return;
+    }
+    if (command === "rotate_view_left" || command === "rotate_view_right") {
+      setRotationDeg((current) => current + (command === "rotate_view_left" ? -90 : 90));
+      return;
+    }
+    if (command === "orient_north" && typeof agentAction.parameters.north_offset_degrees === "number") {
+      setRotationDeg(-agentAction.parameters.north_offset_degrees);
+      return;
+    }
+    if (command === "start_distance_measurement" || command === "start_area_measurement") {
+      setMeasurementMode(command === "start_distance_measurement" ? "distance" : "area");
+      setMeasurementSession((current) => current + 1);
+      resetZoom();
+      return;
+    }
+    if (command !== "focus_room") return;
+    const roomNumber = agentAction.parameters.room_number;
+    if (!Number.isInteger(roomNumber)) return;
+    resetZoom();
+    const frame = window.requestAnimationFrame(() => {
+      const viewport = viewportRef.current;
+      const badge = viewport?.querySelector<HTMLElement>(`[data-floorplan-room-number="${roomNumber}"]`);
+      if (!viewport || !badge) return;
+      const viewportRect = viewport.getBoundingClientRect();
+      const badgeRect = badge.getBoundingClientRect();
+      const desiredScale = 2.5;
+      commit(desiredScale, clampOffset({
+        x: (viewportRect.left + viewportRect.width / 2 - (badgeRect.left + badgeRect.width / 2)) * desiredScale,
+        y: (viewportRect.top + viewportRect.height / 2 - (badgeRect.top + badgeRect.height / 2)) * desiredScale,
+      }, desiredScale));
+    });
+    return () => window.cancelAnimationFrame(frame);
+  }, [agentAction, applyScale, clampOffset, commit, open, resetZoom]);
+
   React.useLayoutEffect(() => {
     if (!open) return;
     returnFocusRef.current = document.activeElement instanceof HTMLElement ? document.activeElement : null;
@@ -229,7 +284,7 @@ export function FloorplanLightbox({
         <div
           className="mx-auto w-full max-w-[min(100%,72rem)] origin-center will-change-transform"
           style={{
-            transform: `translate3d(${offset.x}px, ${offset.y}px, 0) scale(${scale})`,
+            transform: `translate3d(${offset.x}px, ${offset.y}px, 0) rotate(${rotationDeg}deg) scale(${scale})`,
             transition: gesturing ? "none" : "transform 200ms var(--motion-ease-smooth)",
           }}
         >
@@ -240,14 +295,23 @@ export function FloorplanLightbox({
             units={units}
             targetAreaUnit={targetAreaUnit}
             planClassName="max-h-[calc(100dvh-16rem)]"
+            measurementMode={measurementMode}
+            measurementSession={measurementSession}
           />
         </div>
       </div>
 
-      {scale > 1 ? (
+      {measurementMode ? (
+        <div className="floating-capsule pointer-events-none absolute bottom-[max(1.25rem,env(safe-area-inset-bottom))] left-1/2 -translate-x-1/2 px-4 text-[12px] font-semibold text-foreground shadow-control">
+          {t(measurementMode === "distance" ? "floorplan.measureDistanceHint" : "floorplan.measureAreaHint", lang)}
+        </div>
+      ) : scale > 1 || rotationDeg !== 0 ? (
         <button
           type="button"
-          onClick={resetZoom}
+          onClick={() => {
+            resetZoom();
+            setRotationDeg(0);
+          }}
           className="floating-capsule floating-control pointer-events-auto absolute bottom-[max(1.25rem,env(safe-area-inset-bottom))] left-1/2 -translate-x-1/2 px-4 text-[12px] font-semibold text-foreground shadow-control"
         >
           {t("floorplan.resetZoom", lang)}

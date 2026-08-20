@@ -2006,6 +2006,11 @@ export interface ReaiAgentConsent {
     conversation_storage: boolean | string;
     model_hosting: string;
     media_processing: string;
+    viewer_controls?: string;
+    controls?: {
+      agent: string;
+      privacy: string;
+    };
   };
 }
 
@@ -2025,7 +2030,8 @@ export interface ReaiAgentDraftResult {
   };
 }
 
-export type ReaiAgentUiBlock =
+/** Universal, bounded cards rendered for every Agent user. */
+export type ReaiAgentBasicUiBlock =
   | {
       kind: "summary";
       title: string;
@@ -2055,6 +2061,121 @@ export type ReaiAgentUiBlock =
       tone?: "neutral" | "success" | "warning";
     };
 
+/** Backwards-compatible name for the original BasicUI response protocol. */
+export type ReaiAgentUiBlock = ReaiAgentBasicUiBlock;
+
+export type ReaiAgentTinyUiBlock =
+  | ReaiAgentBasicUiBlock
+  | {
+      kind: "chart";
+      chart: "bar";
+      title: string;
+      description?: string;
+      unit?: string;
+      items: Array<{
+        label: string;
+        value: number;
+        display_value?: string;
+        tone?: "neutral" | "success" | "warning";
+      }>;
+    }
+  | {
+      kind: "form";
+      title: string;
+      description?: string;
+      fields: Array<{
+        key: string;
+        label: string;
+        type: "number" | "text" | "select";
+        required?: boolean;
+        unit?: string;
+        placeholder?: string;
+        value?: string | number;
+        min?: number;
+        max?: number;
+        step?: number;
+        options?: Array<{ value: string; label: string }>;
+      }>;
+      submit: { label: string; prompt_template: string };
+    }
+  | {
+      kind: "comparison";
+      title: string;
+      description?: string;
+      columns: string[];
+      rows: Array<{
+        label: string;
+        values: string[];
+        tone?: "neutral" | "success" | "warning";
+      }>;
+    }
+  | {
+      kind: "scorecard";
+      title: string;
+      description?: string;
+      source?: string;
+      metrics: Array<{
+        label: string;
+        value: string;
+        score?: number;
+        hint?: string;
+        tone?: "neutral" | "success" | "warning";
+      }>;
+    }
+  | {
+      kind: "map";
+      title: string;
+      description?: string;
+      origin_label: string;
+      /** GeoJSON coordinate order: [longitude, latitude]. */
+      origin: [number, number];
+      places: Array<{
+        label: string;
+        category: string;
+        coordinate: [number, number];
+        distance_m: number;
+      }>;
+      attribution?: string;
+    }
+  | {
+      kind: "route";
+      title: string;
+      mode: "walk" | "bicycle" | "drive" | "transit";
+      origin_label: string;
+      destination_label: string;
+      distance_m: number;
+      duration_s: number;
+      provider: string;
+      attribution: string;
+      traffic_delay_s?: number;
+      traffic_status?: "none" | "light" | "moderate" | "heavy" | "unknown";
+      warning?: string;
+      /** GeoJSON coordinate order: [longitude, latitude]. */
+      path: Array<[number, number]>;
+    }
+  | {
+      kind: "calculator";
+      calculator: "property_finance";
+      title: string;
+      description?: string;
+      currency: string;
+      values: Partial<{
+        purchase_price: number;
+        area_m2: number;
+        monthly_rent: number;
+        annual_operating_costs: number;
+        down_payment: number;
+        annual_interest_rate: number;
+        term_years: number;
+      }>;
+    };
+
+export interface ReaiAgentTinyUi {
+  schema: "com.reaigen.agent.tinyui";
+  version: 1;
+  blocks: ReaiAgentTinyUiBlock[];
+}
+
 export interface ReaiAgentResponse {
   reply: string;
   execution_mode?: "deterministic" | "fast" | "standard" | "reasoning" | "safe_fallback";
@@ -2072,10 +2193,12 @@ export interface ReaiAgentResponse {
   } | null;
   proposed_changes: Record<string, unknown>;
   suggested_actions: string[];
-  /** Optional bounded generative-UI blocks. Text is rendered as content and actions only re-prompt Agent. */
+  /** Universal BasicUI blocks. */
   ui_blocks?: ReaiAgentUiBlock[];
+  /** Experimental extra-user native mini-apps; never arbitrary HTML or script. */
+  tinyui?: ReaiAgentTinyUi;
   proposal_token: string | null;
-  action_code?: "revoke_all_shares" | "manage_shares" | "share_inventory" | "share_status" | "current_creation_overview" | "settings_navigation" | "settings_update" | "select_share_fields" | "create_draft_share" | "translate_description" | "grade_draft_images" | "retouch_draft_image" | "cleanplate_draft_images" | "generative_hdr_draft_image" | "organize_draft_images" | "generate_draft_video";
+  action_code?: "revoke_all_shares" | "manage_shares" | "share_inventory" | "share_status" | "current_creation_overview" | "settings_navigation" | "settings_update" | "select_share_fields" | "create_draft_share" | "translate_description" | "grade_draft_images" | "retouch_draft_image" | "cleanplate_draft_images" | "generative_hdr_draft_image" | "organize_draft_images" | "generate_draft_video" | "viewer_control";
   action_token?: string | null;
   action_count?: number;
   share_action?: "list" | "pause" | "resume" | "revoke";
@@ -2117,7 +2240,7 @@ export interface ReaiAgentResponse {
     cloud_image_processor: boolean;
     authenticity_boundary?: boolean;
   };
-  operation?: "none" | "list" | "compare" | "bulk_edit";
+  operation?: "none" | "list" | "compare" | "bulk_edit" | "client_action";
   search_query?: string | null;
   matched_creation_count?: number;
   selected_creation_ids?: number[];
@@ -2137,15 +2260,24 @@ export interface ReaiAgentResponse {
     provider_data_collection: string;
     model: string;
     prompt_version: string;
+    context_boundary?: string;
+    raw_geometry_sent_to_model?: boolean;
+    raw_media_sent_to_model?: boolean;
   };
+  client_action?: import("../reai-viewer-actions").ReaiViewerAction | null;
 }
 
 export type ReaiToolCode =
+  | "agent_assist"
   | "creation_search"
   | "creation_compare"
   | "creation_edit"
   | "bulk_edit"
   | "floorplan"
+  | "floorplan_edit"
+  | "floorplan_navigation"
+  | "floorplan_measurement"
+  | "virtual_tour_navigation"
   | "translation"
   | "image"
   | "cleanplate"
@@ -2155,7 +2287,10 @@ export type ReaiToolCode =
   | "video_generation"
   | "sharing"
   | "settings_navigation"
-  | "settings_localization";
+  | "settings_localization"
+  | "location_insights"
+  | "financial_analysis"
+  | "tinyui";
 
 export interface ReaiToolStatus {
   /** True when the active subscription tier includes the tool. */
@@ -2176,6 +2311,20 @@ export interface ReaiToolPermissions {
   entitled_tools: Record<ReaiToolCode, boolean>;
   tool_status: Record<ReaiToolCode, ReaiToolStatus>;
   available_tools: ReaiToolCode[];
+  tool_catalog: Record<ReaiToolCode, {
+    code: ReaiToolCode;
+    group: string;
+    label: string;
+    settings_section: "agent";
+    privacy_section: "privacy";
+    data_boundary: string;
+    persistent_change: boolean;
+    confirmation_required: boolean;
+  }>;
+  settings_surfaces: {
+    agent: { path: string; controls: ReaiToolCode[] };
+    privacy: { path: string; controls: string[] };
+  };
   writable: boolean;
   confirmation_required_for_writes: true;
   updated_at: string;
@@ -2279,10 +2428,11 @@ export async function askReaiWorkspace(
   improvementConversationId: string | null = null,
   shareFieldNames?: string[],
   pendingActionCode?: ReaiAgentResponse["action_code"],
-  workspaceContext?: "creator" | "draft" | "settings",
+  workspaceContext?: "creator" | "draft" | "settings" | "floorplan" | "virtual_tour",
   currentUploadId?: number,
   /** The Agent window's working pool: what the user dragged in. */
   attachedItems?: Array<{ kind: "image"; upload_id: number } | { kind: "field"; path: string }>,
+  currentTourId?: number,
 ): Promise<ReaiAgentResponse> {
   return request("/api/reaigen/reai-agent/workspace/assist/", {
     method: "POST",
@@ -2296,6 +2446,7 @@ export async function askReaiWorkspace(
       workspace_context: workspaceContext,
       current_upload_id: currentUploadId,
       attached_items: attachedItems?.length ? attachedItems : undefined,
+      current_tour_id: currentTourId,
     }),
   });
 }

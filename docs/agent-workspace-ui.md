@@ -85,27 +85,36 @@ left-aligned, normal-weight text with natural wrapping.
 - A deterministic workspace search updates the normal dashboard query and shows grounded creation
   cards; it does not create a second independent result universe.
 
-## Embedded mini UI
+## BasicUI and experimental TinyUI
 
-Agent replies may carry a compact, directly usable UI below the conversational answer. This is a
-bounded response protocol, not a general-purpose HTML surface:
+Agent has two native, declarative response surfaces. Neither is a general-purpose HTML surface.
 
-- `summary` presents at most four labelled facts in a two-column grid;
-- `progress` presents one named operation, its state, and an optional percentage;
-- `actions` presents at most three short follow-up prompts;
-- existing grounded creation results become a compact result browser; and
-- settings navigation becomes one deterministic internal shortcut.
+**BasicUI** is available to every Agent user. It renders bounded `summary`, `progress`, and
+`actions` blocks, grounded creation results, and deterministic Settings navigation. Summary cards
+contain at most four labelled facts and action cards contain at most three follow-up prompts.
 
-The client renders no more than two explicit mini-UI blocks per reply. Result lists and action
-lists are capped at three items so the chat remains the primary surface instead of becoming a
-dashboard inside a drawer. Generic suggested actions are a fallback and are suppressed whenever
-an explicit mini-UI block is present. Long descriptions remain in the answer or review card.
+**TinyUI** is experimental and available only when the backend reports the `tinyui` tool as both
+subscription-entitled and user-enabled. The current entitlement is the `extrauser` feature set.
+TinyUI may render a chart, form, comparison table, scorecard, nearby spatial preview, route
+preview, or fixed property-finance calculator. It is useful when a relationship is easier to
+understand or manipulate than to read: for example, bars appearing in distance order around an
+estate, an estate-to-work route with traffic status, a property comparison, or adjustable yield
+assumptions. Ordinary prose remains ordinary prose.
 
-Mini-UI actions submit a new Agent prompt; they never mutate a creation directly. Existing signed
-proposal and destructive-action confirmation still govern every write. Navigation targets accept
-only application-relative paths, and arbitrary markup, scripts, remote links, and executable
-payloads are never rendered. This lets backend tools return useful, ChatGPT-style micro interfaces
-without widening their authority.
+Both protocols are versioned and server-sanitized. The client renders no more than two explicit UI
+blocks per reply. TinyUI is implemented as reviewed native React components, and each experimental
+block has its own failure boundary so one malformed mini-app cannot remove the conversational
+answer or another block. Route geometry and nearby positions are bounded, session-only previews.
+Provider data must display the attribution and warning returned by Django; a relative SVG spatial
+preview is not represented as a street map or official Walk Score.
+
+UI actions submit a new Agent prompt; they never mutate a creation directly. The local calculator
+uses fixed, visible formulas and user-entered assumptions. Existing signed proposal and
+destructive-action confirmation still govern every write. Navigation accepts only
+application-relative paths, and arbitrary markup, scripts, remote links, executable payloads, and
+model-authored map coordinates are never rendered. The pattern is informed by the older Reailist
+TinyApps R&D, but the production contract is this typed protocol rather than a dependency on the
+prototype.
 
 ## Interaction and status feedback
 
@@ -126,6 +135,12 @@ Settings exposes an **Allow all tools** switch and, when disabled, one switch pe
 tool. Turning off all-tools mode preserves the currently effective choices, so the user can then
 disable individual tools without an accidental lockout. Settings are loaded from and persisted to
 Django; this UI is a control surface, not the authorization boundary.
+
+Floor-plan navigation, floor-plan measurement, virtual-tour navigation, location insights,
+financial scenarios, and experimental TinyUI each have their own Agent switch and Privacy data
+boundary. BasicUI is part of the core response renderer and is not separately switchable. Exact
+coordinates may go only to the currently enabled route/location provider for the requested call;
+viewer movement, measurements, route geometry, and TinyUI calculator state remain session-only.
 
 Destructive actions use a separate review card. Asking Agent to revoke every shared link produces
 a count, an irreversible-action warning, and confirm/dismiss controls. Chat alone changes nothing.

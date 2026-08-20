@@ -68,6 +68,7 @@ import {
 } from "../lib/web-push";
 import { DeviceDesktopIcon, DeviceMobileIcon } from "./icons";
 import { t, getUserLanguage, formatDate as fmtDate } from "../lib/i18n";
+import type { LocaleKey } from "../lib/locales";
 import { cn } from "../lib/utils";
 import { ManagedLegalDocuments } from "./content-documents";
 
@@ -645,6 +646,21 @@ function SellerTab({ user, onSaved, lang }: { user: UserProfile; onSaved: () => 
 
 /* ── Reai Tab ───────────────────────────────────────────────────────── */
 
+const REAI_BOUNDARY_KEYS: Record<string, LocaleKey> = {
+  local_viewer_only: "settings.reai.boundary.local_viewer_only",
+  local_deterministic: "settings.reai.boundary.local_deterministic",
+  redacted_creation_context: "settings.reai.boundary.redacted_creation_context",
+  redacted_creation_catalogue: "settings.reai.boundary.redacted_creation_catalogue",
+  derived_floorplan_facts: "settings.reai.boundary.derived_floorplan_facts",
+  approved_translation_service: "settings.reai.boundary.approved_translation_service",
+  approved_media_processor: "settings.reai.boundary.approved_media_processor",
+  approved_cloud_media_processor: "settings.reai.boundary.approved_cloud_media_processor",
+  derived_media_metadata: "settings.reai.boundary.derived_media_metadata",
+  approved_location_services: "settings.reai.boundary.approved_location_services",
+  redacted_financial_scenario: "settings.reai.boundary.redacted_financial_scenario",
+  local_tinyui_renderer: "settings.reai.boundary.local_tinyui_renderer",
+};
+
 function ReaiTab({ lang }: { lang: string }) {
   const [consent, setConsent] = React.useState<ReaiAgentConsent | null>(null);
   const [toolPermissions, setToolPermissions] = React.useState<ReaiToolPermissions | null>(null);
@@ -852,13 +868,14 @@ function ReaiTab({ lang }: { lang: string }) {
                 />
               </div>
 
-              {!toolPermissions.allow_all_tools && (
-                <div className="divide-y divide-border/60 rounded-lg border border-border/60 px-4">
+              <div className="divide-y divide-border/60 rounded-lg border border-border/60 px-4">
                   {toolPermissions.available_tools.map((code) => {
                     // A tool the plan excludes can never be switched on: the
                     // backend keeps the preference but still reports it off,
                     // so an enabled switch would silently snap back.
                     const entitled = toolPermissions.tool_status?.[code]?.entitled ?? true;
+                    const catalog = toolPermissions.tool_catalog?.[code];
+                    const boundaryKey = catalog ? REAI_BOUNDARY_KEYS[catalog.data_boundary] : undefined;
                     return (
                       <div key={code} className="flex items-center justify-between gap-4 py-3">
                         <div className="min-w-0">
@@ -866,6 +883,12 @@ function ReaiTab({ lang }: { lang: string }) {
                           <p className="mt-0.5 text-[12px] leading-relaxed text-muted-foreground">
                             {t(`settings.reai.tool.${code}.help`, lang)}
                           </p>
+                          {boundaryKey && (
+                            <p className="mt-1 text-[11px] leading-relaxed text-muted-foreground/80">
+                              {t(boundaryKey, lang)}
+                              {catalog.persistent_change ? ` · ${t("settings.reai.persistentChange", lang)}` : ` · ${t("settings.reai.sessionOnly", lang)}`}
+                            </p>
+                          )}
                           {!entitled && (
                             <p className="mt-0.5 text-[12px] leading-relaxed text-muted-foreground/80">
                               {t("settings.reai.toolTierBlocked", lang)}
@@ -874,15 +897,14 @@ function ReaiTab({ lang }: { lang: string }) {
                         </div>
                         <Switch
                           checked={toolPermissions.tools[code]}
-                          disabled={saving || !entitled}
+                          disabled={saving || !entitled || toolPermissions.allow_all_tools}
                           onCheckedChange={(checked) => void setTool(code, checked)}
                           aria-label={t(`settings.reai.tool.${code}`, lang)}
                         />
                       </div>
                     );
                   })}
-                </div>
-              )}
+              </div>
 
               <p className="text-[12px] leading-relaxed text-muted-foreground">{t("settings.reai.toolsConfirmation", lang)}</p>
             </div>
@@ -935,6 +957,13 @@ function PrivacyTab({ user, onSaved, lang }: { user: UserProfile; onSaved: () =>
   const [marketingConsent, setMarketingConsent] = React.useState(user.gdpr?.marketing_consent ?? false);
   const [marketingSaving, setMarketingSaving] = React.useState(false);
   const [marketingError, setMarketingError] = React.useState<string | null>(null);
+  const [agentPrivacy, setAgentPrivacy] = React.useState<{
+    consent: ReaiAgentConsent;
+    tools: ReaiToolPermissions | null;
+    improvement: ReaiImprovementConsent;
+  } | null>(null);
+  const [agentPrivacySaving, setAgentPrivacySaving] = React.useState(false);
+  const [agentPrivacyError, setAgentPrivacyError] = React.useState<string | null>(null);
   useAutoDismiss(success, setSuccess);
 
   React.useEffect(() => {
@@ -950,6 +979,52 @@ function PrivacyTab({ user, onSaved, lang }: { user: UserProfile; onSaved: () =>
     p?.show_phone,
     user.gdpr?.marketing_consent,
   ]);
+
+  React.useEffect(() => {
+    let active = true;
+    Promise.all([getReaiAgentConsent(), getReaiImprovementConsent()])
+      .then(async ([consent, improvement]) => {
+        const tools = consent.consented ? await getReaiToolPermissions() : null;
+        if (active) setAgentPrivacy({ consent, tools, improvement });
+      })
+      .catch(() => {
+        if (active) setAgentPrivacy(null);
+      });
+    return () => { active = false; };
+  }, []);
+
+  async function setPrivacyTools(payload: {
+    allow_all_tools?: boolean;
+    tools?: Partial<Record<ReaiToolCode, boolean>>;
+  }) {
+    if (!agentPrivacy?.tools || agentPrivacySaving) return;
+    setAgentPrivacySaving(true);
+    setAgentPrivacyError(null);
+    try {
+      const tools = await updateReaiToolPermissions(payload);
+      setAgentPrivacy((current) => current ? { ...current, tools } : current);
+    } catch (err) {
+      setAgentPrivacyError(getSafeApiErrorMessage(err, lang));
+    } finally {
+      setAgentPrivacySaving(false);
+    }
+  }
+
+  async function togglePrivacyImprovement() {
+    if (!agentPrivacy || agentPrivacySaving) return;
+    setAgentPrivacySaving(true);
+    setAgentPrivacyError(null);
+    try {
+      const improvement = agentPrivacy.improvement.consented
+        ? await revokeReaiImprovementConsent()
+        : await grantReaiImprovementConsent(agentPrivacy.improvement.policy_version);
+      setAgentPrivacy((current) => current ? { ...current, improvement } : current);
+    } catch (err) {
+      setAgentPrivacyError(getSafeApiErrorMessage(err, lang));
+    } finally {
+      setAgentPrivacySaving(false);
+    }
+  }
 
   async function handleMarketingConsent(nextValue: boolean) {
     const previous = marketingConsent;
@@ -1074,6 +1149,94 @@ function PrivacyTab({ user, onSaved, lang }: { user: UserProfile; onSaved: () =>
               <Button type="submit" size="sm" loading={loading}>{t("settings.privacy.save", lang)}</Button>
             </div>
           </form>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>{t("settings.privacy.agentTitle", lang)}</CardTitle>
+          <CardDescription>{t("settings.privacy.agentSubtitle", lang)}</CardDescription>
+        </CardHeader>
+        <CardContent>
+          <dl className="space-y-3 rounded-lg border border-border/60 px-4 py-3">
+            <DataRow
+              label={t("settings.privacy.agentAccess", lang)}
+              value={agentPrivacy?.consent.consented ? t("common.allowed", lang) : t("common.notAllowed", lang)}
+            />
+            <DataRow
+              label={t("settings.privacy.agentTools", lang)}
+              value={agentPrivacy?.tools
+                ? `${Object.values(agentPrivacy.tools.tools).filter(Boolean).length} / ${agentPrivacy.tools.available_tools.length}`
+                : t("common.notRecorded", lang)}
+            />
+            <DataRow
+              label={t("settings.privacy.agentImprovement", lang)}
+              value={agentPrivacy?.improvement.consented ? t("common.allowed", lang) : t("common.notAllowed", lang)}
+            />
+          </dl>
+          <p className="mt-3 text-[12px] leading-relaxed text-muted-foreground">
+            {t("settings.privacy.agentViewerBoundary", lang)}
+          </p>
+          {agentPrivacy?.tools ? (
+            <div className="mt-4 space-y-3">
+              <div className="flex items-start justify-between gap-4 rounded-lg border border-border/60 px-3 py-2.5">
+                <div>
+                  <p className="text-[12px] font-medium">{t("settings.reai.allTools", lang)}</p>
+                  <p className="mt-0.5 text-[11px] text-muted-foreground">{t("settings.reai.allToolsHelp", lang)}</p>
+                </div>
+                <Switch
+                  checked={agentPrivacy.tools.allow_all_tools}
+                  disabled={agentPrivacySaving}
+                  onCheckedChange={(checked) => void setPrivacyTools({ allow_all_tools: checked })}
+                  aria-label={t("settings.reai.allTools", lang)}
+                />
+              </div>
+              <div className="divide-y divide-border/60 rounded-lg border border-border/60 px-3">
+                  {agentPrivacy.tools.available_tools.map((code) => {
+                    const entitled = agentPrivacy.tools?.tool_status[code]?.entitled ?? false;
+                    const dataBoundary = agentPrivacy.tools?.tool_catalog[code]?.data_boundary;
+                    const boundaryKey = dataBoundary
+                      ? REAI_BOUNDARY_KEYS[dataBoundary]
+                      : undefined;
+                    return (
+                      <div key={code} className="flex items-center justify-between gap-4 py-2.5">
+                        <div className="min-w-0">
+                          <p className="text-[12px] font-medium">{t(`settings.reai.tool.${code}`, lang)}</p>
+                          <p className="mt-0.5 text-[11px] leading-relaxed text-muted-foreground">
+                            {t(boundaryKey ?? "settings.reai.boundary.local_deterministic", lang)}
+                          </p>
+                        </div>
+                        <Switch
+                          checked={agentPrivacy.tools?.tools[code] ?? false}
+                          disabled={agentPrivacySaving || !entitled || agentPrivacy.tools?.allow_all_tools}
+                          onCheckedChange={(checked) => void setPrivacyTools({ tools: { [code]: checked } })}
+                          aria-label={t(`settings.reai.tool.${code}`, lang)}
+                        />
+                      </div>
+                    );
+                  })}
+              </div>
+              <div className="flex items-start justify-between gap-4 rounded-lg border border-border/60 px-3 py-2.5">
+                <div>
+                  <p className="text-[12px] font-medium">{t("settings.reai.improvementPermission", lang)}</p>
+                  <p className="mt-0.5 text-[11px] text-muted-foreground">{t("reai.improvementConsent", lang)}</p>
+                </div>
+                <Switch
+                  checked={agentPrivacy.improvement.consented}
+                  disabled={agentPrivacySaving}
+                  onCheckedChange={() => void togglePrivacyImprovement()}
+                  aria-label={t("settings.reai.improvementPermission", lang)}
+                />
+              </div>
+            </div>
+          ) : null}
+          {agentPrivacyError ? <p className="mt-3 text-[12px] text-destructive" role="alert">{agentPrivacyError}</p> : null}
+          <a
+            href="#reai"
+            className="mt-4 inline-flex min-h-9 items-center rounded-md border border-border bg-background px-3 text-[12px] font-medium text-foreground transition-colors hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+          >
+            {t("settings.privacy.manageAgent", lang)}
+          </a>
         </CardContent>
       </Card>
 

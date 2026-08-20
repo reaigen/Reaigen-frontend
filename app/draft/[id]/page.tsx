@@ -48,6 +48,11 @@ import {
 } from "../../components/icons";
 import { StatusPill } from "../../components/status-pill";
 import { selectShareableTour } from "../../lib/tour-sharing";
+import {
+  REAI_VIEWER_ACTION_EVENT,
+  readReaiViewerAction,
+  type ReaiViewerAction,
+} from "../../lib/reai-viewer-actions";
 
 // ── Formatting ────────────────────────────────────────────────────────────
 
@@ -513,6 +518,7 @@ export default function DraftPreviewPage({
   const [editorOpen, setEditorOpen] = useState(false);
   const [floorplanEditorOpen, setFloorplanEditorOpen] = useState(false);
   const [floorplanFullscreen, setFloorplanFullscreen] = useState(false);
+  const [floorplanAgentAction, setFloorplanAgentAction] = useState<ReaiViewerAction | null>(null);
   // Drawing walls, placing doors and dragging vertices needs a pointer and a
   // canvas with room beside its inspector panels; on a phone the plan is pushed
   // off-screen by its own chrome. Viewing the floorplan stays available
@@ -530,6 +536,21 @@ export default function DraftPreviewPage({
   const [retryAttempt, setRetryAttempt] = useState(0);
   const [reloadNonce, setReloadNonce] = useState(0);
   const [manualRefreshPending, setManualRefreshPending] = useState(false);
+
+  useEffect(() => {
+    const handleViewerAction = (event: Event) => {
+      const action = readReaiViewerAction(event);
+      if (
+        action?.surface !== "floorplan"
+        || action.resource.draft_id !== draftId
+        || (draft?.floorplan_id && action.resource.floorplan_id !== draft.floorplan_id)
+      ) return;
+      setFloorplanAgentAction({ ...action });
+      setFloorplanFullscreen(true);
+    };
+    window.addEventListener(REAI_VIEWER_ACTION_EVENT, handleViewerAction);
+    return () => window.removeEventListener(REAI_VIEWER_ACTION_EVENT, handleViewerAction);
+  }, [draft?.floorplan_id, draftId]);
 
   const refreshListing = () => {
     setManualRefreshPending(true);
@@ -772,6 +793,7 @@ export default function DraftPreviewPage({
       reaiDraftId={draftId}
       reaiDraftTitle={draft?.title}
       reaiUploadId={activeImageId ?? undefined}
+      reaiWorkspaceContext={floorplanFullscreen || floorplanEditorOpen ? "floorplan" : "draft"}
       onReaiDraftUpdated={(updatedDraft) => {
         setDraft(updatedDraft);
         writeDraftDetailCache(user.id, draftId, updatedDraft);
@@ -1191,6 +1213,7 @@ export default function DraftPreviewPage({
         lang={lang}
         units={unitCatalog}
         targetAreaUnit={draft.area_preferred_unit ?? draft.area_unit}
+        agentAction={floorplanAgentAction}
       />
 
       {/* Structural gate, so the editor cannot mount on a phone regardless of state. */}

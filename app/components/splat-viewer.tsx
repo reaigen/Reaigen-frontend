@@ -1616,6 +1616,8 @@ export interface SplatViewerHandle {
   stopCameraNavigation: () => void;
   enableFreeCamera: () => void;
   frameScene: (instant?: boolean) => void;
+  /** Apply one bounded, ephemeral Agent step in the existing camera basis. */
+  nudgeView: (command: "turn_left" | "turn_right" | "look_up" | "look_down" | "move_forward" | "move_backward" | "reset_view") => void;
   /** Set camera FOV in degrees (applies immediately to the live BabylonJS camera). */
   setFov: (degrees: number) => void;
   clearSplatSelection: () => void;
@@ -2991,6 +2993,97 @@ const SplatViewer = forwardRef<SplatViewerHandle, Props>(function SplatViewer(
     }
   }, [transformSpatialDirection, transformSpatialPoint]);
 
+  const nudgeView = useCallback((command: "turn_left" | "turn_right" | "look_up" | "look_down" | "move_forward" | "move_backward" | "reset_view") => {
+    if (command === "reset_view") {
+      frameScene(true);
+      return;
+    }
+    const camera = cameraRef.current;
+    const B = babylonRef.current;
+    if (!camera || !B) return;
+
+    const immersive = immersivePoseRef.current;
+    if (immersive.enabled) {
+      if (command === "turn_left" || command === "turn_right") {
+        immersive.yawOffset += command === "turn_left" ? -Math.PI / 12 : Math.PI / 12;
+      } else if (command === "look_up" || command === "look_down") {
+        immersive.pitchOffset = Math.max(
+          -Math.PI * 0.47,
+          Math.min(Math.PI * 0.47, immersive.pitchOffset + (command === "look_up" ? -Math.PI / 18 : Math.PI / 18)),
+        );
+      } else {
+        const step = Math.max(0.2, (fallbackSceneRef.current?.radius ?? 2) * 0.08);
+        immersive.dolly = Math.max(
+          -immersive.maxDolly,
+          Math.min(immersive.maxDolly, immersive.dolly + (command === "move_forward" ? step : -step)),
+        );
+      }
+      immersiveRenderBurstUntilRef.current = performance.now() + 450;
+      applyImmersivePose();
+      return;
+    }
+
+    const target = camera.getTarget();
+    const position: Vec3 = [camera.position.x, camera.position.y, camera.position.z];
+    const normalize = (value: Vec3, fallback: Vec3): Vec3 => {
+      const length = Math.hypot(...value);
+      return length > 1e-6
+        ? [value[0] / length, value[1] / length, value[2] / length]
+        : fallback;
+    };
+    const cross = (a: Vec3, b: Vec3): Vec3 => [
+      a[1] * b[2] - a[2] * b[1],
+      a[2] * b[0] - a[0] * b[2],
+      a[0] * b[1] - a[1] * b[0],
+    ];
+    const rotate = (value: Vec3, axisValue: Vec3, angle: number): Vec3 => {
+      const axis = normalize(axisValue, [0, 1, 0]);
+      const cosine = Math.cos(angle);
+      const sine = Math.sin(angle);
+      const dot = value[0] * axis[0] + value[1] * axis[1] + value[2] * axis[2];
+      const perpendicular = cross(axis, value);
+      return normalize([
+        value[0] * cosine + perpendicular[0] * sine + axis[0] * dot * (1 - cosine),
+        value[1] * cosine + perpendicular[1] * sine + axis[1] * dot * (1 - cosine),
+        value[2] * cosine + perpendicular[2] * sine + axis[2] * dot * (1 - cosine),
+      ], value);
+    };
+    let forward = normalize([
+      target.x - camera.position.x,
+      target.y - camera.position.y,
+      target.z - camera.position.z,
+    ], [0, 0, 1]);
+    const up = normalize([camera.upVector.x, camera.upVector.y, camera.upVector.z], [0, 1, 0]);
+
+    if (command === "move_forward" || command === "move_backward") {
+      const step = Math.max(0.2, (fallbackSceneRef.current?.radius ?? 2) * 0.08)
+        * (command === "move_forward" ? 1 : -1);
+      const next: Vec3 = [
+        position[0] + forward[0] * step,
+        position[1] + forward[1] * step,
+        position[2] + forward[2] * step,
+      ];
+      camera.position.set(...next);
+      camera.setTarget(new B.Vector3(next[0] + forward[0], next[1] + forward[1], next[2] + forward[2]));
+    } else {
+      const right = normalize(cross(up, forward), [1, 0, 0]);
+      const axis = command === "turn_left" || command === "turn_right" ? up : right;
+      const angle = command === "turn_left"
+        ? -Math.PI / 12
+        : command === "turn_right"
+          ? Math.PI / 12
+          : command === "look_up"
+            ? -Math.PI / 18
+            : Math.PI / 18;
+      forward = rotate(forward, axis, angle);
+      camera.setTarget(new B.Vector3(position[0] + forward[0], position[1] + forward[1], position[2] + forward[2]));
+    }
+    camera.upVector.set(...up);
+    cameraUpRef.current = up;
+    syncSpatialOrbitToCamera();
+    immersiveRenderBurstUntilRef.current = performance.now() + 450;
+  }, [applyImmersivePose, frameScene, syncSpatialOrbitToCamera]);
+
   useImperativeHandle(ref, () => ({
     goToShot,
     goToPrev,
@@ -3002,6 +3095,7 @@ const SplatViewer = forwardRef<SplatViewerHandle, Props>(function SplatViewer(
     stopCameraNavigation,
     enableFreeCamera,
     frameScene,
+    nudgeView,
     setFov,
     clearSplatSelection,
     invertSplatSelection,
@@ -3024,6 +3118,7 @@ const SplatViewer = forwardRef<SplatViewerHandle, Props>(function SplatViewer(
     stopCameraNavigation,
     enableFreeCamera,
     frameScene,
+    nudgeView,
     setFov,
     clearSplatSelection,
     invertSplatSelection,
