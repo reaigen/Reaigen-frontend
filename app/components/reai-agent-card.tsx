@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 
 import {
@@ -45,6 +46,7 @@ import {
   readAgentTranscript,
   writeAgentTranscript,
 } from "../lib/agent-session";
+import { getSafeApiErrorMessage } from "../lib/api/error-message";
 import { formatDate, t } from "../lib/i18n";
 import type { LocaleKey } from "../lib/locales";
 import { PROPERTY_FIELD_SECTIONS, subtypeOptions, type PropertyFieldDefinition, type PropertyType } from "../lib/property-field-registry";
@@ -348,11 +350,18 @@ function historyValue(
   return String(value);
 }
 
-function errorText(_error: unknown, lang: string): string {
-  // Backend `detail` strings are raw English internals (e.g. "The Agent tool
-  // 'settings_navigation' is disabled in user settings") — never surface them
-  // in a localized creator workspace. Always show a clean localized message.
-  return t("reai.error", lang);
+function errorText(error: unknown, lang: string): string {
+  // Safe 4xx details explain an actionable permission/context problem. Server
+  // failures and technical internals remain behind the localized fallback.
+  return getSafeApiErrorMessage(error, lang, "reai.error");
+}
+
+function safeAgentNavigationPath(answer: ReaiAgentResponse): string | null {
+  const path = answer.navigation_path;
+  if (!path || !path.startsWith("/") || path.startsWith("//")) return null;
+  if (answer.action_code === "open_creation" && /^\/draft\/[1-9]\d*\/?$/.test(path)) return path;
+  if (answer.action_code === "settings_navigation" && /^\/settings(?:#[a-z_-]+)?$/.test(path)) return path;
+  return null;
 }
 
 function isExplicitProposalConfirmation(value: string): boolean {
@@ -390,6 +399,7 @@ export function ReaiAgentCard({
   panel?: boolean;
   compact?: boolean;
 }) {
+  const router = useRouter();
   const { user } = useAuth();
   const dateFormat = user?.localization?.date_format;
   const [consent, setConsent] = useState<ReaiAgentConsent | null>(null);
@@ -429,7 +439,7 @@ export function ReaiAgentCard({
   const [uploading, setUploading] = useState(false);
   const dragDepthRef = useRef(0);
   const compactPanel = panel && compact;
-  const transcriptKey = agentTranscriptKey(workspaceContext, draftId);
+  const transcriptKey = agentTranscriptKey();
   const poolKey = agentPoolKey(workspaceContext, draftId);
   const quickActions = workspaceContext === "settings"
     ? (["reai.quickSettingsAgent", "reai.quickSettingsLanguage", "reai.quickSettingsSecurity"] as const)
@@ -555,9 +565,19 @@ export function ReaiAgentCard({
     setError(null);
   }, []);
 
+  // Resource-specific drawers must not leak across pages, while the site-wide
+  // conversation itself deliberately follows the creator into the next page.
   useEffect(() => {
-    resetConversation();
-  }, [draftId, workspaceContext, resetConversation]);
+    setShowHistory(false);
+    setShowMediaHistory(false);
+    setHistory([]);
+    setMediaGroups([]);
+    setSelectedMediaVersionIds({});
+    setMediaCandidate(null);
+    setRestoreCandidateId(null);
+    setHistoryNotice(null);
+    setError(null);
+  }, [draftId, workspaceContext]);
 
   /*
    * "New conversation" from the panel header. The transcript is client-side
@@ -641,10 +661,24 @@ export function ReaiAgentCard({
         dispatchReaiViewerAction(response.client_action, { draftId, tourId: currentTourId });
       }
       if (response.improvement_conversation_id) setImprovementConversationId(response.improvement_conversation_id);
+      const assistantTurn: ChatTurn = {
+        id: Date.now() + 1,
+        role: "assistant",
+        content: response.reply,
+        response,
+      };
       setTurns((current) => [
         ...current,
-        { id: Date.now() + 1, role: "assistant", content: response.reply, response },
+        assistantTurn,
       ]);
+      const navigationPath = safeAgentNavigationPath(response);
+      if (navigationPath) {
+        // Navigation can unmount this page before the persistence effect runs.
+        // Park the complete turn pair synchronously so the destination page
+        // always rehydrates the same conversation.
+        writeAgentTranscript(transcriptKey, [...turns, userTurn, assistantTurn]);
+        router.push(navigationPath);
+      }
     } catch (err) {
       setError(errorText(err, lang));
       setTurns((current) => current.filter((turn) => turn.id !== userTurn.id));

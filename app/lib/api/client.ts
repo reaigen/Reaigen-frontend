@@ -2144,7 +2144,9 @@ export type ReaiAgentTinyUiBlock =
       origin_label: string;
       destination_label: string;
       distance_m: number;
-      duration_s: number;
+      /** Omitted only for an explicitly labelled straight-line preview. */
+      duration_s?: number;
+      preview_kind?: "road_route" | "straight_line";
       provider: string;
       attribution: string;
       traffic_delay_s?: number;
@@ -2198,7 +2200,7 @@ export interface ReaiAgentResponse {
   /** Experimental extra-user native mini-apps; never arbitrary HTML or script. */
   tinyui?: ReaiAgentTinyUi;
   proposal_token: string | null;
-  action_code?: "revoke_all_shares" | "manage_shares" | "share_inventory" | "share_status" | "current_creation_overview" | "settings_navigation" | "settings_update" | "select_share_fields" | "create_draft_share" | "translate_description" | "grade_draft_images" | "retouch_draft_image" | "cleanplate_draft_images" | "generative_hdr_draft_image" | "organize_draft_images" | "generate_draft_video" | "viewer_control";
+  action_code?: "revoke_all_shares" | "manage_shares" | "share_inventory" | "share_status" | "current_creation_overview" | "open_creation" | "settings_navigation" | "settings_update" | "select_share_fields" | "create_draft_share" | "translate_description" | "grade_draft_images" | "retouch_draft_image" | "cleanplate_draft_images" | "generative_hdr_draft_image" | "organize_draft_images" | "generate_draft_video" | "viewer_control";
   action_token?: string | null;
   action_count?: number;
   share_action?: "list" | "pause" | "resume" | "revoke";

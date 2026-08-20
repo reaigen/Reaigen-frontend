@@ -16,7 +16,7 @@ const TONE_BAR: Record<"neutral" | "success" | "warning", string> = {
 
 const TINY_COPY = {
   en: {
-    fact: "Fact", source: "Source", trafficDelay: "traffic delay", routePreview: "Route geometry preview",
+    fact: "Fact", source: "Source", trafficDelay: "traffic delay", routePreview: "Route geometry preview", geographicPreview: "Straight-line geographic preview",
     estate: "Estate", relativeMap: "Relative spatial preview without a street basemap",
     interactiveActions: "Interactive actions", inProgress: "In progress", outOf100: "out of 100",
     price: "Purchase price", area: "Area", rent: "Monthly rent", costs: "Annual operating costs",
@@ -27,7 +27,7 @@ const TINY_COPY = {
     discuss: "Discuss this scenario with Agent",
   },
   sk: {
-    fact: "Fakt", source: "Zdroj", trafficDelay: "zdržanie v premávke", routePreview: "Náhľad geometrie trasy",
+    fact: "Fakt", source: "Zdroj", trafficDelay: "zdržanie v premávke", routePreview: "Náhľad geometrie trasy", geographicPreview: "Geografický náhľad vzdušnou čiarou",
     estate: "Nehnuteľnosť", relativeMap: "Relatívny priestorový náhľad bez uličnej podkladovej mapy",
     interactiveActions: "Interaktívne akcie", inProgress: "Prebieha", outOf100: "zo 100",
     price: "Kúpna cena", area: "Plocha", rent: "Mesačné nájomné", costs: "Ročné prevádzkové náklady",
@@ -38,7 +38,7 @@ const TINY_COPY = {
     discuss: "Prediskutovať scenár s Agentom",
   },
   cs: {
-    fact: "Fakt", source: "Zdroj", trafficDelay: "zdržení v provozu", routePreview: "Náhled geometrie trasy",
+    fact: "Fakt", source: "Zdroj", trafficDelay: "zdržení v provozu", routePreview: "Náhled geometrie trasy", geographicPreview: "Geografický náhled vzdušnou čarou",
     estate: "Nemovitost", relativeMap: "Relativní prostorový náhled bez uliční podkladové mapy",
     interactiveActions: "Interaktivní akce", inProgress: "Probíhá", outOf100: "ze 100",
     price: "Kupní cena", area: "Plocha", rent: "Měsíční nájem", costs: "Roční provozní náklady",
@@ -49,7 +49,7 @@ const TINY_COPY = {
     discuss: "Probrat scénář s Agentem",
   },
   de: {
-    fact: "Fakt", source: "Quelle", trafficDelay: "Verkehrsverzögerung", routePreview: "Vorschau der Routengeometrie",
+    fact: "Fakt", source: "Quelle", trafficDelay: "Verkehrsverzögerung", routePreview: "Vorschau der Routengeometrie", geographicPreview: "Geografische Luftlinienvorschau",
     estate: "Immobilie", relativeMap: "Relative räumliche Vorschau ohne Straßenbasiskarte",
     interactiveActions: "Interaktive Aktionen", inProgress: "Läuft", outOf100: "von 100",
     price: "Kaufpreis", area: "Fläche", rent: "Monatsmiete", costs: "Jährliche Betriebskosten",
@@ -205,13 +205,14 @@ function TinyRoute({ block, lang }: { block: Extract<ReaiAgentTinyUiBlock, { kin
   const first = pointList[0]?.split(",").map(Number);
   const last = pointList.at(-1)?.split(",").map(Number);
   const distance = block.distance_m >= 1000 ? `${(block.distance_m / 1000).toFixed(1)} km` : `${Math.round(block.distance_m)} m`;
-  const minutes = Math.max(1, Math.round(block.duration_s / 60));
-  const duration = minutes >= 60 ? `${Math.floor(minutes / 60)} h ${minutes % 60} min` : `${minutes} min`;
+  const minutes = block.duration_s == null ? null : Math.max(1, Math.round(block.duration_s / 60));
+  const duration = minutes == null ? null : (minutes >= 60 ? `${Math.floor(minutes / 60)} h ${minutes % 60} min` : `${minutes} min`);
+  const previewLabel = block.preview_kind === "straight_line" ? copy.geographicPreview : copy.routePreview;
   return (
     <section aria-label={block.title} className="floating-panel-shape overflow-hidden border border-violet-500/25 bg-card shadow-control">
       <TinyHeader
         title={block.title}
-        description={`${block.mode} · ${distance} · ${duration}${block.traffic_delay_s ? ` · ${Math.max(1, Math.round(block.traffic_delay_s / 60))} min ${copy.trafficDelay}` : ""}`}
+        description={`${block.mode} · ${distance}${duration ? ` · ${duration}` : ` · ${copy.geographicPreview}`}${block.traffic_delay_s ? ` · ${Math.max(1, Math.round(block.traffic_delay_s / 60))} min ${copy.trafficDelay}` : ""}`}
         icon={<MapPinIcon size={14} />}
       />
       <div className="p-3">
@@ -235,7 +236,7 @@ function TinyRoute({ block, lang }: { block: Extract<ReaiAgentTinyUiBlock, { kin
           <ArrowRightIcon size={11} className="text-muted-foreground" />
           <span className="truncate text-right font-medium">{block.destination_label}</span>
         </div>
-        <p className="mt-2 text-[9px] leading-4 text-muted-foreground">{copy.routePreview} · {block.attribution}</p>
+        <p className="mt-2 text-[9px] leading-4 text-muted-foreground">{previewLabel} · {block.attribution}</p>
         {block.warning ? <p className="mt-1.5 rounded-lg bg-amber-500/10 px-2 py-1.5 text-[9px] leading-4 text-amber-800 dark:text-amber-200">{block.warning}</p> : null}
       </div>
     </section>

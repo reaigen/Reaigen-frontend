@@ -23,15 +23,13 @@ const PANEL_OPEN_KEY = "reaigen:agent:panel-open";
 const MAX_STORED_TURNS = 30;
 
 /**
- * Transcripts are bucketed by what the agent is scoped to. A draft
- * conversation should come back when you return to that draft, not follow you
- * onto an unrelated page where its proposals no longer mean anything.
+ * Reai is one site-wide assistant, so its conversation follows navigation.
+ * Resource context is still supplied afresh with every request and proposals
+ * remain server-bound to their signed draft IDs. Only the visible transcript
+ * is global; the drag/drop working pool remains scoped to the current surface.
  */
-export function agentTranscriptKey(
-  workspaceContext: string,
-  draftId?: number | string | null,
-): string {
-  return `${TRANSCRIPT_PREFIX}${workspaceContext}:${draftId ?? "none"}`;
+export function agentTranscriptKey(): string {
+  return `${TRANSCRIPT_PREFIX}global`;
 }
 
 export function readAgentTranscript<T>(key: string): T[] | null {
