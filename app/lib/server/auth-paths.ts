@@ -26,6 +26,9 @@ const CREDENTIAL_FREE_AUTH_PATHS = new Set([
   "password-reset/confirm",
   "password-reset/sms/request",
   "password-reset/sms/confirm",
+  // Step-up completion happens exactly when the caller has no working
+  // session yet; a stale bearer here would 401 the very flow that fixes it.
+  "step-up/verify",
 ]);
 
 /** True when the proxy should attach the caller's access token to `joined`. */

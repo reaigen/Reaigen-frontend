@@ -33,7 +33,8 @@ export function HomeAuthScreen() {
         open
         onClose={() => {}}
         onLogin={async (email, password) => {
-          await login(email, password);
+          const challenge = await login(email, password);
+          if (challenge) return challenge;
           setNavigating(true);
         }}
         onRegister={async (data) => {

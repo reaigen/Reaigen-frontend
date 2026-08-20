@@ -102,7 +102,8 @@ const PROFILE_REQUEST_TIMEOUT_MS = 8_000;
 const GET_RETRY_DELAYS_MS = [350, 900] as const;
 
 function isTransientGetError(error: unknown): boolean {
-  if (error instanceof ApiError) return [408, 425, 429, 502, 503, 504].includes(error.status);
+  // 52x are Cloudflare edge failures — as transient as a 502/504.
+  if (error instanceof ApiError) return [408, 425, 429, 502, 503, 504, 520, 521, 522, 523, 524].includes(error.status);
   return error instanceof TypeError;
 }
 
@@ -285,6 +286,21 @@ export function getDeviceFingerprint(): string {
   }
 }
 
+export interface StepUpChallenge {
+  step_up_required: true;
+  step_up_token: string;
+  step_up_methods: Array<"otp" | "totp">;
+}
+
+export function isStepUpChallenge(value: unknown): value is StepUpChallenge {
+  return (
+    !!value &&
+    typeof value === "object" &&
+    (value as { step_up_required?: unknown }).step_up_required === true &&
+    typeof (value as { step_up_token?: unknown }).step_up_token === "string"
+  );
+}
+
 export async function login(email: string, password: string) {
   resetPrivateApiState();
   return request("/api/auth/login/", {
@@ -292,6 +308,22 @@ export async function login(email: string, password: string) {
     body: JSON.stringify({
       email,
       password,
+      device_fingerprint: getDeviceFingerprint(),
+    }),
+  });
+}
+
+export async function verifyStepUp(
+  stepUpToken: string,
+  method: "otp" | "totp",
+  code: string,
+) {
+  return request("/api/auth/step-up/verify/", {
+    method: "POST",
+    body: JSON.stringify({
+      step_up_token: stepUpToken,
+      method,
+      code,
       device_fingerprint: getDeviceFingerprint(),
     }),
   });

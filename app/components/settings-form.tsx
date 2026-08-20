@@ -2106,8 +2106,20 @@ function DevicesSection({ lang }: { lang: string }) {
       </CardHeader>
       <CardContent className="space-y-3">
         {error && (
-          <p className="text-[13px] text-destructive" role="alert">{error}</p>
+          <div className="space-y-2">
+            <p className="text-[13px] text-destructive" role="alert">{error}</p>
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              disabled={loading}
+              onClick={load}
+            >
+              {loading ? t("common.loading", lang) : t("common.retry", lang)}
+            </Button>
+          </div>
         )}
+        {!error && (
         <ul className="divide-y divide-border/60 rounded-lg border border-border/60">
           {rows.map((session) => (
             <li key={session.id} className="flex items-center justify-between gap-4 px-4 py-3">
@@ -2147,6 +2159,8 @@ function DevicesSection({ lang }: { lang: string }) {
             </li>
           )}
         </ul>
+        )}
+        {!error && (
         <div className="flex flex-wrap gap-2">
           {others.length > 0 && (
             <Button
@@ -2174,6 +2188,7 @@ function DevicesSection({ lang }: { lang: string }) {
               : t("settings.security.devicesRevokeAll", lang)}
           </Button>
         </div>
+        )}
       </CardContent>
     </Card>
   );

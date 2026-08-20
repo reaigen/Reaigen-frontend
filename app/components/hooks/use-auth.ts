@@ -8,7 +8,10 @@ import {
   register as apiRegister,
   logout as apiLogout,
   getProfile,
+  isStepUpChallenge,
   resetPrivateApiState,
+  verifyStepUp,
+  type StepUpChallenge,
   type UserProfile,
 } from "../../lib/api/client";
 import {
@@ -27,7 +30,12 @@ export type AuthState = {
   isAuthenticated: boolean;
   user: UserProfile | null;
   isLoading: boolean;
-  login: (email: string, password: string) => Promise<void>;
+  login: (email: string, password: string) => Promise<StepUpChallenge | void>;
+  completeStepUp: (
+    stepUpToken: string,
+    method: "otp" | "totp",
+    code: string,
+  ) => Promise<void>;
   register: (data: {
     email: string;
     username: string;
@@ -142,13 +150,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     return () => document.removeEventListener("visibilitychange", handleVisibility);
   }, [user, refreshProfile]);
 
-  const login = React.useCallback(async (email: string, password: string) => {
-    resetPrivateApiState();
-    const result = await apiLogin(email, password);
+  const adoptAuthenticatedResult = React.useCallback(async (result: unknown) => {
     // Invalidate anything that finished while the identity was changing.
     resetPrivateApiState();
-    if (result?.user) {
-      setUser(result.user as UserProfile);
+    const withUser = result as { user?: UserProfile } | null;
+    if (withUser?.user) {
+      setUser(withUser.user);
       broadcastAuthBoundary("login");
       refreshProfile().catch(() => {});
       return;
@@ -170,6 +177,26 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       : lastErr instanceof Error ? lastErr.message : "unknown";
     throw new Error(`Session failed: ${detail}`);
   }, [refreshProfile]);
+
+  const login = React.useCallback(async (email: string, password: string) => {
+    resetPrivateApiState();
+    const result = await apiLogin(email, password);
+    // High-risk sign-ins answer with a verification challenge instead of
+    // tokens; hand it to the form so the user can enter the code.
+    if (isStepUpChallenge(result)) {
+      return result;
+    }
+    await adoptAuthenticatedResult(result);
+  }, [adoptAuthenticatedResult]);
+
+  const completeStepUp = React.useCallback(
+    async (stepUpToken: string, method: "otp" | "totp", code: string) => {
+      resetPrivateApiState();
+      const result = await verifyStepUp(stepUpToken, method, code);
+      await adoptAuthenticatedResult(result);
+    },
+    [adoptAuthenticatedResult],
+  );
 
   const register = React.useCallback(
     async (data: {
@@ -222,10 +249,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     user,
     isLoading,
     login,
+    completeStepUp,
     register,
     logout,
     refreshProfile,
-  }), [user, isLoading, login, register, logout, refreshProfile]);
+  }), [user, isLoading, login, completeStepUp, register, logout, refreshProfile]);
 
   return React.createElement(AuthContext.Provider, { value }, children);
 }

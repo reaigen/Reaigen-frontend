@@ -5,10 +5,11 @@ import { Button } from "../lib/ui/button";
 import { Checkbox } from "../lib/ui/checkbox";
 import { Input } from "../lib/ui/input";
 import { Label } from "../lib/ui/label";
-import { requestPasswordReset } from "../lib/api/client";
+import { requestPasswordReset, type StepUpChallenge } from "../lib/api/client";
 import { getSafeApiErrorMessage } from "../lib/api/error-message";
 import { getBrowserLanguage, t } from "../lib/i18n";
 import { RegistrationLegalText } from "./content-documents";
+import { useAuth } from "./hooks/use-auth";
 
 type RegisterData = {
   email: string;
@@ -26,7 +27,7 @@ type RegisterData = {
 type AuthGateProps = {
   open: boolean;
   onClose: () => void;
-  onLogin: (email: string, password: string) => Promise<void>;
+  onLogin: (email: string, password: string) => Promise<void | StepUpChallenge>;
   onRegister: (data: RegisterData) => Promise<void>;
 };
 
@@ -101,9 +102,10 @@ function LoginCard({
   onSwitchToRegister,
 }: {
   lang: string;
-  onSubmit: (email: string, password: string) => Promise<void>;
+  onSubmit: (email: string, password: string) => Promise<void | StepUpChallenge>;
   onSwitchToRegister: () => void;
 }) {
+  const { completeStepUp } = useAuth();
   const [email, setEmail] = React.useState("");
   const [password, setPassword] = React.useState("");
   const [showPassword, setShowPassword] = React.useState(false);
@@ -111,6 +113,8 @@ function LoginCard({
   const [error, setError] = React.useState<string | null>(null);
   const [resetSent, setResetSent] = React.useState(false);
   const [resetLoading, setResetLoading] = React.useState(false);
+  const [stepUp, setStepUp] = React.useState<StepUpChallenge | null>(null);
+  const [stepUpCode, setStepUpCode] = React.useState("");
   const emailIsValid = /\S+@\S+\.\S+/.test(email.trim());
   const canSubmit = emailIsValid && password.length > 0;
 
@@ -120,12 +124,81 @@ function LoginCard({
     if (!canSubmit) return;
     try {
       setLoading(true);
-      await onSubmit(email.trim(), password);
+      const result = await onSubmit(email.trim(), password);
+      if (result && result.step_up_required) {
+        setStepUp(result);
+        setStepUpCode("");
+      }
     } catch (err) {
       setError(getSafeApiErrorMessage(err, lang));
     } finally {
       setLoading(false);
     }
+  }
+
+  async function handleStepUpSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    if (!stepUp || stepUpCode.trim().length < 6) return;
+    setError(null);
+    try {
+      setLoading(true);
+      const method = stepUp.step_up_methods.includes("otp") ? "otp" : "totp";
+      await completeStepUp(stepUp.step_up_token, method, stepUpCode.trim());
+    } catch (err) {
+      setError(getSafeApiErrorMessage(err, lang));
+      setLoading(false);
+    }
+  }
+
+  if (stepUp) {
+    const usesSms = stepUp.step_up_methods.includes("otp");
+    return (
+      <form className="space-y-5" onSubmit={handleStepUpSubmit} noValidate>
+        <div className="space-y-1.5">
+          <p className="text-[15px] font-semibold text-foreground">
+            {t("auth.stepUp.title", lang)}
+          </p>
+          <p className="text-[13px] text-muted-foreground">
+            {usesSms ? t("auth.stepUp.hintOtp", lang) : t("auth.stepUp.hintTotp", lang)}
+          </p>
+        </div>
+        <div className="space-y-1.5">
+          <Label htmlFor="step-up-code" className="text-[13px] font-medium text-foreground">
+            {t("auth.stepUp.codeLabel", lang)}
+          </Label>
+          <Input
+            id="step-up-code"
+            inputMode="numeric"
+            autoComplete="one-time-code"
+            placeholder={t("auth.stepUp.codePlaceholder", lang)}
+            value={stepUpCode}
+            onChange={(e) => { setStepUpCode(e.target.value.replace(/\D/g, "").slice(0, 8)); if (error) setError(null); }}
+            className={INPUT_CLASS}
+            autoFocus
+          />
+        </div>
+        {error && (
+          <p role="alert" className="rounded-xl border border-destructive/20 bg-destructive/[0.045] px-4 py-3 text-[12px] font-medium leading-relaxed text-destructive">
+            {error}
+          </p>
+        )}
+        <Button
+          type="submit"
+          className="h-[3.25rem] w-full rounded-full text-[14px] font-semibold shadow-none"
+          loading={loading}
+          disabled={stepUpCode.trim().length < 6 || loading}
+        >
+          {t("auth.stepUp.submit", lang)}
+        </Button>
+        <button
+          type="button"
+          onClick={() => { setStepUp(null); setStepUpCode(""); setError(null); }}
+          className="h-11 w-full rounded-full text-[13px] font-medium text-foreground/55 transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+        >
+          {t("auth.stepUp.back", lang)}
+        </button>
+      </form>
+    );
   }
 
   return (
