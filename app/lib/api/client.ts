@@ -919,20 +919,37 @@ export async function getDeviceSessions(): Promise<{ sessions: DeviceSession[] }
   return request("/api/auth/sessions/");
 }
 
+/** The generic mutation invalidation derives a per-id prefix
+ * (`/api/auth/sessions/<id>/`) that never matches the cached list key, so a
+ * revoked device would keep showing for up to the cache TTL. Drop the list
+ * cache explicitly after every revoke. */
+function invalidateDeviceSessionsCache() {
+  for (const key of cache.keys()) {
+    if (key.startsWith("/api/auth/sessions/")) cache.delete(key);
+  }
+}
+
 export async function revokeDeviceSession(
   sessionId: string,
 ): Promise<{ revoked: boolean; was_current: boolean }> {
-  return request(`/api/auth/sessions/${encodeURIComponent(sessionId)}/revoke/`, {
-    method: "POST",
-  });
+  const result = await request(
+    `/api/auth/sessions/${encodeURIComponent(sessionId)}/revoke/`,
+    { method: "POST" },
+  );
+  invalidateDeviceSessionsCache();
+  return result;
 }
 
 export async function revokeOtherDeviceSessions(): Promise<{ revoked: number }> {
-  return request("/api/auth/sessions/revoke-others/", { method: "POST" });
+  const result = await request("/api/auth/sessions/revoke-others/", { method: "POST" });
+  invalidateDeviceSessionsCache();
+  return result;
 }
 
 export async function revokeAllDeviceSessions(): Promise<{ revoked: number }> {
-  return request("/api/auth/sessions/revoke-all/", { method: "POST" });
+  const result = await request("/api/auth/sessions/revoke-all/", { method: "POST" });
+  invalidateDeviceSessionsCache();
+  return result;
 }
 
 // ─── Email Verification ──────────────────────────────────────────────────
