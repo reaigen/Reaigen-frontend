@@ -899,6 +899,10 @@ export async function revokeOtherDeviceSessions(): Promise<{ revoked: number }> 
   return request("/api/auth/sessions/revoke-others/", { method: "POST" });
 }
 
+export async function revokeAllDeviceSessions(): Promise<{ revoked: number }> {
+  return request("/api/auth/sessions/revoke-all/", { method: "POST" });
+}
+
 // ─── Email Verification ──────────────────────────────────────────────────
 
 export async function resendVerification(email: string) {

@@ -667,6 +667,7 @@ const en = {
   "settings.security.devicesSignOut":    "Sign out",
   "settings.security.devicesRevoke":     "Sign out device",
   "settings.security.devicesRevokeOthers": "Sign out all other devices",
+  "settings.security.devicesRevokeAll": "Sign out all devices",
   "settings.security.devicesEmpty":      "No managed sessions yet. Devices appear here after their next sign-in.",
   "settings.security.linkedTitle":       "Linked Accounts",
   "settings.security.linkedSubtitle":    "Social accounts connected to your profile.",

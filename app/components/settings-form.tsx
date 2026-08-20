@@ -52,6 +52,7 @@ import {
   getDeviceSessions,
   revokeDeviceSession,
   revokeOtherDeviceSessions,
+  revokeAllDeviceSessions,
   logout as apiLogout,
   type ReaiAgentConsent,
   type ReaiToolCode,
@@ -2058,6 +2059,22 @@ function DevicesSection({ lang }: { lang: string }) {
     }
   }
 
+  async function handleRevokeAll() {
+    setError(null);
+    try {
+      setBusyId("all");
+      await revokeAllDeviceSessions();
+    } catch (err) {
+      setError(getSafeApiErrorMessage(err, lang));
+      setBusyId(null);
+      return;
+    }
+    // Everything is revoked server-side, this session included — clear
+    // local cookies and leave.
+    try { await apiLogout(); } catch { /* tokens already dead */ }
+    window.location.assign("/");
+  }
+
   if (loading && sessions === null) {
     return (
       <Card aria-busy="true">
@@ -2130,19 +2147,33 @@ function DevicesSection({ lang }: { lang: string }) {
             </li>
           )}
         </ul>
-        {others.length > 0 && (
+        <div className="flex flex-wrap gap-2">
+          {others.length > 0 && (
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              disabled={busyId !== null}
+              onClick={handleRevokeOthers}
+            >
+              {busyId === "others"
+                ? t("common.loading", lang)
+                : t("settings.security.devicesRevokeOthers", lang)}
+            </Button>
+          )}
           <Button
             type="button"
             variant="outline"
             size="sm"
+            className="text-destructive hover:text-destructive"
             disabled={busyId !== null}
-            onClick={handleRevokeOthers}
+            onClick={handleRevokeAll}
           >
-            {busyId === "others"
+            {busyId === "all"
               ? t("common.loading", lang)
-              : t("settings.security.devicesRevokeOthers", lang)}
+              : t("settings.security.devicesRevokeAll", lang)}
           </Button>
-        )}
+        </div>
       </CardContent>
     </Card>
   );

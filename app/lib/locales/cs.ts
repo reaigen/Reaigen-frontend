@@ -654,6 +654,7 @@ const cs: LocaleStrings = {
   "settings.security.devicesSignOut":    "Odhlásit se",
   "settings.security.devicesRevoke":     "Odhlásit zařízení",
   "settings.security.devicesRevokeOthers": "Odhlásit všechna ostatní zařízení",
+  "settings.security.devicesRevokeAll": "Odhlásit všechna zařízení",
   "settings.security.devicesEmpty":      "Zatím žádné spravované relace. Zařízení se zde objeví po dalším přihlášení.",
   "settings.security.linkedTitle":       "Propojené účty",
   "settings.security.linkedSubtitle":    "Sociální účty propojené s vaším profilem.",

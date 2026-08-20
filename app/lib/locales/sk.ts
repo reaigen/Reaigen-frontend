@@ -654,6 +654,7 @@ const sk: LocaleStrings = {
   "settings.security.devicesSignOut":    "Odhlásiť sa",
   "settings.security.devicesRevoke":     "Odhlásiť zariadenie",
   "settings.security.devicesRevokeOthers": "Odhlásiť všetky ostatné zariadenia",
+  "settings.security.devicesRevokeAll": "Odhlásiť všetky zariadenia",
   "settings.security.devicesEmpty":      "Zatiaľ žiadne spravované relácie. Zariadenia sa tu objavia po ďalšom prihlásení.",
   "settings.security.linkedTitle":       "Prepojené účty",
   "settings.security.linkedSubtitle":    "Sociálne účty prepojené s vaším profilom.",

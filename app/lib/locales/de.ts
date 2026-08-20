@@ -654,6 +654,7 @@ const de: LocaleStrings = {
   "settings.security.devicesSignOut":    "Abmelden",
   "settings.security.devicesRevoke":     "Gerät abmelden",
   "settings.security.devicesRevokeOthers": "Alle anderen Geräte abmelden",
+  "settings.security.devicesRevokeAll": "Alle Geräte abmelden",
   "settings.security.devicesEmpty":      "Noch keine verwalteten Sitzungen. Geräte erscheinen hier nach der nächsten Anmeldung.",
   "settings.security.linkedTitle":       "Verknüpfte Konten",
   "settings.security.linkedSubtitle":    "Mit Ihrem Profil verbundene soziale Konten.",
