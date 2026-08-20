@@ -48,6 +48,11 @@ import {
   type TotpStatus,
   type TotpSetupResponse,
   type LinkedAccountsResponse,
+  type DeviceSession,
+  getDeviceSessions,
+  revokeDeviceSession,
+  revokeOtherDeviceSessions,
+  logout as apiLogout,
   type ReaiAgentConsent,
   type ReaiToolCode,
   type ReaiToolPermissions,
@@ -1911,6 +1916,7 @@ function SecurityTab({ user, onSaved, lang }: { user: UserProfile; onSaved: () =
     <div className="space-y-6">
       <PasswordSection hasExistingPassword={user.has_password} lang={lang} />
       <TwoFactorSection lang={lang} />
+      <DevicesSection lang={lang} />
       <LinkedAccountsSection lang={lang} />
       <PhoneSection user={user} onSaved={onSaved} lang={lang} />
     </div>
@@ -1996,6 +2002,147 @@ function PasswordSection({ hasExistingPassword, lang }: { hasExistingPassword: b
             </Button>
           </div>
         </form>
+      </CardContent>
+    </Card>
+  );
+}
+
+function DevicesSection({ lang }: { lang: string }) {
+  const [sessions, setSessions] = React.useState<DeviceSession[] | null>(null);
+  const [loading, setLoading] = React.useState(true);
+  const [busyId, setBusyId] = React.useState<string | null>(null);
+  const [error, setError] = React.useState<string | null>(null);
+
+  const load = React.useCallback(() => {
+    setLoading(true);
+    getDeviceSessions()
+      .then((data) => {
+        setSessions(data.sessions);
+        setError(null);
+      })
+      .catch((err) => setError(getSafeApiErrorMessage(err, lang)))
+      .finally(() => setLoading(false));
+  }, [lang]);
+
+  React.useEffect(() => { load(); }, [load]);
+
+  async function handleRevoke(session: DeviceSession) {
+    setError(null);
+    try {
+      setBusyId(session.id);
+      const result = await revokeDeviceSession(session.id);
+      if (result.was_current) {
+        // We just signed ourselves out — clear local state and leave.
+        try { await apiLogout(); } catch { /* cookies already dead */ }
+        window.location.assign("/");
+        return;
+      }
+      load();
+    } catch (err) {
+      setError(getSafeApiErrorMessage(err, lang));
+    } finally {
+      setBusyId(null);
+    }
+  }
+
+  async function handleRevokeOthers() {
+    setError(null);
+    try {
+      setBusyId("others");
+      await revokeOtherDeviceSessions();
+      load();
+    } catch (err) {
+      setError(getSafeApiErrorMessage(err, lang));
+    } finally {
+      setBusyId(null);
+    }
+  }
+
+  if (loading && sessions === null) {
+    return (
+      <Card aria-busy="true">
+        <CardHeader>
+          <CardTitle>{t("settings.security.devicesTitle", lang)}</CardTitle>
+          <CardDescription>{t("settings.security.devicesSubtitle", lang)}</CardDescription>
+        </CardHeader>
+        <CardContent>
+          <div className="flex min-h-11 items-center justify-between gap-4" aria-hidden="true">
+            <div className="space-y-2">
+              <div className="h-3 w-32 animate-pulse rounded-full bg-muted/70 motion-reduce:animate-none" />
+              <div className="h-3 w-44 animate-pulse rounded-full bg-muted/45 motion-reduce:animate-none" />
+            </div>
+            <div className="h-9 w-24 animate-pulse rounded-full bg-muted/55 motion-reduce:animate-none" />
+          </div>
+        </CardContent>
+      </Card>
+    );
+  }
+
+  const rows = sessions ?? [];
+  const others = rows.filter((row) => !row.current);
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle>{t("settings.security.devicesTitle", lang)}</CardTitle>
+        <CardDescription>{t("settings.security.devicesSubtitle", lang)}</CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-3">
+        {error && (
+          <p className="text-[13px] text-destructive" role="alert">{error}</p>
+        )}
+        <ul className="divide-y divide-border/60 rounded-lg border border-border/60">
+          {rows.map((session) => (
+            <li key={session.id} className="flex items-center justify-between gap-4 px-4 py-3">
+              <div className="min-w-0">
+                <p className="flex items-center gap-2 text-[13px] font-medium">
+                  <span className="truncate">{session.device_label}</span>
+                  {session.current && (
+                    <span className="rounded-full bg-success/10 px-2 py-0.5 text-[11px] font-semibold text-emerald-800">
+                      {t("settings.security.devicesThisDevice", lang)}
+                    </span>
+                  )}
+                </p>
+                <p className="truncate text-[12px] text-muted-foreground">
+                  {session.ip_address ? `${session.ip_address} · ` : ""}
+                  {t("settings.security.devicesLastActive", lang)}{" "}
+                  {formatAccountDate(session.last_seen_at, lang)}
+                </p>
+              </div>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                disabled={busyId !== null}
+                onClick={() => handleRevoke(session)}
+              >
+                {busyId === session.id
+                  ? t("common.loading", lang)
+                  : session.current
+                    ? t("settings.security.devicesSignOut", lang)
+                    : t("settings.security.devicesRevoke", lang)}
+              </Button>
+            </li>
+          ))}
+          {rows.length === 0 && (
+            <li className="px-4 py-3 text-[13px] text-muted-foreground">
+              {t("settings.security.devicesEmpty", lang)}
+            </li>
+          )}
+        </ul>
+        {others.length > 0 && (
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            disabled={busyId !== null}
+            onClick={handleRevokeOthers}
+          >
+            {busyId === "others"
+              ? t("common.loading", lang)
+              : t("settings.security.devicesRevokeOthers", lang)}
+          </Button>
+        )}
       </CardContent>
     </Card>
   );

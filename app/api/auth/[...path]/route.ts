@@ -63,6 +63,36 @@ async function proxy(
   const joined = path.join("/");
 
   if (joined === "logout") {
+    // Tell Django first so the refresh token is blacklisted and the device
+    // session is marked signed out — otherwise the token stays live for up
+    // to 90 days and the device lingers in the Settings device list. The
+    // local cookies are cleared regardless of the backend's answer: signing
+    // out must never be blocked by a network fault.
+    const accessToken = req.cookies.get(ACCESS_COOKIE_NAME)?.value ?? null;
+    const refreshToken = req.cookies.get(REFRESH_COOKIE_NAME)?.value ?? null;
+    if (accessToken || refreshToken) {
+      const headers: Record<string, string> = {
+        "Content-Type": "application/json",
+      };
+      if (accessToken) headers["Authorization"] = `Bearer ${accessToken}`;
+      for (const baseUrl of backendCandidates()) {
+        try {
+          await fetchBackend(
+            `${baseUrl}/api/v1/core/auth/logout/`,
+            {
+              method: "POST",
+              headers,
+              body: JSON.stringify(refreshToken ? { refresh: refreshToken } : {}),
+              cache: "no-store",
+            },
+            3_000,
+          );
+          break;
+        } catch {
+          // Try the next backend candidate; never block the local sign-out.
+        }
+      }
+    }
     const response = NextResponse.json(
       { ok: true },
       { status: 200, headers: noStoreHeaders("application/json") },

@@ -267,11 +267,33 @@ async function freshRequest(path: string) {
 
 // ─── Auth ─────────────────────────────────────────────────────────────────
 
+const DEVICE_FINGERPRINT_KEY = "reaigen_device_fingerprint";
+
+/** Stable per-browser id so this installation shows up as one device in the
+ * Settings device list across logins. Cosmetic only — never used for auth. */
+export function getDeviceFingerprint(): string {
+  if (typeof window === "undefined") return "";
+  try {
+    let fingerprint = window.localStorage.getItem(DEVICE_FINGERPRINT_KEY);
+    if (!fingerprint) {
+      fingerprint = crypto.randomUUID();
+      window.localStorage.setItem(DEVICE_FINGERPRINT_KEY, fingerprint);
+    }
+    return fingerprint;
+  } catch {
+    return "";
+  }
+}
+
 export async function login(email: string, password: string) {
   resetPrivateApiState();
   return request("/api/auth/login/", {
     method: "POST",
-    body: JSON.stringify({ email, password }),
+    body: JSON.stringify({
+      email,
+      password,
+      device_fingerprint: getDeviceFingerprint(),
+    }),
   });
 }
 
@@ -849,6 +871,32 @@ export async function unlinkSocialAccount(provider: string) {
   return request(`/api/auth/unlink/social/${encodeURIComponent(provider)}/`, {
     method: "DELETE",
   });
+}
+
+export interface DeviceSession {
+  id: string;
+  device_label: string;
+  platform: "web" | "ios" | "unknown";
+  ip_address: string | null;
+  created_at: string;
+  last_seen_at: string;
+  current: boolean;
+}
+
+export async function getDeviceSessions(): Promise<{ sessions: DeviceSession[] }> {
+  return request("/api/auth/sessions/");
+}
+
+export async function revokeDeviceSession(
+  sessionId: string,
+): Promise<{ revoked: boolean; was_current: boolean }> {
+  return request(`/api/auth/sessions/${encodeURIComponent(sessionId)}/revoke/`, {
+    method: "POST",
+  });
+}
+
+export async function revokeOtherDeviceSessions(): Promise<{ revoked: number }> {
+  return request("/api/auth/sessions/revoke-others/", { method: "POST" });
 }
 
 // ─── Email Verification ──────────────────────────────────────────────────
