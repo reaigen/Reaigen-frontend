@@ -77,7 +77,9 @@ function GalleryLightbox({
   const pendingPhotoIndexRef = React.useRef(startIndex);
   const [index, setIndex] = React.useState(startIndex);
   const count = images.length;
-  const overviewAvailable = count >= 5;
+  // Any multi-photo set earns the collage overview; only a lone photo has
+  // nothing to lay out. (The desktop hero mosaic keeps its own 5-tile gate.)
+  const overviewAvailable = count >= 2;
   const [viewMode, setViewMode] = React.useState<"photo" | "overview">(
     startInOverview && overviewAvailable ? "overview" : "photo",
   );
@@ -372,7 +374,22 @@ export function DraftImageGallery({ images, alt, fallbackUrl, lang = "en", onAct
   const [lightboxIndex, setLightboxIndex] = React.useState<number | null>(null);
   const [lightboxStartsInOverview, setLightboxStartsInOverview] = React.useState(false);
   const count = displayImages.length;
-  const mosaicAvailable = count >= 5;
+  /*
+   * Any multi-photo listing gets the desktop mosaic — a lone big-screen
+   * carousel for three photos read as the phone layout stretched wide. Each
+   * count gets a grid it can fill completely, so there are never empty cells:
+   * 2 → halves, 3 → lead + two stacked, 4 → quad, 5+ → lead + four.
+   */
+  const mosaicAvailable = count >= 2;
+  const mosaicCount = count >= 5 ? 5 : Math.min(count, 4);
+  const mosaicGrid = count >= 5
+    ? "grid-cols-4 grid-rows-2"
+    : count === 4
+      ? "grid-cols-2 grid-rows-2"
+      : count === 3
+        ? "grid-cols-3 grid-rows-2"
+        : "grid-cols-2 grid-rows-1";
+  const mosaicLeadTile = count >= 5 || count === 3 ? "col-span-2 row-span-2" : "";
 
   React.useEffect(() => {
     if (activeIndex < count) return;
@@ -515,15 +532,15 @@ export function DraftImageGallery({ images, alt, fallbackUrl, lang = "en", onAct
         </div>
 
         {mosaicAvailable ? (
-          <div className="hidden h-full w-full grid-cols-4 grid-rows-2 gap-1 lg:grid">
-            {displayImages.slice(0, 5).map((image, imageIndex) => (
+          <div className={cn("hidden h-full w-full gap-1 lg:grid", mosaicGrid)}>
+            {displayImages.slice(0, mosaicCount).map((image, imageIndex) => (
               <button
                 type="button"
                 key={`${image.id ?? image.url}-mosaic-${imageIndex}`}
                 onClick={() => openLightbox(imageIndex)}
                 className={cn(
                   "group/tile relative overflow-hidden bg-surface-subtle text-left outline-none focus-visible:z-10 focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring",
-                  imageIndex === 0 ? "col-span-2 row-span-2" : "col-span-1 row-span-1",
+                  imageIndex === 0 && mosaicLeadTile,
                 )}
                 aria-label={`${t("draft.gallery.photoView", lang)}: ${counterLabel(imageIndex, count, lang)}`}
               >
