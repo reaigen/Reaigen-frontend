@@ -49,9 +49,10 @@ const FLOOR_LABEL_KEYS: Record<LiveSplatSession["floor_status"],
   rejected: "liveScan.floor.rejected",
 };
 
-const SplatViewer = dynamic(() => import("../../../components/splat-viewer"), {
-  ssr: false,
-});
+const ScanningPointCloudViewer = dynamic(
+  () => import("../../../components/scanning-point-cloud-viewer"),
+  { ssr: false },
+);
 
 async function frameDigest(blob: Blob): Promise<string> {
   const digest = await crypto.subtle.digest("SHA-256", await blob.arrayBuffer());
@@ -355,20 +356,11 @@ export default function LiveScanWorkspacePage() {
                   {t("liveScan.contractTest", lang)}
                 </p>
               ) : null}
-              {session.runtime.profile === "preview" ? (
-                <p role="status" className="absolute left-4 right-4 top-4 z-30 rounded-xl border border-sky-300/25 bg-sky-950/85 px-3 py-2 text-xs leading-relaxed text-sky-100 shadow-lg backdrop-blur">
-                  {t("liveScan.previewMode", lang)}
-                </p>
-              ) : null}
               {preview ? (
-                <SplatViewer
-                  key={`${preview.trust}-${preview.epoch}`}
-                  splatUrl={preview.splat_url}
-                  readOnly
-                  performanceProfile="balanced"
-                  showSpatialGrid={preview.show_floor_grid}
-                  gaussianRenderer="spark"
-                  lang={lang}
+                <ScanningPointCloudViewer
+                  pointCloudUrl={preview.splat_url}
+                  gaugeRevision={preview.gauge_revision}
+                  showFloorGrid={preview.show_floor_grid}
                   className="h-full w-full"
                 />
               ) : null}
@@ -396,7 +388,12 @@ export default function LiveScanWorkspacePage() {
               ) : null}
               {preview ? (
                 <span className="absolute left-4 bottom-4 z-20 rounded-full bg-black/60 px-3 py-1.5 text-[11px] font-semibold text-white backdrop-blur">
-                  {preview.trust === "qualified" ? t("liveScan.previewQualified", lang) : t("liveScan.previewProvisional", lang)} · {t("liveScan.epoch", lang)} {preview.epoch}
+                  {t(
+                    preview.refined
+                      ? "liveScan.pointCloudRefined"
+                      : "liveScan.pointCloudForming",
+                    lang,
+                  )} · {preview.point_count.toLocaleString()} {t("liveScan.points", lang)} · {t("liveScan.epoch", lang)} {preview.epoch}
                 </span>
               ) : null}
             </section>
@@ -412,8 +409,23 @@ export default function LiveScanWorkspacePage() {
                   </dl>
                 </div>
                 <div className="rounded-2xl border border-dashed border-border bg-background/35 p-5 text-center">
-                  <p className="text-sm font-semibold">{t("liveScan.previewWaiting", lang)}</p>
-                  <p className="mt-1.5 text-[12px] leading-relaxed text-muted-foreground">{t("liveScan.previewHint", lang)}</p>
+                  <p className="text-sm font-semibold">
+                    {t(
+                      session.status === "refining"
+                        ? "liveScan.pointCloudRefining"
+                        : preview
+                          ? preview.refined
+                            ? "liveScan.pointCloudRefined"
+                            : "liveScan.pointCloudForming"
+                          : "liveScan.previewWaiting",
+                      lang,
+                    )}
+                  </p>
+                  <p className="mt-1.5 text-[12px] leading-relaxed text-muted-foreground">
+                    {preview
+                      ? `${preview.point_count.toLocaleString()} ${t("liveScan.points", lang)} · ${preview.camera_count.toLocaleString()} ${t("liveScan.cameras", lang)}`
+                      : t("liveScan.previewHint", lang)}
+                  </p>
                 </div>
                 {session.runtime.active && !terminal ? (
                   <Button

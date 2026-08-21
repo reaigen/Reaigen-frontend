@@ -87,7 +87,7 @@ export default function LiveScanStartPage() {
           quality,
           floor_preview: floorPreview,
           dragon_refinement: dragonRefinement,
-          output_format: "sog",
+          output_format: "ply",
         },
       });
       router.push(`/create/live-scan/${session.id}`);
