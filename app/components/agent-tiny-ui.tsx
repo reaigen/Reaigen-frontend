@@ -17,7 +17,7 @@ const TONE_BAR: Record<"neutral" | "success" | "warning", string> = {
 const TINY_COPY = {
   en: {
     fact: "Fact", source: "Source", trafficDelay: "traffic delay", routePreview: "Route geometry preview", geographicPreview: "Straight-line geographic preview",
-    estate: "Estate", relativeMap: "OpenStreetMap view of verified positions",
+    estate: "Estate", relativeMap: "OpenStreetMap view of verified positions", approximateMap: "Approximate area view · not an exact property pin",
     interactiveActions: "Interactive actions", inProgress: "In progress", outOf100: "out of 100",
     price: "Purchase price", area: "Area", rent: "Monthly rent", costs: "Annual operating costs",
     down: "Down payment", interest: "Annual interest rate", term: "Loan term (years)",
@@ -28,7 +28,7 @@ const TINY_COPY = {
   },
   sk: {
     fact: "Fakt", source: "Zdroj", trafficDelay: "zdržanie v premávke", routePreview: "Náhľad geometrie trasy", geographicPreview: "Geografický náhľad vzdušnou čiarou",
-    estate: "Nehnuteľnosť", relativeMap: "OpenStreetMap náhľad overených polôh",
+    estate: "Nehnuteľnosť", relativeMap: "OpenStreetMap náhľad overených polôh", approximateMap: "Približný náhľad oblasti · nejde o presný bod nehnuteľnosti",
     interactiveActions: "Interaktívne akcie", inProgress: "Prebieha", outOf100: "zo 100",
     price: "Kúpna cena", area: "Plocha", rent: "Mesačné nájomné", costs: "Ročné prevádzkové náklady",
     down: "Vlastné zdroje", interest: "Ročná úroková sadzba", term: "Splatnosť úveru (roky)",
@@ -39,7 +39,7 @@ const TINY_COPY = {
   },
   cs: {
     fact: "Fakt", source: "Zdroj", trafficDelay: "zdržení v provozu", routePreview: "Náhled geometrie trasy", geographicPreview: "Geografický náhled vzdušnou čarou",
-    estate: "Nemovitost", relativeMap: "OpenStreetMap náhled ověřených poloh",
+    estate: "Nemovitost", relativeMap: "OpenStreetMap náhled ověřených poloh", approximateMap: "Přibližný náhled oblasti · nejde o přesný bod nemovitosti",
     interactiveActions: "Interaktivní akce", inProgress: "Probíhá", outOf100: "ze 100",
     price: "Kupní cena", area: "Plocha", rent: "Měsíční nájem", costs: "Roční provozní náklady",
     down: "Vlastní zdroje", interest: "Roční úroková sazba", term: "Splatnost úvěru (roky)",
@@ -50,7 +50,7 @@ const TINY_COPY = {
   },
   de: {
     fact: "Fakt", source: "Quelle", trafficDelay: "Verkehrsverzögerung", routePreview: "Vorschau der Routengeometrie", geographicPreview: "Geografische Luftlinienvorschau",
-    estate: "Immobilie", relativeMap: "OpenStreetMap-Ansicht der verifizierten Positionen",
+    estate: "Immobilie", relativeMap: "OpenStreetMap-Ansicht der verifizierten Positionen", approximateMap: "Ungefähre Gebietsansicht · kein genauer Immobilienpunkt",
     interactiveActions: "Interaktive Aktionen", inProgress: "Läuft", outOf100: "von 100",
     price: "Kaufpreis", area: "Fläche", rent: "Monatsmiete", costs: "Jährliche Betriebskosten",
     down: "Eigenkapital", interest: "Jährlicher Zinssatz", term: "Kreditlaufzeit (Jahre)",
@@ -207,7 +207,7 @@ function osmTileUrl(zoom: number, x: number, y: number) {
     .replace("{y}", String(y));
 }
 
-function buildMiniMapLayout(rawCoordinates: MiniMapCoordinate[]) {
+function buildMiniMapLayout(rawCoordinates: MiniMapCoordinate[], maximumZoom = 16) {
   const coordinates = rawCoordinates.filter(([longitude, latitude]) => (
     Number.isFinite(longitude)
     && Number.isFinite(latitude)
@@ -219,7 +219,7 @@ function buildMiniMapLayout(rawCoordinates: MiniMapCoordinate[]) {
   if (!coordinates.length) return null;
 
   let zoom = 1;
-  for (let candidate = 16; candidate >= 1; candidate -= 1) {
+  for (let candidate = maximumZoom; candidate >= 1; candidate -= 1) {
     const world = coordinates.map((coordinate) => worldCoordinate(coordinate, candidate));
     const xValues = world.map(({ x }) => x);
     const yValues = world.map(({ y }) => y);
@@ -269,21 +269,24 @@ function OsmMiniMap({
   coordinates,
   path,
   straightLine = false,
+  maximumZoom = 16,
   markers,
   ariaLabel,
 }: {
   coordinates: MiniMapCoordinate[];
   path?: MiniMapCoordinate[];
   straightLine?: boolean;
+  maximumZoom?: number;
   markers: Array<{
     coordinate: MiniMapCoordinate;
     kind: "origin" | "destination" | "place";
     label?: string;
     index?: number;
+    approximate?: boolean;
   }>;
   ariaLabel: string;
 }) {
-  const layout = useMemo(() => buildMiniMapLayout(coordinates), [coordinates]);
+  const layout = useMemo(() => buildMiniMapLayout(coordinates, maximumZoom), [coordinates, maximumZoom]);
   const projectedPath = layout && path
     ? path.map((coordinate) => layout.project(coordinate)).map(({ x, y }) => `${x.toFixed(2)},${y.toFixed(2)}`).join(" ")
     : "";
@@ -338,7 +341,14 @@ function OsmMiniMap({
         {layout ? markers.map((marker, markerIndex) => {
           const point = layout.project(marker.coordinate);
           if (marker.kind === "origin") {
-            return <circle key={`origin-${markerIndex}`} cx={point.x} cy={point.y} r="6" className="fill-foreground stroke-card" strokeWidth="3" />;
+            return marker.approximate ? (
+              <g key={`origin-${markerIndex}`}>
+                <circle cx={point.x} cy={point.y} r="18" fill="none" strokeWidth="2" strokeDasharray="4 3" className="stroke-violet-600/70" />
+                <circle cx={point.x} cy={point.y} r="5" className="fill-violet-700 stroke-card" strokeWidth="3" />
+              </g>
+            ) : (
+              <circle key={`origin-${markerIndex}`} cx={point.x} cy={point.y} r="6" className="fill-foreground stroke-card" strokeWidth="3" />
+            );
           }
           if (marker.kind === "destination") {
             return <circle key={`destination-${markerIndex}`} cx={point.x} cy={point.y} r="7" className="fill-violet-600 stroke-card" strokeWidth="3" />;
@@ -431,6 +441,7 @@ function TinyNearbyMap({
   lang: string;
 }) {
   const copy = tinyCopy(lang);
+  const approximate = block.precision === "approximate_area";
   const mapCoordinates = useMemo(
     () => [block.origin, ...block.places.slice(0, 20).map((place) => place.coordinate)],
     [block.origin, block.places],
@@ -441,8 +452,9 @@ function TinyNearbyMap({
       <div className="p-3">
         <OsmMiniMap
           coordinates={mapCoordinates}
+          maximumZoom={approximate ? 10 : 16}
           markers={[
-            { coordinate: block.origin, kind: "origin", label: copy.estate },
+            { coordinate: block.origin, kind: "origin", label: copy.estate, approximate },
             ...block.places.slice(0, 20).map((place, index) => ({
               coordinate: place.coordinate,
               kind: "place" as const,
@@ -450,27 +462,36 @@ function TinyNearbyMap({
               index,
             })),
           ]}
-          ariaLabel={`${block.places.length} nearby places around ${block.origin_label}`}
+          ariaLabel={approximate
+            ? `Approximate area around ${block.origin_label}`
+            : `${block.places.length} nearby places around ${block.origin_label}`}
         />
-        <ol className="mt-2 grid gap-1 sm:grid-cols-2">
-          {block.places.slice(0, 8).map((place, index) => (
-            <li key={`${place.label}-${index}`}>
-              <button
-                type="button"
-                disabled={busy}
-                onClick={() => onPrompt(`Show the walking route to the nearby ${place.category} ${place.label}`)}
-                className="flex min-h-8 w-full min-w-0 items-center gap-1.5 rounded-lg px-1 text-left text-[9px] transition-colors hover:bg-foreground/[0.04] disabled:opacity-45"
-                aria-label={`Show walking route to ${place.label}`}
-              >
-                <span className="flex h-4 w-4 shrink-0 items-center justify-center rounded-full bg-violet-500/10 font-semibold text-violet-700 dark:text-violet-300">{index + 1}</span>
-                <span className="min-w-0 flex-1 truncate font-medium">{place.label}</span>
-                <span className="shrink-0 tabular-nums text-muted-foreground">{place.distance_m >= 1000 ? `${(place.distance_m / 1000).toFixed(1)} km` : `${Math.round(place.distance_m)} m`}</span>
-              </button>
-            </li>
-          ))}
-        </ol>
+        {block.places.length ? (
+          <ol className="mt-2 grid gap-1 sm:grid-cols-2">
+            {block.places.slice(0, 8).map((place, index) => (
+              <li key={`${place.label}-${index}`}>
+                <button
+                  type="button"
+                  disabled={busy}
+                  onClick={() => onPrompt(`Show the walking route to the nearby ${place.category} ${place.label}`)}
+                  className="flex min-h-8 w-full min-w-0 items-center gap-1.5 rounded-lg px-1 text-left text-[9px] transition-colors hover:bg-foreground/[0.04] disabled:opacity-45"
+                  aria-label={`Show walking route to ${place.label}`}
+                >
+                  <span className="flex h-4 w-4 shrink-0 items-center justify-center rounded-full bg-violet-500/10 font-semibold text-violet-700 dark:text-violet-300">{index + 1}</span>
+                  <span className="min-w-0 flex-1 truncate font-medium">{place.label}</span>
+                  <span className="shrink-0 tabular-nums text-muted-foreground">{place.distance_m >= 1000 ? `${(place.distance_m / 1000).toFixed(1)} km` : `${Math.round(place.distance_m)} m`}</span>
+                </button>
+              </li>
+            ))}
+          </ol>
+        ) : (
+          <p className="mt-2 flex items-center gap-1.5 text-[10px] font-medium">
+            <MapPinIcon size={12} className="shrink-0 text-violet-700 dark:text-violet-300" />
+            <span className="truncate">{block.origin_label}</span>
+          </p>
+        )}
         <p className="mt-2 text-[9px] leading-4 text-muted-foreground">
-          {copy.relativeMap}{block.attribution ? ` · ${block.attribution}` : ""}
+          {approximate ? copy.approximateMap : copy.relativeMap}{block.attribution ? ` · ${block.attribution}` : ""}
         </p>
       </div>
     </section>

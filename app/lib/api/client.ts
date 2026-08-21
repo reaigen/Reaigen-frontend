@@ -2132,6 +2132,8 @@ export type ReaiAgentTinyUiBlock =
       origin_label: string;
       /** GeoJSON coordinate order: [longitude, latitude]. */
       origin: [number, number];
+      /** A location-only map must disclose whether its point is saved or area-level. */
+      precision?: "saved_point" | "approximate_area";
       places: Array<{
         label: string;
         category: string;
