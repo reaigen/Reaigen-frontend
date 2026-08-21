@@ -78,7 +78,14 @@
     scrollbar-gutter: stable;
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
-    overflow-x: hidden;
+    /*
+     * clip, not hidden: overflow-x hidden turns the element into a scroll
+     * container, and a sticky header inside a scroll container that is not
+     * the thing actually scrolling never sticks — the app header vanished on
+     * scroll and left a hole above the nav rail. clip clips the same overflow
+     * without creating a scrollport.
+     */
+    overflow-x: clip;
   }
 
   body {
@@ -90,7 +97,7 @@
     font-weight: 400;
     min-width: 320px;
     min-height: 100dvh;
-    overflow-x: hidden;
+    overflow-x: clip;
   }
 
   button, [role="button"], a { -webkit-tap-highlight-color: transparent; }
@@ -633,6 +640,14 @@
 @keyframes panelIn {
   from { opacity: 0; transform: translateX(24px); }
   to { opacity: 1; transform: translateX(0); }
+}
+@keyframes sheetUp {
+  from { transform: translateY(100%); }
+  to { transform: translateY(0); }
+}
+@keyframes sheetDown {
+  from { transform: translateY(0); }
+  to { transform: translateY(100%); }
 }
 @keyframes panelOut {
   from { opacity: 1; transform: translateX(0); }

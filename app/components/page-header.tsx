@@ -57,7 +57,12 @@ export function PageHeader({
           `text-balance` keeps the break near the middle instead of leaving one
           word stranded.
         */}
-        <h1 className="text-balance text-[24px] font-bold leading-[1.12] tracking-[-0.03em] text-foreground sm:text-[40px] sm:leading-[1.08] sm:tracking-[-0.035em]">
+        {/*
+          Working-page scale, not display scale. With the brand now anchored in
+          the app header, a 40px page title was the loudest thing on every
+          desktop screen — the title names the view, it doesn't headline it.
+        */}
+        <h1 className="text-balance text-[24px] font-bold leading-[1.12] tracking-[-0.03em] text-foreground sm:text-[28px] sm:leading-[1.15]">
           {title}
         </h1>
         {meta ? (
