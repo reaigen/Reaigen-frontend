@@ -355,6 +355,11 @@ export default function LiveScanWorkspacePage() {
                   {t("liveScan.contractTest", lang)}
                 </p>
               ) : null}
+              {session.runtime.profile === "preview" ? (
+                <p role="status" className="absolute left-4 right-4 top-4 z-30 rounded-xl border border-sky-300/25 bg-sky-950/85 px-3 py-2 text-xs leading-relaxed text-sky-100 shadow-lg backdrop-blur">
+                  {t("liveScan.previewMode", lang)}
+                </p>
+              ) : null}
               {preview ? (
                 <SplatViewer
                   key={`${preview.trust}-${preview.epoch}`}
@@ -417,7 +422,12 @@ export default function LiveScanWorkspacePage() {
                     loading={finishing}
                     onClick={finishSession}
                   >
-                    {t("liveScan.finish", lang)}
+                    {t(
+                      access?.capabilities.dragon_refinement === true
+                        ? "liveScan.finish"
+                        : "liveScan.finishPreview",
+                      lang,
+                    )}
                   </Button>
                 ) : null}
                 {errorText ? <p role="alert" className="rounded-xl bg-destructive/10 p-3 text-sm text-destructive">{errorText}</p> : null}
