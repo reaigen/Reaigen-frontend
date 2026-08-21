@@ -17,7 +17,7 @@ const TONE_BAR: Record<"neutral" | "success" | "warning", string> = {
 const TINY_COPY = {
   en: {
     fact: "Fact", source: "Source", trafficDelay: "traffic delay", routePreview: "Route geometry preview", geographicPreview: "Straight-line geographic preview",
-    estate: "Estate", relativeMap: "Relative spatial preview without a street basemap",
+    estate: "Estate", relativeMap: "OpenStreetMap view of verified positions",
     interactiveActions: "Interactive actions", inProgress: "In progress", outOf100: "out of 100",
     price: "Purchase price", area: "Area", rent: "Monthly rent", costs: "Annual operating costs",
     down: "Down payment", interest: "Annual interest rate", term: "Loan term (years)",
@@ -28,7 +28,7 @@ const TINY_COPY = {
   },
   sk: {
     fact: "Fakt", source: "Zdroj", trafficDelay: "zdržanie v premávke", routePreview: "Náhľad geometrie trasy", geographicPreview: "Geografický náhľad vzdušnou čiarou",
-    estate: "Nehnuteľnosť", relativeMap: "Relatívny priestorový náhľad bez uličnej podkladovej mapy",
+    estate: "Nehnuteľnosť", relativeMap: "OpenStreetMap náhľad overených polôh",
     interactiveActions: "Interaktívne akcie", inProgress: "Prebieha", outOf100: "zo 100",
     price: "Kúpna cena", area: "Plocha", rent: "Mesačné nájomné", costs: "Ročné prevádzkové náklady",
     down: "Vlastné zdroje", interest: "Ročná úroková sadzba", term: "Splatnosť úveru (roky)",
@@ -39,7 +39,7 @@ const TINY_COPY = {
   },
   cs: {
     fact: "Fakt", source: "Zdroj", trafficDelay: "zdržení v provozu", routePreview: "Náhled geometrie trasy", geographicPreview: "Geografický náhled vzdušnou čarou",
-    estate: "Nemovitost", relativeMap: "Relativní prostorový náhled bez uliční podkladové mapy",
+    estate: "Nemovitost", relativeMap: "OpenStreetMap náhled ověřených poloh",
     interactiveActions: "Interaktivní akce", inProgress: "Probíhá", outOf100: "ze 100",
     price: "Kupní cena", area: "Plocha", rent: "Měsíční nájem", costs: "Roční provozní náklady",
     down: "Vlastní zdroje", interest: "Roční úroková sazba", term: "Splatnost úvěru (roky)",
@@ -50,7 +50,7 @@ const TINY_COPY = {
   },
   de: {
     fact: "Fakt", source: "Quelle", trafficDelay: "Verkehrsverzögerung", routePreview: "Vorschau der Routengeometrie", geographicPreview: "Geografische Luftlinienvorschau",
-    estate: "Immobilie", relativeMap: "Relative räumliche Vorschau ohne Straßenbasiskarte",
+    estate: "Immobilie", relativeMap: "OpenStreetMap-Ansicht der verifizierten Positionen",
     interactiveActions: "Interaktive Aktionen", inProgress: "Läuft", outOf100: "von 100",
     price: "Kaufpreis", area: "Fläche", rent: "Monatsmiete", costs: "Jährliche Betriebskosten",
     down: "Eigenkapital", interest: "Jährlicher Zinssatz", term: "Kreditlaufzeit (Jahre)",
@@ -182,28 +182,209 @@ function TinyScorecard({ block, lang }: { block: Extract<ReaiAgentTinyUiBlock, {
   );
 }
 
+type MiniMapCoordinate = readonly [number, number];
+
+const MINI_MAP_WIDTH = 300;
+const MINI_MAP_HEIGHT = 160;
+const OSM_TILE_SIZE = 256;
+const OSM_TILE_TEMPLATE = process.env.NEXT_PUBLIC_OSM_TILE_URL_TEMPLATE?.trim()
+  || "https://tile.openstreetmap.org/{z}/{x}/{y}.png";
+
+function worldCoordinate([longitude, latitude]: MiniMapCoordinate, zoom: number) {
+  const scale = OSM_TILE_SIZE * 2 ** zoom;
+  const boundedLatitude = Math.max(-85.05112878, Math.min(85.05112878, latitude));
+  const sinLatitude = Math.sin(boundedLatitude * Math.PI / 180);
+  return {
+    x: (longitude + 180) / 360 * scale,
+    y: (0.5 - Math.log((1 + sinLatitude) / (1 - sinLatitude)) / (4 * Math.PI)) * scale,
+  };
+}
+
+function osmTileUrl(zoom: number, x: number, y: number) {
+  return OSM_TILE_TEMPLATE
+    .replace("{z}", String(zoom))
+    .replace("{x}", String(x))
+    .replace("{y}", String(y));
+}
+
+function buildMiniMapLayout(rawCoordinates: MiniMapCoordinate[]) {
+  const coordinates = rawCoordinates.filter(([longitude, latitude]) => (
+    Number.isFinite(longitude)
+    && Number.isFinite(latitude)
+    && longitude >= -180
+    && longitude <= 180
+    && latitude >= -90
+    && latitude <= 90
+  ));
+  if (!coordinates.length) return null;
+
+  let zoom = 1;
+  for (let candidate = 16; candidate >= 1; candidate -= 1) {
+    const world = coordinates.map((coordinate) => worldCoordinate(coordinate, candidate));
+    const xValues = world.map(({ x }) => x);
+    const yValues = world.map(({ y }) => y);
+    if (
+      Math.max(...xValues) - Math.min(...xValues) <= MINI_MAP_WIDTH - 36
+      && Math.max(...yValues) - Math.min(...yValues) <= MINI_MAP_HEIGHT - 36
+    ) {
+      zoom = candidate;
+      break;
+    }
+  }
+
+  const world = coordinates.map((coordinate) => worldCoordinate(coordinate, zoom));
+  const xValues = world.map(({ x }) => x);
+  const yValues = world.map(({ y }) => y);
+  const centerX = (Math.min(...xValues) + Math.max(...xValues)) / 2;
+  const centerY = (Math.min(...yValues) + Math.max(...yValues)) / 2;
+  const left = centerX - MINI_MAP_WIDTH / 2;
+  const top = centerY - MINI_MAP_HEIGHT / 2;
+  const tileCount = 2 ** zoom;
+  const minimumTileX = Math.floor(left / OSM_TILE_SIZE);
+  const maximumTileX = Math.floor((left + MINI_MAP_WIDTH - 1) / OSM_TILE_SIZE);
+  const minimumTileY = Math.max(0, Math.floor(top / OSM_TILE_SIZE));
+  const maximumTileY = Math.min(tileCount - 1, Math.floor((top + MINI_MAP_HEIGHT - 1) / OSM_TILE_SIZE));
+  const tiles: Array<{ key: string; url: string; left: number; top: number }> = [];
+  for (let tileY = minimumTileY; tileY <= maximumTileY; tileY += 1) {
+    for (let tileX = minimumTileX; tileX <= maximumTileX; tileX += 1) {
+      const wrappedX = ((tileX % tileCount) + tileCount) % tileCount;
+      tiles.push({
+        key: `${zoom}-${tileX}-${tileY}`,
+        url: osmTileUrl(zoom, wrappedX, tileY),
+        left: tileX * OSM_TILE_SIZE - left,
+        top: tileY * OSM_TILE_SIZE - top,
+      });
+    }
+  }
+  return {
+    tiles,
+    project: (coordinate: MiniMapCoordinate) => {
+      const point = worldCoordinate(coordinate, zoom);
+      return { x: point.x - left, y: point.y - top };
+    },
+  };
+}
+
+function OsmMiniMap({
+  coordinates,
+  path,
+  straightLine = false,
+  markers,
+  ariaLabel,
+}: {
+  coordinates: MiniMapCoordinate[];
+  path?: MiniMapCoordinate[];
+  straightLine?: boolean;
+  markers: Array<{
+    coordinate: MiniMapCoordinate;
+    kind: "origin" | "destination" | "place";
+    label?: string;
+    index?: number;
+  }>;
+  ariaLabel: string;
+}) {
+  const layout = useMemo(() => buildMiniMapLayout(coordinates), [coordinates]);
+  const projectedPath = layout && path
+    ? path.map((coordinate) => layout.project(coordinate)).map(({ x, y }) => `${x.toFixed(2)},${y.toFixed(2)}`).join(" ")
+    : "";
+  return (
+    <div
+      role="group"
+      aria-label={ariaLabel}
+      className="relative aspect-[15/8] w-full overflow-hidden rounded-xl border border-border/55 bg-foreground/[0.035]"
+    >
+      {layout?.tiles.map((tile) => (
+        /* A native image preserves OSM browser caching and sends the document origin as required by the tile policy. */
+        // eslint-disable-next-line @next/next/no-img-element
+        <img
+          key={tile.key}
+          src={tile.url}
+          alt=""
+          aria-hidden="true"
+          loading="lazy"
+          decoding="async"
+          draggable={false}
+          referrerPolicy="origin"
+          onError={(event) => { event.currentTarget.hidden = true; }}
+          className="pointer-events-none absolute max-w-none select-none"
+          style={{
+            left: `${tile.left / MINI_MAP_WIDTH * 100}%`,
+            top: `${tile.top / MINI_MAP_HEIGHT * 100}%`,
+            width: `${OSM_TILE_SIZE / MINI_MAP_WIDTH * 100}%`,
+            height: `${OSM_TILE_SIZE / MINI_MAP_HEIGHT * 100}%`,
+          }}
+        />
+      ))}
+      <svg
+        viewBox={`0 0 ${MINI_MAP_WIDTH} ${MINI_MAP_HEIGHT}`}
+        aria-hidden="true"
+        className="pointer-events-none absolute inset-0 h-full w-full"
+      >
+        {projectedPath ? (
+          <>
+            <polyline points={projectedPath} fill="none" strokeWidth="7" strokeLinecap="round" strokeLinejoin="round" className="stroke-card" />
+            <polyline
+              points={projectedPath}
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="4"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              strokeDasharray={straightLine ? "7 6" : undefined}
+              className="text-violet-700"
+            />
+          </>
+        ) : null}
+        {layout ? markers.map((marker, markerIndex) => {
+          const point = layout.project(marker.coordinate);
+          if (marker.kind === "origin") {
+            return <circle key={`origin-${markerIndex}`} cx={point.x} cy={point.y} r="6" className="fill-foreground stroke-card" strokeWidth="3" />;
+          }
+          if (marker.kind === "destination") {
+            return <circle key={`destination-${markerIndex}`} cx={point.x} cy={point.y} r="7" className="fill-violet-600 stroke-card" strokeWidth="3" />;
+          }
+          return (
+            <g
+              key={`place-${marker.index ?? markerIndex}`}
+              className="animate-pulse motion-reduce:animate-none"
+              style={{ animationDelay: `${Math.min((marker.index ?? markerIndex) * 120, 1200)}ms` }}
+            >
+              <circle cx={point.x} cy={point.y} r="9" className="fill-violet-500/20" />
+              <circle cx={point.x} cy={point.y} r="4" className="fill-violet-700 stroke-card" strokeWidth="2" />
+              {(marker.index ?? 99) < 8 ? (
+                <text x={point.x + 6} y={point.y - 6} className="fill-foreground text-[6.5px] font-semibold">
+                  {(marker.index ?? 0) + 1}
+                </text>
+              ) : null}
+            </g>
+          );
+        }) : null}
+        <g className="fill-foreground text-[8px] font-semibold">
+          <rect x="267" y="5" width="27" height="32" rx="6" className="fill-card/85" />
+          <text x="280.5" y="16" textAnchor="middle">N</text>
+          <path d="M280.5 20 L276.5 29 L280.5 26.5 L284.5 29 Z" className="fill-foreground" />
+        </g>
+      </svg>
+      <a
+        href="https://www.openstreetmap.org/copyright"
+        target="_blank"
+        rel="noreferrer"
+        className="absolute bottom-0.5 right-0.5 rounded bg-card/90 px-1 py-0.5 text-[7px] font-medium text-foreground underline-offset-2 hover:underline"
+      >
+        © OpenStreetMap
+      </a>
+    </div>
+  );
+}
+
 function TinyRoute({ block, lang }: { block: Extract<ReaiAgentTinyUiBlock, { kind: "route" }>; lang: string }) {
   const copy = tinyCopy(lang);
-  const projected = useMemo(() => {
-    const points = block.path.filter(([lon, lat]) => Number.isFinite(lon) && Number.isFinite(lat)).slice(0, 256);
-    if (points.length < 2) return "";
-    const longitudes = points.map(([lon]) => lon);
-    const latitudes = points.map(([, lat]) => lat);
-    const minLon = Math.min(...longitudes);
-    const maxLon = Math.max(...longitudes);
-    const minLat = Math.min(...latitudes);
-    const maxLat = Math.max(...latitudes);
-    const lonSpan = Math.max(maxLon - minLon, 0.000001);
-    const latSpan = Math.max(maxLat - minLat, 0.000001);
-    return points.map(([lon, lat]) => {
-      const x = 12 + (lon - minLon) / lonSpan * 276;
-      const y = 12 + (maxLat - lat) / latSpan * 136;
-      return `${x.toFixed(2)},${y.toFixed(2)}`;
-    }).join(" ");
-  }, [block.path]);
-  const pointList = projected.split(" ");
-  const first = pointList[0]?.split(",").map(Number);
-  const last = pointList.at(-1)?.split(",").map(Number);
+  const routePath = useMemo(
+    () => block.path.filter(([longitude, latitude]) => (
+      Number.isFinite(longitude) && Number.isFinite(latitude)
+    )).slice(0, 256),
+    [block.path],
+  );
   const distance = block.distance_m >= 1000 ? `${(block.distance_m / 1000).toFixed(1)} km` : `${Math.round(block.distance_m)} m`;
   const minutes = block.duration_s == null ? null : Math.max(1, Math.round(block.duration_s / 60));
   const duration = minutes == null ? null : (minutes >= 60 ? `${Math.floor(minutes / 60)} h ${minutes % 60} min` : `${minutes} min`);
@@ -216,21 +397,16 @@ function TinyRoute({ block, lang }: { block: Extract<ReaiAgentTinyUiBlock, { kin
         icon={<MapPinIcon size={14} />}
       />
       <div className="p-3">
-        <svg viewBox="0 0 300 160" role="img" aria-label={`Route geometry from ${block.origin_label} to ${block.destination_label}`} className="h-auto w-full rounded-xl border border-border/55 bg-foreground/[0.025]">
-          <defs>
-            <pattern id="tiny-route-grid" width="24" height="24" patternUnits="userSpaceOnUse">
-              <path d="M 24 0 L 0 0 0 24" fill="none" stroke="currentColor" strokeOpacity="0.06" strokeWidth="1" />
-            </pattern>
-          </defs>
-          <rect width="300" height="160" fill="url(#tiny-route-grid)" />
-          {projected ? <polyline points={projected} fill="none" stroke="currentColor" strokeWidth="5" strokeLinecap="round" strokeLinejoin="round" className="text-violet-600" /> : null}
-          {first ? <circle cx={first[0]} cy={first[1]} r="5" className="fill-foreground" /> : null}
-          {last ? <circle cx={last[0]} cy={last[1]} r="6" className="fill-violet-600 stroke-card" strokeWidth="3" /> : null}
-          <g className="fill-muted-foreground text-[8px] font-semibold">
-            <text x="282" y="14" textAnchor="middle">N</text>
-            <path d="M282 19 L278 27 L282 25 L286 27 Z" className="fill-muted-foreground" />
-          </g>
-        </svg>
+        <OsmMiniMap
+          coordinates={routePath}
+          path={routePath}
+          straightLine={block.preview_kind === "straight_line"}
+          markers={routePath.length >= 2 ? [
+            { coordinate: routePath[0], kind: "origin" },
+            { coordinate: routePath.at(-1)!, kind: "destination" },
+          ] : []}
+          ariaLabel={`Route geometry from ${block.origin_label} to ${block.destination_label}`}
+        />
         <div className="mt-2 grid grid-cols-[1fr_auto_1fr] items-center gap-2 text-[10px]">
           <span className="truncate font-medium">{block.origin_label}</span>
           <ArrowRightIcon size={11} className="text-muted-foreground" />
@@ -255,55 +431,27 @@ function TinyNearbyMap({
   lang: string;
 }) {
   const copy = tinyCopy(lang);
-  const projected = useMemo(() => {
-    const raw = [
-      { coordinate: block.origin, origin: true, label: block.origin_label, distance_m: 0 },
-      ...block.places.slice(0, 20).map((place) => ({ ...place, origin: false })),
-    ];
-    const longitudes = raw.map((item) => item.coordinate[0]);
-    const latitudes = raw.map((item) => item.coordinate[1]);
-    const minLon = Math.min(...longitudes);
-    const maxLon = Math.max(...longitudes);
-    const minLat = Math.min(...latitudes);
-    const maxLat = Math.max(...latitudes);
-    const lonSpan = Math.max(maxLon - minLon, 0.0005);
-    const latSpan = Math.max(maxLat - minLat, 0.0005);
-    return raw.map((item) => ({
-      ...item,
-      x: 18 + (item.coordinate[0] - minLon) / lonSpan * 264,
-      y: 18 + (maxLat - item.coordinate[1]) / latSpan * 124,
-    }));
-  }, [block.origin, block.origin_label, block.places]);
+  const mapCoordinates = useMemo(
+    () => [block.origin, ...block.places.slice(0, 20).map((place) => place.coordinate)],
+    [block.origin, block.places],
+  );
   return (
     <section aria-label={block.title} className="floating-panel-shape overflow-hidden border border-violet-500/25 bg-card shadow-control">
       <TinyHeader title={block.title} description={block.description} icon={<MapPinIcon size={14} />} />
       <div className="p-3">
-        <svg viewBox="0 0 300 160" role="img" aria-label={`${block.places.length} nearby places around ${block.origin_label}`} className="h-auto w-full rounded-xl border border-border/55 bg-foreground/[0.025]">
-          <defs>
-            <pattern id="tiny-nearby-grid" width="24" height="24" patternUnits="userSpaceOnUse">
-              <path d="M 24 0 L 0 0 0 24" fill="none" stroke="currentColor" strokeOpacity="0.06" strokeWidth="1" />
-            </pattern>
-          </defs>
-          <rect width="300" height="160" fill="url(#tiny-nearby-grid)" />
-          <circle cx={projected[0]?.x} cy={projected[0]?.y} r="34" fill="none" stroke="currentColor" strokeOpacity="0.08" strokeDasharray="3 4" />
-          <circle cx={projected[0]?.x} cy={projected[0]?.y} r="68" fill="none" stroke="currentColor" strokeOpacity="0.06" strokeDasharray="3 4" />
-          {projected.map((point, index) => point.origin ? (
-            <g key="origin">
-              <circle cx={point.x} cy={point.y} r="7" className="fill-foreground stroke-card" strokeWidth="3" />
-              <text x={point.x + 9} y={point.y - 8} className="fill-foreground text-[7px] font-semibold">{copy.estate}</text>
-            </g>
-          ) : (
-            <g key={`${point.label}-${index}`} className="animate-pulse motion-reduce:animate-none" style={{ animationDelay: `${Math.min(index * 120, 1200)}ms` }}>
-              <circle cx={point.x} cy={point.y} r="9" className="fill-violet-500/15" />
-              <circle cx={point.x} cy={point.y} r="4" className="fill-violet-600 stroke-card" strokeWidth="2" />
-              {index <= 8 ? <text x={point.x + 6} y={point.y - 6} className="fill-foreground text-[6.5px] font-medium">{index}</text> : null}
-            </g>
-          ))}
-          <g className="fill-muted-foreground text-[8px] font-semibold">
-            <text x="282" y="14" textAnchor="middle">N</text>
-            <path d="M282 19 L278 27 L282 25 L286 27 Z" className="fill-muted-foreground" />
-          </g>
-        </svg>
+        <OsmMiniMap
+          coordinates={mapCoordinates}
+          markers={[
+            { coordinate: block.origin, kind: "origin", label: copy.estate },
+            ...block.places.slice(0, 20).map((place, index) => ({
+              coordinate: place.coordinate,
+              kind: "place" as const,
+              label: place.label,
+              index,
+            })),
+          ]}
+          ariaLabel={`${block.places.length} nearby places around ${block.origin_label}`}
+        />
         <ol className="mt-2 grid gap-1 sm:grid-cols-2">
           {block.places.slice(0, 8).map((place, index) => (
             <li key={`${place.label}-${index}`}>
