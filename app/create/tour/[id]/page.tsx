@@ -61,7 +61,10 @@ import {
   clampSceneScaleComponent,
   sceneScaleMagnitude,
 } from "../../../lib/global-scene-transform";
-import { selectTourThumbnailCamera } from "../../../lib/tour-thumbnail-camera";
+import {
+  findTourThumbnailCamera,
+  selectTourThumbnailCamera,
+} from "../../../lib/tour-thumbnail-camera";
 import type {
   SplatPruneMask,
   SplatSelectionOperation,
@@ -74,6 +77,7 @@ import { Input } from "../../../lib/ui/input";
 import { cn } from "../../../lib/utils";
 import {
   REAI_VIEWER_ACTION_EVENT,
+  dispatchReaiViewerActionResult,
   readReaiViewerAction,
 } from "../../../lib/reai-viewer-actions";
 
@@ -745,7 +749,10 @@ export default function WebTourEditorPage({
     destructive: true,
   }), [confirm, lang]);
 
-  const captureAutomaticThumbnail = useCallback((workspaceRevision: number) => {
+  const captureAutomaticThumbnail = useCallback((
+    workspaceRevision: number,
+    options: { cameraId?: string; force?: boolean; agentWriteToken?: string } = {},
+  ) => {
     const task = thumbnailCaptureRef.current
       .catch(() => undefined)
       .then(async () => {
@@ -753,12 +760,14 @@ export default function WebTourEditorPage({
         if (
           !current
           || current.revision !== workspaceRevision
-          || (
+          || (!options.force && (
             current.thumbnail_revision === workspaceRevision
             && current.thumbnail_renderer_version === 2
-          )
+          ))
         ) return null;
-        const thumbnailCamera = selectTourThumbnailCamera(current.cameras);
+        const thumbnailCamera = options.cameraId
+          ? findTourThumbnailCamera(current.cameras, options.cameraId)
+          : selectTourThumbnailCamera(current.cameras);
         if (!thumbnailCamera) return null;
         let imageData: string | null | undefined = null;
         for (let attempt = 0; attempt < 3 && !imageData; attempt += 1) {
@@ -778,6 +787,7 @@ export default function WebTourEditorPage({
             workspaceRevision,
             imageData,
             thumbnailCamera.cameraId,
+            options.agentWriteToken,
           );
           if (workspaceRef.current?.revision === updated.revision) {
             workspaceRef.current = updated;
@@ -946,6 +956,36 @@ export default function WebTourEditorPage({
       ) return;
 
       const cameras = workspace.cameras as unknown as SavedCamera[];
+      if (action.command === "set_tour_cover") {
+        const cameraId = action.parameters.camera_id;
+        const selectedCamera = cameraId
+          ? findTourThumbnailCamera(cameras, cameraId)
+          : null;
+        if (!selectedCamera) {
+          dispatchReaiViewerActionResult({
+            schema: "com.reaigen.agent.viewer-action-result",
+            version: 1,
+            command: "set_tour_cover",
+            resource: { draft_id: workspace.draft_id, tour_id: tourId },
+            status: "capture_unavailable",
+          });
+          return;
+        }
+        void captureAutomaticThumbnail(workspace.revision, {
+          cameraId: selectedCamera.cameraId,
+          force: true,
+          agentWriteToken: action.parameters.write_token,
+        }).then((updated) => {
+          dispatchReaiViewerActionResult({
+            schema: "com.reaigen.agent.viewer-action-result",
+            version: 1,
+            command: "set_tour_cover",
+            resource: { draft_id: workspace.draft_id, tour_id: tourId },
+            status: updated ? "completed" : "save_failed",
+          });
+        });
+        return;
+      }
       if (action.command === "go_to_room" && action.target) {
         const requested = `${action.target.id} ${action.target.label}`.toLocaleLowerCase();
         const cameraIndex = cameras.findIndex((camera) => [camera.id, camera.label, camera.name]
@@ -987,7 +1027,7 @@ export default function WebTourEditorPage({
     };
     window.addEventListener(REAI_VIEWER_ACTION_EVENT, handleViewerAction);
     return () => window.removeEventListener(REAI_VIEWER_ACTION_EVENT, handleViewerAction);
-  }, [tourId, workspace]);
+  }, [captureAutomaticThumbnail, tourId, workspace]);
 
   const enqueueWorkspaceSave = useCallback(<T,>(task: () => Promise<T>): Promise<T> => {
     const run = workspaceSaveQueueRef.current.then(task, task);

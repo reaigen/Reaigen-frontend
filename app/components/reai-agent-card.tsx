@@ -6,6 +6,7 @@ import { useCallback, useEffect, useRef, useState, type ReactNode } from "react"
 
 import {
   applyReaiMediaAction,
+  applyReaiTourCoverAction,
   applyReaiTranslationAction,
   applyReaiWorkspaceAction,
   applyReaiWorkspaceProposal,
@@ -52,7 +53,11 @@ import type { LocaleKey } from "../lib/locales";
 import { PROPERTY_FIELD_SECTIONS, subtypeOptions, type PropertyFieldDefinition, type PropertyType } from "../lib/property-field-registry";
 import type { DraftDetailItem, DraftUpload } from "../lib/tour-types";
 import { copyToClipboard } from "../lib/share-ui";
-import { dispatchReaiViewerAction } from "../lib/reai-viewer-actions";
+import {
+  REAI_VIEWER_ACTION_RESULT_EVENT,
+  dispatchReaiViewerAction,
+  readReaiViewerActionResult,
+} from "../lib/reai-viewer-actions";
 import { baseUnitForCategory, resolveUnit, unitLabel, type UnitLookup } from "../lib/unit-catalog";
 import { Button } from "../lib/ui/button";
 import { cn } from "../lib/utils";
@@ -165,7 +170,7 @@ type ChatTurn = {
   response?: ReaiAgentResponse;
   feedback?: boolean;
   proposalStatus?: "applied" | "dismissed";
-  actionStatus?: "applied" | "dismissed";
+  actionStatus?: "pending" | "applied" | "failed" | "dismissed";
 };
 
 function contextualShareUrl(answer: ReaiAgentResponse): string | null {
@@ -360,6 +365,8 @@ function safeAgentNavigationPath(answer: ReaiAgentResponse): string | null {
   const path = answer.navigation_path;
   if (!path || !path.startsWith("/") || path.startsWith("//")) return null;
   if (answer.action_code === "open_creation" && /^\/draft\/[1-9]\d*\/?$/.test(path)) return path;
+  if (answer.action_code === "create_creation" && path === "/create") return path;
+  if (answer.action_code === "open_tour" && /^\/create\/tour\/[1-9]\d*\/?$/.test(path)) return path;
   if (answer.action_code === "settings_navigation" && /^\/settings(?:#[a-z_-]+)?$/.test(path)) return path;
   return null;
 }
@@ -422,6 +429,46 @@ export function ReaiAgentCard({
   const [unitCatalog, setUnitCatalog] = useState<UnitLookup[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [copiedShareUrl, setCopiedShareUrl] = useState<string | null>(null);
+  const [pendingViewerActionTurnId, setPendingViewerActionTurnId] = useState<number | null>(null);
+  const pendingViewerActionTurnRef = useRef<number | null>(null);
+  const viewerActionTimeoutRef = useRef<number | null>(null);
+
+  useEffect(() => {
+    const handleResult = (event: Event) => {
+      const result = readReaiViewerActionResult(event);
+      const turnId = pendingViewerActionTurnRef.current;
+      if (
+        !result
+        || turnId == null
+        || (draftId !== undefined && result.resource.draft_id !== draftId)
+        || (currentTourId !== undefined && result.resource.tour_id !== currentTourId)
+      ) return;
+      if (viewerActionTimeoutRef.current != null) {
+        window.clearTimeout(viewerActionTimeoutRef.current);
+        viewerActionTimeoutRef.current = null;
+      }
+      pendingViewerActionTurnRef.current = null;
+      setPendingViewerActionTurnId(null);
+      const completed = result.status === "completed";
+      setTurns((current) => current.map((turn) => turn.id === turnId && turn.response ? {
+        ...turn,
+        actionStatus: completed ? "applied" : "failed",
+        response: completed
+          ? { ...turn.response, client_action: null, action_token: null }
+          : turn.response,
+      } : turn));
+      setBusy(false);
+      if (!completed) setError(t("reai.tourCoverFailed", lang));
+    };
+    window.addEventListener(REAI_VIEWER_ACTION_RESULT_EVENT, handleResult);
+    return () => {
+      window.removeEventListener(REAI_VIEWER_ACTION_RESULT_EVENT, handleResult);
+      if (viewerActionTimeoutRef.current != null) {
+        window.clearTimeout(viewerActionTimeoutRef.current);
+        viewerActionTimeoutRef.current = null;
+      }
+    };
+  }, [currentTourId, draftId, lang]);
 
   useEffect(() => {
     if (!historyNotice) return;
@@ -550,6 +597,13 @@ export function ReaiAgentCard({
   };
 
   const resetConversation = useCallback(() => {
+    if (viewerActionTimeoutRef.current != null) {
+      window.clearTimeout(viewerActionTimeoutRef.current);
+      viewerActionTimeoutRef.current = null;
+    }
+    pendingViewerActionTurnRef.current = null;
+    setPendingViewerActionTurnId(null);
+    setBusy(false);
     setTurns([]);
     setMessage("");
     setComposerFocused(false);
@@ -591,6 +645,61 @@ export function ReaiAgentCard({
     return () => window.removeEventListener("reai-new-conversation", startNew);
   }, [resetConversation]);
 
+  const confirmViewerAction = useCallback(async (turnId: number, answer: ReaiAgentResponse) => {
+    if (
+      !answer.client_action
+      || !answer.client_action.confirmation_required
+      || answer.action_code !== "set_tour_cover"
+      || !answer.action_token
+    ) return false;
+    setError(null);
+    pendingViewerActionTurnRef.current = turnId;
+    setPendingViewerActionTurnId(turnId);
+    setTurns((current) => current.map((turn) => turn.id === turnId ? {
+      ...turn,
+      actionStatus: "pending",
+    } : turn));
+    setBusy(true);
+    let dispatched = false;
+    let confirmationError: string | null = null;
+    try {
+      const confirmed = await applyReaiTourCoverAction(
+        answer.action_token,
+        improvementConversationId,
+      );
+      dispatched = dispatchReaiViewerAction(confirmed.client_action, {
+        draftId,
+        tourId: currentTourId,
+      });
+    } catch (err) {
+      confirmationError = errorText(err, lang);
+    }
+    if (!dispatched) {
+      pendingViewerActionTurnRef.current = null;
+      setPendingViewerActionTurnId(null);
+      setBusy(false);
+      setTurns((current) => current.map((turn) => turn.id === turnId ? {
+        ...turn,
+        actionStatus: "failed",
+      } : turn));
+      setError(confirmationError ?? t("reai.tourCoverUnavailable", lang));
+      return false;
+    }
+    viewerActionTimeoutRef.current = window.setTimeout(() => {
+      if (pendingViewerActionTurnRef.current !== turnId) return;
+      pendingViewerActionTurnRef.current = null;
+      setPendingViewerActionTurnId(null);
+      viewerActionTimeoutRef.current = null;
+      setBusy(false);
+      setTurns((current) => current.map((turn) => turn.id === turnId ? {
+        ...turn,
+        actionStatus: "failed",
+      } : turn));
+      setError(t("reai.tourCoverFailed", lang));
+    }, 20_000);
+    return true;
+  }, [currentTourId, draftId, improvementConversationId, lang]);
+
   const ask = async (override?: string) => {
     const requestText = (override ?? message).trim();
     if (!requestText || busy) return;
@@ -614,6 +723,19 @@ export function ReaiAgentCard({
           { id: Date.now() + 1, role: "assistant", content: t("reai.applied", lang) },
         ]);
       }
+      return;
+    }
+    const pendingViewerAction = [...turns].reverse().find((turn) => (
+      turn.role === "assistant"
+      && Boolean(turn.response?.client_action?.confirmation_required)
+      && turn.actionStatus !== "applied"
+      && turn.actionStatus !== "dismissed"
+    ));
+    if (
+      pendingViewerAction?.response?.client_action
+      && isExplicitProposalConfirmation(requestText)
+    ) {
+      void confirmViewerAction(pendingViewerAction.id, pendingViewerAction.response);
       return;
     }
 
@@ -657,7 +779,7 @@ export function ReaiAgentCard({
         window.location.reload();
         return;
       }
-      if (response.client_action) {
+      if (response.client_action && !response.client_action.confirmation_required) {
         dispatchReaiViewerAction(response.client_action, { draftId, tourId: currentTourId });
       }
       if (response.improvement_conversation_id) setImprovementConversationId(response.improvement_conversation_id);
@@ -823,6 +945,14 @@ export function ReaiAgentCard({
       ...turn,
       actionStatus: "dismissed",
       response: { ...turn.response, action_token: null },
+    } : turn));
+  };
+
+  const dismissViewerAction = (turnId: number) => {
+    setTurns((current) => current.map((turn) => turn.id === turnId && turn.response ? {
+      ...turn,
+      actionStatus: "dismissed",
+      response: { ...turn.response, client_action: null, action_token: null },
     } : turn));
   };
 
@@ -1270,6 +1400,56 @@ export function ReaiAgentCard({
                         />
                         <AgentTinyUi answer={answer} busy={busy} onPrompt={(prompt) => void ask(prompt)} lang={lang} />
                       </>
+                    )}
+                    {answer?.action_code === "set_tour_cover" && (answer.client_action || turn.actionStatus) && (
+                      <div className="mt-4 overflow-hidden floating-panel-shape border border-border/65 bg-card shadow-control">
+                        <div className="px-3.5 py-3">
+                          <p className="text-xs font-semibold text-foreground">{t("reai.tourCoverTitle", lang)}</p>
+                          <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
+                            {t("reai.tourCoverDescription", lang)}
+                          </p>
+                        </div>
+                        {answer.client_action && (!turn.actionStatus || turn.actionStatus === "failed") && (
+                          <div className="flex items-center gap-2 border-t border-border/45 px-3.5 py-3">
+                            <Button
+                              type="button"
+                              size="sm"
+                              className="flex-1 rounded-2xl sm:flex-none"
+                              loading={busy && pendingViewerActionTurnId === turn.id}
+                              disabled={busy && pendingViewerActionTurnId !== turn.id}
+                              onClick={() => void confirmViewerAction(turn.id, answer)}
+                            >
+                              {t(turn.actionStatus === "failed" ? "reai.tourCoverRetry" : "reai.tourCoverConfirm", lang)}
+                            </Button>
+                            <Button type="button" variant="ghost" size="sm" className="rounded-2xl" disabled={busy} onClick={() => dismissViewerAction(turn.id)}>
+                              {t("reai.dismissProposal", lang)}
+                            </Button>
+                          </div>
+                        )}
+                        {turn.actionStatus && turn.actionStatus !== "failed" && (
+                          <div className="border-t border-border/45 px-3.5 py-3">
+                            <AgentStatusBadge tone={
+                              turn.actionStatus === "applied"
+                                ? "success"
+                                : turn.actionStatus === "pending" ? "pending" : "neutral"
+                            }>
+                              {t(
+                                turn.actionStatus === "applied"
+                                  ? "reai.tourCoverSaved"
+                                  : turn.actionStatus === "pending"
+                                    ? "reai.tourCoverSaving"
+                                    : "reai.proposalDismissed",
+                                lang,
+                              )}
+                            </AgentStatusBadge>
+                          </div>
+                        )}
+                        {turn.actionStatus === "failed" && (
+                          <div className="border-t border-border/45 px-3.5 py-3">
+                            <AgentStatusBadge tone="neutral">{t("reai.tourCoverFailed", lang)}</AgentStatusBadge>
+                          </div>
+                        )}
+                      </div>
                     )}
                     {answer && !!answer.knowledge_sources?.length && (
                       <div className="mt-3 border-t border-border/30 pt-2">

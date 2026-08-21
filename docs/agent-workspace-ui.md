@@ -77,7 +77,12 @@ left-aligned, normal-weight text with natural wrapping.
 
 - Applying or dismissing a proposal must not delete or replace prior messages.
 - The proposal remains visible with an applied/dismissed state marker.
-- Closing and reopening the Agent panel preserves the active conversation and selected view.
+- Closing and reopening the Agent panel preserves the active conversation and selected view. The
+  same tab-scoped transcript also follows application-relative navigation into a creation, new-post
+  flow, settings, or tour editor; the destination page supplies fresh resource IDs and permissions.
+- Every prompt offered by Agent's own BasicUI must map to an executable deterministic path. Short
+  greetings, create/open navigation, and a unique conservative title-typo match do not wait for a
+  model call. Ambiguous title matches stay put and ask the user to choose.
 - The three workspace views have stable meanings: **Chat**, **Media versions**, and **Edit history**.
   Narrow panels may show the shorter **Media** and **Edits** labels, but retain the full accessible
   names. The current view is visibly selected and exposed to assistive technology.
@@ -146,6 +151,13 @@ Destructive actions use a separate review card. Asking Agent to revoke every sha
 a count, an irreversible-action warning, and confirm/dismiss controls. Chat alone changes nothing.
 Confirmation submits the signed action token to Django, and success refreshes the Shares screen
 without deleting the conversation.
+
+Using a saved virtual-tour camera as the cover is also a persistent action. Agent first resolves
+one camera from the server-owned authored list and shows a confirm/dismiss card. Confirmation is
+exchanged for a separate short-lived write token; the tour editor then renders that exact camera
+locally and submits the render to the existing tour-thumbnail endpoint. The card remains pending
+until the editor reports success or failure, supports retry, and never treats a tour camera as a
+listing-gallery upload.
 
 ## Edit history
 

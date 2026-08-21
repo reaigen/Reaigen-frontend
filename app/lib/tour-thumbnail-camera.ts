@@ -21,21 +21,42 @@ function isRenderableCamera(value: unknown): value is SavedCamera {
     && (!camera.up || isFiniteVec3(camera.up));
 }
 
-export function selectTourThumbnailCamera(
+function renderableTourCameras(
   cameras: Array<Record<string, unknown>> | SavedCamera[] | null | undefined,
-): TourThumbnailCamera | null {
-  const valid = (cameras ?? [])
+) {
+  return (cameras ?? [])
     .map((camera, index) => ({ camera, index }))
     .filter((entry): entry is { camera: SavedCamera; index: number } => (
       isRenderableCamera(entry.camera)
     ));
+}
+
+function cameraSelection(camera: SavedCamera, index: number): TourThumbnailCamera {
+  const cameraId = (
+    typeof camera.id === "string" && camera.id.trim()
+  ) || `saved-camera-${index + 1}`;
+  return { camera, cameraId };
+}
+
+export function selectTourThumbnailCamera(
+  cameras: Array<Record<string, unknown>> | SavedCamera[] | null | undefined,
+): TourThumbnailCamera | null {
+  const valid = renderableTourCameras(cameras);
   if (valid.length === 0) return null;
 
   const selected = valid.find(({ camera }) => camera.role === "hero")
     ?? valid.find(({ camera }) => camera.role === "tour")
     ?? valid[0];
-  const cameraId = (
-    typeof selected.camera.id === "string" && selected.camera.id.trim()
-  ) || `saved-camera-${selected.index + 1}`;
-  return { camera: selected.camera, cameraId };
+  return cameraSelection(selected.camera, selected.index);
+}
+
+/** Resolve the exact server-proposed saved camera; never guess another one. */
+export function findTourThumbnailCamera(
+  cameras: Array<Record<string, unknown>> | SavedCamera[] | null | undefined,
+  cameraId: string,
+): TourThumbnailCamera | null {
+  const selected = renderableTourCameras(cameras).find(({ camera, index }) => (
+    cameraSelection(camera, index).cameraId === cameraId
+  ));
+  return selected ? cameraSelection(selected.camera, selected.index) : null;
 }

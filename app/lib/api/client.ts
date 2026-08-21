@@ -1519,6 +1519,7 @@ export async function saveWebTourThumbnail(
   workspaceRevision: number,
   imageData: string,
   cameraId: string,
+  agentWriteToken?: string,
 ): Promise<WebTourWorkspace> {
   const workspace = await request(`/api/reaigen/web-creation/tours/${tourId}/thumbnail/`, {
     method: "POST",
@@ -1527,6 +1528,7 @@ export async function saveWebTourThumbnail(
       image_data: imageData,
       camera_id: cameraId,
       renderer_version: 2,
+      agent_write_token: agentWriteToken,
     }),
   }) as WebTourWorkspace;
   invalidateCache(`/api/reaigen/splats/by-draft/${workspace.draft_id}/?all=true`);
@@ -2200,7 +2202,7 @@ export interface ReaiAgentResponse {
   /** Experimental extra-user native mini-apps; never arbitrary HTML or script. */
   tinyui?: ReaiAgentTinyUi;
   proposal_token: string | null;
-  action_code?: "revoke_all_shares" | "manage_shares" | "share_inventory" | "share_status" | "current_creation_overview" | "open_creation" | "settings_navigation" | "settings_update" | "select_share_fields" | "create_draft_share" | "translate_description" | "grade_draft_images" | "retouch_draft_image" | "cleanplate_draft_images" | "generative_hdr_draft_image" | "organize_draft_images" | "generate_draft_video" | "viewer_control";
+  action_code?: "revoke_all_shares" | "manage_shares" | "share_inventory" | "share_status" | "current_creation_overview" | "open_creation" | "create_creation" | "clarify_missing_price" | "set_missing_prices" | "open_tour" | "set_tour_cover" | "settings_navigation" | "settings_update" | "select_share_fields" | "create_draft_share" | "translate_description" | "grade_draft_images" | "retouch_draft_image" | "cleanplate_draft_images" | "generative_hdr_draft_image" | "organize_draft_images" | "generate_draft_video" | "viewer_control";
   action_token?: string | null;
   action_count?: number;
   share_action?: "list" | "pause" | "resume" | "revoke";
@@ -2463,6 +2465,26 @@ export async function applyReaiWorkspaceProposal(
     body: JSON.stringify({
       proposal_token: proposalToken,
       current_draft_id: currentDraftId,
+      confirmed: true,
+      improvement_conversation_id: improvementConversationId,
+    }),
+  });
+}
+
+export async function applyReaiTourCoverAction(
+  actionToken: string,
+  improvementConversationId: string | null = null,
+): Promise<{
+  action: "set_tour_cover";
+  draft_id: number;
+  tour_id: number;
+  client_action: import("../reai-viewer-actions").ReaiViewerAction;
+  execution_mode: "deterministic";
+}> {
+  return request("/api/reaigen/reai-agent/workspace/tour-cover-actions/apply/", {
+    method: "POST",
+    body: JSON.stringify({
+      action_token: actionToken,
       confirmed: true,
       improvement_conversation_id: improvementConversationId,
     }),
