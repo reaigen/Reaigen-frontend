@@ -79,6 +79,9 @@ test("scanning UI hides implementation names and remains standalone", () => {
   assert.doesNotMatch(startPage, /draft_id|tour_id|listSplats/);
   assert.doesNotMatch(startPage, /access\.runtime\.(?:release|commit)/);
   assert.doesNotMatch(workspace, /session\.runtime\.(?:release|commit)/);
+  assert.match(startPage, /access\?\.runtime\.profile === "preview"/);
+  assert.match(startPage, /capabilities\.dragon_refinement !== true/);
+  assert.match(workspace, /liveScan\.finishPreview/);
   assert.match(workspace, /splatUrl=\{preview\.splat_url\}/);
   assert.match(workspace, /readOnly/);
 });

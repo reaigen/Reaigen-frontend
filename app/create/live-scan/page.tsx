@@ -34,8 +34,10 @@ export default function LiveScanStartPage() {
   const [dragonRefinement, setDragonRefinement] = React.useState(true);
 
   React.useEffect(() => {
-    if (access?.runtime.profile === "contract-test") setDragonRefinement(false);
-  }, [access?.runtime.profile]);
+    if (access && access.capabilities.dragon_refinement !== true) {
+      setDragonRefinement(false);
+    }
+  }, [access]);
 
   React.useEffect(() => {
     if (!isLoading && !isAuthenticated) router.replace("/");
@@ -111,6 +113,11 @@ export default function LiveScanStartPage() {
         {access?.runtime.profile === "contract-test" ? (
           <p role="status" className="mt-5 rounded-2xl border border-amber-500/30 bg-amber-500/10 px-4 py-3 text-sm leading-relaxed text-amber-900 dark:text-amber-100">
             {t("liveScan.contractTest", lang)}
+          </p>
+        ) : null}
+        {access?.runtime.profile === "preview" ? (
+          <p role="status" className="mt-5 rounded-2xl border border-sky-500/25 bg-sky-500/10 px-4 py-3 text-sm leading-relaxed text-sky-950 dark:text-sky-100">
+            {t("liveScan.previewMode", lang)}
           </p>
         ) : null}
 

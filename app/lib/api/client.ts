@@ -1307,6 +1307,7 @@ export interface LiveSplatAccess {
     last_good_preview: boolean;
     automatic_floor_retry: boolean;
     manual_floor_revision: boolean;
+    camera_derived_preview?: boolean;
     dragon_refinement: boolean;
     contract_test?: boolean;
   };
