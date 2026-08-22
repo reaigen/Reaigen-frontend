@@ -500,15 +500,18 @@ export default function LiveScanWorkspacePage() {
         : null;
   const terminal = TERMINAL_SESSION_STATES.has(session.status);
   const finalizing = session.status === "draining" || session.status === "refining";
-  const pointCloudLabel = finalizing
-    ? t("liveScan.pointCloudRefining", lang)
-    : preview?.refined
-      ? t("liveScan.pointCloudRefined", lang)
-      : preview?.trust === "qualified"
-        ? t("liveScan.previewQualified", lang)
-      : preview
-        ? t("liveScan.pointCloudForming", lang)
-        : t("liveScan.previewWaiting", lang);
+  const refinementFailed = session.status === "failed";
+  const pointCloudLabel = refinementFailed
+    ? t("liveScan.pointCloudNeedsRefinement", lang)
+    : finalizing
+      ? t("liveScan.pointCloudRefining", lang)
+      : preview?.refined
+        ? t("liveScan.pointCloudRefined", lang)
+        : preview?.trust === "qualified"
+          ? t("liveScan.previewQualified", lang)
+          : preview
+            ? t("liveScan.pointCloudForming", lang)
+            : t("liveScan.previewWaiting", lang);
   const interrupted = (
     !capturing
     && session.progress.allocated_frames > session.progress.ready_frames + queuedFrameCount
@@ -589,6 +592,11 @@ export default function LiveScanWorkspacePage() {
                   {errorText}
                 </p>
               ) : null}
+              {refinementFailed ? (
+                <p role="status" className="rounded-xl border border-amber-300/25 bg-amber-950/85 px-3 py-2 text-xs leading-relaxed text-amber-100 shadow-lg backdrop-blur">
+                  {t("liveScan.refinementIncomplete", lang)}
+                </p>
+              ) : null}
             </div>
 
             <div className="absolute bottom-2 left-2 right-2 z-30 rounded-2xl border border-white/15 bg-black/72 p-3 text-white shadow-2xl backdrop-blur-xl sm:bottom-4 sm:left-4 sm:right-auto sm:w-[min(82vw,30rem)]">
@@ -619,28 +627,37 @@ export default function LiveScanWorkspacePage() {
                     </p>
                   ) : null}
                 </div>
-                {!terminal && session.status !== "draining" && session.status !== "refining" ? (
-                <Button
-                  className="h-11 shrink-0 rounded-full px-4 shadow-control"
-                  variant={capturing ? "destructive" : "default"}
-                  size="sm"
-                  loading={cameraLoading || runtimeStarting || capturePending || finishing}
-                  disabled={
-                    !captureDevice
-                    || (!session.runtime.active && access?.runtime_available !== true)
-                  }
-                  onClick={interrupted
-                    ? () => router.push("/create/live-scan")
-                    : capturing
-                      ? finishSession
-                      : beginCapture}
-                >
-                  {interrupted
-                    ? t("liveScan.restart", lang)
-                    : capturing
-                      ? t("liveScan.finishPreview", lang)
-                      : t("liveScan.startCapture", lang)}
-                </Button>
+                {refinementFailed ? (
+                  <Button
+                    className="h-11 shrink-0 rounded-full px-4 shadow-control"
+                    variant="default"
+                    size="sm"
+                    onClick={() => router.push("/create/live-scan")}
+                  >
+                    {t("liveScan.newScan", lang)}
+                  </Button>
+                ) : !terminal && session.status !== "draining" && session.status !== "refining" ? (
+                  <Button
+                    className="h-11 shrink-0 rounded-full px-4 shadow-control"
+                    variant={capturing ? "destructive" : "default"}
+                    size="sm"
+                    loading={cameraLoading || runtimeStarting || capturePending || finishing}
+                    disabled={
+                      !captureDevice
+                      || (!session.runtime.active && access?.runtime_available !== true)
+                    }
+                    onClick={interrupted
+                      ? () => router.push("/create/live-scan")
+                      : capturing
+                        ? finishSession
+                        : beginCapture}
+                  >
+                    {interrupted
+                      ? t("liveScan.restart", lang)
+                      : capturing
+                        ? t("liveScan.finishPreview", lang)
+                        : t("liveScan.startCapture", lang)}
+                  </Button>
                 ) : null}
               </div>
             </div>

@@ -78,3 +78,14 @@ test("the scan workspace is one responsive viewport with a portrait camera inset
   assert.match(start, /useState<"fast" \| "balanced" \| "quality">\("fast"\)/);
   assert.match(english, /"liveScan\.pointCloudForming":\s+"Point cloud forming"/);
 });
+
+test("a rejected final refinement keeps the last cloud and explains data safety", () => {
+  assert.match(workspace, /const refinementFailed = session\.status === "failed"/);
+  assert.match(workspace, /liveScan\.refinementIncomplete/);
+  assert.match(workspace, /liveScan\.pointCloudNeedsRefinement/);
+  assert.match(workspace, /liveScan\.newScan/);
+  assert.match(
+    english,
+    /"liveScan\.refinementIncomplete":\s+"Final quality checks did not pass\. Your source frames and last point cloud are safely retained\."/,
+  );
+});
