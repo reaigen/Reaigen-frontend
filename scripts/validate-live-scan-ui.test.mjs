@@ -42,11 +42,12 @@ test("capture and status cadences do not recreate the old ten-second delay", () 
   assert.equal(numericConstant(workspace, "CAPTURE_HEIGHT"), 960);
   assert.ok(numericConstant(workspace, "CAPTURE_INTERVAL_MS") <= 250);
   assert.ok(numericConstant(workspace, "STATUS_INTERVAL_MS") <= 500);
-  assert.equal(numericConstant(workspace, "FIRST_PREVIEW_FRAME_COUNT"), 8);
+  assert.equal(numericConstant(workspace, "FIRST_PREVIEW_FRAME_COUNT"), 4);
   assert.ok(numericConstant(workspace, "MAX_PARALLEL_UPLOADS") >= 4);
   assert.ok(numericConstant(workspace, "MAX_PARALLEL_UPLOADS") <= 8);
   assert.match(workspace, /sourceWidth[\s\S]*sourceHeight[\s\S]*context\.drawImage/);
-  assert.match(workspace, /capturePending[\s\S]*session\.status === "capturing"/);
+  assert.match(workspace, /CAPTURE_ACCEPTING_SESSION_STATES[\s\S]*"starting"[\s\S]*"capturing"/);
+  assert.match(workspace, /current\.runtime\.active[\s\S]*CAPTURE_ACCEPTING_SESSION_STATES\.has\(current\.status\)/);
   assert.match(workspace, /allocationTailRef/);
   assert.match(workspace, /activeUploadsRef/);
   assert.match(workspace, /persistCapturedFrame/);

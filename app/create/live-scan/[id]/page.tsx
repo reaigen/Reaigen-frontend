@@ -27,7 +27,7 @@ const CAPTURE_WIDTH = 540;
 const CAPTURE_HEIGHT = 960;
 const CAPTURE_INTERVAL_MS = 250;
 const STATUS_INTERVAL_MS = 400;
-const FIRST_PREVIEW_FRAME_COUNT = 8;
+const FIRST_PREVIEW_FRAME_COUNT = 4;
 const MAX_FRAME_SIZE = 16 * 1024 * 1024;
 const MAX_PARALLEL_UPLOADS = 6;
 const MAX_CAPTURE_BACKLOG = 24;
@@ -42,6 +42,10 @@ const ACTIVE_MODAL_STATUSES = new Set<LiveSplatSession["status"]>([
   "capturing",
   "draining",
   "refining",
+]);
+const CAPTURE_ACCEPTING_SESSION_STATES = new Set<LiveSplatSession["status"]>([
+  "starting",
+  "capturing",
 ]);
 const ScanningPointCloudViewer = dynamic(
   () => import("../../../components/scanning-point-cloud-viewer"),
@@ -374,7 +378,10 @@ export default function LiveScanWorkspacePage() {
       }
       setRuntimeStarting(false);
     }
-    if (current.status === "capturing") {
+    if (
+      current.runtime.active
+      && CAPTURE_ACCEPTING_SESSION_STATES.has(current.status)
+    ) {
       setCapturePending(false);
       captureActiveRef.current = true;
       setCapturing(true);
@@ -383,7 +390,10 @@ export default function LiveScanWorkspacePage() {
 
   React.useEffect(() => {
     if (!capturePending || !session) return;
-    if (session.status === "capturing") {
+    if (
+      session.runtime.active
+      && CAPTURE_ACCEPTING_SESSION_STATES.has(session.status)
+    ) {
       setCapturePending(false);
       captureActiveRef.current = true;
       setCapturing(true);
