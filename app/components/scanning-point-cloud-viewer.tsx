@@ -317,7 +317,6 @@ export default function ScanningPointCloudViewer({
         }
         scene.add(points);
         pointsRef.current = points;
-        const previousRadius = radiusRef.current;
         const gaugeChanged = (
           gaugeRevisionRef.current !== null
           && gaugeRevisionRef.current !== gaugeRevision
@@ -325,17 +324,11 @@ export default function ScanningPointCloudViewer({
         camera.near = Math.max(radius / 5_000, 0.002);
         camera.far = Math.max(radius * 1_000, 100);
         camera.updateProjectionMatrix();
-        const targetDistance = controls.target.distanceTo(center);
-        const scaleChanged = (
-          previousRadius > 0
-          && Math.max(radius / previousRadius, previousRadius / radius) > 3
-        );
-        const needsFrame = (
-          !framedRef.current
-          || gaugeChanged
-          || scaleChanged
-          || targetDistance > Math.max(radius * 3, previousRadius * 3)
-        );
+        // A growing cloud must remain visually fixed in one world. Reframing
+        // on changing bounds made a valid same-gauge update look like the room
+        // jumped or reset. Only the first cloud, or an explicit backend gauge
+        // revision, may move the viewer camera.
+        const needsFrame = !framedRef.current || gaugeChanged;
         if (needsFrame) {
           const direction = new THREE.Vector3(1.35, 0.9, 1.35).normalize();
           controls.target.copy(center);

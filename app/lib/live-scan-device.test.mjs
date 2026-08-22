@@ -62,7 +62,8 @@ test("new scan never automatically resumes an older session", () => {
     "utf8",
   );
 
-  assert.match(startPage, /onClick=\{startSession\}/);
+  assert.match(startPage, /createLiveSplatSession/);
+  assert.match(startPage, /attemptedRef\.current = true;[\s\S]*void startSession\(\)/);
   assert.doesNotMatch(startPage, /listLiveSplatSessions/);
   assert.doesNotMatch(startPage, /liveScan\.continue/);
 });
@@ -90,7 +91,7 @@ test("scanning UI hides implementation names and remains standalone", () => {
   assert.doesNotMatch(startPage, /draft_id|tour_id|listSplats/);
   assert.doesNotMatch(startPage, /access\.runtime\.(?:release|commit)/);
   assert.doesNotMatch(workspace, /session\.runtime\.(?:release|commit)/);
-  assert.match(startPage, /capabilities\.dragon_refinement !== true/);
+  assert.match(startPage, /dragon_refinement: access\.capabilities\.dragon_refinement === true/);
   assert.match(workspace, /liveScan\.finishPreview/);
   assert.match(workspace, /pointCloudUrl=\{preview\.splat_url\}/);
   assert.match(workspace, /ScanningPointCloudViewer/);

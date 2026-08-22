@@ -46,7 +46,6 @@ test("capture and status cadences do not recreate the old ten-second delay", () 
   assert.equal(numericConstant(workspace, "CAPTURE_HEIGHT"), 960);
   assert.ok(numericConstant(workspace, "CAPTURE_INTERVAL_MS") <= 250);
   assert.ok(numericConstant(workspace, "STATUS_INTERVAL_MS") <= 500);
-  assert.equal(numericConstant(workspace, "FIRST_PREVIEW_FRAME_COUNT"), 1);
   assert.ok(numericConstant(workspace, "MAX_PARALLEL_UPLOADS") >= 4);
   assert.ok(numericConstant(workspace, "MAX_PARALLEL_UPLOADS") <= 8);
   assert.match(workspace, /sourceWidth[\s\S]*sourceHeight[\s\S]*context\.drawImage/);
@@ -76,16 +75,19 @@ test("the scan workspace is one responsive viewport with a portrait camera inset
   assert.match(workspace, /safe-area-inset-bottom/);
   assert.doesNotMatch(workspace, /absolute inset-0 h-full w-full bg-black object-cover/);
   assert.match(workspace, /capturedFrameCount/);
-  assert.match(workspace, /liveScan\.firstPreview/);
-  assert.match(workspace, /liveScan\.captured/);
-  assert.match(workspace, /liveScan\.saved/);
+  assert.doesNotMatch(workspace, /liveScan\.firstPreview/);
+  assert.doesNotMatch(workspace, /liveScan\.captured/);
+  assert.doesNotMatch(workspace, /liveScan\.saved[",]/);
+  assert.doesNotMatch(workspace, /liveScan\.cameras/);
+  assert.doesNotMatch(workspace, /liveScan\.previewQualified/);
+  assert.doesNotMatch(workspace, /liveScan\.previewProvisional/);
+  assert.doesNotMatch(workspace, /liveScan\.contractTest/);
   assert.match(workspace, /session\.progress\.allocated_frames > session\.progress\.ready_frames \+ queuedFrameCount/);
   assert.match(workspace, /liveScan\.restart/);
-  assert.match(start, /onClick=\{startSession\}/);
   assert.doesNotMatch(start, /listLiveSplatSessions|liveScan\.continue/);
   assert.match(workspace, /finishSession[\s\S]*beginCapture/);
   assert.doesNotMatch(workspace, /onClick=\{enableCamera\}|toggleCapture/);
-  assert.match(start, /<details/);
+  assert.doesNotMatch(start, /<details|<Switch|liveScan\.options|liveScan\.dragonRefinement|liveScan\.floorPreview/);
   assert.match(start, /const LIVE_SCAN_PIPELINE_QUALITY = "fast" as const/);
   assert.match(start, /quality: LIVE_SCAN_PIPELINE_QUALITY/);
   assert.match(
@@ -93,21 +95,23 @@ test("the scan workspace is one responsive viewport with a portrait camera inset
     /await startLiveSplatSession\(session\.id\)[\s\S]*router\.push\(`\/create\/live-scan\/\$\{session\.id\}`\)/,
   );
   assert.doesNotMatch(start, /setQuality|selection-capsule-track/);
-  assert.ok(
-    start.indexOf('t("liveScan.runtimeUnavailable", lang)')
-      < start.indexOf("<details"),
-    "runtime availability must be visible without opening options",
-  );
-  assert.match(english, /"liveScan\.pointCloudForming":\s+"Point cloud forming"/);
+  assert.match(start, /attemptedRef\.current = true;[\s\S]*void startSession\(\)/);
+  assert.match(workspace, /beforeunload/);
+  assert.match(workspace, /if \(!capturing && !savingFrame && !finishing\) return/);
+  assert.match(viewer, /const needsFrame = !framedRef\.current \|\| gaugeChanged/);
+  assert.doesNotMatch(viewer, /scaleChanged|targetDistance/);
+  assert.match(english, /"liveScan\.pointCloudForming":\s+"Building room"/);
+  assert.match(english, /"liveScan\.savingLatest":\s+"Saving…"/);
+  assert.match(english, /"liveScan\.savedSafely":\s+"Saved"/);
 });
 
-test("a rejected final refinement keeps the last cloud and explains data safety", () => {
+test("a rejected result stays simple while retaining the last cloud", () => {
   assert.match(workspace, /const refinementFailed = session\.status === "failed"/);
-  assert.match(workspace, /liveScan\.refinementIncomplete/);
   assert.match(workspace, /liveScan\.pointCloudNeedsRefinement/);
   assert.match(workspace, /liveScan\.newScan/);
+  assert.doesNotMatch(workspace, /liveScan\.refinementIncomplete/);
   assert.match(
     english,
-    /"liveScan\.refinementIncomplete":\s+"Final quality checks did not pass\. Your source frames and last point cloud are safely retained\."/,
+    /"liveScan\.pointCloudNeedsRefinement":\s+"Saved — result incomplete"/,
   );
 });

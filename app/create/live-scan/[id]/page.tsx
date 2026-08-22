@@ -28,7 +28,6 @@ const CAPTURE_WIDTH = 540;
 const CAPTURE_HEIGHT = 960;
 const CAPTURE_INTERVAL_MS = 200;
 const STATUS_INTERVAL_MS = 400;
-const FIRST_PREVIEW_FRAME_COUNT = 1;
 const MAX_FRAME_SIZE = 16 * 1024 * 1024;
 const MAX_PARALLEL_UPLOADS = 6;
 const MAX_CAPTURE_BACKLOG = 24;
@@ -216,13 +215,14 @@ export default function LiveScanWorkspacePage() {
   }, []);
 
   React.useEffect(() => {
-    if (!savingFrame) return;
-    const protectPendingUploads = (event: BeforeUnloadEvent) => {
+    if (!capturing && !savingFrame && !finishing) return;
+    const protectActiveCapture = (event: BeforeUnloadEvent) => {
       event.preventDefault();
+      event.returnValue = "";
     };
-    window.addEventListener("beforeunload", protectPendingUploads);
-    return () => window.removeEventListener("beforeunload", protectPendingUploads);
-  }, [savingFrame]);
+    window.addEventListener("beforeunload", protectActiveCapture);
+    return () => window.removeEventListener("beforeunload", protectActiveCapture);
+  }, [capturing, finishing, savingFrame]);
 
   const enableCamera = async (): Promise<boolean> => {
     if (cameraReady) return true;
@@ -505,13 +505,11 @@ export default function LiveScanWorkspacePage() {
     ? t("liveScan.pointCloudNeedsRefinement", lang)
     : finalizing
       ? t("liveScan.pointCloudRefining", lang)
-      : preview?.refined
+      : session.status === "completed" || preview?.refined
         ? t("liveScan.pointCloudRefined", lang)
-        : preview?.trust === "qualified"
-          ? t("liveScan.previewQualified", lang)
-          : preview
-            ? t("liveScan.pointCloudForming", lang)
-            : t("liveScan.previewWaiting", lang);
+        : capturing || preview
+          ? t("liveScan.pointCloudForming", lang)
+          : t("liveScan.previewWaiting", lang);
   const interrupted = (
     !capturing
     && session.progress.allocated_frames > session.progress.ready_frames + queuedFrameCount
@@ -519,7 +517,7 @@ export default function LiveScanWorkspacePage() {
 
   return (
     <AppShell user={user} onLogout={logout} hideMobileNav immersive>
-      <div className="fixed inset-0 bg-background">
+      <div className="fixed inset-0 overscroll-none bg-background">
         <div className="flex h-full min-h-0 flex-col">
           <section className="relative min-h-0 flex-1 overflow-hidden bg-[#111215]">
             <h1 className="sr-only">{t("liveScan.workspaceTitle", lang)}</h1>
@@ -541,14 +539,16 @@ export default function LiveScanWorkspacePage() {
                 ? "hidden"
                 : "absolute right-[calc(0.5rem+env(safe-area-inset-right,0px))] top-[calc(0.5rem+env(safe-area-inset-top,0px))] z-20 aspect-[9/16] w-[72px] rounded-xl border border-white/20 bg-black object-cover shadow-2xl sm:right-[calc(1rem+env(safe-area-inset-right,0px))] sm:top-[calc(1rem+env(safe-area-inset-top,0px))] sm:w-[90px] lg:w-[104px]"}
             />
-            <button
-              type="button"
-              onClick={() => router.push("/create/live-scan")}
-              aria-label={t("common.back", lang)}
-              className="floating-icon-button pen-touch-target absolute left-[calc(0.5rem+env(safe-area-inset-left,0px))] top-[calc(0.5rem+env(safe-area-inset-top,0px))] z-40 border border-white/15 bg-black/72 text-white/80 shadow-xl backdrop-blur-xl hover:bg-black/85 sm:left-[calc(1rem+env(safe-area-inset-left,0px))] sm:top-[calc(1rem+env(safe-area-inset-top,0px))]"
-            >
-              <ArrowLeftIcon size={17} />
-            </button>
+            {!capturing && !capturePending && !finalizing && !savingFrame ? (
+              <button
+                type="button"
+                onClick={() => router.push("/create")}
+                aria-label={t("common.back", lang)}
+                className="floating-icon-button pen-touch-target absolute left-[calc(0.5rem+env(safe-area-inset-left,0px))] top-[calc(0.5rem+env(safe-area-inset-top,0px))] z-40 border border-white/15 bg-black/72 text-white/80 shadow-xl backdrop-blur-xl hover:bg-black/85 sm:left-[calc(1rem+env(safe-area-inset-left,0px))] sm:top-[calc(1rem+env(safe-area-inset-top,0px))]"
+              >
+                <ArrowLeftIcon size={17} />
+              </button>
+            ) : null}
             {!preview ? (
               <div className="absolute inset-0 flex items-center justify-center p-6 text-center">
                 <div>
@@ -557,35 +557,17 @@ export default function LiveScanWorkspacePage() {
                     {interrupted
                       ? t("liveScan.interrupted", lang)
                       : cameraReady
-                      ? `${t("liveScan.firstPreview", lang)} · ${Math.min(session.progress.ready_frames, FIRST_PREVIEW_FRAME_COUNT)}/${FIRST_PREVIEW_FRAME_COUNT}`
+                      ? t("liveScan.pointCloudForming", lang)
                       : t("liveScan.cameraPrompt", lang)}
                   </p>
-                  {cameraReady && !interrupted ? (
-                    <div className="mx-auto mt-3 h-1.5 w-40 overflow-hidden rounded-full bg-white/10">
-                      <div
-                        className="h-full rounded-full bg-white/70 transition-[width] duration-300"
-                        style={{ width: `${Math.min(100, (session.progress.ready_frames / FIRST_PREVIEW_FRAME_COUNT) * 100)}%` }}
-                      />
-                    </div>
-                  ) : null}
                 </div>
               </div>
             ) : null}
 
             <div className="pointer-events-none absolute left-[calc(3.5rem+env(safe-area-inset-left,0px))] right-[calc(5.125rem+env(safe-area-inset-right,0px))] top-[calc(0.5rem+env(safe-area-inset-top,0px))] z-30 flex flex-col items-start gap-2 sm:left-[calc(4rem+env(safe-area-inset-left,0px))] sm:right-[calc(6.875rem+env(safe-area-inset-right,0px))] sm:top-[calc(1rem+env(safe-area-inset-top,0px))]">
-              {session.runtime.profile === "contract-test" ? (
-                <p role="status" className="rounded-xl border border-amber-300/30 bg-amber-950/85 px-3 py-2 text-xs leading-relaxed text-amber-100 shadow-lg backdrop-blur">
-                  {t("liveScan.contractTest", lang)}
-                </p>
-              ) : null}
               {errorText ? (
                 <p role="alert" className="rounded-xl border border-red-300/20 bg-red-950/85 px-3 py-2 text-xs leading-relaxed text-red-100 shadow-lg backdrop-blur">
                   {errorText}
-                </p>
-              ) : null}
-              {refinementFailed ? (
-                <p role="status" className="rounded-xl border border-amber-300/25 bg-amber-950/85 px-3 py-2 text-xs leading-relaxed text-amber-100 shadow-lg backdrop-blur">
-                  {t("liveScan.refinementIncomplete", lang)}
                 </p>
               ) : null}
             </div>
@@ -593,28 +575,17 @@ export default function LiveScanWorkspacePage() {
             <div className="absolute bottom-[calc(0.5rem+env(safe-area-inset-bottom,0px))] left-[calc(0.5rem+env(safe-area-inset-left,0px))] right-[calc(0.5rem+env(safe-area-inset-right,0px))] z-30 rounded-2xl border border-white/15 bg-black/72 p-3 text-white shadow-2xl backdrop-blur-xl sm:bottom-[calc(1rem+env(safe-area-inset-bottom,0px))] sm:left-[calc(1rem+env(safe-area-inset-left,0px))] sm:right-auto sm:w-[min(82vw,30rem)]">
               <div className="flex items-center justify-between gap-3">
                 <div className="min-w-0">
-                  <p className="truncate text-sm font-semibold">
+                  <p className="flex items-center gap-2 truncate text-sm font-semibold">
+                    <span className={`h-2 w-2 shrink-0 rounded-full ${refinementFailed ? "bg-amber-300" : finalizing || savingFrame ? "animate-pulse bg-sky-300" : "bg-emerald-300"}`} />
                     {pointCloudLabel}
                   </p>
-                  <p className="mt-1 truncate text-[11px] tabular-nums text-white/65">
-                    {capturedFrameCount} {t("liveScan.captured", lang)} · {session.progress.ready_frames} {t("liveScan.saved", lang)} · {(preview?.camera_count ?? 0)} {t("liveScan.cameras", lang)}
-                  </p>
-                  {preview ? (
-                    <p className={`mt-1 flex items-center gap-1.5 text-[11px] font-medium ${preview.trust === "qualified" ? "text-sky-200" : "text-amber-200"}`}>
-                      <span className={`h-1.5 w-1.5 rounded-full ${preview.trust === "qualified" ? "bg-sky-300" : "bg-amber-300"}`} />
-                      {t(preview.trust === "qualified" ? "liveScan.previewQualified" : "liveScan.previewProvisional", lang)}
-                    </p>
-                  ) : null}
-                  {finalizing ? (
-                    <p role="status" className="mt-1 text-[11px] font-medium text-emerald-200">
-                      {t("liveScan.savedSafely", lang)} · {session.progress.processed_frames}/{session.progress.ready_frames}
-                    </p>
-                  ) : null}
-                  {captureThrottled ? (
-                    <p role="status" className="mt-1 text-[11px] font-medium text-amber-200">{t("liveScan.catchingUp", lang)}</p>
-                  ) : savingFrame ? (
-                    <p role="status" className="mt-1 text-[11px] text-sky-200">
-                      {t("liveScan.savingLatest", lang)}{queuedFrameCount > 0 ? ` · ${queuedFrameCount}` : ""}
+                  {capturedFrameCount > 0 ? (
+                    <p role="status" className={`mt-1 truncate text-[11px] font-medium ${captureThrottled ? "text-amber-200" : savingFrame ? "text-sky-200" : "text-emerald-200"}`}>
+                      {captureThrottled
+                        ? t("liveScan.catchingUp", lang)
+                        : savingFrame
+                          ? t("liveScan.savingLatest", lang)
+                          : t("liveScan.savedSafely", lang)}
                     </p>
                   ) : null}
                 </div>
