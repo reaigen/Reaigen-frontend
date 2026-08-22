@@ -485,6 +485,10 @@ export default function LiveScanWorkspacePage() {
         ? t("liveScan.sessionUnavailable", lang)
         : null;
   const terminal = TERMINAL_SESSION_STATES.has(session.status);
+  const interrupted = (
+    !capturing
+    && session.progress.allocated_frames > session.progress.ready_frames + queuedFrameCount
+  );
 
   return (
     <AppShell user={user} onLogout={logout} hideMobileNav>
@@ -531,11 +535,13 @@ export default function LiveScanWorkspacePage() {
                 <div>
                   {!cameraReady ? <VideoIcon size={28} className="mx-auto text-white/35" /> : null}
                   <p className="mt-3 text-sm font-medium text-white/80">
-                    {cameraReady
+                    {interrupted
+                      ? t("liveScan.interrupted", lang)
+                      : cameraReady
                       ? `${t("liveScan.firstPreview", lang)} · ${Math.min(session.progress.ready_frames, FIRST_PREVIEW_FRAME_COUNT)}/${FIRST_PREVIEW_FRAME_COUNT}`
                       : t("liveScan.cameraPrompt", lang)}
                   </p>
-                  {cameraReady ? (
+                  {cameraReady && !interrupted ? (
                     <div className="mx-auto mt-3 h-1.5 w-40 overflow-hidden rounded-full bg-white/10">
                       <div
                         className="h-full rounded-full bg-white/70 transition-[width] duration-300"
@@ -589,9 +595,17 @@ export default function LiveScanWorkspacePage() {
                     !captureDevice
                     || (!session.runtime.active && access?.runtime_available !== true)
                   }
-                  onClick={capturing ? finishSession : beginCapture}
+                  onClick={interrupted
+                    ? () => router.push("/create/live-scan")
+                    : capturing
+                      ? finishSession
+                      : beginCapture}
                 >
-                  {capturing ? t("liveScan.finishPreview", lang) : t("liveScan.startCapture", lang)}
+                  {interrupted
+                    ? t("liveScan.restart", lang)
+                    : capturing
+                      ? t("liveScan.finishPreview", lang)
+                      : t("liveScan.startCapture", lang)}
                 </Button>
                 ) : null}
               </div>

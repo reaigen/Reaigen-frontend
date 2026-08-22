@@ -209,6 +209,8 @@ const sk: LocaleStrings = {
   "liveScan.saved":                        "uložených",
   "liveScan.firstPreview":                 "Vytvára sa prvé mračno bodov",
   "liveScan.catchingUp":                   "Ukladám čakajúce zábery — zostaňte chvíľu na mieste",
+  "liveScan.interrupted":                  "Predchádzajúce snímanie sa nedokončilo ukladať.",
+  "liveScan.restart":                      "Spustiť nové snímanie",
   "liveScan.savingLatest":                 "Ukladám nasnímané zábery",
   "liveScan.savedSafely":                  "Zábery sú bezpečne uložené",
   "liveScan.readyToSave":                  "Pripravené na ukladanie",

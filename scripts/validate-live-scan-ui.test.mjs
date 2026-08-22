@@ -65,7 +65,10 @@ test("the scan workspace is one responsive viewport with a portrait camera inset
   assert.match(workspace, /liveScan\.firstPreview/);
   assert.match(workspace, /liveScan\.captured/);
   assert.match(workspace, /liveScan\.saved/);
-  assert.match(workspace, /onClick=\{capturing \? finishSession : beginCapture\}/);
+  assert.match(workspace, /session\.progress\.allocated_frames > session\.progress\.ready_frames \+ queuedFrameCount/);
+  assert.match(workspace, /liveScan\.restart/);
+  assert.match(start, /session\.progress\.allocated_frames === session\.progress\.ready_frames/);
+  assert.match(workspace, /finishSession[\s\S]*beginCapture/);
   assert.doesNotMatch(workspace, /onClick=\{enableCamera\}|toggleCapture/);
   assert.match(start, /<details/);
   assert.match(start, /useState<"fast" \| "balanced" \| "quality">\("fast"\)/);

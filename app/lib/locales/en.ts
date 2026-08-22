@@ -219,6 +219,8 @@ const en = {
   "liveScan.saved":                        "saved",
   "liveScan.firstPreview":                 "Building first point cloud",
   "liveScan.catchingUp":                   "Saving backlog — hold position",
+  "liveScan.interrupted":                  "The previous capture did not finish saving.",
+  "liveScan.restart":                      "Start new scan",
   "liveScan.savingLatest":                 "Saving captured views",
   "liveScan.savedSafely":                  "Captured views saved safely",
   "liveScan.readyToSave":                  "Ready to save",

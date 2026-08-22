@@ -209,6 +209,8 @@ const de: LocaleStrings = {
   "liveScan.saved":                        "gespeichert",
   "liveScan.firstPreview":                 "Erste Punktwolke wird erstellt",
   "liveScan.catchingUp":                   "Aufnahmen werden gespeichert — Position kurz halten",
+  "liveScan.interrupted":                  "Die vorherige Aufnahme wurde nicht vollständig gespeichert.",
+  "liveScan.restart":                      "Neuen Scan starten",
   "liveScan.savingLatest":                 "Aufnahmen werden gespeichert",
   "liveScan.savedSafely":                  "Aufnahmen sicher gespeichert",
   "liveScan.readyToSave":                  "Bereit zum Speichern",

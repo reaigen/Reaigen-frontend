@@ -49,7 +49,10 @@ export default function LiveScanStartPage() {
     listLiveSplatSessions()
       .then(({ results }) => {
         if (!active) return;
-        setLatest(results.find((session) => ACTIVE_STATES.has(session.status)) ?? null);
+        setLatest(results.find((session) => (
+          ACTIVE_STATES.has(session.status)
+          && session.progress.allocated_frames === session.progress.ready_frames
+        )) ?? null);
       })
       .catch(() => { if (active) setLatest(null); });
     return () => { active = false; };
