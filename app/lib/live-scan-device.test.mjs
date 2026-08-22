@@ -82,6 +82,7 @@ test("scanning UI hides implementation names and remains standalone", () => {
   assert.match(startPage, /access\?\.runtime\.profile === "preview"/);
   assert.match(startPage, /capabilities\.dragon_refinement !== true/);
   assert.match(workspace, /liveScan\.finishPreview/);
-  assert.match(workspace, /splatUrl=\{preview\.splat_url\}/);
-  assert.match(workspace, /readOnly/);
+  assert.match(workspace, /pointCloudUrl=\{preview\.splat_url\}/);
+  assert.match(workspace, /ScanningPointCloudViewer/);
+  assert.doesNotMatch(workspace, /gaussianRenderer|<SplatViewer/);
 });

@@ -6,7 +6,7 @@ import { AppShell } from "../../components/app-shell";
 import { useAuth } from "../../components/hooks/use-auth";
 import { useLiveSplatAccess } from "../../components/hooks/use-live-splat-access";
 import { useLiveScanCaptureDevice } from "../../components/hooks/use-live-scan-device";
-import { ArrowLeftIcon, LockIcon, PlayIcon, VideoIcon } from "../../components/icons";
+import { ArrowLeftIcon, LockIcon, PlayIcon } from "../../components/icons";
 import { PageHeader } from "../../components/page-header";
 import { PageLoading } from "../../components/page-loading";
 import {
@@ -85,9 +85,9 @@ export default function LiveScanStartPage() {
       const session = await createLiveSplatSession({
         postprocess: {
           quality,
-          floor_preview: floorPreview,
+          floor_preview: access?.capabilities.automatic_floor_retry === true && floorPreview,
           dragon_refinement: dragonRefinement,
-          output_format: "sog",
+          output_format: "ply",
         },
       });
       router.push(`/create/live-scan/${session.id}`);
@@ -99,7 +99,7 @@ export default function LiveScanStartPage() {
 
   return (
     <AppShell user={user} onLogout={logout} hideMobileNav>
-      <div className="mx-auto w-full max-w-[1040px] pb-12">
+      <div className="mx-auto w-full max-w-[720px] pb-12">
         <button
           type="button"
           onClick={() => router.push("/create")}
@@ -121,21 +121,7 @@ export default function LiveScanStartPage() {
           </p>
         ) : null}
 
-        <div className="mt-6 grid gap-4 md:grid-cols-3">
-          {([
-            ["liveScan.realtimeTitle", "liveScan.realtimeDescription"],
-            ["liveScan.durableTitle", "liveScan.durableDescription"],
-            ["liveScan.floorTitle", "liveScan.floorDescription"],
-          ] as const).map(([titleKey, descriptionKey]) => (
-            <div key={titleKey} className="rounded-[1.5rem] border border-border/60 bg-card/75 p-5 shadow-sm backdrop-blur-xl">
-              <VideoIcon size={18} className="text-foreground/55" />
-              <h2 className="mt-4 text-[15px] font-semibold">{t(titleKey, lang)}</h2>
-              <p className="mt-1.5 text-[13px] leading-relaxed text-muted-foreground">{t(descriptionKey, lang)}</p>
-            </div>
-          ))}
-        </div>
-
-        <div className="mt-4 rounded-[1.875rem] border border-border/60 bg-card/80 p-5 shadow-[0_18px_50px_-42px_rgba(0,0,0,0.32)] backdrop-blur-2xl sm:p-7">
+        <div className="mt-6 rounded-[1.875rem] border border-border/60 bg-card/80 p-5 shadow-[0_18px_50px_-42px_rgba(0,0,0,0.32)] backdrop-blur-2xl sm:p-7">
           <div className="flex flex-col gap-5 sm:flex-row sm:items-center sm:justify-between">
             <div className="min-w-0">
               <h2 className="text-lg font-semibold">{t("liveScan.readyTitle", lang)}</h2>
@@ -185,7 +171,11 @@ export default function LiveScanStartPage() {
               <div className="divide-y divide-border/60 rounded-2xl border border-border/60 bg-background/50 px-4">
                 <label className="flex min-h-14 items-center justify-between gap-4 py-3 text-sm font-medium">
                   <span>{t("liveScan.floorPreview", lang)}</span>
-                  <Switch checked={floorPreview} onCheckedChange={setFloorPreview} />
+                  <Switch
+                    checked={access?.capabilities.automatic_floor_retry === true && floorPreview}
+                    disabled={access?.capabilities.automatic_floor_retry !== true}
+                    onCheckedChange={setFloorPreview}
+                  />
                 </label>
                 <label className="flex min-h-14 items-center justify-between gap-4 py-3 text-sm font-medium">
                   <span>{t("liveScan.dragonRefinement", lang)}</span>

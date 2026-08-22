@@ -23,9 +23,14 @@ import {
 import { getUserLanguage, t } from "../../../lib/i18n";
 import { Button } from "../../../lib/ui/button";
 
-const CAPTURE_INTERVAL_MS = 1_200;
-const STATUS_INTERVAL_MS = 2_500;
+const CAPTURE_WIDTH = 540;
+const CAPTURE_HEIGHT = 960;
+const CAPTURE_INTERVAL_MS = 250;
+const STATUS_INTERVAL_MS = 400;
 const MAX_FRAME_SIZE = 16 * 1024 * 1024;
+const MAX_PARALLEL_UPLOADS = 3;
+const MAX_CAPTURE_BACKLOG = 24;
+const FRAME_UPLOAD_ATTEMPTS = 3;
 const TERMINAL_SESSION_STATES = new Set<LiveSplatSession["status"]>([
   "completed",
   "failed",
@@ -49,31 +54,68 @@ const FLOOR_LABEL_KEYS: Record<LiveSplatSession["floor_status"],
   rejected: "liveScan.floor.rejected",
 };
 
-const SplatViewer = dynamic(() => import("../../../components/splat-viewer"), {
-  ssr: false,
-});
+const ScanningPointCloudViewer = dynamic(
+  () => import("../../../components/scanning-point-cloud-viewer"),
+  { ssr: false },
+);
 
 async function frameDigest(blob: Blob): Promise<string> {
   const digest = await crypto.subtle.digest("SHA-256", await blob.arrayBuffer());
   return Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, "0")).join("");
 }
 
-function videoFrame(video: HTMLVideoElement): Promise<Blob> {
+function videoFrame(video: HTMLVideoElement, canvas: HTMLCanvasElement): Promise<Blob> {
   const width = Math.max(1, video.videoWidth);
   const height = Math.max(1, video.videoHeight);
-  const canvas = document.createElement("canvas");
-  canvas.width = width;
-  canvas.height = height;
+  const sourceAspect = width / height;
+  const targetAspect = CAPTURE_WIDTH / CAPTURE_HEIGHT;
+  let sourceX = 0;
+  let sourceY = 0;
+  let sourceWidth = width;
+  let sourceHeight = height;
+  if (sourceAspect > targetAspect) {
+    sourceWidth = height * targetAspect;
+    sourceX = (width - sourceWidth) / 2;
+  } else if (sourceAspect < targetAspect) {
+    sourceHeight = width / targetAspect;
+    sourceY = (height - sourceHeight) / 2;
+  }
+  if (canvas.width !== CAPTURE_WIDTH) canvas.width = CAPTURE_WIDTH;
+  if (canvas.height !== CAPTURE_HEIGHT) canvas.height = CAPTURE_HEIGHT;
   const context = canvas.getContext("2d", { alpha: false });
   if (!context) return Promise.reject(new Error("Canvas is unavailable."));
-  context.drawImage(video, 0, 0, width, height);
+  context.drawImage(
+    video,
+    sourceX,
+    sourceY,
+    sourceWidth,
+    sourceHeight,
+    0,
+    0,
+    CAPTURE_WIDTH,
+    CAPTURE_HEIGHT,
+  );
   return new Promise((resolve, reject) => {
     canvas.toBlob(
       (blob) => blob ? resolve(blob) : reject(new Error("Frame encoding failed.")),
       "image/jpeg",
-      0.86,
+      0.82,
     );
   });
+}
+
+interface CapturedFrame {
+  blob: Blob;
+  capturedAt: string;
+}
+
+function newestSession(
+  current: LiveSplatSession | null,
+  incoming: LiveSplatSession,
+): LiveSplatSession {
+  return !current || incoming.progress.revision >= current.progress.revision
+    ? incoming
+    : current;
 }
 
 export default function LiveScanWorkspacePage() {
@@ -85,12 +127,20 @@ export default function LiveScanWorkspacePage() {
   const sessionId = String(params.id || "");
   const videoRef = React.useRef<HTMLVideoElement>(null);
   const streamRef = React.useRef<MediaStream | null>(null);
-  const captureBusyRef = React.useRef(false);
+  const captureCanvasRef = React.useRef<HTMLCanvasElement | null>(null);
+  const captureActiveRef = React.useRef(false);
+  const allocationTailRef = React.useRef<Promise<void>>(Promise.resolve());
+  const activeUploadsRef = React.useRef<Set<Promise<void>>>(new Set());
+  const outstandingFramesRef = React.useRef(0);
+  const uploadFailedRef = React.useRef(false);
   const [session, setSession] = React.useState<LiveSplatSession | null>(null);
   const [sessionLoading, setSessionLoading] = React.useState(true);
   const [cameraReady, setCameraReady] = React.useState(false);
   const [cameraLoading, setCameraLoading] = React.useState(false);
   const [runtimeStarting, setRuntimeStarting] = React.useState(false);
+  const [capturePending, setCapturePending] = React.useState(false);
+  const [savingFrame, setSavingFrame] = React.useState(false);
+  const [queuedFrameCount, setQueuedFrameCount] = React.useState(0);
   const [finishing, setFinishing] = React.useState(false);
   const [capturing, setCapturing] = React.useState(false);
   const [preview, setPreview] = React.useState<LiveSplatPreview | null>(null);
@@ -110,7 +160,7 @@ export default function LiveScanWorkspacePage() {
     getLiveSplatSession(sessionId)
       .then((value) => {
         if (!active) return;
-        setSession(value);
+        setSession((current) => newestSession(current, value));
         setError((current) => current === "session" ? null : current);
       })
       .catch(() => { if (active) setError("session"); })
@@ -126,9 +176,12 @@ export default function LiveScanWorkspacePage() {
       try {
         const value = await syncLiveSplatSession(sessionId);
         if (!active) return;
-        setSession(value);
+        setSession((current) => newestSession(current, value));
         setError((current) => current === "runtime" ? null : current);
-        if (TERMINAL_SESSION_STATES.has(value.status)) setCapturing(false);
+        if (TERMINAL_SESSION_STATES.has(value.status)) {
+          setCapturing(false);
+          setCapturePending(false);
+        }
       } catch {
         if (active) setError("runtime");
       } finally {
@@ -142,18 +195,38 @@ export default function LiveScanWorkspacePage() {
     };
   }, [session?.runtime.active, session?.status, sessionId]);
 
+  const sessionRevision = session?.progress.revision;
   React.useEffect(() => {
-    if (!session) return;
+    if (sessionRevision === undefined) return;
     let active = true;
-    getLiveSplatPreview(sessionId, session.progress.revision)
-      .then(({ preview: value }) => { if (active) setPreview(value); })
+    getLiveSplatPreview(sessionId, sessionRevision)
+      .then(({ preview: value }) => {
+        if (!active || !value) return;
+        setPreview((current) => (
+          current
+          && current.epoch === value.epoch
+          && (current.gauge_revision ?? 0) === (value.gauge_revision ?? 0)
+            ? current
+            : value
+        ));
+      })
       .catch(() => { /* The last rendered preview remains visible. */ });
     return () => { active = false; };
-  }, [session, sessionId]);
+  }, [sessionId, sessionRevision]);
 
   React.useEffect(() => () => {
+    captureActiveRef.current = false;
     streamRef.current?.getTracks().forEach((track) => track.stop());
   }, []);
+
+  React.useEffect(() => {
+    if (!savingFrame) return;
+    const protectPendingUploads = (event: BeforeUnloadEvent) => {
+      event.preventDefault();
+    };
+    window.addEventListener("beforeunload", protectPendingUploads);
+    return () => window.removeEventListener("beforeunload", protectPendingUploads);
+  }, [savingFrame]);
 
   const enableCamera = async () => {
     if (!captureDevice) return;
@@ -165,8 +238,9 @@ export default function LiveScanWorkspacePage() {
         audio: false,
         video: {
           facingMode: { ideal: "environment" },
-          width: { ideal: 1920 },
-          height: { ideal: 1080 },
+          width: { ideal: 1080 },
+          height: { ideal: 1920 },
+          aspectRatio: { ideal: CAPTURE_WIDTH / CAPTURE_HEIGHT },
         },
       });
       openedStream = stream;
@@ -192,71 +266,147 @@ export default function LiveScanWorkspacePage() {
     }
   };
 
-  const captureOne = React.useCallback(async () => {
-    const video = videoRef.current;
-    if (!video || video.videoWidth <= 0 || captureBusyRef.current) return;
-    captureBusyRef.current = true;
-    try {
-      const blob = await videoFrame(video);
-      if (blob.size > MAX_FRAME_SIZE) throw new Error("Encoded frame exceeds the capture limit.");
-      const sha256 = await frameDigest(blob);
-      const presign = await presignLiveSplatFrame(sessionId, {
-        content_type: "image/jpeg",
-        file_size: blob.size,
-        width: video.videoWidth,
-        height: video.videoHeight,
-        sha256,
-        captured_at: new Date().toISOString(),
-      });
-      const headers = { ...presign.required_headers };
-      delete headers["Content-Length"];
-      const uploaded = await fetch(presign.upload_url, {
-        method: "PUT",
-        headers,
-        body: blob,
-      });
-      if (!uploaded.ok) throw new Error(`Upload failed: HTTP ${uploaded.status}`);
-      const confirmed = await confirmLiveSplatFrame(sessionId, presign.frame_id);
-      if (confirmed.session) setSession(confirmed.session);
-      setError(null);
-    } catch {
-      setCapturing(false);
-      setError("capture");
-    } finally {
-      captureBusyRef.current = false;
-    }
-  }, [sessionId]);
+  const updateOutstandingFrames = React.useCallback((change: number) => {
+    const next = Math.max(0, outstandingFramesRef.current + change);
+    outstandingFramesRef.current = next;
+    setQueuedFrameCount(next);
+    setSavingFrame(next > 0);
+  }, []);
+
+  const failCapturePersistence = React.useCallback(() => {
+    uploadFailedRef.current = true;
+    captureActiveRef.current = false;
+    setCapturing(false);
+    setError("capture");
+  }, []);
+
+  const persistCapturedFrame = React.useCallback((frame: CapturedFrame) => {
+    updateOutstandingFrames(1);
+    const allocateAndUpload = async () => {
+      let uploadStarted = false;
+      try {
+        if (uploadFailedRef.current) return;
+        if (frame.blob.size > MAX_FRAME_SIZE) {
+          throw new Error("Encoded frame exceeds the capture limit.");
+        }
+        const sha256 = await frameDigest(frame.blob);
+        const presign = await presignLiveSplatFrame(sessionId, {
+          content_type: "image/jpeg",
+          file_size: frame.blob.size,
+          width: CAPTURE_WIDTH,
+          height: CAPTURE_HEIGHT,
+          sha256,
+          captured_at: frame.capturedAt,
+        });
+
+        while (activeUploadsRef.current.size >= MAX_PARALLEL_UPLOADS) {
+          await Promise.race(activeUploadsRef.current);
+        }
+        if (uploadFailedRef.current) return;
+
+        const upload = (async () => {
+          let lastFailure: unknown = null;
+          for (let attempt = 1; attempt <= FRAME_UPLOAD_ATTEMPTS; attempt += 1) {
+            try {
+              const headers = { ...presign.required_headers };
+              delete headers["Content-Length"];
+              const uploaded = await fetch(presign.upload_url, {
+                method: "PUT",
+                headers,
+                body: frame.blob,
+              });
+              if (!uploaded.ok) throw new Error(`Upload failed: HTTP ${uploaded.status}`);
+              const confirmed = await confirmLiveSplatFrame(sessionId, presign.frame_id);
+              if (confirmed.session) {
+                setSession((current) => newestSession(current, confirmed.session!));
+              }
+              setError((current) => current === "capture" ? null : current);
+              return;
+            } catch (reason) {
+              lastFailure = reason;
+              if (attempt < FRAME_UPLOAD_ATTEMPTS) {
+                await new Promise((resolve) => window.setTimeout(resolve, attempt * 250));
+              }
+            }
+          }
+          throw lastFailure instanceof Error
+            ? lastFailure
+            : new Error("live_scan_frame_upload_failed");
+        })();
+        const settled = upload
+          .catch(() => { failCapturePersistence(); })
+          .finally(() => { updateOutstandingFrames(-1); });
+        uploadStarted = true;
+        activeUploadsRef.current.add(settled);
+        void settled.finally(() => { activeUploadsRef.current.delete(settled); });
+      } catch {
+        failCapturePersistence();
+      } finally {
+        if (!uploadStarted) updateOutstandingFrames(-1);
+      }
+    };
+    const scheduled = allocationTailRef.current.then(allocateAndUpload);
+    allocationTailRef.current = scheduled.catch(() => { /* failure is reflected in the UI */ });
+  }, [failCapturePersistence, sessionId, updateOutstandingFrames]);
 
   const toggleCapture = async () => {
     if (capturing) {
+      captureActiveRef.current = false;
       setCapturing(false);
       return;
     }
-    if (!session) return;
+    if (!session || capturePending) return;
     setError(null);
+    uploadFailedRef.current = false;
+    setCapturePending(true);
+    let current = session;
     if (!session.runtime.active) {
       setRuntimeStarting(true);
       try {
         const started = await startLiveSplatSession(sessionId);
-        setSession(started);
+        setSession((current) => newestSession(current, started));
         if (!started.runtime.active) throw new Error("Runtime dispatch is still pending.");
+        current = started;
       } catch {
         setError("runtimeStart");
         setRuntimeStarting(false);
+        setCapturePending(false);
         return;
       }
       setRuntimeStarting(false);
     }
-    setCapturing(true);
+    if (current.status === "capturing") {
+      setCapturePending(false);
+      captureActiveRef.current = true;
+      setCapturing(true);
+    }
   };
+
+  React.useEffect(() => {
+    if (!capturePending || !session) return;
+    if (session.status === "capturing") {
+      setCapturePending(false);
+      captureActiveRef.current = true;
+      setCapturing(true);
+    } else if (TERMINAL_SESSION_STATES.has(session.status)) {
+      setCapturePending(false);
+      setError("runtimeStart");
+    }
+  }, [capturePending, session]);
 
   const finishSession = async () => {
     if (!session) return;
+    captureActiveRef.current = false;
     setCapturing(false);
+    setCapturePending(false);
     setFinishing(true);
     setError(null);
     try {
-      setSession(await finishLiveSplatSession(sessionId));
+      await allocationTailRef.current;
+      await Promise.all(Array.from(activeUploadsRef.current));
+      if (uploadFailedRef.current) return;
+      const finished = await finishLiveSplatSession(sessionId);
+      setSession((current) => newestSession(current, finished));
     } catch {
       setError("finish");
     } finally {
@@ -266,10 +416,39 @@ export default function LiveScanWorkspacePage() {
 
   React.useEffect(() => {
     if (!capturing) return;
-    void captureOne();
-    const timer = window.setInterval(() => { void captureOne(); }, CAPTURE_INTERVAL_MS);
-    return () => window.clearInterval(timer);
-  }, [captureOne, capturing]);
+    captureActiveRef.current = true;
+    let active = true;
+    let timer: number | undefined;
+    const run = async () => {
+      const started = performance.now();
+      try {
+        if (outstandingFramesRef.current < MAX_CAPTURE_BACKLOG) {
+          const video = videoRef.current;
+          if (!video || video.videoWidth <= 0) throw new Error("Camera frame is unavailable.");
+          const canvas = captureCanvasRef.current ?? document.createElement("canvas");
+          captureCanvasRef.current = canvas;
+          const capturedAt = new Date().toISOString();
+          const blob = await videoFrame(video, canvas);
+          if (!active || !captureActiveRef.current) return;
+          persistCapturedFrame({ blob, capturedAt });
+        }
+      } catch {
+        captureActiveRef.current = false;
+        setCapturing(false);
+        setError("capture");
+      }
+      if (active && captureActiveRef.current) {
+        const delay = Math.max(0, CAPTURE_INTERVAL_MS - (performance.now() - started));
+        timer = window.setTimeout(() => { void run(); }, delay);
+      }
+    };
+    void run();
+    return () => {
+      active = false;
+      captureActiveRef.current = false;
+      if (timer) window.clearTimeout(timer);
+    };
+  }, [capturing, persistCapturedFrame]);
 
   if (isLoading || accessLoading || !user || !allowed) return <PageLoading />;
   const lang = getUserLanguage(user.localization);
@@ -334,9 +513,11 @@ export default function LiveScanWorkspacePage() {
                 <Button
                   size="sm"
                   variant={capturing ? "destructive" : "default"}
-                  loading={runtimeStarting}
+                  loading={runtimeStarting || capturePending}
                   disabled={
                     terminal
+                    || session.status === "draining"
+                    || session.status === "refining"
                     || (!session.runtime.active && access?.runtime_available !== true)
                   }
                   onClick={toggleCapture}
@@ -348,92 +529,128 @@ export default function LiveScanWorkspacePage() {
             </div>
           </header>
 
-          <div className="grid min-h-0 flex-1 gap-px bg-border/50 lg:grid-cols-[minmax(0,1fr)_320px]">
-            <section className="relative min-h-0 overflow-hidden bg-[#111215]">
+          <section className="relative min-h-0 flex-1 overflow-hidden bg-[#111215]">
+            {preview ? (
+              <ScanningPointCloudViewer
+                pointCloudUrl={preview.splat_url}
+                gaugeRevision={preview.gauge_revision ?? 0}
+                showFloorGrid={preview.show_floor_grid}
+                className="h-full w-full"
+              />
+            ) : null}
+            <video
+              ref={videoRef}
+              muted
+              playsInline
+              className={!cameraReady
+                ? "hidden"
+                : "absolute right-2 top-2 z-20 aspect-[9/16] w-[72px] rounded-xl border border-white/20 bg-black object-cover shadow-2xl sm:right-4 sm:top-4 sm:w-[90px] lg:w-[104px]"}
+            />
+            {!cameraReady && !preview ? (
+              <div className="absolute inset-0 flex items-center justify-center p-6 text-center">
+                <div>
+                  <VideoIcon size={28} className="mx-auto text-white/35" />
+                  <p className="mt-3 text-sm font-medium text-white/80">{t("liveScan.cameraPrompt", lang)}</p>
+                </div>
+              </div>
+            ) : null}
+
+            <div className="pointer-events-none absolute left-2 top-2 z-30 flex max-w-[min(72vw,34rem)] flex-col items-start gap-2 sm:left-4 sm:top-4">
               {session.runtime.profile === "contract-test" ? (
-                <p role="status" className="absolute left-4 right-4 top-4 z-30 rounded-xl border border-amber-300/30 bg-amber-950/85 px-3 py-2 text-xs leading-relaxed text-amber-100 shadow-lg backdrop-blur">
+                <p role="status" className="rounded-xl border border-amber-300/30 bg-amber-950/85 px-3 py-2 text-xs leading-relaxed text-amber-100 shadow-lg backdrop-blur">
                   {t("liveScan.contractTest", lang)}
                 </p>
               ) : null}
-              {session.runtime.profile === "preview" ? (
-                <p role="status" className="absolute left-4 right-4 top-4 z-30 rounded-xl border border-sky-300/25 bg-sky-950/85 px-3 py-2 text-xs leading-relaxed text-sky-100 shadow-lg backdrop-blur">
+              {session.runtime.profile === "preview" && !capturing && !preview ? (
+                <p role="status" className="rounded-xl border border-sky-300/25 bg-sky-950/85 px-3 py-2 text-xs leading-relaxed text-sky-100 shadow-lg backdrop-blur">
                   {t("liveScan.previewMode", lang)}
                 </p>
               ) : null}
-              {preview ? (
-                <SplatViewer
-                  key={`${preview.trust}-${preview.epoch}`}
-                  splatUrl={preview.splat_url}
-                  readOnly
-                  performanceProfile="balanced"
-                  showSpatialGrid={preview.show_floor_grid}
-                  gaussianRenderer="spark"
-                  lang={lang}
-                  className="h-full w-full"
-                />
-              ) : null}
-              <video
-                ref={videoRef}
-                muted
-                playsInline
-                className={preview
-                  ? "absolute bottom-4 right-4 z-20 aspect-video w-[min(32%,300px)] rounded-xl border border-white/15 bg-black object-cover shadow-2xl"
-                  : "h-full w-full object-contain"}
-              />
-              {!cameraReady && !preview ? (
-                <div className="absolute inset-0 flex items-center justify-center p-6 text-center">
-                  <div>
-                    <VideoIcon size={28} className="mx-auto text-white/35" />
-                    <p className="mt-3 text-sm font-medium text-white/80">{t("liveScan.cameraPrompt", lang)}</p>
-                  </div>
-                </div>
-              ) : null}
               {capturing ? (
-                <span className="absolute left-4 top-4 inline-flex items-center gap-2 rounded-full bg-black/60 px-3 py-1.5 text-[11px] font-semibold text-white backdrop-blur">
+                <span className="inline-flex items-center gap-2 rounded-full bg-black/70 px-3 py-1.5 text-[11px] font-semibold text-white backdrop-blur">
                   <span className="h-2 w-2 animate-pulse rounded-full bg-red-500 motion-reduce:animate-none" />
                   {t("liveScan.capturing", lang)}
                 </span>
               ) : null}
-              {preview ? (
-                <span className="absolute left-4 bottom-4 z-20 rounded-full bg-black/60 px-3 py-1.5 text-[11px] font-semibold text-white backdrop-blur">
-                  {preview.trust === "qualified" ? t("liveScan.previewQualified", lang) : t("liveScan.previewProvisional", lang)} · {t("liveScan.epoch", lang)} {preview.epoch}
+              {capturePending ? (
+                <span className="inline-flex items-center gap-2 rounded-full bg-black/70 px-3 py-1.5 text-[11px] font-semibold text-white backdrop-blur">
+                  <span className="h-3 w-3 animate-spin rounded-full border border-white/25 border-t-white motion-reduce:animate-none" />
+                  {t("liveScan.mapperStarting", lang)}
                 </span>
               ) : null}
-            </section>
+              {errorText ? (
+                <p role="alert" className="rounded-xl border border-red-300/20 bg-red-950/85 px-3 py-2 text-xs leading-relaxed text-red-100 shadow-lg backdrop-blur">
+                  {errorText}
+                </p>
+              ) : null}
+            </div>
 
-            <aside className="min-h-0 overflow-y-auto bg-card p-4 sm:p-5">
-              <div className="space-y-3">
-                <div className="rounded-2xl border border-border/60 bg-background/60 p-4">
-                  <p className="text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">{t("liveScan.progress", lang)}</p>
-                  <dl className="mt-3 grid grid-cols-2 gap-3 text-sm">
-                    <div><dt className="text-[11px] text-muted-foreground">{t("liveScan.framesReady", lang)}</dt><dd className="mt-0.5 font-semibold tabular-nums">{session.progress.ready_frames}</dd></div>
-                    <div><dt className="text-[11px] text-muted-foreground">{t("liveScan.framesProcessed", lang)}</dt><dd className="mt-0.5 font-semibold tabular-nums">{session.progress.processed_frames}</dd></div>
-                    <div className="col-span-2"><dt className="text-[11px] text-muted-foreground">{t("liveScan.floorState", lang)}</dt><dd className="mt-0.5 font-semibold">{floorLabel}</dd></div>
-                  </dl>
+            <div className="absolute bottom-2 left-2 z-30 w-[min(70vw,20rem)] rounded-2xl border border-white/15 bg-black/70 p-3 text-white shadow-2xl backdrop-blur-xl sm:bottom-4 sm:left-4">
+              <div className="flex items-start justify-between gap-3">
+                <div className="min-w-0">
+                  <p className="truncate text-sm font-semibold">
+                    {preview
+                      ? t(preview.refined ? "liveScan.pointCloudRefined" : "liveScan.pointCloudForming", lang)
+                      : t("liveScan.previewWaiting", lang)}
+                  </p>
+                  <p className="mt-1 text-[11px] leading-relaxed text-white/60">
+                    {preview
+                      ? `${(preview.point_count ?? 0).toLocaleString()} ${t("liveScan.points", lang)} · ${(preview.camera_count ?? 0).toLocaleString()} ${t("liveScan.cameras", lang)}`
+                      : t("liveScan.previewHint", lang)}
+                  </p>
                 </div>
-                <div className="rounded-2xl border border-dashed border-border bg-background/35 p-5 text-center">
-                  <p className="text-sm font-semibold">{t("liveScan.previewWaiting", lang)}</p>
-                  <p className="mt-1.5 text-[12px] leading-relaxed text-muted-foreground">{t("liveScan.previewHint", lang)}</p>
-                </div>
-                {session.runtime.active && !terminal ? (
-                  <Button
-                    className="w-full"
-                    variant="outline"
-                    loading={finishing}
-                    onClick={finishSession}
-                  >
-                    {t(
-                      access?.capabilities.dragon_refinement === true
-                        ? "liveScan.finish"
-                        : "liveScan.finishPreview",
-                      lang,
-                    )}
-                  </Button>
+                {preview ? (
+                  <span className="shrink-0 rounded-full bg-white/10 px-2 py-1 text-[10px] font-semibold tabular-nums text-white/75">
+                    {t("liveScan.epoch", lang)} {preview.epoch}
+                  </span>
                 ) : null}
-                {errorText ? <p role="alert" className="rounded-xl bg-destructive/10 p-3 text-sm text-destructive">{errorText}</p> : null}
               </div>
-            </aside>
-          </div>
+              <div className="mt-2 flex flex-wrap gap-1.5 text-[10px] font-medium text-white/65">
+                <span
+                  role="status"
+                  aria-live="polite"
+                  className="inline-flex items-center gap-1.5 rounded-full bg-white/10 px-2 py-1"
+                >
+                  <span className={`h-1.5 w-1.5 rounded-full ${savingFrame ? "animate-pulse bg-sky-300" : "bg-emerald-300"}`} />
+                  {savingFrame
+                    ? `${t("liveScan.savingLatest", lang)}${queuedFrameCount > 1 ? ` · ${queuedFrameCount}` : ""}`
+                    : session.progress.ready_frames > 0
+                      ? t("liveScan.savedSafely", lang)
+                      : t("liveScan.readyToSave", lang)}
+                </span>
+                <span className="rounded-full bg-white/10 px-2 py-1">
+                  {t("liveScan.quality", lang)} · {t(`liveScan.quality.${session.options.quality}`, lang)}
+                </span>
+                <span className="rounded-full bg-white/10 px-2 py-1">{floorLabel}</span>
+              </div>
+              <dl className="mt-2 grid grid-cols-2 gap-x-3 border-t border-white/10 pt-2 text-[11px]">
+                <div>
+                  <dt className="text-white/50">{t("liveScan.framesReady", lang)}</dt>
+                  <dd className="mt-0.5 font-semibold tabular-nums">{session.progress.ready_frames}</dd>
+                </div>
+                <div>
+                  <dt className="text-white/50">{t("liveScan.framesProcessed", lang)}</dt>
+                  <dd className="mt-0.5 font-semibold tabular-nums">{session.progress.processed_frames}</dd>
+                </div>
+              </dl>
+              {session.runtime.active && !terminal ? (
+                <Button
+                  className="mt-3 w-full border-white/15 bg-white/10 text-white hover:bg-white/15"
+                  variant="outline"
+                  size="sm"
+                  loading={finishing}
+                  onClick={finishSession}
+                >
+                  {t(
+                    access?.capabilities.dragon_refinement === true
+                      ? "liveScan.finish"
+                      : "liveScan.finishPreview",
+                    lang,
+                  )}
+                </Button>
+              ) : null}
+            </div>
+          </section>
         </div>
       </div>
     </AppShell>

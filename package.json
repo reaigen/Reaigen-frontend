@@ -14,14 +14,15 @@
     "validate-floorplan": "node --test \"$PWD/node_modules/@reaigen/floorplan-solver/test/solver.test.mjs\"",
     "validate-floorplan-integration": "node --experimental-strip-types --test scripts/validate-floorplan-integration.mjs",
     "validate-proxy-path": "node --experimental-strip-types --test scripts/validate-proxy-path.test.mjs",
-    "check": "npm run lint && npm run typecheck && npm run validate-proxy-path && npm run validate-auth-paths && npm run validate-camera-bounds && npm run validate-live-scan-device && npm run validate-splat-render-profile && npm run validate-floorplan && npm run validate-floorplan-integration && npm run build",
+    "check": "npm run lint && npm run typecheck && npm run validate-proxy-path && npm run validate-auth-paths && npm run validate-camera-bounds && npm run validate-live-scan-device && npm run validate-live-scan-ui && npm run validate-splat-render-profile && npm run validate-floorplan && npm run validate-floorplan-integration && npm run build",
     "validate-floorplan-rendering": "node --experimental-strip-types --test scripts/validate-floorplan-rendering.test.mjs",
     "validate-floorplan-presentation": "node --experimental-strip-types --test scripts/validate-floorplan-presentation.test.mjs",
     "validate-splat-render-profile": "node --experimental-strip-types --test scripts/validate-splat-render-profile.test.mjs",
     "sog-metrics": "node --experimental-strip-types scripts/sog-render-metrics.mjs",
     "validate-auth-paths": "node --experimental-strip-types --test scripts/validate-auth-paths.test.mjs",
     "validate-camera-bounds": "node --experimental-strip-types --test app/lib/camera-bounds.test.mjs",
-    "validate-live-scan-device": "node --experimental-strip-types --test app/lib/live-scan-device.test.mjs"
+    "validate-live-scan-device": "node --experimental-strip-types --test app/lib/live-scan-device.test.mjs",
+    "validate-live-scan-ui": "node --test scripts/validate-live-scan-ui.test.mjs"
   },
   "dependencies": {
     "@babylonjs/core": "^9.10.1",
