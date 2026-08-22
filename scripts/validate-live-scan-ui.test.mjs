@@ -16,6 +16,10 @@ const viewer = fs.readFileSync(
   path.join(root, "app/components/scanning-point-cloud-viewer.tsx"),
   "utf8",
 );
+const shell = fs.readFileSync(
+  path.join(root, "app/components/app-shell.tsx"),
+  "utf8",
+);
 const english = fs.readFileSync(
   path.join(root, "app/lib/locales/en.ts"),
   "utf8",
@@ -63,8 +67,13 @@ test("the scan workspace is one responsive viewport with a portrait camera inset
   assert.match(workspace, /aspect-\[9\/16\]/);
   assert.match(workspace, /sm:w-\[90px\]/);
   assert.match(workspace, /object-cover/);
+  assert.match(workspace, /<AppShell[^>]*immersive>/);
+  assert.match(shell, /immersive\s*\?\s*"min-h-dvh p-0"/);
+  assert.match(shell, /!immersive \? <header/);
+  assert.match(shell, /!immersive \? <aside/);
   assert.doesNotMatch(workspace, /<header className=/);
-  assert.match(workspace, /absolute left-2 top-2 z-40/);
+  assert.match(workspace, /safe-area-inset-top/);
+  assert.match(workspace, /safe-area-inset-bottom/);
   assert.doesNotMatch(workspace, /absolute inset-0 h-full w-full bg-black object-cover/);
   assert.match(workspace, /capturedFrameCount/);
   assert.match(workspace, /liveScan\.firstPreview/);

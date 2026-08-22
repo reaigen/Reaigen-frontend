@@ -518,11 +518,8 @@ export default function LiveScanWorkspacePage() {
   );
 
   return (
-    <AppShell user={user} onLogout={logout} hideMobileNav>
-      <div
-        className="fixed bottom-0 right-0 top-[var(--header-h)] bg-background"
-        style={{ left: "var(--sidebar-offset, 0px)" }}
-      >
+    <AppShell user={user} onLogout={logout} hideMobileNav immersive>
+      <div className="fixed inset-0 bg-background">
         <div className="flex h-full min-h-0 flex-col">
           <section className="relative min-h-0 flex-1 overflow-hidden bg-[#111215]">
             <h1 className="sr-only">{t("liveScan.workspaceTitle", lang)}</h1>
@@ -542,13 +539,13 @@ export default function LiveScanWorkspacePage() {
               playsInline
               className={!cameraReady
                 ? "hidden"
-                : "absolute right-2 top-2 z-20 aspect-[9/16] w-[72px] rounded-xl border border-white/20 bg-black object-cover shadow-2xl sm:right-4 sm:top-4 sm:w-[90px] lg:w-[104px]"}
+                : "absolute right-[calc(0.5rem+env(safe-area-inset-right,0px))] top-[calc(0.5rem+env(safe-area-inset-top,0px))] z-20 aspect-[9/16] w-[72px] rounded-xl border border-white/20 bg-black object-cover shadow-2xl sm:right-[calc(1rem+env(safe-area-inset-right,0px))] sm:top-[calc(1rem+env(safe-area-inset-top,0px))] sm:w-[90px] lg:w-[104px]"}
             />
             <button
               type="button"
               onClick={() => router.push("/create/live-scan")}
               aria-label={t("common.back", lang)}
-              className="floating-icon-button pen-touch-target absolute left-2 top-2 z-40 border border-white/15 bg-black/72 text-white/80 shadow-xl backdrop-blur-xl hover:bg-black/85 sm:left-4 sm:top-4"
+              className="floating-icon-button pen-touch-target absolute left-[calc(0.5rem+env(safe-area-inset-left,0px))] top-[calc(0.5rem+env(safe-area-inset-top,0px))] z-40 border border-white/15 bg-black/72 text-white/80 shadow-xl backdrop-blur-xl hover:bg-black/85 sm:left-[calc(1rem+env(safe-area-inset-left,0px))] sm:top-[calc(1rem+env(safe-area-inset-top,0px))]"
             >
               <ArrowLeftIcon size={17} />
             </button>
@@ -575,7 +572,7 @@ export default function LiveScanWorkspacePage() {
               </div>
             ) : null}
 
-            <div className="pointer-events-none absolute left-14 right-[82px] top-2 z-30 flex flex-col items-start gap-2 sm:left-16 sm:right-[110px] sm:top-4">
+            <div className="pointer-events-none absolute left-[calc(3.5rem+env(safe-area-inset-left,0px))] right-[calc(5.125rem+env(safe-area-inset-right,0px))] top-[calc(0.5rem+env(safe-area-inset-top,0px))] z-30 flex flex-col items-start gap-2 sm:left-[calc(4rem+env(safe-area-inset-left,0px))] sm:right-[calc(6.875rem+env(safe-area-inset-right,0px))] sm:top-[calc(1rem+env(safe-area-inset-top,0px))]">
               {session.runtime.profile === "contract-test" ? (
                 <p role="status" className="rounded-xl border border-amber-300/30 bg-amber-950/85 px-3 py-2 text-xs leading-relaxed text-amber-100 shadow-lg backdrop-blur">
                   {t("liveScan.contractTest", lang)}
@@ -593,7 +590,7 @@ export default function LiveScanWorkspacePage() {
               ) : null}
             </div>
 
-            <div className="absolute bottom-2 left-2 right-2 z-30 rounded-2xl border border-white/15 bg-black/72 p-3 text-white shadow-2xl backdrop-blur-xl sm:bottom-4 sm:left-4 sm:right-auto sm:w-[min(82vw,30rem)]">
+            <div className="absolute bottom-[calc(0.5rem+env(safe-area-inset-bottom,0px))] left-[calc(0.5rem+env(safe-area-inset-left,0px))] right-[calc(0.5rem+env(safe-area-inset-right,0px))] z-30 rounded-2xl border border-white/15 bg-black/72 p-3 text-white shadow-2xl backdrop-blur-xl sm:bottom-[calc(1rem+env(safe-area-inset-bottom,0px))] sm:left-[calc(1rem+env(safe-area-inset-left,0px))] sm:right-auto sm:w-[min(82vw,30rem)]">
               <div className="flex items-center justify-between gap-3">
                 <div className="min-w-0">
                   <p className="truncate text-sm font-semibold">

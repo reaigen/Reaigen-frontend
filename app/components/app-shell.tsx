@@ -110,6 +110,8 @@ function clampAgentPanelWidth(width: number) {
 export type AppShellProps = {
   user: UserProfile;
   onLogout: () => void;
+  /** Remove global chrome for camera/viewer workspaces that supply their own controls. */
+  immersive?: boolean;
   /** Hide the mobile bottom tab bar — for detail screens that provide their own bottom action bar */
   hideMobileNav?: boolean;
   /** Current draft context. Reai stays read-only outside a draft page. */
@@ -128,7 +130,7 @@ export type AppShellProps = {
 
 type AppShellOverrides = Pick<
   AppShellProps,
-  "hideMobileNav" | "reaiDraftId" | "reaiDraftTitle" | "reaiUploadId" | "reaiWorkspaceContext" | "reaiTourId" | "onReaiDraftUpdated"
+  "immersive" | "hideMobileNav" | "reaiDraftId" | "reaiDraftTitle" | "reaiUploadId" | "reaiWorkspaceContext" | "reaiTourId" | "onReaiDraftUpdated"
 >;
 
 type PersistentShellBridge = {
@@ -138,6 +140,7 @@ type PersistentShellBridge = {
 const PersistentShellContext = React.createContext<PersistentShellBridge | null>(null);
 
 function NestedAppShell({
+  immersive,
   hideMobileNav,
   reaiDraftId,
   reaiDraftTitle,
@@ -160,6 +163,7 @@ function NestedAppShell({
   React.useLayoutEffect(() => {
     if (!bridge) return;
     return bridge.register({
+      immersive,
       hideMobileNav,
       reaiDraftId,
       reaiDraftTitle,
@@ -172,6 +176,7 @@ function NestedAppShell({
     bridge,
     forwardDraftUpdate,
     hideMobileNav,
+    immersive,
     registeredDraftUpdate,
     reaiDraftId,
     reaiDraftTitle,
@@ -215,6 +220,7 @@ export function PersistentAppShell({
       <AppShellFrame
         user={user}
         onLogout={onLogout}
+        immersive={overrides.immersive ?? false}
         hideMobileNav={overrides.hideMobileNav ?? hideMobileNav}
         reaiDraftId={overrides.reaiDraftId}
         reaiDraftTitle={overrides.reaiDraftTitle}
@@ -232,6 +238,7 @@ export function PersistentAppShell({
 function AppShellFrame({
   user,
   onLogout,
+  immersive = false,
   hideMobileNav = false,
   reaiDraftId,
   reaiDraftTitle,
@@ -528,7 +535,9 @@ function AppShellFrame({
       )}
       style={{
         // Room for the fixed header (plus the notch inset it absorbs).
-        paddingTop: "calc(var(--header-h) + env(safe-area-inset-top, 0px))",
+        paddingTop: immersive
+          ? "0px"
+          : "calc(var(--header-h) + env(safe-area-inset-top, 0px))",
         paddingRight: "var(--reai-docked-width, 0px)",
         /*
           How much room the docked agent is actually taking, or 0px when it is
@@ -536,12 +545,13 @@ function AppShellFrame({
           flow; a full-screen editor is positioned, so it needs the number
           itself to know where the page now ends.
         */
-        "--reai-docked-width": reaiOpen && dockedAgentViewport ? "var(--reai-panel-width)" : "0px",
+        "--reai-docked-width": !immersive && reaiOpen && dockedAgentViewport ? "var(--reai-panel-width)" : "0px",
+        "--sidebar-offset": immersive ? "0px" : undefined,
         ...(reaiPanelWidth ? { "--reai-panel-width": `${reaiPanelWidth}px` } : {}),
       } as React.CSSProperties}
     >
       {/* ── Desktop sidebar — nav only, below the header (YouTube frame) ── */}
-      <aside className="fixed bottom-0 left-0 top-[var(--header-h)] z-40 hidden w-[88px] border-r border-border bg-card pl-safe text-foreground md:flex md:flex-col">
+      {!immersive ? <aside className="fixed bottom-0 left-0 top-[var(--header-h)] z-40 hidden w-[88px] border-r border-border bg-card pl-safe text-foreground md:flex md:flex-col">
         <nav className="flex-1 space-y-1.5 px-2 pt-3">
           {NAV_ITEMS.map((item) => {
             const active = pathname === item.href || pathname.startsWith(item.href + "/") || (item.href === "/dashboard" && pathname.startsWith("/draft/"));
@@ -555,10 +565,10 @@ function AppShellFrame({
         <div className="px-2 pb-4">
           <NavRailItem href="/settings" label={t("nav.settings", lang)} icon={MainSettingsIcon} active={settingsActive} />
         </div>
-      </aside>
+      </aside> : null}
 
       {/* ── Top header (all widths — the YouTube frame) ──────────── */}
-      <header
+      {!immersive ? <header
         /*
          * Opaque, not glass. At 95% fill the blur was contributing almost
          * nothing visually, but a backdrop-filter on a sticky bar makes the
@@ -659,33 +669,33 @@ function AppShellFrame({
             </BottomSheet>
           </div>
         </div>
-      </header>
+      </header> : null}
 
       {/* ── Content ──────────────────────────────────────────────── */}
       <main
         className={cn(
-          // Derived from the header token so the two can never drift apart.
-          "min-h-[calc(100dvh-var(--header-h))] pb-24 pt-6 pl-[max(1rem,env(safe-area-inset-left))] pr-[max(1rem,env(safe-area-inset-right))]",
-          "md:px-8 md:pb-7 md:pt-5 xl:px-10 2xl:px-12",
+          immersive
+            ? "min-h-dvh p-0"
+            : "min-h-[calc(100dvh-var(--header-h))] pb-24 pt-6 pl-[max(1rem,env(safe-area-inset-left))] pr-[max(1rem,env(safe-area-inset-right))] md:px-8 md:pb-7 md:pt-5 xl:px-10 2xl:px-12",
           // The labeled rail stays stable across desktop widths. Only its
           // outer gutter grows slightly on a wide canvas.
         )}
-        style={{ marginLeft: `var(--sidebar-offset, 0px)` }}
+        style={{ marginLeft: immersive ? 0 : "var(--sidebar-offset, 0px)" }}
       >
-        <AppContentMessages
+        {!immersive ? <AppContentMessages
           lang={lang}
           countryCode={user.profile?.country}
           regionCode={user.profile?.state}
           // Stacks above the floating agent launcher, which owns the corner.
           className="pointer-events-none fixed bottom-20 right-4 z-[70] mb-0 max-h-[min(28rem,65dvh)] w-[min(28rem,calc(100vw-2rem))] overflow-y-auto [&>section]:pointer-events-auto md:bottom-24 md:right-6"
-        />
+        /> : null}
         <div key={pathname} className="async-stable-region animate-fade-in">
           {children}
         </div>
       </main>
 
       {/* ── Mobile bottom tab bar ────────────────────────────────── */}
-      {!hideMobileNav && (
+      {!immersive && !hideMobileNav && (
       /* Opaque for the same reason as the header — on screen for every scrolled frame. */
       <nav className="fixed inset-x-0 bottom-0 z-40 border-t border-border bg-card pb-safe text-foreground md:hidden">
         <div className="grid h-16 grid-cols-2 px-4">
@@ -722,9 +732,9 @@ function AppShellFrame({
       )}
 
       {/* Hidden while the panel is open: the panel is the launcher's own result. */}
-      {!reaiOpen && reaiLauncher("floating")}
+      {!immersive && !reaiOpen && reaiLauncher("floating")}
 
-      {reaiEnabled && (
+      {!immersive && reaiEnabled && (
         <>
           {reaiOpen && compactAgentViewport && (
             <div
