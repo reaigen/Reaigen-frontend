@@ -11,6 +11,7 @@ import { PageHeader } from "../../components/page-header";
 import { PageLoading } from "../../components/page-loading";
 import {
   createLiveSplatSession,
+  startLiveSplatSession,
 } from "../../lib/api/client";
 import { getSafeApiErrorMessage } from "../../lib/api/error-message";
 import { getUserLanguage, t } from "../../lib/i18n";
@@ -78,6 +79,15 @@ export default function LiveScanStartPage() {
           output_format: "ply",
         },
       });
+      try {
+        // Otter requires prewarming before capture. Dispatch while the
+        // workspace and camera are opening; its normal start path remains a
+        // safe retry if this best-effort request hits transient GPU capacity.
+        await startLiveSplatSession(session.id);
+      } catch {
+        // The durable session still exists, so navigating preserves the scan
+        // and lets the workspace retry without creating a duplicate session.
+      }
       router.push(`/create/live-scan/${session.id}`);
     } catch (err) {
       setError(getSafeApiErrorMessage(err, lang, "liveScan.startFailed"));

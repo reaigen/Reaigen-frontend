@@ -77,6 +77,10 @@ test("the scan workspace is one responsive viewport with a portrait camera inset
   assert.match(start, /<details/);
   assert.match(start, /const LIVE_SCAN_PIPELINE_QUALITY = "fast" as const/);
   assert.match(start, /quality: LIVE_SCAN_PIPELINE_QUALITY/);
+  assert.match(
+    start,
+    /await startLiveSplatSession\(session\.id\)[\s\S]*router\.push\(`\/create\/live-scan\/\$\{session\.id\}`\)/,
+  );
   assert.doesNotMatch(start, /setQuality|selection-capsule-track/);
   assert.ok(
     start.indexOf('t("liveScan.runtimeUnavailable", lang)')
