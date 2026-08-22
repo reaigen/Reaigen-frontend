@@ -56,17 +56,15 @@ test("production permits only same-origin camera and opens it only on explicit a
   assert.doesNotMatch(startPage, /getUserMedia\(/);
 });
 
-test("an untouched scan never overrides the new-scan path", () => {
+test("new scan never automatically resumes an older session", () => {
   const startPage = readFileSync(
     new URL("../create/live-scan/page.tsx", import.meta.url),
     "utf8",
   );
 
-  assert.match(
-    startPage,
-    /const CONTINUABLE_STATES = new Set\(\["starting", "capturing", "draining", "refining"\]\)/,
-  );
-  assert.doesNotMatch(startPage, /CONTINUABLE_STATES[^\n]+"created"/);
+  assert.match(startPage, /onClick=\{startSession\}/);
+  assert.doesNotMatch(startPage, /listLiveSplatSessions/);
+  assert.doesNotMatch(startPage, /liveScan\.continue/);
 });
 
 test("scanning UI hides implementation names and remains standalone", () => {

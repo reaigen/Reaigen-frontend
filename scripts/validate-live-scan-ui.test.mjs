@@ -42,7 +42,7 @@ test("capture and status cadences do not recreate the old ten-second delay", () 
   assert.equal(numericConstant(workspace, "CAPTURE_HEIGHT"), 960);
   assert.ok(numericConstant(workspace, "CAPTURE_INTERVAL_MS") <= 250);
   assert.ok(numericConstant(workspace, "STATUS_INTERVAL_MS") <= 500);
-  assert.equal(numericConstant(workspace, "FIRST_PREVIEW_FRAME_COUNT"), 4);
+  assert.equal(numericConstant(workspace, "FIRST_PREVIEW_FRAME_COUNT"), 1);
   assert.ok(numericConstant(workspace, "MAX_PARALLEL_UPLOADS") >= 4);
   assert.ok(numericConstant(workspace, "MAX_PARALLEL_UPLOADS") <= 8);
   assert.match(workspace, /sourceWidth[\s\S]*sourceHeight[\s\S]*context\.drawImage/);
@@ -70,7 +70,8 @@ test("the scan workspace is one responsive viewport with a portrait camera inset
   assert.match(workspace, /liveScan\.saved/);
   assert.match(workspace, /session\.progress\.allocated_frames > session\.progress\.ready_frames \+ queuedFrameCount/);
   assert.match(workspace, /liveScan\.restart/);
-  assert.match(start, /session\.progress\.allocated_frames === session\.progress\.ready_frames/);
+  assert.match(start, /onClick=\{startSession\}/);
+  assert.doesNotMatch(start, /listLiveSplatSessions|liveScan\.continue/);
   assert.match(workspace, /finishSession[\s\S]*beginCapture/);
   assert.doesNotMatch(workspace, /onClick=\{enableCamera\}|toggleCapture/);
   assert.match(start, /<details/);

@@ -26,9 +26,9 @@ import { Button } from "../../../lib/ui/button";
 
 const CAPTURE_WIDTH = 540;
 const CAPTURE_HEIGHT = 960;
-const CAPTURE_INTERVAL_MS = 250;
+const CAPTURE_INTERVAL_MS = 200;
 const STATUS_INTERVAL_MS = 400;
-const FIRST_PREVIEW_FRAME_COUNT = 4;
+const FIRST_PREVIEW_FRAME_COUNT = 1;
 const MAX_FRAME_SIZE = 16 * 1024 * 1024;
 const MAX_PARALLEL_UPLOADS = 6;
 const MAX_CAPTURE_BACKLOG = 24;
@@ -502,10 +502,12 @@ export default function LiveScanWorkspacePage() {
   const finalizing = session.status === "draining" || session.status === "refining";
   const pointCloudLabel = finalizing
     ? t("liveScan.pointCloudRefining", lang)
-    : session.status === "completed"
+    : preview?.refined
       ? t("liveScan.pointCloudRefined", lang)
+      : preview?.trust === "qualified"
+        ? t("liveScan.previewQualified", lang)
       : preview
-        ? t(preview.refined ? "liveScan.pointCloudRefined" : "liveScan.pointCloudForming", lang)
+        ? t("liveScan.pointCloudForming", lang)
         : t("liveScan.previewWaiting", lang);
   const interrupted = (
     !capturing
@@ -598,6 +600,12 @@ export default function LiveScanWorkspacePage() {
                   <p className="mt-1 truncate text-[11px] tabular-nums text-white/65">
                     {capturedFrameCount} {t("liveScan.captured", lang)} · {session.progress.ready_frames} {t("liveScan.saved", lang)} · {(preview?.camera_count ?? 0)} {t("liveScan.cameras", lang)}
                   </p>
+                  {preview ? (
+                    <p className={`mt-1 flex items-center gap-1.5 text-[11px] font-medium ${preview.trust === "qualified" ? "text-sky-200" : "text-amber-200"}`}>
+                      <span className={`h-1.5 w-1.5 rounded-full ${preview.trust === "qualified" ? "bg-sky-300" : "bg-amber-300"}`} />
+                      {t(preview.trust === "qualified" ? "liveScan.previewQualified" : "liveScan.previewProvisional", lang)}
+                    </p>
+                  ) : null}
                   {finalizing ? (
                     <p role="status" className="mt-1 text-[11px] font-medium text-emerald-200">
                       {t("liveScan.savedSafely", lang)} · {session.progress.processed_frames}/{session.progress.ready_frames}

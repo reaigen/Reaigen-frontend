@@ -7,6 +7,7 @@ function preview(overrides = {}) {
   return {
     epoch: 1,
     trust: "provisional",
+    authority: "provisional",
     floor_status: "pending",
     show_floor_grid: false,
     format: "ply",

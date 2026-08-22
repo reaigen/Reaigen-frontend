@@ -11,22 +11,17 @@ import { PageHeader } from "../../components/page-header";
 import { PageLoading } from "../../components/page-loading";
 import {
   createLiveSplatSession,
-  listLiveSplatSessions,
-  type LiveSplatSession,
 } from "../../lib/api/client";
 import { getSafeApiErrorMessage } from "../../lib/api/error-message";
 import { getUserLanguage, t } from "../../lib/i18n";
 import { Button } from "../../lib/ui/button";
 import { Switch } from "../../lib/ui/switch";
 
-const CONTINUABLE_STATES = new Set(["starting", "capturing", "draining", "refining"]);
-
 export default function LiveScanStartPage() {
   const { isAuthenticated, isLoading, user, logout } = useAuth();
   const { allowed, loading: accessLoading, access } = useLiveSplatAccess(isAuthenticated);
   const { supported: captureDevice, loading: deviceLoading } = useLiveScanCaptureDevice();
   const router = useRouter();
-  const [latest, setLatest] = React.useState<LiveSplatSession | null>(null);
   const [starting, setStarting] = React.useState(false);
   const [error, setError] = React.useState<string | null>(null);
   const [quality, setQuality] = React.useState<"fast" | "balanced" | "quality">("fast");
@@ -42,21 +37,6 @@ export default function LiveScanStartPage() {
   React.useEffect(() => {
     if (!isLoading && !isAuthenticated) router.replace("/");
   }, [isAuthenticated, isLoading, router]);
-
-  React.useEffect(() => {
-    if (!allowed) return;
-    let active = true;
-    listLiveSplatSessions()
-      .then(({ results }) => {
-        if (!active) return;
-        setLatest(results.find((session) => (
-          CONTINUABLE_STATES.has(session.status)
-          && session.progress.allocated_frames === session.progress.ready_frames
-        )) ?? null);
-      })
-      .catch(() => { if (active) setLatest(null); });
-    return () => { active = false; };
-  }, [allowed]);
 
   if (isLoading || accessLoading || deviceLoading || !user) return <PageLoading />;
   const lang = getUserLanguage(user.localization);
@@ -130,15 +110,15 @@ export default function LiveScanStartPage() {
             <Button
               loading={starting}
               disabled={!captureDevice || access?.runtime_available !== true}
-              onClick={latest ? () => router.push(`/create/live-scan/${latest.id}`) : startSession}
+              onClick={startSession}
               className="h-11 shrink-0 rounded-full px-5 shadow-control"
             >
               <PlayIcon size={15} />
-              {t(latest ? "liveScan.continue" : "liveScan.start", lang)}
+              {t("liveScan.start", lang)}
             </Button>
           </div>
 
-          {captureDevice && !latest ? (
+          {captureDevice ? (
           <details className="mt-5 border-t border-border/60 pt-4">
             <summary className="cursor-pointer select-none text-sm font-medium text-muted-foreground marker:text-muted-foreground">
               {t("liveScan.options", lang)} · {t(`liveScan.quality.${quality}`, lang)}

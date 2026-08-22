@@ -1345,6 +1345,7 @@ export interface LiveSplatSession {
 export interface LiveSplatPreview {
   epoch: number;
   trust: "provisional" | "qualified";
+  authority: "provisional" | "otter";
   floor_status: LiveSplatSession["floor_status"];
   show_floor_grid: boolean;
   format: "ply" | "sog";
@@ -1353,7 +1354,7 @@ export interface LiveSplatPreview {
   camera_count?: number;
   gauge_revision?: number;
   gauge_reset?: boolean;
-  stage?: "forming" | "refined";
+  stage?: "forming" | "validated" | "refined";
   refined?: boolean;
   splat_url: string;
   expires_in: number;
