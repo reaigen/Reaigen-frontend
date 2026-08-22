@@ -1308,6 +1308,7 @@ export interface LiveSplatAccess {
     automatic_floor_retry: boolean;
     manual_floor_revision: boolean;
     camera_derived_preview?: boolean;
+    forming_point_cloud?: boolean;
     dragon_refinement: boolean;
     contract_test?: boolean;
   };
@@ -1347,6 +1348,13 @@ export interface LiveSplatPreview {
   floor_status: LiveSplatSession["floor_status"];
   show_floor_grid: boolean;
   format: "ply" | "sog";
+  source_sequence?: number;
+  point_count?: number;
+  camera_count?: number;
+  gauge_revision?: number;
+  gauge_reset?: boolean;
+  stage?: "forming" | "refined";
+  refined?: boolean;
   splat_url: string;
   expires_in: number;
 }

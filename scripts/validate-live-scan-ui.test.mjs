@@ -1,0 +1,66 @@
+import assert from "node:assert/strict";
+import fs from "node:fs";
+import path from "node:path";
+import test from "node:test";
+
+const root = process.cwd();
+const workspace = fs.readFileSync(
+  path.join(root, "app/create/live-scan/[id]/page.tsx"),
+  "utf8",
+);
+const start = fs.readFileSync(
+  path.join(root, "app/create/live-scan/page.tsx"),
+  "utf8",
+);
+const viewer = fs.readFileSync(
+  path.join(root, "app/components/scanning-point-cloud-viewer.tsx"),
+  "utf8",
+);
+const english = fs.readFileSync(
+  path.join(root, "app/lib/locales/en.ts"),
+  "utf8",
+);
+
+function numericConstant(source, name) {
+  const match = source.match(new RegExp(`const ${name} = ([0-9_]+);`));
+  assert.ok(match, `${name} must be declared as a numeric constant`);
+  return Number(match[1].replaceAll("_", ""));
+}
+
+test("live scanning uses a standard colored point-cloud renderer", () => {
+  assert.match(workspace, /ScanningPointCloudViewer/);
+  assert.doesNotMatch(workspace, /<SplatViewer|gaussianRenderer|spark/);
+  assert.match(viewer, /new THREE\.Points\(/);
+  assert.match(viewer, /new THREE\.PointsMaterial\(/);
+  assert.match(viewer, /byName\.get\("red"\)/);
+  assert.doesNotMatch(viewer, /Gaussian|BoxGeometry|placeholder/i);
+  assert.match(workspace, /gaugeRevision=\{preview\.gauge_revision \?\? 0\}/);
+});
+
+test("capture and status cadences do not recreate the old ten-second delay", () => {
+  assert.equal(numericConstant(workspace, "CAPTURE_WIDTH"), 540);
+  assert.equal(numericConstant(workspace, "CAPTURE_HEIGHT"), 960);
+  assert.ok(numericConstant(workspace, "CAPTURE_INTERVAL_MS") <= 250);
+  assert.ok(numericConstant(workspace, "STATUS_INTERVAL_MS") <= 500);
+  assert.match(workspace, /sourceWidth[\s\S]*sourceHeight[\s\S]*context\.drawImage/);
+  assert.match(workspace, /capturePending[\s\S]*session\.status === "capturing"/);
+  assert.match(workspace, /allocationTailRef/);
+  assert.match(workspace, /activeUploadsRef/);
+  assert.match(workspace, /persistCapturedFrame/);
+  assert.match(workspace, /MAX_CAPTURE_BACKLOG/);
+  assert.match(workspace, /Promise\.all\(Array\.from\(activeUploadsRef\.current\)\)/);
+  assert.doesNotMatch(workspace, /pendingFrameRef|queueLatestFrame/);
+  assert.doesNotMatch(workspace, /setInterval\(/);
+  assert.match(start, /output_format: "ply"/);
+});
+
+test("the scan workspace is one responsive viewport with a portrait camera inset", () => {
+  assert.doesNotMatch(workspace, /lg:grid-cols-\[minmax\(0,1fr\)_320px\]/);
+  assert.match(workspace, /aspect-\[9\/16\]/);
+  assert.match(workspace, /sm:w-\[90px\]/);
+  assert.match(workspace, /object-cover/);
+  assert.doesNotMatch(workspace, /absolute inset-0 h-full w-full bg-black object-cover/);
+  assert.match(workspace, /session\.options\.quality/);
+  assert.match(workspace, /liveScan\.savedSafely/);
+  assert.match(english, /"liveScan\.pointCloudForming":\s+"Point cloud forming"/);
+});
