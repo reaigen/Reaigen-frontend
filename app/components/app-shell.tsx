@@ -4,6 +4,7 @@ import * as React from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { Avatar, AvatarFallback, AvatarImage } from "../lib/ui/avatar";
+import { BottomSheet } from "../lib/ui/bottom-sheet";
 import { getReaiAgentConsent, type UserProfile } from "../lib/api/client";
 import { clearAgentSession, readAgentPanelOpen, writeAgentPanelOpen } from "../lib/agent-session";
 import type { DraftDetailItem } from "../lib/tour-types";
@@ -13,6 +14,41 @@ import { AppContentMessages } from "./content-documents";
 import { ReaiAgentCard } from "./reai-agent-card";
 import { AgentIcon, CloseIcon, MainHomeIcon, MainSettingsIcon, MainSignOutIcon, MainTourIcon, PlusIcon } from "./icons";
 
+/*
+ * A rail item in the Material-rail idiom: a small pill behind the icon only,
+ * caption free below it — not one tall grey slab swallowing both. The rail is
+ * the only desktop nav; with two destinations plus Settings, a wide labelled
+ * column was dead space.
+ */
+function NavRailItem({ href, label, icon: Icon, active }: {
+  href: string;
+  label: string;
+  icon: React.ComponentType<{ size?: number; filled?: boolean; strokeWidth?: number; className?: string }>;
+  active: boolean;
+}) {
+  return (
+    <Link
+      href={href}
+      title={label}
+      aria-current={active ? "page" : undefined}
+      className={cn(
+        "group/nav flex w-full flex-col items-center justify-center gap-1 rounded-2xl py-1 text-[11px] leading-none transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2",
+        active ? "font-semibold text-foreground" : "font-medium text-muted-foreground hover:text-foreground",
+      )}
+    >
+      <span
+        className={cn(
+          "flex h-8 w-14 items-center justify-center rounded-full transition-colors",
+          active ? "bg-foreground/[0.08]" : "group-hover/nav:bg-foreground/[0.05]",
+        )}
+      >
+        <Icon size={23} filled={active} strokeWidth={1.9} className={cn("shrink-0", active ? "text-foreground" : "text-foreground/55")} />
+      </span>
+      <span className="max-w-full truncate">{label}</span>
+    </Link>
+  );
+}
+
 function getInitials(user: UserProfile): string {
   const f = user.first_name?.[0] ?? "";
   const l = user.last_name?.[0] ?? "";
@@ -20,7 +56,6 @@ function getInitials(user: UserProfile): string {
 }
 
 const SIDEBAR_W = 88;
-const SIDEBAR_WIDE_W = 260;
 const REAI_PANEL_MIN_W = 420;
 const REAI_PANEL_MAX_W = 960;
 const REAI_PANEL_WIDTH_KEY = "reaigen:agentPanelWidth.v2";
@@ -66,9 +101,7 @@ function clampAgentPanelWidth(width: number) {
       REAI_PANEL_MIN_W,
       Math.min(
         window.innerWidth * 0.58,
-        window.innerWidth
-          - (window.innerWidth >= 1280 ? SIDEBAR_WIDE_W : SIDEBAR_W)
-          - AGENT_MIN_CONTENT_W,
+        window.innerWidth - SIDEBAR_W - AGENT_MIN_CONTENT_W,
       ),
     );
   return Math.round(Math.min(Math.max(width, REAI_PANEL_MIN_W), Math.min(REAI_PANEL_MAX_W, viewportLimit)));
@@ -222,9 +255,6 @@ function AppShellFrame({
   const reaiReturnFocusRef = React.useRef<HTMLElement | null>(null);
   const reaiPanelWidthRef = React.useRef<number | null>(null);
   const reaiResizeActiveRef = React.useRef(false);
-  const mobileAccountRef = React.useRef<HTMLDivElement>(null);
-  const mobileAccountButtonRef = React.useRef<HTMLButtonElement>(null);
-  const mobileAccountItemRefs = React.useRef<Array<HTMLAnchorElement | HTMLButtonElement | null>>([]);
   const lang = getUserLanguage(user.localization);
   const displayName = user.full_name || `${user.first_name ?? ""} ${user.last_name ?? ""}`.trim() || user.first_name || user.email;
   const avatarUrl = user.profile?.avatar_thumbnail_url ?? user.profile?.avatar_url;
@@ -397,49 +427,6 @@ function AppShellFrame({
   }, [reaiOpen]);
 
   React.useEffect(() => {
-    if (!mobileAccountOpen) return;
-    const focusFrame = window.requestAnimationFrame(() => {
-      mobileAccountItemRefs.current[0]?.focus({ preventScroll: true });
-    });
-    const closeOutside = (event: PointerEvent) => {
-      if (event.target instanceof Node && !mobileAccountRef.current?.contains(event.target)) {
-        setMobileAccountOpen(false);
-      }
-    };
-    const closeOnEscape = (event: KeyboardEvent) => {
-      if (event.key !== "Escape") return;
-      setMobileAccountOpen(false);
-      mobileAccountButtonRef.current?.focus({ preventScroll: true });
-    };
-    const navigateMenu = (event: KeyboardEvent) => {
-      if (!["ArrowDown", "ArrowUp", "Home", "End"].includes(event.key)) return;
-      const items = mobileAccountItemRefs.current.filter(
-        (item): item is HTMLAnchorElement | HTMLButtonElement => Boolean(item?.isConnected),
-      );
-      if (items.length === 0) return;
-      event.preventDefault();
-      const currentIndex = items.indexOf(document.activeElement as HTMLAnchorElement | HTMLButtonElement);
-      const nextIndex = event.key === "Home"
-        ? 0
-        : event.key === "End"
-          ? items.length - 1
-          : event.key === "ArrowUp"
-            ? (currentIndex <= 0 ? items.length - 1 : currentIndex - 1)
-            : (currentIndex + 1) % items.length;
-      items[nextIndex]?.focus({ preventScroll: true });
-    };
-    document.addEventListener("pointerdown", closeOutside);
-    window.addEventListener("keydown", closeOnEscape);
-    window.addEventListener("keydown", navigateMenu);
-    return () => {
-      window.cancelAnimationFrame(focusFrame);
-      document.removeEventListener("pointerdown", closeOutside);
-      window.removeEventListener("keydown", closeOnEscape);
-      window.removeEventListener("keydown", navigateMenu);
-    };
-  }, [mobileAccountOpen]);
-
-  React.useEffect(() => {
     setMobileAccountOpen(false);
   }, [pathname]);
 
@@ -540,6 +527,8 @@ function AppShellFrame({
         reaiResizing && "transition-none",
       )}
       style={{
+        // Room for the fixed header (plus the notch inset it absorbs).
+        paddingTop: "calc(var(--header-h) + env(safe-area-inset-top, 0px))",
         paddingRight: "var(--reai-docked-width, 0px)",
         /*
           How much room the docked agent is actually taking, or 0px when it is
@@ -551,120 +540,24 @@ function AppShellFrame({
         ...(reaiPanelWidth ? { "--reai-panel-width": `${reaiPanelWidth}px` } : {}),
       } as React.CSSProperties}
     >
-      {/* ── Desktop sidebar ──────────────────────────────────────── */}
-      <aside
-        className="fixed inset-y-0 left-0 z-40 hidden w-[88px] border-r border-border bg-card pl-safe text-foreground md:flex md:flex-col xl:w-[260px]"
-      >
-        {/* Brand */}
-        <div className="px-3 pb-6 pt-4">
-          <Link
-            href="/dashboard"
-            aria-label="Reaigen"
-            className="flex h-12 w-full items-center justify-center rounded-xl transition-colors hover:bg-foreground/[0.04] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 xl:justify-start xl:px-2"
-          >
-            <span
-              aria-hidden="true"
-              className="text-[28px] leading-none text-foreground xl:hidden"
-              style={{ fontFamily: 'var(--font-brand), ui-serif, Georgia, serif', fontWeight: 400, letterSpacing: '-0.01em' }}
-            >
-              Re
-            </span>
-            <span
-              aria-hidden="true"
-              className="hidden text-[28px] leading-none text-foreground xl:block"
-              style={{ fontFamily: 'var(--font-brand), ui-serif, Georgia, serif', fontWeight: 400, letterSpacing: '-0.01em' }}
-            >
-              Reaigen
-            </span>
-          </Link>
-        </div>
-
-        {/* Nav links */}
-        <nav className="flex-1 space-y-1 px-5 xl:px-3">
+      {/* ── Desktop sidebar — nav only, below the header (YouTube frame) ── */}
+      <aside className="fixed bottom-0 left-0 top-[var(--header-h)] z-40 hidden w-[88px] border-r border-border bg-card pl-safe text-foreground md:flex md:flex-col">
+        <nav className="flex-1 space-y-1.5 px-2 pt-3">
           {NAV_ITEMS.map((item) => {
             const active = pathname === item.href || pathname.startsWith(item.href + "/") || (item.href === "/dashboard" && pathname.startsWith("/draft/"));
-            const Icon = item.icon;
             return (
-              <Link
-                key={item.href}
-                href={item.href}
-                title={item.label}
-                aria-current={active ? "page" : undefined}
-                className={cn(
-                  // The selected chip is the tokenised bg-foreground/[0.06],
-                  // not bg-accent. bg-accent is a solid mid-grey, so at 64×58
-                  // it read as a heavy slab behind a small glyph rather than a
-                  // selection. Now the filled icon carries the selected state
-                  // and the chip just sits under it. Label is 11px — the
-                  // documented floor — where it used to be 10.
-                  "flex h-12 w-12 items-center justify-center rounded-2xl text-[14px] leading-normal transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 xl:w-full xl:justify-start xl:gap-3.5 xl:px-3",
-                  active
-                    ? "bg-foreground/[0.06] font-semibold text-foreground"
-                    : "font-medium text-muted-foreground hover:bg-foreground/[0.04] hover:text-foreground"
-                )}
-              >
-                {/*
-                  25px. The rail's rows are tall and its labels are 14px on the
-                  wide layout, against which 22px glyphs read as undersized —
-                  and in the collapsed rail the icon *is* the control, with the
-                  label only a caption under it. Matches the weight the mobile
-                  tab bar now carries.
-                */}
-                <Icon size={25} filled={active} strokeWidth={1.9} className={cn("shrink-0", active ? "text-foreground" : "text-foreground/55")} />
-                <span className="hidden max-w-full truncate xl:block">{item.label}</span>
-              </Link>
+              <NavRailItem key={item.href} href={item.href} label={item.label} icon={item.icon} active={active} />
             );
           })}
         </nav>
 
-        {/* ReaUI utility stack with an X-like account position at the bottom. */}
-        <div className="space-y-1 px-5 pb-4 xl:px-3">
-          <Link
-            href="/settings"
-            title={t("nav.settings", lang)}
-            aria-current={settingsActive ? "page" : undefined}
-            className={cn(
-              // Matches the primary nav items above — same chip, same floor.
-              "flex h-12 w-12 items-center justify-center rounded-2xl text-[14px] leading-normal transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 xl:w-full xl:justify-start xl:gap-3.5 xl:px-3",
-              settingsActive
-                ? "bg-foreground/[0.06] font-semibold text-foreground"
-                : "font-medium text-muted-foreground hover:bg-foreground/[0.04] hover:text-foreground"
-            )}
-          >
-            <MainSettingsIcon size={25} filled={settingsActive} strokeWidth={1.9} className={cn("shrink-0", settingsActive ? "text-foreground" : "text-foreground/55")} />
-            <span className="hidden max-w-full truncate xl:block">{t("nav.settings", lang)}</span>
-          </Link>
-
-          <Link
-            href="/settings"
-            title={displayName}
-            aria-label={displayName}
-            className="flex h-12 w-12 items-center justify-center rounded-xl transition-colors hover:bg-foreground/[0.04] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 xl:min-h-12 xl:w-full xl:justify-start xl:gap-3 xl:px-2 xl:py-2"
-          >
-            <Avatar size="sm" className="shrink-0">
-              {avatarUrl && <AvatarImage src={avatarUrl as string} />}
-              <AvatarFallback>{getInitials(user)}</AvatarFallback>
-            </Avatar>
-            <span className="hidden min-w-0 xl:block">
-              <span className="block truncate text-[13px] font-semibold leading-tight">{displayName}</span>
-              <span className="mt-0.5 block truncate text-[11px] text-muted-foreground">{user.email}</span>
-            </span>
-          </Link>
-
-          <button
-            type="button"
-            onClick={onLogout}
-            title={t("nav.signout", lang)}
-            aria-label={t("nav.signout", lang)}
-            className="flex h-12 w-12 items-center justify-center rounded-2xl text-[13px] font-medium text-foreground/65 transition-colors hover:bg-accent/80 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 xl:w-full xl:justify-start xl:gap-3.5 xl:px-3"
-          >
-            <MainSignOutIcon size={25} strokeWidth={1.9} className="shrink-0" />
-            <span className="hidden xl:block">{t("nav.signout", lang)}</span>
-          </button>
+        {/* Settings keeps a pinned spot; account actions live in the header's avatar menu. */}
+        <div className="px-2 pb-4">
+          <NavRailItem href="/settings" label={t("nav.settings", lang)} icon={MainSettingsIcon} active={settingsActive} />
         </div>
       </aside>
 
-      {/* ── Top header (mobile only) ─────────────────────────────── */}
+      {/* ── Top header (all widths — the YouTube frame) ──────────── */}
       <header
         /*
          * Opaque, not glass. At 95% fill the blur was contributing almost
@@ -672,7 +565,13 @@ function AppShellFrame({
          * compositor re-blur that strip on every scrolled frame — the single
          * biggest source of scroll jank on a phone.
          */
-        className="sticky top-0 z-50 border-b border-border bg-card pt-safe text-foreground md:hidden"
+        /*
+         * Fixed, not sticky. Sticky ties the bar's fate to every ancestor's
+         * overflow behavior — one `overflow-x: hidden` anywhere up the chain
+         * and it silently scrolls away again. Fixed cannot move, in any
+         * browser; the canvas below compensates with matching top padding.
+         */
+        className="fixed inset-x-0 top-0 z-50 border-b border-border bg-card pt-safe text-foreground"
       >
         {/*
           Sized from --header-h, which the theme already defined but nothing
@@ -703,68 +602,61 @@ function AppShellFrame({
             </span>
           </Link>
           <div className="flex items-center gap-2">
-            {reaiLauncher("header")}
-            <div ref={mobileAccountRef} className="relative">
-              <button
-                ref={mobileAccountButtonRef}
-                type="button"
-                data-testid="mobile-account-open"
-                aria-label={displayName}
-                aria-haspopup="menu"
-                aria-expanded={mobileAccountOpen}
-                aria-controls="mobile-account-menu"
-                onClick={() => setMobileAccountOpen((open) => !open)}
-                className="floating-icon-button p-1 transition-colors hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
-              >
-                <Avatar size="sm">
+            {/* Desktop already has the floating corner launcher; one entry point per breakpoint. */}
+            <span className="inline-flex md:hidden">{reaiLauncher("header")}</span>
+            <button
+              type="button"
+              data-testid="mobile-account-open"
+              aria-label={displayName}
+              aria-haspopup="dialog"
+              aria-expanded={mobileAccountOpen}
+              onClick={() => setMobileAccountOpen((open) => !open)}
+              className="floating-icon-button p-1 transition-colors hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+            >
+              <Avatar size="sm">
+                {avatarUrl && <AvatarImage src={avatarUrl as string} />}
+                <AvatarFallback>{getInitials(user)}</AvatarFallback>
+              </Avatar>
+            </button>
+            <BottomSheet
+              open={mobileAccountOpen}
+              onOpenChange={setMobileAccountOpen}
+              title={displayName}
+              hideTitle
+              data-testid="mobile-account-menu"
+            >
+              <div className="flex min-w-0 items-center gap-3.5 px-1 pb-3">
+                <Avatar size="lg" className="shrink-0">
                   {avatarUrl && <AvatarImage src={avatarUrl as string} />}
                   <AvatarFallback>{getInitials(user)}</AvatarFallback>
                 </Avatar>
-              </button>
-              {mobileAccountOpen && (
-                <div
-                  id="mobile-account-menu"
-                  data-testid="mobile-account-menu"
-                  role="menu"
-                  aria-label={displayName}
-                  className="floating-panel absolute right-0 top-[calc(100%+0.5rem)] w-72 max-w-[calc(100vw-2rem)] overflow-hidden border-border bg-card p-2 animate-fade-in"
-                >
-                  <div role="presentation" className="min-w-0 border-b border-border/60 px-3 py-2.5">
-                    <p className="truncate text-sm font-semibold text-foreground">{displayName}</p>
-                    <p className="mt-0.5 truncate text-xs text-muted-foreground">{user.email}</p>
-                  </div>
-                  <div className="pt-1.5">
-                    <Link
-                      ref={(node) => {
-                        mobileAccountItemRefs.current[0] = node;
-                      }}
-                      href="/settings"
-                      role="menuitem"
-                      onClick={() => setMobileAccountOpen(false)}
-                      className="flex min-h-11 items-center gap-3 rounded-2xl px-3 text-sm font-medium text-foreground/75 transition-colors hover:bg-accent hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                    >
-                      <MainSettingsIcon size={20} strokeWidth={1.9} className="shrink-0 text-foreground/55" />
-                      {t("nav.settings", lang)}
-                    </Link>
-                    <button
-                      ref={(node) => {
-                        mobileAccountItemRefs.current[1] = node;
-                      }}
-                      type="button"
-                      role="menuitem"
-                      onClick={() => {
-                        setMobileAccountOpen(false);
-                        onLogout();
-                      }}
-                      className="flex min-h-11 w-full items-center gap-3 rounded-2xl px-3 text-left text-sm font-medium text-foreground/75 transition-colors hover:bg-accent hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                    >
-                      <MainSignOutIcon size={20} strokeWidth={1.9} className="shrink-0 text-foreground/55" />
-                      {t("nav.signout", lang)}
-                    </button>
-                  </div>
+                <div className="min-w-0">
+                  <p className="truncate text-[15px] font-semibold text-foreground">{displayName}</p>
+                  <p className="mt-0.5 truncate text-[13px] text-muted-foreground">{user.email}</p>
                 </div>
-              )}
-            </div>
+              </div>
+              <div className="border-t border-border/60 pt-2">
+                <Link
+                  href="/settings"
+                  onClick={() => setMobileAccountOpen(false)}
+                  className="flex min-h-12 items-center gap-3.5 rounded-2xl px-2 text-[15px] font-medium text-foreground/80 transition-colors hover:bg-accent hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                >
+                  <MainSettingsIcon size={22} strokeWidth={1.9} className="shrink-0 text-foreground/55" />
+                  {t("nav.settings", lang)}
+                </Link>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setMobileAccountOpen(false);
+                    onLogout();
+                  }}
+                  className="flex min-h-12 w-full items-center gap-3.5 rounded-2xl px-2 text-left text-[15px] font-medium text-foreground/80 transition-colors hover:bg-accent hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                >
+                  <MainSignOutIcon size={22} strokeWidth={1.9} className="shrink-0 text-foreground/55" />
+                  {t("nav.signout", lang)}
+                </button>
+              </div>
+            </BottomSheet>
           </div>
         </div>
       </header>
@@ -774,7 +666,7 @@ function AppShellFrame({
         className={cn(
           // Derived from the header token so the two can never drift apart.
           "min-h-[calc(100dvh-var(--header-h))] pb-24 pt-6 pl-[max(1rem,env(safe-area-inset-left))] pr-[max(1rem,env(safe-area-inset-right))]",
-          "md:min-h-dvh md:px-8 md:py-7 xl:px-10 2xl:px-12",
+          "md:px-8 md:pb-7 md:pt-5 xl:px-10 2xl:px-12",
           // The labeled rail stays stable across desktop widths. Only its
           // outer gutter grows slightly on a wide canvas.
         )}
@@ -928,7 +820,12 @@ function AppShellFrame({
                 />
               </button>
             ) : null}
-            <div className="flex min-h-16 shrink-0 items-center justify-between border-b border-border/55 bg-card px-4 pt-safe">
+            {/*
+              Sized and ruled exactly like the app navbar, so when the panel
+              docks beside the page the two heads read as one continuous bar —
+              same height token, same border color, one horizontal line.
+            */}
+            <div className="flex min-h-[var(--header-h)] shrink-0 items-center justify-between border-b border-border bg-card px-4 pt-safe">
               <div className="flex min-w-0 items-center gap-2.5">
                 <span className="flex h-8 w-8 shrink-0 items-center justify-center text-foreground">
                   <AgentIcon size={20} strokeWidth={1.8} />
@@ -972,14 +869,11 @@ function AppShellFrame({
         </>
       )}
 
-      {/* CSS variables keep the ReaUI rail and X-style wide navigation aligned. */}
+      {/* CSS variables keep the rail and the page offset aligned. */}
       <style>{`
         :root { --reai-panel-width: clamp(${AGENT_PANEL_BASE_W}px, 33vw, 720px); }
         @media (min-width: 768px) {
           :root { --sidebar-offset: ${SIDEBAR_W}px; }
-        }
-        @media (min-width: 1280px) {
-          :root { --sidebar-offset: ${SIDEBAR_WIDE_W}px; }
         }
         /* The Agent width is consumed by the app canvas in desktop-width
            workspaces; phones and tablets keep the focused drawer composition. */

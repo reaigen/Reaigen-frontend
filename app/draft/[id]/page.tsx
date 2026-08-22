@@ -837,24 +837,44 @@ export default function DraftPreviewPage({
             on status pills floating in whitespace and never said the obvious
             thing: it needs photographs. This holds the same slot the gallery
             would, so the page has one structure either way, and carries the
-            action instead of leaving the gap unexplained.
+            action instead of leaving the gap unexplained. Bounded rather than
+            aspect-locked: a 16/10 box at desktop widths grew into a
+            viewport-filling droppool that dwarfed its own CTA.
           */}
           {!hasMedia && (
             <button
               type="button"
               onClick={() => setMediaOpen(true)}
-              className="flex aspect-[16/10] w-full flex-col items-center justify-center gap-3 rounded-[1.5rem] border border-dashed border-border/70 bg-card/50 px-6 text-center transition-colors hover:border-foreground/25 hover:bg-card focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 sm:rounded-2xl"
+              className="group relative block w-full overflow-hidden rounded-[1.5rem] border border-dashed border-border/70 bg-card/50 text-center transition-colors hover:border-foreground/25 hover:bg-card focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 sm:rounded-2xl"
             >
-              <span className="flex h-12 w-12 items-center justify-center rounded-full bg-surface-subtle text-foreground/30">
-                <ImageIcon size={22} />
+              {/*
+                The canvas itself is the ghost of the hero mosaic the photos
+                will form — the lead tile plus the four supporting ones — so
+                the page holds the shape it will have once filled, at a height
+                that suggests the gallery without swallowing the viewport.
+              */}
+              <span className="grid h-64 w-full grid-cols-2 grid-rows-2 gap-1.5 p-1.5 sm:h-80 lg:h-[26rem] lg:grid-cols-4">
+                {/*
+                  The pitch lives inside the lead tile — the slot the cover
+                  photo will take — instead of floating over the grid seams.
+                */}
+                <span className="col-span-2 flex flex-col items-center justify-center gap-3 rounded-[1.05rem] bg-surface-subtle px-6 lg:row-span-2">
+                  <span className="text-[15px] font-semibold">{t("draft.media.emptyTitle", lang)}</span>
+                  <span className="hidden max-w-md text-[12px] leading-relaxed text-muted-foreground sm:block">
+                    {t("draft.media.emptyBody", lang)}
+                  </span>
+                  <span className="floating-control mt-1 inline-flex items-center gap-2 bg-foreground px-4 text-[13px] font-semibold text-background shadow-control">
+                    <PlusIcon size={15} />
+                    {t("draft.media.addPhotos", lang)}
+                  </span>
+                </span>
+                <span aria-hidden="true" className="rounded-[1.05rem] bg-surface-subtle" />
+                <span aria-hidden="true" className="rounded-[1.05rem] bg-surface-subtle" />
+                <span aria-hidden="true" className="hidden rounded-[1.05rem] bg-surface-subtle lg:block" />
+                <span aria-hidden="true" className="hidden rounded-[1.05rem] bg-surface-subtle lg:block" />
               </span>
-              <span className="text-[15px] font-semibold">{t("draft.media.emptyTitle", lang)}</span>
-              <span className="hidden max-w-md text-[12px] leading-relaxed text-muted-foreground sm:block">
-                {t("draft.media.emptyBody", lang)}
-              </span>
-              <span className="floating-control mt-1 inline-flex items-center gap-2 bg-foreground px-4 text-[13px] font-semibold text-background shadow-control">
-                <PlusIcon size={15} />
-                {t("draft.media.addPhotos", lang)}
+              <span aria-hidden="true" className="absolute bottom-4 right-4 flex h-9 w-9 items-center justify-center rounded-full bg-foreground text-background shadow-control transition-transform group-hover:scale-105">
+                <PlusIcon size={16} />
               </span>
             </button>
           )}

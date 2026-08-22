@@ -524,23 +524,8 @@ export default function LiveScanWorkspacePage() {
         style={{ left: "var(--sidebar-offset, 0px)" }}
       >
         <div className="flex h-full min-h-0 flex-col">
-          <header className="flex shrink-0 items-center gap-3 border-b border-border/60 bg-card/85 px-3 py-2 backdrop-blur-xl sm:px-5">
-            <div className="flex min-w-0 items-center gap-3">
-              <button
-                type="button"
-                onClick={() => router.push("/create/live-scan")}
-                aria-label={t("common.back", lang)}
-                className="floating-icon-button pen-touch-target text-foreground/65 hover:bg-foreground/[0.06]"
-              >
-                <ArrowLeftIcon size={17} />
-              </button>
-              <div className="min-w-0">
-                <h1 className="truncate text-[15px] font-semibold">{t("liveScan.workspaceTitle", lang)}</h1>
-              </div>
-            </div>
-          </header>
-
           <section className="relative min-h-0 flex-1 overflow-hidden bg-[#111215]">
+            <h1 className="sr-only">{t("liveScan.workspaceTitle", lang)}</h1>
             {preview ? (
               <ScanningPointCloudViewer
                 pointCloudUrl={preview.splat_url}
@@ -559,6 +544,14 @@ export default function LiveScanWorkspacePage() {
                 ? "hidden"
                 : "absolute right-2 top-2 z-20 aspect-[9/16] w-[72px] rounded-xl border border-white/20 bg-black object-cover shadow-2xl sm:right-4 sm:top-4 sm:w-[90px] lg:w-[104px]"}
             />
+            <button
+              type="button"
+              onClick={() => router.push("/create/live-scan")}
+              aria-label={t("common.back", lang)}
+              className="floating-icon-button pen-touch-target absolute left-2 top-2 z-40 border border-white/15 bg-black/72 text-white/80 shadow-xl backdrop-blur-xl hover:bg-black/85 sm:left-4 sm:top-4"
+            >
+              <ArrowLeftIcon size={17} />
+            </button>
             {!preview ? (
               <div className="absolute inset-0 flex items-center justify-center p-6 text-center">
                 <div>
@@ -582,7 +575,7 @@ export default function LiveScanWorkspacePage() {
               </div>
             ) : null}
 
-            <div className="pointer-events-none absolute left-2 top-2 z-30 flex max-w-[min(72vw,34rem)] flex-col items-start gap-2 sm:left-4 sm:top-4">
+            <div className="pointer-events-none absolute left-14 right-[82px] top-2 z-30 flex flex-col items-start gap-2 sm:left-16 sm:right-[110px] sm:top-4">
               {session.runtime.profile === "contract-test" ? (
                 <p role="status" className="rounded-xl border border-amber-300/30 bg-amber-950/85 px-3 py-2 text-xs leading-relaxed text-amber-100 shadow-lg backdrop-blur">
                   {t("liveScan.contractTest", lang)}

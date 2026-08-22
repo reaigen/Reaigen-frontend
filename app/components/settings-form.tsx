@@ -11,6 +11,7 @@ import { Switch } from "../lib/ui/switch";
 import { Checkbox } from "../lib/ui/checkbox";
 import { Textarea } from "../lib/ui/textarea";
 import { Avatar, AvatarFallback, AvatarImage } from "../lib/ui/avatar";
+import { BottomSheet } from "../lib/ui/bottom-sheet";
 import {
   updateProfile,
   updateAccountConsent,
@@ -66,7 +67,8 @@ import {
   getWebPushStateForUser,
   type WebPushState,
 } from "../lib/web-push";
-import { DeviceDesktopIcon, DeviceMobileIcon } from "./icons";
+import { DeviceDesktopIcon, DeviceMobileIcon, ImageIcon, LinkIcon } from "./icons";
+import { formatPhoneDisplay } from "../lib/phone";
 import { t, getUserLanguage, formatDate as fmtDate } from "../lib/i18n";
 import type { LocaleKey } from "../lib/locales";
 import { cn } from "../lib/utils";
@@ -113,10 +115,12 @@ function formatAccountDate(value: string | null | undefined, lang: string, dateF
 }
 
 function DataRow({ label, value }: { label: string; value: React.ReactNode }) {
+  // One line, label left and value right — the way a native settings list
+  // reads — instead of stacking into a tall label-over-value ladder on phones.
   return (
-    <div className="grid grid-cols-1 gap-1 border-b border-border/60 py-3 last:border-b-0 sm:grid-cols-[12rem_minmax(0,1fr)] sm:gap-4">
-      <dt className="text-[12px] text-muted-foreground">{label}</dt>
-      <dd className="min-w-0 text-[13px] font-medium text-foreground/85">{value}</dd>
+    <div className="flex min-h-11 items-baseline justify-between gap-6 border-b border-border/60 py-3 last:border-b-0">
+      <dt className="shrink-0 text-[12px] text-muted-foreground">{label}</dt>
+      <dd className="min-w-0 text-right text-[13px] font-medium text-foreground/85">{value}</dd>
     </div>
   );
 }
@@ -319,21 +323,30 @@ function ProfileTab({ user, onSaved, lang }: { user: UserProfile; onSaved: () =>
             <Label htmlFor="username">{t("settings.profile.username", lang)}</Label>
             <Input id="username" value={username} onChange={(e) => setUsername(e.target.value)} />
           </div>
+          {/*
+            The address is a fact, not a field — a disabled input reads as a
+            broken form. A quiet row states it, and the chip carries the
+            verification status the way the phone row does.
+          */}
           <div className="space-y-1.5">
-            <Label htmlFor="email">{t("settings.profile.email", lang)}</Label>
-            <div className="flex items-center gap-2">
-              <Input id="email" value={user.email} disabled />
+            <Label>{t("settings.profile.email", lang)}</Label>
+            <div className="flex min-h-11 items-center justify-between gap-4 rounded-2xl bg-muted/30 px-4 py-2.5">
+              <span className="min-w-0 truncate text-sm font-medium">{user.email}</span>
               {user.email_verified ? (
-                <span className="shrink-0 text-[12px] font-medium text-success">{t("settings.profile.emailVerified", lang)}</span>
+                <span className="shrink-0 rounded-full bg-success/10 px-2.5 py-0.5 text-[11px] font-semibold text-emerald-800">
+                  {t("settings.profile.emailVerified", lang)}
+                </span>
               ) : (
-                <span className="flex shrink-0 items-center gap-1.5">
-                  <span className="text-[12px] font-medium text-amber-600">{t("settings.profile.emailUnverified", lang)}</span>
+                <span className="flex shrink-0 items-center gap-2">
+                  <span className="rounded-full bg-amber-100 px-2.5 py-0.5 text-[11px] font-semibold text-amber-700">
+                    {t("settings.profile.emailUnverified", lang)}
+                  </span>
                   {emailResent ? (
                     <span className="text-[11px] text-success">{t("settings.profile.emailResent", lang)}</span>
                   ) : (
                     <button
                       type="button"
-                      className="text-[11px] font-medium text-primary underline underline-offset-2 hover:no-underline disabled:opacity-50"
+                      className="text-[11px] font-medium text-foreground underline underline-offset-2 hover:no-underline disabled:opacity-50"
                       onClick={handleResendVerification}
                       disabled={emailResending}
                     >
@@ -343,7 +356,6 @@ function ProfileTab({ user, onSaved, lang }: { user: UserProfile; onSaved: () =>
                 </span>
               )}
             </div>
-            <p className="text-[12px] text-muted-foreground">{t("settings.profile.emailHint", lang)}</p>
           </div>
           {error && <p className="text-[12px] text-destructive">{error}</p>}
           {success && <p className="text-[12px] text-success">{t("settings.profile.saved", lang)}</p>}
@@ -495,29 +507,45 @@ function SellerTab({ user, onSaved, lang }: { user: UserProfile; onSaved: () => 
         <form className="space-y-4" onSubmit={handleSubmit}>
           {/* Cover Image */}
           <div className="relative">
-            <div className={cn(
-              "w-full overflow-hidden rounded-xl bg-muted",
-              p?.cover_image_url ? "h-28 sm:h-36" : "h-24 sm:h-28",
-            )}>
-              {p?.cover_image_url ? (
-                // User-owned signed media URLs are not compatible with a fixed Next image host.
-                // eslint-disable-next-line @next/next/no-img-element
-                <img src={p.cover_image_url} alt={t("settings.seller.coverImage", lang)} className="h-full w-full object-cover" />
-              ) : (
-                <div className="flex h-full w-full items-center justify-center text-sm text-muted-foreground">{t("settings.seller.coverImage", lang)}</div>
-              )}
-            </div>
             <input ref={coverInputRef} type="file" accept="image/*" className="hidden" onChange={handleCoverChange} />
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              loading={coverUploading}
-              className="absolute bottom-2 right-2 bg-background/80 backdrop-blur-sm"
-              onClick={() => coverInputRef.current?.click()}
-            >
-              {coverUploading ? t("settings.seller.coverUploading", lang) : t("settings.seller.coverChange", lang)}
-            </Button>
+            {p?.cover_image_url ? (
+              <>
+                <div className="h-28 w-full overflow-hidden rounded-xl bg-muted sm:h-36">
+                  {/* User-owned signed media URLs are not compatible with a fixed Next image host. */}
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img src={p.cover_image_url} alt={t("settings.seller.coverImage", lang)} className="h-full w-full object-cover" />
+                </div>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  loading={coverUploading}
+                  className="absolute bottom-2 right-2 bg-background/80 backdrop-blur-sm"
+                  onClick={() => coverInputRef.current?.click()}
+                >
+                  {coverUploading ? t("settings.seller.coverUploading", lang) : t("settings.seller.coverChange", lang)}
+                </Button>
+              </>
+            ) : (
+              /*
+                With no image there is nothing for a floating button to float
+                over — it just collided with the placeholder label. The whole
+                empty surface is the upload control instead.
+              */
+              <button
+                type="button"
+                disabled={coverUploading}
+                onClick={() => coverInputRef.current?.click()}
+                className="flex h-28 w-full flex-col items-center justify-center gap-2 rounded-xl border border-dashed border-border/70 bg-muted/30 px-4 text-center transition-colors hover:border-foreground/25 hover:bg-muted/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:opacity-60 sm:h-32"
+              >
+                <span className="flex h-9 w-9 items-center justify-center rounded-full bg-muted/80 text-foreground/40">
+                  <ImageIcon size={17} />
+                </span>
+                <span className="text-[13px] font-medium text-foreground/70">
+                  {coverUploading ? t("settings.seller.coverUploading", lang) : t("settings.seller.coverImage", lang)}
+                </span>
+              </button>
+            )}
           </div>
 
           {/* Contact */}
@@ -1102,7 +1130,7 @@ function PrivacyTab({ user, onSaved, lang }: { user: UserProfile; onSaved: () =>
                 <p className="text-sm font-medium">{statusLabel}</p>
                 <p className="text-[12px] text-muted-foreground mt-1 leading-relaxed">{statusHint}</p>
               </div>
-              <span className="shrink-0 rounded-full bg-foreground/10 px-2.5 py-0.5 text-[11px] font-medium text-foreground/70">
+              <span className="shrink-0 self-start rounded-full bg-foreground/10 px-2.5 py-0.5 text-[11px] font-medium text-foreground/70 sm:self-auto">
                 {isPublic ? t("settings.privacy.badgePublic", lang) : t("settings.privacy.badgePrivate", lang)}
               </span>
             </div>
@@ -1617,10 +1645,6 @@ function flattenUnits(grouped: { METRIC?: PreferenceOption[]; IMPERIAL?: Prefere
   return [...(grouped.METRIC ?? []), ...(grouped.IMPERIAL ?? [])];
 }
 
-function optionName(options: PreferenceOption[], code: string): string {
-  return options.find((option) => option.code === code)?.name ?? code;
-}
-
 function symbolFor(options: PreferenceOption[], code: string): string {
   return options.find((option) => option.code === code)?.symbol ?? code;
 }
@@ -1739,7 +1763,7 @@ function LocalizationTab({ user, lang }: { user: UserProfile; lang: string }) {
           </div>
 
           <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-            <SettingsField label={t("settings.localization.language", lang)} hint={optionName(languages, language)}>
+            <SettingsField label={t("settings.localization.language", lang)}>
               <Select value={language} onValueChange={setLanguage}>
                 <SelectTrigger aria-label={t("settings.localization.language", lang)}><SelectValue /></SelectTrigger>
                 <SelectContent>
@@ -1749,7 +1773,7 @@ function LocalizationTab({ user, lang }: { user: UserProfile; lang: string }) {
                 </SelectContent>
               </Select>
             </SettingsField>
-            <SettingsField label={t("settings.localization.timezone", lang)} hint={timezone}>
+            <SettingsField label={t("settings.localization.timezone", lang)}>
               <Select value={timezone} onValueChange={setTimezone}>
                 <SelectTrigger aria-label={t("settings.localization.timezone", lang)}><SelectValue placeholder={timezone || "—"} /></SelectTrigger>
                 <SelectContent>
@@ -1764,7 +1788,7 @@ function LocalizationTab({ user, lang }: { user: UserProfile; lang: string }) {
           <Separator />
 
           <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-            <SettingsField label={t("settings.localization.currency", lang)} hint={optionName(currencies, currency)}>
+            <SettingsField label={t("settings.localization.currency", lang)}>
               <Select value={currency} onValueChange={setCurrency}>
                 <SelectTrigger aria-label={t("settings.localization.currency", lang)}><SelectValue /></SelectTrigger>
                 <SelectContent>
@@ -1776,7 +1800,7 @@ function LocalizationTab({ user, lang }: { user: UserProfile; lang: string }) {
                 </SelectContent>
               </Select>
             </SettingsField>
-            <SettingsField label={t("settings.localization.dateFormat", lang)} hint={formattedDateSample}>
+            <SettingsField label={t("settings.localization.dateFormat", lang)}>
               <Select value={dateFormat} onValueChange={setDateFormat}>
                 <SelectTrigger aria-label={t("settings.localization.dateFormat", lang)}><SelectValue /></SelectTrigger>
                 <SelectContent>
@@ -1789,7 +1813,7 @@ function LocalizationTab({ user, lang }: { user: UserProfile; lang: string }) {
           </div>
 
           <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-            <SettingsField label={t("settings.localization.areaUnit", lang)} hint={formattedAreaSample}>
+            <SettingsField label={t("settings.localization.areaUnit", lang)}>
               <Select value={areaUnit} onValueChange={setAreaUnit}>
                 <SelectTrigger aria-label={t("settings.localization.areaUnit", lang)}><SelectValue /></SelectTrigger>
                 <SelectContent>
@@ -1801,7 +1825,7 @@ function LocalizationTab({ user, lang }: { user: UserProfile; lang: string }) {
                 </SelectContent>
               </Select>
             </SettingsField>
-            <SettingsField label={t("settings.localization.distanceUnit", lang)} hint={formattedDistanceSample}>
+            <SettingsField label={t("settings.localization.distanceUnit", lang)}>
               <Select value={distanceUnit} onValueChange={setDistanceUnit}>
                 <SelectTrigger aria-label={t("settings.localization.distanceUnit", lang)}><SelectValue /></SelectTrigger>
                 <SelectContent>
@@ -2089,6 +2113,7 @@ function SecurityTab({ user, onSaved, lang }: { user: UserProfile; onSaved: () =
 }
 
 function PasswordSection({ hasExistingPassword, lang }: { hasExistingPassword: boolean; lang: string }) {
+  const [sheetOpen, setSheetOpen] = React.useState(false);
   const [currentPassword, setCurrentPassword] = React.useState("");
   const [newPassword, setNewPassword] = React.useState("");
   const [confirmPassword, setConfirmPassword] = React.useState("");
@@ -2101,6 +2126,18 @@ function PasswordSection({ hasExistingPassword, lang }: { hasExistingPassword: b
     && newPassword.length >= 8
     && newPassword === confirmPassword
     && !passwordReused;
+  const actionLabel = t(hasExistingPassword ? "settings.security.save" : "settings.security.createPassword", lang);
+
+  function handleSheetChange(open: boolean) {
+    setSheetOpen(open);
+    if (!open) {
+      // Half-typed secrets must not survive a dismissed sheet.
+      setCurrentPassword("");
+      setNewPassword("");
+      setConfirmPassword("");
+      setError(null);
+    }
+  }
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -2114,10 +2151,8 @@ function PasswordSection({ hasExistingPassword, lang }: { hasExistingPassword: b
         new_password: newPassword,
         new_password_confirm: confirmPassword,
       });
+      handleSheetChange(false);
       setSuccess(true);
-      setCurrentPassword("");
-      setNewPassword("");
-      setConfirmPassword("");
     } catch (err) {
       setError(getSafeApiErrorMessage(err, lang));
     } finally {
@@ -2132,6 +2167,27 @@ function PasswordSection({ hasExistingPassword, lang }: { hasExistingPassword: b
         <CardDescription>{t(hasExistingPassword ? "settings.security.passwordSubtitle" : "settings.security.passwordCreateSubtitle", lang)}</CardDescription>
       </CardHeader>
       <CardContent>
+        <div className="flex min-h-11 items-center justify-between gap-4">
+          {hasExistingPassword ? (
+            <p aria-hidden="true" className="select-none text-[15px] font-medium leading-none tracking-[0.22em] text-foreground/70">
+              ••••••••••
+            </p>
+          ) : (
+            <span aria-hidden="true" />
+          )}
+          <Button type="button" variant="outline" size="sm" className="shrink-0" onClick={() => setSheetOpen(true)}>
+            {actionLabel}
+          </Button>
+        </div>
+        {success && <p className="mt-2 text-[12px] text-success" role="status">{t("settings.security.saved", lang)}</p>}
+      </CardContent>
+
+      <BottomSheet
+        open={sheetOpen}
+        onOpenChange={handleSheetChange}
+        title={actionLabel}
+        description={hasExistingPassword ? undefined : t("settings.security.passwordCreateSubtitle", lang)}
+      >
         <form className="space-y-4" onSubmit={handleSubmit}>
           {hasExistingPassword && (
             <>
@@ -2159,15 +2215,14 @@ function PasswordSection({ hasExistingPassword, lang }: { hasExistingPassword: b
           {passwordReused && (
             <p className="text-[12px] text-destructive">{t("settings.security.mustDiffer", lang)}</p>
           )}
-          {error && <p className="text-[12px] text-destructive">{error}</p>}
-          {success && <p className="text-[12px] text-success">{t("settings.security.saved", lang)}</p>}
-          <div className="pt-2">
-            <Button type="submit" size="sm" loading={loading} disabled={!canSubmit || loading}>
-              {t(hasExistingPassword ? "settings.security.save" : "settings.security.createPassword", lang)}
+          {error && <p className="text-[12px] text-destructive" role="alert">{error}</p>}
+          <div className="pt-1">
+            <Button type="submit" className="w-full" loading={loading} disabled={!canSubmit || loading}>
+              {actionLabel}
             </Button>
           </div>
         </form>
-      </CardContent>
+      </BottomSheet>
     </Card>
   );
 }
@@ -2290,7 +2345,7 @@ function DevicesSection({ lang }: { lang: string }) {
               key={session.id}
               className="rounded-2xl border border-border/60 bg-background/60 p-4"
             >
-              <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+              <div className="flex items-center justify-between gap-3">
                 <div className="flex min-w-0 items-start gap-3">
                   <span className="mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-muted/70 text-foreground/70">
                     {session.platform === "ios" ? (
@@ -2319,7 +2374,7 @@ function DevicesSection({ lang }: { lang: string }) {
                   type="button"
                   variant="outline"
                   size="sm"
-                  className="w-full shrink-0 whitespace-nowrap rounded-full sm:w-auto"
+                  className="shrink-0 whitespace-nowrap rounded-full"
                   disabled={busyId !== null}
                   onClick={() => handleRevoke(session)}
                 >
@@ -2340,13 +2395,13 @@ function DevicesSection({ lang }: { lang: string }) {
         </ul>
         )}
         {!error && (
-        <div className="flex flex-col gap-2 pt-1 sm:flex-row sm:flex-wrap">
+        <div className="flex flex-wrap gap-2 pt-1">
           {others.length > 0 && (
             <Button
               type="button"
               variant="outline"
               size="sm"
-              className="w-full whitespace-nowrap rounded-full sm:w-auto"
+              className="whitespace-nowrap rounded-full"
               disabled={busyId !== null}
               onClick={handleRevokeOthers}
             >
@@ -2359,7 +2414,7 @@ function DevicesSection({ lang }: { lang: string }) {
             type="button"
             variant="outline"
             size="sm"
-            className="w-full whitespace-nowrap rounded-full text-destructive hover:text-destructive sm:w-auto"
+            className="whitespace-nowrap rounded-full"
             disabled={busyId !== null}
             onClick={handleRevokeAll}
           >
@@ -2661,7 +2716,12 @@ function LinkedAccountsSection({ lang }: { lang: string }) {
           </div>
         ) : null}
         {data && accounts.length === 0 ? (
-          <p className="text-[13px] text-muted-foreground">{t("settings.security.linkedNone", lang)}</p>
+          <div className="flex items-center gap-3 rounded-2xl bg-muted/30 px-4 py-3.5">
+            <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-muted/70 text-foreground/55">
+              <LinkIcon size={16} />
+            </span>
+            <p className="text-[13px] text-muted-foreground">{t("settings.security.linkedNone", lang)}</p>
+          </div>
         ) : data ? (
           <div className="divide-y divide-border/60">
             {accounts.map((acc) => (
@@ -2697,6 +2757,7 @@ function LinkedAccountsSection({ lang }: { lang: string }) {
 
 function PhoneSection({ user, onSaved, lang }: { user: UserProfile; onSaved: () => void; lang: string }) {
   const phone = user.profile?.phone;
+  const phoneDisplay = formatPhoneDisplay(phone);
   const verified = user.phone_verified;
   const [otpSent, setOtpSent] = React.useState(false);
   const [code, setCode] = React.useState("");
@@ -2741,45 +2802,62 @@ function PhoneSection({ user, onSaved, lang }: { user: UserProfile; onSaved: () 
       </CardHeader>
       <CardContent>
         {!phone ? (
-          <p className="text-[13px] text-muted-foreground">{t("settings.security.phoneNoPhone", lang)}</p>
+          <div className="flex items-center gap-3 rounded-2xl bg-muted/30 px-4 py-3.5">
+            <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-muted/70 text-foreground/55">
+              <DeviceMobileIcon size={16} />
+            </span>
+            <p className="text-[13px] text-muted-foreground">{t("settings.security.phoneNoPhone", lang)}</p>
+          </div>
         ) : (
           <div className="space-y-3">
-            <div className="flex items-center gap-3">
-              <span className="text-sm font-medium">{phone}</span>
-              <span className={cn("rounded-full px-2.5 py-0.5 text-[11px] font-semibold",
-                verified
-                  ? "bg-success/10 text-emerald-800"
-                  : "bg-amber-100 text-amber-700"
-              )}>
-                {verified ? t("settings.security.phoneVerified", lang) : t("settings.security.phoneUnverified", lang)}
-              </span>
+            <div className="flex min-h-11 items-center justify-between gap-4">
+              <div className="flex min-w-0 items-center gap-3">
+                <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-muted/70 text-foreground/70">
+                  {phoneDisplay.flag ? (
+                    <span aria-hidden="true" className="text-[17px] leading-none">{phoneDisplay.flag}</span>
+                  ) : (
+                    <DeviceMobileIcon size={16} />
+                  )}
+                </span>
+                <span className="min-w-0 truncate text-sm font-medium tabular-nums">{phoneDisplay.display}</span>
+              </div>
+              {verified ? (
+                <span className="shrink-0 rounded-full bg-success/10 px-2.5 py-0.5 text-[11px] font-semibold text-emerald-800">
+                  {t("settings.security.phoneVerified", lang)}
+                </span>
+              ) : otpSent ? (
+                <span className="shrink-0 rounded-full bg-amber-100 px-2.5 py-0.5 text-[11px] font-semibold text-amber-700">
+                  {t("settings.security.phoneUnverified", lang)}
+                </span>
+              ) : (
+                <Button type="button" variant="outline" size="sm" className="shrink-0" loading={loading} onClick={handleRequestOtp}>
+                  {t("settings.security.phoneVerify", lang)}
+                </Button>
+              )}
             </div>
 
-            {!verified && !otpSent && (
-              <Button type="button" size="sm" loading={loading} onClick={handleRequestOtp}>
-                {t("settings.security.phoneVerify", lang)}
-              </Button>
-            )}
-
             {otpSent && (
-              <div className="flex items-end gap-2">
-                <div className="space-y-1.5">
-                  <Label>{t("settings.security.phoneOtpSent", lang)}</Label>
+              <div className="space-y-2 rounded-2xl border border-border/60 bg-muted/20 p-4">
+                <Label htmlFor="phone-otp-code">{t("settings.security.phoneOtpSent", lang)}</Label>
+                <div className="flex items-center gap-2">
                   <Input
+                    id="phone-otp-code"
                     value={code}
                     onChange={(e) => setCode(e.target.value.replace(/\D/g, "").slice(0, 6))}
                     placeholder={t("settings.security.phoneOtpPlaceholder", lang)}
                     maxLength={6}
-                    className="w-40 font-mono"
+                    inputMode="numeric"
+                    autoComplete="one-time-code"
+                    className="w-full max-w-[10.5rem] font-mono tracking-[0.2em]"
                   />
+                  <Button type="button" size="sm" className="shrink-0" loading={loading} disabled={code.length < 4} onClick={handleVerify}>
+                    {t("settings.security.phoneOtpConfirm", lang)}
+                  </Button>
                 </div>
-                <Button type="button" size="sm" loading={loading} disabled={code.length < 4} onClick={handleVerify}>
-                  {t("settings.security.phoneOtpConfirm", lang)}
-                </Button>
               </div>
             )}
 
-            {error && <p className="text-[12px] text-destructive">{error}</p>}
+            {error && <p className="text-[12px] text-destructive" role="alert">{error}</p>}
           </div>
         )}
       </CardContent>
@@ -2814,8 +2892,23 @@ export function SettingsForm({ user, onSaved }: { user: UserProfile; onSaved: ()
       window.removeEventListener("reai-settings-navigate", navigateFromAgent);
     };
   }, []);
+  // One trigger, two shapes: a pill chip in the mobile rail, a full-width row
+  // in the desktop list. Active state is the same inversion in both.
   const triggerClassName =
-    "h-11 w-full shrink-0 justify-start rounded-2xl px-4 py-0 text-left text-[13px] font-medium shadow-none data-[state=active]:bg-foreground data-[state=active]:text-background data-[state=active]:shadow-control";
+    "h-11 shrink-0 justify-center whitespace-nowrap rounded-full border border-border/65 bg-card px-4 py-0 text-[13px] font-medium shadow-none data-[state=active]:border-foreground data-[state=active]:bg-foreground data-[state=active]:text-background data-[state=active]:shadow-control lg:w-full lg:justify-start lg:rounded-2xl lg:border-0 lg:bg-transparent lg:text-left lg:data-[state=active]:bg-foreground";
+  const tabsListRef = React.useRef<HTMLDivElement>(null);
+  React.useEffect(() => {
+    // Keep the active chip visible in the mobile rail (deep links land on
+    // #security, whose chip starts off-screen). No-op on the desktop column.
+    const list = tabsListRef.current;
+    if (!list || list.scrollWidth <= list.clientWidth) return;
+    const active = list.querySelector<HTMLElement>('[data-state="active"]');
+    if (!active) return;
+    list.scrollTo({
+      left: active.offsetLeft - (list.clientWidth - active.offsetWidth) / 2,
+      behavior: "smooth",
+    });
+  }, [activeTab]);
   const settingsTabs = [
     { value: "profile", label: "settings.tab.profile" },
     { value: "seller", label: "settings.tab.seller" },
@@ -2836,27 +2929,17 @@ export function SettingsForm({ user, onSaved }: { user: UserProfile; onSaved: ()
       }}
       className="w-full lg:grid lg:grid-cols-[220px_minmax(0,1fr)] lg:items-start lg:gap-8 xl:gap-10"
     >
-      <div className="mb-6 lg:sticky lg:top-6 lg:mb-0">
-        {/* Mobile: every section is available in one native, keyboard-friendly control. */}
-        <label className="relative block lg:hidden">
-          <span className="sr-only">{t("settings.title", lang)}</span>
-          <select
-            value={activeTab}
-            onChange={(event) => {
-              const value = event.target.value;
-              setActiveTab(value);
-              window.history.replaceState(null, "", `#${value}`);
-            }}
-            className="h-12 w-full rounded-full border border-border/75 bg-card px-5 text-[16px] font-semibold text-foreground shadow-control outline-none transition-[border-color,box-shadow] focus-visible:border-foreground/30 focus-visible:ring-2 focus-visible:ring-ring/20"
-            aria-label={t("settings.title", lang)}
-          >
-            {settingsTabs.map((tab) => (
-              <option key={tab.value} value={tab.value}>{t(tab.label, lang)}</option>
-            ))}
-          </select>
-        </label>
-        {/* Desktop: vertical list */}
-        <TabsList className="hidden h-auto min-h-0 w-full flex-col items-stretch gap-1 rounded-[24px] border border-border/65 bg-card p-2 text-muted-foreground shadow-card lg:flex">
+      <div className="mb-5 lg:sticky lg:top-6 lg:mb-0">
+        {/*
+          One list, two forms: a horizontally scrolling chip rail on phones —
+          every section visible and one tap away, the way the app's other
+          segmented surfaces read — and the vertical column on desktop. The
+          full-bleed negative margin lets the rail scroll edge to edge.
+        */}
+        <TabsList
+          ref={tabsListRef}
+          className="-mx-4 flex h-auto min-h-0 w-auto items-stretch justify-start gap-1.5 overflow-x-auto rounded-none bg-transparent px-4 py-1 text-muted-foreground [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden lg:mx-0 lg:w-full lg:flex-col lg:gap-1 lg:overflow-visible lg:rounded-[24px] lg:border lg:border-border/65 lg:bg-card lg:p-2 lg:shadow-card"
+        >
           {settingsTabs.map((tab) => (
             <TabsTrigger key={tab.value} value={tab.value} className={triggerClassName}>
               <span className="min-w-0 truncate">{t(tab.label, lang)}</span>

@@ -63,6 +63,8 @@ test("the scan workspace is one responsive viewport with a portrait camera inset
   assert.match(workspace, /aspect-\[9\/16\]/);
   assert.match(workspace, /sm:w-\[90px\]/);
   assert.match(workspace, /object-cover/);
+  assert.doesNotMatch(workspace, /<header className=/);
+  assert.match(workspace, /absolute left-2 top-2 z-40/);
   assert.doesNotMatch(workspace, /absolute inset-0 h-full w-full bg-black object-cover/);
   assert.match(workspace, /capturedFrameCount/);
   assert.match(workspace, /liveScan\.firstPreview/);

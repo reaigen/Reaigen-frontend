@@ -291,13 +291,12 @@ export default function DashboardPage() {
         */}
         <PageHeader
           title={t("dashboard.creationsTitle", lang)}
-          description={t("dashboard.creationsSubtitle", lang)}
           meta={`${totalCount} ${t("dashboard.items", lang)}`}
           actions={<WebCreateAction lang={lang} />}
-          className="mb-4 sm:mb-8"
+          className="mb-3 sm:mb-5"
         />
         {/* Search bar */}
-        <div className="mb-4 flex items-center gap-2 border-b border-border/75 pb-2 sm:mb-6">
+        <div className="mb-3 flex items-center gap-2 border-b border-border/75 pb-2 sm:mb-4">
           <SearchField
             value={searchInput}
             onChange={setSearchInput}
