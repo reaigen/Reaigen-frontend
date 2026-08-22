@@ -17,6 +17,8 @@ import { getUserLanguage, t } from "../../lib/i18n";
 import { Button } from "../../lib/ui/button";
 import { Switch } from "../../lib/ui/switch";
 
+const LIVE_SCAN_PIPELINE_QUALITY = "fast" as const;
+
 export default function LiveScanStartPage() {
   const { isAuthenticated, isLoading, user, logout } = useAuth();
   const { allowed, loading: accessLoading, access } = useLiveSplatAccess(isAuthenticated);
@@ -24,7 +26,6 @@ export default function LiveScanStartPage() {
   const router = useRouter();
   const [starting, setStarting] = React.useState(false);
   const [error, setError] = React.useState<string | null>(null);
-  const [quality, setQuality] = React.useState<"fast" | "balanced" | "quality">("fast");
   const [floorPreview, setFloorPreview] = React.useState(true);
   const [dragonRefinement, setDragonRefinement] = React.useState(true);
 
@@ -40,6 +41,10 @@ export default function LiveScanStartPage() {
 
   if (isLoading || accessLoading || deviceLoading || !user) return <PageLoading />;
   const lang = getUserLanguage(user.localization);
+  const showProcessingOptions = (
+    access?.capabilities.automatic_floor_retry === true
+    || access?.capabilities.dragon_refinement === true
+  );
 
   if (!allowed) {
     return (
@@ -67,7 +72,7 @@ export default function LiveScanStartPage() {
     try {
       const session = await createLiveSplatSession({
         postprocess: {
-          quality,
+          quality: LIVE_SCAN_PIPELINE_QUALITY,
           floor_preview: access?.capabilities.automatic_floor_retry === true && floorPreview,
           dragon_refinement: dragonRefinement,
           output_format: "ply",
@@ -118,49 +123,38 @@ export default function LiveScanStartPage() {
             </Button>
           </div>
 
-          {captureDevice ? (
-          <details className="mt-5 border-t border-border/60 pt-4">
-            <summary className="cursor-pointer select-none text-sm font-medium text-muted-foreground marker:text-muted-foreground">
-              {t("liveScan.options", lang)} · {t(`liveScan.quality.${quality}`, lang)}
-            </summary>
-            <div className="mt-4 rounded-2xl border border-border/60 bg-background/50 p-4">
-              <p className="text-sm font-semibold">{t("liveScan.quality", lang)}</p>
-              <div className="selection-capsule-track mt-3 grid grid-cols-3" role="group" aria-label={t("liveScan.quality", lang)}>
-                {(["fast", "balanced", "quality"] as const).map((value) => (
-                  <button
-                    key={value}
-                    type="button"
-                    aria-pressed={quality === value}
-                    onClick={() => setQuality(value)}
-                    className="selection-capsule-item pen-touch-target min-w-0 px-2 text-[11px] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                  >
-                    <span className="truncate">{t(`liveScan.quality.${value}`, lang)}</span>
-                  </button>
-                ))}
-              </div>
-              {access?.capabilities.automatic_floor_retry === true ? (
-                <label className="mt-4 flex min-h-11 items-center justify-between gap-4 border-t border-border/60 pt-3 text-sm font-medium">
-                  <span>{t("liveScan.floorPreview", lang)}</span>
-                  <Switch checked={floorPreview} onCheckedChange={setFloorPreview} />
-                </label>
-              ) : null}
-              {access?.capabilities.dragon_refinement === true ? (
-                <label className="mt-3 flex min-h-11 items-center justify-between gap-4 border-t border-border/60 pt-3 text-sm font-medium">
-                  <span>{t("liveScan.dragonRefinement", lang)}</span>
-                  <Switch checked={dragonRefinement} onCheckedChange={setDragonRefinement} />
-                </label>
-              ) : null}
-            </div>
-            {access?.runtime_available !== true ? (
-              <p role="status" className="mt-3 rounded-xl bg-amber-500/10 px-3 py-2 text-sm text-amber-800 dark:text-amber-200">
-                {t("liveScan.runtimeUnavailable", lang)}
-              </p>
-            ) : null}
-          </details>
-          ) : !captureDevice ? (
+          {captureDevice && access?.runtime_available !== true ? (
+            <p role="status" className="mt-4 rounded-xl bg-amber-500/10 px-3 py-2 text-sm text-amber-800 dark:text-amber-200">
+              {t("liveScan.runtimeUnavailable", lang)}
+            </p>
+          ) : null}
+
+          {!captureDevice ? (
             <p role="status" className="mt-6 rounded-2xl border border-border/60 bg-background/50 p-4 text-sm leading-relaxed text-muted-foreground">
               {t("liveScan.mobileRequired", lang)}
             </p>
+          ) : null}
+
+          {captureDevice && showProcessingOptions ? (
+            <details className="mt-5 border-t border-border/60 pt-4">
+              <summary className="cursor-pointer select-none text-sm font-medium text-muted-foreground marker:text-muted-foreground">
+                {t("liveScan.options", lang)}
+              </summary>
+              <div className="mt-4 rounded-2xl border border-border/60 bg-background/50 p-4">
+                {access?.capabilities.automatic_floor_retry === true ? (
+                  <label className="flex min-h-11 items-center justify-between gap-4 text-sm font-medium">
+                    <span>{t("liveScan.floorPreview", lang)}</span>
+                    <Switch checked={floorPreview} onCheckedChange={setFloorPreview} />
+                  </label>
+                ) : null}
+                {access?.capabilities.dragon_refinement === true ? (
+                  <label className="mt-3 flex min-h-11 items-center justify-between gap-4 border-t border-border/60 pt-3 text-sm font-medium">
+                    <span>{t("liveScan.dragonRefinement", lang)}</span>
+                    <Switch checked={dragonRefinement} onCheckedChange={setDragonRefinement} />
+                  </label>
+                ) : null}
+              </div>
+            </details>
           ) : null}
         </div>
       </div>

@@ -75,7 +75,14 @@ test("the scan workspace is one responsive viewport with a portrait camera inset
   assert.match(workspace, /finishSession[\s\S]*beginCapture/);
   assert.doesNotMatch(workspace, /onClick=\{enableCamera\}|toggleCapture/);
   assert.match(start, /<details/);
-  assert.match(start, /useState<"fast" \| "balanced" \| "quality">\("fast"\)/);
+  assert.match(start, /const LIVE_SCAN_PIPELINE_QUALITY = "fast" as const/);
+  assert.match(start, /quality: LIVE_SCAN_PIPELINE_QUALITY/);
+  assert.doesNotMatch(start, /setQuality|selection-capsule-track/);
+  assert.ok(
+    start.indexOf('t("liveScan.runtimeUnavailable", lang)')
+      < start.indexOf("<details"),
+    "runtime availability must be visible without opening options",
+  );
   assert.match(english, /"liveScan\.pointCloudForming":\s+"Point cloud forming"/);
 });
 
