@@ -155,8 +155,18 @@ function parsePointCloud(buffer: ArrayBuffer): ParsedPointCloud {
   };
 }
 
+function decodeBase64PointCloud(encoded: string): ArrayBuffer {
+  const binary = atob(encoded);
+  const bytes = new Uint8Array(binary.length);
+  for (let index = 0; index < binary.length; index += 1) {
+    bytes[index] = binary.charCodeAt(index);
+  }
+  return bytes.buffer;
+}
+
 interface Props {
   pointCloudUrl: string;
+  inlinePointCloudBase64?: string;
   gaugeRevision?: number;
   showFloorGrid?: boolean;
   className?: string;
@@ -165,6 +175,7 @@ interface Props {
 
 export default function ScanningPointCloudViewer({
   pointCloudUrl,
+  inlinePointCloudBase64 = "",
   gaugeRevision = 0,
   showFloorGrid = false,
   className = "",
@@ -272,15 +283,13 @@ export default function ScanningPointCloudViewer({
     const controller = new AbortController();
     if (!pointsRef.current) setLoading(true);
     void (async () => {
-      try {
-        const response = await fetch(pointCloudUrl, { cache: "no-store", signal: controller.signal });
-        if (!response.ok) throw new Error(`Point-cloud download failed (${response.status}).`);
-        const parsed = parsePointCloud(await response.arrayBuffer());
-        if (controller.signal.aborted) return;
+      const renderPointCloud = (buffer: ArrayBuffer): boolean => {
+        const parsed = parsePointCloud(buffer);
+        if (controller.signal.aborted) return false;
         const scene = sceneRef.current;
         const camera = cameraRef.current;
         const controls = controlsRef.current;
-        if (!scene || !camera || !controls) return;
+        if (!scene || !camera || !controls) return false;
         const geometry = new THREE.BufferGeometry();
         geometry.setAttribute("position", new THREE.BufferAttribute(parsed.positions, 3));
         geometry.setAttribute("color", new THREE.BufferAttribute(parsed.colors, 3));
@@ -338,6 +347,42 @@ export default function ScanningPointCloudViewer({
         gaugeRevisionRef.current = gaugeRevision;
         updateGrid(radius);
         setLoading(false);
+        return true;
+      };
+
+      try {
+        let renderedInline = false;
+        let inlineError: unknown = null;
+        if (inlinePointCloudBase64) {
+          try {
+            renderedInline = renderPointCloud(
+              decodeBase64PointCloud(inlinePointCloudBase64),
+            );
+          } catch (error) {
+            inlineError = error;
+          }
+        }
+        if (pointCloudUrl) {
+          try {
+            const response = await fetch(pointCloudUrl, {
+              cache: "no-store",
+              signal: controller.signal,
+            });
+            if (!response.ok) {
+              throw new Error(`Point-cloud download failed (${response.status}).`);
+            }
+            renderPointCloud(await response.arrayBuffer());
+            return;
+          } catch (error) {
+            if (!renderedInline) throw error;
+            return;
+          }
+        }
+        if (!renderedInline) {
+          throw inlineError instanceof Error
+            ? inlineError
+            : new Error("Point-cloud transport is unavailable.");
+        }
       } catch (error) {
         if (controller.signal.aborted) return;
         setLoading(false);
@@ -345,7 +390,7 @@ export default function ScanningPointCloudViewer({
       }
     })();
     return () => controller.abort();
-  }, [gaugeRevision, onError, pointCloudUrl, updateGrid]);
+  }, [gaugeRevision, inlinePointCloudBase64, onError, pointCloudUrl, updateGrid]);
 
   return (
     <div className={`relative overflow-hidden bg-[#111215] ${className}`}>

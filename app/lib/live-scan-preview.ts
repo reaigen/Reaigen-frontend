@@ -30,5 +30,11 @@ export function newestLiveSplatPreview(
     incoming.point_count !== current.point_count
     || incoming.camera_count !== current.camera_count
   );
-  return incomingIsNewerStage || geometryChanged ? incoming : current;
+  const inlineTransportChanged = (
+    incoming.inline_ply_sha256 !== current.inline_ply_sha256
+    || incoming.durable_ply_ready !== current.durable_ply_ready
+  );
+  return incomingIsNewerStage || geometryChanged || inlineTransportChanged
+    ? incoming
+    : current;
 }

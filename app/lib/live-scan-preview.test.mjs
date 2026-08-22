@@ -50,6 +50,23 @@ test("a changed signature alone does not redownload unchanged geometry", () => {
   assert.equal(newestLiveSplatPreview(current, resigned), current);
 });
 
+test("a ready durable PLY upgrades its immediate inline preview", () => {
+  const current = preview({
+    splat_url: "",
+    inline_ply_base64: "cGx5Cg==",
+    inline_ply_sha256: "a".repeat(64),
+    durable_ply_ready: false,
+  });
+  const durable = preview({
+    splat_url: "https://example.invalid/full",
+    inline_ply_base64: "cGx5Cg==",
+    inline_ply_sha256: "a".repeat(64),
+    durable_ply_ready: true,
+  });
+
+  assert.equal(newestLiveSplatPreview(current, durable), durable);
+});
+
 test("the terminal refined publication replaces its forming version", () => {
   const current = preview();
   const refined = preview({ stage: "refined", refined: true });

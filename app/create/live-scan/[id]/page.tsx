@@ -544,6 +544,7 @@ export default function LiveScanWorkspacePage() {
             {preview ? (
               <ScanningPointCloudViewer
                 pointCloudUrl={preview.splat_url}
+                inlinePointCloudBase64={preview.inline_ply_base64}
                 gaugeRevision={preview.gauge_revision ?? 0}
                 showFloorGrid={preview.show_floor_grid}
                 className="h-full w-full"

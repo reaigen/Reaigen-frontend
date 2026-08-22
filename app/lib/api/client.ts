@@ -1357,6 +1357,10 @@ export interface LiveSplatPreview {
   stage?: "forming" | "validated" | "refined";
   refined?: boolean;
   splat_url: string;
+  inline_ply_base64?: string;
+  inline_ply_sha256?: string;
+  inline_point_count?: number;
+  durable_ply_ready?: boolean;
   expires_in: number;
 }
 
