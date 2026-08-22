@@ -7,7 +7,7 @@ import { AppShell } from "../../../components/app-shell";
 import { useAuth } from "../../../components/hooks/use-auth";
 import { useLiveSplatAccess } from "../../../components/hooks/use-live-splat-access";
 import { useLiveScanCaptureDevice } from "../../../components/hooks/use-live-scan-device";
-import { ArrowLeftIcon, PlayIcon, VideoIcon } from "../../../components/icons";
+import { ArrowLeftIcon, VideoIcon } from "../../../components/icons";
 import { PageLoading } from "../../../components/page-loading";
 import {
   confirmLiveSplatFrame,
@@ -27,6 +27,7 @@ const CAPTURE_WIDTH = 540;
 const CAPTURE_HEIGHT = 960;
 const CAPTURE_INTERVAL_MS = 250;
 const STATUS_INTERVAL_MS = 400;
+const FIRST_PREVIEW_FRAME_COUNT = 8;
 const MAX_FRAME_SIZE = 16 * 1024 * 1024;
 const MAX_PARALLEL_UPLOADS = 3;
 const MAX_CAPTURE_BACKLOG = 24;
@@ -42,18 +43,6 @@ const ACTIVE_MODAL_STATUSES = new Set<LiveSplatSession["status"]>([
   "draining",
   "refining",
 ]);
-const FLOOR_LABEL_KEYS: Record<LiveSplatSession["floor_status"],
-  | "liveScan.floor.pending"
-  | "liveScan.floor.locked"
-  | "liveScan.floor.manual"
-  | "liveScan.floor.rejected"
-> = {
-  pending: "liveScan.floor.pending",
-  locked: "liveScan.floor.locked",
-  manual: "liveScan.floor.manual",
-  rejected: "liveScan.floor.rejected",
-};
-
 const ScanningPointCloudViewer = dynamic(
   () => import("../../../components/scanning-point-cloud-viewer"),
   { ssr: false },
@@ -141,6 +130,8 @@ export default function LiveScanWorkspacePage() {
   const [capturePending, setCapturePending] = React.useState(false);
   const [savingFrame, setSavingFrame] = React.useState(false);
   const [queuedFrameCount, setQueuedFrameCount] = React.useState(0);
+  const [capturedFrameCount, setCapturedFrameCount] = React.useState(0);
+  const [captureThrottled, setCaptureThrottled] = React.useState(false);
   const [finishing, setFinishing] = React.useState(false);
   const [capturing, setCapturing] = React.useState(false);
   const [preview, setPreview] = React.useState<LiveSplatPreview | null>(null);
@@ -167,6 +158,11 @@ export default function LiveScanWorkspacePage() {
       .finally(() => { if (active) setSessionLoading(false); });
     return () => { active = false; };
   }, [allowed, sessionId]);
+
+  React.useEffect(() => {
+    if (!session) return;
+    setCapturedFrameCount((current) => Math.max(current, session.progress.allocated_frames));
+  }, [session]);
 
   React.useEffect(() => {
     if (!session?.runtime.active || !ACTIVE_MODAL_STATUSES.has(session.status)) return;
@@ -228,8 +224,9 @@ export default function LiveScanWorkspacePage() {
     return () => window.removeEventListener("beforeunload", protectPendingUploads);
   }, [savingFrame]);
 
-  const enableCamera = async () => {
-    if (!captureDevice) return;
+  const enableCamera = async (): Promise<boolean> => {
+    if (cameraReady) return true;
+    if (!captureDevice) return false;
     setCameraLoading(true);
     setError(null);
     let openedStream: MediaStream | null = null;
@@ -257,10 +254,12 @@ export default function LiveScanWorkspacePage() {
       streamRef.current?.getTracks().forEach((track) => track.stop());
       streamRef.current = stream;
       setCameraReady(true);
+      return true;
     } catch {
       openedStream?.getTracks().forEach((track) => track.stop());
       if (videoRef.current?.srcObject === openedStream) videoRef.current.srcObject = null;
       setError("cameraQuality");
+      return false;
     } finally {
       setCameraLoading(false);
     }
@@ -349,16 +348,16 @@ export default function LiveScanWorkspacePage() {
     allocationTailRef.current = scheduled.catch(() => { /* failure is reflected in the UI */ });
   }, [failCapturePersistence, sessionId, updateOutstandingFrames]);
 
-  const toggleCapture = async () => {
-    if (capturing) {
-      captureActiveRef.current = false;
-      setCapturing(false);
-      return;
-    }
+  const beginCapture = async () => {
     if (!session || capturePending) return;
     setError(null);
     uploadFailedRef.current = false;
     setCapturePending(true);
+    const cameraAvailable = cameraReady || await enableCamera();
+    if (!cameraAvailable) {
+      setCapturePending(false);
+      return;
+    }
     let current = session;
     if (!session.runtime.active) {
       setRuntimeStarting(true);
@@ -398,6 +397,7 @@ export default function LiveScanWorkspacePage() {
     if (!session) return;
     captureActiveRef.current = false;
     setCapturing(false);
+    setCaptureThrottled(false);
     setCapturePending(false);
     setFinishing(true);
     setError(null);
@@ -423,6 +423,7 @@ export default function LiveScanWorkspacePage() {
       const started = performance.now();
       try {
         if (outstandingFramesRef.current < MAX_CAPTURE_BACKLOG) {
+          setCaptureThrottled(false);
           const video = videoRef.current;
           if (!video || video.videoWidth <= 0) throw new Error("Camera frame is unavailable.");
           const canvas = captureCanvasRef.current ?? document.createElement("canvas");
@@ -430,7 +431,10 @@ export default function LiveScanWorkspacePage() {
           const capturedAt = new Date().toISOString();
           const blob = await videoFrame(video, canvas);
           if (!active || !captureActiveRef.current) return;
+          setCapturedFrameCount((current) => current + 1);
           persistCapturedFrame({ blob, capturedAt });
+        } else {
+          setCaptureThrottled(true);
         }
       } catch {
         captureActiveRef.current = false;
@@ -446,6 +450,7 @@ export default function LiveScanWorkspacePage() {
     return () => {
       active = false;
       captureActiveRef.current = false;
+      setCaptureThrottled(false);
       if (timer) window.clearTimeout(timer);
     };
   }, [capturing, persistCapturedFrame]);
@@ -466,7 +471,6 @@ export default function LiveScanWorkspacePage() {
     );
   }
 
-  const floorLabel = t(FLOOR_LABEL_KEYS[session.floor_status], lang);
   const errorText = error === "cameraQuality"
     ? t("liveScan.cameraQuality", lang)
     : error === "camera"
@@ -489,7 +493,7 @@ export default function LiveScanWorkspacePage() {
         style={{ left: "var(--sidebar-offset, 0px)" }}
       >
         <div className="flex h-full min-h-0 flex-col">
-          <header className="flex shrink-0 items-center justify-between gap-3 border-b border-border/60 bg-card/85 px-3 py-2 backdrop-blur-xl sm:px-5">
+          <header className="flex shrink-0 items-center gap-3 border-b border-border/60 bg-card/85 px-3 py-2 backdrop-blur-xl sm:px-5">
             <div className="flex min-w-0 items-center gap-3">
               <button
                 type="button"
@@ -502,30 +506,6 @@ export default function LiveScanWorkspacePage() {
               <div className="min-w-0">
                 <h1 className="truncate text-[15px] font-semibold">{t("liveScan.workspaceTitle", lang)}</h1>
               </div>
-            </div>
-            <div className="flex shrink-0 items-center gap-2">
-              {!cameraReady ? (
-                <Button size="sm" loading={cameraLoading} disabled={!captureDevice} onClick={enableCamera}>
-                  <VideoIcon size={14} />
-                  {captureDevice ? t("liveScan.enableCamera", lang) : t("liveScan.phoneOnly", lang)}
-                </Button>
-              ) : (
-                <Button
-                  size="sm"
-                  variant={capturing ? "destructive" : "default"}
-                  loading={runtimeStarting || capturePending}
-                  disabled={
-                    terminal
-                    || session.status === "draining"
-                    || session.status === "refining"
-                    || (!session.runtime.active && access?.runtime_available !== true)
-                  }
-                  onClick={toggleCapture}
-                >
-                  <PlayIcon size={14} />
-                  {capturing ? t("liveScan.stopCapture", lang) : t("liveScan.startCapture", lang)}
-                </Button>
-              )}
             </div>
           </header>
 
@@ -546,11 +526,23 @@ export default function LiveScanWorkspacePage() {
                 ? "hidden"
                 : "absolute right-2 top-2 z-20 aspect-[9/16] w-[72px] rounded-xl border border-white/20 bg-black object-cover shadow-2xl sm:right-4 sm:top-4 sm:w-[90px] lg:w-[104px]"}
             />
-            {!cameraReady && !preview ? (
+            {!preview ? (
               <div className="absolute inset-0 flex items-center justify-center p-6 text-center">
                 <div>
-                  <VideoIcon size={28} className="mx-auto text-white/35" />
-                  <p className="mt-3 text-sm font-medium text-white/80">{t("liveScan.cameraPrompt", lang)}</p>
+                  {!cameraReady ? <VideoIcon size={28} className="mx-auto text-white/35" /> : null}
+                  <p className="mt-3 text-sm font-medium text-white/80">
+                    {cameraReady
+                      ? `${t("liveScan.firstPreview", lang)} · ${Math.min(session.progress.ready_frames, FIRST_PREVIEW_FRAME_COUNT)}/${FIRST_PREVIEW_FRAME_COUNT}`
+                      : t("liveScan.cameraPrompt", lang)}
+                  </p>
+                  {cameraReady ? (
+                    <div className="mx-auto mt-3 h-1.5 w-40 overflow-hidden rounded-full bg-white/10">
+                      <div
+                        className="h-full rounded-full bg-white/70 transition-[width] duration-300"
+                        style={{ width: `${Math.min(100, (session.progress.ready_frames / FIRST_PREVIEW_FRAME_COUNT) * 100)}%` }}
+                      />
+                    </div>
+                  ) : null}
                 </div>
               </div>
             ) : null}
@@ -561,23 +553,6 @@ export default function LiveScanWorkspacePage() {
                   {t("liveScan.contractTest", lang)}
                 </p>
               ) : null}
-              {session.runtime.profile === "preview" && !capturing && !preview ? (
-                <p role="status" className="rounded-xl border border-sky-300/25 bg-sky-950/85 px-3 py-2 text-xs leading-relaxed text-sky-100 shadow-lg backdrop-blur">
-                  {t("liveScan.previewMode", lang)}
-                </p>
-              ) : null}
-              {capturing ? (
-                <span className="inline-flex items-center gap-2 rounded-full bg-black/70 px-3 py-1.5 text-[11px] font-semibold text-white backdrop-blur">
-                  <span className="h-2 w-2 animate-pulse rounded-full bg-red-500 motion-reduce:animate-none" />
-                  {t("liveScan.capturing", lang)}
-                </span>
-              ) : null}
-              {capturePending ? (
-                <span className="inline-flex items-center gap-2 rounded-full bg-black/70 px-3 py-1.5 text-[11px] font-semibold text-white backdrop-blur">
-                  <span className="h-3 w-3 animate-spin rounded-full border border-white/25 border-t-white motion-reduce:animate-none" />
-                  {t("liveScan.mapperStarting", lang)}
-                </span>
-              ) : null}
               {errorText ? (
                 <p role="alert" className="rounded-xl border border-red-300/20 bg-red-950/85 px-3 py-2 text-xs leading-relaxed text-red-100 shadow-lg backdrop-blur">
                   {errorText}
@@ -585,70 +560,41 @@ export default function LiveScanWorkspacePage() {
               ) : null}
             </div>
 
-            <div className="absolute bottom-2 left-2 z-30 w-[min(70vw,20rem)] rounded-2xl border border-white/15 bg-black/70 p-3 text-white shadow-2xl backdrop-blur-xl sm:bottom-4 sm:left-4">
-              <div className="flex items-start justify-between gap-3">
+            <div className="absolute bottom-2 left-2 right-2 z-30 rounded-2xl border border-white/15 bg-black/72 p-3 text-white shadow-2xl backdrop-blur-xl sm:bottom-4 sm:left-4 sm:right-auto sm:w-[min(82vw,30rem)]">
+              <div className="flex items-center justify-between gap-3">
                 <div className="min-w-0">
                   <p className="truncate text-sm font-semibold">
                     {preview
                       ? t(preview.refined ? "liveScan.pointCloudRefined" : "liveScan.pointCloudForming", lang)
                       : t("liveScan.previewWaiting", lang)}
                   </p>
-                  <p className="mt-1 text-[11px] leading-relaxed text-white/60">
-                    {preview
-                      ? `${(preview.point_count ?? 0).toLocaleString()} ${t("liveScan.points", lang)} · ${(preview.camera_count ?? 0).toLocaleString()} ${t("liveScan.cameras", lang)}`
-                      : t("liveScan.previewHint", lang)}
+                  <p className="mt-1 truncate text-[11px] tabular-nums text-white/65">
+                    {capturedFrameCount} {t("liveScan.captured", lang)} · {session.progress.ready_frames} {t("liveScan.saved", lang)} · {(preview?.camera_count ?? 0)} {t("liveScan.cameras", lang)}
                   </p>
+                  {captureThrottled ? (
+                    <p role="status" className="mt-1 text-[11px] font-medium text-amber-200">{t("liveScan.catchingUp", lang)}</p>
+                  ) : savingFrame ? (
+                    <p role="status" className="mt-1 text-[11px] text-sky-200">
+                      {t("liveScan.savingLatest", lang)}{queuedFrameCount > 0 ? ` · ${queuedFrameCount}` : ""}
+                    </p>
+                  ) : null}
                 </div>
-                {preview ? (
-                  <span className="shrink-0 rounded-full bg-white/10 px-2 py-1 text-[10px] font-semibold tabular-nums text-white/75">
-                    {t("liveScan.epoch", lang)} {preview.epoch}
-                  </span>
+                {!terminal && session.status !== "draining" && session.status !== "refining" ? (
+                <Button
+                  className="h-11 shrink-0 rounded-full px-4 shadow-control"
+                  variant={capturing ? "destructive" : "default"}
+                  size="sm"
+                  loading={cameraLoading || runtimeStarting || capturePending || finishing}
+                  disabled={
+                    !captureDevice
+                    || (!session.runtime.active && access?.runtime_available !== true)
+                  }
+                  onClick={capturing ? finishSession : beginCapture}
+                >
+                  {capturing ? t("liveScan.finishPreview", lang) : t("liveScan.startCapture", lang)}
+                </Button>
                 ) : null}
               </div>
-              <div className="mt-2 flex flex-wrap gap-1.5 text-[10px] font-medium text-white/65">
-                <span
-                  role="status"
-                  aria-live="polite"
-                  className="inline-flex items-center gap-1.5 rounded-full bg-white/10 px-2 py-1"
-                >
-                  <span className={`h-1.5 w-1.5 rounded-full ${savingFrame ? "animate-pulse bg-sky-300" : "bg-emerald-300"}`} />
-                  {savingFrame
-                    ? `${t("liveScan.savingLatest", lang)}${queuedFrameCount > 1 ? ` · ${queuedFrameCount}` : ""}`
-                    : session.progress.ready_frames > 0
-                      ? t("liveScan.savedSafely", lang)
-                      : t("liveScan.readyToSave", lang)}
-                </span>
-                <span className="rounded-full bg-white/10 px-2 py-1">
-                  {t("liveScan.quality", lang)} · {t(`liveScan.quality.${session.options.quality}`, lang)}
-                </span>
-                <span className="rounded-full bg-white/10 px-2 py-1">{floorLabel}</span>
-              </div>
-              <dl className="mt-2 grid grid-cols-2 gap-x-3 border-t border-white/10 pt-2 text-[11px]">
-                <div>
-                  <dt className="text-white/50">{t("liveScan.framesReady", lang)}</dt>
-                  <dd className="mt-0.5 font-semibold tabular-nums">{session.progress.ready_frames}</dd>
-                </div>
-                <div>
-                  <dt className="text-white/50">{t("liveScan.framesProcessed", lang)}</dt>
-                  <dd className="mt-0.5 font-semibold tabular-nums">{session.progress.processed_frames}</dd>
-                </div>
-              </dl>
-              {session.runtime.active && !terminal ? (
-                <Button
-                  className="mt-3 w-full border-white/15 bg-white/10 text-white hover:bg-white/15"
-                  variant="outline"
-                  size="sm"
-                  loading={finishing}
-                  onClick={finishSession}
-                >
-                  {t(
-                    access?.capabilities.dragon_refinement === true
-                      ? "liveScan.finish"
-                      : "liveScan.finishPreview",
-                    lang,
-                  )}
-                </Button>
-              ) : null}
             </div>
           </section>
         </div>

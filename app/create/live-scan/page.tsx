@@ -29,7 +29,7 @@ export default function LiveScanStartPage() {
   const [latest, setLatest] = React.useState<LiveSplatSession | null>(null);
   const [starting, setStarting] = React.useState(false);
   const [error, setError] = React.useState<string | null>(null);
-  const [quality, setQuality] = React.useState<"fast" | "balanced" | "quality">("balanced");
+  const [quality, setQuality] = React.useState<"fast" | "balanced" | "quality">("fast");
   const [floorPreview, setFloorPreview] = React.useState(true);
   const [dragonRefinement, setDragonRefinement] = React.useState(true);
 
@@ -115,12 +115,6 @@ export default function LiveScanStartPage() {
             {t("liveScan.contractTest", lang)}
           </p>
         ) : null}
-        {access?.runtime.profile === "preview" ? (
-          <p role="status" className="mt-5 rounded-2xl border border-sky-500/25 bg-sky-500/10 px-4 py-3 text-sm leading-relaxed text-sky-950 dark:text-sky-100">
-            {t("liveScan.previewMode", lang)}
-          </p>
-        ) : null}
-
         <div className="mt-6 rounded-[1.875rem] border border-border/60 bg-card/80 p-5 shadow-[0_18px_50px_-42px_rgba(0,0,0,0.32)] backdrop-blur-2xl sm:p-7">
           <div className="flex flex-col gap-5 sm:flex-row sm:items-center sm:justify-between">
             <div className="min-w-0">
@@ -130,74 +124,61 @@ export default function LiveScanStartPage() {
               </p>
               {error ? <p role="alert" className="mt-3 text-sm text-destructive">{error}</p> : null}
             </div>
-            <div className="flex shrink-0 flex-col gap-2 sm:items-end">
-              {latest ? (
-                <Button variant="outline" onClick={() => router.push(`/create/live-scan/${latest.id}`)}>
-                  {t("liveScan.continue", lang)}
-                </Button>
-              ) : null}
-              <Button
-                loading={starting}
-                disabled={!captureDevice || access?.runtime_available !== true}
-                onClick={startSession}
-                className="h-11 rounded-full px-5 shadow-control"
-              >
-                <PlayIcon size={15} />
-                {t("liveScan.start", lang)}
-              </Button>
-            </div>
+            <Button
+              loading={starting}
+              disabled={!captureDevice || access?.runtime_available !== true}
+              onClick={latest ? () => router.push(`/create/live-scan/${latest.id}`) : startSession}
+              className="h-11 shrink-0 rounded-full px-5 shadow-control"
+            >
+              <PlayIcon size={15} />
+              {t(latest ? "liveScan.continue" : "liveScan.start", lang)}
+            </Button>
           </div>
 
-          {captureDevice ? (
-          <div className="mt-6 border-t border-border/60 pt-5">
-            <p className="text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">{t("liveScan.options", lang)}</p>
-            <div className="mt-3 grid gap-3 lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
-              <div className="rounded-2xl border border-border/60 bg-background/50 p-4">
-                <p className="text-sm font-semibold">{t("liveScan.quality", lang)}</p>
-                <div className="selection-capsule-track mt-3 grid grid-cols-3" role="group" aria-label={t("liveScan.quality", lang)}>
-                  {(["fast", "balanced", "quality"] as const).map((value) => (
-                    <button
-                      key={value}
-                      type="button"
-                      aria-pressed={quality === value}
-                      onClick={() => setQuality(value)}
-                      className="selection-capsule-item pen-touch-target min-w-0 px-2 text-[11px] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                    >
-                      <span className="truncate">{t(`liveScan.quality.${value}`, lang)}</span>
-                    </button>
-                  ))}
-                </div>
+          {captureDevice && !latest ? (
+          <details className="mt-5 border-t border-border/60 pt-4">
+            <summary className="cursor-pointer select-none text-sm font-medium text-muted-foreground marker:text-muted-foreground">
+              {t("liveScan.options", lang)} · {t(`liveScan.quality.${quality}`, lang)}
+            </summary>
+            <div className="mt-4 rounded-2xl border border-border/60 bg-background/50 p-4">
+              <p className="text-sm font-semibold">{t("liveScan.quality", lang)}</p>
+              <div className="selection-capsule-track mt-3 grid grid-cols-3" role="group" aria-label={t("liveScan.quality", lang)}>
+                {(["fast", "balanced", "quality"] as const).map((value) => (
+                  <button
+                    key={value}
+                    type="button"
+                    aria-pressed={quality === value}
+                    onClick={() => setQuality(value)}
+                    className="selection-capsule-item pen-touch-target min-w-0 px-2 text-[11px] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                  >
+                    <span className="truncate">{t(`liveScan.quality.${value}`, lang)}</span>
+                  </button>
+                ))}
               </div>
-              <div className="divide-y divide-border/60 rounded-2xl border border-border/60 bg-background/50 px-4">
-                <label className="flex min-h-14 items-center justify-between gap-4 py-3 text-sm font-medium">
+              {access?.capabilities.automatic_floor_retry === true ? (
+                <label className="mt-4 flex min-h-11 items-center justify-between gap-4 border-t border-border/60 pt-3 text-sm font-medium">
                   <span>{t("liveScan.floorPreview", lang)}</span>
-                  <Switch
-                    checked={access?.capabilities.automatic_floor_retry === true && floorPreview}
-                    disabled={access?.capabilities.automatic_floor_retry !== true}
-                    onCheckedChange={setFloorPreview}
-                  />
+                  <Switch checked={floorPreview} onCheckedChange={setFloorPreview} />
                 </label>
-                <label className="flex min-h-14 items-center justify-between gap-4 py-3 text-sm font-medium">
+              ) : null}
+              {access?.capabilities.dragon_refinement === true ? (
+                <label className="mt-3 flex min-h-11 items-center justify-between gap-4 border-t border-border/60 pt-3 text-sm font-medium">
                   <span>{t("liveScan.dragonRefinement", lang)}</span>
-                  <Switch
-                    checked={dragonRefinement}
-                    disabled={access?.capabilities.dragon_refinement !== true}
-                    onCheckedChange={setDragonRefinement}
-                  />
+                  <Switch checked={dragonRefinement} onCheckedChange={setDragonRefinement} />
                 </label>
-              </div>
+              ) : null}
             </div>
             {access?.runtime_available !== true ? (
               <p role="status" className="mt-3 rounded-xl bg-amber-500/10 px-3 py-2 text-sm text-amber-800 dark:text-amber-200">
                 {t("liveScan.runtimeUnavailable", lang)}
               </p>
             ) : null}
-          </div>
-          ) : (
+          </details>
+          ) : !captureDevice ? (
             <p role="status" className="mt-6 rounded-2xl border border-border/60 bg-background/50 p-4 text-sm leading-relaxed text-muted-foreground">
               {t("liveScan.mobileRequired", lang)}
             </p>
-          )}
+          ) : null}
         </div>
       </div>
     </AppShell>

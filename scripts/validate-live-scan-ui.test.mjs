@@ -42,6 +42,7 @@ test("capture and status cadences do not recreate the old ten-second delay", () 
   assert.equal(numericConstant(workspace, "CAPTURE_HEIGHT"), 960);
   assert.ok(numericConstant(workspace, "CAPTURE_INTERVAL_MS") <= 250);
   assert.ok(numericConstant(workspace, "STATUS_INTERVAL_MS") <= 500);
+  assert.equal(numericConstant(workspace, "FIRST_PREVIEW_FRAME_COUNT"), 8);
   assert.match(workspace, /sourceWidth[\s\S]*sourceHeight[\s\S]*context\.drawImage/);
   assert.match(workspace, /capturePending[\s\S]*session\.status === "capturing"/);
   assert.match(workspace, /allocationTailRef/);
@@ -60,7 +61,13 @@ test("the scan workspace is one responsive viewport with a portrait camera inset
   assert.match(workspace, /sm:w-\[90px\]/);
   assert.match(workspace, /object-cover/);
   assert.doesNotMatch(workspace, /absolute inset-0 h-full w-full bg-black object-cover/);
-  assert.match(workspace, /session\.options\.quality/);
-  assert.match(workspace, /liveScan\.savedSafely/);
+  assert.match(workspace, /capturedFrameCount/);
+  assert.match(workspace, /liveScan\.firstPreview/);
+  assert.match(workspace, /liveScan\.captured/);
+  assert.match(workspace, /liveScan\.saved/);
+  assert.match(workspace, /onClick=\{capturing \? finishSession : beginCapture\}/);
+  assert.doesNotMatch(workspace, /onClick=\{enableCamera\}|toggleCapture/);
+  assert.match(start, /<details/);
+  assert.match(start, /useState<"fast" \| "balanced" \| "quality">\("fast"\)/);
   assert.match(english, /"liveScan\.pointCloudForming":\s+"Point cloud forming"/);
 });
