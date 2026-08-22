@@ -21,7 +21,7 @@
     "sog-metrics": "node --experimental-strip-types scripts/sog-render-metrics.mjs",
     "validate-auth-paths": "node --experimental-strip-types --test scripts/validate-auth-paths.test.mjs",
     "validate-camera-bounds": "node --experimental-strip-types --test app/lib/camera-bounds.test.mjs",
-    "validate-live-scan-device": "node --experimental-strip-types --test app/lib/live-scan-device.test.mjs",
+    "validate-live-scan-device": "node --experimental-strip-types --test app/lib/live-scan-device.test.mjs app/lib/live-scan-preview.test.mjs app/lib/point-cloud-bounds.test.mjs",
     "validate-live-scan-ui": "node --test scripts/validate-live-scan-ui.test.mjs"
   },
   "dependencies": {

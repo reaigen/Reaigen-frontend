@@ -239,6 +239,7 @@ const en = {
   "liveScan.captureFailed":                "Capture stopped because a frame could not be saved safely.",
   "liveScan.runtimeStartFailed":           "The scanning service could not be started. Capture remains stopped.",
   "liveScan.finishFailed":                 "Scanning could not finish.",
+  "liveScan.previewDisplayFailed":         "The latest point cloud could not be displayed. Your captured views are still saved.",
   "liveScan.finish":                       "Finish and refine",
   "liveScan.finishPreview":                "Finish scanning",
   "liveScan.previewQualified":             "Qualified preview",

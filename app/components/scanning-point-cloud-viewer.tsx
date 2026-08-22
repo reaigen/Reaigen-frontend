@@ -3,6 +3,7 @@
 import * as React from "react";
 import * as THREE from "three";
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
+import { robustPointCloudBounds } from "../lib/point-cloud-bounds";
 
 type PlyScalar =
   | "char" | "int8" | "uchar" | "uint8"
@@ -284,9 +285,12 @@ export default function ScanningPointCloudViewer({
         geometry.setAttribute("position", new THREE.BufferAttribute(parsed.positions, 3));
         geometry.setAttribute("color", new THREE.BufferAttribute(parsed.colors, 3));
         geometry.computeBoundingSphere();
-        const sphere = geometry.boundingSphere;
-        if (!sphere || !Number.isFinite(sphere.radius)) throw new Error("Point-cloud bounds are invalid.");
-        const radius = Math.max(sphere.radius, 0.05);
+        if (!geometry.boundingSphere || !Number.isFinite(geometry.boundingSphere.radius)) {
+          throw new Error("Point-cloud bounds are invalid.");
+        }
+        const bounds = robustPointCloudBounds(parsed.positions);
+        const center = new THREE.Vector3(...bounds.center);
+        const radius = bounds.radius;
         const material = new THREE.PointsMaterial({
           size: THREE.MathUtils.clamp(radius / 180, 0.006, 0.055),
           sizeAttenuation: true,
@@ -312,7 +316,7 @@ export default function ScanningPointCloudViewer({
         camera.near = Math.max(radius / 5_000, 0.002);
         camera.far = Math.max(radius * 1_000, 100);
         camera.updateProjectionMatrix();
-        const targetDistance = controls.target.distanceTo(sphere.center);
+        const targetDistance = controls.target.distanceTo(center);
         const scaleChanged = (
           previousRadius > 0
           && Math.max(radius / previousRadius, previousRadius / radius) > 3
@@ -325,8 +329,8 @@ export default function ScanningPointCloudViewer({
         );
         if (needsFrame) {
           const direction = new THREE.Vector3(1.35, 0.9, 1.35).normalize();
-          controls.target.copy(sphere.center);
-          camera.position.copy(sphere.center).addScaledVector(direction, radius * 2.8);
+          controls.target.copy(center);
+          camera.position.copy(center).addScaledVector(direction, radius * 2.8);
           controls.update();
           framedRef.current = true;
         }

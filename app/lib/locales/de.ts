@@ -229,6 +229,7 @@ const de: LocaleStrings = {
   "liveScan.captureFailed":                "Die Aufnahme wurde gestoppt, weil ein Bild nicht sicher gespeichert werden konnte.",
   "liveScan.runtimeStartFailed":           "Der Scan-Dienst konnte nicht gestartet werden. Die Aufnahme bleibt gestoppt.",
   "liveScan.finishFailed":                 "Das Scannen konnte nicht abgeschlossen werden.",
+  "liveScan.previewDisplayFailed":         "Die neueste Punktwolke konnte nicht angezeigt werden. Ihre Aufnahmen sind weiterhin sicher gespeichert.",
   "liveScan.finish":                       "Abschließen und verfeinern",
   "liveScan.finishPreview":                "Scannen abschließen",
   "liveScan.previewQualified":             "Qualifizierte Vorschau",

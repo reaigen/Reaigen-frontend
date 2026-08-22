@@ -21,6 +21,7 @@ import {
   type LiveSplatSession,
 } from "../../../lib/api/client";
 import { getUserLanguage, t } from "../../../lib/i18n";
+import { newestLiveSplatPreview } from "../../../lib/live-scan-preview";
 import { Button } from "../../../lib/ui/button";
 
 const CAPTURE_WIDTH = 540;
@@ -202,13 +203,8 @@ export default function LiveScanWorkspacePage() {
     getLiveSplatPreview(sessionId, sessionRevision)
       .then(({ preview: value }) => {
         if (!active || !value) return;
-        setPreview((current) => (
-          current
-          && current.epoch === value.epoch
-          && (current.gauge_revision ?? 0) === (value.gauge_revision ?? 0)
-            ? current
-            : value
-        ));
+        setPreview((current) => newestLiveSplatPreview(current, value));
+        setError((current) => current === "preview" ? null : current);
       })
       .catch(() => { /* The last rendered preview remains visible. */ });
     return () => { active = false; };
@@ -424,6 +420,12 @@ export default function LiveScanWorkspacePage() {
     }
   };
 
+  const handlePreviewError = React.useCallback(() => {
+    // Captured RGB remains durable even if this browser cannot render one PLY.
+    // Keep the last-good canvas mounted and surface the failure to the user.
+    setError("preview");
+  }, []);
+
   React.useEffect(() => {
     if (!capturing) return;
     captureActiveRef.current = true;
@@ -491,10 +493,20 @@ export default function LiveScanWorkspacePage() {
         ? t("liveScan.runtimeStartFailed", lang)
         : error === "finish"
           ? t("liveScan.finishFailed", lang)
+        : error === "preview"
+          ? t("liveScan.previewDisplayFailed", lang)
       : error === "session"
         ? t("liveScan.sessionUnavailable", lang)
         : null;
   const terminal = TERMINAL_SESSION_STATES.has(session.status);
+  const finalizing = session.status === "draining" || session.status === "refining";
+  const pointCloudLabel = finalizing
+    ? t("liveScan.pointCloudRefining", lang)
+    : session.status === "completed"
+      ? t("liveScan.pointCloudRefined", lang)
+      : preview
+        ? t(preview.refined ? "liveScan.pointCloudRefined" : "liveScan.pointCloudForming", lang)
+        : t("liveScan.previewWaiting", lang);
   const interrupted = (
     !capturing
     && session.progress.allocated_frames > session.progress.ready_frames + queuedFrameCount
@@ -530,6 +542,7 @@ export default function LiveScanWorkspacePage() {
                 gaugeRevision={preview.gauge_revision ?? 0}
                 showFloorGrid={preview.show_floor_grid}
                 className="h-full w-full"
+                onError={handlePreviewError}
               />
             ) : null}
             <video
@@ -580,13 +593,16 @@ export default function LiveScanWorkspacePage() {
               <div className="flex items-center justify-between gap-3">
                 <div className="min-w-0">
                   <p className="truncate text-sm font-semibold">
-                    {preview
-                      ? t(preview.refined ? "liveScan.pointCloudRefined" : "liveScan.pointCloudForming", lang)
-                      : t("liveScan.previewWaiting", lang)}
+                    {pointCloudLabel}
                   </p>
                   <p className="mt-1 truncate text-[11px] tabular-nums text-white/65">
                     {capturedFrameCount} {t("liveScan.captured", lang)} · {session.progress.ready_frames} {t("liveScan.saved", lang)} · {(preview?.camera_count ?? 0)} {t("liveScan.cameras", lang)}
                   </p>
+                  {finalizing ? (
+                    <p role="status" className="mt-1 text-[11px] font-medium text-emerald-200">
+                      {t("liveScan.savedSafely", lang)} · {session.progress.processed_frames}/{session.progress.ready_frames}
+                    </p>
+                  ) : null}
                   {captureThrottled ? (
                     <p role="status" className="mt-1 text-[11px] font-medium text-amber-200">{t("liveScan.catchingUp", lang)}</p>
                   ) : savingFrame ? (

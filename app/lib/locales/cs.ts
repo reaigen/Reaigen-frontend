@@ -229,6 +229,7 @@ const cs: LocaleStrings = {
   "liveScan.captureFailed":                "Snímání se zastavilo, protože snímek nebylo možné bezpečně uložit.",
   "liveScan.runtimeStartFailed":           "Službu snímání se nepodařilo spustit. Snímání zůstalo zastavené.",
   "liveScan.finishFailed":                 "Snímání se nepodařilo dokončit.",
+  "liveScan.previewDisplayFailed":         "Nejnovější mračno bodů se nepodařilo zobrazit. Pořízené záběry jsou stále bezpečně uložené.",
   "liveScan.finish":                       "Dokončit a zpřesnit",
   "liveScan.finishPreview":                "Dokončit snímání",
   "liveScan.previewQualified":             "Ověřený náhled",

@@ -229,6 +229,7 @@ const sk: LocaleStrings = {
   "liveScan.captureFailed":                "Snímanie sa zastavilo, pretože záber nebolo možné bezpečne uložiť.",
   "liveScan.runtimeStartFailed":           "Službu snímania sa nepodarilo spustiť. Snímanie zostalo zastavené.",
   "liveScan.finishFailed":                 "Snímanie sa nepodarilo dokončiť.",
+  "liveScan.previewDisplayFailed":         "Najnovšie mračno bodov sa nepodarilo zobraziť. Nasnímané zábery sú stále bezpečne uložené.",
   "liveScan.finish":                       "Dokončiť a spresniť",
   "liveScan.finishPreview":                "Dokončiť snímanie",
   "liveScan.previewQualified":             "Overený náhľad",
