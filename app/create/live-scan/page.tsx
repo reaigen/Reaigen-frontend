@@ -19,7 +19,7 @@ import { getUserLanguage, t } from "../../lib/i18n";
 import { Button } from "../../lib/ui/button";
 import { Switch } from "../../lib/ui/switch";
 
-const ACTIVE_STATES = new Set(["created", "starting", "capturing", "draining", "refining"]);
+const CONTINUABLE_STATES = new Set(["starting", "capturing", "draining", "refining"]);
 
 export default function LiveScanStartPage() {
   const { isAuthenticated, isLoading, user, logout } = useAuth();
@@ -50,7 +50,7 @@ export default function LiveScanStartPage() {
       .then(({ results }) => {
         if (!active) return;
         setLatest(results.find((session) => (
-          ACTIVE_STATES.has(session.status)
+          CONTINUABLE_STATES.has(session.status)
           && session.progress.allocated_frames === session.progress.ready_frames
         )) ?? null);
       })

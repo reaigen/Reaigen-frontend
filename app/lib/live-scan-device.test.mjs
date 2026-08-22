@@ -56,6 +56,19 @@ test("production permits only same-origin camera and opens it only on explicit a
   assert.doesNotMatch(startPage, /getUserMedia\(/);
 });
 
+test("an untouched scan never overrides the new-scan path", () => {
+  const startPage = readFileSync(
+    new URL("../create/live-scan/page.tsx", import.meta.url),
+    "utf8",
+  );
+
+  assert.match(
+    startPage,
+    /const CONTINUABLE_STATES = new Set\(\["starting", "capturing", "draining", "refining"\]\)/,
+  );
+  assert.doesNotMatch(startPage, /CONTINUABLE_STATES[^\n]+"created"/);
+});
+
 test("scanning UI hides implementation names and remains standalone", () => {
   const startPage = readFileSync(
     new URL("../create/live-scan/page.tsx", import.meta.url),
