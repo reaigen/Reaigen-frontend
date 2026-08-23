@@ -163,6 +163,34 @@ function AgentStatusBadge({
   );
 }
 
+function AgentVersionStamp({ answer }: { answer: ReaiAgentResponse }) {
+  const version = answer.agent_version;
+  if (!version?.version) return null;
+  const build = version.build_sha || "unknown";
+  const shortBuild = build === "development" ? build : build.slice(0, 12);
+
+  return (
+    <details
+      className="mt-1.5 w-fit text-[11px] text-muted-foreground"
+      data-agent-version={version.version}
+      data-agent-build={build}
+    >
+      <summary className="cursor-pointer select-none hover:text-foreground">
+        ReaiAgent {version.version} · {shortBuild}
+      </summary>
+      <div className="mt-1 max-w-full space-y-0.5 border-l border-border/55 pl-2.5 leading-relaxed">
+        <p className="break-all">Git <code>{build}</code></p>
+        {version.prompt_version && <p className="break-all">Prompt <code>{version.prompt_version}</code></p>}
+        <p>
+          Schema <code>{version.response_schema_version || "untracked"}</code>
+          {" · "}tools <code>{version.tool_policy_version || "untracked"}</code>
+          {" · "}runtime <code>r{version.runtime_settings_revision}</code>
+        </p>
+      </div>
+    </details>
+  );
+}
+
 type ChatTurn = {
   id: number;
   role: "user" | "assistant";
@@ -1385,6 +1413,7 @@ export function ReaiAgentCard({
                       : "py-1"}
                   >
                     <p className={cn("whitespace-pre-line text-[14px] leading-6", turn.role === "user" ? "text-background" : "text-foreground")}>{turn.content}</p>
+                    {answer && <AgentVersionStamp answer={answer} />}
                     {answer && (
                       <>
                         <AgentMiniUi
