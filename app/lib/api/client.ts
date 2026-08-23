@@ -1300,6 +1300,11 @@ export interface LiveSplatAccess {
     accepted_content_types: Array<"image/jpeg" | "image/webp">;
     max_frame_size: number;
     max_frame_dimension: number;
+    frame_width: number;
+    frame_height: number;
+    camera_profile: string;
+    lens: "ultrawide" | string;
+    full_frame_only: boolean;
   };
   capabilities: {
     browser_capture: boolean;

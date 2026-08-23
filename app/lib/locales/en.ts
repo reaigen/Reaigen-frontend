@@ -235,7 +235,7 @@ const en = {
   "liveScan.previewWaiting":               "Ready",
   "liveScan.previewHint":                  "Reconstructed points appear continuously as camera frames align.",
   "liveScan.cameraUnavailable":            "The camera could not be opened. Check browser permission and try again.",
-  "liveScan.cameraQuality":                "Scanning requires a phone camera delivering at least 1280 × 720. Choose the main camera and try again.",
+  "liveScan.cameraQuality":                "This camera is unavailable.",
   "liveScan.captureFailed":                "Capture stopped because a frame could not be saved safely.",
   "liveScan.runtimeStartFailed":           "The scanning service could not be started. Capture remains stopped.",
   "liveScan.finishFailed":                 "Scanning could not finish.",

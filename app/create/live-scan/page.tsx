@@ -15,8 +15,6 @@ import {
 import { getUserLanguage, t } from "../../lib/i18n";
 import { Button } from "../../lib/ui/button";
 
-const LIVE_SCAN_PIPELINE_QUALITY = "fast" as const;
-
 export default function LiveScanStartPage() {
   const { isAuthenticated, isLoading, user, logout } = useAuth();
   const { allowed, loading: accessLoading, access } = useLiveSplatAccess(isAuthenticated);
@@ -35,14 +33,7 @@ export default function LiveScanStartPage() {
     setStarting(true);
     setStartFailed(false);
     try {
-      const session = await createLiveSplatSession({
-        postprocess: {
-          quality: LIVE_SCAN_PIPELINE_QUALITY,
-          floor_preview: access.capabilities.automatic_floor_retry === true,
-          dragon_refinement: access.capabilities.dragon_refinement === true,
-          output_format: "ply",
-        },
-      });
+      const session = await createLiveSplatSession();
       try {
         // Otter requires prewarming before capture. Dispatch while the
         // workspace and camera are opening; its normal start path remains a

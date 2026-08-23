@@ -50,8 +50,14 @@ test("capture and status cadences do not recreate the old ten-second delay", () 
   assert.ok(numericConstant(workspace, "MAX_PARALLEL_UPLOADS") >= 4);
   assert.ok(numericConstant(workspace, "MAX_PARALLEL_UPLOADS") <= 8);
   assert.ok(numericConstant(workspace, "FRAME_UPLOAD_ATTEMPTS") >= 6);
-  assert.match(workspace, /sourceWidth[\s\S]*sourceHeight[\s\S]*context\.drawImage/);
-  assert.match(workspace, /CAPTURE_ACCEPTING_SESSION_STATES[\s\S]*"starting"[\s\S]*"capturing"/);
+  assert.match(workspace, /context\.drawImage/);
+  assert.match(workspace, /context\.rotate\(Math\.PI \/ 2\)/);
+  assert.doesNotMatch(workspace, /sourceX|sourceY|sourceWidth|sourceHeight/);
+  assert.match(workspace, /CAPTURE_ACCEPTING_SESSION_STATES[\s\S]*"capturing"/);
+  assert.doesNotMatch(
+    workspace,
+    /CAPTURE_ACCEPTING_SESSION_STATES = new Set[\s\S]{0,120}"starting"/,
+  );
   assert.match(workspace, /current\.runtime\.active[\s\S]*CAPTURE_ACCEPTING_SESSION_STATES\.has\(current\.status\)/);
   assert.doesNotMatch(workspace, /allocationTailRef/);
   assert.match(workspace, /persistenceSlotsRef/);
@@ -73,14 +79,15 @@ test("capture and status cadences do not recreate the old ten-second delay", () 
   );
   assert.doesNotMatch(workspace, /pendingFrameRef|queueLatestFrame/);
   assert.doesNotMatch(workspace, /setInterval\(/);
-  assert.match(start, /output_format: "ply"/);
+  assert.match(start, /createLiveSplatSession\(\)/);
+  assert.doesNotMatch(start, /output_format:/);
 });
 
 test("the scan workspace is one responsive viewport with a portrait camera inset", () => {
   assert.doesNotMatch(workspace, /lg:grid-cols-\[minmax\(0,1fr\)_320px\]/);
   assert.match(workspace, /aspect-\[9\/16\]/);
   assert.match(workspace, /sm:w-\[90px\]/);
-  assert.match(workspace, /object-cover/);
+  assert.match(workspace, /object-contain/);
   assert.match(workspace, /<AppShell[^>]*immersive>/);
   assert.match(shell, /immersive\s*\?\s*"min-h-dvh p-0"/);
   assert.match(shell, /!immersive \? <header/);
@@ -97,14 +104,14 @@ test("the scan workspace is one responsive viewport with a portrait camera inset
   assert.doesNotMatch(workspace, /liveScan\.previewQualified/);
   assert.doesNotMatch(workspace, /liveScan\.previewProvisional/);
   assert.doesNotMatch(workspace, /liveScan\.contractTest/);
-  assert.match(workspace, /session\.progress\.allocated_frames > session\.progress\.ready_frames \+ queuedFrameCount/);
-  assert.match(workspace, /liveScan\.restart/);
+  assert.match(workspace, /session\.progress\.allocated_frames > 0 \|\| queuedFrameCount > 0/);
+  assert.match(workspace, /liveScan\.continue/);
+  assert.doesNotMatch(workspace, /onClick=\{resumable[\s\S]{0,160}router\.push\("\/create\/live-scan"\)/);
   assert.doesNotMatch(start, /listLiveSplatSessions|liveScan\.continue/);
   assert.match(workspace, /finishSession[\s\S]*beginCapture/);
   assert.doesNotMatch(workspace, /onClick=\{enableCamera\}|toggleCapture/);
   assert.doesNotMatch(start, /<details|<Switch|liveScan\.options|liveScan\.dragonRefinement|liveScan\.floorPreview/);
-  assert.match(start, /const LIVE_SCAN_PIPELINE_QUALITY = "fast" as const/);
-  assert.match(start, /quality: LIVE_SCAN_PIPELINE_QUALITY/);
+  assert.doesNotMatch(start, /LIVE_SCAN_PIPELINE_QUALITY|quality:/);
   assert.match(
     start,
     /await startLiveSplatSession\(session\.id\)[\s\S]*router\.push\(`\/create\/live-scan\/\$\{session\.id\}`\)/,

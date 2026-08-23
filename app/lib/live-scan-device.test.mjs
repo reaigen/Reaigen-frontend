@@ -52,7 +52,7 @@ test("production permits only same-origin camera and opens it only on explicit a
   assert.match(nextConfig, /camera=\(self\)/);
   assert.doesNotMatch(nextConfig, /camera=\(\)/);
   assert.equal(workspace.match(/getUserMedia\(/g)?.length, 1);
-  assert.ok(workspace.indexOf("getUserMedia(") > workspace.indexOf("const enableCamera = async"));
+  assert.match(workspace, /const enableCamera = async[\s\S]*openEnvironmentCamera\(\)/);
   assert.doesNotMatch(startPage, /getUserMedia\(/);
 });
 
@@ -66,6 +66,41 @@ test("new scan never automatically resumes an older session", () => {
   assert.match(startPage, /attemptedRef\.current = true;[\s\S]*void startSession\(\)/);
   assert.doesNotMatch(startPage, /listLiveSplatSessions/);
   assert.doesNotMatch(startPage, /liveScan\.continue/);
+});
+
+test("a refreshed workspace resumes its durable session instead of replacing it", () => {
+  const workspace = readFileSync(
+    new URL("../create/live-scan/[id]/page.tsx", import.meta.url),
+    "utf8",
+  );
+
+  assert.match(
+    workspace,
+    /const resumable = \([\s\S]*session\.progress\.allocated_frames > 0 \|\| queuedFrameCount > 0/,
+  );
+  assert.match(workspace, /onClick=\{capturing \? finishSession : beginCapture\}/);
+  assert.match(workspace, /resumable[\s\S]{0,100}liveScan\.continue/);
+  assert.doesNotMatch(
+    workspace,
+    /onClick=\{resumable[\s\S]{0,160}router\.push\("\/create\/live-scan"\)/,
+  );
+});
+
+test("capture waits for the native Otter service to finish prewarming", () => {
+  const workspace = readFileSync(
+    new URL("../create/live-scan/[id]/page.tsx", import.meta.url),
+    "utf8",
+  );
+
+  assert.match(workspace, /CAPTURE_ACCEPTING_SESSION_STATES[\s\S]{0,120}"capturing"/);
+  assert.doesNotMatch(
+    workspace,
+    /CAPTURE_ACCEPTING_SESSION_STATES = new Set[\s\S]{0,120}"starting"/,
+  );
+  assert.match(
+    workspace,
+    /capturePending[\s\S]*session\.runtime\.active[\s\S]*CAPTURE_ACCEPTING_SESSION_STATES\.has\(session\.status\)/,
+  );
 });
 
 test("scanning UI hides implementation names and remains standalone", () => {
@@ -91,9 +126,25 @@ test("scanning UI hides implementation names and remains standalone", () => {
   assert.doesNotMatch(startPage, /draft_id|tour_id|listSplats/);
   assert.doesNotMatch(startPage, /access\.runtime\.(?:release|commit)/);
   assert.doesNotMatch(workspace, /session\.runtime\.(?:release|commit)/);
-  assert.match(startPage, /dragon_refinement: access\.capabilities\.dragon_refinement === true/);
+  assert.match(startPage, /createLiveSplatSession\(\)/);
+  assert.doesNotMatch(startPage, /postprocess|quality:/);
   assert.match(workspace, /liveScan\.finishPreview/);
   assert.match(workspace, /pointCloudUrl=\{preview\.splat_url\}/);
   assert.match(workspace, /ScanningPointCloudViewer/);
   assert.doesNotMatch(workspace, /gaussianRenderer|<SplatViewer/);
+});
+
+test("capture uses the calibrated ultrawide full frame without a center crop", () => {
+  const workspace = readFileSync(
+    new URL("../create/live-scan/[id]/page.tsx", import.meta.url),
+    "utf8",
+  );
+
+  assert.match(workspace, /replica-cad-apt2-iphone-ultrawide/);
+  assert.match(workspace, /ULTRAWIDE_CAMERA_LABEL/);
+  assert.match(workspace, /enumerateDevices\(\)/);
+  assert.match(workspace, /full_frame_only !== true/);
+  assert.match(workspace, /context\.rotate\(Math\.PI \/ 2\)/);
+  assert.doesNotMatch(workspace, /sourceX|sourceY|sourceWidth|sourceHeight/);
+  assert.match(workspace, /object-contain/);
 });

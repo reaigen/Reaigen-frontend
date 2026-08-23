@@ -37,6 +37,11 @@ const MAX_FRAME_SIZE = 16 * 1024 * 1024;
 const MAX_PARALLEL_UPLOADS = 8;
 const MAX_CAPTURE_BACKLOG = 150;
 const FRAME_UPLOAD_ATTEMPTS = 6;
+const CAMERA_PROFILE = "replica-cad-apt2-iphone-ultrawide";
+const PORTRAIT_ASPECT = CAPTURE_WIDTH / CAPTURE_HEIGHT;
+const LANDSCAPE_ASPECT = CAPTURE_HEIGHT / CAPTURE_WIDTH;
+const ASPECT_TOLERANCE = 0.015;
+const ULTRAWIDE_CAMERA_LABEL = /(?:ultra[\s-]?wide|0[.,]5\s*[x×]|wide[\s-]?angle|weitwinkel|grand[\s-]?angle|širok)/i;
 const TERMINAL_SESSION_STATES = new Set<LiveSplatSession["status"]>([
   "completed",
   "failed",
@@ -49,7 +54,6 @@ const ACTIVE_MODAL_STATUSES = new Set<LiveSplatSession["status"]>([
   "refining",
 ]);
 const CAPTURE_ACCEPTING_SESSION_STATES = new Set<LiveSplatSession["status"]>([
-  "starting",
   "capturing",
 ]);
 const ScanningPointCloudViewer = dynamic(
@@ -66,39 +70,48 @@ function videoFrame(video: HTMLVideoElement, canvas: HTMLCanvasElement): Promise
   const width = Math.max(1, video.videoWidth);
   const height = Math.max(1, video.videoHeight);
   const sourceAspect = width / height;
-  const targetAspect = CAPTURE_WIDTH / CAPTURE_HEIGHT;
-  let sourceX = 0;
-  let sourceY = 0;
-  let sourceWidth = width;
-  let sourceHeight = height;
-  if (sourceAspect > targetAspect) {
-    sourceWidth = height * targetAspect;
-    sourceX = (width - sourceWidth) / 2;
-  } else if (sourceAspect < targetAspect) {
-    sourceHeight = width / targetAspect;
-    sourceY = (height - sourceHeight) / 2;
+  const portrait = Math.abs(sourceAspect - PORTRAIT_ASPECT) <= ASPECT_TOLERANCE;
+  const landscape = Math.abs(sourceAspect - LANDSCAPE_ASPECT) <= ASPECT_TOLERANCE;
+  if (!portrait && !landscape) {
+    return Promise.reject(new Error("Camera aspect does not match its calibration."));
   }
   if (canvas.width !== CAPTURE_WIDTH) canvas.width = CAPTURE_WIDTH;
   if (canvas.height !== CAPTURE_HEIGHT) canvas.height = CAPTURE_HEIGHT;
   const context = canvas.getContext("2d", { alpha: false });
   if (!context) return Promise.reject(new Error("Canvas is unavailable."));
-  context.drawImage(
-    video,
-    sourceX,
-    sourceY,
-    sourceWidth,
-    sourceHeight,
-    0,
-    0,
-    CAPTURE_WIDTH,
-    CAPTURE_HEIGHT,
-  );
+  context.save();
+  context.setTransform(1, 0, 0, 1, 0, 0);
+  context.fillStyle = "#000";
+  context.fillRect(0, 0, CAPTURE_WIDTH, CAPTURE_HEIGHT);
+  if (portrait) {
+    context.drawImage(video, 0, 0, width, height, 0, 0, CAPTURE_WIDTH, CAPTURE_HEIGHT);
+  } else {
+    // Preserve every sensor pixel. The supplied pinhole calibration is
+    // centered with equal fx/fy, so a full 90-degree sensor rotation maps it
+    // exactly into the locked portrait calibration without a crop.
+    context.translate(CAPTURE_WIDTH, 0);
+    context.rotate(Math.PI / 2);
+    context.drawImage(video, 0, 0, width, height, 0, 0, CAPTURE_HEIGHT, CAPTURE_WIDTH);
+  }
+  context.restore();
   return new Promise((resolve, reject) => {
     canvas.toBlob(
       (blob) => blob ? resolve(blob) : reject(new Error("Frame encoding failed.")),
       "image/jpeg",
       0.90,
     );
+  });
+}
+
+function openEnvironmentCamera(deviceId?: string): Promise<MediaStream> {
+  return navigator.mediaDevices.getUserMedia({
+    audio: false,
+    video: {
+      ...(deviceId ? { deviceId: { exact: deviceId } } : { facingMode: { ideal: "environment" } }),
+      width: { ideal: 1080 },
+      height: { ideal: 1920 },
+      aspectRatio: { ideal: PORTRAIT_ASPECT },
+    },
   });
 }
 
@@ -240,28 +253,57 @@ export default function LiveScanWorkspacePage() {
     setError(null);
     let openedStream: MediaStream | null = null;
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({
-        audio: false,
-        video: {
-          facingMode: { ideal: "environment" },
-          width: { ideal: 1080 },
-          height: { ideal: 1920 },
-          aspectRatio: { ideal: CAPTURE_WIDTH / CAPTURE_HEIGHT },
-        },
-      });
-      openedStream = stream;
+      if (
+        access?.capture.camera_profile !== CAMERA_PROFILE
+        || access.capture.frame_width !== CAPTURE_WIDTH
+        || access.capture.frame_height !== CAPTURE_HEIGHT
+        || access.capture.lens !== "ultrawide"
+        || access.capture.full_frame_only !== true
+      ) {
+        throw new Error("The camera calibration profile is unavailable.");
+      }
+      openedStream = await openEnvironmentCamera();
+      const devices = await navigator.mediaDevices.enumerateDevices();
+      const videoDevices = devices.filter((device) => device.kind === "videoinput");
+      const ultrawide = videoDevices.find((device) => ULTRAWIDE_CAMERA_LABEL.test(device.label));
+      const activeTrack = openedStream.getVideoTracks()[0];
+      const activeDeviceId = activeTrack?.getSettings().deviceId || "";
+      const activeLabel = activeTrack?.label || videoDevices.find(
+        (device) => device.deviceId === activeDeviceId,
+      )?.label || "";
+      if (ultrawide && ultrawide.deviceId !== activeDeviceId) {
+        openedStream.getTracks().forEach((track) => track.stop());
+        openedStream = await openEnvironmentCamera(ultrawide.deviceId);
+      }
+      const selectedTrack = openedStream.getVideoTracks()[0];
+      const selectedDeviceId = selectedTrack?.getSettings().deviceId || "";
+      const selectedLabel = videoDevices.find(
+        (device) => device.deviceId === selectedDeviceId,
+      )?.label || selectedTrack?.label || activeLabel;
+      if (!ULTRAWIDE_CAMERA_LABEL.test(selectedLabel)) {
+        throw new Error("The calibrated ultrawide camera is unavailable.");
+      }
       const video = videoRef.current;
       if (!video) throw new Error("The camera preview is unavailable.");
-      video.srcObject = stream;
+      video.srcObject = openedStream;
       await video.play();
-      const settings = stream.getVideoTracks()[0]?.getSettings();
+      const settings = openedStream.getVideoTracks()[0]?.getSettings();
       const width = Number(video.videoWidth || settings?.width || 0);
       const height = Number(video.videoHeight || settings?.height || 0);
-      if (Math.max(width, height) < 1280 || Math.min(width, height) < 720) {
+      const aspect = width / Math.max(1, height);
+      const calibratedAspect = (
+        Math.abs(aspect - PORTRAIT_ASPECT) <= ASPECT_TOLERANCE
+        || Math.abs(aspect - LANDSCAPE_ASPECT) <= ASPECT_TOLERANCE
+      );
+      if (
+        !calibratedAspect
+        || Math.max(width, height) < 960
+        || Math.min(width, height) < 540
+      ) {
         throw new Error("The selected camera does not meet the capture resolution.");
       }
       streamRef.current?.getTracks().forEach((track) => track.stop());
-      streamRef.current = stream;
+      streamRef.current = openedStream;
       setCameraReady(true);
       return true;
     } catch {
@@ -604,9 +646,10 @@ export default function LiveScanWorkspacePage() {
         : capturing || preview
           ? t("liveScan.pointCloudForming", lang)
           : t("liveScan.previewWaiting", lang);
-  const interrupted = (
+  const resumable = (
     !capturing
-    && session.progress.allocated_frames > session.progress.ready_frames + queuedFrameCount
+    && !terminal
+    && (session.progress.allocated_frames > 0 || queuedFrameCount > 0)
   );
 
   return (
@@ -631,9 +674,9 @@ export default function LiveScanWorkspacePage() {
               playsInline
               className={!cameraReady
                 ? "hidden"
-                : "absolute right-[calc(0.5rem+env(safe-area-inset-right,0px))] top-[calc(0.5rem+env(safe-area-inset-top,0px))] z-20 aspect-[9/16] w-[72px] rounded-xl border border-white/20 bg-black object-cover shadow-2xl sm:right-[calc(1rem+env(safe-area-inset-right,0px))] sm:top-[calc(1rem+env(safe-area-inset-top,0px))] sm:w-[90px] lg:w-[104px]"}
+                : "absolute right-[calc(0.5rem+env(safe-area-inset-right,0px))] top-[calc(0.5rem+env(safe-area-inset-top,0px))] z-20 aspect-[9/16] w-[72px] rounded-xl border border-white/20 bg-black object-contain shadow-2xl sm:right-[calc(1rem+env(safe-area-inset-right,0px))] sm:top-[calc(1rem+env(safe-area-inset-top,0px))] sm:w-[90px] lg:w-[104px]"}
             />
-            {!capturing && !capturePending && !finalizing && !savingFrame ? (
+            {!capturing && !capturePending && !finalizing && !savingFrame && !resumable ? (
               <button
                 type="button"
                 onClick={() => router.push("/create")}
@@ -648,7 +691,7 @@ export default function LiveScanWorkspacePage() {
                 <div>
                   {!cameraReady ? <VideoIcon size={28} className="mx-auto text-white/35" /> : null}
                   <p className="mt-3 text-sm font-medium text-white/80">
-                    {interrupted
+                    {resumable
                       ? t("liveScan.interrupted", lang)
                       : cameraReady
                       ? t("liveScan.pointCloudForming", lang)
@@ -702,14 +745,10 @@ export default function LiveScanWorkspacePage() {
                       !captureDevice
                       || (!session.runtime.active && access?.runtime_available !== true)
                     }
-                    onClick={interrupted
-                      ? () => router.push("/create/live-scan")
-                      : capturing
-                        ? finishSession
-                        : beginCapture}
+                    onClick={capturing ? finishSession : beginCapture}
                   >
-                    {interrupted
-                      ? t("liveScan.restart", lang)
+                    {resumable
+                      ? t("liveScan.continue", lang)
                       : capturing
                         ? t("liveScan.finishPreview", lang)
                         : t("liveScan.startCapture", lang)}

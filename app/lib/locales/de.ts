@@ -225,7 +225,7 @@ const de: LocaleStrings = {
   "liveScan.previewWaiting":               "Bereit",
   "liveScan.previewHint":                  "Rekonstruierte Punkte erscheinen fortlaufend, sobald Kamerabilder ausgerichtet werden.",
   "liveScan.cameraUnavailable":            "Die Kamera konnte nicht geöffnet werden. Prüfen Sie die Browserberechtigung und versuchen Sie es erneut.",
-  "liveScan.cameraQuality":                "Scannen benötigt eine Smartphone-Kamera mit mindestens 1280 × 720. Wählen Sie die Hauptkamera und versuchen Sie es erneut.",
+  "liveScan.cameraQuality":                "Diese Kamera ist nicht verfügbar.",
   "liveScan.captureFailed":                "Die Aufnahme wurde gestoppt, weil ein Bild nicht sicher gespeichert werden konnte.",
   "liveScan.runtimeStartFailed":           "Der Scan-Dienst konnte nicht gestartet werden. Die Aufnahme bleibt gestoppt.",
   "liveScan.finishFailed":                 "Das Scannen konnte nicht abgeschlossen werden.",

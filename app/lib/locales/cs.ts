@@ -225,7 +225,7 @@ const cs: LocaleStrings = {
   "liveScan.previewWaiting":               "Připraveno",
   "liveScan.previewHint":                  "Rekonstruované body přibývají průběžně se zarovnáváním snímků kamery.",
   "liveScan.cameraUnavailable":            "Kameru se nepodařilo otevřít. Zkontrolujte oprávnění prohlížeče a zkuste to znovu.",
-  "liveScan.cameraQuality":                "Snímání vyžaduje kameru telefonu s rozlišením alespoň 1280 × 720. Vyberte hlavní kameru a zkuste to znovu.",
+  "liveScan.cameraQuality":                "Tato kamera není dostupná.",
   "liveScan.captureFailed":                "Snímání se zastavilo, protože snímek nebylo možné bezpečně uložit.",
   "liveScan.runtimeStartFailed":           "Službu snímání se nepodařilo spustit. Snímání zůstalo zastavené.",
   "liveScan.finishFailed":                 "Snímání se nepodařilo dokončit.",
