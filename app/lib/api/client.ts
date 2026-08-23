@@ -2191,8 +2191,33 @@ export interface ReaiAgentTinyUi {
   blocks: ReaiAgentTinyUiBlock[];
 }
 
+/** Reproducible identity for one Agent response or archived turn. */
+export interface ReaiAgentVersionManifest {
+  manifest_schema_version: number;
+  version: string | null;
+  version_key: string;
+  scheme: string | null;
+  released_at: string | null;
+  build_sha: string | null;
+  build_tracked: boolean;
+  prompt_version: string | null;
+  response_schema_version: string | null;
+  tool_policy_version: string | null;
+  tinyui_schema: string | null;
+  tinyui_version: number | null;
+  runtime_settings_revision: number;
+  release_bundle: {
+    id: number | null;
+    content_hash: string | null;
+  } | null;
+  tracked: boolean;
+  model_id?: string | null;
+}
+
 export interface ReaiAgentResponse {
   reply: string;
+  /** Exact Agent behavior/build identity. Optional only for pre-versioned tab history. */
+  agent_version?: ReaiAgentVersionManifest;
   execution_mode?: "deterministic" | "fast" | "standard" | "reasoning" | "safe_fallback";
   reasoning_effort?: "none" | "minimal" | "low" | "high";
   latency_ms?: number;
@@ -2713,7 +2738,15 @@ export interface ReaiImprovementConversation {
     role: "user" | "assistant" | "system";
     content: string;
     created_at: string;
+    agent_version: ReaiAgentVersionManifest;
+    execution_mode: string | null;
+    model_id: string | null;
+    prompt_version: string | null;
+    settings_revision: number;
+    latency_ms: number;
   }>;
+  agent_versions: ReaiAgentVersionGroup[];
+  mixed_agent_versions: boolean;
   actions: Array<{
     tool: string;
     action: string;
@@ -2721,14 +2754,52 @@ export interface ReaiImprovementConversation {
     before: Record<string, unknown>;
     changes: Record<string, unknown>;
     after: Record<string, unknown>;
+    agent_version: ReaiAgentVersionManifest | null;
+    created_at: string;
+  }>;
+  feedback: Array<{
+    helpful: boolean;
+    correction: string;
     created_at: string;
   }>;
 }
 
+export interface ReaiAgentVersionGroup {
+  version_key: string;
+  version: string | null;
+  tracked: boolean;
+  build_tracked: boolean;
+  assistant_turns: number;
+  build_shas: string[];
+  prompt_versions: string[];
+  response_schema_versions: string[];
+  tool_policy_versions: string[];
+  tinyui_versions: number[];
+  runtime_settings_revisions: number[];
+  models: string[];
+  first_seen_at: string;
+  last_seen_at: string;
+}
+
+export interface ReaiAgentVersionSummary extends ReaiAgentVersionGroup {
+  conversations: number;
+  helpful_feedback: number;
+  unhelpful_feedback: number;
+  mixed_version_feedback_unassigned: number;
+}
+
 export async function getReaiImprovementConversations(): Promise<{
   conversations: ReaiImprovementConversation[];
+  version_summary: ReaiAgentVersionSummary[];
+  agent_version: ReaiAgentVersionManifest;
 }> {
   return request("/api/reaigen/reai-agent/improvement-conversations/");
+}
+
+export async function getReaiAgentVersion(): Promise<{
+  agent_version: ReaiAgentVersionManifest;
+}> {
+  return request("/api/reaigen/reai-agent/version/");
 }
 
 export async function deleteReaiImprovementConversation(
