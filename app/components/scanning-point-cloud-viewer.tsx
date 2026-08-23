@@ -26,6 +26,7 @@ interface ParsedPointCloud {
 
 const MAX_POINTS = 500_000;
 const SH_C0 = 0.28209479177387814;
+const VIEWPORT_BACKGROUND = 0x252b33;
 const TYPE_BYTES: Record<PlyScalar, number> = {
   char: 1,
   int8: 1,
@@ -223,7 +224,10 @@ export default function ScanningPointCloudViewer({
     const host = hostRef.current;
     if (!host) return;
     const scene = new THREE.Scene();
-    scene.background = new THREE.Color(0x111215);
+    // A near-black canvas made dark, correctly colored apartment points look
+    // absent. Keep a neutral slate field so both black furniture and pale
+    // walls remain visible without changing the stored RGB evidence.
+    scene.background = new THREE.Color(VIEWPORT_BACKGROUND);
     const camera = new THREE.PerspectiveCamera(55, 1, 0.01, 10_000);
     camera.up.set(0, 1, 0);
     camera.position.set(3, 2, 3);
@@ -301,8 +305,16 @@ export default function ScanningPointCloudViewer({
         const center = new THREE.Vector3(...bounds.center);
         const radius = bounds.radius;
         const material = new THREE.PointsMaterial({
-          size: THREE.MathUtils.clamp(radius / 180, 0.006, 0.055),
-          sizeAttenuation: true,
+          // Match Otter's reference viewport: screen-space pixels remain
+          // visible regardless of room scale or camera distance. The inline
+          // first response intentionally carries only 512 points, so it gets
+          // a slightly larger mark until the dense cloud arrives.
+          size: THREE.MathUtils.lerp(
+            4.5,
+            2,
+            THREE.MathUtils.clamp(parsed.count / 20_000, 0, 1),
+          ),
+          sizeAttenuation: false,
           vertexColors: true,
           transparent: true,
           opacity: 0.96,
@@ -386,10 +398,10 @@ export default function ScanningPointCloudViewer({
   }, [gaugeRevision, inlinePointCloudBase64, onError, pointCloudUrl, updateGrid]);
 
   return (
-    <div className={`relative overflow-hidden bg-[#111215] ${className}`}>
+    <div className={`relative overflow-hidden bg-[#252b33] ${className}`}>
       <div ref={hostRef} className="absolute inset-0" />
       {loading ? (
-        <div className="pointer-events-none absolute inset-0 grid place-items-center bg-[#111215]/35">
+        <div className="pointer-events-none absolute inset-0 grid place-items-center bg-[#252b33]/35">
           <span className="h-7 w-7 animate-spin rounded-full border-2 border-white/20 border-t-white/80 motion-reduce:animate-none" />
         </div>
       ) : null}

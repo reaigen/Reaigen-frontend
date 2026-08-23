@@ -247,6 +247,7 @@ const en = {
   "liveScan.pointCloudForming":            "Building room",
   "liveScan.pointCloudRefining":           "Finishing…",
   "liveScan.pointCloudRefined":            "Ready",
+  "liveScan.pointCloudSaved":              "Saved",
   "liveScan.pointCloudNeedsRefinement":     "Saved — result incomplete",
   "liveScan.refinementIncomplete":          "Final quality checks did not pass. Your source frames and last point cloud are safely retained.",
   "liveScan.newScan":                       "New scan",

@@ -44,18 +44,33 @@ test("live scanning uses a standard colored point-cloud renderer", () => {
 test("capture and status cadences do not recreate the old ten-second delay", () => {
   assert.equal(numericConstant(workspace, "CAPTURE_WIDTH"), 540);
   assert.equal(numericConstant(workspace, "CAPTURE_HEIGHT"), 960);
+  assert.match(workspace, /"image\/jpeg",\s*0\.90/);
   assert.ok(numericConstant(workspace, "CAPTURE_INTERVAL_MS") <= 250);
   assert.ok(numericConstant(workspace, "STATUS_INTERVAL_MS") <= 500);
   assert.ok(numericConstant(workspace, "MAX_PARALLEL_UPLOADS") >= 4);
   assert.ok(numericConstant(workspace, "MAX_PARALLEL_UPLOADS") <= 8);
+  assert.ok(numericConstant(workspace, "FRAME_UPLOAD_ATTEMPTS") >= 6);
   assert.match(workspace, /sourceWidth[\s\S]*sourceHeight[\s\S]*context\.drawImage/);
   assert.match(workspace, /CAPTURE_ACCEPTING_SESSION_STATES[\s\S]*"starting"[\s\S]*"capturing"/);
   assert.match(workspace, /current\.runtime\.active[\s\S]*CAPTURE_ACCEPTING_SESSION_STATES\.has\(current\.status\)/);
-  assert.match(workspace, /allocationTailRef/);
+  assert.doesNotMatch(workspace, /allocationTailRef/);
+  assert.match(workspace, /persistenceSlotsRef/);
   assert.match(workspace, /activeUploadsRef/);
   assert.match(workspace, /persistCapturedFrame/);
+  assert.match(workspace, /frame_id: frame\.frameId/);
+  assert.match(workspace, /storeLiveScanFrame/);
+  assert.match(workspace, /listLiveScanFrames/);
   assert.match(workspace, /MAX_CAPTURE_BACKLOG/);
+  assert.match(workspace, /nextCaptureAt \+= CAPTURE_INTERVAL_MS/);
+  assert.match(
+    workspace,
+    /finishSession[\s\S]*await recoverStoredFrames\(\);[\s\S]*while \(activeUploadsRef\.current\.size > 0\)/,
+  );
   assert.match(workspace, /Promise\.all\(Array\.from\(activeUploadsRef\.current\)\)/);
+  assert.doesNotMatch(
+    workspace,
+    /TERMINAL_SESSION_STATES\.has\(session\.status\)[\s\S]{0,240}removeLiveScanFrame/,
+  );
   assert.doesNotMatch(workspace, /pendingFrameRef|queueLatestFrame/);
   assert.doesNotMatch(workspace, /setInterval\(/);
   assert.match(start, /output_format: "ply"/);
@@ -103,6 +118,9 @@ test("the scan workspace is one responsive viewport with a portrait camera inset
   assert.match(english, /"liveScan\.pointCloudForming":\s+"Building room"/);
   assert.match(english, /"liveScan\.savingLatest":\s+"Saving…"/);
   assert.match(english, /"liveScan\.savedSafely":\s+"Saved"/);
+  assert.match(english, /"liveScan\.pointCloudSaved":\s+"Saved"/);
+  assert.match(workspace, /visualSaved[\s\S]*liveScan\.pointCloudSaved/);
+  assert.doesNotMatch(workspace, /session\.status === "completed" \|\| preview\?\.refined/);
 });
 
 test("a rejected result stays simple while retaining the last cloud", () => {

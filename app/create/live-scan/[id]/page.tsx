@@ -21,6 +21,11 @@ import {
   type LiveSplatSession,
 } from "../../../lib/api/client";
 import { getUserLanguage, t } from "../../../lib/i18n";
+import {
+  listLiveScanFrames,
+  removeLiveScanFrame,
+  storeLiveScanFrame,
+} from "../../../lib/live-scan-frame-queue";
 import { newestLiveSplatPreview } from "../../../lib/live-scan-preview";
 import { Button } from "../../../lib/ui/button";
 
@@ -29,9 +34,9 @@ const CAPTURE_HEIGHT = 960;
 const CAPTURE_INTERVAL_MS = 200;
 const STATUS_INTERVAL_MS = 400;
 const MAX_FRAME_SIZE = 16 * 1024 * 1024;
-const MAX_PARALLEL_UPLOADS = 6;
-const MAX_CAPTURE_BACKLOG = 24;
-const FRAME_UPLOAD_ATTEMPTS = 3;
+const MAX_PARALLEL_UPLOADS = 8;
+const MAX_CAPTURE_BACKLOG = 150;
+const FRAME_UPLOAD_ATTEMPTS = 6;
 const TERMINAL_SESSION_STATES = new Set<LiveSplatSession["status"]>([
   "completed",
   "failed",
@@ -92,12 +97,13 @@ function videoFrame(video: HTMLVideoElement, canvas: HTMLCanvasElement): Promise
     canvas.toBlob(
       (blob) => blob ? resolve(blob) : reject(new Error("Frame encoding failed.")),
       "image/jpeg",
-      0.82,
+      0.90,
     );
   });
 }
 
 interface CapturedFrame {
+  frameId: string;
   blob: Blob;
   capturedAt: string;
 }
@@ -122,8 +128,11 @@ export default function LiveScanWorkspacePage() {
   const streamRef = React.useRef<MediaStream | null>(null);
   const captureCanvasRef = React.useRef<HTMLCanvasElement | null>(null);
   const captureActiveRef = React.useRef(false);
-  const allocationTailRef = React.useRef<Promise<void>>(Promise.resolve());
   const activeUploadsRef = React.useRef<Set<Promise<void>>>(new Set());
+  const activeFrameIdsRef = React.useRef<Set<string>>(new Set());
+  const persistenceSlotsRef = React.useRef(0);
+  const persistenceWaitersRef = React.useRef<Array<() => void>>([]);
+  const recoveredSessionRef = React.useRef<string | null>(null);
   const outstandingFramesRef = React.useRef(0);
   const uploadFailedRef = React.useRef(false);
   const [session, setSession] = React.useState<LiveSplatSession | null>(null);
@@ -272,6 +281,25 @@ export default function LiveScanWorkspacePage() {
     setSavingFrame(next > 0);
   }, []);
 
+  const acquirePersistenceSlot = React.useCallback(async () => {
+    if (persistenceSlotsRef.current < MAX_PARALLEL_UPLOADS) {
+      persistenceSlotsRef.current += 1;
+      return;
+    }
+    await new Promise<void>((resolve) => {
+      persistenceWaitersRef.current.push(resolve);
+    });
+  }, []);
+
+  const releasePersistenceSlot = React.useCallback(() => {
+    const next = persistenceWaitersRef.current.shift();
+    if (next) {
+      next();
+      return;
+    }
+    persistenceSlotsRef.current = Math.max(0, persistenceSlotsRef.current - 1);
+  }, []);
+
   const failCapturePersistence = React.useCallback(() => {
     uploadFailedRef.current = true;
     captureActiveRef.current = false;
@@ -279,34 +307,44 @@ export default function LiveScanWorkspacePage() {
     setError("capture");
   }, []);
 
-  const persistCapturedFrame = React.useCallback((frame: CapturedFrame) => {
+  const persistCapturedFrame = React.useCallback((
+    frame: CapturedFrame,
+    alreadyStored = false,
+  ) => {
+    if (activeFrameIdsRef.current.has(frame.frameId)) return;
+    activeFrameIdsRef.current.add(frame.frameId);
     updateOutstandingFrames(1);
-    const allocateAndUpload = async () => {
-      let uploadStarted = false;
+    const persistence = (async () => {
+      let slotAcquired = false;
       try {
-        if (uploadFailedRef.current) return;
         if (frame.blob.size > MAX_FRAME_SIZE) {
           throw new Error("Encoded frame exceeds the capture limit.");
         }
-        const sha256 = await frameDigest(frame.blob);
-        const presign = await presignLiveSplatFrame(sessionId, {
-          content_type: "image/jpeg",
-          file_size: frame.blob.size,
-          width: CAPTURE_WIDTH,
-          height: CAPTURE_HEIGHT,
-          sha256,
-          captured_at: frame.capturedAt,
-        });
-
-        while (activeUploadsRef.current.size >= MAX_PARALLEL_UPLOADS) {
-          await Promise.race(activeUploadsRef.current);
+        if (!alreadyStored) {
+          await storeLiveScanFrame({
+            sessionId,
+            frameId: frame.frameId,
+            capturedAt: frame.capturedAt,
+            blob: frame.blob,
+          });
         }
-        if (uploadFailedRef.current) return;
-
-        const upload = (async () => {
-          let lastFailure: unknown = null;
-          for (let attempt = 1; attempt <= FRAME_UPLOAD_ATTEMPTS; attempt += 1) {
-            try {
+        await acquirePersistenceSlot();
+        slotAcquired = true;
+        const sha256 = await frameDigest(frame.blob);
+        let lastFailure: unknown = null;
+        let confirmedSession: LiveSplatSession | undefined;
+        for (let attempt = 1; attempt <= FRAME_UPLOAD_ATTEMPTS; attempt += 1) {
+          try {
+            const presign = await presignLiveSplatFrame(sessionId, {
+              frame_id: frame.frameId,
+              content_type: "image/jpeg",
+              file_size: frame.blob.size,
+              width: CAPTURE_WIDTH,
+              height: CAPTURE_HEIGHT,
+              sha256,
+              captured_at: frame.capturedAt,
+            });
+            if (!presign.already_confirmed) {
               const headers = { ...presign.required_headers };
               delete headers["Content-Length"];
               const uploaded = await fetch(presign.upload_url, {
@@ -316,42 +354,81 @@ export default function LiveScanWorkspacePage() {
               });
               if (!uploaded.ok) throw new Error(`Upload failed: HTTP ${uploaded.status}`);
               const confirmed = await confirmLiveSplatFrame(sessionId, presign.frame_id);
-              if (confirmed.session) {
-                setSession((current) => newestSession(current, confirmed.session!));
-              }
-              setError((current) => current === "capture" ? null : current);
-              return;
-            } catch (reason) {
-              lastFailure = reason;
-              if (attempt < FRAME_UPLOAD_ATTEMPTS) {
-                await new Promise((resolve) => window.setTimeout(resolve, attempt * 250));
-              }
+              confirmedSession = confirmed.session;
+            }
+            lastFailure = null;
+            break;
+          } catch (reason) {
+            lastFailure = reason;
+            if (attempt < FRAME_UPLOAD_ATTEMPTS) {
+              await new Promise((resolve) => window.setTimeout(resolve, attempt * 250));
             }
           }
+        }
+        if (lastFailure) {
           throw lastFailure instanceof Error
             ? lastFailure
             : new Error("live_scan_frame_upload_failed");
-        })();
-        const settled = upload
-          .catch(() => { failCapturePersistence(); })
-          .finally(() => { updateOutstandingFrames(-1); });
-        uploadStarted = true;
-        activeUploadsRef.current.add(settled);
-        void settled.finally(() => { activeUploadsRef.current.delete(settled); });
-      } catch {
-        failCapturePersistence();
+        }
+        if (confirmedSession) {
+          setSession((current) => newestSession(current, confirmedSession!));
+        }
+        setError((current) => current === "capture" ? null : current);
+        try {
+          await removeLiveScanFrame(sessionId, frame.frameId);
+        } catch {
+          // The backend copy is authoritative. A stale local copy is harmless:
+          // the same frame UUID makes the next recovery idempotent.
+        }
       } finally {
-        if (!uploadStarted) updateOutstandingFrames(-1);
+        if (slotAcquired) releasePersistenceSlot();
       }
-    };
-    const scheduled = allocationTailRef.current.then(allocateAndUpload);
-    allocationTailRef.current = scheduled.catch(() => { /* failure is reflected in the UI */ });
-  }, [failCapturePersistence, sessionId, updateOutstandingFrames]);
+    })();
+    const settled = persistence
+      .catch(() => { failCapturePersistence(); })
+      .finally(() => {
+        activeFrameIdsRef.current.delete(frame.frameId);
+        updateOutstandingFrames(-1);
+      });
+    activeUploadsRef.current.add(settled);
+    void settled.finally(() => { activeUploadsRef.current.delete(settled); });
+  }, [
+    acquirePersistenceSlot,
+    failCapturePersistence,
+    releasePersistenceSlot,
+    sessionId,
+    updateOutstandingFrames,
+  ]);
+
+  const recoverStoredFrames = React.useCallback(async () => {
+    try {
+      const stored = await listLiveScanFrames(sessionId);
+      for (const frame of stored) {
+        persistCapturedFrame(
+          {
+            frameId: frame.frameId,
+            blob: frame.blob,
+            capturedAt: frame.capturedAt,
+          },
+          true,
+        );
+      }
+    } catch {
+      failCapturePersistence();
+    }
+  }, [failCapturePersistence, persistCapturedFrame, sessionId]);
+
+  React.useEffect(() => {
+    if (!session || recoveredSessionRef.current === sessionId) return;
+    recoveredSessionRef.current = sessionId;
+    void recoverStoredFrames();
+  }, [recoverStoredFrames, session, sessionId]);
 
   const beginCapture = async () => {
     if (!session || capturePending) return;
     setError(null);
     uploadFailedRef.current = false;
+    void recoverStoredFrames();
     setCapturePending(true);
     const cameraAvailable = cameraReady || await enableCamera();
     if (!cameraAvailable) {
@@ -408,8 +485,13 @@ export default function LiveScanWorkspacePage() {
     setFinishing(true);
     setError(null);
     try {
-      await allocationTailRef.current;
-      await Promise.all(Array.from(activeUploadsRef.current));
+      // Re-enqueue anything left by an interrupted page before freezing the
+      // server-side capture boundary. Keep draining until no persistence task
+      // can still add a newly recovered frame.
+      await recoverStoredFrames();
+      while (activeUploadsRef.current.size > 0) {
+        await Promise.all(Array.from(activeUploadsRef.current));
+      }
       if (uploadFailedRef.current) return;
       const finished = await finishLiveSplatSession(sessionId);
       setSession((current) => newestSession(current, finished));
@@ -431,8 +513,9 @@ export default function LiveScanWorkspacePage() {
     captureActiveRef.current = true;
     let active = true;
     let timer: number | undefined;
+    let nextCaptureAt = performance.now();
     const run = async () => {
-      const started = performance.now();
+      nextCaptureAt += CAPTURE_INTERVAL_MS;
       try {
         if (outstandingFramesRef.current < MAX_CAPTURE_BACKLOG) {
           setCaptureThrottled(false);
@@ -444,7 +527,11 @@ export default function LiveScanWorkspacePage() {
           const blob = await videoFrame(video, canvas);
           if (!active || !captureActiveRef.current) return;
           setCapturedFrameCount((current) => current + 1);
-          persistCapturedFrame({ blob, capturedAt });
+          persistCapturedFrame({
+            frameId: crypto.randomUUID(),
+            blob,
+            capturedAt,
+          });
         } else {
           setCaptureThrottled(true);
         }
@@ -454,7 +541,11 @@ export default function LiveScanWorkspacePage() {
         setError("capture");
       }
       if (active && captureActiveRef.current) {
-        const delay = Math.max(0, CAPTURE_INTERVAL_MS - (performance.now() - started));
+        const now = performance.now();
+        if (nextCaptureAt < now - CAPTURE_INTERVAL_MS) {
+          nextCaptureAt = now;
+        }
+        const delay = Math.max(0, nextCaptureAt - now);
         timer = window.setTimeout(() => { void run(); }, delay);
       }
     };
@@ -501,12 +592,15 @@ export default function LiveScanWorkspacePage() {
   const terminal = TERMINAL_SESSION_STATES.has(session.status);
   const finalizing = session.status === "draining" || session.status === "refining";
   const refinementFailed = session.status === "failed";
-  const pointCloudLabel = refinementFailed
+  const visualSaved = terminal && Boolean(preview);
+  const pointCloudLabel = refinementFailed && !preview
     ? t("liveScan.pointCloudNeedsRefinement", lang)
     : finalizing
       ? t("liveScan.pointCloudRefining", lang)
-      : session.status === "completed" || preview?.refined
+      : preview?.refined
         ? t("liveScan.pointCloudRefined", lang)
+        : visualSaved
+          ? t("liveScan.pointCloudSaved", lang)
         : capturing || preview
           ? t("liveScan.pointCloudForming", lang)
           : t("liveScan.previewWaiting", lang);
@@ -576,11 +670,11 @@ export default function LiveScanWorkspacePage() {
               <div className="flex items-center justify-between gap-3">
                 <div className="min-w-0">
                   <p className="flex items-center gap-2 truncate text-sm font-semibold">
-                    <span className={`h-2 w-2 shrink-0 rounded-full ${refinementFailed ? "bg-amber-300" : finalizing || savingFrame ? "animate-pulse bg-sky-300" : "bg-emerald-300"}`} />
+                    <span className={`h-2 w-2 shrink-0 rounded-full ${refinementFailed && !preview ? "bg-red-300" : finalizing || savingFrame ? "animate-pulse bg-sky-300" : "bg-emerald-300"}`} />
                     {pointCloudLabel}
                   </p>
                   {capturedFrameCount > 0 ? (
-                    <p role="status" className={`mt-1 truncate text-[11px] font-medium ${captureThrottled ? "text-amber-200" : savingFrame ? "text-sky-200" : "text-emerald-200"}`}>
+                    <p role="status" className={`mt-1 truncate text-[11px] font-medium ${captureThrottled || savingFrame ? "text-sky-200" : "text-emerald-200"}`}>
                       {captureThrottled
                         ? t("liveScan.catchingUp", lang)
                         : savingFrame

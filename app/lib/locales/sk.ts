@@ -237,6 +237,7 @@ const sk: LocaleStrings = {
   "liveScan.pointCloudForming":            "Vytváram miestnosť",
   "liveScan.pointCloudRefining":           "Dokončujem…",
   "liveScan.pointCloudRefined":            "Pripravené",
+  "liveScan.pointCloudSaved":              "Uložené",
   "liveScan.pointCloudNeedsRefinement":     "Uložené — výsledok nie je úplný",
   "liveScan.refinementIncomplete":          "Finálne kontroly kvality neprešli. Zdrojové zábery aj posledné mračno bodov sú bezpečne uložené.",
   "liveScan.newScan":                       "Nové snímanie",

@@ -1370,6 +1370,8 @@ export interface LiveSplatFramePresign {
   upload_url: string;
   expires_in: number;
   required_headers: Record<string, string>;
+  status?: "uploading" | "ready" | "processed";
+  already_confirmed?: boolean;
   confirm_endpoint: string;
 }
 
@@ -1440,6 +1442,7 @@ export async function getLiveSplatPreview(
 export async function presignLiveSplatFrame(
   sessionId: string,
   data: {
+    frame_id?: string;
     content_type: "image/jpeg" | "image/webp";
     file_size: number;
     width: number;

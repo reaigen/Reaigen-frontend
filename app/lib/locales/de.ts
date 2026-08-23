@@ -237,6 +237,7 @@ const de: LocaleStrings = {
   "liveScan.pointCloudForming":            "Raum wird aufgebaut",
   "liveScan.pointCloudRefining":           "Wird fertiggestellt…",
   "liveScan.pointCloudRefined":            "Bereit",
+  "liveScan.pointCloudSaved":              "Gespeichert",
   "liveScan.pointCloudNeedsRefinement":     "Gespeichert — Ergebnis unvollständig",
   "liveScan.refinementIncomplete":          "Die finalen Qualitätsprüfungen wurden nicht bestanden. Quellbilder und die letzte Punktwolke sind sicher gespeichert.",
   "liveScan.newScan":                       "Neuer Scan",
