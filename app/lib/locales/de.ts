@@ -238,7 +238,7 @@ const de: LocaleStrings = {
   "liveScan.pointCloudRefining":           "Wird fertiggestellt…",
   "liveScan.pointCloudRefined":            "Bereit",
   "liveScan.pointCloudSaved":              "Gespeichert",
-  "liveScan.pointCloudNeedsRefinement":     "Gespeichert — Ergebnis unvollständig",
+  "liveScan.pointCloudNeedsRefinement":     "Aufnahme gespeichert — kein Raumergebnis",
   "liveScan.refinementIncomplete":          "Die finalen Qualitätsprüfungen wurden nicht bestanden. Quellbilder und die letzte Punktwolke sind sicher gespeichert.",
   "liveScan.newScan":                       "Neuer Scan",
   "liveScan.points":                       "Punkte",

@@ -26,7 +26,10 @@ import {
   removeLiveScanFrame,
   storeLiveScanFrame,
 } from "../../../lib/live-scan-frame-queue";
-import { newestLiveSplatPreview } from "../../../lib/live-scan-preview";
+import {
+  newestLiveSplatPreview,
+  presentableLiveSplatPreview,
+} from "../../../lib/live-scan-preview";
 import { Button } from "../../../lib/ui/button";
 
 const CAPTURE_WIDTH = 540;
@@ -188,6 +191,14 @@ export default function LiveScanWorkspacePage() {
   React.useEffect(() => {
     if (!session) return;
     setCapturedFrameCount((current) => Math.max(current, session.progress.allocated_frames));
+  }, [session]);
+
+  React.useEffect(() => {
+    if (!session || !TERMINAL_SESSION_STATES.has(session.status)) return;
+    streamRef.current?.getTracks().forEach((track) => track.stop());
+    streamRef.current = null;
+    if (videoRef.current) videoRef.current.srcObject = null;
+    setCameraReady(false);
   }, [session]);
 
   React.useEffect(() => {
@@ -634,8 +645,9 @@ export default function LiveScanWorkspacePage() {
   const terminal = TERMINAL_SESSION_STATES.has(session.status);
   const finalizing = session.status === "draining" || session.status === "refining";
   const refinementFailed = session.status === "failed";
-  const visualSaved = terminal && Boolean(preview);
-  const pointCloudLabel = refinementFailed && !preview
+  const visiblePreview = presentableLiveSplatPreview(preview, terminal);
+  const visualSaved = terminal && Boolean(visiblePreview);
+  const pointCloudLabel = refinementFailed && !visiblePreview
     ? t("liveScan.pointCloudNeedsRefinement", lang)
     : finalizing
       ? t("liveScan.pointCloudRefining", lang)
@@ -643,7 +655,7 @@ export default function LiveScanWorkspacePage() {
         ? t("liveScan.pointCloudRefined", lang)
         : visualSaved
           ? t("liveScan.pointCloudSaved", lang)
-        : capturing || preview
+        : capturing || visiblePreview
           ? t("liveScan.pointCloudForming", lang)
           : t("liveScan.previewWaiting", lang);
   const resumable = (
@@ -658,12 +670,12 @@ export default function LiveScanWorkspacePage() {
         <div className="flex h-full min-h-0 flex-col">
           <section className="relative min-h-0 flex-1 overflow-hidden bg-[#111215]">
             <h1 className="sr-only">{t("liveScan.workspaceTitle", lang)}</h1>
-            {preview ? (
+            {visiblePreview ? (
               <ScanningPointCloudViewer
-                pointCloudUrl={preview.splat_url}
-                inlinePointCloudBase64={preview.inline_ply_base64}
-                gaugeRevision={preview.gauge_revision ?? 0}
-                showFloorGrid={preview.show_floor_grid}
+                pointCloudUrl={visiblePreview.splat_url}
+                inlinePointCloudBase64={visiblePreview.inline_ply_base64}
+                gaugeRevision={visiblePreview.gauge_revision ?? 0}
+                showFloorGrid={visiblePreview.show_floor_grid}
                 className="h-full w-full"
                 onError={handlePreviewError}
               />
@@ -686,7 +698,7 @@ export default function LiveScanWorkspacePage() {
                 <ArrowLeftIcon size={17} />
               </button>
             ) : null}
-            {!preview ? (
+            {!visiblePreview && !terminal ? (
               <div className="absolute inset-0 flex items-center justify-center p-6 text-center">
                 <div>
                   {!cameraReady ? <VideoIcon size={28} className="mx-auto text-white/35" /> : null}
@@ -713,7 +725,7 @@ export default function LiveScanWorkspacePage() {
               <div className="flex items-center justify-between gap-3">
                 <div className="min-w-0">
                   <p className="flex items-center gap-2 truncate text-sm font-semibold">
-                    <span className={`h-2 w-2 shrink-0 rounded-full ${refinementFailed && !preview ? "bg-red-300" : finalizing || savingFrame ? "animate-pulse bg-sky-300" : "bg-emerald-300"}`} />
+                    <span className={`h-2 w-2 shrink-0 rounded-full ${refinementFailed && !visiblePreview ? "bg-red-300" : finalizing || savingFrame ? "animate-pulse bg-sky-300" : "bg-emerald-300"}`} />
                     {pointCloudLabel}
                   </p>
                   {capturedFrameCount > 0 ? (

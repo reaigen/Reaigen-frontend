@@ -1,7 +1,10 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { newestLiveSplatPreview } from "./live-scan-preview.ts";
+import {
+  newestLiveSplatPreview,
+  presentableLiveSplatPreview,
+} from "./live-scan-preview.ts";
 
 function preview(overrides = {}) {
   return {
@@ -72,4 +75,26 @@ test("the terminal refined publication replaces its forming version", () => {
   const refined = preview({ stage: "refined", refined: true });
 
   assert.equal(newestLiveSplatPreview(current, refined), refined);
+});
+
+test("a qualified publication replaces the matching provisional geometry", () => {
+  const current = preview();
+  const qualified = preview({
+    trust: "qualified",
+    authority: "otter",
+    floor_status: "locked",
+    show_floor_grid: true,
+    stage: "validated",
+  });
+
+  assert.equal(newestLiveSplatPreview(current, qualified), qualified);
+});
+
+test("Done never presents a provisional fragment as the room result", () => {
+  const forming = preview();
+  const qualified = preview({ trust: "qualified", authority: "otter" });
+
+  assert.equal(presentableLiveSplatPreview(forming, false), forming);
+  assert.equal(presentableLiveSplatPreview(forming, true), null);
+  assert.equal(presentableLiveSplatPreview(qualified, true), qualified);
 });

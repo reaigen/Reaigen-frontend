@@ -25,6 +25,9 @@ export function newestLiveSplatPreview(
     return incomingSource > currentSource ? incoming : current;
   }
 
+  const incomingIsMoreTrusted = (
+    incoming.trust === "qualified" && current.trust !== "qualified"
+  );
   const incomingIsNewerStage = incoming.refined && !current.refined;
   const geometryChanged = (
     incoming.point_count !== current.point_count
@@ -34,7 +37,21 @@ export function newestLiveSplatPreview(
     incoming.inline_ply_sha256 !== current.inline_ply_sha256
     || incoming.durable_ply_ready !== current.durable_ply_ready
   );
-  return incomingIsNewerStage || geometryChanged || inlineTransportChanged
+  return (
+    incomingIsMoreTrusted
+    || incomingIsNewerStage
+    || geometryChanged
+    || inlineTransportChanged
+  )
     ? incoming
     : current;
+}
+
+/** Provisional geometry is live guidance, never a terminal room result. */
+export function presentableLiveSplatPreview(
+  preview: LiveSplatPreview | null,
+  terminal: boolean,
+): LiveSplatPreview | null {
+  if (terminal && preview?.trust !== "qualified") return null;
+  return preview;
 }

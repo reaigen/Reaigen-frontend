@@ -129,7 +129,7 @@ test("scanning UI hides implementation names and remains standalone", () => {
   assert.match(startPage, /createLiveSplatSession\(\)/);
   assert.doesNotMatch(startPage, /postprocess|quality:/);
   assert.match(workspace, /liveScan\.finishPreview/);
-  assert.match(workspace, /pointCloudUrl=\{preview\.splat_url\}/);
+  assert.match(workspace, /pointCloudUrl=\{visiblePreview\.splat_url\}/);
   assert.match(workspace, /ScanningPointCloudViewer/);
   assert.doesNotMatch(workspace, /gaussianRenderer|<SplatViewer/);
 });

@@ -38,7 +38,7 @@ test("live scanning uses a standard colored point-cloud renderer", () => {
   assert.match(viewer, /new THREE\.PointsMaterial\(/);
   assert.match(viewer, /byName\.get\("red"\)/);
   assert.doesNotMatch(viewer, /Gaussian|BoxGeometry|placeholder/i);
-  assert.match(workspace, /gaugeRevision=\{preview\.gauge_revision \?\? 0\}/);
+  assert.match(workspace, /gaugeRevision=\{visiblePreview\.gauge_revision \?\? 0\}/);
 });
 
 test("capture and status cadences do not recreate the old ten-second delay", () => {
@@ -130,13 +130,17 @@ test("the scan workspace is one responsive viewport with a portrait camera inset
   assert.doesNotMatch(workspace, /session\.status === "completed" \|\| preview\?\.refined/);
 });
 
-test("a rejected result stays simple while retaining the last cloud", () => {
+test("a rejected result stays simple without presenting a flat final cloud", () => {
   assert.match(workspace, /const refinementFailed = session\.status === "failed"/);
+  assert.match(workspace, /presentableLiveSplatPreview\(preview, terminal\)/);
+  assert.match(workspace, /const visualSaved = terminal && Boolean\(visiblePreview\)/);
+  assert.match(workspace, /\{visiblePreview \? \(/);
+  assert.match(workspace, /!visiblePreview && !terminal/);
   assert.match(workspace, /liveScan\.pointCloudNeedsRefinement/);
   assert.match(workspace, /liveScan\.newScan/);
   assert.doesNotMatch(workspace, /liveScan\.refinementIncomplete/);
   assert.match(
     english,
-    /"liveScan\.pointCloudNeedsRefinement":\s+"Saved — result incomplete"/,
+    /"liveScan\.pointCloudNeedsRefinement":\s+"Capture saved — no room result"/,
   );
 });
