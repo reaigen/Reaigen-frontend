@@ -30,6 +30,15 @@ export function getApiErrorJson(error: unknown): Record<string, unknown> | null 
   }
 }
 
+export function isInsufficientComputeCredits(error: unknown) {
+  if (!(error instanceof ApiError) || error.status !== 403) return false;
+  const payload = getApiErrorJson(error);
+  const text = flattenValue(
+    payload?.detail ?? payload?.error ?? (error.body ?? ""),
+  ).toLowerCase();
+  return text.includes("compute credit");
+}
+
 export function isApiNotFound(error: unknown) {
   if (error instanceof ApiError && error.status === 404) return true;
   const payload = getApiErrorJson(error);

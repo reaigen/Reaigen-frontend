@@ -1,12 +1,19 @@
 import { NextRequest, NextResponse } from "next/server";
 import {
+  ACCESS_COOKIE_NAME,
   REFRESH_COOKIE_NAME,
   clearAuthCookies,
+  expireSession,
   setAuthCookies,
 } from "../../../lib/server/auth-cookies";
+import { fetchBackend } from "../../../lib/server/backend-fetch";
+import { authPathCarriesSession } from "../../../lib/server/auth-paths";
+import { isSafeProxyPath } from "../../../lib/server/proxy-path";
+import { refreshSession } from "../../../lib/server/token-refresh";
 
 const BACKEND_URL =
   process.env.REAIGEN_BACKEND_URL ?? "http://localhost:8000";
+
 
 function backendCandidates(): string[] {
   const configured = BACKEND_URL.replace(/\/+$/, "");
@@ -34,6 +41,7 @@ function noStoreHeaders(contentType: string) {
     "Cache-Control": "private, no-store, no-cache, max-age=0, must-revalidate",
     Pragma: "no-cache",
     Expires: "0",
+    Vary: "Cookie, Authorization",
   };
 }
 
@@ -42,13 +50,58 @@ async function proxy(
   { params }: { params: Promise<{ path: string[] }> },
 ) {
   const { path } = await params;
+
+  // Same guard as the reaigen proxy: a dot-segment would escape the
+  // /api/v1/core/auth/ prefix once fetch normalizes the target URL.
+  if (!isSafeProxyPath(path)) {
+    return NextResponse.json(
+      { error: "Invalid request path" },
+      { status: 400, headers: noStoreHeaders("application/json") },
+    );
+  }
+
   const joined = path.join("/");
 
   if (joined === "logout") {
+    // Tell Django first so the refresh token is blacklisted and the device
+    // session is marked signed out — otherwise the token stays live for up
+    // to 90 days and the device lingers in the Settings device list. The
+    // local cookies are cleared regardless of the backend's answer: signing
+    // out must never be blocked by a network fault.
+    const accessToken = req.cookies.get(ACCESS_COOKIE_NAME)?.value ?? null;
+    const refreshToken = req.cookies.get(REFRESH_COOKIE_NAME)?.value ?? null;
+    if (accessToken || refreshToken) {
+      const headers: Record<string, string> = {
+        "Content-Type": "application/json",
+      };
+      if (accessToken) headers["Authorization"] = `Bearer ${accessToken}`;
+      const logoutUserAgent = req.headers.get("user-agent");
+      if (logoutUserAgent) headers["User-Agent"] = logoutUserAgent;
+      const logoutForwardedFor = req.headers.get("x-forwarded-for");
+      if (logoutForwardedFor) headers["X-Forwarded-For"] = logoutForwardedFor;
+      for (const baseUrl of backendCandidates()) {
+        try {
+          await fetchBackend(
+            `${baseUrl}/api/v1/core/auth/logout/`,
+            {
+              method: "POST",
+              headers,
+              body: JSON.stringify(refreshToken ? { refresh: refreshToken } : {}),
+              cache: "no-store",
+            },
+            3_000,
+          );
+          break;
+        } catch {
+          // Try the next backend candidate; never block the local sign-out.
+        }
+      }
+    }
     const response = NextResponse.json(
       { ok: true },
       { status: 200, headers: noStoreHeaders("application/json") },
     );
+    response.headers.set("Clear-Site-Data", "\"cache\", \"storage\"");
     clearAuthCookies(response);
     return response;
   }
@@ -57,6 +110,17 @@ async function proxy(
   const headers: Record<string, string> = {};
   const ct = req.headers.get("Content-Type");
   if (ct) headers["Content-Type"] = ct;
+  // Device-session bookkeeping on the backend parses these: without them a
+  // login is recorded as the proxy's own fetch ("Unknown OS", proxy IP).
+  const clientUserAgent = req.headers.get("user-agent");
+  if (clientUserAgent) headers["User-Agent"] = clientUserAgent;
+  const forwardedFor = req.headers.get("x-forwarded-for");
+  if (forwardedFor) headers["X-Forwarded-For"] = forwardedFor;
+
+  const sessionPath = authPathCarriesSession(joined);
+  const accessToken = sessionPath ? req.cookies.get(ACCESS_COOKIE_NAME)?.value ?? null : null;
+  const refreshToken = sessionPath ? req.cookies.get(REFRESH_COOKIE_NAME)?.value ?? null : null;
+  if (accessToken) headers["Authorization"] = `Bearer ${accessToken}`;
 
   const init: RequestInit = { method: req.method, headers };
 
@@ -65,29 +129,58 @@ async function proxy(
   }
 
   for (const baseUrl of backendCandidates()) {
-    const target = `${baseUrl}/api/v1/core/auth/${joined}${slash}`;
+    const target = `${baseUrl}/api/v1/core/auth/${joined}${slash}${req.nextUrl.search}`;
     try {
-      const res = await fetch(target, { ...init, cache: "no-store" });
+      let res = await fetchBackend(target, { ...init, cache: "no-store" }, 5_000);
+
+      // Same silent renewal the reaigen proxy performs. Without it an expired
+      // access token on, say, the settings page reads as a dead session.
+      let rotated: { access: string; refresh: string | null } | null = null;
+      if (res.status === 401 && sessionPath && refreshToken) {
+        rotated = await refreshSession(refreshToken, backendCandidates());
+        if (rotated) {
+          headers["Authorization"] = `Bearer ${rotated.access}`;
+          res = await fetchBackend(target, { ...init, headers, cache: "no-store" }, 5_000);
+        }
+      }
+
       const data = await res.text();
       const contentType = res.headers.get("Content-Type") ?? "application/json";
       const response = new NextResponse(data, {
         status: res.status,
         headers: noStoreHeaders(contentType),
       });
+      if (rotated) setAuthCookies(response, rotated, refreshToken);
+      // Renewal was attempted for this session and refused. Anything else that
+      // happens to be a 401 is the endpoint's business, not the session's.
+      if (res.status === 401 && sessionPath && refreshToken && !rotated) {
+        expireSession(response);
+      }
 
       if (res.ok && contentType.includes("application/json")) {
         try {
-          const payload = JSON.parse(data) as { access?: string; refresh?: string; user?: unknown };
-          if (payload.access || payload.refresh) {
-            const body: Record<string, unknown> = { ok: true };
+          const payload = JSON.parse(data) as {
+            access?: string;
+            refresh?: string;
+            tokens?: { access?: string; refresh?: string };
+            user?: unknown;
+            message?: string;
+          };
+          const tokenPayload = payload.tokens ?? payload;
+          if (tokenPayload.access || tokenPayload.refresh) {
+            const body: Record<string, unknown> = { ok: true, message: payload.message };
             if (payload.user) body.user = payload.user;
             const sanitized = NextResponse.json(
               body,
               { status: res.status, headers: noStoreHeaders("application/json") },
             );
+            // Flush responses cached by older web builds before establishing
+            // the new identity. Current builds mark every private response
+            // no-store, so this is primarily a migration safety boundary.
+            sanitized.headers.set("Clear-Site-Data", "\"cache\"");
             setAuthCookies(
               sanitized,
-              payload,
+              tokenPayload,
               req.cookies.get(REFRESH_COOKIE_NAME)?.value ?? null,
             );
             return sanitized;
@@ -98,7 +191,7 @@ async function proxy(
       }
 
       if (!res.ok && joined === "token/refresh") {
-        clearAuthCookies(response);
+        expireSession(response);
       }
 
       return response;

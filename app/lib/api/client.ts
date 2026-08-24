@@ -1,3 +1,5 @@
+import type { DraftDataEntry } from "../tour-types";
+
 export class ApiError extends Error {
   status: number;
   body: string;
@@ -12,14 +14,136 @@ export class ApiError extends Error {
 
 const inFlight = new Map<string, Promise<unknown>>();
 const cache = new Map<string, { data: unknown; ts: number }>();
+let privateCacheGeneration = 0;
+
+/**
+ * Establish a hard identity boundary for private browser data.
+ *
+ * Clearing the maps is not enough: a request started by the previous account
+ * can resolve after logout and repopulate the cache. The generation prevents
+ * those late responses from being committed.
+ */
+export function resetPrivateApiState() {
+  privateCacheGeneration += 1;
+  cache.clear();
+  inFlight.clear();
+}
+
+/** Session expired: flush all cached data and signal the app to
+ * re-authenticate. A single global event lets AuthProvider force a clean
+ * logout + redirect to login, instead of leaving the user stranded on a
+ * dead authenticated session (which is unsafe — stale data, failing actions). */
+function notifyUnauthorized() {
+  resetPrivateApiState();
+  if (typeof window !== "undefined") {
+    window.dispatchEvent(new Event("reai:unauthorized"));
+  }
+}
+
+/** The proxies set this when renewal was tried for a session and refused. */
+const SESSION_STATUS_HEADER = "X-Reaigen-Session";
+const SESSION_EXPIRED = "expired";
+/** The cheapest endpoint that answers only "is this identity still good?". */
+const IDENTITY_PROBE_PATH = "/api/reaigen/users/me/";
+
+let identityProbe: Promise<void> | null = null;
+
+/**
+ * Ask once whether the identity is actually gone, and sign out only if it is.
+ *
+ * Deliberately not fired by every 401. A 401 is raised for plenty of reasons
+ * that have nothing to do with the session — one resource refused, a backend
+ * restarting mid-request, a proxy that failed to attach the token (which is
+ * precisely what used to sign people out of Settings). Evicting on all of them
+ * throws people back to the login screen while their credentials are fine.
+ *
+ * Leaving someone on a dead session is the opposite hazard, so the doubtful
+ * case is resolved rather than assumed: one probe, shared by every 401 racing
+ * with it, and the answer decides. A network failure decides nothing.
+ */
+function confirmSessionEnded(): Promise<void> {
+  if (identityProbe) return identityProbe;
+  identityProbe = (async () => {
+    try {
+      // Raw fetch on purpose, and the verdict is applied directly: routing the
+      // probe's own 401 back through handleUnauthorized would ask it to confirm
+      // itself, and the in-flight guard would swallow the answer.
+      const res = await fetch(IDENTITY_PROBE_PATH, {
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        cache: "no-store",
+      });
+      if (res.status === 401) notifyUnauthorized();
+    } catch {
+      // Offline or unreachable is not a verdict on the session.
+    } finally {
+      identityProbe = null;
+    }
+  })();
+  return identityProbe;
+}
+
+/**
+ * The single place a 401 is turned into a decision about the session.
+ * Every caller that reads a response status routes through here.
+ */
+function handleUnauthorized(res: Response) {
+  if (res.headers.get(SESSION_STATUS_HEADER) === SESSION_EXPIRED) {
+    notifyUnauthorized();
+    return;
+  }
+  void confirmSessionEnded();
+}
 
 const CACHE_TTL = 30_000; // 30s default
 const LONG_TTL = 300_000; // 5 min — profile / localization / preferences
 const CONTENT_TTL = 600_000; // 10 min — legal / content documents
+const PROFILE_REQUEST_TIMEOUT_MS = 8_000;
+const GET_RETRY_DELAYS_MS = [350, 900] as const;
+
+function isTransientGetError(error: unknown): boolean {
+  // 52x are Cloudflare edge failures — as transient as a 502/504.
+  if (error instanceof ApiError) return [408, 425, 429, 502, 503, 504, 520, 521, 522, 523, 524].includes(error.status);
+  return error instanceof TypeError;
+}
+
+function pause(ms: number) {
+  return new Promise<void>((resolve) => setTimeout(resolve, ms));
+}
+
+async function fetchGetData(path: string, options: RequestInit): Promise<unknown> {
+  let lastError: unknown;
+  for (let attempt = 0; attempt <= GET_RETRY_DELAYS_MS.length; attempt += 1) {
+    try {
+      const res = await fetch(path, {
+        ...options,
+        credentials: "include",
+        headers: { "Content-Type": "application/json", ...options.headers },
+        // Never let the browser HTTP cache answer an authenticated request.
+        // The session-aware in-memory cache above is the only permitted cache.
+        cache: "no-store",
+      });
+      if (!res.ok) {
+        const body = await res.text();
+        if (res.status === 401) handleUnauthorized(res);
+        throw new ApiError(res.status, body);
+      }
+      const text = await res.text();
+      return text ? JSON.parse(text) : null;
+    } catch (error) {
+      lastError = error;
+      if (!isTransientGetError(error) || attempt >= GET_RETRY_DELAYS_MS.length) throw error;
+      await pause(GET_RETRY_DELAYS_MS[attempt]);
+    }
+  }
+  throw lastError;
+}
 
 function ttlForPath(path: string): number {
-  if (path.startsWith("/api/reaigen/users/") || path.startsWith("/api/reaigen/profiles/") || path.startsWith("/api/reaigen/personalized-data/") || path.startsWith("/api/reaigen/billing/")) return LONG_TTL;
+  if (path.startsWith("/api/reaigen/users/") || path.startsWith("/api/reaigen/profiles/") || path.startsWith("/api/reaigen/personalized-data/")) return LONG_TTL;
   if (path.startsWith("/api/reaigen/content/")) return CONTENT_TTL;
+  // Billing carries the live compute-credit balance now — keep it on the
+  // short default TTL so spends and top-ups appear promptly.
   return CACHE_TTL;
 }
 
@@ -30,6 +154,14 @@ function invalidateCache(path: string) {
   const prefix = segments.length > 3 ? segments.slice(0, -1).join("/") + "/" : path;
   for (const key of cache.keys()) {
     if (key.startsWith(prefix)) cache.delete(key);
+  }
+  // The profile response embeds personalized_data. A preference PATCH must
+  // invalidate both views or a cross-platform setting can appear to revert
+  // for up to five minutes even though the backend saved it correctly.
+  if (path.startsWith("/api/reaigen/personalized-data/")) {
+    for (const key of cache.keys()) {
+      if (key.startsWith("/api/reaigen/users/")) cache.delete(key);
+    }
   }
 }
 
@@ -46,23 +178,13 @@ async function request(path: string, options: RequestInit = {}) {
     const existing = inFlight.get(path);
     if (existing) return existing;
 
-    const promise = (async () => {
-      const res = await fetch(path, {
-        ...options,
-        credentials: "include",
-        headers: { "Content-Type": "application/json", ...options.headers },
-      });
-      if (!res.ok) {
-        const body = await res.text();
-        // 401 = session expired — flush entire cache so re-auth gets fresh data
-        if (res.status === 401) cache.clear();
-        throw new ApiError(res.status, body);
+    const requestGeneration = privateCacheGeneration;
+    const promise = fetchGetData(path, options).then((data) => {
+      if (requestGeneration === privateCacheGeneration) {
+        cache.set(path, { data, ts: Date.now() });
       }
-      const text = await res.text();
-      const data = text ? JSON.parse(text) : null;
-      cache.set(path, { data, ts: Date.now() });
       return data;
-    })();
+    });
 
     inFlight.set(path, promise);
     promise.catch(() => {}).finally(() => inFlight.delete(path));
@@ -84,6 +206,7 @@ async function request(path: string, options: RequestInit = {}) {
 
   if (!res.ok) {
     const body = await res.text();
+    if (res.status === 401) handleUnauthorized(res);
     throw new ApiError(res.status, body);
   }
 
@@ -98,9 +221,11 @@ async function abortableRequest(path: string, signal?: AbortSignal) {
     credentials: "include",
     headers: { "Content-Type": "application/json" },
     signal,
+    cache: "no-store",
   });
   if (!res.ok) {
     const body = await res.text();
+    if (res.status === 401) handleUnauthorized(res);
     throw new ApiError(res.status, body);
   }
   const text = await res.text();
@@ -108,10 +233,21 @@ async function abortableRequest(path: string, signal?: AbortSignal) {
   return JSON.parse(text);
 }
 
+async function requestWithTimeout(path: string, timeoutMs: number) {
+  const controller = new AbortController();
+  const timeout = window.setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    return await abortableRequest(path, controller.signal);
+  } finally {
+    window.clearTimeout(timeout);
+  }
+}
+
 /** Force a network GET and replace the matching in-memory cache entry. */
 async function freshRequest(path: string) {
   cache.delete(path);
   inFlight.delete(path);
+  const requestGeneration = privateCacheGeneration;
   const res = await fetch(path, {
     credentials: "include",
     headers: { "Content-Type": "application/json" },
@@ -119,21 +255,77 @@ async function freshRequest(path: string) {
   });
   if (!res.ok) {
     const body = await res.text();
-    if (res.status === 401) cache.clear();
+    if (res.status === 401) handleUnauthorized(res);
     throw new ApiError(res.status, body);
   }
   const text = await res.text();
   const data = text ? JSON.parse(text) : null;
-  cache.set(path, { data, ts: Date.now() });
+  if (requestGeneration === privateCacheGeneration) {
+    cache.set(path, { data, ts: Date.now() });
+  }
   return data;
 }
 
 // ─── Auth ─────────────────────────────────────────────────────────────────
 
+const DEVICE_FINGERPRINT_KEY = "reaigen_device_fingerprint";
+
+/** Stable per-browser id so this installation shows up as one device in the
+ * Settings device list across logins. Cosmetic only — never used for auth. */
+export function getDeviceFingerprint(): string {
+  if (typeof window === "undefined") return "";
+  try {
+    let fingerprint = window.localStorage.getItem(DEVICE_FINGERPRINT_KEY);
+    if (!fingerprint) {
+      fingerprint = crypto.randomUUID();
+      window.localStorage.setItem(DEVICE_FINGERPRINT_KEY, fingerprint);
+    }
+    return fingerprint;
+  } catch {
+    return "";
+  }
+}
+
+export interface StepUpChallenge {
+  step_up_required: true;
+  step_up_token: string;
+  step_up_methods: Array<"otp" | "totp">;
+}
+
+export function isStepUpChallenge(value: unknown): value is StepUpChallenge {
+  return (
+    !!value &&
+    typeof value === "object" &&
+    (value as { step_up_required?: unknown }).step_up_required === true &&
+    typeof (value as { step_up_token?: unknown }).step_up_token === "string"
+  );
+}
+
 export async function login(email: string, password: string) {
+  resetPrivateApiState();
   return request("/api/auth/login/", {
     method: "POST",
-    body: JSON.stringify({ email, password }),
+    body: JSON.stringify({
+      email,
+      password,
+      device_fingerprint: getDeviceFingerprint(),
+    }),
+  });
+}
+
+export async function verifyStepUp(
+  stepUpToken: string,
+  method: "otp" | "totp",
+  code: string,
+) {
+  return request("/api/auth/step-up/verify/", {
+    method: "POST",
+    body: JSON.stringify({
+      step_up_token: stepUpToken,
+      method,
+      code,
+      device_fingerprint: getDeviceFingerprint(),
+    }),
   });
 }
 
@@ -146,6 +338,8 @@ export async function register(data: {
   last_name?: string;
   accept_privacy_policy: boolean;
   accept_terms: boolean;
+  preferred_language: string;
+  preferred_timezone: string;
 }) {
   return request("/api/auth/register/", {
     method: "POST",
@@ -154,13 +348,63 @@ export async function register(data: {
 }
 
 export async function logout() {
-  return request("/api/auth/logout", { method: "POST" });
+  try {
+    return await request("/api/auth/logout", { method: "POST" });
+  } finally {
+    resetPrivateApiState();
+  }
 }
 
 export async function requestPasswordReset(email: string) {
-  return request("/api/auth/password-reset/request/", {
+  return request("/api/auth/password-reset/request/?app_name=reaigen", {
     method: "POST",
     body: JSON.stringify({ email }),
+  });
+}
+
+export async function validatePasswordReset(token: string) {
+  return request("/api/auth/password-reset/validate/?app_name=reaigen", {
+    method: "POST",
+    body: JSON.stringify({ token }),
+  });
+}
+
+export async function confirmPasswordReset(
+  token: string,
+  newPassword: string,
+  newPasswordConfirm: string,
+) {
+  return request("/api/auth/password-reset/confirm/?app_name=reaigen", {
+    method: "POST",
+    body: JSON.stringify({
+      token,
+      new_password: newPassword,
+      new_password_confirm: newPasswordConfirm,
+    }),
+  });
+}
+
+export async function requestPasswordResetSMS(phoneNumber: string) {
+  return request("/api/auth/password-reset/sms/request/?app_name=reaigen", {
+    method: "POST",
+    body: JSON.stringify({ phone_number: phoneNumber }),
+  });
+}
+
+export async function confirmPasswordResetSMS(
+  phoneNumber: string,
+  otpCode: string,
+  newPassword: string,
+  newPasswordConfirm: string,
+) {
+  return request("/api/auth/password-reset/sms/confirm/?app_name=reaigen", {
+    method: "POST",
+    body: JSON.stringify({
+      phone_number: phoneNumber,
+      otp_code: otpCode,
+      new_password: newPassword,
+      new_password_confirm: newPasswordConfirm,
+    }),
   });
 }
 
@@ -227,8 +471,52 @@ export interface PersonalizedData {
   notify_billing: boolean;
   notify_processing_complete: boolean;
   notify_processing_failed: boolean;
+  notify_upload_landed: boolean;
+  notification_sound: boolean;
+  notification_quiet_hours_start: string | null;
+  notification_quiet_hours_end: string | null;
+  notification_timezone: string;
+  preferences: Record<string, unknown>;
   onboarding_completed: boolean;
   onboarding_step: number;
+}
+
+export interface NotificationDevice {
+  id: number;
+  platform: "ios" | "web";
+  app_id: string;
+  environment: "production" | "sandbox";
+  enabled: boolean;
+  last_seen_at: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface WebPushConfig {
+  enabled: boolean;
+  public_key: string;
+}
+
+export interface NotificationMessage {
+  id: number;
+  event_type: string;
+  collapse_key: string;
+  title: string;
+  body: string;
+  data: Record<string, string | number | boolean | null>;
+  status: string;
+  read_at: string | null;
+  sent_at: string | null;
+  created_at: string;
+}
+
+export interface ComputeCredits {
+  unlimited: boolean;
+  included: number;
+  purchased: number;
+  total: number;
+  monthly_allowance: number;
+  period_start: string | null;
 }
 
 export interface BillingAccount {
@@ -236,9 +524,14 @@ export interface BillingAccount {
   subscription_tier_detail: {
     code: string;
     name: string;
+    is_custom_pricing?: boolean;
+    /** @deprecated display mirror — runtime posts limit lives in TierLimit */
     max_posts: number;
+    /** @deprecated storage is not tiered; value is 0 (not applicable) */
     max_storage_gb: number;
+    /** @deprecated display mirror — runtime features come from TierFeature */
     can_use_ai_processing: boolean;
+    /** @deprecated display mirror — runtime features come from TierFeature */
     can_use_3d_processing: boolean;
   } | null;
   subscription_status: string;
@@ -248,6 +541,8 @@ export interface BillingAccount {
   has_reached_post_limit: boolean;
   has_reached_storage_limit: boolean;
   days_until_expiry: number | null;
+  trial_ends_at?: string | null;
+  compute_credits?: ComputeCredits;
   current_storage_gb: string;
   current_posts_count: number;
   payment_provider: string;
@@ -290,7 +585,7 @@ export interface UserProfile {
 // ─── API calls ────────────────────────────────────────────────────────────
 
 export async function getProfile(): Promise<UserProfile> {
-  return request("/api/reaigen/users/me/");
+  return requestWithTimeout("/api/reaigen/users/me/", PROFILE_REQUEST_TIMEOUT_MS);
 }
 
 export async function updateProfile(data: Partial<{
@@ -299,6 +594,23 @@ export async function updateProfile(data: Partial<{
   username: string;
 }>) {
   return request("/api/reaigen/users/me/", {
+    method: "PATCH",
+    body: JSON.stringify(data),
+  });
+}
+
+export interface AccountConsent {
+  has_given_consent: boolean;
+  consent_date: string | null;
+  consent_version: string;
+  marketing_consent: boolean;
+  data_processing_consent: boolean;
+}
+
+export async function updateAccountConsent(data: Partial<Pick<AccountConsent,
+  "marketing_consent" | "data_processing_consent"
+>>): Promise<AccountConsent> {
+  return request("/api/reaigen/users/consent/", {
     method: "PATCH",
     body: JSON.stringify(data),
   });
@@ -351,10 +663,69 @@ export async function updatePersonalizedData(data: Partial<{
   notify_billing: boolean;
   notify_processing_complete: boolean;
   notify_processing_failed: boolean;
+  notify_upload_landed: boolean;
+  notification_sound: boolean;
+  notification_quiet_hours_start: string | null;
+  notification_quiet_hours_end: string | null;
+  notification_timezone: string;
+  preferences: Record<string, unknown>;
 }>): Promise<PersonalizedData> {
   return request("/api/reaigen/personalized-data/me/", {
     method: "PATCH",
     body: JSON.stringify(data),
+  });
+}
+
+export async function getWebPushConfig(): Promise<WebPushConfig> {
+  return request(
+    "/api/reaigen/notification-devices/web-push-config/",
+  );
+}
+
+export async function registerWebPushDevice(data: {
+  endpoint: string;
+  p256dh: string;
+  auth: string;
+}): Promise<NotificationDevice> {
+  return request("/api/reaigen/notification-devices/", {
+    method: "POST",
+    body: JSON.stringify({
+      platform: "web",
+      app_id: "reaigen-web",
+      environment: "production",
+      ...data,
+    }),
+  });
+}
+
+export async function deleteNotificationDevice(deviceId: number): Promise<void> {
+  await request(
+    `/api/reaigen/notification-devices/${encodeURIComponent(deviceId)}/`,
+    { method: "DELETE" },
+  );
+}
+
+export async function getNotificationMessages(): Promise<{
+  count: number;
+  results: NotificationMessage[];
+}> {
+  return freshRequest("/api/reaigen/notifications/");
+}
+
+export async function markNotificationRead(
+  notificationId: number,
+): Promise<NotificationMessage> {
+  return request(
+    `/api/reaigen/notifications/${encodeURIComponent(notificationId)}/read/`,
+    { method: "POST" },
+  );
+}
+
+export async function markAllNotificationsRead(): Promise<{
+  marked_read: number;
+}> {
+  return request("/api/reaigen/notifications/read-all/", {
+    method: "POST",
   });
 }
 
@@ -418,9 +789,49 @@ export async function getAvailablePreferences(): Promise<AvailablePreferences> {
   return request("/api/reaigen/users/available_preferences/");
 }
 
+export type { UnitLookup } from "../unit-catalog";
+import type { UnitLookup } from "../unit-catalog";
+
+interface UnitLookupPage {
+  count?: number;
+  next?: string | null;
+  previous?: string | null;
+  results?: UnitLookup[];
+}
+
+/**
+ * Read every page of the canonical backend unit catalogue. The endpoint owns
+ * codes, symbols, categories, display metadata, and conversion factors.
+ */
+export async function listUnits(category?: string): Promise<UnitLookup[]> {
+  const requestPage = async (page: number) => {
+    const query = new URLSearchParams({ page: String(page), page_size: "500" });
+    if (category) query.set("category", category.trim().toUpperCase());
+    return request(`/api/reaigen/lookups/units/?${query.toString()}`) as Promise<UnitLookupPage | UnitLookup[]>;
+  };
+
+  const first = await requestPage(1);
+  if (Array.isArray(first)) return first.filter((unit) => unit.is_active !== false);
+
+  const firstPage = first.results ?? [];
+  const pageCount = first.next && firstPage.length > 0
+    ? Math.min(50, Math.ceil((first.count ?? firstPage.length) / firstPage.length))
+    : 1;
+  const remainingPages = pageCount > 1
+    ? await Promise.all(Array.from({ length: pageCount - 1 }, (_, index) => requestPage(index + 2)))
+    : [];
+  const allUnits = [
+    ...firstPage,
+    ...remainingPages.flatMap((page) => Array.isArray(page) ? page : page.results ?? []),
+  ];
+  return [...new Map(allUnits.map((unit) => [unit.id, unit])).values()]
+    .filter((unit) => unit.is_active !== false);
+}
+
 export async function changePassword(data: {
-  current_password: string;
+  old_password: string;
   new_password: string;
+  new_password_confirm: string;
 }) {
   return request("/api/auth/change-password/", {
     method: "POST",
@@ -494,12 +905,66 @@ export async function unlinkSocialAccount(provider: string) {
   });
 }
 
+export interface DeviceSession {
+  id: string;
+  device_label: string;
+  platform: "web" | "ios" | "unknown";
+  ip_address: string | null;
+  created_at: string;
+  last_seen_at: string;
+  current: boolean;
+}
+
+export async function getDeviceSessions(): Promise<{ sessions: DeviceSession[] }> {
+  return request("/api/auth/sessions/");
+}
+
+/** The generic mutation invalidation derives a per-id prefix
+ * (`/api/auth/sessions/<id>/`) that never matches the cached list key, so a
+ * revoked device would keep showing for up to the cache TTL. Drop the list
+ * cache explicitly after every revoke. */
+function invalidateDeviceSessionsCache() {
+  for (const key of cache.keys()) {
+    if (key.startsWith("/api/auth/sessions/")) cache.delete(key);
+  }
+}
+
+export async function revokeDeviceSession(
+  sessionId: string,
+): Promise<{ revoked: boolean; was_current: boolean }> {
+  const result = await request(
+    `/api/auth/sessions/${encodeURIComponent(sessionId)}/revoke/`,
+    { method: "POST" },
+  );
+  invalidateDeviceSessionsCache();
+  return result;
+}
+
+export async function revokeOtherDeviceSessions(): Promise<{ revoked: number }> {
+  const result = await request("/api/auth/sessions/revoke-others/", { method: "POST" });
+  invalidateDeviceSessionsCache();
+  return result;
+}
+
+export async function revokeAllDeviceSessions(): Promise<{ revoked: number }> {
+  const result = await request("/api/auth/sessions/revoke-all/", { method: "POST" });
+  invalidateDeviceSessionsCache();
+  return result;
+}
+
 // ─── Email Verification ──────────────────────────────────────────────────
 
 export async function resendVerification(email: string) {
-  return request("/api/auth/resend-verification/", {
+  return request("/api/auth/resend-verification/?app_name=reaigen", {
     method: "POST",
     body: JSON.stringify({ email }),
+  });
+}
+
+export async function verifyEmail(token: string) {
+  return request("/api/auth/verify-email/?app_name=reaigen", {
+    method: "POST",
+    body: JSON.stringify({ token }),
   });
 }
 
@@ -508,14 +973,14 @@ export async function resendVerification(email: string) {
 export async function requestPhoneLinkOtp(phone: string) {
   return request("/api/auth/link/phone/request-otp/", {
     method: "POST",
-    body: JSON.stringify({ phone }),
+    body: JSON.stringify({ phone_number: phone }),
   });
 }
 
 export async function verifyPhoneLinkOtp(data: { phone: string; code: string }) {
   return request("/api/auth/link/phone/verify-otp/", {
     method: "POST",
-    body: JSON.stringify(data),
+    body: JSON.stringify({ phone_number: data.phone, otp_code: data.code }),
   });
 }
 
@@ -673,11 +1138,12 @@ export async function acceptAppContentDocument(data: {
 
 // ─── Splat Viewer & Tour ──────────────────────────────────────────────────
 
-import type { SplatViewerPayload, CameraData, TourViewerData, SplatListItem, ShareData, SharedDraftData, SplatsByDraftPayload, DraftListingItem, DraftDetailItem } from "../tour-types";
+import type { SplatViewerPayload, SplatPackagePayload, SplatSceneResponse, SceneDeliveryResolution, SceneDeliverySummary, SceneDeliveryTargetProfile, SceneRefinementSummary, VirtualTourViewerPayload, CameraData, GlobalSceneTransform, UsdStageTransformEditResponse, TourViewerData, SplatListItem, ShareData, SharedDraftData, SplatsByDraftPayload, DraftListingItem, DraftDetailItem, DraftUpload, DraftTourAssetsPayload, DraftTourPublicationSelection } from "../tour-types";
+import type { SplatPruneMask } from "../splat-editing";
 
 export async function listSplats(page = 1, pageSize = 20, search = ""): Promise<{ results: SplatListItem[]; count: number; next: string | null }> {
   const q = search ? `&search=${encodeURIComponent(search)}` : "";
-  return request(`/api/reaigen/splats/?page=${page}&page_size=${pageSize}${q}`);
+  return request(`/api/reaigen/splats/?view=web&page=${page}&page_size=${pageSize}${q}`);
 }
 
 export async function listDrafts(page = 1, pageSize = 100, search = ""): Promise<{ results: DraftListingItem[]; count: number; next: string | null }> {
@@ -687,6 +1153,838 @@ export async function listDrafts(page = 1, pageSize = 100, search = ""): Promise
 
 export async function getDraft(draftId: number): Promise<DraftDetailItem> {
   return request(`/api/reaigen/drafts/${draftId}/`);
+}
+
+export interface WebSceneTransform {
+  translation: [number, number, number];
+  rotationDeg: [number, number, number];
+  scale: number;
+  scale3?: [number, number, number];
+}
+
+export interface WebTourWorkspaceNode {
+  id: string;
+  splat_id: number;
+  name: string;
+  prim_path: string;
+  visible: boolean;
+  transform: WebSceneTransform;
+  prune?: SplatPruneMask | null;
+  asset: {
+    splat_id: number;
+    status: string;
+    format: "ply" | "sog" | null;
+    url: string | null;
+    fingerprint: string;
+    has_ply: boolean;
+    has_sog: boolean;
+    conversion: {
+      status: "running" | "completed" | "failed" | null;
+      error: string | null;
+    } | null;
+  };
+}
+
+export interface WebTourWorkspace {
+  tour_id: number;
+  draft_id: number;
+  name: string;
+  status: string;
+  revision: number;
+  nodes: WebTourWorkspaceNode[];
+  cameras: Array<Record<string, unknown>>;
+  usd: {
+    rootLayer?: string;
+    format?: "usda";
+    stageSha256?: string;
+    content?: string;
+    validation?: { valid?: boolean; validator?: string };
+  };
+  accepted_formats: Array<"ply" | "sog">;
+  thumbnail_url: string | null;
+  thumbnail_revision: number | null;
+  thumbnail_camera_id: string | null;
+  thumbnail_renderer_version?: number | null;
+}
+
+function webTourSogDeliveryUrl(
+  tourId: number,
+  splatId: number,
+  fingerprint: string,
+): string {
+  const version = fingerprint ? `?v=${encodeURIComponent(fingerprint)}` : "";
+  return `/api/sog/${tourId}/${splatId}/scene.sog${version}`;
+}
+
+function withWebTourSogDelivery(workspace: WebTourWorkspace): WebTourWorkspace {
+  return {
+    ...workspace,
+    nodes: workspace.nodes.map((node) => (
+      node.asset.format === "sog"
+        ? {
+            ...node,
+            asset: {
+              ...node.asset,
+              url: webTourSogDeliveryUrl(
+                workspace.tour_id,
+                node.splat_id,
+                node.asset.fingerprint,
+              ),
+            },
+          }
+        : node
+    )),
+  };
+}
+
+export interface WebCreationAccess {
+  allowed: boolean;
+  feature: "web_scene_authoring";
+  accepted_formats: Array<"ply" | "sog">;
+  max_upload_size: number;
+  capabilities: {
+    drafts: boolean;
+    multi_splat: boolean;
+    node_transforms: boolean;
+    openusd_hierarchy: boolean;
+    cameras: boolean;
+    ply_to_sog: boolean;
+  };
+}
+
+export async function getWebCreationAccess(): Promise<WebCreationAccess> {
+  return request("/api/reaigen/web-creation/access/");
+}
+
+export async function hasWebCreationAccess(): Promise<boolean> {
+  try {
+    return (await getWebCreationAccess()).allowed;
+  } catch (error) {
+    if (error instanceof ApiError && (error.status === 401 || error.status === 403)) {
+      return false;
+    }
+    throw error;
+  }
+}
+
+export interface LiveSplatRuntimeIdentity {
+  release: string;
+  commit: string;
+  profile: "production" | "contract-test" | string;
+  modal_app: string;
+  modal_app_version?: string | null;
+  image_id?: string | null;
+  checkpoint_schema: string;
+  active?: boolean;
+  software?: {
+    schema: string;
+    profile: string;
+    release: string;
+    commit: string;
+    capabilities?: string[];
+    missing_production_capabilities?: string[];
+    update_policy?: {
+      channel?: string;
+      hot_patch_allowed?: boolean;
+      checkpoint_compatibility_required?: boolean;
+    };
+  } | null;
+}
+
+export interface LiveSplatAccess {
+  allowed: boolean;
+  feature: "live_splatting";
+  runtime: LiveSplatRuntimeIdentity;
+  runtime_available: boolean;
+  capture: {
+    accepted_content_types: Array<"image/jpeg" | "image/webp">;
+    max_frame_size: number;
+    max_frame_dimension: number;
+    frame_width: number;
+    frame_height: number;
+    camera_profile: string;
+    lens: "ultrawide" | string;
+    full_frame_only: boolean;
+  };
+  capabilities: {
+    browser_capture: boolean;
+    durable_wasabi_frames: boolean;
+    last_good_preview: boolean;
+    automatic_floor_retry: boolean;
+    manual_floor_revision: boolean;
+    camera_derived_preview?: boolean;
+    forming_point_cloud?: boolean;
+    dragon_refinement: boolean;
+    contract_test?: boolean;
+  };
+}
+
+export interface LiveSplatSession {
+  id: string;
+  status: "created" | "starting" | "capturing" | "draining" | "refining" | "completed" | "failed" | "cancelled";
+  floor_status: "pending" | "locked" | "manual" | "rejected";
+  draft_id: number | null;
+  tour_id: number | null;
+  runtime: LiveSplatRuntimeIdentity;
+  progress: {
+    allocated_frames: number;
+    ready_frames: number;
+    processed_frames: number;
+    last_good_epoch: number;
+    revision: number;
+  };
+  error: { code: string } | null;
+  options: {
+    quality: "fast" | "balanced" | "quality";
+    floor_preview: boolean;
+    dragon_refinement: boolean;
+    output_format: "ply" | "sog";
+  };
+  telemetry?: Record<string, unknown> | null;
+  created_at: string;
+  started_at: string | null;
+  completed_at: string | null;
+  updated_at: string;
+}
+
+export interface LiveSplatPreview {
+  epoch: number;
+  trust: "provisional" | "qualified";
+  authority: "provisional" | "otter";
+  floor_status: LiveSplatSession["floor_status"];
+  show_floor_grid: boolean;
+  format: "ply" | "sog";
+  source_sequence?: number;
+  point_count?: number;
+  camera_count?: number;
+  gauge_revision?: number;
+  gauge_reset?: boolean;
+  stage?: "forming" | "validated" | "refined";
+  refined?: boolean;
+  splat_url: string;
+  inline_ply_base64?: string;
+  inline_ply_sha256?: string;
+  inline_point_count?: number;
+  durable_ply_ready?: boolean;
+  expires_in: number;
+}
+
+export interface LiveSplatFramePresign {
+  frame_id: string;
+  sequence: number;
+  upload_url: string;
+  expires_in: number;
+  required_headers: Record<string, string>;
+  status?: "uploading" | "ready" | "processed";
+  already_confirmed?: boolean;
+  confirm_endpoint: string;
+}
+
+export async function getLiveSplatAccess(): Promise<LiveSplatAccess> {
+  return request("/api/reaigen/live-splat/access/");
+}
+
+export async function hasLiveSplatAccess(): Promise<boolean> {
+  try {
+    return (await getLiveSplatAccess()).allowed;
+  } catch (error) {
+    if (error instanceof ApiError && (error.status === 401 || error.status === 403)) {
+      return false;
+    }
+    throw error;
+  }
+}
+
+export async function listLiveSplatSessions(): Promise<{ results: LiveSplatSession[] }> {
+  return request("/api/reaigen/live-splat/sessions/");
+}
+
+export async function createLiveSplatSession(data: {
+  draft_id?: number;
+  tour_id?: number;
+  postprocess?: LiveSplatSession["options"];
+} = {}): Promise<LiveSplatSession> {
+  return request("/api/reaigen/live-splat/sessions/", {
+    method: "POST",
+    body: JSON.stringify(data),
+  });
+}
+
+export async function getLiveSplatSession(sessionId: string): Promise<LiveSplatSession> {
+  return request(`/api/reaigen/live-splat/sessions/${encodeURIComponent(sessionId)}/`);
+}
+
+export async function startLiveSplatSession(sessionId: string): Promise<LiveSplatSession> {
+  return request(`/api/reaigen/live-splat/sessions/${encodeURIComponent(sessionId)}/start/`, {
+    method: "POST",
+    body: "{}",
+  });
+}
+
+export async function syncLiveSplatSession(sessionId: string): Promise<LiveSplatSession> {
+  return request(`/api/reaigen/live-splat/sessions/${encodeURIComponent(sessionId)}/sync/`, {
+    method: "POST",
+    body: "{}",
+  });
+}
+
+export async function finishLiveSplatSession(sessionId: string): Promise<LiveSplatSession> {
+  return request(`/api/reaigen/live-splat/sessions/${encodeURIComponent(sessionId)}/finish/`, {
+    method: "POST",
+    body: "{}",
+  });
+}
+
+export async function getLiveSplatPreview(
+  sessionId: string,
+  revision: number,
+): Promise<{ preview: LiveSplatPreview | null }> {
+  return request(
+    `/api/reaigen/live-splat/sessions/${encodeURIComponent(sessionId)}/preview/?revision=${encodeURIComponent(revision)}`,
+  );
+}
+
+export async function presignLiveSplatFrame(
+  sessionId: string,
+  data: {
+    frame_id?: string;
+    content_type: "image/jpeg" | "image/webp";
+    file_size: number;
+    width: number;
+    height: number;
+    sha256: string;
+    captured_at?: string;
+  },
+): Promise<LiveSplatFramePresign> {
+  return request(
+    `/api/reaigen/live-splat/sessions/${encodeURIComponent(sessionId)}/frames/presign/`,
+    { method: "POST", body: JSON.stringify(data) },
+  );
+}
+
+export async function confirmLiveSplatFrame(
+  sessionId: string,
+  frameId: string,
+): Promise<{ frame_id: string; sequence: number; status: string; session?: LiveSplatSession }> {
+  return request(
+    `/api/reaigen/live-splat/sessions/${encodeURIComponent(sessionId)}/frames/${encodeURIComponent(frameId)}/confirm/`,
+    { method: "POST", body: "{}" },
+  );
+}
+
+export async function createWebDraft(
+  data: DraftUpdatePayload & { title: string },
+): Promise<DraftDetailItem> {
+  return request("/api/reaigen/web-creation/drafts/", {
+    method: "POST",
+    body: JSON.stringify(data),
+  });
+}
+
+export async function createWebTour(data: {
+  draft_id: number;
+  name?: string;
+}): Promise<WebTourWorkspace> {
+  const workspace = await request("/api/reaigen/web-creation/tours/", {
+    method: "POST",
+    body: JSON.stringify(data),
+  }) as WebTourWorkspace;
+  return withWebTourSogDelivery(workspace);
+}
+
+export async function getWebTourWorkspace(tourId: number): Promise<WebTourWorkspace> {
+  const workspace = await freshRequest(
+    `/api/reaigen/web-creation/tours/${tourId}/`,
+  ) as WebTourWorkspace;
+  return withWebTourSogDelivery(workspace);
+}
+
+export async function saveWebTourWorkspace(
+  tourId: number,
+  data: {
+    base_revision: number;
+    name?: string;
+    nodes?: Array<
+      Pick<WebTourWorkspaceNode, "id" | "name" | "visible" | "transform" | "prune">
+    >;
+    cameras?: Array<Record<string, unknown>>;
+  },
+): Promise<WebTourWorkspace> {
+  const workspace = await request(`/api/reaigen/web-creation/tours/${tourId}/`, {
+    method: "PATCH",
+    body: JSON.stringify(data),
+  }) as WebTourWorkspace;
+  return withWebTourSogDelivery(workspace);
+}
+
+export async function saveWebTourPruneMask(
+  tourId: number,
+  splatId: number,
+  baseRevision: number,
+  prune: SplatPruneMask | null,
+): Promise<WebTourWorkspace> {
+  const workspace = await request(
+    `/api/reaigen/web-creation/tours/${tourId}/assets/${splatId}/prune/`,
+    {
+      method: "POST",
+      body: JSON.stringify({
+        base_revision: baseRevision,
+        prune,
+      }),
+    },
+  ) as WebTourWorkspace;
+  return withWebTourSogDelivery(workspace);
+}
+
+export async function saveWebTourThumbnail(
+  tourId: number,
+  workspaceRevision: number,
+  imageData: string,
+  cameraId: string,
+  agentWriteToken?: string,
+): Promise<WebTourWorkspace> {
+  const workspace = await request(`/api/reaigen/web-creation/tours/${tourId}/thumbnail/`, {
+    method: "POST",
+    body: JSON.stringify({
+      workspace_revision: workspaceRevision,
+      image_data: imageData,
+      camera_id: cameraId,
+      renderer_version: 2,
+      agent_write_token: agentWriteToken,
+    }),
+  }) as WebTourWorkspace;
+  invalidateCache(`/api/reaigen/splats/by-draft/${workspace.draft_id}/?all=true`);
+  return withWebTourSogDelivery(workspace);
+}
+
+interface WebTourUploadInit {
+  splat_id: number;
+  tour_id: number;
+  upload_key: string;
+  upload_mode: "single" | "multipart";
+  upload_url?: string;
+  content_type: string;
+  required_headers?: Record<string, string>;
+  multipart?: {
+    upload_id: string;
+    part_size: number;
+    total_parts: number;
+    parts: Array<{ part_number: number; url: string }>;
+  };
+}
+
+async function putFileWithProgress(
+  url: string,
+  body: Blob,
+  headers: Record<string, string>,
+  onProgress?: (fraction: number) => void,
+): Promise<string | null> {
+  return new Promise((resolve, reject) => {
+    const xhr = new XMLHttpRequest();
+    xhr.open("PUT", url);
+    xhr.withCredentials = false;
+    xhr.timeout = 10 * 60 * 1000;
+    for (const [name, value] of Object.entries(headers)) {
+      // Browsers calculate Content-Length and forbid JavaScript from setting it.
+      if (name.toLowerCase() === "content-length") continue;
+      xhr.setRequestHeader(name, value);
+    }
+    xhr.upload.onprogress = (event) => {
+      if (event.lengthComputable) onProgress?.(event.loaded / event.total);
+    };
+    xhr.onerror = () => reject(new Error("The storage upload was interrupted."));
+    xhr.onabort = () => reject(new Error("The storage upload was cancelled."));
+    xhr.ontimeout = () => reject(new Error("The storage upload timed out."));
+    xhr.onload = () => {
+      if (xhr.status < 200 || xhr.status >= 300) {
+        reject(new ApiError(xhr.status, xhr.responseText));
+        return;
+      }
+      onProgress?.(1);
+      resolve(xhr.getResponseHeader("ETag"));
+    };
+    xhr.send(body);
+  });
+}
+
+async function putFileWithRetry(
+  url: string,
+  body: Blob,
+  headers: Record<string, string>,
+  onProgress?: (fraction: number) => void,
+): Promise<string | null> {
+  let lastError: unknown;
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    try {
+      return await putFileWithProgress(url, body, headers, onProgress);
+    } catch (error) {
+      lastError = error;
+      if (
+        error instanceof ApiError
+        && error.status >= 400
+        && error.status < 500
+      ) throw error;
+      if (attempt < 2) await pause(500 * (2 ** attempt));
+    }
+  }
+  throw lastError;
+}
+
+export async function uploadWebTourAsset(
+  tourId: number,
+  file: File,
+  onProgress?: (fraction: number) => void,
+): Promise<WebTourWorkspace> {
+  const initialized = await request(
+    `/api/reaigen/web-creation/tours/${tourId}/assets/`,
+    {
+      method: "POST",
+      body: JSON.stringify({ filename: file.name, file_size: file.size }),
+    },
+  ) as WebTourUploadInit;
+
+  try {
+    let confirmBody: Record<string, unknown> = {};
+    if (initialized.upload_mode === "single" && initialized.upload_url) {
+      await putFileWithRetry(
+        initialized.upload_url,
+        file,
+        initialized.required_headers ?? { "Content-Type": initialized.content_type },
+        onProgress,
+      );
+    } else if (initialized.multipart) {
+      const completedParts: Array<{ part_number: number; etag: string }> = [];
+      const { part_size: partSize, parts, upload_id: uploadId } = initialized.multipart;
+      let uploadedBytes = 0;
+      for (const part of parts) {
+        const start = (part.part_number - 1) * partSize;
+        const end = Math.min(file.size, start + partSize);
+        const blob = file.slice(start, end);
+        const etag = await putFileWithRetry(
+          part.url,
+          blob,
+          {},
+          (partFraction) => onProgress?.(
+            Math.min(1, (uploadedBytes + blob.size * partFraction) / file.size),
+          ),
+        );
+        if (!etag) throw new Error("Storage did not return an ETag for an uploaded part.");
+        completedParts.push({ part_number: part.part_number, etag });
+        uploadedBytes += blob.size;
+      }
+      confirmBody = { upload_id: uploadId, parts: completedParts };
+    } else {
+      throw new Error("The upload session is incomplete.");
+    }
+
+    const workspace = await request(
+      `/api/reaigen/web-creation/tours/${tourId}/assets/${initialized.splat_id}/confirm/`,
+      {
+        method: "POST",
+        body: JSON.stringify(confirmBody),
+      },
+    ) as WebTourWorkspace;
+    return withWebTourSogDelivery(workspace);
+  } catch (error) {
+    void request(
+      `/api/reaigen/web-creation/tours/${tourId}/assets/${initialized.splat_id}/abort/`,
+      { method: "POST", body: "{}" },
+    ).catch(() => undefined);
+    throw error;
+  }
+}
+
+export async function replaceWebTourAsset(
+  tourId: number,
+  splatId: number,
+  file: File,
+  counts: { originalCount: number; remainingCount: number },
+  onProgress?: (fraction: number) => void,
+): Promise<WebTourWorkspace> {
+  const initialized = await request(
+    `/api/reaigen/web-creation/tours/${tourId}/assets/${splatId}/revision/`,
+    {
+      method: "POST",
+      body: JSON.stringify({
+        filename: file.name,
+        file_size: file.size,
+        original_count: counts.originalCount,
+        remaining_count: counts.remainingCount,
+      }),
+    },
+  ) as WebTourUploadInit;
+
+  try {
+    let confirmBody: Record<string, unknown> = {};
+    if (initialized.upload_mode === "single" && initialized.upload_url) {
+      await putFileWithRetry(
+        initialized.upload_url,
+        file,
+        initialized.required_headers ?? { "Content-Type": initialized.content_type },
+        onProgress,
+      );
+    } else if (initialized.multipart) {
+      const completedParts: Array<{ part_number: number; etag: string }> = [];
+      const { part_size: partSize, parts, upload_id: uploadId } = initialized.multipart;
+      let uploadedBytes = 0;
+      for (const part of parts) {
+        const start = (part.part_number - 1) * partSize;
+        const end = Math.min(file.size, start + partSize);
+        const blob = file.slice(start, end);
+        const etag = await putFileWithRetry(
+          part.url,
+          blob,
+          {},
+          (partFraction) => onProgress?.(
+            Math.min(1, (uploadedBytes + blob.size * partFraction) / file.size),
+          ),
+        );
+        if (!etag) throw new Error("Storage did not return an ETag for an uploaded part.");
+        completedParts.push({ part_number: part.part_number, etag });
+        uploadedBytes += blob.size;
+      }
+      confirmBody = { upload_id: uploadId, parts: completedParts };
+    } else {
+      throw new Error("The upload session is incomplete.");
+    }
+
+    const workspace = await request(
+      `/api/reaigen/web-creation/tours/${tourId}/assets/${initialized.splat_id}/confirm/`,
+      {
+        method: "POST",
+        body: JSON.stringify(confirmBody),
+      },
+    ) as WebTourWorkspace;
+    return withWebTourSogDelivery(workspace);
+  } catch (error) {
+    void request(
+      `/api/reaigen/web-creation/tours/${tourId}/assets/${initialized.splat_id}/abort/`,
+      { method: "POST", body: "{}" },
+    ).catch(() => undefined);
+    throw error;
+  }
+}
+
+export async function getWebTourAssetStatus(
+  tourId: number,
+  splatId: number,
+): Promise<WebTourWorkspaceNode["asset"]> {
+  const asset = await freshRequest(
+    `/api/reaigen/web-creation/tours/${tourId}/assets/${splatId}/status/`,
+  ) as WebTourWorkspaceNode["asset"];
+  return asset.format === "sog"
+    ? {
+        ...asset,
+        url: webTourSogDeliveryUrl(tourId, splatId, asset.fingerprint),
+      }
+    : asset;
+}
+
+/** Bypass the short detail cache after an editor or media mutation. */
+export async function refreshDraft(draftId: number): Promise<DraftDetailItem> {
+  return freshRequest(`/api/reaigen/drafts/${draftId}/`);
+}
+
+interface DraftUploadPage {
+  count?: number;
+  next?: string | null;
+  previous?: string | null;
+  results?: DraftUpload[];
+}
+
+export async function listDraftUploads(
+  draftId: number,
+  options: { includeDeleted?: boolean; fresh?: boolean } = {},
+): Promise<DraftUpload[]> {
+  const query = new URLSearchParams({
+    draft_post: String(draftId),
+    page_size: "500",
+    ordering: "sort_order,uploaded_at",
+  });
+  if (options.includeDeleted) query.set("include_deleted", "true");
+  const path = `/api/reaigen/uploads/?${query.toString()}`;
+  const payload = options.fresh ? await freshRequest(path) : await request(path);
+  return (payload as DraftUploadPage)?.results ?? (Array.isArray(payload) ? payload : []);
+}
+
+export async function updateDraftUpload(
+  uploadId: number,
+  data: Partial<Pick<DraftUpload, "sort_order" | "role" | "asset_type">>,
+): Promise<DraftUpload> {
+  return request(`/api/reaigen/uploads/${uploadId}/`, {
+    method: "PATCH",
+    body: JSON.stringify(data),
+  });
+}
+
+/** Persist the gallery order using the same 0-based sort_order contract as iOS. */
+export async function reorderDraftUploads(uploadIds: number[]): Promise<DraftUpload[]> {
+  return Promise.all(uploadIds.map((uploadId, sortOrder) => updateDraftUpload(uploadId, { sort_order: sortOrder })));
+}
+
+export interface DraftGalleryUpdate {
+  logical_asset_id: string;
+  sort_order?: number;
+  visible?: boolean;
+}
+
+export interface DraftGalleryUpdateResult {
+  draft_id: number;
+  items: Array<{
+    logical_asset_id: string;
+    sort_order: number;
+    visible: boolean;
+    current_upload_id: number | null;
+  }>;
+}
+
+/**
+ * Persist presentation state for logical media assets. The backend applies
+ * every change to all physical versions so version promotion cannot undo it.
+ */
+export async function updateDraftGallery(
+  draftId: number,
+  items: DraftGalleryUpdate[],
+): Promise<DraftGalleryUpdateResult> {
+  return request("/api/reaigen/uploads/gallery/", {
+    method: "PATCH",
+    body: JSON.stringify({ draft_post: draftId, items }),
+  });
+}
+
+interface AssetTypeLookup {
+  id: number;
+  code: string;
+  name: string;
+}
+
+async function getAssetTypeByCode(code: string): Promise<AssetTypeLookup> {
+  return request(`/api/reaigen/lookups/asset-types/by_code/?code=${encodeURIComponent(code)}`);
+}
+
+interface DraftMediaPresignResponse {
+  upload_mode: "single" | "multipart";
+  upload_key: string;
+  presigned_url?: string;
+}
+
+interface DraftPhotoUploadSession {
+  assetType: AssetTypeLookup;
+  presign: DraftMediaPresignResponse & { presigned_url: string };
+  contentType: string;
+  sortOrder: number;
+  putComplete: boolean;
+  createdAt: number;
+}
+
+export interface DraftPhotoUploadOptions {
+  /** Add the upload to an existing image history instead of creating a new gallery item. */
+  logicalAssetId?: string;
+  /** Existing active version replaced by this upload. Must belong to logicalAssetId. */
+  supersedesId?: number;
+}
+
+const draftPhotoUploadSessions = new Map<string, DraftPhotoUploadSession>();
+
+/**
+ * Upload one owner-selected photo through Django's production direct-upload flow.
+ * The caller intentionally owns retry UI: creating a new presign on an opaque
+ * network timeout could duplicate the file, while confirm itself is idempotent.
+ */
+export async function uploadDraftPhoto(
+  draftId: number,
+  file: File,
+  sortOrder: number,
+  options: DraftPhotoUploadOptions = {},
+): Promise<DraftUpload> {
+  const extension = file.name.split(".").pop()?.toLowerCase() ?? "";
+  const inferredTypes: Record<string, string> = {
+    jpg: "image/jpeg",
+    jpeg: "image/jpeg",
+    png: "image/png",
+    webp: "image/webp",
+    heic: "image/heic",
+    heif: "image/heif",
+    tif: "image/tiff",
+    tiff: "image/tiff",
+    bmp: "image/bmp",
+  };
+  const contentType = file.type || inferredTypes[extension] || "application/octet-stream";
+  const sessionKey = [
+    draftId,
+    options.logicalAssetId ?? "new",
+    options.supersedesId ?? "none",
+    file.name,
+    file.size,
+    file.lastModified,
+  ].join(":");
+  let uploadSession = draftPhotoUploadSessions.get(sessionKey);
+  if (uploadSession && Date.now() - uploadSession.createdAt > 5 * 60 * 60 * 1000) {
+    draftPhotoUploadSessions.delete(sessionKey);
+    uploadSession = undefined;
+  }
+
+  if (!uploadSession) {
+    const [assetType, presign] = await Promise.all([
+      getAssetTypeByCode("RAW_IMAGE"),
+      request("/api/reaigen/uploads/presign/", {
+        method: "POST",
+        body: JSON.stringify({
+          draft_post: draftId,
+          filename: file.name,
+          content_type: contentType,
+          file_size: file.size,
+          ...(options.logicalAssetId ? { logical_asset_id: options.logicalAssetId } : {}),
+        }),
+      }) as Promise<DraftMediaPresignResponse>,
+    ]);
+
+    if (presign.upload_mode !== "single" || !presign.presigned_url) {
+      throw new Error("This photo is too large for the browser uploader.");
+    }
+    uploadSession = {
+      assetType,
+      presign: { ...presign, presigned_url: presign.presigned_url },
+      contentType,
+      sortOrder,
+      putComplete: false,
+      createdAt: Date.now(),
+    };
+    draftPhotoUploadSessions.set(sessionKey, uploadSession);
+  }
+
+  if (!uploadSession.putComplete) {
+    const storageResponse = await fetch(uploadSession.presign.presigned_url, {
+      method: "PUT",
+      headers: { "Content-Type": uploadSession.contentType },
+      body: file,
+      credentials: "omit",
+    });
+    if (!storageResponse.ok) {
+      throw new ApiError(storageResponse.status, await storageResponse.text());
+    }
+    uploadSession.putComplete = true;
+  }
+
+  const confirmed = await request("/api/reaigen/uploads/confirm/", {
+    method: "POST",
+    body: JSON.stringify({
+      upload_key: uploadSession.presign.upload_key,
+      draft_post: draftId,
+      asset_type: uploadSession.assetType.id,
+      file_name: file.name,
+      file_size: file.size,
+      content_type: uploadSession.contentType,
+      sort_order: uploadSession.sortOrder,
+      role: "photo",
+      ...(options.logicalAssetId ? { logical_asset_id: options.logicalAssetId } : {}),
+      ...(options.supersedesId ? { supersedes: options.supersedesId } : {}),
+    }),
+  });
+  draftPhotoUploadSessions.delete(sessionKey);
+  cache.delete(`/api/reaigen/drafts/${draftId}/`);
+  inFlight.delete(`/api/reaigen/drafts/${draftId}/`);
+  return confirmed as DraftUpload;
 }
 
 export type DraftUpdatePayload = Partial<{
@@ -700,7 +1998,9 @@ export type DraftUpdatePayload = Partial<{
   price: string | number | null;
   currency: string;
   area: string | number | null;
+  area_unit: number | null;
   lot_size: string | number | null;
+  lot_size_unit: number | null;
   year_built: number | null;
   bedrooms: number | null;
   bathrooms: number | null;
@@ -730,18 +2030,228 @@ export interface ReaiAgentConsent {
     conversation_storage: boolean | string;
     model_hosting: string;
     media_processing: string;
+    viewer_controls?: string;
+    controls?: {
+      agent: string;
+      privacy: string;
+    };
   };
+}
+
+export interface ReaiAgentDraftResult {
+  id: number;
+  is_complete: boolean;
+  updated_at: string | null;
+  semantic_summary?: string;
+  creation_data: {
+    title?: string | null;
+    description?: string | null;
+    price?: string | number | null;
+    currency?: string | number | null;
+    area?: string | number | null;
+    area_unit?: string | number | null;
+    [key: string]: unknown;
+  };
+}
+
+/** Universal, bounded cards rendered for every Agent user. */
+export type ReaiAgentBasicUiBlock =
+  | {
+      kind: "summary";
+      title: string;
+      description?: string;
+      items: Array<{
+        label: string;
+        value: string;
+        hint?: string;
+        tone?: "neutral" | "success" | "warning";
+      }>;
+    }
+  | {
+      kind: "actions";
+      title?: string;
+      actions: Array<{
+        label: string;
+        prompt: string;
+        description?: string;
+      }>;
+    }
+  | {
+      kind: "progress";
+      title: string;
+      label: string;
+      value?: number;
+      detail?: string;
+      tone?: "neutral" | "success" | "warning";
+    };
+
+/** Backwards-compatible name for the original BasicUI response protocol. */
+export type ReaiAgentUiBlock = ReaiAgentBasicUiBlock;
+
+export type ReaiAgentTinyUiBlock =
+  | ReaiAgentBasicUiBlock
+  | {
+      kind: "chart";
+      chart: "bar";
+      title: string;
+      description?: string;
+      unit?: string;
+      items: Array<{
+        label: string;
+        value: number;
+        display_value?: string;
+        tone?: "neutral" | "success" | "warning";
+      }>;
+    }
+  | {
+      kind: "form";
+      title: string;
+      description?: string;
+      fields: Array<{
+        key: string;
+        label: string;
+        type: "number" | "text" | "select";
+        required?: boolean;
+        unit?: string;
+        placeholder?: string;
+        value?: string | number;
+        min?: number;
+        max?: number;
+        step?: number;
+        options?: Array<{ value: string; label: string }>;
+      }>;
+      submit: { label: string; prompt_template: string };
+    }
+  | {
+      kind: "comparison";
+      title: string;
+      description?: string;
+      columns: string[];
+      rows: Array<{
+        label: string;
+        values: string[];
+        tone?: "neutral" | "success" | "warning";
+      }>;
+    }
+  | {
+      kind: "scorecard";
+      title: string;
+      description?: string;
+      source?: string;
+      metrics: Array<{
+        label: string;
+        value: string;
+        score?: number;
+        hint?: string;
+        tone?: "neutral" | "success" | "warning";
+      }>;
+    }
+  | {
+      kind: "map";
+      title: string;
+      description?: string;
+      origin_label: string;
+      /** GeoJSON coordinate order: [longitude, latitude]. */
+      origin: [number, number];
+      /** A location-only map must disclose whether its point is saved or area-level. */
+      precision?: "saved_point" | "approximate_area";
+      places: Array<{
+        label: string;
+        category: string;
+        coordinate: [number, number];
+        distance_m: number;
+      }>;
+      attribution?: string;
+    }
+  | {
+      kind: "route";
+      title: string;
+      mode: "walk" | "bicycle" | "drive" | "transit";
+      origin_label: string;
+      destination_label: string;
+      distance_m: number;
+      /** Omitted only for an explicitly labelled straight-line preview. */
+      duration_s?: number;
+      preview_kind?: "road_route" | "straight_line";
+      provider: string;
+      attribution: string;
+      traffic_delay_s?: number;
+      traffic_status?: "none" | "light" | "moderate" | "heavy" | "unknown";
+      warning?: string;
+      /** GeoJSON coordinate order: [longitude, latitude]. */
+      path: Array<[number, number]>;
+    }
+  | {
+      kind: "calculator";
+      calculator: "property_finance";
+      title: string;
+      description?: string;
+      currency: string;
+      values: Partial<{
+        purchase_price: number;
+        area_m2: number;
+        monthly_rent: number;
+        annual_operating_costs: number;
+        down_payment: number;
+        annual_interest_rate: number;
+        term_years: number;
+      }>;
+    };
+
+export interface ReaiAgentTinyUi {
+  schema: "com.reaigen.agent.tinyui";
+  version: 1;
+  blocks: ReaiAgentTinyUiBlock[];
+}
+
+/** Reproducible identity for one Agent response or archived turn. */
+export interface ReaiAgentVersionManifest {
+  manifest_schema_version: number;
+  version: string | null;
+  version_key: string;
+  scheme: string | null;
+  released_at: string | null;
+  build_sha: string | null;
+  build_tracked: boolean;
+  prompt_version: string | null;
+  response_schema_version: string | null;
+  tool_policy_version: string | null;
+  tinyui_schema: string | null;
+  tinyui_version: number | null;
+  runtime_settings_revision: number;
+  release_bundle: {
+    id: number | null;
+    content_hash: string | null;
+  } | null;
+  tracked: boolean;
+  model_id?: string | null;
 }
 
 export interface ReaiAgentResponse {
   reply: string;
-  execution_mode?: "deterministic" | "fast" | "standard" | "reasoning";
+  /** Exact Agent behavior/build identity. Optional only for pre-versioned tab history. */
+  agent_version?: ReaiAgentVersionManifest;
+  execution_mode?: "deterministic" | "fast" | "standard" | "reasoning" | "safe_fallback";
   reasoning_effort?: "none" | "minimal" | "low" | "high";
   latency_ms?: number;
+  settings_revision?: number;
+  release_bundle?: {
+    id: number;
+    name: string;
+    execution_lane: "fast" | "standard" | "reasoning";
+    status: "active" | "canary_5" | "canary_25";
+    content_hash: string;
+    generation_profile: string;
+    generation_profile_version: number;
+  } | null;
   proposed_changes: Record<string, unknown>;
   suggested_actions: string[];
+  /** Universal BasicUI blocks. */
+  ui_blocks?: ReaiAgentUiBlock[];
+  /** Experimental extra-user native mini-apps; never arbitrary HTML or script. */
+  tinyui?: ReaiAgentTinyUi;
   proposal_token: string | null;
-  action_code?: "revoke_all_shares" | "manage_shares" | "share_inventory" | "share_status" | "settings_navigation" | "settings_update" | "select_share_fields" | "create_draft_share" | "grade_draft_images" | "retouch_draft_image" | "cleanplate_draft_images" | "generative_hdr_draft_image" | "organize_draft_images" | "generate_draft_video";
+  action_code?: "revoke_all_shares" | "manage_shares" | "share_inventory" | "share_status" | "current_creation_overview" | "open_creation" | "create_creation" | "clarify_missing_price" | "set_missing_prices" | "open_tour" | "set_tour_cover" | "settings_navigation" | "settings_update" | "select_share_fields" | "create_draft_share" | "translate_description" | "grade_draft_images" | "retouch_draft_image" | "cleanplate_draft_images" | "generative_hdr_draft_image" | "organize_draft_images" | "generate_draft_video" | "viewer_control";
   action_token?: string | null;
   action_count?: number;
   share_action?: "list" | "pause" | "resume" | "revoke";
@@ -765,35 +2275,29 @@ export interface ReaiAgentResponse {
   settings_changes?: {
     preferred_language?: "en" | "sk" | "cs" | "de";
   };
+  translation_action?: {
+    field: "description";
+    source_language: "auto";
+    target_language: string;
+    status: "awaiting_confirmation" | "pending" | "ready" | "unavailable";
+    cached: boolean;
+    translated_text?: string | null;
+  };
   media_action?: {
-    mode: "grade" | "cleanplate" | "generative_hdr" | "organize" | "video";
+    mode: "grade" | "retouch" | "cleanplate" | "generative_hdr" | "organize" | "video";
     scope: "selected" | "room" | "draft";
     upload_ids: number[];
-    operations: Record<string, number | boolean>;
+    operations: Record<string, string | number | boolean>;
     originals_preserved: true;
     requires_version_review: boolean;
     cloud_image_processor: boolean;
     authenticity_boundary?: boolean;
   };
-  operation?: "none" | "list" | "compare" | "bulk_edit";
+  operation?: "none" | "list" | "compare" | "bulk_edit" | "client_action";
   search_query?: string | null;
   matched_creation_count?: number;
   selected_creation_ids?: number[];
-  draft_results?: Array<{
-    id: number;
-    is_complete: boolean;
-    updated_at: string | null;
-    semantic_summary?: string;
-    creation_data: {
-      title?: string;
-      description?: string;
-      price?: string | number;
-      currency?: string;
-      area?: string | number;
-      area_unit?: string;
-      [key: string]: unknown;
-    };
-  }>;
+  draft_results?: ReaiAgentDraftResult[];
   improvement_conversation_id?: string | null;
   knowledge_sources?: Array<{
     title: string;
@@ -809,15 +2313,25 @@ export interface ReaiAgentResponse {
     provider_data_collection: string;
     model: string;
     prompt_version: string;
+    context_boundary?: string;
+    raw_geometry_sent_to_model?: boolean;
+    raw_media_sent_to_model?: boolean;
   };
+  client_action?: import("../reai-viewer-actions").ReaiViewerAction | null;
 }
 
 export type ReaiToolCode =
+  | "agent_assist"
   | "creation_search"
   | "creation_compare"
   | "creation_edit"
   | "bulk_edit"
   | "floorplan"
+  | "floorplan_edit"
+  | "floorplan_navigation"
+  | "floorplan_measurement"
+  | "virtual_tour_navigation"
+  | "translation"
   | "image"
   | "cleanplate"
   | "retouch"
@@ -826,13 +2340,45 @@ export type ReaiToolCode =
   | "video_generation"
   | "sharing"
   | "settings_navigation"
-  | "settings_localization";
+  | "settings_localization"
+  | "location_insights"
+  | "financial_analysis"
+  | "tinyui";
+
+export interface ReaiToolStatus {
+  /** True when the active subscription tier includes the tool. */
+  entitled: boolean;
+  /** The account's own on/off preference, independent of the tier. */
+  user_policy: boolean;
+  /** entitled && user_policy — what the backend actually enforces. */
+  allowed: boolean;
+  blocker: "reaigen_access" | "tier_feature" | "user_policy" | null;
+}
 
 export interface ReaiToolPermissions {
   allow_all_tools: boolean;
+  /** Effective decision per tool; a tier-blocked tool reads false here. */
   tools: Record<ReaiToolCode, boolean>;
+  /** The stored preference, which survives a tier that blocks the tool. */
   overrides: Record<ReaiToolCode, boolean>;
+  entitled_tools: Record<ReaiToolCode, boolean>;
+  tool_status: Record<ReaiToolCode, ReaiToolStatus>;
   available_tools: ReaiToolCode[];
+  tool_catalog: Record<ReaiToolCode, {
+    code: ReaiToolCode;
+    group: string;
+    label: string;
+    settings_section: "agent";
+    privacy_section: "privacy";
+    data_boundary: string;
+    persistent_change: boolean;
+    confirmation_required: boolean;
+  }>;
+  settings_surfaces: {
+    agent: { path: string; controls: ReaiToolCode[] };
+    privacy: { path: string; controls: string[] };
+  };
+  writable: boolean;
   confirmation_required_for_writes: true;
   updated_at: string;
 }
@@ -910,11 +2456,10 @@ export async function askReaiAgent(
   message: string,
   conversation: Array<{ role: "user" | "assistant"; content: string }> = [],
   improvementConversationId: string | null = null,
-  language?: string,
 ): Promise<ReaiAgentResponse> {
   return request(`/api/reaigen/reai-agent/drafts/${draftId}/assist/`, {
     method: "POST",
-    body: JSON.stringify({ message, conversation: conversation.slice(-4), improvement_conversation_id: improvementConversationId, language }),
+    body: JSON.stringify({ message, conversation: conversation.slice(-4), improvement_conversation_id: improvementConversationId }),
   });
 }
 
@@ -934,11 +2479,13 @@ export async function askReaiWorkspace(
   currentDraftId?: number,
   conversation: Array<{ role: "user" | "assistant"; content: string }> = [],
   improvementConversationId: string | null = null,
-  language?: string,
   shareFieldNames?: string[],
   pendingActionCode?: ReaiAgentResponse["action_code"],
-  workspaceContext?: "creator" | "draft" | "settings",
+  workspaceContext?: "creator" | "draft" | "settings" | "floorplan" | "virtual_tour",
   currentUploadId?: number,
+  /** The Agent window's working pool: what the user dragged in. */
+  attachedItems?: Array<{ kind: "image"; upload_id: number } | { kind: "field"; path: string }>,
+  currentTourId?: number,
 ): Promise<ReaiAgentResponse> {
   return request("/api/reaigen/reai-agent/workspace/assist/", {
     method: "POST",
@@ -947,11 +2494,12 @@ export async function askReaiWorkspace(
       current_draft_id: currentDraftId,
       conversation: conversation.slice(-4),
       improvement_conversation_id: improvementConversationId,
-      language,
       share_field_names: shareFieldNames,
       pending_action_code: pendingActionCode,
       workspace_context: workspaceContext,
       current_upload_id: currentUploadId,
+      attached_items: attachedItems?.length ? attachedItems : undefined,
+      current_tour_id: currentTourId,
     }),
   });
 }
@@ -966,6 +2514,50 @@ export async function applyReaiWorkspaceProposal(
     body: JSON.stringify({
       proposal_token: proposalToken,
       current_draft_id: currentDraftId,
+      confirmed: true,
+      improvement_conversation_id: improvementConversationId,
+    }),
+  });
+}
+
+export async function applyReaiTourCoverAction(
+  actionToken: string,
+  improvementConversationId: string | null = null,
+): Promise<{
+  action: "set_tour_cover";
+  draft_id: number;
+  tour_id: number;
+  client_action: import("../reai-viewer-actions").ReaiViewerAction;
+  execution_mode: "deterministic";
+}> {
+  return request("/api/reaigen/reai-agent/workspace/tour-cover-actions/apply/", {
+    method: "POST",
+    body: JSON.stringify({
+      action_token: actionToken,
+      confirmed: true,
+      improvement_conversation_id: improvementConversationId,
+    }),
+  });
+}
+
+export async function applyReaiTranslationAction(
+  actionToken: string,
+  improvementConversationId: string | null = null,
+): Promise<{
+  action: "translate_description";
+  draft_id: number;
+  field: "description";
+  source_language: "auto";
+  target_language: string;
+  status: "pending" | "ready";
+  cached: boolean;
+  translated_text: string | null;
+  execution_mode: "translation_service";
+}> {
+  return request("/api/reaigen/reai-agent/workspace/translations/apply/", {
+    method: "POST",
+    body: JSON.stringify({
+      action_token: actionToken,
       confirmed: true,
       improvement_conversation_id: improvementConversationId,
     }),
@@ -1015,7 +2607,7 @@ export async function applyReaiMediaAction(
   actionToken: string,
   improvementConversationId: string | null = null,
 ): Promise<{
-  action: "grade_draft_images" | "cleanplate_draft_images" | "generative_hdr_draft_image" | "organize_draft_images" | "generate_draft_video";
+  action: "grade_draft_images" | "retouch_draft_image" | "cleanplate_draft_images" | "generative_hdr_draft_image" | "organize_draft_images" | "generate_draft_video";
   draft_id: number;
   selected_upload_ids: number[];
   service_ids?: number[];
@@ -1024,7 +2616,8 @@ export async function applyReaiMediaAction(
   status?: string;
   service_id?: number;
   requires_version_review: boolean;
-  execution_mode: "deterministic" | "cloud_image_edit" | "runpod_async";
+  /** Backend-reported media execution mode; provider details stay outside the frontend contract. */
+  execution_mode: string;
 }> {
   const result = await request("/api/reaigen/reai-agent/workspace/media-actions/apply/", {
     method: "POST",
@@ -1039,7 +2632,7 @@ export async function applyReaiMediaAction(
   return result;
 }
 
-export interface AgentMediaVersion {
+export interface MediaVersion {
   id: number;
   logical_asset_id: string;
   version: number;
@@ -1057,10 +2650,15 @@ export interface AgentMediaVersion {
   authenticity_boundary: boolean;
 }
 
-export interface AgentMediaVersionGroup {
+export interface MediaVersionGroup {
   logical_asset_id: string;
-  versions: AgentMediaVersion[];
+  versions: MediaVersion[];
 }
+
+// Compatibility names for the Agent conversation UI. Product media controls
+// use the neutral types and owner-scoped regular-tool endpoints below.
+export type AgentMediaVersion = MediaVersion;
+export type AgentMediaVersionGroup = MediaVersionGroup;
 
 export async function getAgentMediaVersions(
   draftId: number,
@@ -1075,6 +2673,52 @@ export async function manageAgentMediaVersion(
 ): Promise<{ action: string; draft_id: number; version: AgentMediaVersion; physical_delete: false }> {
   const result = await request(
     `/api/reaigen/reai-agent/workspace/drafts/${draftId}/media-versions/${uploadId}/action/`,
+    { method: "POST", body: JSON.stringify({ action, confirmed: true }) },
+  );
+  cache.delete(`/api/reaigen/drafts/${draftId}/`);
+  inFlight.delete(`/api/reaigen/drafts/${draftId}/`);
+  return result;
+}
+
+export interface DraftServiceStatus {
+  id: number;
+  service_name: string;
+  status: string;
+  error_message: string | null;
+  output_data: Record<string, unknown> | null;
+}
+
+/**
+ * Read one queued processing job. Image editing answers 202 with a `service_id`
+ * and produces its version asynchronously; without this the app could only watch
+ * the version list and guess — a failed job looked exactly like a slow one.
+ */
+export async function getDraftService(serviceId: number): Promise<DraftServiceStatus> {
+  const path = `/api/reaigen/draft-services/${serviceId}/`;
+  cache.delete(path);
+  inFlight.delete(path);
+  return request(path);
+}
+
+export async function getMediaVersions(
+  draftId: number,
+  options: { fresh?: boolean } = {},
+): Promise<{ draft_id: number; groups: MediaVersionGroup[]; physical_delete_available: false }> {
+  const path = `/api/reaigen/tools/drafts/${draftId}/media-versions/`;
+  if (options.fresh) {
+    cache.delete(path);
+    inFlight.delete(path);
+  }
+  return request(path);
+}
+
+export async function manageMediaVersion(
+  draftId: number,
+  uploadId: number,
+  action: "promote" | "hide" | "restore",
+): Promise<{ action: string; draft_id: number; version: MediaVersion; physical_delete: false }> {
+  const result = await request(
+    `/api/reaigen/tools/drafts/${draftId}/media-versions/${uploadId}/action/`,
     { method: "POST", body: JSON.stringify({ action, confirmed: true }) },
   );
   cache.delete(`/api/reaigen/drafts/${draftId}/`);
@@ -1098,11 +2742,368 @@ export async function restoreAgentCreationRevision(
   });
 }
 
-export async function saveReaiFeedback(conversationId: string, helpful: boolean): Promise<{ saved: boolean; feedback_id: number }> {
+export interface ReaiImprovementConversation {
+  id: string;
+  created_at: string;
+  updated_at: string;
+  expires_at: string;
+  messages: Array<{
+    role: "user" | "assistant" | "system";
+    content: string;
+    created_at: string;
+    agent_version: ReaiAgentVersionManifest;
+    execution_mode: string | null;
+    model_id: string | null;
+    prompt_version: string | null;
+    settings_revision: number;
+    latency_ms: number;
+  }>;
+  agent_versions: ReaiAgentVersionGroup[];
+  mixed_agent_versions: boolean;
+  actions: Array<{
+    tool: string;
+    action: string;
+    status: string;
+    before: Record<string, unknown>;
+    changes: Record<string, unknown>;
+    after: Record<string, unknown>;
+    agent_version: ReaiAgentVersionManifest | null;
+    created_at: string;
+  }>;
+  feedback: Array<{
+    helpful: boolean;
+    correction: string;
+    created_at: string;
+  }>;
+}
+
+export interface ReaiAgentVersionGroup {
+  version_key: string;
+  version: string | null;
+  tracked: boolean;
+  build_tracked: boolean;
+  assistant_turns: number;
+  build_shas: string[];
+  prompt_versions: string[];
+  response_schema_versions: string[];
+  tool_policy_versions: string[];
+  tinyui_versions: number[];
+  runtime_settings_revisions: number[];
+  models: string[];
+  first_seen_at: string;
+  last_seen_at: string;
+}
+
+export interface ReaiAgentVersionSummary extends ReaiAgentVersionGroup {
+  conversations: number;
+  helpful_feedback: number;
+  unhelpful_feedback: number;
+  mixed_version_feedback_unassigned: number;
+}
+
+export async function getReaiImprovementConversations(): Promise<{
+  conversations: ReaiImprovementConversation[];
+  version_summary: ReaiAgentVersionSummary[];
+  agent_version: ReaiAgentVersionManifest;
+}> {
+  return request("/api/reaigen/reai-agent/improvement-conversations/");
+}
+
+export async function getReaiAgentVersion(): Promise<{
+  agent_version: ReaiAgentVersionManifest;
+}> {
+  return request("/api/reaigen/reai-agent/version/");
+}
+
+export async function deleteReaiImprovementConversation(
+  conversationId: string,
+): Promise<{ deleted: true }> {
+  return request("/api/reaigen/reai-agent/improvement-conversations/", {
+    method: "DELETE",
+    body: JSON.stringify({ conversation_id: conversationId }),
+  });
+}
+
+export async function saveReaiFeedback(
+  conversationId: string,
+  helpful: boolean,
+  correction = "",
+): Promise<{ saved: boolean; feedback_id: number }> {
   return request("/api/reaigen/reai-agent/improvement-conversations/", {
     method: "POST",
-    body: JSON.stringify({ conversation_id: conversationId, helpful }),
+    body: JSON.stringify({ conversation_id: conversationId, helpful, correction }),
   });
+}
+
+export interface ReaiImageInsight {
+  analysis_mode?: string;
+  category?: string;
+  subcategory?: string;
+  confidence?: number;
+  aesthetic_score?: number;
+  quality_score?: number;
+  technical_quality_score?: number;
+  marketing_score?: number;
+  duplicate_flag?: boolean;
+  recommended_gallery_position?: number;
+  keep_or_drop?: string;
+  section?: string;
+  processor: string;
+}
+
+export interface ReaiImageEditOperations {
+  auto_enhance?: boolean;
+  brightness?: number;
+  contrast?: number;
+  saturation?: number;
+  sharpness?: number;
+  exposure_ev?: number;
+  auto_white_balance?: boolean;
+  normalize_color_profile?: boolean;
+  temperature?: number;
+  tint?: number;
+  hue_degrees?: number;
+  rotation?: 0 | 90 | 180 | 270;
+  crop_aspect?: "original" | "1:1" | "4:3" | "3:2" | "16:9";
+  crop_x?: number;
+  crop_y?: number;
+}
+
+export interface ReaiImageSelection {
+  scope: "selected" | "room" | "draft";
+  upload_ids?: number[];
+  room_id?: string;
+  room_label?: string;
+}
+
+export type ReaiRetouchTarget = Partial<Record<
+  | "target_reflection"
+  | "target_display"
+  | "region_top_right"
+  | "region_top_left"
+  | "region_bottom_right"
+  | "region_bottom_left",
+  true
+>>;
+
+export interface ReaiCloudImageResult {
+  upload_id: number;
+  generated_upload_id?: number;
+  cleaned_upload_id?: number | null;
+  mode?: string;
+  target?: ReaiRetouchTarget;
+  status: "completed" | "failed";
+  detail?: string;
+}
+
+function invalidateReaiDraft(draftId: number) {
+  cache.delete(`/api/reaigen/drafts/${draftId}/`);
+  inFlight.delete(`/api/reaigen/drafts/${draftId}/`);
+}
+
+export async function analyzeDraftImage(
+  draftId: number,
+  uploadId: number,
+  improvementConversationId: string | null = null,
+): Promise<{
+  upload_id: number;
+  insights: ReaiImageInsight;
+  execution_mode: "deterministic";
+  raw_image_sent_to_language_model: false;
+}> {
+  const result = await request(
+    `/api/reaigen/tools/drafts/${draftId}/images/${uploadId}/insights/`,
+    {
+      method: "POST",
+      body: JSON.stringify({
+        confirmed: true,
+        improvement_conversation_id: improvementConversationId,
+      }),
+    },
+  );
+  invalidateReaiDraft(draftId);
+  return result;
+}
+
+export async function editDraftImage(
+  draftId: number,
+  uploadId: number,
+  operations: ReaiImageEditOperations,
+  improvementConversationId: string | null = null,
+): Promise<{
+  service_id: number;
+  status: "pending";
+  execution_mode: "deterministic";
+  requires_version_review: true;
+}> {
+  const result = await request(
+    `/api/reaigen/tools/drafts/${draftId}/images/${uploadId}/edit/`,
+    {
+      method: "POST",
+      body: JSON.stringify({
+        operations,
+        confirmed: true,
+        improvement_conversation_id: improvementConversationId,
+      }),
+    },
+  );
+  invalidateReaiDraft(draftId);
+  return result;
+}
+
+export async function editDraftImages(
+  draftId: number,
+  selection: ReaiImageSelection,
+  operations: ReaiImageEditOperations,
+  improvementConversationId: string | null = null,
+): Promise<{
+  action: "grade_draft_images";
+  draft_id: number;
+  selected_upload_ids: number[];
+  service_ids: number[];
+  status: "pending";
+  execution_mode: "deterministic";
+  raw_image_sent_to_language_model: false;
+  requires_version_review: true;
+}> {
+  const result = await request(`/api/reaigen/tools/drafts/${draftId}/images/edit-batch/`, {
+    method: "POST",
+    body: JSON.stringify({
+      ...selection,
+      operations,
+      confirmed: true,
+      improvement_conversation_id: improvementConversationId,
+    }),
+  });
+  invalidateReaiDraft(draftId);
+  return result;
+}
+
+export async function retouchDraftImage(
+  draftId: number,
+  uploadId: number,
+  target: ReaiRetouchTarget,
+  improvementConversationId: string | null = null,
+): Promise<{
+  action: "retouch_draft_image";
+  draft_id: number;
+  selected_upload_ids: number[];
+  result: ReaiCloudImageResult;
+  execution_mode: "bounded_vfx_retouch";
+  raw_user_instruction_forwarded: false;
+  requires_version_review: true;
+}> {
+  const result = await request(`/api/reaigen/tools/drafts/${draftId}/images/retouch/`, {
+    method: "POST",
+    body: JSON.stringify({
+      scope: "selected",
+      upload_ids: [uploadId],
+      target,
+      confirmed: true,
+      improvement_conversation_id: improvementConversationId,
+    }),
+  });
+  invalidateReaiDraft(draftId);
+  return result;
+}
+
+export async function cleanplateDraftImages(
+  draftId: number,
+  selection: ReaiImageSelection,
+  improvementConversationId: string | null = null,
+): Promise<{
+  action: "cleanplate_draft_images";
+  draft_id: number;
+  selected_upload_ids: number[];
+  completed_count: number;
+  failed_count: number;
+  results: ReaiCloudImageResult[];
+  execution_mode: "cloud_image_edit";
+  raw_image_sent_to_language_model: false;
+  requires_version_review: true;
+}> {
+  const result = await request(`/api/reaigen/tools/drafts/${draftId}/images/cleanplate/`, {
+    method: "POST",
+    body: JSON.stringify({
+      ...selection,
+      confirmed: true,
+      improvement_conversation_id: improvementConversationId,
+    }),
+  });
+  invalidateReaiDraft(draftId);
+  return result;
+}
+
+export async function generateDraftImageHdr(
+  draftId: number,
+  uploadId: number,
+  improvementConversationId: string | null = null,
+): Promise<{
+  action: "generative_hdr_draft_image";
+  draft_id: number;
+  selected_upload_ids: number[];
+  result: ReaiCloudImageResult;
+  execution_mode: "cloud_image_edit";
+  requires_version_review: true;
+}> {
+  const result = await request(`/api/reaigen/tools/drafts/${draftId}/images/hdr/`, {
+    method: "POST",
+    body: JSON.stringify({
+      scope: "selected",
+      upload_ids: [uploadId],
+      confirmed: true,
+      improvement_conversation_id: improvementConversationId,
+    }),
+  });
+  invalidateReaiDraft(draftId);
+  return result;
+}
+
+export async function organizeDraftImages(
+  draftId: number,
+  improvementConversationId: string | null = null,
+): Promise<{
+  action: "organize_draft_images";
+  draft_id: number;
+  selected_upload_ids: number[];
+  status: "completed";
+  execution_mode: "deterministic";
+}> {
+  const result = await request(`/api/reaigen/tools/drafts/${draftId}/images/organize/`, {
+    method: "POST",
+    body: JSON.stringify({
+      confirmed: true,
+      improvement_conversation_id: improvementConversationId,
+    }),
+  });
+  invalidateReaiDraft(draftId);
+  return result;
+}
+
+export async function generateDraftVideoFromImage(
+  draftId: number,
+  sourceUploadId: number,
+  motion: "slow_push" | "slow_pull_back" | "pan_left" | "pan_right" = "slow_push",
+  improvementConversationId: string | null = null,
+): Promise<{
+  action: "generate_draft_video";
+  draft_id: number;
+  source_upload_id: number;
+  service_id: number;
+  status: "pending";
+  execution_mode: "runpod_async";
+}> {
+  const result = await request(`/api/reaigen/tools/drafts/${draftId}/videos/generate/`, {
+    method: "POST",
+    body: JSON.stringify({
+      source_upload_id: sourceUploadId,
+      motion,
+      confirmed: true,
+      improvement_conversation_id: improvementConversationId,
+    }),
+  });
+  invalidateReaiDraft(draftId);
+  return result;
 }
 
 export interface FloorplanDetail {
@@ -1131,6 +3132,9 @@ export interface GeometryMesh {
   points: number[][];
   faces: number[][];
   hinge_xz?: number[];
+  /** Furniture meshes only: category / ML classification from the floorplan service. */
+  category?: string;
+  furniture_type?: string;
 }
 
 export interface GeometryLayer {
@@ -1157,6 +3161,7 @@ export interface FloorplanRenderingData {
       walls: GeometryLayer;
       doors: GeometryLayer;
       windows: GeometryLayer;
+      furniture?: GeometryLayer;
     };
   };
   rooms: FloorplanRoom[];
@@ -1167,6 +3172,34 @@ export interface FloorplanRenderingData {
 
 export async function getFloorplanRendering(floorplanId: number, signal?: AbortSignal): Promise<FloorplanRenderingData> {
   return abortableRequest(`/api/reaigen/floorplans/${floorplanId}/rendering/`, signal);
+}
+
+// ─── Draft data (floorplan editor persistence) ────────────────────────
+
+/** Upsert draft-data fields the way the iOS editor does: PATCH the existing
+ * record for a key, POST a new one otherwise. Returns the saved entries. */
+export async function saveDraftDataFields(
+  draftId: number,
+  fields: Record<string, string>,
+  existing: readonly DraftDataEntry[],
+): Promise<DraftDataEntry[]> {
+  const byKey = new Map(existing.map((e) => [e.data_key, e]));
+  const saved: DraftDataEntry[] = [];
+  for (const [key, value] of Object.entries(fields)) {
+    const prev = byKey.get(key);
+    const dataType = key.endsWith("_json") || key.endsWith("_camera") ? "json" : "text";
+    const entry: DraftDataEntry = prev
+      ? await request(`/api/reaigen/draft-data/${prev.id}/`, {
+          method: "PATCH",
+          body: JSON.stringify({ data_value: value }),
+        })
+      : await request(`/api/reaigen/draft-data/`, {
+          method: "POST",
+          body: JSON.stringify({ draft: draftId, data_key: key, data_value: value, data_type: dataType }),
+        });
+    saved.push(entry);
+  }
+  return saved;
 }
 
 export interface TranslateDescriptionResponse {
@@ -1191,7 +3224,8 @@ export async function listAllDrafts(): Promise<DraftListingItem[]> {
   const first = await listDrafts(1, pageSize);
   const all = [...(first.results ?? [])];
   if (!first.next) return all;
-  const totalPages = Math.ceil((first.count ?? all.length) / pageSize);
+  const effectivePageSize = Math.max(first.results?.length ?? 0, 1);
+  const totalPages = Math.ceil((first.count ?? all.length) / effectivePageSize);
   const remaining = await Promise.all(
     Array.from({ length: totalPages - 1 }, (_, i) => listDrafts(i + 2, pageSize))
   );
@@ -1204,7 +3238,10 @@ export async function listAllSplats(): Promise<SplatListItem[]> {
   const first = await listSplats(1, pageSize);
   const all = [...(first.results ?? [])];
   if (!first.next) return all;
-  const totalPages = Math.ceil((first.count ?? all.length) / pageSize);
+  // The backend caps splat pages at 100 even when a larger size is requested.
+  // Derive the remaining page count from what the server actually returned.
+  const effectivePageSize = Math.max(first.results?.length ?? 0, 1);
+  const totalPages = Math.ceil((first.count ?? all.length) / effectivePageSize);
   const remaining = await Promise.all(
     Array.from({ length: totalPages - 1 }, (_, i) => listSplats(i + 2, pageSize))
   );
@@ -1254,12 +3291,220 @@ export async function searchDrafts(query: string, signal?: AbortSignal): Promise
   return abortableRequest(`/api/reaigen/drafts/?page=1&page_size=50&search=${q}`, signal);
 }
 
-export async function getSplatViewer(splatId: number): Promise<SplatViewerPayload> {
-  return request(`/api/reaigen/splats/${splatId}/viewer/`);
+export async function getSplatViewer(
+  splatId: number,
+  options: { fresh?: boolean; tourId?: number } = {},
+): Promise<SplatViewerPayload> {
+  const query = new URLSearchParams({ targetProfile: "web" });
+  if (options.tourId != null) query.set("tourId", String(options.tourId));
+  const path = `/api/reaigen/splats/${splatId}/viewer/?${query.toString()}`;
+  if (options.fresh) {
+    cache.delete(path);
+    const data = await fetchGetData(path, { cache: "no-store" });
+    cache.set(path, { data, ts: Date.now() });
+    return data as SplatViewerPayload;
+  }
+  return request(path);
+}
+
+export async function getSplatPackage(splatId: number): Promise<SplatPackagePayload> {
+  return request(
+    `/api/reaigen/splats/${splatId}/package/?targetProfile=web`,
+  );
+}
+
+export async function getSplatScene(
+  splatId: number,
+  revision?: number,
+): Promise<SplatSceneResponse> {
+  const suffix = revision == null ? "" : `?revision=${encodeURIComponent(revision)}`;
+  return request(`/api/reaigen/splats/${splatId}/scene/${suffix}`);
+}
+
+export async function getSplatSceneDeliveries(
+  splatId: number,
+  targetProfile?: SceneDeliveryTargetProfile,
+): Promise<{
+  profiles: Array<{
+    id: SceneDeliveryTargetProfile;
+    label: string;
+    runtime: string;
+    packageKind: string;
+    portableUsdz: boolean;
+  }>;
+  deliveries: SceneDeliverySummary[];
+}> {
+  const suffix = targetProfile
+    ? `?targetProfile=${encodeURIComponent(targetProfile)}`
+    : "";
+  return request(`/api/reaigen/splats/${splatId}/scene/deliveries/${suffix}`);
+}
+
+export async function createSplatSceneDeliveries(
+  splatId: number,
+  data: {
+    sceneRevision?: number;
+    sceneRevisionId?: number;
+    sceneStageSha256?: string;
+    reconstructionVersion?: number;
+    reconstructionVersionId?: number;
+    targetProfiles: SceneDeliveryTargetProfile[];
+  },
+): Promise<{
+  promotionPolicy: "manual";
+  deliveries: SceneDeliverySummary[];
+}> {
+  return request(`/api/reaigen/splats/${splatId}/scene/deliveries/`, {
+    method: "POST",
+    body: JSON.stringify(data),
+  });
+}
+
+export async function resolveSplatSceneDelivery(
+  splatId: number,
+  deliveryId: number,
+): Promise<SceneDeliveryResolution> {
+  return request(
+    `/api/reaigen/splats/${splatId}/scene/deliveries/${deliveryId}/resolve/`,
+  );
+}
+
+export async function resolveCurrentSplatSceneDelivery(
+  splatId: number,
+  targetProfile: SceneDeliveryTargetProfile,
+): Promise<SceneDeliveryResolution & {
+  representations: SceneDeliveryResolution["asset"][];
+}> {
+  return request(
+    `/api/reaigen/splats/${splatId}/scene/deliveries/current/`
+    + `?targetProfile=${encodeURIComponent(targetProfile)}`,
+  );
+}
+
+export async function publishSplatSceneDelivery(
+  splatId: number,
+  deliveryId: number,
+): Promise<{
+  promotionPolicy: "explicit-target-publication";
+  archivedDeliveryIds: number[];
+  delivery: SceneDeliverySummary;
+}> {
+  return request(
+    `/api/reaigen/splats/${splatId}/scene/deliveries/${deliveryId}/publish/`,
+    { method: "POST" },
+  );
+}
+
+export async function getSplatRefinements(
+  splatId: number,
+): Promise<{
+  refinements: SceneRefinementSummary[];
+  sceneDeliveries: SceneDeliverySummary[];
+}> {
+  return request(`/api/reaigen/splats/${splatId}/refinements/`);
+}
+
+export async function requestSplatRefinement(
+  splatId: number,
+  data: {
+    baseSceneRevision?: number;
+    sceneStageSha256?: string;
+    baseReconstructionVersion?: number;
+    iterations?: number;
+    preset?: string;
+    downsample?: 1 | 2 | 4 | 8;
+    priority?: 0 | 1 | 2 | 3;
+    trainingEngine?: "gsplat" | "splatfiction" | "3dgut";
+    outputFormats?: Array<"ply" | "sog" | "splat">;
+    targetProfiles: SceneDeliveryTargetProfile[];
+    trainingOverrides?: Record<string, unknown>;
+  },
+): Promise<{
+  refinement: SceneRefinementSummary;
+  preservesApprovedScene: true;
+  promotionPolicy: "manual";
+}> {
+  return request(`/api/reaigen/splats/${splatId}/refinements/`, {
+    method: "POST",
+    body: JSON.stringify(data),
+  });
+}
+
+export async function downloadSplatSceneDeliveryBundle(
+  splatId: number,
+  deliveryId: number,
+): Promise<Blob> {
+  const response = await fetch(
+    `/api/reaigen/splats/${splatId}/scene/deliveries/${deliveryId}/usd/?bundle=1`,
+    {
+      credentials: "include",
+      cache: "no-store",
+    },
+  );
+  if (!response.ok) {
+    const body = await response.text();
+    if (response.status === 401) handleUnauthorized(response);
+    throw new ApiError(response.status, body);
+  }
+  return response.blob();
+}
+
+export async function getVirtualTourViewer(
+  tourId: number,
+  version?: number,
+): Promise<VirtualTourViewerPayload> {
+  const suffix = version == null ? "" : `?version=${encodeURIComponent(version)}`;
+  return request(`/api/reaigen/tours/${tourId}/viewer/${suffix}`);
 }
 
 export async function getSplatsByDraft(draftId: number): Promise<SplatsByDraftPayload> {
   return request(`/api/reaigen/splats/by-draft/${draftId}/?all=true`);
+}
+
+export async function getDraftTourAssets(draftId: number): Promise<DraftTourAssetsPayload> {
+  return freshRequest(`/api/reaigen/drafts/${draftId}/tours/`);
+}
+
+export async function updateDraftTourPublication(
+  draftId: number,
+  entries: DraftTourPublicationSelection[],
+  applyToActiveShares = true,
+): Promise<DraftTourAssetsPayload & {
+  publication_created: boolean;
+  active_shares_updated: boolean;
+}> {
+  return request(`/api/reaigen/drafts/${draftId}/tours/`, {
+    method: "PUT",
+    body: JSON.stringify({
+      entries,
+      apply_to_active_shares: applyToActiveShares,
+    }),
+  });
+}
+
+export async function renameDraftTourAsset(
+  draftId: number,
+  tourId: number,
+  name: string,
+): Promise<DraftTourAssetsPayload> {
+  return request(`/api/reaigen/drafts/${draftId}/tours/`, {
+    method: "PATCH",
+    body: JSON.stringify({ tour_id: tourId, name }),
+  });
+}
+
+export async function removeDraftTourAsset(
+  draftId: number,
+  tourId: number,
+): Promise<DraftTourAssetsPayload & {
+  removed_tour_id: number;
+  removal_kind?: "cancel" | "archive";
+  already_removed: boolean;
+  recoverable: boolean;
+}> {
+  return request(`/api/reaigen/drafts/${draftId}/tours/${tourId}/`, {
+    method: "DELETE",
+  });
 }
 
 export async function setActiveSplat(
@@ -1284,9 +3529,49 @@ export async function getCameras(splatId: number): Promise<CameraData> {
   return request(`/api/reaigen/splats/${splatId}/cameras/`);
 }
 
+export async function downloadSplatUsdBundle(
+  splatId: number,
+  revision: number,
+  tourVersion?: number,
+): Promise<Blob> {
+  const query = new URLSearchParams({
+    revision: String(revision),
+    bundle: "1",
+  });
+  if (tourVersion != null) query.set("tourVersion", String(tourVersion));
+  const response = await fetch(
+    `/api/reaigen/splats/${splatId}/scene/usd/?${query.toString()}`,
+    {
+      credentials: "include",
+      cache: "no-store",
+    },
+  );
+  if (!response.ok) {
+    const body = await response.text();
+    if (response.status === 401) handleUnauthorized(response);
+    throw new ApiError(response.status, body);
+  }
+  return response.blob();
+}
+
 export async function saveCameras(
   splatId: number,
-  data: { cameras: { position: number[]; forward: number[]; up: number[]; fov?: number }[]; fovY?: number; sceneFov?: number },
+  data: {
+    cameras: {
+      id?: string;
+      position: number[];
+      forward: number[];
+      up?: number[];
+      fov?: number;
+      label?: string;
+      kind?: string;
+      role?: string;
+      coordinate_space?: string;
+    }[];
+    fovY?: number;
+    sceneFov?: number;
+    baseRevision?: number;
+  },
 ): Promise<CameraData> {
   return request(`/api/reaigen/splats/${splatId}/cameras/`, {
     method: "PATCH",
@@ -1294,21 +3579,85 @@ export async function saveCameras(
   });
 }
 
-export async function getSharedTourViewer(token: string): Promise<TourViewerData> {
-  return request(`/api/reaigen/shared/${encodeURIComponent(token)}/tour-viewer/`);
+export async function authorUsdSceneTransformOperation(
+  splatId: number,
+  delta: GlobalSceneTransform,
+  baseRevision: number,
+  baseStageSha256?: string,
+): Promise<UsdStageTransformEditResponse> {
+  return request(`/api/reaigen/splats/${splatId}/scene/edits/`, {
+    method: "POST",
+    body: JSON.stringify({
+      baseRevision,
+      ...(baseStageSha256 ? { baseStageSha256 } : {}),
+      editTarget: {
+        layer: "authoring.usda",
+        primPath: "/Reaigen",
+      },
+      operation: {
+        type: "transform",
+        space: "world",
+        delta,
+      },
+    }),
+  });
+}
+
+export async function getSharedTourViewer(token: string, tourId?: number): Promise<TourViewerData> {
+  const query = tourId == null ? "" : `?tour_id=${encodeURIComponent(tourId)}`;
+  // Public access can be edited, paused, or revoked at any moment. Never let
+  // the in-memory GET cache keep an older permission set alive.
+  return freshRequest(`/api/reaigen/shared/${encodeURIComponent(token)}/tour-viewer/${query}`);
 }
 
 export async function getSharedDraftData(token: string): Promise<SharedDraftData | null> {
   // Errors propagate so callers can react to gating responses
   // (requires_pin / requires_auth / expired / paused).
-  const raw = await request(`/api/reaigen/shared/${encodeURIComponent(token)}/`);
+  const raw = await freshRequest(`/api/reaigen/shared/${encodeURIComponent(token)}/`);
   if (!raw) return null;
   // Map backend response to frontend SharedDraftData format
   // Backend uses: raw_uploads[].file_url, draft_data[].data_key/data_value, area_unit_display
-  const uploads = (raw.raw_uploads ?? raw.uploads ?? [])
-    .map((u: Record<string, unknown>) => ({
+  const sharedUploadGroups = new Map<string, Record<string, unknown>[]>();
+  for (const upload of (raw.raw_uploads ?? raw.uploads ?? []) as Record<string, unknown>[]) {
+    const key = String(upload.logical_asset_id ?? upload.id ?? upload.file_url ?? upload.url ?? "");
+    sharedUploadGroups.set(key, [...(sharedUploadGroups.get(key) ?? []), upload]);
+  }
+  const currentSharedUploads = [...sharedUploadGroups.values()].flatMap((versions) => {
+    const current = versions.find((upload) => upload.is_master !== false && upload.is_deleted !== true);
+    if (!current) return [];
+    const authoritativeOriginalName = versions.find((upload) => (
+      typeof upload.original_file_name === "string" && upload.original_file_name.trim()
+    ))?.original_file_name as string | undefined;
+    const original = [...versions].sort((left, right) => {
+      const leftIsRoot = left.supersedes == null && left.source_upload_id == null ? 0 : 1;
+      const rightIsRoot = right.supersedes == null && right.source_upload_id == null ? 0 : 1;
+      if (leftIsRoot !== rightIsRoot) return leftIsRoot - rightIsRoot;
+
+      const leftVersion = Number.isFinite(Number(left.version)) ? Number(left.version) : Number.POSITIVE_INFINITY;
+      const rightVersion = Number.isFinite(Number(right.version)) ? Number(right.version) : Number.POSITIVE_INFINITY;
+      if (leftVersion !== rightVersion) return leftVersion - rightVersion;
+
+      const leftTimestamp = Date.parse(String(left.uploaded_at ?? ""));
+      const rightTimestamp = Date.parse(String(right.uploaded_at ?? ""));
+      return (Number.isFinite(leftTimestamp) ? leftTimestamp : Number.POSITIVE_INFINITY)
+          - (Number.isFinite(rightTimestamp) ? rightTimestamp : Number.POSITIVE_INFINITY)
+        || Number(left.id ?? 0) - Number(right.id ?? 0);
+    })[0];
+    const enriched: Record<string, unknown> = {
+      ...current,
+      original_file_name: authoritativeOriginalName
+        ?? original?.file_name
+        ?? original?.name
+        ?? current.file_name
+        ?? current.name,
+    };
+    return [enriched];
+  });
+  const uploads = currentSharedUploads
+    .sort((left, right) => Number(left.sort_order ?? 0) - Number(right.sort_order ?? 0))
+    .map((u) => ({
       url: (u.file_url ?? u.url ?? "") as string,
-      name: (u.file_name ?? u.name ?? "") as string,
+      name: (u.original_file_name ?? u.file_name ?? u.name ?? "") as string,
       mime_type: (u.mime_type ?? "") as string,
     }))
     .filter((u: { url: string }) => u.url);
@@ -1318,6 +3667,21 @@ export async function getSharedDraftData(token: string): Promise<SharedDraftData
       value: (e.data_value ?? e.value ?? "") as string,
     }))
     .filter((e: { key: string }) => e.key);
+  const tours = (Array.isArray(raw.tours) ? raw.tours : [])
+    .map((tour: Record<string, unknown>) => ({
+      tour_id: Number(tour.tour_id),
+      tour_asset_id: String(tour.tour_asset_id ?? ""),
+      name: String(tour.name ?? ""),
+      capture_reason: String(tour.capture_reason ?? "other"),
+      captured_at: String(tour.captured_at ?? ""),
+      is_primary: tour.is_primary === true,
+      sort_order: Number(tour.sort_order ?? 0),
+      targets: (Array.isArray(tour.targets) ? tour.targets : [])
+        .filter((target): target is "web" | "ios" => target === "web" || target === "ios"),
+    }))
+    .filter((tour: { tour_id: number }) => (
+      Number.isInteger(tour.tour_id) && tour.tour_id > 0
+    ));
   return {
     title: raw.title,
     description: raw.description,
@@ -1337,6 +3701,7 @@ export async function getSharedDraftData(token: string): Promise<SharedDraftData
     uploads,
     data: data.length ? data : undefined,
     floorplan: raw.floorplan ?? null,
+    tours,
   };
 }
 
@@ -1350,20 +3715,45 @@ export async function verifySharePin(token: string, pin: string): Promise<{ veri
 // ─── Share Management ─────────────────────────────────────────────────────
 
 export async function listShares(options: { fresh?: boolean } = {}): Promise<ShareData[]> {
-  const data = options.fresh
-    ? await freshRequest("/api/reaigen/shares/")
-    : await request("/api/reaigen/shares/");
-  return data.results ?? data ?? [];
+  const firstPath = "/api/reaigen/shares/?view=web&page_size=100";
+  const first = options.fresh
+    ? await freshRequest(firstPath)
+    : await request(firstPath);
+  if (Array.isArray(first)) return first;
+
+  const all = [...(first?.results ?? [])] as ShareData[];
+  if (!first?.next) return all;
+
+  const effectivePageSize = Math.max(first.results?.length ?? 0, 1);
+  const totalPages = Math.ceil((first.count ?? all.length) / effectivePageSize);
+  const loadPage = (page: number) => {
+    const path = `/api/reaigen/shares/?view=web&page=${page}&page_size=100`;
+    return options.fresh ? freshRequest(path) : request(path);
+  };
+  const remaining = await Promise.all(
+    Array.from({ length: totalPages - 1 }, (_, index) => loadPage(index + 2)),
+  );
+  for (const page of remaining) all.push(...(page?.results ?? page ?? []));
+  return all;
 }
 
 export async function createDraftShare(
   draftId: number,
   opts?: { share_type?: string; pin?: string; expires_in_hours?: number; max_access_count?: number; field_names?: string[]; data_features?: string[] | null },
 ): Promise<ShareData> {
-  return request("/api/reaigen/shares/", {
+  const created = await request("/api/reaigen/shares/", {
     method: "POST",
     body: JSON.stringify({ draft: draftId, ...opts }),
-  });
+  }) as ShareData;
+
+  // The generic Django create serializer stores an expiry only for a
+  // temporary share. PIN shares support an expiry too, but need the same
+  // positive-hour value applied once more through PATCH (the splat endpoint
+  // already performs this compatibility step server-side).
+  if (opts?.share_type === "pin" && (opts.expires_in_hours ?? 0) > 0) {
+    return updateShare(created.id, { expires_in_hours: opts.expires_in_hours });
+  }
+  return created;
 }
 
 export async function getDraftShare(draftId: number): Promise<ShareData | null> {
@@ -1377,7 +3767,7 @@ export async function getDraftShare(draftId: number): Promise<ShareData | null> 
 
 export async function createSplatShare(
   splatId: number,
-  opts?: { share_type?: string; pin?: string; expires_in_hours?: number; max_access_count?: number; field_names?: string[]; data_features?: string[] | null },
+  opts?: { share_type?: string; pin?: string; expires_in_hours?: number; max_access_count?: number; field_names?: string[]; data_features?: string[] | null; tour_id?: number },
 ): Promise<ShareData> {
   return request(`/api/reaigen/splats/${splatId}/share/`, {
     method: "POST",
@@ -1388,7 +3778,9 @@ export async function createSplatShare(
 export async function updateShare(shareId: number, data: Partial<{
   title: string;
   share_type: string;
+  status: string;
   pin: string;
+  expires_at: string | null;
   expires_in_hours: number;
   max_access_count: number | null;
   field_names: string[];
@@ -1405,7 +3797,24 @@ export async function pauseShare(shareId: number): Promise<{ message: string; sh
 }
 
 export async function resumeShare(shareId: number): Promise<{ message: string; share: ShareData }> {
-  return request(`/api/reaigen/shares/${shareId}/resume/`, { method: "POST" });
+  try {
+    return await request(`/api/reaigen/shares/${shareId}/resume/`, { method: "POST" });
+  } catch (error) {
+    if (!(error instanceof ApiError) || error.status !== 400) throw error;
+
+    // Compatibility for backend versions whose resume action calls
+    // is_accessible() while status is still "paused" (and therefore rejects
+    // every valid paused link). Preserve its intended expiry/view-limit guard
+    // before using the ordinary owner-authorized PATCH path.
+    const current = (await listShares({ fresh: true })).find((share) => share.id === shareId);
+    const expired = Boolean(current?.expires_at && new Date(current.expires_at).getTime() <= Date.now());
+    const limit = current?.max_access_count ?? current?.max_accesses ?? null;
+    const limitReached = limit != null && current != null && current.access_count >= limit;
+    if (!current || current.status !== "paused" || expired || limitReached) throw error;
+
+    const share = await updateShare(shareId, { status: "active" });
+    return { message: "Share resumed successfully", share };
+  }
 }
 
 export async function revokeShare(shareId: number): Promise<{ message: string }> {
@@ -1417,4 +3826,135 @@ export async function getShareAnalytics(shareId: number): Promise<{
   stats: { total_accesses: number; unique_ips: number; authenticated_accesses: number; failed_pin_attempts: number };
 }> {
   return request(`/api/reaigen/shares/${shareId}/analytics/`);
+}
+
+// ---------------------------------------------------------------------------
+// Volumes & rooms
+//
+// A volume is one capture unit — one splat, one 3D scene. Open-plan spaces are
+// captured as a single volume holding several rooms, so the tour presents
+// volumes while rooms are labelled regions inside them.
+//
+// These are the regular authenticated draft endpoints, deliberately not the
+// staff-gated /web-creation/ ones: editing after creation must be available to
+// every owner. The backend rewrites the derived `scan_volume_assignments`
+// draft-data projection itself, so clients must never write that key directly.
+// ---------------------------------------------------------------------------
+
+export interface VolumeRoom {
+  id: number;
+  room: number;
+  room_label: string;
+  room_number: number;
+  display_order: number;
+}
+
+export interface DraftVolume {
+  id: number;
+  draft: number;
+  label: string;
+  volume_number: number;
+  status: string;
+  exposure_compensation: number;
+  volume_rooms: VolumeRoom[];
+  created_at: string;
+  updated_at: string;
+}
+
+export async function listDraftVolumes(
+  draftId: number | string,
+  opts: { includeArchived?: boolean } = {},
+): Promise<DraftVolume[]> {
+  const qs = opts.includeArchived ? "?all=true" : "";
+  return freshRequest(`/api/reaigen/drafts/${draftId}/volumes/${qs}`);
+}
+
+export async function updateDraftVolume(
+  draftId: number | string,
+  volumeId: number,
+  patch: Partial<Pick<DraftVolume, "label" | "volume_number" | "status" | "exposure_compensation">> & {
+    room_ids?: (number | string)[];
+  },
+): Promise<DraftVolume> {
+  return request(`/api/reaigen/drafts/${draftId}/volumes/${volumeId}/`, {
+    method: "PATCH",
+    body: JSON.stringify(patch),
+  });
+}
+
+export async function createDraftVolume(
+  draftId: number | string,
+  data: { label?: string; volume_number?: number; room_ids?: (number | string)[] },
+): Promise<DraftVolume> {
+  return request(`/api/reaigen/drafts/${draftId}/volumes/`, {
+    method: "POST",
+    body: JSON.stringify(data),
+  });
+}
+
+export async function archiveDraftVolume(
+  draftId: number | string,
+  volumeId: number,
+): Promise<void> {
+  await request(`/api/reaigen/drafts/${draftId}/volumes/${volumeId}/`, {
+    method: "DELETE",
+  });
+}
+
+export async function listDraftRooms(draftId: number | string): Promise<FloorplanRoom[]> {
+  return freshRequest(`/api/reaigen/floorplans/by-draft/${draftId}/rooms/`);
+}
+
+export async function renameFloorplanRoom(
+  floorplanId: number,
+  roomId: number,
+  label: string,
+): Promise<FloorplanRoom> {
+  return request(`/api/reaigen/floorplans/${floorplanId}/rooms/${roomId}/`, {
+    method: "PATCH",
+    body: JSON.stringify({ label }),
+  });
+}
+
+/**
+ * Move one room into another volume.
+ *
+ * Assignment is expressed as the destination's complete room set, because the
+ * backend treats `room_ids` as the authoritative membership list for a volume
+ * rather than as a delta. Both sides are written so a room is never briefly
+ * present in two volumes at once.
+ */
+export async function moveRoomToVolume(
+  draftId: number | string,
+  room: VolumeRoom,
+  fromVolume: DraftVolume,
+  toVolume: DraftVolume,
+): Promise<void> {
+  const remaining = fromVolume.volume_rooms
+    .filter((r) => r.id !== room.id)
+    .map((r) => r.room);
+  const destination = [...toVolume.volume_rooms.map((r) => r.room), room.room];
+
+  await updateDraftVolume(draftId, toVolume.id, { room_ids: destination });
+  await updateDraftVolume(draftId, fromVolume.id, { room_ids: remaining });
+}
+
+/** Split a room out of its volume into a brand-new one. */
+export async function splitRoomIntoNewVolume(
+  draftId: number | string,
+  room: VolumeRoom,
+  fromVolume: DraftVolume,
+  existingVolumes: DraftVolume[],
+): Promise<DraftVolume> {
+  const nextNumber =
+    Math.max(0, ...existingVolumes.map((v) => v.volume_number || 0)) + 1;
+  const created = await createDraftVolume(draftId, {
+    label: room.room_label || `Volume ${nextNumber}`,
+    volume_number: nextNumber,
+    room_ids: [room.room],
+  });
+  await updateDraftVolume(draftId, fromVolume.id, {
+    room_ids: fromVolume.volume_rooms.filter((r) => r.id !== room.id).map((r) => r.room),
+  });
+  return created;
 }

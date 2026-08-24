@@ -19,6 +19,7 @@ const config: Config = {
         secondary: { DEFAULT: "hsl(var(--secondary))", foreground: "hsl(var(--secondary-foreground))" },
         muted: { DEFAULT: "hsl(var(--muted))", foreground: "hsl(var(--muted-foreground))" },
         accent: { DEFAULT: "hsl(var(--accent))", foreground: "hsl(var(--accent-foreground))" },
+        creative: { DEFAULT: "hsl(var(--creative))", foreground: "hsl(var(--creative-foreground))" },
         destructive: { DEFAULT: "hsl(var(--destructive))", foreground: "hsl(var(--destructive-foreground))" },
         success: { DEFAULT: "hsl(var(--success))", foreground: "hsl(var(--success-foreground))" },
         border: "hsl(var(--border))",
@@ -27,19 +28,6 @@ const config: Config = {
         surface: {
           DEFAULT: "hsl(var(--surface))",
           subtle: "hsl(var(--surface-subtle))",
-        },
-        studio: {
-          DEFAULT: "hsl(var(--studio))",
-          surface: "hsl(var(--studio-surface))",
-          border: "hsl(var(--studio-border))",
-        },
-        sidebar: {
-          DEFAULT: "hsl(var(--sidebar))",
-          foreground: "hsl(var(--sidebar-foreground))",
-          border: "hsl(var(--sidebar-border))",
-          accent: "hsl(var(--sidebar-accent))",
-          "accent-foreground": "hsl(var(--sidebar-accent-foreground))",
-          muted: "hsl(var(--sidebar-muted))",
         },
       },
       borderRadius: {
@@ -52,7 +40,8 @@ const config: Config = {
       },
       boxShadow: {
         soft: "0 18px 40px rgba(0, 0, 0, 0.08)",
-        card: "0 2px 12px rgba(0, 0, 0, 0.06)",
+        card: "0 1px 3px rgba(0, 0, 0, 0.055)",
+        control: "0 1px 2px rgba(0, 0, 0, 0.045)",
         elevated: "0 8px 32px rgba(0, 0, 0, 0.12)",
         button: "0 14px 30px rgba(0, 0, 0, 0.14)",
       },

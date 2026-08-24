@@ -4,22 +4,28 @@ import * as React from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { AppShell } from "../components/app-shell";
-import { GridLayoutToggle } from "../components/grid-layout-toggle";
+import { CollectionCard } from "../components/collection-card";
+import { CollectionState } from "../components/collection-state";
 import { useAuth } from "../components/hooks/use-auth";
-import { TourIcon } from "../components/icons";
+import { InfoIcon, MainTourIcon, PlayIcon } from "../components/icons";
 import { PageHeader } from "../components/page-header";
 import { PageLoading } from "../components/page-loading";
 import { StatusPill } from "../components/status-pill";
 import { SearchField } from "../components/search-field";
 import { Thumbnail } from "../components/thumbnail";
-import { listAllSplats } from "../lib/api/client";
+import { listSplats } from "../lib/api/client";
 import { getUserLanguage, t } from "../lib/i18n";
 import type { SplatListItem } from "../lib/tour-types";
-import { cn } from "../lib/utils";
+import { Button } from "../lib/ui/button";
+import { WebCreateAction } from "../components/web-create-action";
+import { CollectionLoading } from "../components/collection-loading";
+import { GridLayoutToggle } from "../components/grid-layout-toggle";
 
-type TourFilter = "all" | "ready" | "processing" | "issues";
+const TOURS_PAGE_SIZE = 24;
 
-function tourState(item: SplatListItem): Exclude<TourFilter, "all"> {
+type TourState = "ready" | "processing" | "issues";
+
+function tourState(item: SplatListItem): TourState {
   const status = item.status.toLowerCase();
   if (status === "failed" || status === "cancelled") return "issues";
   if (status === "completed" && (item.has_sog || item.has_splat || item.has_ply)) return "ready";
@@ -40,6 +46,40 @@ function statusTone(item: SplatListItem): "success" | "warning" | "danger" {
   return "warning";
 }
 
+/**
+ * One card per post. A draft's re-trained versions belong to the version
+ * manager inside its detail, not the tours grid — listing every splat gave
+ * the same property several identical cards. Keep the strongest candidate
+ * per draft: a ready tour beats a processing one, then the newest wins.
+ * Opening the card normalises to the draft's canonical tour anyway.
+ */
+function dedupeByDraft(list: SplatListItem[]): SplatListItem[] {
+  const rank = (item: SplatListItem) => {
+    const state = tourState(item);
+    return state === "ready" ? 2 : state === "processing" ? 1 : 0;
+  };
+  const byDraft = new Map<number, SplatListItem>();
+  for (const item of list) {
+    const current = byDraft.get(item.source_draft);
+    if (
+      !current
+      || rank(item) > rank(current)
+      || (rank(item) === rank(current) && item.updated_at > current.updated_at)
+    ) {
+      byDraft.set(item.source_draft, item);
+    }
+  }
+  const seen = new Set<number>();
+  const ordered: SplatListItem[] = [];
+  for (const item of list) {
+    if (seen.has(item.source_draft)) continue;
+    seen.add(item.source_draft);
+    const kept = byDraft.get(item.source_draft);
+    if (kept) ordered.push(kept);
+  }
+  return ordered;
+}
+
 function formatUpdated(value: string, lang: string) {
   try {
     return new Intl.DateTimeFormat(lang || "en", { day: "numeric", month: "short", year: "numeric" }).format(new Date(value));
@@ -53,13 +93,23 @@ export default function ToursPage() {
   const router = useRouter();
   const [items, setItems] = React.useState<SplatListItem[]>([]);
   const [loading, setLoading] = React.useState(true);
+  const [loadingMore, setLoadingMore] = React.useState(false);
+  const [hasMore, setHasMore] = React.useState(false);
   const [error, setError] = React.useState(false);
   const [query, setQuery] = React.useState("");
-  const [filter, setFilter] = React.useState<TourFilter>("all");
-  const [gridCols, setGridCols] = React.useState<1 | 2>(() => {
-    if (typeof window === "undefined") return 2;
-    return localStorage.getItem("reaigen:gridCols") === "1" ? 1 : 2;
-  });
+  const [searchQuery, setSearchQuery] = React.useState("");
+  const [gridCols, setGridCols] = React.useState<1 | 2>(2);
+  const pageRef = React.useRef(1);
+  const requestRef = React.useRef(0);
+  // Raw pages as fetched; `items` is always the deduped view of this list,
+  // so a later page carrying a better version of an already-shown draft can
+  // still replace its card.
+  const rawItemsRef = React.useRef<SplatListItem[]>([]);
+
+  React.useLayoutEffect(() => {
+    const cached = localStorage.getItem("reaigen:gridCols");
+    if (cached === "1") setGridCols(1);
+  }, []);
 
   const handleGridCols = React.useCallback((cols: 1 | 2) => {
     setGridCols(cols);
@@ -67,156 +117,154 @@ export default function ToursPage() {
   }, []);
 
   const load = React.useCallback(async () => {
+    const requestId = ++requestRef.current;
     setLoading(true);
+    setLoadingMore(false);
     setError(false);
     try {
-      setItems(await listAllSplats());
+      const data = await listSplats(1, TOURS_PAGE_SIZE, searchQuery);
+      if (requestId !== requestRef.current) return;
+      rawItemsRef.current = data.results ?? [];
+      setItems(dedupeByDraft(rawItemsRef.current));
+      setHasMore(!!data.next);
+      pageRef.current = 1;
     } catch {
-      setError(true);
+      if (requestId === requestRef.current) setError(true);
     } finally {
-      setLoading(false);
+      if (requestId === requestRef.current) setLoading(false);
     }
-  }, []);
+  }, [searchQuery]);
+
+  const loadMore = React.useCallback(async () => {
+    if (loadingMore || !hasMore) return;
+    const requestId = requestRef.current;
+    setLoadingMore(true);
+    try {
+      const nextPage = pageRef.current + 1;
+      const data = await listSplats(nextPage, TOURS_PAGE_SIZE, searchQuery);
+      if (requestId !== requestRef.current) return;
+      const seen = new Set(rawItemsRef.current.map((item) => item.id));
+      rawItemsRef.current = [
+        ...rawItemsRef.current,
+        ...(data.results ?? []).filter((item) => !seen.has(item.id)),
+      ];
+      setItems(dedupeByDraft(rawItemsRef.current));
+      setHasMore(!!data.next);
+      pageRef.current = nextPage;
+    } catch {
+      // Keep the already-rendered page usable; the button remains available.
+    } finally {
+      if (requestId === requestRef.current) setLoadingMore(false);
+    }
+  }, [hasMore, loadingMore, searchQuery]);
 
   React.useEffect(() => {
     if (!isLoading && !isAuthenticated) router.replace("/");
   }, [isLoading, isAuthenticated, router]);
 
   React.useEffect(() => {
-    if (isAuthenticated) void load();
+    if (!isAuthenticated) return;
+    void load();
+    return () => { requestRef.current += 1; };
   }, [isAuthenticated, load]);
+
+  React.useEffect(() => {
+    const timer = window.setTimeout(() => setSearchQuery(query.trim()), 150);
+    return () => window.clearTimeout(timer);
+  }, [query]);
 
   if (isLoading || !user) return <PageLoading />;
 
   const lang = getUserLanguage(user.localization);
-  const counts = {
-    all: items.length,
-    ready: items.filter((item) => tourState(item) === "ready").length,
-    processing: items.filter((item) => tourState(item) === "processing").length,
-    issues: items.filter((item) => tourState(item) === "issues").length,
-  };
-  const normalizedQuery = query.trim().toLowerCase();
-  const visible = items.filter((item) => {
-    if (filter !== "all" && tourState(item) !== filter) return false;
-    if (!normalizedQuery) return true;
-    return `${item.title} ${item.scan_type}`.toLowerCase().includes(normalizedQuery);
-  });
-
-  const filters: Array<{ key: TourFilter; label: string }> = [
-    { key: "all", label: t("tours.filter.all", lang) },
-    { key: "ready", label: t("tours.filter.ready", lang) },
-    { key: "processing", label: t("tours.filter.processing", lang) },
-    { key: "issues", label: t("tours.filter.issues", lang) },
-  ];
 
   return (
     <AppShell user={user} onLogout={logout}>
-      <div className="mx-auto w-full max-w-[1180px] animate-fade-in pb-10">
+      <div className="mx-auto w-full max-w-[1360px] pb-10">
         <PageHeader
           title={t("tours.title", lang)}
           description={t("tours.subtitle", lang)}
-          actions={counts.all > 0 ? <StatusPill>{counts.all} {t("dashboard.items", lang)}</StatusPill> : undefined}
-          className="mb-7"
+          actions={<WebCreateAction lang={lang} labelKey="webCreate.tourAction" />}
+          className="mb-5 sm:mb-8"
         />
 
-        <div className="mb-4 flex items-center gap-3 border-b border-border/40 pb-3">
+        <div className="mb-5 flex min-w-0 items-center gap-2 border-b border-border/75 pb-2 sm:mb-6">
           <SearchField
             value={query}
             onChange={setQuery}
             onClear={() => setQuery("")}
             placeholder={t("tours.search", lang)}
             clearLabel={t("dashboard.clearSearch", lang)}
-            className="flex-1"
+            className="flex-1 px-1"
+            appearance="toolbar"
           />
-          <GridLayoutToggle value={gridCols} onChange={handleGridCols} />
+          <GridLayoutToggle value={gridCols} onChange={handleGridCols} lang={lang} />
         </div>
 
-        <div className="mb-6 flex min-w-0 items-center gap-1 overflow-x-auto scrollbar-hide">
-          {filters.map((item) => (
-            <button
-              key={item.key}
-              type="button"
-              onClick={() => setFilter(item.key)}
-              className={cn(
-                "inline-flex h-8 shrink-0 items-center gap-2 rounded-full px-3 text-[12px] font-medium transition-colors",
-                filter === item.key
-                  ? "bg-foreground text-background"
-                  : "text-foreground/60 hover:bg-foreground/[0.045] hover:text-foreground",
-              )}
-              aria-pressed={filter === item.key}
-            >
-              {item.label}
-              <span className={cn("tabular-nums", filter === item.key ? "text-background/65" : "text-foreground/45")}>{counts[item.key]}</span>
-            </button>
-          ))}
-        </div>
-
-        {loading ? (
-          <div className={`grid grid-cols-1 gap-6 ${gridCols === 2 ? "md:grid-cols-2" : "mx-auto max-w-2xl"}`}>
-            {Array.from({ length: gridCols === 2 ? 4 : 3 }).map((_, index) => (
-              <div key={index} className="animate-pulse">
-                <div className="aspect-[16/10] rounded-xl bg-muted/30" />
-                <div className="mt-3 space-y-2 px-1">
-                  <div className="h-4 w-2/3 rounded bg-muted/40" />
-                  <div className="h-3 w-1/2 rounded bg-muted/30" />
-                </div>
-              </div>
-            ))}
-          </div>
-        ) : error ? (
-          <div className="rounded-2xl border border-border/55 bg-surface px-6 py-14 text-center">
-            <p className="text-[14px] font-semibold">{t("tours.error", lang)}</p>
-            <button type="button" onClick={() => void load()} className="mt-3 text-[12px] font-semibold underline underline-offset-4">
-              {t("common.tryAgain", lang)}
-            </button>
-          </div>
-        ) : visible.length === 0 ? (
-          <div className="flex flex-col items-center justify-center px-6 py-20 text-center">
-            <div className="mb-4 flex h-12 w-12 items-center justify-center rounded-full bg-foreground/[0.04] text-foreground/35"><TourIcon size={22} /></div>
-            <p className="text-[14px] font-semibold">{query || filter !== "all" ? t("tours.emptyFiltered", lang) : t("tours.empty", lang)}</p>
-            <p className="mt-1 max-w-sm text-[12px] leading-relaxed text-muted-foreground">{t("tours.emptyHint", lang)}</p>
-          </div>
-        ) : (
-          <div className={`grid grid-cols-1 gap-6 ${gridCols === 2 ? "md:grid-cols-2" : "mx-auto max-w-2xl"}`}>
-            {visible.map((item, index) => {
+        <div className="min-w-0">
+          {loading ? (
+          <CollectionLoading label={t("common.loading", lang)} className="min-h-48" />
+            ) : error ? (
+          <CollectionState
+            kind="error"
+            icon={<InfoIcon size={20} />}
+            title={t("tours.error", lang)}
+            action={<Button type="button" variant="outline" size="sm" onClick={() => void load()}>{t("common.tryAgain", lang)}</Button>}
+          />
+            ) : items.length === 0 ? (
+          <CollectionState
+            icon={<MainTourIcon size={20} />}
+            title={searchQuery ? t("tours.emptyFiltered", lang) : t("tours.empty", lang)}
+            description={t("tours.emptyHint", lang)}
+            action={searchQuery ? <Button type="button" variant="outline" size="sm" onClick={() => setQuery("")}>{t("dashboard.clearSearch", lang)}</Button> : undefined}
+          />
+            ) : (
+          <>
+          <div className={`grid grid-cols-1 gap-5 xl:gap-6 ${gridCols === 2 ? "md:grid-cols-2" : "mx-auto max-w-2xl"}`}>
+            {items.map((item, index) => {
               const ready = tourState(item) === "ready";
               const href = ready ? `/tour/${item.id}` : `/draft/${item.source_draft}`;
               return (
-                <Link
-                  key={item.id}
-                  href={href}
-                  prefetch={ready}
-                  className="group block opacity-0 animate-fade-in-up [animation-fill-mode:forwards]"
-                  style={{ animationDelay: `${index * 50}ms` }}
-                >
-                  <div className="relative aspect-[16/10] overflow-hidden rounded-xl bg-muted/20 transition-shadow group-hover:shadow-lg">
+                <CollectionCard key={item.id}>
+                  <Link href={href} data-testid={ready ? "tour-card-link" : "draft-card-link"} prefetch={ready} className="block focus-visible:outline-none">
+                  <div className="relative aspect-[16/10] overflow-hidden bg-surface-subtle">
                     {item.thumbnail_url ? (
-                      <Thumbnail src={item.thumbnail_url} alt={item.title} className="absolute inset-0 h-full w-full object-cover transition-transform duration-300 group-hover:scale-[1.02]" priority={index < 4} />
+                      <Thumbnail src={item.thumbnail_url} alt={item.title} className="absolute inset-0 h-full w-full object-cover [@media(hover:hover)]:transition-transform [@media(hover:hover)]:duration-500 [@media(hover:hover)]:ease-out [@media(hover:hover)]:group-hover:scale-[1.03]" priority={index < 4} />
                     ) : (
-                      <div className="absolute inset-0 flex items-center justify-center text-foreground/12"><TourIcon size={36} /></div>
+                      <div className="absolute inset-0 flex items-center justify-center bg-gradient-to-br from-muted/60 via-muted to-foreground/10 text-foreground/20"><MainTourIcon size={42} strokeWidth={1.35} /></div>
                     )}
-                    <StatusPill tone={statusTone(item)} dot className="absolute left-3 top-3 shadow-sm">
+                    <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/5 to-black/15" aria-hidden="true" />
+                    {/* Matches the p-4 sm:p-5 block at the foot of the card, so
+                        everything over the photo shares one margin. */}
+                    <StatusPill tone={statusTone(item)} dot className="absolute left-4 top-4 border-white/15 bg-black/55 text-white/90 shadow-sm backdrop-blur-md sm:left-5 sm:top-5">
                       {statusLabel(item, lang)}
                     </StatusPill>
-                  </div>
-                  <div className="mt-2.5 px-0.5">
-                    <div className="flex items-start justify-between gap-3">
-                      <h2 className="min-w-0 truncate text-[15px] font-semibold leading-snug">{item.title}</h2>
-                      {item.delivery_versions_count && item.delivery_versions_count > 1 ? (
-                        <span className="shrink-0 text-[12px] text-muted-foreground">
-                          {item.delivery_versions_count} {t("tours.versions", lang)}
-                        </span>
-                      ) : null}
+                    {ready ? (
+                      <span className="absolute right-4 top-4 inline-flex h-8 w-8 items-center justify-center rounded-full border border-white/15 bg-black/65 px-0 text-[11px] font-semibold text-white shadow-sm backdrop-blur-md transition-colors group-hover:bg-black/80 sm:right-5 sm:top-5 sm:w-auto sm:gap-1.5 sm:px-3">
+                        <PlayIcon size={14} /> <span className="hidden sm:inline">{t("tours.open", lang)}</span>
+                      </span>
+                    ) : null}
+                    <div className="absolute inset-x-0 bottom-0 p-4 sm:p-5">
+                      <h2 className="truncate text-[17px] font-semibold leading-snug tracking-[-0.02em] text-white">{item.title}</h2>
+                      <p className="mt-1 text-[12px] text-white/70">
+                        {t("tours.updated", lang)} {formatUpdated(item.updated_at, lang)}
+                      </p>
                     </div>
-                    <p className="mt-0.5 text-[13px] text-muted-foreground">
-                      {t("tours.updated", lang)} {formatUpdated(item.updated_at, lang)}
-                    </p>
                   </div>
-                </Link>
+                  </Link>
+                </CollectionCard>
               );
             })}
           </div>
-        )}
+          {hasMore ? (
+            <div className="mt-8 flex justify-center">
+              <Button type="button" variant="outline" size="sm" className="h-11" disabled={loadingMore} onClick={() => void loadMore()}>
+                {loadingMore ? t("common.loading", lang) : t("dashboard.loadMore", lang)}
+              </Button>
+            </div>
+          ) : null}
+          </>
+            )}
+        </div>
       </div>
     </AppShell>
   );

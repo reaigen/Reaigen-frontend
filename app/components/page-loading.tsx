@@ -1,17 +1,15 @@
-export function PageLoading({ className }: { className?: string }) {
+import { t } from "../lib/i18n";
+import { ReaigenLoadingMark } from "./reaigen-loading-mark";
+
+/**
+ * Full-screen startup splash. The composition itself lives in
+ * `ReaigenLoadingMark` so that this and the in-viewport loaders are literally
+ * the same artwork — see the note there about the jump that two of them caused.
+ */
+export function PageLoading({ className, lang = "en" }: { className?: string; lang?: string }) {
   return (
-    <div className={className ?? "fixed inset-0 flex items-center justify-center bg-background"}>
-      <div className="flex flex-col items-center gap-4">
-        <span
-          className="text-[30px] text-foreground/80"
-          style={{ fontFamily: "var(--font-brand), ui-serif, Georgia, serif", fontWeight: 400, letterSpacing: "0.01em" }}
-        >
-          Reaigen
-        </span>
-        <div className="h-[3px] w-16 rounded-full bg-foreground/10 overflow-hidden">
-          <div className="h-full w-1/2 rounded-full bg-foreground/40 animate-[shimmer-bar_1.2s_ease-in-out_infinite]" />
-        </div>
-      </div>
+    <div className={className ?? "fixed inset-0 z-50 bg-background"}>
+      <ReaigenLoadingMark status={t("common.loading", lang)} />
     </div>
   );
 }

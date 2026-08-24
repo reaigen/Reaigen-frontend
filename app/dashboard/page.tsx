@@ -4,9 +4,11 @@ import * as React from "react";
 import { useRouter } from "next/navigation";
 import { useAuth } from "../components/hooks/use-auth";
 import { AppShell } from "../components/app-shell";
+import { CollectionCard } from "../components/collection-card";
+import { CollectionState } from "../components/collection-state";
 import { t, getUserLanguage } from "../lib/i18n";
-import { listAllSplats, listDrafts } from "../lib/api/client";
-import type { DraftListingItem } from "../lib/tour-types";
+import { listAllSplats, listDrafts, listUnits } from "../lib/api/client";
+import type { DraftListingItem, SplatListItem } from "../lib/tour-types";
 import Link from "next/link";
 import { Thumbnail } from "../components/thumbnail";
 import { PageLoading } from "../components/page-loading";
@@ -14,6 +16,13 @@ import { PageHeader } from "../components/page-header";
 import { StatusPill } from "../components/status-pill";
 import { SearchField } from "../components/search-field";
 import { GridLayoutToggle } from "../components/grid-layout-toggle";
+import { ImageIcon, InfoIcon, ShareIcon } from "../components/icons";
+import { Button } from "../lib/ui/button";
+import { currentGalleryUploads } from "../lib/media";
+import { readDraftPageCache, writeDraftPageCache } from "../lib/resilient-draft-cache";
+import { resolveUnit, type UnitLookup } from "../lib/unit-catalog";
+import { WebCreateAction } from "../components/web-create-action";
+import { CollectionLoading } from "../components/collection-loading";
 
 function compactNumber(value: string | number | null | undefined, lang?: string) {
   if (value == null || value === "") return null;
@@ -26,38 +35,25 @@ function formatMoney(value: string | number | null | undefined, currency: string
   if (value == null || value === "") return null;
   const n = typeof value === "number" ? value : Number(value);
   if (!Number.isFinite(n) || n === 0) return null;
+  if (!currency) return compactNumber(n, lang);
   try {
-    return new Intl.NumberFormat(lang, { style: "currency", currency: currency || "EUR", maximumFractionDigits: 0 }).format(n);
+    return new Intl.NumberFormat(lang, { style: "currency", currency, maximumFractionDigits: 0 }).format(n);
   } catch {
-    return `${compactNumber(n, lang)}${currency ? ` ${currency}` : ""}`;
+    return compactNumber(n, lang);
   }
 }
 
 function getDraftThumbnail(draft: DraftListingItem): string | null {
-  const uploads = draft.raw_uploads ?? [];
-  const img = uploads
-    .filter((u) => u.mime_type?.startsWith("image") || u.asset_type === "photo")
-    .sort((a, b) => a.sort_order - b.sort_order)[0];
-  return img?.file_url ?? null;
+  return currentGalleryUploads(draft.raw_uploads, "image")[0]?.file_url ?? null;
 }
 
-/** Build a "3 Bed · 2 Bath · 120 m²" string */
-function factsLine(draft: DraftListingItem, lang: string): string {
-  const layout = draft.specs?.layout ?? {};
-  const parts: string[] = [];
-  if (layout.bedrooms != null && layout.bedrooms !== "") parts.push(`${layout.bedrooms} ${t("dashboard.bedroomsShort", lang)}`);
-  if (layout.bathrooms != null && layout.bathrooms !== "") parts.push(`${layout.bathrooms} ${t("dashboard.bathroomsShort", lang)}`);
-  const area = draft.area_preferred ?? draft.area;
-  const areaUnit = draft.area_preferred_unit ?? draft.area_unit_display;
-  if (area != null && area !== "") {
-    let areaStr = `${compactNumber(area, lang)}${areaUnit ? ` ${areaUnit}` : ""}`;
-    // Show original in parentheses if different unit
-    if (draft.area_preferred && draft.area && draft.area_preferred_unit !== draft.area_unit_display && draft.area_unit_display) {
-      areaStr += ` (${compactNumber(draft.area, lang)} ${draft.area_unit_display})`;
-    }
-    parts.push(areaStr);
-  }
-  return parts.join(" · ");
+type DashboardTourState = "ready" | "processing" | "issues";
+
+function getTourState(item: SplatListItem): DashboardTourState {
+  const status = item.status.toLowerCase();
+  if (status === "failed" || status === "cancelled") return "issues";
+  if (status === "completed" && (item.has_sog || item.has_splat || item.has_ply)) return "ready";
+  return "processing";
 }
 
 export default function DashboardPage() {
@@ -67,26 +63,44 @@ export default function DashboardPage() {
   const [drafts, setDrafts] = React.useState<DraftListingItem[]>([]);
   const [draftsLoading, setDraftsLoading] = React.useState(true);
   const [draftsError, setDraftsError] = React.useState(false);
+  const [usingCachedDrafts, setUsingCachedDrafts] = React.useState(false);
+  const [retryAttempt, setRetryAttempt] = React.useState(0);
   const [reloadNonce, setReloadNonce] = React.useState(0);
   const [loadingMore, setLoadingMore] = React.useState(false);
   const [hasMore, setHasMore] = React.useState(false);
   const [totalCount, setTotalCount] = React.useState(0);
   const pageRef = React.useRef(1);
 
-  const [splatIds, setSplatIds] = React.useState<Record<number, number>>({});
+  const [tourStates, setTourStates] = React.useState<Record<number, DashboardTourState>>({});
+  const [unitCatalog, setUnitCatalog] = React.useState<UnitLookup[]>([]);
   const [searchInput, setSearchInput] = React.useState("");
   const [searchQuery, setSearchQuery] = React.useState("");
-  const [gridCols, setGridCols] = React.useState<1 | 2>(() => {
-    if (typeof window === "undefined") return 2;
+  const [gridCols, setGridCols] = React.useState<1 | 2>(2);
+  // Apply the persisted layout before the browser paints. Reading it in a
+  // passive effect visibly reshaped every card after the first frame.
+  React.useLayoutEffect(() => {
     const cached = localStorage.getItem("reaigen:gridCols");
-    return cached === "1" ? 1 : 2;
-  });
+    if (cached === "1") setGridCols(1);
+  }, []);
   const handleGridCols = React.useCallback((cols: 1 | 2) => {
     setGridCols(cols);
     localStorage.setItem("reaigen:gridCols", String(cols));
   }, []);
   const abortRef = React.useRef<AbortController | null>(null);
   const sentinelRef = React.useRef<HTMLDivElement>(null);
+  const firstPageLoadingRef = React.useRef(true);
+
+  // Restore this user's last successful page before paint. The live request
+  // still refreshes it immediately, but returning to the dashboard no longer
+  // swaps a grid of fake cards for real cards.
+  React.useLayoutEffect(() => {
+    if (!user?.id) return;
+    const cached = readDraftPageCache(user.id);
+    if (!cached?.results.length) return;
+    setDrafts(cached.results);
+    setHasMore(!!cached.next);
+    setTotalCount(cached.count);
+  }, [user?.id]);
 
   React.useEffect(() => {
     if (!isLoading && !isAuthenticated) router.replace("/");
@@ -103,25 +117,52 @@ export default function DashboardPage() {
     if (controller.signal.aborted) return;
 
     const results = data.results ?? [];
-    setDrafts((prev) => append ? [...prev, ...results] : results);
+    setDrafts((prev) => {
+      if (!append) return results;
+      const seen = new Set(prev.map((draft) => draft.id));
+      return [...prev, ...results.filter((draft) => !seen.has(draft.id))];
+    });
     setHasMore(!!data.next);
     setTotalCount(data.count ?? 0);
     pageRef.current = page;
+    if (page === 1 && !searchQuery && user?.id) {
+      writeDraftPageCache(user.id, {
+        results,
+        count: data.count ?? results.length,
+        next: data.next ?? null,
+      });
+    }
+    setUsingCachedDrafts(false);
+    setRetryAttempt(0);
 
-  }, [searchQuery]);
+  }, [searchQuery, user?.id]);
 
   // Load tour availability in batches. This avoids one by-draft request per card.
   React.useEffect(() => {
+    if (!isAuthenticated || draftsLoading) return;
+    let active = true;
+    void listAllSplats()
+      .then((splats) => {
+        if (!active) return;
+        const map: Record<number, DashboardTourState> = {};
+        for (const splat of splats) {
+          const state = getTourState(splat);
+          if (!map[splat.source_draft] || (state === "ready" && map[splat.source_draft] !== "ready")) {
+            map[splat.source_draft] = state;
+          }
+        }
+        setTourStates(map);
+      })
+      .catch(() => undefined);
+    return () => { active = false; };
+  }, [draftsLoading, isAuthenticated]);
+
+  React.useEffect(() => {
     if (!isAuthenticated) return;
     let active = true;
-    void listAllSplats().then((splats) => {
-      if (!active) return;
-      const map: Record<number, number> = {};
-      for (const splat of splats) {
-        if (!map[splat.source_draft]) map[splat.source_draft] = splat.id;
-      }
-      setSplatIds(map);
-    }).catch(() => undefined);
+    void listUnits("CURRENCY")
+      .then((units) => { if (active) setUnitCatalog(units); })
+      .catch(() => { if (active) setUnitCatalog([]); });
     return () => { active = false; };
   }, [isAuthenticated]);
 
@@ -132,12 +173,48 @@ export default function DashboardPage() {
 
   React.useEffect(() => {
     if (!isAuthenticated) return;
+    let active = true;
+    firstPageLoadingRef.current = true;
+    pageRef.current = 1;
+    setHasMore(false);
     setDraftsLoading(true);
     setDraftsError(false);
-    loadPage(1, false)
-      .catch(() => setDraftsError(true))
-      .finally(() => setDraftsLoading(false));
-  }, [searchQuery, isAuthenticated, loadPage, reloadNonce]);
+    void loadPage(1, false)
+      .then(() => { if (active) setDraftsError(false); })
+      .catch(() => {
+        if (!active) return;
+        const cached = !searchQuery && user?.id ? readDraftPageCache(user.id) : null;
+        if (cached?.results.length) {
+          setDrafts(cached.results);
+          setHasMore(!!cached.next);
+          setTotalCount(cached.count);
+          pageRef.current = 1;
+          setUsingCachedDrafts(true);
+          setDraftsError(false);
+        } else {
+          setDraftsError(true);
+        }
+        setRetryAttempt((attempt) => attempt + 1);
+      })
+      .finally(() => {
+        if (!active) return;
+        firstPageLoadingRef.current = false;
+        setDraftsLoading(false);
+      });
+    return () => {
+      active = false;
+      abortRef.current?.abort();
+    };
+  }, [searchQuery, isAuthenticated, loadPage, reloadNonce, user?.id]);
+
+  React.useEffect(() => {
+    if (!isAuthenticated || (!draftsError && !usingCachedDrafts)) return;
+    const delay = Math.min(30_000, 3_000 * (2 ** Math.min(retryAttempt, 3)));
+    const timer = window.setTimeout(() => {
+      if (!document.hidden) setReloadNonce((value) => value + 1);
+    }, delay);
+    return () => window.clearTimeout(timer);
+  }, [draftsError, isAuthenticated, retryAttempt, usingCachedDrafts]);
 
   React.useEffect(() => {
     if (!isAuthenticated) return;
@@ -155,10 +232,11 @@ export default function DashboardPage() {
   }, [isAuthenticated, loadPage]);
 
   const handleLoadMore = React.useCallback(async () => {
+    if (firstPageLoadingRef.current || loadingMore || !hasMore) return;
     setLoadingMore(true);
     try { await loadPage(pageRef.current + 1, true); } catch {}
     setLoadingMore(false);
-  }, [loadPage]);
+  }, [hasMore, loadPage, loadingMore]);
 
   // Infinite scroll: observe sentinel div to auto-load next page
   React.useEffect(() => {
@@ -196,14 +274,6 @@ export default function DashboardPage() {
     return () => { clearInterval(id); document.removeEventListener("visibilitychange", onVisible); };
   }, [isAuthenticated, searchQuery, drafts]);
 
-  // Show back-to-top button after scrolling down
-  const [showBackToTop, setShowBackToTop] = React.useState(false);
-  React.useEffect(() => {
-    const onScroll = () => setShowBackToTop(window.scrollY > 400);
-    window.addEventListener("scroll", onScroll, { passive: true });
-    return () => window.removeEventListener("scroll", onScroll);
-  }, []);
-
   if (isLoading || !user) {
     return <PageLoading />;
   }
@@ -212,171 +282,181 @@ export default function DashboardPage() {
 
   return (
     <AppShell user={user} onLogout={logout}>
-      <div className="mx-auto w-full max-w-[1180px] animate-fade-in">
+      <div className="mx-auto w-full max-w-[1360px]">
+        {/*
+          The count goes to `meta`, not `actions`. In the action row it was not
+          just competing with the create button for weight, it was holding that
+          row full-width on phones; under the title it reads as what it is and
+          costs no band of its own.
+        */}
         <PageHeader
           title={t("dashboard.creationsTitle", lang)}
-          description={t("dashboard.creationsSubtitle", lang)}
-          actions={totalCount > 0 ? <StatusPill>{totalCount} {t("dashboard.items", lang)}</StatusPill> : undefined}
-          className="mb-7"
+          meta={`${totalCount} ${t("dashboard.items", lang)}`}
+          actions={<WebCreateAction lang={lang} />}
+          className="mb-3 sm:mb-5"
         />
         {/* Search bar */}
-        <div className="mb-6 flex items-center gap-3 border-b border-border/40 pb-3">
+        <div className="mb-3 flex items-center gap-2 border-b border-border/75 pb-2 sm:mb-4">
           <SearchField
             value={searchInput}
             onChange={setSearchInput}
             onClear={() => setSearchQuery("")}
             placeholder={t("dashboard.searchPlaceholder", lang)}
             clearLabel={t("dashboard.clearSearch", lang)}
-            className="flex-1"
+            className="flex-1 px-1"
+            appearance="toolbar"
           />
-          <GridLayoutToggle value={gridCols} onChange={handleGridCols} />
+          <GridLayoutToggle value={gridCols} onChange={handleGridCols} lang={lang} />
         </div>
 
+        {usingCachedDrafts && (
+          /*
+            In flow above the list it describes, not floating over it. Fixed at
+            top-20 it sat on the header on a phone — a notice about stale
+            results covering the page's own title and search — and it has no
+            dismiss, so it stayed there. Nothing about it is urgent enough to
+            take a layer above the content.
+          */
+          <div
+            role="status"
+            className="floating-panel mb-4 flex items-start gap-3 border-border/70 bg-card/95 px-3.5 py-3 text-[12px] text-foreground/65 sm:items-center"
+          >
+            <InfoIcon size={16} className="mt-0.5 shrink-0 text-foreground/45 sm:mt-0" />
+            <p className="min-w-0 flex-1 leading-relaxed">{t("dashboard.cachedNotice", lang)}</p>
+            <Button type="button" variant="ghost" size="xs" className="shrink-0" onClick={() => setReloadNonce((value) => value + 1)}>{t("dashboard.refreshCreations", lang)}</Button>
+          </div>
+        )}
+
         {/* Cards */}
-        {draftsLoading ? (
-          <div className={`grid grid-cols-1 gap-6 ${gridCols === 2 ? "md:grid-cols-2" : "mx-auto max-w-2xl"}`}>
-            {Array.from({ length: gridCols === 2 ? 4 : 3 }).map((_, i) => (
-              <div key={i} className="animate-pulse">
-                <div className="aspect-[16/10] rounded-xl bg-muted/30" />
-                <div className="mt-3 space-y-2 px-1">
-                  <div className="h-4 w-2/3 rounded bg-muted/40" />
-                  <div className="h-3 w-1/2 rounded bg-muted/30" />
-                </div>
-              </div>
-            ))}
-          </div>
+        {draftsLoading && drafts.length === 0 ? (
+          <CollectionLoading label={t("common.loading", lang)} className="min-h-48" />
         ) : draftsError ? (
-          <div className="flex flex-col items-center justify-center rounded-2xl border border-border/55 bg-surface px-6 py-20 text-center">
-            <p className="text-[14px] font-semibold">{t("dashboard.loadFailed", lang)}</p>
-            <button type="button" onClick={() => setReloadNonce((value) => value + 1)} className="mt-3 text-[12px] font-semibold underline underline-offset-4">
-              {t("common.tryAgain", lang)}
-            </button>
-          </div>
+          <CollectionState
+            kind="error"
+            icon={<InfoIcon size={20} />}
+            title={t("dashboard.loadFailed", lang)}
+            description={t("dashboard.reconnectHint", lang)}
+            action={<Button type="button" variant="outline" size="sm" onClick={() => setReloadNonce((value) => value + 1)}>{t("common.tryAgain", lang)}</Button>}
+          />
         ) : drafts.length === 0 ? (
-          <div className="flex flex-col items-center justify-center py-20 text-center">
-            <div className="mb-4 flex h-12 w-12 items-center justify-center rounded-full bg-foreground/[0.04]">
-              <svg width="22" height="22" viewBox="0 0 24 24" fill="none" className="text-foreground/25" aria-hidden="true">
-                <path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
-                <path d="M3.27 6.96L12 12.01l8.73-5.05M12 22.08V12" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
-              </svg>
-            </div>
-            <p className="text-[14px] font-medium text-foreground/60">{t("dashboard.noSplatsTitle", lang)}</p>
-            <p className="mt-1 max-w-[260px] text-[12px] leading-relaxed text-muted-foreground">{t("dashboard.noSplats", lang)}</p>
-          </div>
+          <CollectionState
+            icon={<ImageIcon size={20} />}
+            title={t(searchQuery ? "dashboard.noResults" : "dashboard.noSplatsTitle", lang)}
+            description={t(searchQuery ? "dashboard.noResultsHint" : "dashboard.noSplats", lang)}
+            action={searchQuery ? <Button type="button" variant="outline" size="sm" onClick={() => { setSearchInput(""); setSearchQuery(""); }}>{t("dashboard.clearSearch", lang)}</Button> : undefined}
+          />
         ) : (
           <>
-          <div className={`grid grid-cols-1 gap-6 ${gridCols === 2 ? "md:grid-cols-2" : "mx-auto max-w-2xl"}`}>
+          <div className={`grid grid-cols-1 gap-5 xl:gap-6 ${gridCols === 2 ? "md:grid-cols-2" : "mx-auto max-w-2xl"}`}>
             {drafts.map((draft, idx) => {
-              const prefPrice = formatMoney(draft.price_preferred, draft.price_preferred_currency, lang);
-              const origPrice = formatMoney(draft.price, draft.currency, lang);
+              const preferredCurrency = resolveUnit(unitCatalog, draft.price_preferred_currency, "CURRENCY");
+              const storedCurrency = resolveUnit(unitCatalog, draft.currency, "CURRENCY");
+              const prefPrice = formatMoney(draft.price_preferred, preferredCurrency?.code, lang);
+              const origPrice = formatMoney(draft.price, storedCurrency?.code, lang);
               const price = prefPrice || origPrice;
-              const showOrigPrice = prefPrice && origPrice && draft.price_preferred_currency !== draft.currency;
-              const facts = factsLine(draft, lang);
+              const showOrigPrice = prefPrice && origPrice && preferredCurrency?.id !== storedCurrency?.id;
               const address = draft.display_address || [draft.city, draft.state, draft.country].filter(Boolean).join(", ");
               const thumbUrl = getDraftThumbnail(draft);
-              const draftSplatId = splatIds[draft.id];
+              const draftTour = tourStates[draft.id];
+              const tourStatusLabel = draftTour === "ready"
+                ? t("dashboard.tourReady", lang)
+                : draftTour === "issues"
+                  ? t("dashboard.status.failed", lang)
+                  : draftTour === "processing"
+                    ? t("dashboard.status.processing", lang)
+                    : null;
 
               return (
-                <Link
-                  key={draft.id}
-                  href={`/draft/${draft.id}`}
-                  className="group block opacity-0 animate-fade-in-up [animation-fill-mode:forwards]"
-                  style={{ animationDelay: `${idx * 50}ms` }}
-                  onMouseEnter={() => router.prefetch(`/draft/${draft.id}`)}
-                >
-                  {/* Image */}
-                  <div className="relative aspect-[16/10] overflow-hidden rounded-xl bg-muted/20 transition-shadow group-hover:shadow-lg">
-                    {thumbUrl ? (
-                      <Thumbnail src={thumbUrl} alt={draft.title} className="absolute inset-0 w-full h-full object-cover transition-transform duration-300 group-hover:scale-[1.02]" priority={idx < 4} />
-                    ) : (
-                      <div className="absolute inset-0 flex items-center justify-center">
-                        <svg width="40" height="40" viewBox="0 0 24 24" fill="none" className="text-foreground/8">
-                          <rect x="3" y="3" width="18" height="18" rx="2" stroke="currentColor" strokeWidth="1.5" />
-                          <circle cx="8.5" cy="8.5" r="1.5" fill="currentColor" />
-                          <path d="M21 15l-5-5L5 21" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
-                        </svg>
-                      </div>
-                    )}
-                    {/* 3D Tour badge */}
-                    {draftSplatId && (
-                      <div className="absolute top-3 left-3 flex items-center gap-1.5 rounded-full bg-black/50 backdrop-blur-sm px-2.5 py-1 text-[11px] font-medium text-white">
-                        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/></svg>
-                        {t("dashboard.tourReady", lang)}
-                      </div>
-                    )}
-                    {!draftSplatId && !draft.is_complete && (
-                      <div className="absolute left-3 top-3 rounded-full bg-white/90 px-2.5 py-1 text-[10px] font-semibold text-black/65 shadow-sm backdrop-blur-sm">
-                        {t("dashboard.listingDraft", lang)}
-                      </div>
-                    )}
-                    {/* Share button */}
-                    <button
-                      onClick={(e) => { e.preventDefault(); e.stopPropagation(); router.push(`/draft/${draft.id}/sharing`); }}
-                      className="absolute right-3 top-3 flex h-8 w-8 items-center justify-center rounded-full bg-black/50 text-white/75 opacity-100 backdrop-blur-sm transition-all hover:bg-black/65 hover:text-white sm:opacity-0 sm:group-hover:opacity-100 sm:group-focus-within:opacity-100"
-                      aria-label={t("draft.share", lang)}
-                    >
-                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><path d="M8.59 13.51l6.83 3.98M15.41 6.51l-6.82 3.98"/></svg>
-                    </button>
-                  </div>
-
-                  {/* Property info */}
-                  <div className="mt-2.5 px-0.5">
-                    <div className="flex items-start justify-between gap-3">
-                      <div className="min-w-0 flex-1">
-                        <h2 className="text-[15px] font-semibold leading-snug truncate">{draft.title || t("dashboard.untitled", lang)}</h2>
-                        {address && (
-                          <p className="mt-0.5 text-[13px] text-muted-foreground truncate">{address}</p>
+                <CollectionCard key={draft.id}>
+                  <Link
+                    href={`/draft/${draft.id}`}
+                    data-testid="draft-card-link"
+                    className="block focus-visible:outline-none"
+                    onMouseEnter={() => router.prefetch(`/draft/${draft.id}`)}
+                  >
+                    <div className="relative aspect-[16/10] overflow-hidden bg-surface-subtle">
+                      {thumbUrl ? (
+                        <Thumbnail src={thumbUrl} alt={draft.title} className="absolute inset-0 h-full w-full object-cover [@media(hover:hover)]:transition-transform [@media(hover:hover)]:duration-500 [@media(hover:hover)]:ease-out [@media(hover:hover)]:group-hover:scale-[1.03]" priority={idx < 4} />
+                      ) : (
+                        <div
+                          aria-hidden="true"
+                          className="absolute inset-0 bg-gradient-to-br from-surface-subtle via-muted/45 to-foreground/[0.14]"
+                        />
+                      )}
+                      <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/5 to-black/15" aria-hidden="true" />
+                      <StatusPill
+                        tone={draftTour === "ready" ? "success" : draftTour === "issues" ? "danger" : draftTour === "processing" ? "warning" : draft.is_complete ? "success" : "warning"}
+                        dot
+                        /*
+                          No backdrop blur here: this pill repeats once per card,
+                          so a full list put twenty blurred regions on the scroll
+                          path. Over a photo at 55% black the blur was not
+                          legible anyway — the fill alone carries the contrast.
+                        */
+                        // Same inset as the title block at the foot of the card
+                        // (p-4 sm:p-5). Anything laid over the photo shares one
+                        // margin on all four sides, or the pill starts left of
+                        // the title it sits above and the card reads crooked.
+                        className="absolute left-4 top-4 border-white/15 bg-black/60 text-white/90 shadow-sm sm:left-5 sm:top-5"
+                      >
+                        {tourStatusLabel
+                          ?? (draft.is_complete
+                            ? t("dashboard.listingComplete", lang)
+                            : t("dashboard.listingDraft", lang))}
+                      </StatusPill>
+                      <div className="absolute inset-x-0 bottom-0 flex items-end justify-between gap-4 p-4 sm:p-5">
+                        <div className="min-w-0 flex-1">
+                          <h2 className="truncate text-[17px] font-semibold leading-snug tracking-[-0.02em] text-white">{draft.title || t("dashboard.untitled", lang)}</h2>
+                          {address && (
+                            <p className="mt-1 truncate text-[12px] text-white/70">{address}</p>
+                          )}
+                          <p className="mt-2 flex min-w-0 items-center gap-2 truncate text-[12px] font-medium text-white/75">
+                            <span className={`h-1.5 w-1.5 shrink-0 rounded-full ${draft.is_portfolio_visible ? "bg-emerald-400" : "bg-white/35"}`} aria-hidden="true" />
+                            <span className="truncate">{draft.is_portfolio_visible ? t("dashboard.portfolioVisible", lang) : t("dashboard.notInPortfolio", lang)}</span>
+                          </p>
+                        </div>
+                        {price && (
+                          /*
+                            Fully opaque. A translucent fill let busy photos read
+                            straight through the price — the one number on the
+                            card that must never be ambiguous. Solid white also
+                            means it needs no backdrop blur, which mattered here
+                            because this pill repeats once per card on the
+                            scroll path.
+                          */
+                          <div className="floating-status shrink-0 flex flex-col justify-center bg-white px-3.5 text-right text-black shadow-[0_2px_10px_rgba(0,0,0,0.18)] ring-1 ring-black/[0.06]">
+                            <span className="block text-[14px] font-semibold leading-tight tabular-nums">{price}</span>
+                            {showOrigPrice && (
+                              <span className="block text-[11px] leading-tight text-black/55 tabular-nums">{origPrice}</span>
+                            )}
+                          </div>
                         )}
                       </div>
-                      {price && (
-                        <div className="text-right shrink-0">
-                          <span className="text-[15px] font-semibold tabular-nums">{price}</span>
-                          {showOrigPrice && (
-                            <p className="text-[11px] text-muted-foreground tabular-nums">{origPrice}</p>
-                          )}
-                        </div>
-                      )}
                     </div>
-                    {facts && (
-                      <p className="mt-1 text-[13px] text-foreground/50">{facts}</p>
-                    )}
-                  </div>
-                </Link>
+                  </Link>
+
+                  <Link
+                    href={`/draft/${draft.id}?sharing=1`}
+                    prefetch
+                    // No backdrop blur: one per card puts a blurred region per row on the scroll path.
+                    className="floating-icon-button-sm pen-touch-target absolute right-4 top-4 z-10 flex items-center justify-center border border-white/15 bg-black/55 text-white/85 shadow-sm sm:right-5 sm:top-5 transition-[background-color,color,opacity] hover:bg-black/75 hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white focus-visible:ring-offset-2 focus-visible:ring-offset-black md:opacity-0 md:group-hover:opacity-100 md:group-focus-within:opacity-100"
+                    aria-label={t("draft.share", lang)}
+                  >
+                    <ShareIcon size={14} />
+                  </Link>
+                </CollectionCard>
               );
             })}
 
           </div>
           {hasMore && <div ref={sentinelRef} className="h-px" />}
           {loadingMore && (
-            <div className={`grid grid-cols-1 gap-6 pt-6 ${gridCols === 2 ? "md:grid-cols-2" : "mx-auto max-w-2xl"}`}>
-              {Array.from({ length: gridCols === 2 ? 2 : 1 }).map((_, i) => (
-                <div key={i} className="animate-pulse">
-                  <div className="aspect-[16/10] rounded-xl bg-muted/30" />
-                  <div className="mt-3 space-y-2 px-1">
-                    <div className="h-4 w-2/3 rounded bg-muted/40" />
-                    <div className="h-3 w-1/2 rounded bg-muted/30" />
-                  </div>
-                </div>
-              ))}
-            </div>
+            <CollectionLoading label={t("common.loading", lang)} className="min-h-20 pt-7" />
           )}
           </>
         )}
       </div>
 
-      {/* Back to top */}
-      {showBackToTop && (
-        <button
-          type="button"
-          onClick={() => window.scrollTo({ top: 0, behavior: "smooth" })}
-          className="fixed bottom-6 right-6 z-50 flex h-10 w-10 items-center justify-center rounded-full bg-foreground/80 text-background shadow-lg backdrop-blur-sm transition-all hover:bg-foreground active:scale-95 animate-fade-in"
-          aria-label="Back to top"
-        >
-          <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true">
-            <path d="M8 13V3M4 7l4-4 4 4" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
-          </svg>
-        </button>
-      )}
     </AppShell>
   );
 }

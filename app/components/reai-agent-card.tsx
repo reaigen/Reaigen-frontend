@@ -1,33 +1,195 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useState } from "react";
+import { useRouter } from "next/navigation";
+import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 
 import {
-  ApiError,
   applyReaiMediaAction,
+  applyReaiTourCoverAction,
+  applyReaiTranslationAction,
   applyReaiWorkspaceAction,
   applyReaiWorkspaceProposal,
   askReaiWorkspace,
   getAgentCreationHistory,
   getAgentMediaVersions,
+  getDraft,
   getReaiAgentConsent,
   getReaiImprovementConsent,
+  listUnits,
   restoreAgentCreationRevision,
   manageAgentMediaVersion,
   saveReaiFeedback,
   updateLocalization,
+  uploadDraftPhoto,
   type AgentCreationRevision,
   type AgentMediaVersionGroup,
   type ReaiAgentConsent,
   type ReaiAgentResponse,
   type ReaiImprovementConsent,
 } from "../lib/api/client";
-import { t } from "../lib/i18n";
+import {
+  addPoolItem,
+  agentPoolKey,
+  dragHasFiles,
+  dragHasPoolItem,
+  poolItemKey,
+  poolItemsForRequest,
+  readAgentPool,
+  readDragItem,
+  removePoolItem,
+  writeAgentPool,
+  type AgentPoolImage,
+  type AgentPoolItem,
+} from "../lib/agent-pool";
+import {
+  agentTranscriptKey,
+  readAgentTranscript,
+  writeAgentTranscript,
+} from "../lib/agent-session";
+import { getSafeApiErrorMessage } from "../lib/api/error-message";
+import { formatDate, t } from "../lib/i18n";
 import type { LocaleKey } from "../lib/locales";
-import type { DraftDetailItem } from "../lib/tour-types";
+import { PROPERTY_FIELD_SECTIONS, subtypeOptions, type PropertyFieldDefinition, type PropertyType } from "../lib/property-field-registry";
+import type { DraftDetailItem, DraftUpload } from "../lib/tour-types";
+import { copyToClipboard } from "../lib/share-ui";
+import {
+  REAI_VIEWER_ACTION_RESULT_EVENT,
+  dispatchReaiViewerAction,
+  readReaiViewerActionResult,
+} from "../lib/reai-viewer-actions";
+import { baseUnitForCategory, resolveUnit, unitLabel, type UnitLookup } from "../lib/unit-catalog";
 import { Button } from "../lib/ui/button";
 import { cn } from "../lib/utils";
+import { AgentMiniUi } from "./agent-mini-ui";
+import { AgentTinyUi } from "./agent-tiny-ui";
+import { MediaVersionCard, type MediaAction } from "./draft-version-manager";
+import { useAuth } from "./hooks/use-auth";
+import { StatusPill } from "./status-pill";
+import { AgentIcon, SearchIcon, VersionsIcon, LayoutIcon, SparklesIcon, CheckIcon, CloseIcon, EditIcon, LockIcon, InfoIcon } from "./icons";
+
+// Maps a quick-action key to its icon, so the agent suggestions read as
+// distinct, recognisable actions rather than flat text rows.
+const ACTION_ICON: Record<string, typeof SearchIcon> = {
+  "reai.quickFind": SearchIcon,
+  "reai.quickCompare": VersionsIcon,
+  "reai.quickBulk": LayoutIcon,
+  "reai.quickImproveDescription": SparklesIcon,
+  "reai.quickCheckFields": CheckIcon,
+  "reai.quickEditCurrent": EditIcon,
+  "reai.quickSettingsAgent": SparklesIcon,
+  "reai.quickSettingsLanguage": InfoIcon,
+  "reai.quickSettingsSecurity": LockIcon,
+};
+
+function Working({ lang, className }: { lang: string; className?: string }) {
+  return (
+    <p role="status" aria-live="polite" className={cn("flex items-center gap-2 py-3 text-[11px] text-muted-foreground", className)}>
+      <svg className="h-3.5 w-3.5 animate-spin" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" aria-hidden="true">
+        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+      </svg>
+      {t("reai.working", lang)}
+    </p>
+  );
+}
+
+/**
+ * The pending assistant turn.
+ *
+ * A turn is one JSON request — there is no token stream to render, so this
+ * cannot show the answer arriving. What it can do is stop the panel looking
+ * stopped: the previous version was a single line of static grey text above an
+ * otherwise empty screen, so a reply that takes several seconds was
+ * indistinguishable from a request that had failed silently.
+ *
+ * It occupies the shape the answer will take — same left rule, same rhythm of
+ * lines — so the reply lands in place rather than appearing somewhere new, and
+ * the widths taper the way a paragraph does. Deliberately three lines: enough
+ * to read as prose, few enough not to promise a longer answer than usually
+ * arrives.
+ *
+ * No invented progress steps. Naming stages the client cannot observe
+ * ("reading images…", "checking the listing…") would be telling the user
+ * something we do not know.
+ */
+function PendingAnswer({ lang }: { lang: string }) {
+  return (
+    <div className="border-l border-foreground/15 pl-3" role="status" aria-live="polite">
+      <p className="flex items-center gap-2 py-1 text-[12px] text-muted-foreground">
+        <svg className="h-3 w-3 shrink-0 animate-spin motion-reduce:animate-none" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+          <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+          <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+        </svg>
+        {t("reai.working", lang)}
+      </p>
+      <div aria-hidden="true" className="mt-2 space-y-2 pb-1">
+        {["w-[92%]", "w-[78%]", "w-[54%]"].map((width) => (
+          <div
+            key={width}
+            className={cn(
+              "h-2.5 rounded-full bg-gradient-to-r from-foreground/[0.06] via-foreground/[0.13] to-foreground/[0.06]",
+              "bg-[length:200%_100%] animate-shimmer motion-reduce:animate-none",
+              width,
+            )}
+          />
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function AgentStatusBadge({
+  tone,
+  children,
+}: {
+  tone: "success" | "pending" | "neutral";
+  children: ReactNode;
+}) {
+  const Icon = tone === "success" ? CheckIcon : tone === "pending" ? InfoIcon : CloseIcon;
+  return (
+    <span
+      role="status"
+      className={cn(
+        "floating-status inline-flex items-center gap-1.5 text-xs",
+        tone === "success" && "bg-foreground text-background",
+        tone === "pending" && "border border-border/55 bg-background text-foreground/75",
+        tone === "neutral" && "bg-foreground/[0.06] text-muted-foreground",
+      )}
+    >
+      <Icon size={12} aria-hidden="true" />
+      {children}
+    </span>
+  );
+}
+
+function AgentVersionStamp({ answer }: { answer: ReaiAgentResponse }) {
+  const version = answer.agent_version;
+  if (!version?.version) return null;
+  const build = version.build_sha || "unknown";
+  const shortBuild = build === "development" ? build : build.slice(0, 12);
+
+  return (
+    <details
+      className="mt-1.5 w-fit text-[11px] text-muted-foreground"
+      data-agent-version={version.version}
+      data-agent-build={build}
+    >
+      <summary className="cursor-pointer select-none hover:text-foreground">
+        ReaiAgent {version.version} · {shortBuild}
+      </summary>
+      <div className="mt-1 max-w-full space-y-0.5 border-l border-border/55 pl-2.5 leading-relaxed">
+        <p className="break-all">Git <code>{build}</code></p>
+        {version.prompt_version && <p className="break-all">Prompt <code>{version.prompt_version}</code></p>}
+        <p>
+          Schema <code>{version.response_schema_version || "untracked"}</code>
+          {" · "}tools <code>{version.tool_policy_version || "untracked"}</code>
+          {" · "}runtime <code>r{version.runtime_settings_revision}</code>
+        </p>
+      </div>
+    </details>
+  );
+}
 
 type ChatTurn = {
   id: number;
@@ -36,7 +198,7 @@ type ChatTurn = {
   response?: ReaiAgentResponse;
   feedback?: boolean;
   proposalStatus?: "applied" | "dismissed";
-  actionStatus?: "applied" | "dismissed";
+  actionStatus?: "pending" | "applied" | "failed" | "dismissed";
 };
 
 function contextualShareUrl(answer: ReaiAgentResponse): string | null {
@@ -62,7 +224,13 @@ function agentFieldLabel(field: string, lang: string): string {
   return key ? t(key, lang) : field.replaceAll("_", " ");
 }
 
-function proposalValue(field: string, value: unknown, answer: ReaiAgentResponse, lang: string): string {
+function proposalValue(
+  field: string,
+  value: unknown,
+  answer: ReaiAgentResponse,
+  units: readonly UnitLookup[],
+  lang: string,
+): string {
   const number = typeof value === "number" ? value : (
     typeof value === "string" && value.trim() !== "" && Number.isFinite(Number(value)) ? Number(value) : null
   );
@@ -72,11 +240,22 @@ function proposalValue(field: string, value: unknown, answer: ReaiAgentResponse,
   const firstCreation = answer.draft_results?.[0]?.creation_data;
   if (field === "area" && formatted) {
     const measurements = firstCreation?.floorplan_measurements as { total_floor_area_m2?: number } | undefined;
-    const unit = measurements?.total_floor_area_m2 ? "m²" : String(firstCreation?.area_unit || "m²");
-    return `${formatted} ${unit}`;
+    const unit = measurements?.total_floor_area_m2 != null
+      ? baseUnitForCategory(units, "AREA")
+      : resolveUnit(units, firstCreation?.area_unit as string | number | null | undefined, "AREA");
+    const label = unitLabel(unit);
+    return `${formatted}${label ? ` ${label}` : ""}`;
   }
-  if (field === "lot_size" && formatted) return `${formatted} ${String(firstCreation?.area_unit || "m²")}`;
-  if (field === "price" && formatted) return `${formatted} ${String(firstCreation?.currency || "")}`.trim();
+  if (field === "lot_size" && formatted) {
+    const unit = resolveUnit(units, firstCreation?.lot_size_unit as string | number | null | undefined, "AREA");
+    const label = unitLabel(unit);
+    return `${formatted}${label ? ` ${label}` : ""}`;
+  }
+  if (field === "price" && formatted) {
+    const unit = resolveUnit(units, firstCreation?.currency, "CURRENCY");
+    const label = unitLabel(unit);
+    return `${formatted}${label ? ` ${label}` : ""}`;
+  }
   if (formatted) return formatted;
   if (typeof value === "string") return value;
   return JSON.stringify(value);
@@ -96,27 +275,40 @@ function localizedMetric(value: unknown, lang: string): string | null {
     : String(value);
 }
 
-const specLabelKeys: Record<string, LocaleKey> = {
-  property_type: "reai.attribute.propertyType",
-  property_subtype: "reai.attribute.propertySubtype",
-  rooms: "reai.attribute.rooms",
-  bedrooms: "reai.attribute.bedrooms",
-  bathrooms: "reai.attribute.bathrooms",
-  toilets: "reai.attribute.toilets",
-  cooling_types: "reai.attribute.coolingTypes",
-};
+function localizedLookupMetric(
+  value: unknown,
+  unitValue: unknown,
+  category: "AREA" | "CURRENCY",
+  units: readonly UnitLookup[],
+  lang: string,
+) {
+  const formatted = localizedMetric(value, lang);
+  if (!formatted) return null;
+  const unit = resolveUnit(
+    units,
+    typeof unitValue === "string" || typeof unitValue === "number" ? unitValue : null,
+    category,
+  );
+  const label = unitLabel(unit);
+  return `${formatted}${label ? ` ${label}` : ""}`;
+}
 
-const specValueKeys: Record<string, LocaleKey> = {
-  commercial: "reai.value.commercial",
-  office: "reai.value.office",
-  air_conditioning: "reai.value.airConditioning",
-};
+const specFieldDefinitions: Map<string, PropertyFieldDefinition> = new Map(
+  PROPERTY_FIELD_SECTIONS.flatMap((section) => (
+    section.fields.map((field) => [`${section.key}.${field.key}`, field] as const)
+  )),
+);
+const propertyTypes: PropertyType[] = ["apartment", "house", "land", "commercial", "other"];
+const propertySubtypeOptions = propertyTypes.flatMap((propertyType) => subtypeOptions(propertyType));
 
-function localizedSpecValue(value: unknown, lang: string): string {
-  if (Array.isArray(value)) return value.map((item) => localizedSpecValue(item, lang)).join(", ");
+function localizedSpecValue(value: unknown, lang: string, section: string, key: string): string {
+  if (Array.isArray(value)) return value.map((item) => localizedSpecValue(item, lang, section, key)).join(", ");
   if (typeof value === "boolean") return value ? t("common.yes", lang) : t("common.no", lang);
   const raw = String(value ?? "");
-  return specValueKeys[raw] ? t(specValueKeys[raw], lang) : raw.replaceAll("_", " ");
+  const definition = specFieldDefinitions.get(`${section}.${key}`);
+  const options = key === "property_subtype" ? propertySubtypeOptions : definition?.options;
+  const option = options?.find((item) => item.value === raw);
+  return option ? t(option.labelKey, lang) : raw.replaceAll("_", " ");
 }
 
 function proposalSpecEntries(value: unknown, lang: string): Array<{ key: string; label: string; value: string }> {
@@ -125,20 +317,42 @@ function proposalSpecEntries(value: unknown, lang: string): Array<{ key: string;
   Object.entries(value as Record<string, unknown>).forEach(([section, sectionValue]) => {
     if (!sectionValue || typeof sectionValue !== "object" || Array.isArray(sectionValue)) return;
     Object.entries(sectionValue as Record<string, unknown>).forEach(([key, item]) => {
+      const definition = specFieldDefinitions.get(`${section}.${key}`);
       entries.push({
         key: `${section}.${key}`,
-        label: specLabelKeys[key] ? t(specLabelKeys[key], lang) : key.replaceAll("_", " "),
-        value: localizedSpecValue(item, lang),
+        label: definition ? t(definition.labelKey, lang) : key.replaceAll("_", " "),
+        value: localizedSpecValue(item, lang, section, key),
       });
     });
   });
   return entries;
 }
 
+function localizedLanguageName(code: string, lang: string): string {
+  if (code === "auto") return t("reai.translationAuto", lang);
+  try {
+    return new Intl.DisplayNames([lang || "en"], { type: "language" }).of(code) || code.toUpperCase();
+  } catch {
+    return code.toUpperCase();
+  }
+}
+
+function mediaOperationSuffix(key: string, value: string | number | boolean, lang: string): string {
+  if (typeof value === "boolean") return "";
+  if (key === "motion") {
+    return ` · ${t(`reai.mediaMotion.${value}` as LocaleKey, lang)}`;
+  }
+  if (typeof value === "number") {
+    return ` · ${new Intl.NumberFormat(lang || "en", { maximumFractionDigits: 2 }).format(value)}`;
+  }
+  return ` · ${value}`;
+}
+
 function historyValue(
   field: string,
   value: unknown,
-  revision: AgentCreationRevision,
+  unitState: Record<string, unknown>,
+  units: readonly UnitLookup[],
   lang: string,
 ): string {
   if (field === "specs") {
@@ -153,23 +367,36 @@ function historyValue(
   );
   if (number !== null) {
     const formatted = new Intl.NumberFormat(lang || "en", { maximumFractionDigits: 2 }).format(number);
-    if (field === "area" || field === "lot_size") return `${formatted} m²`;
-    if (field === "price") return `${formatted} ${String(revision.snapshot.currency || "")}`.trim();
+    if (field === "area" || field === "lot_size") {
+      const unitValue = field === "lot_size"
+        ? unitState.lot_size_unit
+        : unitState.area_unit ?? unitState.area_unit_code ?? unitState.area_unit_display;
+      const label = unitLabel(resolveUnit(units, unitValue as string | number | null | undefined, "AREA"));
+      return `${formatted}${label ? ` ${label}` : ""}`;
+    }
+    if (field === "price") {
+      const label = unitLabel(resolveUnit(units, unitState.currency as string | number | null | undefined, "CURRENCY"));
+      return `${formatted}${label ? ` ${label}` : ""}`;
+    }
     return formatted;
   }
   return String(value);
 }
 
 function errorText(error: unknown, lang: string): string {
-  if (error instanceof ApiError) {
-    try {
-      const parsed = JSON.parse(error.body) as { detail?: string };
-      // Provider and validation internals are intentionally not rendered as
-      // raw English strings in a localized creator workspace.
-      if (parsed.detail && error.status < 500) return parsed.detail;
-    } catch { /* use localized fallback */ }
-  }
-  return t("reai.error", lang);
+  // Safe 4xx details explain an actionable permission/context problem. Server
+  // failures and technical internals remain behind the localized fallback.
+  return getSafeApiErrorMessage(error, lang, "reai.error");
+}
+
+function safeAgentNavigationPath(answer: ReaiAgentResponse): string | null {
+  const path = answer.navigation_path;
+  if (!path || !path.startsWith("/") || path.startsWith("//")) return null;
+  if (answer.action_code === "open_creation" && /^\/draft\/[1-9]\d*\/?$/.test(path)) return path;
+  if (answer.action_code === "create_creation" && path === "/create") return path;
+  if (answer.action_code === "open_tour" && /^\/create\/tour\/[1-9]\d*\/?$/.test(path)) return path;
+  if (answer.action_code === "settings_navigation" && /^\/settings(?:#[a-z_-]+)?$/.test(path)) return path;
+  return null;
 }
 
 function isExplicitProposalConfirmation(value: string): boolean {
@@ -191,19 +418,27 @@ function isExplicitProposalConfirmation(value: string): boolean {
 export function ReaiAgentCard({
   draftId,
   currentUploadId,
+  currentTourId,
   workspaceContext = draftId ? "draft" : "creator",
   lang,
   onDraftUpdated,
   panel = false,
+  compact = false,
 }: {
   draftId?: number;
   currentUploadId?: number;
-  workspaceContext?: "creator" | "draft" | "settings";
+  currentTourId?: number;
+  workspaceContext?: "creator" | "draft" | "settings" | "floorplan" | "virtual_tour";
   lang: string;
   onDraftUpdated?: (draft: DraftDetailItem) => void;
   panel?: boolean;
+  compact?: boolean;
 }) {
+  const router = useRouter();
+  const { user } = useAuth();
+  const dateFormat = user?.localization?.date_format;
   const [consent, setConsent] = useState<ReaiAgentConsent | null>(null);
+  const [consentResolved, setConsentResolved] = useState(false);
   const [improvementConsent, setImprovementConsent] = useState<ReaiImprovementConsent | null>(null);
   const [improvementConversationId, setImprovementConversationId] = useState<string | null>(null);
   const [message, setMessage] = useState("");
@@ -216,20 +451,128 @@ export function ReaiAgentCard({
   const [restoreCandidateId, setRestoreCandidateId] = useState<number | null>(null);
   const [historyNotice, setHistoryNotice] = useState<string | null>(null);
   const [mediaGroups, setMediaGroups] = useState<AgentMediaVersionGroup[]>([]);
+  const [selectedMediaVersionIds, setSelectedMediaVersionIds] = useState<Record<string, number>>({});
   const [mediaBusy, setMediaBusy] = useState(false);
-  const [mediaCandidate, setMediaCandidate] = useState<{ id: number; action: "promote" | "hide" | "restore" } | null>(null);
+  const [mediaCandidate, setMediaCandidate] = useState<MediaAction>(null);
+  const [unitCatalog, setUnitCatalog] = useState<UnitLookup[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [copiedShareUrl, setCopiedShareUrl] = useState<string | null>(null);
+  const [pendingViewerActionTurnId, setPendingViewerActionTurnId] = useState<number | null>(null);
+  const pendingViewerActionTurnRef = useRef<number | null>(null);
+  const viewerActionTimeoutRef = useRef<number | null>(null);
+
+  useEffect(() => {
+    const handleResult = (event: Event) => {
+      const result = readReaiViewerActionResult(event);
+      const turnId = pendingViewerActionTurnRef.current;
+      if (
+        !result
+        || turnId == null
+        || (draftId !== undefined && result.resource.draft_id !== draftId)
+        || (currentTourId !== undefined && result.resource.tour_id !== currentTourId)
+      ) return;
+      if (viewerActionTimeoutRef.current != null) {
+        window.clearTimeout(viewerActionTimeoutRef.current);
+        viewerActionTimeoutRef.current = null;
+      }
+      pendingViewerActionTurnRef.current = null;
+      setPendingViewerActionTurnId(null);
+      const completed = result.status === "completed";
+      setTurns((current) => current.map((turn) => turn.id === turnId && turn.response ? {
+        ...turn,
+        actionStatus: completed ? "applied" : "failed",
+        response: completed
+          ? { ...turn.response, client_action: null, action_token: null }
+          : turn.response,
+      } : turn));
+      setBusy(false);
+      if (!completed) setError(t("reai.tourCoverFailed", lang));
+    };
+    window.addEventListener(REAI_VIEWER_ACTION_RESULT_EVENT, handleResult);
+    return () => {
+      window.removeEventListener(REAI_VIEWER_ACTION_RESULT_EVENT, handleResult);
+      if (viewerActionTimeoutRef.current != null) {
+        window.clearTimeout(viewerActionTimeoutRef.current);
+        viewerActionTimeoutRef.current = null;
+      }
+    };
+  }, [currentTourId, draftId, lang]);
+
+  useEffect(() => {
+    if (!historyNotice) return;
+    const timer = window.setTimeout(() => setHistoryNotice(null), 3_200);
+    return () => window.clearTimeout(timer);
+  }, [historyNotice]);
+  const [consentReloadKey, setConsentReloadKey] = useState(0);
+  const [composerFocused, setComposerFocused] = useState(false);
+  const [transcriptRestored, setTranscriptRestored] = useState(false);
+  const restoredTranscriptKeyRef = useRef<string | null>(null);
+  const [pool, setPool] = useState<AgentPoolItem[]>([]);
+  const [poolRestored, setPoolRestored] = useState(false);
+  const restoredPoolKeyRef = useRef<string | null>(null);
+  const [dropActive, setDropActive] = useState(false);
+  const [uploading, setUploading] = useState(false);
+  const dragDepthRef = useRef(0);
+  const compactPanel = panel && compact;
+  const transcriptKey = agentTranscriptKey();
+  const poolKey = agentPoolKey(workspaceContext, draftId);
   const quickActions = workspaceContext === "settings"
     ? (["reai.quickSettingsAgent", "reai.quickSettingsLanguage", "reai.quickSettingsSecurity"] as const)
     : draftId
     ? (["reai.quickImproveDescription", "reai.quickCheckFields", "reai.quickEditCurrent"] as const)
     : (["reai.quickFind", "reai.quickCompare", "reai.quickBulk"] as const);
 
+  // Each page mounts its own shell, so this component is recreated on every
+  // navigation. Rehydrate the parked transcript on mount, then keep the parked
+  // copy in step with it.
   useEffect(() => {
-    getReaiAgentConsent().then(setConsent).catch((err) => setError(errorText(err, lang)));
+    setTurns(readAgentTranscript<ChatTurn>(transcriptKey) ?? []);
+    restoredTranscriptKeyRef.current = transcriptKey;
+    setTranscriptRestored(true);
+  }, [transcriptKey]);
+
+  useEffect(() => {
+    // Switching drafts changes the key one render before `turns` catches up.
+    // Writing in that gap would stamp the previous conversation onto the
+    // bucket that was just read, so wait until the two agree.
+    if (!transcriptRestored || restoredTranscriptKeyRef.current !== transcriptKey) return;
+    writeAgentTranscript(transcriptKey, turns);
+  }, [transcriptKey, transcriptRestored, turns]);
+
+  // The working pool is parked and restored on the same terms as the
+  // transcript: what you dropped is still there after a navigation.
+  useEffect(() => {
+    setPool(readAgentPool(poolKey));
+    restoredPoolKeyRef.current = poolKey;
+    setPoolRestored(true);
+  }, [poolKey]);
+
+  useEffect(() => {
+    if (!poolRestored || restoredPoolKeyRef.current !== poolKey) return;
+    writeAgentPool(poolKey, pool);
+  }, [pool, poolKey, poolRestored]);
+
+  useEffect(() => {
+    let active = true;
+    setConsentResolved(false);
+    setError(null);
+    getReaiAgentConsent()
+      .then((value) => {
+        if (active) setConsent(value);
+      })
+      .catch((err) => {
+        if (active) {
+          setConsent(null);
+          setError(errorText(err, lang));
+        }
+      })
+      .finally(() => {
+        if (active) setConsentResolved(true);
+      });
     getReaiImprovementConsent().then(setImprovementConsent).catch(() => undefined);
-  }, [lang]);
+    listUnits().then(setUnitCatalog).catch(() => setUnitCatalog([]));
+    return () => { active = false; };
+  }, [consentReloadKey, lang]);
 
   const loadHistory = async () => {
     if (!draftId) return;
@@ -250,6 +593,14 @@ export function ReaiAgentCard({
     try {
       const result = await getAgentMediaVersions(draftId);
       setMediaGroups(result.groups);
+      setSelectedMediaVersionIds((current) => Object.fromEntries(result.groups.flatMap((group) => {
+        const currentSelection = group.versions.find((version) => version.id === current[group.logical_asset_id]);
+        const selected = currentSelection
+          ?? group.versions.find((version) => version.is_master)
+          ?? group.versions.find((version) => !version.is_deleted)
+          ?? group.versions[0];
+        return selected ? [[group.logical_asset_id, selected.id]] : [];
+      })));
     } catch (err) {
       setError(errorText(err, lang));
     } finally {
@@ -261,7 +612,7 @@ export function ReaiAgentCard({
     if (!draftId || !mediaCandidate) return;
     setMediaBusy(true);
     try {
-      await manageAgentMediaVersion(draftId, mediaCandidate.id, mediaCandidate.action);
+      await manageAgentMediaVersion(draftId, mediaCandidate.uploadId, mediaCandidate.action);
       setMediaCandidate(null);
       await loadMediaHistory();
       window.dispatchEvent(new CustomEvent("reai-media-updated", { detail: { draftId } }));
@@ -273,19 +624,109 @@ export function ReaiAgentCard({
     }
   };
 
-  useEffect(() => {
+  const resetConversation = useCallback(() => {
+    if (viewerActionTimeoutRef.current != null) {
+      window.clearTimeout(viewerActionTimeoutRef.current);
+      viewerActionTimeoutRef.current = null;
+    }
+    pendingViewerActionTurnRef.current = null;
+    setPendingViewerActionTurnId(null);
+    setBusy(false);
     setTurns([]);
     setMessage("");
+    setComposerFocused(false);
     setImprovementConversationId(null);
     setShowHistory(false);
     setShowMediaHistory(false);
     setHistory([]);
     setMediaGroups([]);
+    setSelectedMediaVersionIds({});
+    setMediaCandidate(null);
+    setRestoreCandidateId(null);
+    setHistoryNotice(null);
+    setError(null);
+  }, []);
+
+  // Resource-specific drawers must not leak across pages, while the site-wide
+  // conversation itself deliberately follows the creator into the next page.
+  useEffect(() => {
+    setShowHistory(false);
+    setShowMediaHistory(false);
+    setHistory([]);
+    setMediaGroups([]);
+    setSelectedMediaVersionIds({});
     setMediaCandidate(null);
     setRestoreCandidateId(null);
     setHistoryNotice(null);
     setError(null);
   }, [draftId, workspaceContext]);
+
+  /*
+   * "New conversation" from the panel header. The transcript is client-side
+   * only — the assist endpoint is stateless and is handed the last few turns
+   * with each request — so clearing state is the entire operation. The parked
+   * copy is dropped by the write effect on the next tick.
+   */
+  useEffect(() => {
+    const startNew = () => resetConversation();
+    window.addEventListener("reai-new-conversation", startNew);
+    return () => window.removeEventListener("reai-new-conversation", startNew);
+  }, [resetConversation]);
+
+  const confirmViewerAction = useCallback(async (turnId: number, answer: ReaiAgentResponse) => {
+    if (
+      !answer.client_action
+      || !answer.client_action.confirmation_required
+      || answer.action_code !== "set_tour_cover"
+      || !answer.action_token
+    ) return false;
+    setError(null);
+    pendingViewerActionTurnRef.current = turnId;
+    setPendingViewerActionTurnId(turnId);
+    setTurns((current) => current.map((turn) => turn.id === turnId ? {
+      ...turn,
+      actionStatus: "pending",
+    } : turn));
+    setBusy(true);
+    let dispatched = false;
+    let confirmationError: string | null = null;
+    try {
+      const confirmed = await applyReaiTourCoverAction(
+        answer.action_token,
+        improvementConversationId,
+      );
+      dispatched = dispatchReaiViewerAction(confirmed.client_action, {
+        draftId,
+        tourId: currentTourId,
+      });
+    } catch (err) {
+      confirmationError = errorText(err, lang);
+    }
+    if (!dispatched) {
+      pendingViewerActionTurnRef.current = null;
+      setPendingViewerActionTurnId(null);
+      setBusy(false);
+      setTurns((current) => current.map((turn) => turn.id === turnId ? {
+        ...turn,
+        actionStatus: "failed",
+      } : turn));
+      setError(confirmationError ?? t("reai.tourCoverUnavailable", lang));
+      return false;
+    }
+    viewerActionTimeoutRef.current = window.setTimeout(() => {
+      if (pendingViewerActionTurnRef.current !== turnId) return;
+      pendingViewerActionTurnRef.current = null;
+      setPendingViewerActionTurnId(null);
+      viewerActionTimeoutRef.current = null;
+      setBusy(false);
+      setTurns((current) => current.map((turn) => turn.id === turnId ? {
+        ...turn,
+        actionStatus: "failed",
+      } : turn));
+      setError(t("reai.tourCoverFailed", lang));
+    }, 20_000);
+    return true;
+  }, [currentTourId, draftId, improvementConversationId, lang]);
 
   const ask = async (override?: string) => {
     const requestText = (override ?? message).trim();
@@ -312,6 +753,19 @@ export function ReaiAgentCard({
       }
       return;
     }
+    const pendingViewerAction = [...turns].reverse().find((turn) => (
+      turn.role === "assistant"
+      && Boolean(turn.response?.client_action?.confirmation_required)
+      && turn.actionStatus !== "applied"
+      && turn.actionStatus !== "dismissed"
+    ));
+    if (
+      pendingViewerAction?.response?.client_action
+      && isExplicitProposalConfirmation(requestText)
+    ) {
+      void confirmViewerAction(pendingViewerAction.id, pendingViewerAction.response);
+      return;
+    }
 
     const conversation = turns.slice(-4).map(({ role, content }) => ({ role, content }));
     setBusy(true);
@@ -325,11 +779,12 @@ export function ReaiAgentCard({
         draftId,
         conversation,
         improvementConversationId,
-        lang,
         undefined,
         pendingActionCode,
         workspaceContext,
         currentUploadId,
+        poolItemsForRequest(pool),
+        currentTourId,
       );
       if (!draftId && response.operation === "list" && response.search_query) {
         window.dispatchEvent(new CustomEvent("reai-workspace-search", {
@@ -352,11 +807,28 @@ export function ReaiAgentCard({
         window.location.reload();
         return;
       }
+      if (response.client_action && !response.client_action.confirmation_required) {
+        dispatchReaiViewerAction(response.client_action, { draftId, tourId: currentTourId });
+      }
       if (response.improvement_conversation_id) setImprovementConversationId(response.improvement_conversation_id);
+      const assistantTurn: ChatTurn = {
+        id: Date.now() + 1,
+        role: "assistant",
+        content: response.reply,
+        response,
+      };
       setTurns((current) => [
         ...current,
-        { id: Date.now() + 1, role: "assistant", content: response.reply, response },
+        assistantTurn,
       ]);
+      const navigationPath = safeAgentNavigationPath(response);
+      if (navigationPath) {
+        // Navigation can unmount this page before the persistence effect runs.
+        // Park the complete turn pair synchronously so the destination page
+        // always rehydrates the same conversation.
+        writeAgentTranscript(transcriptKey, [...turns, userTurn, assistantTurn]);
+        router.push(navigationPath);
+      }
     } catch (err) {
       setError(errorText(err, lang));
       setTurns((current) => current.filter((turn) => turn.id !== userTurn.id));
@@ -422,6 +894,29 @@ export function ReaiAgentCard({
     setBusy(true);
     setError(null);
     try {
+      if (answer.action_code === "translate_description") {
+        const result = await applyReaiTranslationAction(answer.action_token, improvementConversationId);
+        window.dispatchEvent(new CustomEvent("reai-creations-updated", {
+          detail: { draftIds: [result.draft_id], translationStatus: result.status },
+        }));
+        setTurns((current) => current.map((turn) => turn.id === turnId ? {
+          ...turn,
+          actionStatus: "applied",
+          response: {
+            ...answer,
+            action_token: null,
+            translation_action: {
+              field: "description",
+              source_language: "auto",
+              target_language: result.target_language,
+              status: result.status,
+              cached: result.cached,
+              translated_text: result.translated_text,
+            },
+          },
+        } : turn));
+        return;
+      }
       if (["grade_draft_images", "retouch_draft_image", "cleanplate_draft_images", "generative_hdr_draft_image", "organize_draft_images", "generate_draft_video"].includes(answer.action_code || "")) {
         const result = await applyReaiMediaAction(answer.action_token, improvementConversationId);
         window.dispatchEvent(new CustomEvent("reai-media-updated", {
@@ -481,8 +976,79 @@ export function ReaiAgentCard({
     } : turn));
   };
 
+  const dismissViewerAction = (turnId: number) => {
+    setTurns((current) => current.map((turn) => turn.id === turnId && turn.response ? {
+      ...turn,
+      actionStatus: "dismissed",
+      response: { ...turn.response, client_action: null, action_token: null },
+    } : turn));
+  };
+
+  const acceptsDrop = (dataTransfer: DataTransfer) =>
+    dragHasPoolItem(dataTransfer) || (Boolean(draftId) && dragHasFiles(dataTransfer));
+
+  /**
+   * Files dropped from the computer become photos on the open creation. When a
+   * single photo is already sitting in the pool, the drop is read as "replace
+   * this one": the upload supersedes it, which keeps the original reviewable as
+   * an earlier version rather than deleting it.
+   */
+  const handleDroppedFiles = async (files: File[]) => {
+    if (!draftId || files.length === 0 || uploading) return;
+    const images = files.filter((file) => file.type.startsWith("image/") || /\.(jpe?g|png|webp|heic|heif|tiff?|bmp)$/i.test(file.name));
+    if (images.length === 0) return;
+    const replacing = pool.filter((item): item is AgentPoolImage => item.kind === "image");
+    const target = images.length === 1 && replacing.length === 1 ? replacing[0] : null;
+    setUploading(true);
+    setError(null);
+    try {
+      const uploaded: DraftUpload[] = [];
+      for (const [index, file] of images.entries()) {
+        uploaded.push(await uploadDraftPhoto(
+          draftId,
+          file,
+          index,
+          target ? { supersedesId: target.uploadId } : {},
+        ));
+      }
+      const last = uploaded[uploaded.length - 1];
+      if (last) {
+        setPool((current) => addPoolItem(
+          target ? removePoolItem(current, poolItemKey(target)) : current,
+          {
+            kind: "image",
+            uploadId: last.id,
+            url: last.file_url,
+            label: target ? t("reai.pool.replacedPhoto", lang) : t("reai.pool.newPhoto", lang),
+          },
+        ));
+      }
+      onDraftUpdated?.(await getDraft(draftId));
+    } catch (err) {
+      setError(errorText(err, lang));
+    } finally {
+      setUploading(false);
+    }
+  };
+
+  const handleDrop = (event: React.DragEvent) => {
+    dragDepthRef.current = 0;
+    if (!acceptsDrop(event.dataTransfer)) return;
+    event.preventDefault();
+    setDropActive(false);
+    const item = readDragItem(event.dataTransfer);
+    if (item) {
+      setPool((current) => addPoolItem(current, item));
+      return;
+    }
+    void handleDroppedFiles(Array.from(event.dataTransfer.files));
+  };
+
   const copyShareUrl = async (url: string) => {
-    await navigator.clipboard.writeText(url);
+    // Via the shared helper, not navigator.clipboard directly: that API only
+    // exists in a secure context, so this threw on every plain-HTTP origin and
+    // the "copied" confirmation never appeared.
+    if (!await copyToClipboard(url)) return;
     setCopiedShareUrl(url);
     window.setTimeout(() => setCopiedShareUrl((current) => current === url ? null : current), 1800);
   };
@@ -501,59 +1067,175 @@ export function ReaiAgentCard({
     }
   };
 
-  if (!consent) return null;
-
   return (
-    <section className={cn(
-      "rounded-2xl bg-foreground/[0.025] p-4",
-      panel ? "flex h-full min-h-0 flex-col rounded-none border-0 bg-transparent" : "mt-5 border border-border/40",
-    )} aria-labelledby="reai-title">
+    <section
+      className={cn(
+        "relative rounded-2xl bg-foreground/[0.025]",
+        compactPanel ? "p-3 [&_button]:min-h-11 [&_button]:min-w-11" : "p-4",
+        panel ? "flex h-full min-h-0 flex-col rounded-none border-0 bg-transparent pb-[max(1rem,env(safe-area-inset-bottom))]" : "mt-5 border border-border/40",
+      )}
+      aria-label={panel ? t("reai.title", lang) : undefined}
+      aria-labelledby={panel ? undefined : "reai-title"}
+      // The whole window is the drop target. Depth counting keeps the
+      // affordance stable while the pointer crosses child elements, which
+      // otherwise fire dragleave on every boundary.
+      onDragEnter={(event) => {
+        if (!acceptsDrop(event.dataTransfer)) return;
+        event.preventDefault();
+        dragDepthRef.current += 1;
+        setDropActive(true);
+      }}
+      onDragOver={(event) => {
+        if (!acceptsDrop(event.dataTransfer)) return;
+        event.preventDefault();
+        event.dataTransfer.dropEffect = "copy";
+      }}
+      onDragLeave={(event) => {
+        if (!acceptsDrop(event.dataTransfer)) return;
+        dragDepthRef.current = Math.max(0, dragDepthRef.current - 1);
+        if (dragDepthRef.current === 0) setDropActive(false);
+      }}
+      onDrop={handleDrop}
+    >
+      {dropActive && (
+        <div
+          className="pointer-events-none absolute inset-1 z-20 flex items-center justify-center rounded-2xl border-2 border-dashed border-foreground/30 bg-background/85"
+          aria-hidden="true"
+        >
+          <p className="px-6 text-center text-[12px] font-medium leading-relaxed text-foreground/70">
+            {t("reai.pool.dropHint", lang)}
+          </p>
+        </div>
+      )}
       <div className={cn("items-start justify-between gap-3", panel ? "hidden" : "flex")}>
         <div>
           <h2 id="reai-title" className="text-[14px] font-semibold">{t("reai.title", lang)}</h2>
           <p className="mt-1 text-[12px] leading-relaxed text-muted-foreground">{t("reai.subtitle", lang)}</p>
         </div>
-        <span className="rounded-full bg-emerald-500/10 px-2 py-1 text-[10px] font-medium text-emerald-700">
-          {t("reai.private", lang)}
-        </span>
+        <StatusPill tone="success" dot className="rounded-2xl">{t("reai.private", lang)}</StatusPill>
       </div>
 
-      {!consent.consented ? (
-        <div className="mt-4 flex flex-col gap-3 rounded-xl bg-background/70 p-3 sm:flex-row sm:items-center sm:justify-between">
+      {!consentResolved ? (
+        <div className={cn("mt-4", panel && "flex min-h-0 flex-1 items-center justify-center")}>
+          <Working lang={lang} />
+        </div>
+      ) : !consent ? (
+        <div role="alert" className={cn("mt-4 rounded-2xl border border-destructive/20 bg-destructive/[0.045] p-3", panel && "mt-auto mb-auto")}>
+          <p className="text-[12px] leading-relaxed text-destructive">{error || t("reai.error", lang)}</p>
+          <Button type="button" variant="outline" size="sm" className="mt-3 rounded-2xl" onClick={() => setConsentReloadKey((current) => current + 1)}>
+            {t("common.tryAgain", lang)}
+          </Button>
+        </div>
+      ) : !consent.consented ? (
+        <div className="mt-4 flex flex-col gap-3 rounded-2xl bg-background/70 p-3 sm:flex-row sm:items-center sm:justify-between">
           <p className="text-[12px] leading-relaxed text-foreground/65">{t("reai.enableInSettings", lang)}</p>
-          <Button asChild size="sm" variant="outline">
+          <Button asChild size="sm" variant="outline" className="min-h-11">
             <Link href="/settings#reai">{t("reai.openSettings", lang)}</Link>
           </Button>
         </div>
       ) : (
-        <div className={cn("mt-4", panel ? "flex min-h-0 flex-1 flex-col gap-3" : "space-y-3")}>
-          {draftId && (
-            <div className="flex items-center justify-end gap-4 border-b border-border/35 pb-2">
+        <div className={cn("mt-4", panel ? "flex min-h-0 flex-1 flex-col" : "space-y-3", compactPanel ? "mt-1 gap-2" : panel && "gap-3")}>
+          {draftId && compactPanel && !composerFocused && (
+            <nav className="selection-capsule-track grid grid-cols-3" aria-label={t("reai.title", lang)}>
               <button
                 type="button"
-                className={cn("text-[11px] font-medium transition hover:text-foreground", showMediaHistory ? "text-foreground" : "text-muted-foreground")}
+                aria-pressed={!showHistory && !showMediaHistory}
+                className={cn(
+                  "selection-capsule-item min-w-0 overflow-hidden px-1 text-[11px] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+                )}
                 onClick={() => {
-                  const next = !showMediaHistory;
-                  setShowMediaHistory(next);
                   setShowHistory(false);
-                  if (next) void loadMediaHistory();
+                  setShowMediaHistory(false);
                 }}
               >
-                {showMediaHistory ? t("reai.backToChat", lang) : t("reai.mediaVersions", lang)}
+                <span className="block truncate">{t("reai.chat", lang)}</span>
               </button>
               <button
                 type="button"
-                className={cn("text-[11px] font-medium transition hover:text-foreground", showHistory ? "text-foreground" : "text-muted-foreground")}
+                aria-label={t("reai.mediaVersions", lang)}
+                aria-pressed={showMediaHistory}
+                className={cn(
+                  "selection-capsule-item min-w-0 overflow-hidden px-1 text-[11px] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+                )}
                 onClick={() => {
-                  const next = !showHistory;
-                  setShowHistory(next);
-                  setShowMediaHistory(false);
-                  if (next) void loadHistory();
+                  if (!showMediaHistory) void loadMediaHistory();
+                  setShowMediaHistory(true);
+                  setShowHistory(false);
                 }}
               >
-                {showHistory ? t("reai.backToChat", lang) : t("reai.editHistory", lang)}
+                <span className="block truncate">{t("reai.mediaTab", lang)}</span>
               </button>
-            </div>
+              <button
+                type="button"
+                aria-label={t("reai.editHistory", lang)}
+                aria-pressed={showHistory}
+                className={cn(
+                  "selection-capsule-item min-w-0 overflow-hidden px-1 text-[11px] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+                )}
+                onClick={() => {
+                  if (!showHistory) void loadHistory();
+                  setShowHistory(true);
+                  setShowMediaHistory(false);
+                }}
+              >
+                <span className="block truncate">{t("reai.historyTab", lang)}</span>
+              </button>
+            </nav>
+          )}
+          {draftId && !compactPanel && (
+            // Built from the workspace capsule primitives rather than bespoke
+            // geometry: the theme's pill radius, its compact control height,
+            // and its control shadow. This bar only switches views, so the
+            // active segment is a lifted card on a muted track instead of the
+            // solid high-contrast capsule it used to be.
+            <nav
+              className="selection-capsule-track mx-auto grid w-full max-w-[24rem] grid-cols-3"
+              aria-label={t("reai.title", lang)}
+            >
+              <button
+                type="button"
+                aria-pressed={!showHistory && !showMediaHistory}
+                className={cn(
+                  "selection-capsule-item w-full text-[11px] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+                )}
+                onClick={() => {
+                  setShowHistory(false);
+                  setShowMediaHistory(false);
+                }}
+              >
+                {t("reai.chat", lang)}
+              </button>
+              <button
+                type="button"
+                aria-label={t("reai.mediaVersions", lang)}
+                aria-pressed={showMediaHistory}
+                className={cn(
+                  "selection-capsule-item w-full text-[11px] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+                )}
+                onClick={() => {
+                  if (!showMediaHistory) void loadMediaHistory();
+                  setShowMediaHistory(true);
+                  setShowHistory(false);
+                }}
+              >
+                {t("reai.mediaTab", lang)}
+              </button>
+              <button
+                type="button"
+                aria-label={t("reai.editHistory", lang)}
+                aria-pressed={showHistory}
+                className={cn(
+                  "selection-capsule-item w-full text-[11px] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+                )}
+                onClick={() => {
+                  if (!showHistory) void loadHistory();
+                  setShowHistory(true);
+                  setShowMediaHistory(false);
+                }}
+              >
+                {t("reai.historyTab", lang)}
+              </button>
+            </nav>
           )}
           {showHistory && draftId && (
             <div className={cn("min-h-0 space-y-2 overflow-y-auto pr-1", panel && "flex-1")} aria-live="polite">
@@ -562,13 +1244,13 @@ export function ReaiAgentCard({
                 <p className="mt-1 text-[11px] leading-relaxed text-muted-foreground">{t("reai.historySafety", lang)}</p>
               </div>
               {historyNotice && (
-                <div className="rounded-lg border border-border/50 bg-foreground/[0.035] px-3 py-2.5 text-[11px] leading-relaxed text-foreground/75">
+                <div className="floating-panel-shape border border-border/65 bg-card shadow-control px-3 py-2.5 text-[11px] leading-relaxed text-foreground/75">
                   {historyNotice}
                 </div>
               )}
-              {historyBusy && <p className="py-3 text-[11px] text-muted-foreground">{t("reai.working", lang)}</p>}
+              {historyBusy && <Working lang={lang} />}
               {!historyBusy && history.length === 0 && (
-                <p className="rounded-xl border border-border/40 p-3 text-[11px] leading-relaxed text-muted-foreground">{t("reai.historyEmpty", lang)}</p>
+                <p className="floating-panel-shape border border-border/65 bg-card shadow-control p-3 text-[11px] leading-relaxed text-muted-foreground">{t("reai.historyEmpty", lang)}</p>
               )}
               {!historyBusy && history.length > 0 && (
                 <div className="relative ml-1 border-l border-border/55 pl-4">
@@ -579,8 +1261,8 @@ export function ReaiAgentCard({
                         index === 0 ? "bg-foreground" : "bg-border",
                       )} />
                       <div className={cn(
-                        "rounded-xl px-3.5 py-3",
-                        index === 0 ? "bg-foreground/[0.045]" : "border border-border/45 bg-background",
+                        "rounded-2xl px-3.5 py-3",
+                        index === 0 ? "bg-foreground/[0.04]" : "border border-border/45 bg-background",
                       )}>
                         <div className="flex items-start justify-between gap-3">
                           <div className="min-w-0">
@@ -589,27 +1271,29 @@ export function ReaiAgentCard({
                                 {t(`reai.history.${revision.source}`, lang)}
                               </h4>
                               {index === 0 && (
-                                <span className="rounded-full bg-foreground px-2 py-0.5 text-[9px] font-medium text-background">
+                                <span className="rounded-2xl bg-foreground px-2 py-0.5 text-[11px] font-medium text-background">
                                   {t("reai.currentVersion", lang)}
                                 </span>
                               )}
                             </div>
-                            <time className="mt-0.5 block text-[10px] text-muted-foreground">
-                              {new Intl.DateTimeFormat(lang || "en", { dateStyle: "medium", timeStyle: "short" }).format(new Date(revision.created_at))}
+                            <time className="mt-0.5 block text-[11px] text-muted-foreground">
+                              {formatDate(revision.created_at, dateFormat, lang)}
                             </time>
                           </div>
                           {index > 0 && (
-                            <button
+                            <Button
                               type="button"
+                              variant="outline"
+                              size="xs"
+                              className="shrink-0 rounded-2xl"
                               disabled={busy}
                               onClick={() => {
                                 setHistoryNotice(null);
                                 setRestoreCandidateId(revision.id);
                               }}
-                              className="shrink-0 text-[10px] font-semibold text-muted-foreground underline-offset-4 transition hover:text-foreground hover:underline disabled:opacity-40"
                             >
                               {t("reai.restore", lang)}
-                            </button>
+                            </Button>
                           )}
                         </div>
                         <div className="mt-3 space-y-3 border-t border-border/40 pt-3">
@@ -622,35 +1306,35 @@ export function ReaiAgentCard({
                             if (!hasDiff) {
                               return (
                                 <div key={field}>
-                                  <p className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
+                                  <p className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
                                     {agentFieldLabel(field, lang)}
                                   </p>
                                   <p className="mt-1 break-words text-[12px] leading-5 text-foreground/85">
-                                    {historyValue(field, revision.snapshot[field], revision, lang)}
+                                    {historyValue(field, revision.snapshot[field], revision.snapshot, unitCatalog, lang)}
                                   </p>
                                 </div>
                               );
                             }
                             return (
                               <div key={field}>
-                                <p className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
+                                <p className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
                                   {agentFieldLabel(field, lang)}
                                 </p>
                                 <div className={cn("mt-1.5 gap-2", longForm ? "space-y-2" : "grid grid-cols-2")}>
-                                  <div className="min-w-0 rounded-lg bg-background/70 px-2.5 py-2">
-                                    <p className="text-[9px] font-medium uppercase tracking-wide text-muted-foreground/80">
+                                  <div className="min-w-0 rounded-2xl bg-background/70 px-2.5 py-2">
+                                    <p className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground/80">
                                       {t("reai.historyBefore", lang)}
                                     </p>
                                     <p className="mt-1 break-words text-[11px] leading-[1.55] text-muted-foreground">
-                                      {historyValue(field, revision.before_values[field], revision, lang)}
+                                      {historyValue(field, revision.before_values[field], { ...revision.snapshot, ...revision.before_values }, unitCatalog, lang)}
                                     </p>
                                   </div>
-                                  <div className="min-w-0 rounded-lg border-l-2 border-foreground/60 bg-background px-2.5 py-2">
-                                    <p className="text-[9px] font-medium uppercase tracking-wide text-muted-foreground/80">
+                                  <div className="min-w-0 rounded-2xl border-l-2 border-foreground/60 bg-background px-2.5 py-2">
+                                    <p className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground/80">
                                       {t("reai.historyAfter", lang)}
                                     </p>
                                     <p className="mt-1 break-words text-[11px] font-medium leading-[1.55] text-foreground/90">
-                                      {historyValue(field, revision.after_values[field], revision, lang)}
+                                      {historyValue(field, revision.after_values[field], { ...revision.snapshot, ...revision.after_values }, unitCatalog, lang)}
                                     </p>
                                   </div>
                                 </div>
@@ -662,22 +1346,12 @@ export function ReaiAgentCard({
                           <div className="mt-3 border-t border-border/40 pt-3">
                             <p className="text-[11px] leading-relaxed text-foreground/70">{t("reai.restoreConfirm", lang)}</p>
                             <div className="mt-2.5 flex items-center gap-2">
-                              <button
-                                type="button"
-                                disabled={busy}
-                                onClick={() => void restoreRevision(revision)}
-                                className="rounded-lg bg-foreground px-3 py-1.5 text-[11px] font-semibold text-background transition hover:bg-foreground/85 disabled:opacity-40"
-                              >
+                              <Button type="button" size="xs" className="rounded-2xl" loading={busy} onClick={() => void restoreRevision(revision)}>
                                 {t("reai.restore", lang)}
-                              </button>
-                              <button
-                                type="button"
-                                disabled={busy}
-                                onClick={() => setRestoreCandidateId(null)}
-                                className="rounded-lg px-3 py-1.5 text-[11px] font-medium text-muted-foreground transition hover:text-foreground disabled:opacity-40"
-                              >
+                              </Button>
+                              <Button type="button" variant="ghost" size="xs" className="rounded-2xl" disabled={busy} onClick={() => setRestoreCandidateId(null)}>
                                 {t("reai.restoreCancel", lang)}
-                              </button>
+                              </Button>
                             </div>
                           </div>
                         )}
@@ -690,119 +1364,125 @@ export function ReaiAgentCard({
           )}
           {showMediaHistory && draftId && (
             <div className={cn("min-h-0 space-y-3 overflow-y-auto pr-1", panel && "flex-1")} aria-live="polite">
-              <div>
+              <div className="flex min-h-8 items-center justify-between gap-3 px-1">
                 <h3 className="text-[13px] font-semibold">{t("reai.mediaVersions", lang)}</h3>
-                <p className="mt-1 text-[11px] leading-relaxed text-muted-foreground">{t("reai.mediaVersionsSafety", lang)}</p>
+                {mediaGroups.length > 0 ? (
+                  <span className="floating-status inline-flex min-w-7 items-center justify-center border border-border/70 bg-card text-[10px] tabular-nums text-foreground/60 shadow-control">
+                    {mediaGroups.length}
+                  </span>
+                ) : null}
               </div>
-              {mediaBusy && mediaGroups.length === 0 && <p className="py-3 text-[11px] text-muted-foreground">{t("reai.working", lang)}</p>}
+              {mediaBusy && mediaGroups.length === 0 && <Working lang={lang} />}
               {!mediaBusy && mediaGroups.length === 0 && (
-                <p className="rounded-xl border border-border/45 p-3 text-[11px] text-muted-foreground">{t("reai.mediaVersionsEmpty", lang)}</p>
+                <p className="floating-panel-shape border border-dashed border-border/55 px-4 py-10 text-center text-[11px] text-muted-foreground">{t("reai.mediaVersionsEmpty", lang)}</p>
               )}
-              {mediaGroups.map((group, groupIndex) => (
-                <section key={group.logical_asset_id} className="overflow-hidden rounded-xl border border-border/55 bg-background">
-                  <div className="border-b border-border/40 px-3 py-2 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
-                    {t("reai.mediaAsset", lang).replace("{number}", String(groupIndex + 1))}
-                  </div>
-                  <div className="divide-y divide-border/40">
-                    {group.versions.map((version) => (
-                      <article key={version.id} className={cn("p-3", version.is_deleted && "bg-foreground/[0.025] opacity-70")}>
-                        <div className="flex gap-3">
-                          <div className="h-16 w-20 shrink-0 overflow-hidden rounded-lg bg-foreground/[0.05]">
-                            {version.file_url && (
-                              // Version URLs are short-lived, backend-signed media previews.
-                              // eslint-disable-next-line @next/next/no-img-element
-                              <img src={version.file_url} alt="" className="h-full w-full object-cover" />
-                            )}
-                          </div>
-                          <div className="min-w-0 flex-1">
-                            <div className="flex flex-wrap items-center gap-1.5">
-                              <span className="text-[12px] font-semibold">v{version.version}</span>
-                              {version.is_master && <span className="rounded-full bg-foreground px-1.5 py-0.5 text-[8px] font-medium text-background">{t("reai.mediaCurrent", lang)}</span>}
-                              {version.is_deleted && <span className="rounded-full bg-foreground/[0.08] px-1.5 py-0.5 text-[8px] font-medium">{t("reai.mediaHidden", lang)}</span>}
-                            </div>
-                            <p className="mt-1 truncate text-[10px] text-muted-foreground">{version.processor === "original" ? t("reai.mediaOriginal", lang) : version.processor}</p>
-                            <time className="mt-0.5 block text-[9px] text-muted-foreground/80">
-                              {new Intl.DateTimeFormat(lang || "en", { dateStyle: "medium", timeStyle: "short" }).format(new Date(version.uploaded_at))}
-                            </time>
-                          </div>
-                        </div>
-                        <div className="mt-2.5 flex flex-wrap items-center gap-3">
-                          {!version.is_deleted && !version.is_master && (
-                            <button type="button" disabled={mediaBusy} onClick={() => setMediaCandidate({ id: version.id, action: "promote" })} className="text-[10px] font-semibold hover:underline disabled:opacity-40">
-                              {t("reai.mediaUseVersion", lang)}
-                            </button>
-                          )}
-                          {!version.is_deleted && (
-                            <button type="button" disabled={mediaBusy} onClick={() => setMediaCandidate({ id: version.id, action: "hide" })} className="text-[10px] font-medium text-muted-foreground hover:text-foreground disabled:opacity-40">
-                              {t("reai.mediaHide", lang)}
-                            </button>
-                          )}
-                          {version.is_deleted && (
-                            <button type="button" disabled={mediaBusy} onClick={() => setMediaCandidate({ id: version.id, action: "restore" })} className="text-[10px] font-semibold hover:underline disabled:opacity-40">
-                              {t("reai.mediaRestore", lang)}
-                            </button>
-                          )}
-                        </div>
-                        {mediaCandidate?.id === version.id && (
-                          <div className="mt-3 rounded-lg bg-foreground/[0.04] p-2.5">
-                            <p className="text-[10px] leading-relaxed text-foreground/70">
-                              {t(mediaCandidate.action === "hide" ? "reai.mediaHideConfirm" : "reai.mediaActionConfirm", lang)}
-                            </p>
-                            <div className="mt-2 flex gap-2">
-                              <button type="button" disabled={mediaBusy} onClick={() => void manageMediaVersion()} className="rounded-md bg-foreground px-2.5 py-1.5 text-[10px] font-semibold text-background disabled:opacity-40">{t("reai.confirm", lang)}</button>
-                              <button type="button" disabled={mediaBusy} onClick={() => setMediaCandidate(null)} className="px-2 py-1.5 text-[10px] text-muted-foreground">{t("reai.restoreCancel", lang)}</button>
-                            </div>
-                          </div>
-                        )}
-                      </article>
-                    ))}
-                  </div>
-                </section>
-              ))}
+              <div className="agent-media-version-grid">
+                {mediaGroups.map((group, groupIndex) => (
+                  <MediaVersionCard
+                    key={group.logical_asset_id}
+                    group={group}
+                    groupIndex={groupIndex}
+                    selectedId={selectedMediaVersionIds[group.logical_asset_id]}
+                    lang={lang}
+                    dateFormat={dateFormat}
+                    candidate={mediaCandidate}
+                    busy={mediaBusy}
+                    onSelect={(id) => {
+                      setSelectedMediaVersionIds((current) => ({ ...current, [group.logical_asset_id]: id }));
+                      setMediaCandidate(null);
+                    }}
+                    onCandidate={setMediaCandidate}
+                    onCancel={() => setMediaCandidate(null)}
+                    onConfirm={() => void manageMediaVersion()}
+                  />
+                ))}
+              </div>
             </div>
           )}
           {!showHistory && !showMediaHistory && turns.length > 0 && (
-            <div className={cn("space-y-2 overflow-y-auto pr-1", panel ? "min-h-0 flex-1" : "max-h-[420px]")} aria-live="polite">
+            <div className={cn("space-y-4 overflow-y-auto pr-1", panel ? "min-h-0 flex-1" : "max-h-[420px]")} aria-live="polite">
               {turns.map((turn) => {
                 const answer = turn.response;
                 const shareUrl = answer ? contextualShareUrl(answer) : null;
-                const visibleDraftResults = answer?.draft_results?.filter((draft) => !draftId || draft.id !== draftId) ?? [];
                 const targetTitle = answer?.draft_results?.find((draft) => answer.selected_creation_ids?.includes(draft.id))?.creation_data.title;
                 return (
                   <div
                     key={turn.id}
                     className={turn.role === "user"
-                      ? "ml-10 rounded-2xl rounded-br-md bg-foreground/[0.06] px-3.5 py-2.5 text-sm leading-relaxed text-foreground"
+                      ? "ml-auto w-fit max-w-[85%] rounded-2xl bg-foreground px-3.5 py-2.5"
                       : "py-1"}
                   >
-                    <p className="whitespace-pre-line text-sm leading-6 text-foreground/85">{turn.content}</p>
-                    {answer && visibleDraftResults.length > 0 && (
-                      <div className="mt-3 space-y-1.5">
-                        {visibleDraftResults.map((draft) => (
-                          <Link
-                            key={draft.id}
-                            href={`/draft/${draft.id}`}
-                            className="block rounded-xl border border-border/50 px-3 py-2.5 transition hover:border-foreground/20 hover:bg-foreground/[0.025]"
-                          >
-                            <span className="block truncate text-sm font-medium">{draft.creation_data.title || `#${draft.id}`}</span>
-                            <span className="mt-0.5 block truncate text-xs text-muted-foreground">
-                              {[
-                                localizedMetric(draft.creation_data.area, lang) && `${localizedMetric(draft.creation_data.area, lang)} ${draft.creation_data.area_unit || "m²"}`,
-                                localizedMetric(draft.creation_data.price, lang) && `${localizedMetric(draft.creation_data.price, lang)} ${draft.creation_data.currency || ""}`,
-                              ].filter(Boolean).join(" · ") || t("nav.creation", lang)}
-                            </span>
-                            {(draft.semantic_summary || draft.creation_data.description) && (
-                              <span className="mt-1.5 line-clamp-2 block text-xs leading-relaxed text-muted-foreground">
-                                {draft.semantic_summary || draft.creation_data.description}
-                              </span>
-                            )}
-                          </Link>
-                        ))}
+                    <p className={cn("whitespace-pre-line text-[14px] leading-6", turn.role === "user" ? "text-background" : "text-foreground")}>{turn.content}</p>
+                    {answer && <AgentVersionStamp answer={answer} />}
+                    {answer && (
+                      <>
+                        <AgentMiniUi
+                          answer={answer}
+                          currentDraftId={draftId}
+                          lang={lang}
+                          busy={busy}
+                          formatDraftMeta={(draft) => [
+                            localizedLookupMetric(draft.creation_data.area, draft.creation_data.area_unit, "AREA", unitCatalog, lang),
+                            localizedLookupMetric(draft.creation_data.price, draft.creation_data.currency, "CURRENCY", unitCatalog, lang),
+                          ].filter(Boolean).join(" · ")}
+                          onPrompt={(prompt) => void ask(prompt)}
+                        />
+                        <AgentTinyUi answer={answer} busy={busy} onPrompt={(prompt) => void ask(prompt)} lang={lang} />
+                      </>
+                    )}
+                    {answer?.action_code === "set_tour_cover" && (answer.client_action || turn.actionStatus) && (
+                      <div className="mt-4 overflow-hidden floating-panel-shape border border-border/65 bg-card shadow-control">
+                        <div className="px-3.5 py-3">
+                          <p className="text-xs font-semibold text-foreground">{t("reai.tourCoverTitle", lang)}</p>
+                          <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
+                            {t("reai.tourCoverDescription", lang)}
+                          </p>
+                        </div>
+                        {answer.client_action && (!turn.actionStatus || turn.actionStatus === "failed") && (
+                          <div className="flex items-center gap-2 border-t border-border/45 px-3.5 py-3">
+                            <Button
+                              type="button"
+                              size="sm"
+                              className="flex-1 rounded-2xl sm:flex-none"
+                              loading={busy && pendingViewerActionTurnId === turn.id}
+                              disabled={busy && pendingViewerActionTurnId !== turn.id}
+                              onClick={() => void confirmViewerAction(turn.id, answer)}
+                            >
+                              {t(turn.actionStatus === "failed" ? "reai.tourCoverRetry" : "reai.tourCoverConfirm", lang)}
+                            </Button>
+                            <Button type="button" variant="ghost" size="sm" className="rounded-2xl" disabled={busy} onClick={() => dismissViewerAction(turn.id)}>
+                              {t("reai.dismissProposal", lang)}
+                            </Button>
+                          </div>
+                        )}
+                        {turn.actionStatus && turn.actionStatus !== "failed" && (
+                          <div className="border-t border-border/45 px-3.5 py-3">
+                            <AgentStatusBadge tone={
+                              turn.actionStatus === "applied"
+                                ? "success"
+                                : turn.actionStatus === "pending" ? "pending" : "neutral"
+                            }>
+                              {t(
+                                turn.actionStatus === "applied"
+                                  ? "reai.tourCoverSaved"
+                                  : turn.actionStatus === "pending"
+                                    ? "reai.tourCoverSaving"
+                                    : "reai.proposalDismissed",
+                                lang,
+                              )}
+                            </AgentStatusBadge>
+                          </div>
+                        )}
+                        {turn.actionStatus === "failed" && (
+                          <div className="border-t border-border/45 px-3.5 py-3">
+                            <AgentStatusBadge tone="neutral">{t("reai.tourCoverFailed", lang)}</AgentStatusBadge>
+                          </div>
+                        )}
                       </div>
                     )}
                     {answer && !!answer.knowledge_sources?.length && (
                       <div className="mt-3 border-t border-border/30 pt-2">
-                        <p className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground">{t("reai.sources", lang)}</p>
+                        <p className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">{t("reai.sources", lang)}</p>
                         <ul className="mt-1 space-y-0.5 text-[11px] text-muted-foreground">
                           {answer.knowledge_sources.map((source) => (
                             <li key={`${source.sha256}-${source.version}`}>{source.title} · {source.source} · v{source.version}</li>
@@ -811,7 +1491,7 @@ export function ReaiAgentCard({
                       </div>
                     )}
                     {answer && Object.keys(answer.proposed_changes).length > 0 && (
-                      <div className="mt-4 overflow-hidden rounded-xl border border-border/60 bg-foreground/[0.018]">
+                      <div className="mt-4 overflow-hidden floating-panel-shape border border-border/65 bg-card shadow-control">
                         <div className="border-b border-border/45 px-3.5 py-3">
                           <p className="text-xs font-semibold text-foreground">{t("reai.proposal", lang)}</p>
                           <p className="mt-0.5 truncate text-xs text-muted-foreground">
@@ -837,7 +1517,7 @@ export function ReaiAgentCard({
                                   {agentFieldLabel(key, lang)}
                                 </span>
                                 {key === "specs" && specEntries.length > 0 ? (
-                                  <dl className="mt-2 divide-y divide-border/35 rounded-lg bg-background/70 px-3">
+                                  <dl className="mt-2 divide-y divide-border/35 rounded-2xl bg-background/70 px-3">
                                     {specEntries.map((item) => (
                                       <div key={item.key} className="flex items-baseline justify-between gap-4 py-2.5">
                                         <dt className="text-xs text-muted-foreground">{item.label}</dt>
@@ -850,7 +1530,7 @@ export function ReaiAgentCard({
                                     ? "mt-2 block whitespace-pre-wrap break-words text-left text-sm font-normal leading-6 text-foreground/85"
                                     : "text-right font-medium text-foreground"}
                                   >
-                                    {proposalValue(key, value, answer, lang)}
+                                    {proposalValue(key, value, answer, unitCatalog, lang)}
                                   </span>
                                 )}
                               </li>
@@ -859,40 +1539,93 @@ export function ReaiAgentCard({
                         </ul>
                         {answer.proposal_token && (
                           <div className="flex items-center gap-2 border-t border-border/45 px-3.5 py-3">
-                            <button
-                              type="button"
-                              className="rounded-lg bg-foreground px-3 py-2 text-xs font-medium text-background transition hover:bg-foreground/85 disabled:opacity-40"
-                              disabled={busy}
-                              onClick={() => apply(turn.id, answer)}
-                            >
+                            <Button type="button" size="xs" className="rounded-2xl" loading={busy} onClick={() => apply(turn.id, answer)}>
                               {t("reai.apply", lang)}
-                            </button>
-                            <button
-                              type="button"
-                              className="px-2 py-2 text-xs font-medium text-muted-foreground transition hover:text-foreground disabled:opacity-40"
-                              disabled={busy}
-                              onClick={() => dismissProposal(turn.id)}
-                            >
+                            </Button>
+                            <Button type="button" variant="ghost" size="xs" className="rounded-2xl" disabled={busy} onClick={() => dismissProposal(turn.id)}>
                               {t("reai.dismissProposal", lang)}
-                            </button>
+                            </Button>
                           </div>
                         )}
                         {!answer.proposal_token && turn.proposalStatus && (
                           <div className="border-t border-border/45 px-3.5 py-3">
-                            <span className={cn(
-                              "inline-flex rounded-md px-2 py-1 text-xs font-medium",
-                              turn.proposalStatus === "applied"
-                                ? "bg-foreground text-background"
-                                : "bg-foreground/[0.06] text-muted-foreground",
-                            )}>
+                            <AgentStatusBadge tone={turn.proposalStatus === "applied" ? "success" : "neutral"}>
                               {t(turn.proposalStatus === "applied" ? "reai.proposalApplied" : "reai.proposalDismissed", lang)}
+                            </AgentStatusBadge>
+                          </div>
+                        )}
+                      </div>
+                    )}
+                    {answer?.action_code === "translate_description" && answer.translation_action && (
+                      <div className="mt-4 overflow-hidden floating-panel-shape border border-border/65 bg-card shadow-control">
+                        <div className="px-3.5 py-3">
+                          <div className="flex items-start justify-between gap-3">
+                            <div>
+                              <p className="text-xs font-semibold text-foreground">{t("reai.translationTitle", lang)}</p>
+                              <p className="mt-1 text-xs leading-relaxed text-muted-foreground">{t("reai.translationDescription", lang)}</p>
+                            </div>
+                            <span className="rounded-2xl bg-foreground/[0.06] px-2 py-1 text-[11px] font-medium text-foreground/65">
+                              {t("reai.translationService", lang)}
                             </span>
+                          </div>
+                          <dl className="mt-3 divide-y divide-border/35 rounded-2xl bg-background/70 px-3">
+                            <div className="flex items-baseline justify-between gap-4 py-2.5">
+                              <dt className="text-xs text-muted-foreground">{t("reai.translationField", lang)}</dt>
+                              <dd className="text-right text-xs font-medium text-foreground">{t("reai.field.description", lang)}</dd>
+                            </div>
+                            <div className="flex items-baseline justify-between gap-4 py-2.5">
+                              <dt className="text-xs text-muted-foreground">{t("reai.translationSource", lang)}</dt>
+                              <dd className="text-right text-xs font-medium text-foreground">
+                                {localizedLanguageName(answer.translation_action.source_language, lang)}
+                              </dd>
+                            </div>
+                            <div className="flex items-baseline justify-between gap-4 py-2.5">
+                              <dt className="text-xs text-muted-foreground">{t("reai.translationTarget", lang)}</dt>
+                              <dd className="text-right text-xs font-medium text-foreground">
+                                {localizedLanguageName(answer.translation_action.target_language, lang)}
+                              </dd>
+                            </div>
+                          </dl>
+                          {answer.translation_action.translated_text && (
+                            <div className="mt-3 rounded-xl border border-border/40 bg-background px-3 py-2.5">
+                              <p className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">{t("reai.translationPreview", lang)}</p>
+                              <p className="mt-1.5 whitespace-pre-wrap text-xs leading-5 text-foreground/85">
+                                {answer.translation_action.translated_text}
+                              </p>
+                            </div>
+                          )}
+                        </div>
+                        {answer.action_token && (
+                          <div className="flex items-center gap-2 border-t border-border/45 px-3.5 py-3">
+                            <Button type="button" size="sm" className="flex-1 rounded-2xl sm:flex-none" loading={busy} onClick={() => void applyAction(turn.id, answer)}>
+                              {t("reai.translationConfirm", lang)}
+                            </Button>
+                            <Button type="button" variant="ghost" size="sm" className="rounded-2xl" disabled={busy} onClick={() => dismissAction(turn.id)}>
+                              {t("reai.dismissProposal", lang)}
+                            </Button>
+                          </div>
+                        )}
+                        {!answer.action_token && (turn.actionStatus || answer.translation_action.status !== "awaiting_confirmation") && (
+                          <div className="border-t border-border/45 px-3.5 py-3">
+                            <AgentStatusBadge tone={
+                              turn.actionStatus === "dismissed" || answer.translation_action.status === "unavailable"
+                                ? "neutral"
+                                : answer.translation_action.status === "ready" ? "success" : "pending"
+                            }>
+                              {turn.actionStatus === "dismissed"
+                                ? t("reai.proposalDismissed", lang)
+                                : answer.translation_action.status === "ready"
+                                  ? t("reai.translationReady", lang)
+                                  : answer.translation_action.status === "unavailable"
+                                    ? t("reai.translationUnavailable", lang)
+                                    : t("reai.translationQueued", lang)}
+                            </AgentStatusBadge>
                           </div>
                         )}
                       </div>
                     )}
                     {answer && (["grade_draft_images", "retouch_draft_image", "cleanplate_draft_images", "generative_hdr_draft_image", "organize_draft_images", "generate_draft_video"].includes(answer.action_code || "")) && (answer.action_token || turn.actionStatus) && (
-                      <div className="mt-4 overflow-hidden rounded-xl border border-border/60 bg-foreground/[0.018]">
+                      <div className="mt-4 overflow-hidden floating-panel-shape border border-border/65 bg-card shadow-control">
                         <div className="px-3.5 py-3">
                           <div className="flex items-start justify-between gap-3">
                             <div>
@@ -916,7 +1649,7 @@ export function ReaiAgentCard({
                                 {t("reai.mediaSelection", lang).replace("{count}", String(answer.action_count || 0))}
                               </p>
                             </div>
-                            <span className="rounded-full bg-foreground/[0.06] px-2 py-1 text-[10px] font-medium text-foreground/65">
+                            <span className="rounded-2xl bg-foreground/[0.06] px-2 py-1 text-[11px] font-medium text-foreground/65">
                               {answer.media_action?.cloud_image_processor
                                 ? t("reai.mediaCloud", lang)
                                 : t("reai.mediaLocal", lang)}
@@ -935,15 +1668,15 @@ export function ReaiAgentCard({
                             )}
                           </p>
                           {answer.media_action?.authenticity_boundary && (
-                            <p className="mt-2 rounded-lg bg-amber-500/10 px-2.5 py-2 text-[10px] leading-relaxed text-amber-900 dark:text-amber-100">
+                            <p className="mt-2 rounded-2xl bg-amber-500/10 px-2.5 py-2 text-[11px] leading-relaxed text-amber-900 dark:text-amber-100">
                               {t("reai.mediaHdrBoundary", lang)}
                             </p>
                           )}
                           {!!answer.media_action?.operations && Object.keys(answer.media_action.operations).length > 0 && (
                             <div className="mt-2 flex flex-wrap gap-1.5">
                               {Object.entries(answer.media_action.operations).map(([key, value]) => (
-                                <span key={key} className="rounded-md border border-border/50 bg-background px-2 py-1 text-[10px] text-foreground/70">
-                                  {t(`reai.mediaOperation.${key}` as LocaleKey, lang)}{typeof value === "number" ? ` · ${value}` : ""}
+                                <span key={key} className="rounded-2xl border border-border/50 bg-background px-2.5 py-1 text-[11px] text-foreground/70">
+                                  {t(`reai.mediaOperation.${key}` as LocaleKey, lang)}{mediaOperationSuffix(key, value, lang)}
                                 </span>
                               ))}
                             </div>
@@ -951,42 +1684,38 @@ export function ReaiAgentCard({
                         </div>
                         {answer.action_token && (
                           <div className="flex items-center gap-2 border-t border-border/45 px-3.5 py-3">
-                            <button
-                              type="button"
-                              className="rounded-lg bg-foreground px-3 py-2 text-xs font-medium text-background transition hover:bg-foreground/85 disabled:opacity-40"
-                              disabled={busy}
-                              onClick={() => void applyAction(turn.id, answer)}
-                            >
+                            <Button type="button" size="sm" className="flex-1 rounded-2xl sm:flex-none" loading={busy} onClick={() => void applyAction(turn.id, answer)}>
                               {t("reai.mediaConfirm", lang)}
-                            </button>
-                            <button
-                              type="button"
-                              className="px-2 py-2 text-xs font-medium text-muted-foreground transition hover:text-foreground disabled:opacity-40"
-                              disabled={busy}
-                              onClick={() => dismissAction(turn.id)}
-                            >
+                            </Button>
+                            <Button type="button" variant="ghost" size="sm" className="rounded-2xl" disabled={busy} onClick={() => dismissAction(turn.id)}>
                               {t("reai.dismissProposal", lang)}
-                            </button>
+                            </Button>
                           </div>
                         )}
                         {!answer.action_token && turn.actionStatus && (
-                          <div className="border-t border-border/45 px-3.5 py-3 text-xs font-medium text-foreground/75">
-                            {t(
+                          <div className="border-t border-border/45 px-3.5 py-3">
+                            <AgentStatusBadge tone={
                               turn.actionStatus !== "applied"
-                                ? "reai.proposalDismissed"
-                                : answer.action_code === "generate_draft_video"
-                                  ? "reai.videoQueued"
-                                  : answer.action_code === "organize_draft_images"
-                                    ? "reai.galleryOrganized"
-                                    : "reai.mediaQueued",
-                              lang,
-                            )}
+                                ? "neutral"
+                                : answer.action_code === "organize_draft_images" ? "success" : "pending"
+                            }>
+                              {t(
+                                turn.actionStatus !== "applied"
+                                  ? "reai.proposalDismissed"
+                                  : answer.action_code === "generate_draft_video"
+                                    ? "reai.videoQueued"
+                                    : answer.action_code === "organize_draft_images"
+                                      ? "reai.galleryOrganized"
+                                      : "reai.mediaQueued",
+                                lang,
+                              )}
+                            </AgentStatusBadge>
                           </div>
                         )}
                       </div>
                     )}
                     {(answer?.action_code === "revoke_all_shares" || answer?.action_code === "manage_shares") && (answer.action_token || turn.actionStatus) && (
-                      <div className="mt-4 overflow-hidden rounded-xl border border-border/60 bg-foreground/[0.018]">
+                      <div className="mt-4 overflow-hidden floating-panel-shape border border-border/65 bg-card shadow-control">
                         <div className="px-3.5 py-3">
                           <p className="text-xs font-semibold text-foreground">{t("reai.shareManagerTitle", lang)}</p>
                           <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
@@ -997,40 +1726,32 @@ export function ReaiAgentCard({
                         </div>
                         {answer.action_token && (
                           <div className="flex items-center gap-2 border-t border-border/45 px-3.5 py-3">
-                            <button
-                              type="button"
-                              className="rounded-lg bg-foreground px-3 py-2 text-xs font-medium text-background transition hover:bg-foreground/85 disabled:opacity-40"
-                              disabled={busy}
-                              onClick={() => void applyAction(turn.id, answer)}
-                            >
+                            <Button type="button" size="sm" className="flex-1 rounded-2xl sm:flex-none" loading={busy} onClick={() => void applyAction(turn.id, answer)}>
                               {t(`reai.shareManagerConfirm.${answer.share_action || "revoke"}` as LocaleKey, lang)}
-                            </button>
-                            <button
-                              type="button"
-                              className="px-2 py-2 text-xs font-medium text-muted-foreground transition hover:text-foreground disabled:opacity-40"
-                              disabled={busy}
-                              onClick={() => dismissAction(turn.id)}
-                            >
+                            </Button>
+                            <Button type="button" variant="ghost" size="sm" className="rounded-2xl" disabled={busy} onClick={() => dismissAction(turn.id)}>
                               {t("reai.dismissProposal", lang)}
-                            </button>
+                            </Button>
                           </div>
                         )}
                         {!answer.action_token && turn.actionStatus && (
-                          <div className="border-t border-border/45 px-3.5 py-3 text-xs font-medium text-foreground/75">
-                            {t(turn.actionStatus === "applied" ? "reai.shareManagerApplied" : "reai.proposalDismissed", lang)}
+                          <div className="border-t border-border/45 px-3.5 py-3">
+                            <AgentStatusBadge tone={turn.actionStatus === "applied" ? "success" : "neutral"}>
+                              {t(turn.actionStatus === "applied" ? "reai.shareManagerApplied" : "reai.proposalDismissed", lang)}
+                            </AgentStatusBadge>
                           </div>
                         )}
                       </div>
                     )}
                     {answer?.action_code === "share_inventory" && !!answer.share_results?.length && (
-                      <div className="mt-3 divide-y divide-border/40 overflow-hidden rounded-lg border border-border/55">
+                      <div className="mt-3 divide-y divide-border/40 overflow-hidden floating-panel-shape border border-border/65 bg-card shadow-control">
                         {answer.share_results.map((share) => (
                           <div key={share.id} className="flex items-center gap-2 px-3 py-2">
                             <span className="min-w-0 flex-1 truncate text-[11px] font-medium">{share.title}</span>
-                            <span className="text-[10px] text-muted-foreground">
+                            <span className="text-[11px] text-muted-foreground">
                               {t("reai.shareManagerViews", lang).replace("{count}", String(share.access_count))}
                             </span>
-                            <span className="rounded-full bg-foreground/[0.06] px-1.5 py-0.5 text-[9px] text-foreground/65">
+                            <span className="rounded-2xl bg-foreground/[0.06] px-1.5 py-0.5 text-[11px] text-foreground/65">
                               {t(`reai.shareStatus.${share.status}` as LocaleKey, lang)}
                             </span>
                           </div>
@@ -1038,7 +1759,7 @@ export function ReaiAgentCard({
                       </div>
                     )}
                     {answer?.action_code === "share_status" && answer.share_status && (
-                      <div className="mt-3 rounded-lg border border-border/55 bg-foreground/[0.018] px-3 py-2.5">
+                      <div className="mt-3 floating-panel-shape border border-border/65 bg-card shadow-control px-3 py-2.5">
                         <div className="flex items-center justify-between gap-3">
                           <div className="min-w-0">
                             <p className="text-xs font-semibold text-foreground">{t("reai.currentShareTitle", lang)}</p>
@@ -1051,18 +1772,14 @@ export function ReaiAgentCard({
                           </div>
                           {shareUrl && (
                             <div className="flex shrink-0 items-center gap-1">
-                              <button
-                                type="button"
-                                className="rounded-md border border-border/60 px-2 py-1 text-[10px] font-medium"
-                                onClick={() => void copyShareUrl(shareUrl)}
-                              >
+                              <Button type="button" variant="outline" size="xs" className="rounded-2xl" onClick={() => void copyShareUrl(shareUrl)}>
                                 {t(copiedShareUrl === shareUrl ? "reai.shareCopied" : "reai.shareCopy", lang)}
-                              </button>
+                              </Button>
                               <a
                                 href={shareUrl}
                                 target="_blank"
                                 rel="noreferrer"
-                                className="px-1 py-1 text-[10px] font-medium text-muted-foreground hover:text-foreground"
+                                className="floating-control inline-flex min-w-11 items-center justify-center px-2 text-[11px] font-medium text-muted-foreground transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
                               >
                                 {t("reai.shareOpen", lang)}
                               </a>
@@ -1072,103 +1789,197 @@ export function ReaiAgentCard({
                       </div>
                     )}
                     {answer?.action_code === "create_draft_share" && (answer.action_token || shareUrl || turn.actionStatus) && (
-                      <div className="mt-3 rounded-lg border border-border/55 bg-foreground/[0.018] px-3 py-2.5">
-                        <div className="flex items-center justify-between gap-3">
-                          <div className="min-w-0">
-                            <p className="text-xs font-semibold text-foreground">{t("reai.shareCreateTitle", lang)}</p>
-                            <p className="mt-0.5 text-[11px] leading-4 text-muted-foreground">
-                              {shareUrl ? t("reai.shareCreateReady", lang) : t("reai.shareCreateBody", lang)}
+                      <div className="mt-3 floating-panel-shape border border-border/65 bg-card shadow-control px-3 py-2.5">
+                        <div className="min-w-0">
+                          <p className="text-xs font-semibold text-foreground">{t("reai.shareCreateTitle", lang)}</p>
+                          <p className="mt-0.5 text-[11px] leading-4 text-muted-foreground">
+                            {shareUrl ? t("reai.shareCreateReady", lang) : t("reai.shareCreateBody", lang)}
+                          </p>
+                          {!!answer.selected_share_fields?.length && (
+                            /* Wraps to two lines rather than truncating the field list to a fragment. */
+                            <p className="mt-1 line-clamp-2 text-[11px] leading-4 text-foreground/55">
+                              {answer.selected_share_fields
+                                .map((field) => t(`shareDialog.field.${field}` as LocaleKey, lang))
+                                .join(" · ")}
                             </p>
-                            {!!answer.selected_share_fields?.length && (
-                              <p className="mt-1 truncate text-[10px] text-foreground/55">
-                                {answer.selected_share_fields
-                                  .map((field) => t(`shareDialog.field.${field}` as LocaleKey, lang))
-                                  .join(" · ")}
-                              </p>
-                            )}
-                          </div>
-                          {answer.action_token && (
-                            <div className="flex shrink-0 items-center gap-1.5">
-                              <button
-                                type="button"
-                                className="rounded-md bg-foreground px-2.5 py-1.5 text-[11px] font-medium text-background disabled:opacity-40"
-                                disabled={busy}
-                                onClick={() => void applyAction(turn.id, answer)}
-                              >
-                                {t("reai.shareCreateConfirm", lang)}
-                              </button>
-                              <button
-                                type="button"
-                                className="px-1.5 py-1.5 text-[11px] text-muted-foreground hover:text-foreground"
-                                disabled={busy}
-                                onClick={() => dismissAction(turn.id)}
-                              >
-                                {t("reai.dismissProposal", lang)}
-                              </button>
-                            </div>
                           )}
                         </div>
+                        {answer.action_token && (
+                          <div className="mt-3 flex items-center gap-2">
+                            <Button type="button" size="sm" className="flex-1 rounded-2xl sm:flex-none" loading={busy} onClick={() => void applyAction(turn.id, answer)}>
+                              {t("reai.shareCreateConfirm", lang)}
+                            </Button>
+                            <Button type="button" variant="ghost" size="sm" className="rounded-2xl" disabled={busy} onClick={() => dismissAction(turn.id)}>
+                              {t("reai.dismissProposal", lang)}
+                            </Button>
+                          </div>
+                        )}
+                        {!answer.action_token && turn.actionStatus === "dismissed" && (
+                          <div className="mt-3 border-t border-border/40 pt-3">
+                            <AgentStatusBadge tone="neutral">{t("reai.proposalDismissed", lang)}</AgentStatusBadge>
+                          </div>
+                        )}
+                        {/*
+                          The link gets its own line. Sharing the URL beside two
+                          actions on one row left it truncated to almost nothing
+                          on a phone, and the two actions were a filled pill next
+                          to bare text — peers rendered as different things. This
+                          matches the sharing panel: copy leads, open follows.
+                        */}
                         {shareUrl && (
-                          <div className="mt-2 flex min-w-0 items-center gap-1.5 border-t border-border/40 pt-2">
-                            <span className="min-w-0 flex-1 truncate text-[11px] text-foreground/65">{shareUrl}</span>
-                            <button
-                              type="button"
-                              className="shrink-0 rounded-md border border-border/60 px-2 py-1 text-[10px] font-medium"
-                              onClick={() => void copyShareUrl(shareUrl)}
-                            >
-                              {t(copiedShareUrl === shareUrl ? "reai.shareCopied" : "reai.shareCopy", lang)}
-                            </button>
-                            <a
-                              href={shareUrl}
-                              target="_blank"
-                              rel="noreferrer"
-                              className="shrink-0 px-1 py-1 text-[10px] font-medium text-muted-foreground hover:text-foreground"
-                            >
-                              {t("reai.shareOpen", lang)}
-                            </a>
+                          <div className="mt-2.5 border-t border-border/40 pt-2.5">
+                            <p className="select-all break-all text-[11px] leading-relaxed text-foreground/65">{shareUrl}</p>
+                            <div className="mt-2.5 flex gap-2">
+                              <Button type="button" size="sm" className="flex-1 rounded-2xl" onClick={() => void copyShareUrl(shareUrl)}>
+                                {t(copiedShareUrl === shareUrl ? "reai.shareCopied" : "reai.shareCopy", lang)}
+                              </Button>
+                              <Button asChild variant="outline" size="sm" className="flex-1 rounded-2xl">
+                                <a href={shareUrl} target="_blank" rel="noreferrer">
+                                  {t("reai.shareOpen", lang)}
+                                </a>
+                              </Button>
+                            </div>
                           </div>
                         )}
                       </div>
                     )}
                     {answer && improvementConsent?.consented && answer.improvement_conversation_id && (
-                      <div className="mt-2 flex items-center gap-2 text-[11px] text-muted-foreground">
-                        <span>{t("reai.feedbackPrompt", lang)}</span>
-                        <button disabled={busy || turn.feedback !== undefined} onClick={() => void sendFeedback(turn.id, true, answer.improvement_conversation_id)}>✓</button>
-                        <button disabled={busy || turn.feedback !== undefined} onClick={() => void sendFeedback(turn.id, false, answer.improvement_conversation_id)}>✕</button>
+                      <div className="mt-2 flex items-center gap-1 text-[11px] text-muted-foreground">
+                        <span className="mr-1">{t("reai.feedbackPrompt", lang)}</span>
+                        <button
+                          type="button"
+                          aria-label={t("reai.feedbackGood", lang)}
+                          disabled={busy || turn.feedback !== undefined}
+                          onClick={() => void sendFeedback(turn.id, true, answer.improvement_conversation_id)}
+                          className={cn(
+                            "flex h-7 w-7 items-center justify-center rounded-2xl transition-colors hover:bg-foreground/[0.04] hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none",
+                            turn.feedback === true ? "text-foreground" : "disabled:opacity-40",
+                          )}
+                        >
+                          <CheckIcon size={12} />
+                        </button>
+                        <button
+                          type="button"
+                          aria-label={t("reai.feedbackBad", lang)}
+                          disabled={busy || turn.feedback !== undefined}
+                          onClick={() => void sendFeedback(turn.id, false, answer.improvement_conversation_id)}
+                          className={cn(
+                            "flex h-7 w-7 items-center justify-center rounded-2xl transition-colors hover:bg-foreground/[0.04] hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none",
+                            turn.feedback === false ? "text-foreground" : "disabled:opacity-40",
+                          )}
+                        >
+                          <CloseIcon size={12} />
+                        </button>
                       </div>
                     )}
                   </div>
                 );
               })}
-              {busy && <div className="border-l border-foreground/15 py-1 pl-3 text-[12px] text-muted-foreground">{t("reai.working", lang)}</div>}
+              {busy && <PendingAnswer lang={lang} />}
             </div>
           )}
-          {!showHistory && !showMediaHistory && panel && turns.length === 0 && (
-            <div className="flex min-h-0 flex-1 flex-col items-center justify-center px-4 text-center">
-              <p className="max-w-xs text-[13px] leading-relaxed text-muted-foreground">
+          {!showHistory && !showMediaHistory && turns.length === 0 && (
+            <div className={cn(
+              "flex flex-col",
+              panel ? "min-h-0 flex-1 items-center justify-center px-6 pb-8 text-center" : "py-2",
+            )}>
+              {panel ? (
+                <span
+                  aria-hidden="true"
+                  className="mb-4 flex h-12 w-12 items-center justify-center rounded-full border border-border/65 bg-card text-foreground shadow-control"
+                >
+                  <AgentIcon size={22} strokeWidth={1.7} />
+                </span>
+              ) : null}
+              <p className={cn("text-[14px] leading-relaxed text-foreground/70", panel && "max-w-[300px] text-[13px]")}>
                 {t(workspaceContext === "settings" ? "reai.startSettingsConversation" : (draftId ? "reai.startDraftConversation" : "reai.startConversation"), lang)}
               </p>
-              <div className="mt-5 flex max-w-xs flex-wrap justify-center gap-2">
-                {quickActions.map((key) => (
+            </div>
+          )}
+          {error && <p role="alert" className="rounded-2xl border border-destructive/20 bg-destructive/[0.045] px-3 py-2.5 text-[12px] text-destructive">{error}</p>}
+          {!showHistory && !showMediaHistory && turns.length === 0 && (!panel || (!composerFocused && !message.trim())) && (
+            <div className={cn(
+              "flex gap-2",
+              compactPanel
+                ? "overflow-x-auto pb-0.5 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+                : "flex-wrap justify-center",
+            )}>
+              {quickActions.map((key, index) => {
+                const Icon = ACTION_ICON[key] ?? SparklesIcon;
+                return (
                   <button
                     key={key}
                     type="button"
                     disabled={busy}
                     onClick={() => void ask(t(key, lang))}
-                    className="rounded-full border border-border/60 px-3 py-1.5 text-[11px] text-foreground/65 transition hover:border-foreground/25 hover:text-foreground"
+                    className={cn(
+                      "group inline-flex shrink-0 items-center gap-1.5 rounded-2xl border border-transparent bg-foreground/[0.04] px-3 text-[12px] font-medium text-foreground/75 transition-colors hover:bg-foreground/[0.06] hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50",
+                      "h-11",
+                      compactPanel && index > 1 && "hidden",
+                      compactPanel && index > 0 && "max-[359px]:hidden",
+                    )}
                   >
+                    <Icon size={14} className="text-foreground/45 transition-colors group-hover:text-foreground/70" />
                     {t(key, lang)}
                   </button>
-                ))}
-              </div>
+                );
+              })}
             </div>
           )}
-          {!showHistory && !showMediaHistory && <div className="flex items-end gap-2 rounded-2xl border border-border/60 bg-background p-2 transition focus-within:border-foreground/30">
+          {!showHistory && !showMediaHistory && (pool.length > 0 || uploading) && (
+            <div className="flex flex-wrap items-center gap-1.5 rounded-2xl border border-border/60 bg-background/70 p-1.5">
+              {pool.map((item) => {
+                const key = poolItemKey(item);
+                return (
+                  <span
+                    key={key}
+                    className="inline-flex max-w-full items-center gap-1.5 rounded-xl border border-border/60 bg-card py-1 pl-1 pr-1.5 text-[11px]"
+                  >
+                    {item.kind === "image" ? (
+                      // eslint-disable-next-line @next/next/no-img-element
+                      <img src={item.url} alt="" className="h-7 w-7 rounded-lg object-cover" />
+                    ) : (
+                      <span className="flex h-7 min-w-7 items-center rounded-lg bg-foreground/[0.04] px-1.5 font-medium text-foreground/70">
+                        {item.value || "—"}
+                      </span>
+                    )}
+                    <span className="max-w-[9rem] truncate text-foreground/75">{item.label}</span>
+                    <button
+                      type="button"
+                      aria-label={`${t("reai.pool.remove", lang)} — ${item.label}`}
+                      onClick={() => setPool((current) => removePoolItem(current, key))}
+                      className="rounded-lg p-0.5 text-foreground/40 transition-colors hover:text-foreground"
+                    >
+                      <CloseIcon size={12} />
+                    </button>
+                  </span>
+                );
+              })}
+              {uploading && (
+                <span className="px-1.5 text-[11px] text-muted-foreground">{t("reai.pool.uploading", lang)}</span>
+              )}
+              {pool.length > 0 && (
+                <button
+                  type="button"
+                  onClick={() => setPool([])}
+                  className="ml-auto rounded-lg px-2 py-1 text-[11px] text-foreground/50 transition-colors hover:text-foreground"
+                >
+                  {t("reai.pool.clear", lang)}
+                </button>
+              )}
+            </div>
+          )}
+          {!showHistory && !showMediaHistory && <div className={cn(
+            "floating-panel-shape flex items-end gap-1.5 border border-border bg-white transition-colors focus-within:border-foreground/25",
+            compactPanel ? "p-1.5" : "p-2",
+          )}>
             <textarea
               value={message}
               onChange={(event) => setMessage(event.target.value)}
+              onFocus={() => setComposerFocused(true)}
+              onBlur={() => setComposerFocused(false)}
               maxLength={2000}
-              rows={2}
+              rows={1}
               placeholder={t(workspaceContext === "settings" ? "reai.settingsPlaceholder" : (draftId ? "reai.draftPlaceholder" : "reai.placeholder"), lang)}
               onKeyDown={(event) => {
                 if (event.key === "Enter" && !event.shiftKey) {
@@ -1176,21 +1987,27 @@ export function ReaiAgentCard({
                   void ask();
                 }
               }}
-              className="min-h-10 flex-1 resize-none bg-transparent px-2 py-1.5 text-[13px] leading-relaxed outline-none"
+              className={cn(
+                "min-w-0 flex-1 resize-none overflow-y-auto bg-transparent px-2.5 py-2.5 text-[14px] leading-5 outline-none [field-sizing:content] placeholder:text-foreground/40",
+                compactPanel ? "min-h-11" : "min-h-12",
+              )}
             />
             <button
               type="button"
               disabled={!message.trim() || busy}
               onClick={() => void ask()}
               aria-label={t("reai.ask", lang)}
-              className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-foreground text-background transition hover:bg-foreground/85 disabled:cursor-not-allowed disabled:opacity-25"
+              className={cn(
+                "bg-creative text-creative-foreground hover:bg-creative/90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-creative focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-25",
+                compactPanel ? "floating-icon-button px-0" : "floating-control w-auto gap-1.5 px-3.5",
+              )}
             >
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="m5 12 14-7-4.5 14-2.5-6.5L5 12Z" /></svg>
+              <SparklesIcon size={15} />
+              <span className={compactPanel ? "sr-only" : undefined}>{t("reai.ask", lang)}</span>
             </button>
           </div>}
         </div>
       )}
-      {error && <p className="mt-3 text-[12px] text-red-600" role="alert">{error}</p>}
     </section>
   );
 }

@@ -144,10 +144,13 @@ UX contract:
 
 Behavior contract:
 
-- `CameraEditor` captures `position`, `forward`, `up`, and `fov` from `SplatViewerHandle.getCurrentCamera()`.
-- Look-through and preview navigation call `SplatViewerHandle.navigateToCamera(position, forward, true, fov)`.
-- Save persists ordered cameras through `PATCH /api/reaigen/splats/{id}/cameras/`.
+- `CameraEditor` captures canonical `position`, `forward`, `up`, and `fov` from `SplatViewerHandle.getCurrentCamera()`.
+- Look-through and preview navigation pass the complete saved basis to `SplatViewerHandle.navigateToCamera(...)`; edit recall is instant and preview recall may animate.
+- `SplatViewer` applies the scene root transform to the complete camera basis exactly once for presentation, then inverses it on capture.
+- Save persists ordered cameras through the owning tour workspace when available, with the splat camera endpoint retained for compatible surfaces.
 - Camera order is meaningful because shared playback follows the saved order.
+
+See [`docs/tour-viewer-runtime.md`](docs/tour-viewer-runtime.md) for the camera-space and shared-delivery performance invariants.
 
 ---
 
@@ -158,12 +161,14 @@ The browser never calls Django directly. All API requests go through Next.js ser
 ```
 /api/auth/*     → Django /api/v1/core/auth/*
 /api/reaigen/*  → Django /api/v1/reaigen/*  (or /api/v1/core/users/*)
+/api/reaigen/reai-agent/* → Django /api/v1/reai-agent/*
 ```
 
 This handles:
 - JWT storage in HTTP-only cookies
 - Automatic token refresh on 401
 - Backend URL hidden from client
+- Private, no-store access to the canonical Django creator Agent
 
 ---
 
@@ -234,6 +239,8 @@ npm run start    # Start production server (port 3055)
 npm run lint     # ESLint
 npm run typecheck # TypeScript without emitting files
 npm run check    # Lint + typecheck + production build
+npm run analyze-floorplan-patterns -- <path> [--format auto|procthor|arkitscenes] [--out-json file] [--suggest-priors]
+                 # Mine furniture placement priors from dataset annotations
 ```
 
 ---

@@ -1,12 +1,16 @@
 "use client";
 
 import * as React from "react";
+import { ListBulletIcon } from "@radix-ui/react-icons";
 import { t, type LocaleKey } from "../../lib/i18n";
 import {
   SHARE_BUNDLES,
   SHARE_FIELD_GROUPS,
   type ShareBundleName,
 } from "../../lib/tour-types";
+import { cn } from "../../lib/utils";
+import { ArrowRightIcon, CheckIcon, FloorplanIcon, ImageIcon, LockIcon, MainTourIcon } from "../icons";
+import { SidePanel } from "../side-panel";
 
 // ── Content scope types ────────────────────────────────────────────────
 
@@ -25,14 +29,17 @@ interface ContentScopeSelectorProps {
   hasPhotos: boolean;
   hasFloorplan: boolean;
   lang: string;
+  layout?: "default" | "workspace";
+  detailsMode?: "panel" | "inline";
 }
 
 // ── Bundle detection ───────────────────────────────────────────────────
 
-function detectBundle(selected: Set<string>): ShareBundleName | null {
+function detectBundle(selected: Set<string>, unavailable: Set<string>): ShareBundleName | null {
+  const comparableSelected = [...selected].filter((field) => !unavailable.has(field));
   for (const name of ["minimal", "less", "all"] as const) {
-    const bundle = SHARE_BUNDLES[name];
-    if (bundle.length === selected.size && bundle.every((f) => selected.has(f))) {
+    const bundle = SHARE_BUNDLES[name].filter((field) => !unavailable.has(field));
+    if (bundle.length === comparableSelected.length && bundle.every((field) => selected.has(field))) {
       return name;
     }
   }
@@ -45,22 +52,24 @@ const BUNDLE_OPTIONS: { name: ShareBundleName; labelKey: LocaleKey }[] = [
   { name: "all", labelKey: "shareDialog.bundle.all" },
 ];
 
-// ── Icons (16px) ───────────────────────────────────────────────────────
-
-const icons = {
-  cube: <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/><path d="M3.27 6.96L12 12.01l8.73-5.05M12 22.08V12"/></svg>,
-  image: <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><path d="M21 15l-5-5L5 21"/></svg>,
-  list: <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/></svg>,
-  layout: <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><rect x="2" y="2" width="20" height="20" rx="2"/><path d="M2 8h20M8 2v20M14 8v14"/></svg>,
-  check: <svg width="10" height="10" viewBox="0 0 16 16" fill="none"><path d="M3 8l4 4 6-6" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"/></svg>,
-  lock: <svg width="10" height="10" viewBox="0 0 16 16" fill="none"><rect x="3" y="7" width="10" height="7" rx="2" stroke="currentColor" strokeWidth="1.5" /><path d="M5 7V5a3 3 0 016 0v2" stroke="currentColor" strokeWidth="1.5" /></svg>,
-};
-
 // ── Component ──────────────────────────────────────────────────────────
 
-export function ContentScopeSelector({ scope, onChange, hasTour, hasPhotos, hasFloorplan, lang }: ContentScopeSelectorProps) {
+export function ContentScopeSelector({
+  scope,
+  onChange,
+  hasTour,
+  hasPhotos,
+  hasFloorplan,
+  lang,
+  layout = "default",
+  detailsMode = "panel",
+}: ContentScopeSelectorProps) {
   const [detailsExpanded, setDetailsExpanded] = React.useState(false);
-  const activeBundle = detectBundle(scope.selectedFields);
+  const unavailableFields = new Set<string>();
+  if (!hasTour) unavailableFields.add("tour");
+  if (!hasPhotos) unavailableFields.add("uploads");
+  if (!hasFloorplan) unavailableFields.add("floorplan");
+  const activeBundle = detectBundle(scope.selectedFields, unavailableFields);
 
   const toggleCard = (key: "tour" | "photos" | "details" | "floorplan") => {
     onChange({ ...scope, [key]: !scope[key] });
@@ -80,38 +89,95 @@ export function ContentScopeSelector({ scope, onChange, hasTour, hasPhotos, hasF
   };
 
   const cards: { key: "tour" | "photos" | "details" | "floorplan"; icon: React.ReactNode; labelKey: LocaleKey; available: boolean }[] = [
-    { key: "tour", icon: icons.cube, labelKey: "sharing.scopeTour", available: hasTour },
-    { key: "photos", icon: icons.image, labelKey: "sharing.scopePhotos", available: hasPhotos },
-    { key: "details", icon: icons.list, labelKey: "sharing.scopeDetails", available: true },
-    { key: "floorplan", icon: icons.layout, labelKey: "sharing.scopeFloorplan", available: hasFloorplan },
+    { key: "tour", icon: <MainTourIcon size={16} />, labelKey: "sharing.scopeTour", available: hasTour },
+    { key: "photos", icon: <ImageIcon size={16} />, labelKey: "sharing.scopePhotos", available: hasPhotos },
+    { key: "details", icon: <ListBulletIcon width={16} height={16} aria-hidden="true" />, labelKey: "sharing.scopeDetails", available: true },
+    { key: "floorplan", icon: <FloorplanIcon size={16} />, labelKey: "sharing.scopeFloorplan", available: hasFloorplan },
   ];
-
-  const visibleCards = cards.filter((c) => c.available);
+  const fieldGroups = (
+    <div className={cn(
+      "grid gap-5",
+      layout === "workspace" && "sm:grid-cols-2 lg:grid-cols-3",
+    )}>
+      {SHARE_FIELD_GROUPS.map((group) => (
+        <section key={group.key}>
+          <h4 className="mb-2 text-[11px] font-semibold uppercase tracking-[0.045em] text-muted-foreground">
+            {t(`shareDialog.fieldGroup.${group.key}` as LocaleKey, lang)}
+          </h4>
+          <div className="grid grid-cols-2 gap-2">
+            {group.fields.map((field) => {
+              const isTitle = field === "title";
+              const checked = isTitle || scope.selectedFields.has(field);
+              return (
+                <button
+                  key={field}
+                  type="button"
+                  disabled={isTitle}
+                  aria-pressed={checked}
+                  onClick={() => handleFieldToggle(field, !checked)}
+                  className={`flex min-h-11 min-w-0 items-center justify-between gap-2 rounded-xl border px-3 text-left text-[12px] font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ${
+                    checked
+                      ? "border-foreground bg-foreground text-background"
+                      : "border-border/70 bg-card text-foreground/65 hover:border-foreground/20 hover:text-foreground"
+                  } ${isTitle ? "cursor-default opacity-65" : ""}`}
+                >
+                  <span className="truncate">{t(`shareDialog.field.${field}` as LocaleKey, lang)}</span>
+                  {isTitle ? <LockIcon size={11} /> : checked ? <CheckIcon size={11} /> : null}
+                </button>
+              );
+            })}
+          </div>
+        </section>
+      ))}
+    </div>
+  );
 
   return (
-    <div className="space-y-3">
-      <h3 className="text-[12px] font-medium text-foreground/50">
+    <div className="space-y-3.5">
+      <h3 className="px-0.5 text-[13px] font-semibold text-foreground/70">
         {t("sharing.whatToShare", lang)}
       </h3>
 
-      {/* Toggle chips — pill-shaped */}
-      <div className="flex flex-wrap gap-2">
-        {visibleCards.map((card) => {
-          const active = scope[card.key];
+      <div className={cn("grid grid-cols-1 gap-2 min-[480px]:grid-cols-2", layout === "workspace" && "sm:grid-cols-4")}>
+        {cards.map((card) => {
+          const active = card.available && scope[card.key];
           return (
             <button
               key={card.key}
               type="button"
+              disabled={!card.available}
+              aria-disabled={!card.available}
+              aria-pressed={active}
               onClick={() => toggleCard(card.key)}
-              className={`inline-flex items-center gap-1.5 rounded-full px-3.5 py-1.5 text-left transition-all ${
-                active
-                  ? "border border-foreground bg-foreground text-background"
-                  : "border border-transparent bg-foreground/[0.04] text-foreground/50 hover:bg-foreground/[0.07] hover:text-foreground/70"
+              className={`floating-panel-shape pen-touch-target group relative flex min-h-16 w-full items-center gap-2.5 border px-3 py-2 text-left transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 ${
+                !card.available
+                  ? "cursor-not-allowed border-border/45 bg-surface-subtle/70 text-foreground/45"
+                  : `editor-control-capsule border-border/55 ${active ? "text-foreground" : "text-foreground/55 hover:bg-card hover:text-foreground"}`
               }`}
             >
-              <span>{card.icon}</span>
-              <span className="text-[12px] font-medium">
+              <span className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-full transition-colors ${active ? "bg-foreground text-background" : "bg-secondary/80 text-foreground/50"}`}>
+                {card.icon}
+              </span>
+              {/*
+                The check sits in the flow rather than absolutely over the label.
+                Reserving space with padding was not enough: a single long word
+                ("nehnuteľnosti") is wider than the padded box and overflows it
+                instead of wrapping, running straight under the badge. Its slot
+                is always present so toggling does not reflow the label.
+              */}
+              <span className="min-w-0 flex-1 hyphens-auto break-words text-[12px] font-semibold leading-[1.25] sm:text-[13px]">
                 {t(card.labelKey, lang)}
+              </span>
+              <span
+                aria-hidden="true"
+                className={cn(
+                  "flex h-5 w-5 shrink-0 items-center justify-center rounded-full border transition-colors",
+                  active
+                    ? "border-foreground bg-foreground text-background"
+                    : "border-foreground/25 bg-card/65 text-transparent",
+                )}
+              >
+                <CheckIcon size={12} />
               </span>
             </button>
           );
@@ -120,71 +186,56 @@ export function ContentScopeSelector({ scope, onChange, hasTour, hasPhotos, hasF
 
       {/* Details sub-section — bundle pills inline + optional custom toggles */}
       {scope.details && (
-        <div className="space-y-2.5">
-          <div className="flex items-center gap-1.5">
+        <div className="space-y-1.5">
+          <div className="selection-capsule-track grid grid-cols-3">
             {BUNDLE_OPTIONS.map(({ name, labelKey }) => (
               <button
                 key={name}
                 type="button"
+                aria-pressed={activeBundle === name}
                 onClick={() => handleBundleClick(name)}
-                className={`px-2.5 py-1 rounded-full text-[11px] font-medium transition-all ${
-                  activeBundle === name
-                    ? "bg-foreground text-background border border-foreground"
-                    : "bg-foreground/[0.04] text-foreground/50 border border-transparent hover:bg-foreground/[0.07] hover:text-foreground/70"
-                }`}
+                className="selection-capsule-item pen-touch-target min-w-0 px-2 text-[12px] leading-tight focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
               >
-                {t(labelKey, lang)}
+                <span className="block truncate">{t(labelKey, lang)}</span>
               </button>
             ))}
-            <div className="flex-1" />
-            <button
-              type="button"
-              onClick={() => setDetailsExpanded((v) => !v)}
-              className="text-[11px] font-medium text-foreground/40 hover:text-foreground transition-colors"
-            >
-              {t("shareDialog.customizeFields", lang)}
-              <svg width="8" height="8" viewBox="0 0 16 16" fill="none" className={`inline ml-0.5 transition-transform ${detailsExpanded ? "rotate-180" : ""}`}>
-                <path d="M4 6l4 4 4-4" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
-              </svg>
-            </button>
           </div>
 
-          {detailsExpanded && (
-            <div className="rounded-xl bg-foreground/[0.02] p-3.5 space-y-3">
-              {SHARE_FIELD_GROUPS.map((group) => (
-                <div key={group.key} className="space-y-1.5">
-                  <p className="text-[10px] font-medium text-foreground/45 uppercase tracking-wide">
-                    {t(`shareDialog.fieldGroup.${group.key}` as LocaleKey, lang)}
-                  </p>
-                  <div className="flex flex-wrap gap-1.5">
-                    {group.fields.map((field) => {
-                      const isTitle = field === "title";
-                      const checked = isTitle || scope.selectedFields.has(field);
-                      return (
-                        <button
-                          key={field}
-                          type="button"
-                          disabled={isTitle}
-                          onClick={() => handleFieldToggle(field, !checked)}
-                          className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-[12px] font-medium transition-all ${
-                            checked
-                              ? "bg-foreground text-background border border-foreground"
-                              : "bg-background text-foreground/70 border border-black/[0.08] hover:border-black/[0.16] hover:text-foreground"
-                          } ${isTitle ? "cursor-default opacity-60" : ""}`}
-                        >
-                          {checked && !isTitle && icons.check}
-                          {t(`shareDialog.field.${field}` as LocaleKey, lang)}
-                          {isTitle && icons.lock}
-                        </button>
-                      );
-                    })}
-                  </div>
-                </div>
-              ))}
-            </div>
-          )}
+          <button
+            type="button"
+            aria-expanded={detailsExpanded}
+            aria-haspopup={detailsMode === "panel" ? "dialog" : undefined}
+            onClick={() => setDetailsExpanded((v) => !v)}
+            className="floating-control pen-touch-target flex w-full items-center justify-between px-3.5 text-[12px] font-semibold text-foreground/70 transition-colors hover:bg-foreground/[0.04] hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+          >
+            <span>{t("shareDialog.customizeFields", lang)}</span>
+            <span className="flex items-center gap-2">
+              {!activeBundle ? <span className="rounded-full bg-secondary px-2 py-0.5 text-[10px] font-semibold">{t("shareDialog.bundle.custom", lang)}</span> : null}
+              <ArrowRightIcon size={12} className={cn("transition-transform", detailsExpanded && "rotate-90")} />
+            </span>
+          </button>
         </div>
       )}
+
+      {detailsMode === "inline" && detailsExpanded ? (
+        <div className="animate-fade-in border-t border-border/50 pt-4">
+          {fieldGroups}
+        </div>
+      ) : null}
+
+      {detailsMode === "panel" ? (
+        <SidePanel
+          open={detailsExpanded}
+          onOpenChange={setDetailsExpanded}
+          title={t("shareDialog.customizeFields", lang)}
+          description={t("sharing.scopeDetails", lang)}
+          headerMode="editor"
+          closeIcon="back"
+          lang={lang}
+        >
+          <div className="space-y-6">{fieldGroups}</div>
+        </SidePanel>
+      ) : null}
     </div>
   );
 }

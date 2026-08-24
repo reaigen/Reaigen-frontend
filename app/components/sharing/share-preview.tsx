@@ -2,50 +2,81 @@
 
 import { t } from "../../lib/i18n";
 import type { DraftDetailItem, DraftUpload } from "../../lib/tour-types";
+import { currentGalleryUploads } from "../../lib/media";
+import { resolveUnit, unitLabel, type UnitLookup } from "../../lib/unit-catalog";
+import { PropertyFactTile } from "../property-fact-tile";
+import { MainTourIcon, PlayIcon } from "../icons";
 import type { ContentScope } from "./content-scope-selector";
 
 interface SharePreviewProps {
   draft: DraftDetailItem;
   scope: ContentScope;
   hasTour: boolean;
+  hasFloorplan: boolean;
   thumbUrl: string | null;
-  fpUrl: string | null;
+  units: readonly UnitLookup[];
   lang: string;
 }
 
 function getImages(uploads: DraftUpload[]) {
-  return (uploads ?? [])
-    .filter((u) => u.mime_type?.startsWith("image") || u.asset_type === "photo" || u.asset_type === "processed_image")
-    .sort((a, b) => a.sort_order - b.sort_order)
-    .map((u) => ({ url: u.file_url }));
+  return currentGalleryUploads(uploads, "image").map((upload) => ({
+    url: upload.file_url,
+  }));
 }
 
-function formatPreviewPrice(value: string | number | null | undefined, currency: string | null | undefined): string | null {
+function formatPreviewPrice(value: string | number | null | undefined, currency: string | null | undefined, lang: string): string | null {
   if (value == null || value === "") return null;
   const n = typeof value === "number" ? value : Number(value);
   if (!Number.isFinite(n) || n === 0) return null;
+  if (!currency) return n.toLocaleString(lang);
   try {
-    return new Intl.NumberFormat(undefined, { style: "currency", currency: currency || "EUR", maximumFractionDigits: 0 }).format(n);
+    return new Intl.NumberFormat(lang, { style: "currency", currency, maximumFractionDigits: 0 }).format(n);
   } catch {
-    return `${n.toLocaleString()}${currency ? ` ${currency}` : ""}`;
+    return n.toLocaleString(lang);
   }
 }
 
-export function SharePreview({ draft, scope, hasTour, thumbUrl, fpUrl, lang }: SharePreviewProps) {
+export function SharePreview({ draft, scope, hasTour, hasFloorplan, thumbUrl, units, lang }: SharePreviewProps) {
   const images = getImages(draft.raw_uploads);
-  const price = formatPreviewPrice(draft.price_preferred ?? draft.price, draft.price_preferred_currency ?? draft.currency);
+  // Preferred (converted) price prominently, original smaller if different currency —
+  // same pattern as the draft detail page.
+  const preferredCurrency = resolveUnit(units, draft.price_preferred_currency, "CURRENCY");
+  const storedCurrency = resolveUnit(units, draft.currency, "CURRENCY");
+  const prefPrice = formatPreviewPrice(draft.price_preferred, preferredCurrency?.code, lang);
+  const origPrice = formatPreviewPrice(draft.price, storedCurrency?.code, lang);
+  const price = prefPrice || origPrice;
+  const showOrigPrice = prefPrice && origPrice && preferredCurrency?.id !== storedCurrency?.id;
   const address = draft.display_address || [draft.city, draft.state, draft.country].filter(Boolean).join(", ");
 
   const fields = scope.selectedFields;
   const showTitle = fields.has("title");
-  const showAddress = fields.has("display_address") && !!address;
-  const showPrice = fields.has("price") && !!price;
-  const showSpecs = (fields.has("bedrooms") || fields.has("bathrooms") || fields.has("area"));
+  const detailsIncluded = scope.details;
+  const showAddress = detailsIncluded && fields.has("display_address") && !!address;
+  const showPrice = detailsIncluded && fields.has("price") && !!price;
+  const specItems: Array<{ label: string; value: string }> = [];
+  if (detailsIncluded && fields.has("bedrooms") && draft.specs?.layout?.bedrooms != null) {
+    specItems.push({ label: t("draft.bedrooms", lang), value: String(draft.specs.layout.bedrooms) });
+  }
+  if (detailsIncluded && fields.has("bathrooms") && draft.specs?.layout?.bathrooms != null) {
+    specItems.push({ label: t("draft.bathrooms", lang), value: String(draft.specs.layout.bathrooms) });
+  }
+  if (detailsIncluded && fields.has("area") && draft.area != null) {
+    const usesPreferredArea = draft.area_preferred != null;
+    const areaUnit = usesPreferredArea
+      ? resolveUnit(units, draft.area_preferred_unit, "AREA")
+      : resolveUnit(units, draft.area_unit, "AREA")
+        ?? resolveUnit(units, draft.area_unit_code, "AREA")
+        ?? resolveUnit(units, draft.area_unit_display, "AREA");
+    const label = unitLabel(areaUnit);
+    specItems.push({
+      label: t("draft.area", lang),
+      value: `${draft.area_preferred ?? draft.area}${label ? ` ${label}` : ""}`,
+    });
+  }
 
   const tourIncluded = scope.tour && hasTour;
   const photosIncluded = scope.photos && images.length > 0;
-  const detailsIncluded = scope.details;
-  const floorplanIncluded = scope.floorplan && !!fpUrl;
+  const floorplanIncluded = scope.floorplan && hasFloorplan;
 
   // Hero image: tour thumbnail or first photo
   const heroUrl = tourIncluded && thumbUrl ? thumbUrl : photosIncluded ? images[0]?.url : null;
@@ -53,50 +84,67 @@ export function SharePreview({ draft, scope, hasTour, thumbUrl, fpUrl, lang }: S
 
   // Checklist
   const items: { label: string; on: boolean }[] = [];
-  if (showTitle) items.push({ label: t("shareDialog.field.title", lang), on: detailsIncluded });
-  if (showAddress) items.push({ label: t("shareDialog.field.display_address", lang), on: detailsIncluded });
-  if (showPrice) items.push({ label: t("shareDialog.field.price", lang), on: detailsIncluded });
-  if (showSpecs) items.push({ label: t("sharing.previewSpecs", lang), on: detailsIncluded });
+  if (showTitle) items.push({ label: t("shareDialog.field.title", lang), on: true });
+  if (showAddress) items.push({ label: t("shareDialog.field.display_address", lang), on: true });
+  if (showPrice) items.push({ label: t("shareDialog.field.price", lang), on: true });
+  if (specItems.length > 0) items.push({ label: t("sharing.previewSpecs", lang), on: true });
   if (fields.has("description") && draft.description) items.push({ label: t("shareDialog.field.description", lang), on: detailsIncluded });
   if (images.length > 0) items.push({ label: `${t("shareDialog.field.uploads", lang)} (${images.length})`, on: photosIncluded });
   if (hasTour) items.push({ label: t("sharing.scopeTour", lang), on: tourIncluded });
-  if (fpUrl) items.push({ label: t("sharing.scopeFloorplan", lang), on: floorplanIncluded });
+  if (hasFloorplan) items.push({ label: t("sharing.scopeFloorplan", lang), on: floorplanIncluded });
+  const includedItems = items.filter((item) => item.on);
 
   return (
     <div>
-      {/* Preview card */}
-      <div className="rounded-2xl border border-border/60 bg-background shadow-sm overflow-hidden">
-        {/* Card header */}
-        <div className="px-4 py-3 border-b border-border/30">
-          <p className="text-[12px] font-medium text-foreground/45">
-            {t("sharing.previewTitle", lang)}
-          </p>
-        </div>
+      <p className="mb-2.5 px-0.5 text-[12px] font-semibold text-foreground/60">
+        {t("sharing.previewTitle", lang)}
+      </p>
 
+      {/* Preview card */}
+      <div className="floating-panel overflow-hidden">
         {/* Hero */}
         {hasHero && (
-          <div className="relative aspect-[16/9] bg-muted/30">
+          <div className="relative aspect-[16/10] bg-muted/30">
             {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img src={heroUrl} alt="" className="w-full h-full object-cover" />
+            <img src={heroUrl} alt="" decoding="async" className="h-full w-full object-cover" />
+            <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/5 to-black/15" aria-hidden="true" />
             {tourIncluded && (
-              <div className="absolute inset-0 flex items-center justify-center bg-black/10">
-                <div className="w-10 h-10 rounded-full bg-black/40 backdrop-blur-sm flex items-center justify-center">
-                  <svg width="16" height="16" viewBox="0 0 24 24" fill="white"><polygon points="10,8 16,12 10,16"/></svg>
+              <div className="absolute inset-0 flex items-center justify-center">
+                <div className="floating-icon-button flex items-center justify-center border border-white/15 bg-black/65 text-white shadow-sm backdrop-blur-md">
+                  <PlayIcon size={16} />
                 </div>
               </div>
             )}
             {tourIncluded && (
-              <div className="absolute top-2.5 left-2.5 flex items-center gap-1 rounded-full bg-black/50 backdrop-blur-sm px-2 py-0.5 text-[9px] font-medium text-white/80">
-                <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/></svg>
-                3D
+              // Matches the p-4 title block below it; this sat at 10px against
+              // that 16px and read as leaning out of the frame.
+              <div className="glass-chip floating-status absolute left-4 top-4 flex items-center gap-1 text-[10px]">
+                <MainTourIcon size={11} />
+                {t("sharing.scopeTour", lang)}
+              </div>
+            )}
+            {(showTitle || showPrice) && (
+              <div className="absolute inset-x-0 bottom-0 flex items-end justify-between gap-3 p-4">
+                {showTitle ? (
+                  <div className="min-w-0 flex-1">
+                    <h3 className="truncate text-[15px] font-semibold leading-tight text-white">{draft.title || t("dashboard.untitled", lang)}</h3>
+                    {showAddress ? <p className="mt-1 truncate text-[11px] text-white/70">{address}</p> : null}
+                  </div>
+                ) : <span />}
+                {showPrice ? (
+                  <p className="glass-chip floating-status shrink-0 flex items-center px-3 text-[12px] tabular-nums">
+                    {price}
+                    {showOrigPrice ? <span className="ml-1.5 text-[10px] font-normal text-black/50">{origPrice}</span> : null}
+                  </p>
+                ) : null}
               </div>
             )}
           </div>
         )}
 
         {/* Property info */}
-        <div className="px-4 py-3 space-y-2">
-          {detailsIncluded && showTitle && (
+        <div className="space-y-2 bg-card px-4 py-3.5 sm:px-5">
+          {showTitle && !hasHero && (
             <div>
               <h3 className="text-[14px] font-semibold leading-tight">{draft.title || t("dashboard.untitled", lang)}</h3>
               {showAddress && (
@@ -108,42 +156,35 @@ export function SharePreview({ draft, scope, hasTour, thumbUrl, fpUrl, lang }: S
             </div>
           )}
 
-          {detailsIncluded && showPrice && (
-            <p className="text-[14px] font-semibold">{price}</p>
+          {detailsIncluded && showPrice && !hasHero && (
+            <p className="text-[14px] font-semibold tabular-nums">
+              {price}
+              {showOrigPrice && (
+                <span className="ml-2 text-[11px] font-normal text-muted-foreground tabular-nums">{origPrice}</span>
+              )}
+            </p>
           )}
 
-          {detailsIncluded && showSpecs && (
-            <div className="flex items-center gap-3 text-[11px] text-foreground/50">
-              {fields.has("bedrooms") && draft.specs?.layout?.bedrooms != null && (
-                <span className="flex items-center gap-1">
-                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" className="text-foreground/30"><path d="M2 4v16"/><path d="M2 8h18a2 2 0 0 1 2 2v10"/><path d="M2 17h20"/><path d="M6 8v9"/></svg>
-                  {draft.specs.layout.bedrooms}
-                </span>
-              )}
-              {fields.has("bathrooms") && draft.specs?.layout?.bathrooms != null && (
-                <span className="flex items-center gap-1">
-                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" className="text-foreground/30"><path d="M4 12h16a1 1 0 0 1 1 1v3a4 4 0 0 1-4 4H7a4 4 0 0 1-4-4v-3a1 1 0 0 1 1-1Z"/><path d="M6 12V5a2 2 0 0 1 2-2h3v2.25"/></svg>
-                  {draft.specs.layout.bathrooms}
-                </span>
-              )}
-              {fields.has("area") && draft.area != null && (
-                <span>{draft.area_preferred ?? draft.area} {draft.area_preferred_unit ?? draft.area_unit_display}</span>
-              )}
+          {detailsIncluded && specItems.length > 0 && (
+            <div className="flex gap-1.5">
+              {specItems.map((item) => (
+                <PropertyFactTile key={item.label} label={item.label} value={item.value} compact />
+              ))}
             </div>
           )}
 
           {/* Photo row */}
           {photosIncluded && images.length > 1 && (
-            <div className="flex gap-1 pt-1">
-              {images.slice(0, 5).map((img, i) => (
-                <div key={i} className="flex-1 aspect-square rounded-md overflow-hidden bg-muted/20">
+            <div className="mt-1 hidden gap-px overflow-hidden rounded-2xl border border-border/45 bg-border/50 sm:flex">
+              {images.slice(0, 5).map((img, index) => (
+                <div key={img.url} className="aspect-square flex-1 overflow-hidden bg-muted/20">
                   {/* eslint-disable-next-line @next/next/no-img-element */}
-                  <img src={img.url} alt="" className="w-full h-full object-cover" />
+                  <img src={img.url} alt={`${t("draft.media.photo", lang)} ${index + 1}`} loading="lazy" decoding="async" className="h-full w-full object-cover" />
                 </div>
               ))}
               {images.length > 5 && (
-                <div className="flex-1 aspect-square rounded-md bg-foreground/[0.03] flex items-center justify-center">
-                  <span className="text-[10px] text-foreground/30 font-medium">+{images.length - 5}</span>
+                <div className="flex aspect-square flex-1 items-center justify-center bg-surface">
+                  <span className="text-[11px] text-foreground/50 font-medium">+{images.length - 5}</span>
                 </div>
               )}
             </div>
@@ -151,33 +192,29 @@ export function SharePreview({ draft, scope, hasTour, thumbUrl, fpUrl, lang }: S
 
           {/* Floorplan indicator */}
           {floorplanIncluded && (
-            <div className="flex items-center gap-1.5 text-[11px] text-foreground/40">
-              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" className="text-foreground/25"><rect x="2" y="2" width="20" height="20" rx="2"/><path d="M2 8h20M8 2v20M14 8v14"/></svg>
+            <div className="flex items-center gap-1.5 text-[11px] text-foreground/50">
+              <svg aria-hidden="true" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" className="text-foreground/25"><rect x="2" y="2" width="20" height="20" rx="2"/><path d="M2 8h20M8 2v20M14 8v14"/></svg>
               {t("sharing.scopeFloorplan", lang)}
             </div>
           )}
         </div>
 
-        {/* Checklist — inside card with divider */}
-        <div className="border-t border-border/40 px-4 py-3">
-          <p className="text-[9px] font-medium text-foreground/25 uppercase tracking-wider mb-1.5">
-            {t("sharing.previewChecklist", lang)}
-          </p>
-          <div className="grid grid-cols-2 gap-x-3 gap-y-0.5">
-            {items.map((item) => (
-              <div key={item.label} className="flex items-center gap-1.5">
-                {item.on ? (
-                  <svg width="10" height="10" viewBox="0 0 16 16" fill="none" className="text-foreground/50 shrink-0"><path d="M3 8l4 4 6-6" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/></svg>
-                ) : (
-                  <svg width="10" height="10" viewBox="0 0 16 16" fill="none" className="text-foreground/15 shrink-0"><path d="M4 4l8 8M12 4l-8 8" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/></svg>
-                )}
-                <span className={`text-[11px] truncate ${item.on ? "text-foreground/60" : "text-foreground/20 line-through"}`}>
+        {/* Show only what recipients will actually get; crossed-out rows add noise. */}
+        {includedItems.length > 0 ? (
+          <div className="border-t border-border/40 px-4 py-3 sm:px-5">
+            <p className="mb-2 text-[10px] font-semibold uppercase tracking-[0.08em] text-foreground/45">
+              {t("sharing.previewChecklist", lang)}
+            </p>
+            <div className="-mx-1 flex gap-1.5 overflow-x-auto px-1 pb-0.5 scrollbar-hide sm:mx-0 sm:flex-wrap sm:overflow-visible sm:px-0 sm:pb-0">
+              {includedItems.map((item) => (
+                <span key={item.label} className="floating-capsule floating-status inline-flex shrink-0 items-center gap-1.5 border text-[10px] text-foreground/65">
+                  <svg width="10" height="10" viewBox="0 0 16 16" fill="none" className="shrink-0"><path d="M3 8l4 4 6-6" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/></svg>
                   {item.label}
                 </span>
-              </div>
-            ))}
+              ))}
+            </div>
           </div>
-        </div>
+        ) : null}
       </div>
     </div>
   );

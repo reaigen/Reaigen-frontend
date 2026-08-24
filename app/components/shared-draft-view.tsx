@@ -9,7 +9,9 @@
 import { t } from "../lib/i18n";
 import FloorplanViewer from "./floorplan-viewer";
 import { DraftImageGallery } from "./draft-image-gallery";
-import type { SharedDraftData, RoomData } from "../lib/tour-types";
+import type { SharedDraftData, RoomData, SharedTourSummary } from "../lib/tour-types";
+import { resolveUnit, unitLabel, type UnitLookup } from "../lib/unit-catalog";
+import { ReaigenWordmark } from "./reaigen-wordmark";
 
 // ── Helpers ────────────────────────────────────────────────────────────
 
@@ -43,9 +45,14 @@ function SharedFloorplan({ floorplanUrl, rooms, lang }: { floorplanUrl: string; 
 
   if (!hasRooms) {
     return (
-      <div className="rounded-2xl overflow-hidden border border-black/[0.06] bg-white">
+      <div className="relative aspect-[4/3] overflow-hidden rounded-2xl border border-border/40 bg-background">
         {/* eslint-disable-next-line @next/next/no-img-element */}
-        <img src={floorplanUrl} alt={t("tour.floorplan.alt", lang)} className="w-full" loading="lazy" />
+        <img
+          src={floorplanUrl}
+          alt={t("tour.floorplan.alt", lang)}
+          className="absolute inset-0 h-full w-full object-contain"
+          loading="lazy"
+        />
       </div>
     );
   }
@@ -67,9 +74,12 @@ function SharedFloorplan({ floorplanUrl, rooms, lang }: { floorplanUrl: string; 
   ];
 
   return (
-    <div className="relative rounded-2xl overflow-hidden border border-black/[0.06] bg-white">
+    <div
+      className="relative overflow-hidden rounded-2xl border border-border/40 bg-background"
+      style={{ aspectRatio: `${svgW} / ${svgH}` }}
+    >
       {/* eslint-disable-next-line @next/next/no-img-element */}
-      <img src={floorplanUrl} alt={t("tour.floorplan.alt", lang)} className="w-full block" loading="lazy" />
+      <img src={floorplanUrl} alt={t("tour.floorplan.alt", lang)} className="absolute inset-0 h-full w-full" loading="lazy" />
       <svg viewBox={`0 0 ${svgW} ${svgH}`} className="absolute inset-0 w-full h-full" style={{ pointerEvents: "none" }}>
         {rooms.map((room) => {
           const pts = room.boundary_points;
@@ -108,17 +118,42 @@ function SharedFloorplan({ floorplanUrl, rooms, lang }: { floorplanUrl: string; 
 
 // ── Component ──────────────────────────────────────────────────────────
 
-export function SharedDraftView({ draftData, lang, hasTour, onOpenTour, floorplanUrl, rooms }: {
+export function SharedDraftView({ draftData, lang, hasTour, tours, onOpenTour, floorplanUrl, rooms, units }: {
   draftData: SharedDraftData;
   lang: string;
   hasTour?: boolean;
-  onOpenTour?: () => void;
+  tours?: SharedTourSummary[];
+  onOpenTour?: (tourId?: number) => void;
   floorplanUrl?: string | null;
   rooms?: RoomData[];
+  units: readonly UnitLookup[];
 }) {
-  const price = formatPrice(draftData.price, draftData.currency);
+  const currency = resolveUnit(units, draftData.currency, "CURRENCY");
+  const areaUnit = resolveUnit(units, draftData.area_unit, "AREA");
+  const lotUnit = resolveUnit(units, draftData.lot_size_unit, "AREA");
+  const price = formatPrice(draftData.price, currency?.code);
   const addressText = draftData.display_address || [draftData.city, draftData.state, draftData.country].filter(Boolean).join(", ");
   const photos = (draftData.uploads ?? []).filter((upload) => !upload.mime_type || upload.mime_type.startsWith("image/"));
+  const webTours = (tours ?? draftData.tours ?? [])
+    .filter((tour) => !tour.targets.length || tour.targets.includes("web"))
+    .sort((left, right) => left.sort_order - right.sort_order);
+  const tourCopy = lang.toLowerCase().startsWith("sk")
+    ? {
+        title: "Virtuálne prehliadky",
+        subtitle: "Vyberte si, ktorú verziu nehnuteľnosti chcete vidieť.",
+        primary: "Predvolená",
+        open: "Otvoriť",
+        renovation: "Po rekonštrukcii",
+        rescan: "Nové snímanie",
+      }
+    : {
+        title: "Virtual tours",
+        subtitle: "Choose which version of the property you want to explore.",
+        primary: "Default",
+        open: "Open",
+        renovation: "After renovation",
+        rescan: "New capture",
+      };
 
   const has = {
     title: !!draftData.title,
@@ -128,16 +163,15 @@ export function SharedDraftView({ draftData, lang, hasTour, onOpenTour, floorpla
     description: !!draftData.description,
     photos: photos.length > 0,
     floorplan: !!draftData.floorplan,
+    tours: Boolean(hasTour),
   };
-  const hasAny = has.title || has.address || has.price || has.facts || has.description || has.photos || has.floorplan;
+  const hasAny = has.title || has.address || has.price || has.facts || has.description || has.photos || has.floorplan || has.tours;
 
   return (
     <div className="min-h-screen bg-background">
       {/* Branded header */}
       <header className="border-b border-border/40 px-5 py-3.5 sm:px-8">
-        <span className="text-[20px] text-foreground/80" style={{ fontFamily: "var(--font-brand), ui-serif, Georgia, serif", fontWeight: 400, letterSpacing: "0.02em" }}>
-          Reaigen
-        </span>
+        <ReaigenWordmark className="text-[20px] text-foreground/80" />
       </header>
 
       <main className="mx-auto max-w-2xl px-5 py-8 sm:px-8 animate-fade-in">
@@ -160,24 +194,75 @@ export function SharedDraftView({ draftData, lang, hasTour, onOpenTour, floorpla
             )}
 
             {/* Virtual tour is the primary shared-property action. */}
-            {hasTour && onOpenTour && (
+            {hasTour && onOpenTour && webTours.length <= 1 && (
               <button
-                onClick={onOpenTour}
-                className="flex w-full items-center justify-center gap-2.5 rounded-2xl bg-foreground py-3 text-background transition-colors hover:bg-foreground/90"
+                onClick={() => onOpenTour(webTours[0]?.tour_id)}
+                className="flex w-full items-center justify-center gap-2.5 rounded-full bg-foreground py-3 text-background transition-colors hover:bg-foreground/90"
               >
                 <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/><path d="M3.27 6.96 12 12.01l8.73-5.05M12 22.08V12"/></svg>
                 <span className="text-[14px] font-semibold">{t("draft.viewTour", lang)}</span>
               </button>
             )}
+            {hasTour && onOpenTour && webTours.length > 1 && (
+              <section className="rounded-[1.5rem] border border-border/60 bg-card p-4 shadow-card sm:p-5">
+                <div className="mb-4">
+                  <h2 className="text-[16px] font-semibold tracking-[-0.015em]">{tourCopy.title}</h2>
+                  <p className="mt-1 text-[12px] leading-relaxed text-muted-foreground">{tourCopy.subtitle}</p>
+                </div>
+                <div className="space-y-2">
+                  {webTours.map((tour) => {
+                    const captured = new Date(tour.captured_at);
+                    const date = Number.isNaN(captured.getTime())
+                      ? ""
+                      : new Intl.DateTimeFormat(lang, {
+                          day: "numeric",
+                          month: "short",
+                          year: "numeric",
+                        }).format(captured);
+                    const reason = tour.capture_reason === "renovation"
+                      ? tourCopy.renovation
+                      : tour.capture_reason === "rescan"
+                        ? tourCopy.rescan
+                        : date;
+                    return (
+                      <button
+                        key={tour.tour_id}
+                        type="button"
+                        onClick={() => onOpenTour(tour.tour_id)}
+                        className="flex w-full items-center gap-3 rounded-2xl border border-border/55 bg-background px-3.5 py-3 text-left transition-colors hover:bg-foreground/[0.025]"
+                      >
+                        <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-foreground/[0.055] text-foreground/65">
+                          <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4a2 2 0 0 0 1-1.73Z"/><path d="m3.3 7 8.7 5 8.7-5M12 22V12"/></svg>
+                        </span>
+                        <span className="min-w-0 flex-1">
+                          <span className="flex flex-wrap items-center gap-2">
+                            <span className="truncate text-[13px] font-semibold">{tour.name}</span>
+                            {tour.is_primary ? (
+                              <span className="rounded-full bg-emerald-500/10 px-2 py-0.5 text-[9px] font-semibold text-emerald-700">
+                                {tourCopy.primary}
+                              </span>
+                            ) : null}
+                          </span>
+                          <span className="mt-0.5 block text-[10px] text-muted-foreground">
+                            {[reason, date !== reason ? date : ""].filter(Boolean).join(" · ")}
+                          </span>
+                        </span>
+                        <span className="text-[11px] font-semibold text-foreground/55">{tourCopy.open}</span>
+                      </button>
+                    );
+                  })}
+                </div>
+              </section>
+            )}
 
             {/* Title block */}
             {(has.title || has.address || has.price) && (
               <div className="space-y-1.5">
-                {has.title && <h1 className="text-[24px] font-semibold tracking-tight leading-tight">{draftData.title}</h1>}
+                {has.title && <h1 className="select-text text-[24px] font-semibold tracking-tight leading-tight">{draftData.title}</h1>}
                 {has.address && (
-                  <p className="flex items-center gap-1.5 text-[13px] text-muted-foreground">{I.pin} {addressText}</p>
+                  <p className="flex select-text items-center gap-1.5 text-[13px] text-muted-foreground">{I.pin} {addressText}</p>
                 )}
-                {has.price && <p className="text-[20px] font-semibold text-foreground mt-1">{price}</p>}
+                {has.price && <p className="mt-1 select-text text-[20px] font-semibold text-foreground">{price}</p>}
               </div>
             )}
 
@@ -187,9 +272,9 @@ export function SharedDraftView({ draftData, lang, hasTour, onOpenTour, floorpla
                 {([
                   [I.bed, draftData.bedrooms, t("shared.bed", lang)],
                   [I.bath, draftData.bathrooms, t("shared.bath", lang)],
-                  [I.area, draftData.area, draftData.area_unit || "m²"],
+                  [I.area, draftData.area, unitLabel(areaUnit) || null],
                   [I.year, draftData.year_built, null],
-                  [I.lot, draftData.lot_size, draftData.lot_size_unit || "m²"],
+                  [I.lot, draftData.lot_size, unitLabel(lotUnit) || null],
                 ] as [React.ReactNode, string | number | null | undefined, string | null][])
                   .filter(([, value]) => value != null && value !== "")
                   .map(([icon, value, label], i) => (
@@ -209,7 +294,8 @@ export function SharedDraftView({ draftData, lang, hasTour, onOpenTour, floorpla
               <div>
                 <h2 className="text-[14px] font-semibold mb-2">{t("draft.description", lang)}</h2>
                 <div className="rounded-2xl bg-foreground/[0.03] px-4 py-3.5">
-                  <p className="text-[13px] leading-[1.75] text-foreground/65 whitespace-pre-line">{draftData.description}</p>
+                  {/* Recipients copy listing copy out of the public page too. */}
+                  <p className="select-text text-[13px] leading-[1.75] text-foreground/65 whitespace-pre-line">{draftData.description}</p>
                 </div>
               </div>
             )}
@@ -224,6 +310,8 @@ export function SharedDraftView({ draftData, lang, hasTour, onOpenTour, floorpla
                     draftData={draftData.floorplan.draft_data}
                     publicFloorplan={draftData.floorplan}
                     lang={lang}
+                    units={units}
+                    targetAreaUnit={draftData.area_unit}
                   />
                 ) : (
                   <SharedFloorplan floorplanUrl={floorplanUrl!} rooms={rooms ?? []} lang={lang} />
@@ -235,11 +323,19 @@ export function SharedDraftView({ draftData, lang, hasTour, onOpenTour, floorpla
         )}
       </main>
 
-      {/* Footer */}
+      {/* Footer — localized "Shared via {name}" with the brand span injected at the placeholder */}
       <footer className="border-t border-border/30 mt-8 px-5 py-4 sm:px-8 text-center">
         <span className="text-[11px] text-muted-foreground">
-          {"Shared via "}
-          <span className="text-foreground/60" style={{ fontFamily: "var(--font-brand), ui-serif, Georgia, serif" }}>Reaigen</span>
+          {(() => {
+            const [before, after = ""] = t("shared.footerSharedVia", lang).split("{name}");
+            return (
+              <>
+                {before}
+                <ReaigenWordmark className="text-foreground/60" />
+                {after}
+              </>
+            );
+          })()}
         </span>
       </footer>
 

@@ -2,7 +2,8 @@
 
 import * as React from "react";
 import { Input } from "../../lib/ui/input";
-import { t } from "../../lib/i18n";
+import { t, type LocaleKey } from "../../lib/i18n";
+import { LinkIcon, LockIcon } from "../icons";
 
 export type PrivacyLevel = "open" | "pin";
 
@@ -15,61 +16,76 @@ interface PrivacyLevelSelectorProps {
 }
 
 export function PrivacyLevelSelector({ level, pin, onLevelChange, onPinChange, lang }: PrivacyLevelSelectorProps) {
-  const options: { value: PrivacyLevel; icon: React.ReactNode; labelKey: string }[] = [
+  const options: { value: PrivacyLevel; icon: React.ReactNode; labelKey: string; descriptionKey: string }[] = [
     {
       value: "open",
-      icon: <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg>,
+      icon: <LinkIcon size={13} />,
       labelKey: "sharing.privacyOpen",
+      descriptionKey: "sharing.privacyOpenDesc",
     },
     {
       value: "pin",
-      icon: <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>,
+      icon: <LockIcon size={13} />,
       labelKey: "sharing.privacyPin",
+      descriptionKey: "sharing.privacyPinDesc",
     },
   ];
 
   return (
-    <div className="space-y-3">
-      <h3 className="text-[12px] font-medium text-foreground/50">
+    <div className="space-y-3.5">
+      <h3 className="px-0.5 text-[13px] font-semibold text-foreground/70">
         {t("sharing.protection", lang)}
       </h3>
 
-      {/* Segmented control */}
-      <div className="flex rounded-xl bg-foreground/[0.05] p-1">
-        {options.map((opt) => {
-          const selected = level === opt.value;
+      <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+        {options.map((option) => {
+          const active = option.value === level;
           return (
             <button
-              key={opt.value}
+              key={option.value}
               type="button"
+              aria-pressed={active}
               onClick={() => {
-                onLevelChange(opt.value);
-                if (opt.value !== "pin") onPinChange("");
+                onLevelChange(option.value);
+                if (option.value !== "pin") onPinChange("");
               }}
-              className={`flex-1 flex items-center justify-center gap-1.5 rounded-lg px-3 py-2 text-[12px] font-medium transition-all ${
-                selected
-                  ? "bg-background text-foreground shadow-sm"
-                  : "text-foreground/45 hover:text-foreground/65"
-              }`}
+              className="editor-control-capsule floating-panel-shape pen-touch-target relative flex min-h-16 items-center gap-2.5 border border-border/55 px-3 py-2.5 text-left transition-colors hover:bg-card focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
             >
-              {opt.icon}
-              {t(opt.labelKey as never, lang)}
+              <span className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-full ${active ? "bg-foreground text-background" : "bg-secondary/80 text-foreground/50"}`}>
+                {option.icon}
+              </span>
+              {/* Check sits in the flow, so wrapping copy can never run under it. */}
+              <span className="min-w-0 flex-1">
+                <span className="block break-words text-[13px] font-semibold leading-snug text-foreground/90">{t(option.labelKey as LocaleKey, lang)}</span>
+                <span className="mt-0.5 block break-words text-[12px] leading-snug text-foreground/60">{t(option.descriptionKey as LocaleKey, lang)}</span>
+              </span>
+              <span
+                aria-hidden="true"
+                className={`flex h-5 w-5 shrink-0 items-center justify-center rounded-full border transition-colors ${
+                  active ? "border-foreground" : "border-foreground/25 bg-card/65"
+                }`}
+              >
+                {active ? <span className="h-2.5 w-2.5 rounded-full bg-foreground" /> : null}
+              </span>
             </button>
           );
         })}
       </div>
 
       {level === "pin" && (
-        <Input
-          type="text"
-          inputMode="numeric"
-          pattern="[0-9]*"
-          placeholder={t("shareDialog.pinPlaceholder", lang)}
-          value={pin}
-          onChange={(e) => onPinChange(e.target.value.replace(/\D/g, "").slice(0, 10))}
-          className="h-9 text-[12px]"
-          autoFocus
-        />
+        <div className="space-y-1.5 animate-fade-in">
+          <Input
+            type="text"
+            inputMode="numeric"
+            pattern="[0-9]*"
+            placeholder={t("shareDialog.pinPlaceholder", lang)}
+            value={pin}
+            onChange={(e) => onPinChange(e.target.value.replace(/\D/g, "").slice(0, 10))}
+            className="editor-control-capsule h-11 rounded-full px-4 text-[14px] tabular-nums"
+            autoFocus
+          />
+          <p className="text-[11px] text-foreground/50">{t("shared.pin.minLength", lang)}</p>
+        </div>
       )}
     </div>
   );

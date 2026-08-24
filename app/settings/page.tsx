@@ -27,8 +27,12 @@ export default function SettingsPage() {
 
   return (
     <AppShell user={user} onLogout={logout}>
-      <div className="mx-auto w-full max-w-5xl animate-fade-in space-y-7 pb-10">
-        <PageHeader title={t("settings.title", lang)} description={t("settings.subtitle", lang)} />
+      <div className="mx-auto w-full max-w-[1180px] pb-12">
+        <PageHeader
+          title={t("settings.title", lang)}
+          description={t("settings.subtitle", lang)}
+          className="mb-6 sm:mb-8"
+        />
         <SettingsForm user={user} onSaved={() => refreshProfile()} />
       </div>
     </AppShell>

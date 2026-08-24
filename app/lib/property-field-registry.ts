@@ -38,6 +38,7 @@ export interface PropertyFieldSectionDefinition {
 
 const buildings: PropertyType[] = ["apartment", "house", "commercial", "other"];
 const residential: PropertyType[] = ["apartment", "house", "other"];
+const currentYear = new Date().getFullYear();
 
 const option = (value: string, labelKey: LocaleKey): PropertyFieldOption => ({ value, labelKey });
 
@@ -91,7 +92,7 @@ export const PROPERTY_FIELD_SECTIONS: PropertyFieldSectionDefinition[] = [
     labelKey: "draft.editor.layout",
     fields: [
       { key: "bedrooms", labelKey: "draft.bedrooms", kind: "number", min: 0, max: 20, visibleFor: residential, core: true },
-      { key: "bathrooms", labelKey: "draft.bathrooms", kind: "decimal", min: 0, max: 10, visibleFor: residential, core: true },
+      { key: "bathrooms", labelKey: "draft.bathrooms", kind: "number", min: 0, max: 10, visibleFor: residential, core: true },
       { key: "rooms", labelKey: "draft.rooms", kind: "number", min: 0, max: 30, visibleFor: residential },
       { key: "living_rooms", labelKey: "draft.livingRooms", kind: "number", min: 0, max: 10, visibleFor: residential },
       { key: "kitchens", labelKey: "draft.kitchens", kind: "number", min: 0, max: 5 },
@@ -100,7 +101,7 @@ export const PROPERTY_FIELD_SECTIONS: PropertyFieldSectionDefinition[] = [
       { key: "separate_toilets", labelKey: "draft.separateToilets", kind: "number", min: 0, max: 5, visibleFor: residential },
       { key: "wardrobes", labelKey: "draft.wardrobes", kind: "number", min: 0, max: 10, visibleFor: residential },
       { key: "pantries", labelKey: "draft.pantries", kind: "number", min: 0, max: 5, visibleFor: residential },
-      { key: "floors", labelKey: "draft.totalFloors", kind: "number", min: 0, max: 99, visibleFor: buildings },
+      { key: "floors", labelKey: "draft.floors", kind: "number", min: 0, max: 99, visibleFor: buildings },
       { key: "floors_above_ground", labelKey: "draft.floorsAboveGround", kind: "number", min: 0, max: 10, visibleFor: ["house"] },
       { key: "open_space_zones", labelKey: "draft.openSpaceZones", kind: "number", min: 0, max: 20, visibleFor: ["commercial"] },
       { key: "meeting_rooms", labelKey: "draft.meetingRooms", kind: "number", min: 0, max: 20, visibleFor: ["commercial"] },
@@ -134,7 +135,7 @@ export const PROPERTY_FIELD_SECTIONS: PropertyFieldSectionDefinition[] = [
     fields: [
       { key: "condition", labelKey: "draft.condition", kind: "select", visibleFor: buildings, options: [option("new", "enum.condition.new"), option("very_good", "enum.condition.very_good"), option("good", "enum.condition.good"), option("fair", "enum.condition.fair"), option("to_renovate", "enum.condition.to_renovate"), option("under_construction", "enum.condition.under_construction"), option("shell", "enum.condition.shell")] },
       { key: "year_built", labelKey: "draft.yearBuilt", kind: "number", min: 1850, visibleFor: buildings, core: true },
-      { key: "renovation_year", labelKey: "draft.renovationYear", kind: "number", min: 1950, visibleFor: buildings },
+      { key: "renovation_year", labelKey: "draft.renovationYear", kind: "number", min: 1950, max: currentYear, visibleFor: buildings },
       { key: "construction_type", labelKey: "draft.constructionType", kind: "select", visibleFor: buildings, options: [option("brick", "enum.construction.brick"), option("panel", "enum.construction.panel"), option("wood", "enum.construction.wood"), option("concrete", "enum.construction.concrete"), option("steel", "enum.construction.steel"), option("mixed", "enum.construction.mixed"), option("other", "enum.construction.other")] },
       { key: "floor", labelKey: "draft.floor", kind: "number", min: -5, max: 200, visibleFor: ["apartment", "commercial", "other"] },
       { key: "total_floors", labelKey: "draft.totalFloors", kind: "number", min: 1, max: 200, visibleFor: buildings },
@@ -157,7 +158,7 @@ export const PROPERTY_FIELD_SECTIONS: PropertyFieldSectionDefinition[] = [
     key: "utilities",
     labelKey: "draft.editor.utilities",
     fields: [
-      { key: "heating_source", labelKey: "draft.heating", kind: "select", visibleFor: buildings, options: [option("central", "enum.heating.central"), option("gas_boiler", "enum.heating.gas_boiler"), option("electric_boiler", "enum.heating.electric_boiler"), option("heat_pump", "enum.heating.heat_pump")] },
+      { key: "heating_source", labelKey: "draft.heatingSource", kind: "select", visibleFor: buildings, options: [option("central", "enum.heating.central"), option("gas_boiler", "enum.heating.gas_boiler"), option("electric_boiler", "enum.heating.electric_boiler"), option("heat_pump", "enum.heating.heat_pump")] },
       { key: "heat_distribution", labelKey: "draft.heatDistribution", kind: "multiselect", visibleFor: buildings, options: [option("radiators", "enum.heat_dist.radiator"), option("underfloor", "enum.heat_dist.underfloor")] },
       { key: "cooling_types", labelKey: "draft.cooling", kind: "multiselect", visibleFor: buildings, options: [option("air_conditioning", "enum.cooling.air_conditioning"), option("ceiling_cooling", "enum.cooling.ceiling_cooling")] },
       { key: "electricity", labelKey: "draft.feat.electricity", kind: "boolean" },

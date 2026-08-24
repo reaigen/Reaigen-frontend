@@ -50,8 +50,17 @@ The `Reaigen-splat-web-tour-combined-system` in the same parent directory is an 
 
 ## Coordinate Convention
 
-- Scene pretransform: **identity** (no scaling, no flip)
-- Backend PLY output is already Y-up
-- Camera upVector: `(0, 1, 0)`
-- Legacy saved cameras (from old `scaling(-1,1,1)` era): X is negated on load
-- Matches iOS `scenePreTransform = matrix_identity_float4x4`
+- Reconstruction content is canonical right-handed, Y-up metres; never add an
+  independent mesh mirror or pretransform.
+- The OpenUSD `rootTransform` moves geometry, cameras, trajectories, and
+  RoomKit together from canonical into presentation/world space. It may be
+  non-identity.
+- Saved cameras persist canonical `position`, `forward`, and reference `up`.
+  Transform the complete basis exactly once for viewing and inverse-transform
+  it exactly once when capturing from the viewport.
+- Camera horizon stabilization must compare up vectors in the same coordinate
+  space. Presentation world-up is `(0, 1, 0)`.
+- Legacy migrations belong at the data boundary; do not reintroduce a runtime
+  X flip.
+- See `docs/tour-viewer-runtime.md` before changing viewer transforms or shared
+  delivery performance.

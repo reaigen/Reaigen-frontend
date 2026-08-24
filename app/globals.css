@@ -4,90 +4,592 @@
 
 @layer base {
   :root {
-    --header-h: 64px;
+    /* Mobile app bar. Must clear the 2.75rem agent capsule with air to spare. */
+    --header-h: 72px;
     --font-primary: -apple-system, BlinkMacSystemFont, "SF Pro Display", "SF Pro Text", "Segoe UI", Roboto, "Helvetica Neue", Helvetica, Arial, system-ui, sans-serif;
     --motion-ease-smooth: cubic-bezier(0.22, 1, 0.36, 1);
     --motion-ease-standard: cubic-bezier(0.2, 0.8, 0.2, 1);
+    --default-transition-timing-function: var(--motion-ease-smooth);
+    --default-transition-duration: 220ms;
 
-    --background:             0 0% 98.5%;
-    --foreground:             0 0% 2%;
+    /* True-white surfaces over a restrained cool-grey canvas; never cream. */
+    --background:             220 12% 97%;
+    --foreground:             0 0% 9%;
 
     --card:                   0 0% 100%;
-    --card-foreground:        0 0% 4%;
+    --card-foreground:        0 0% 9%;
 
     --popover:                0 0% 100%;
-    --popover-foreground:     0 0% 4%;
+    --popover-foreground:     0 0% 9%;
 
-    --primary:                0 0% 4%;
-    --primary-foreground:     0 0% 99%;
+    --primary:                0 0% 9%;
+    --primary-foreground:     0 0% 100%;
 
-    --secondary:              0 0% 94.5%;
-    --secondary-foreground:   0 0% 14%;
+    --secondary:              220 10% 93%;
+    --secondary-foreground:   0 0% 20%;
 
-    --muted:                  0 0% 93.5%;
-    --muted-foreground:       0 0% 34%;
+    --muted:                  220 10% 93%;
+    --muted-foreground:       0 0% 42%;
 
-    --accent:                 0 0% 90%;
-    --accent-foreground:      0 0% 5%;
+    --accent:                 220 10% 91%;
+    --accent-foreground:      0 0% 12%;
+
+    /* Reai stays neutral and shares the product's black/white hierarchy. */
+    --creative:               0 0% 9%;
+    --creative-foreground:    0 0% 100%;
 
     --destructive:            0 84% 50%;
     --destructive-foreground: 0 0% 99%;
 
-    --success:                142 72% 40%;
+    --success:                142 64% 31%;
     --success-foreground:     0 0% 99%;
 
-    --border:                 0 0% 86%;
-    --input:                  0 0% 80%;
-    --ring:                   0 0% 8%;
+    --border:                 220 8% 84%;
+    --input:                  220 8% 82%;
+    --ring:                   0 0% 9%;
 
-    --sidebar:                    0 0% 6%;
-    --sidebar-foreground:         0 0% 97%;
-    --sidebar-border:             0 0% 12%;
-    --sidebar-accent:             0 0% 14%;
-    --sidebar-accent-foreground:  0 0% 97%;
-    --sidebar-muted:              0 0% 62%;
+    --radius: 0.75rem;
 
-    --radius: 0.625rem;
-
-    /* Product surfaces: management stays light; 3D workspaces opt into studio. */
+    /* White is a deliberate elevation layer, not the whole application. */
     --surface:                0 0% 100%;
-    --surface-subtle:         0 0% 96%;
-    --studio:                 0 0% 5%;
-    --studio-surface:         0 0% 10%;
-    --studio-border:          0 0% 18%;
+    --surface-subtle:         220 10% 94%;
+
+    /* Floating workspace geometry. Materials live below; these dimensions do not drift per feature. */
+    --floating-panel-radius: 1.5rem;
+    --floating-frame-radius: 2rem;
+    --floating-control-sm: 2.25rem;
+    --floating-control: 2.75rem;
+    --floating-status: 1.75rem;
+    --floating-header: 3.5rem;
   }
 
   * { border-color: hsl(var(--border)); }
 
   html {
+    /*
+     * `color-scheme` belongs on the root, not on body. Chrome on Android reads
+     * it from the root element to decide whether to leave a page alone; declared
+     * only on body, Auto Dark Theme still repainted the app on phones with the
+     * system theme set to dark — the white gallery lightbox came out grey, which
+     * is the one surface the design system pins to pure white.
+     */
+    color-scheme: light;
     scroll-behavior: smooth;
+    scrollbar-gutter: stable;
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
-    overflow-x: hidden;
+    /*
+     * clip, not hidden: overflow-x hidden turns the element into a scroll
+     * container, and a sticky header inside a scroll container that is not
+     * the thing actually scrolling never sticks — the app header vanished on
+     * scroll and left a hole above the nav rail. clip clips the same overflow
+     * without creating a scrollport.
+     */
+    overflow-x: clip;
   }
 
   body {
-    background-color: hsl(var(--background));
+    background: hsl(var(--background));
     color: hsl(var(--foreground));
     font-family: var(--font-primary);
     font-size: 0.95rem;
     line-height: 1.5;
     font-weight: 400;
     min-width: 320px;
-    overflow-x: hidden;
+    min-height: 100dvh;
+    overflow-x: clip;
   }
 
   button, [role="button"], a { -webkit-tap-highlight-color: transparent; }
 
+  /*
+   * Application chrome is not a document. A long press on a card title or a
+   * page heading raised the platform's text-selection toolbar over the UI and,
+   * on Android, a search sheet on top of that. Selection is therefore opt-in:
+   * anything you type into, plus values explicitly marked as copyable with
+   * Tailwind's `select-text` / `select-all` — those live in the utilities
+   * layer, so they win over this without needing `!important`.
+   */
+  body {
+    -webkit-user-select: none;
+    user-select: none;
+  }
+
+  input,
+  textarea,
+  select,
+  [contenteditable]:not([contenteditable="false"]) {
+    -webkit-user-select: text;
+    user-select: text;
+  }
+
+  /*
+   * Keep every browser-drawn accent inside the monochrome palette. Untouched,
+   * the caret, the Android selection handles and native control accents all
+   * render in the platform blue, which is the only colour on screen.
+   *
+   * `caret-color` was previously set only inside the autofill rule, so ordinary
+   * fields kept the system caret. Chrome derives the selection handle tint from
+   * the ::selection background, which needs enough opacity to read as a colour.
+   */
   ::selection {
-    background: hsl(var(--foreground) / 0.14);
+    background: hsl(var(--foreground) / 0.16);
     color: hsl(var(--foreground));
+  }
+
+  :root {
+    accent-color: hsl(var(--foreground));
+  }
+
+  input,
+  textarea,
+  [contenteditable]:not([contenteditable="false"]) {
+    caret-color: hsl(var(--foreground));
   }
 
   h1, h2, h3, h4 {
     font-family: var(--font-primary);
-    line-height: 1.3;
+    letter-spacing: -0.02em;
+    line-height: 1.2;
+    font-weight: 700;
+  }
+}
+
+@layer components {
+  .app-canvas {
+    background: hsl(var(--background));
+  }
+
+  .agent-canvas {
+    background: hsl(var(--background));
+  }
+
+  /*
+   * Camera authoring inside the spatial workspace uses the same neutral,
+   * elevated material system as the outliner and inspector. Public immersive
+   * playback keeps its dark overlay treatment.
+   */
+  .camera-editor-workspace {
+    color: hsl(var(--foreground));
+  }
+
+  .camera-editor-workspace [class~="bg-black/70"],
+  .camera-editor-workspace [class~="bg-black/55"],
+  .camera-editor-workspace [class~="bg-black/45"] {
+    background-color: hsl(var(--card) / 0.9) !important;
+  }
+
+  .camera-editor-workspace [class~="text-white"],
+  .camera-editor-workspace [class~="text-white/90"],
+  .camera-editor-workspace [class~="text-white/85"],
+  .camera-editor-workspace [class~="text-white/80"],
+  .camera-editor-workspace [class~="text-white/75"],
+  .camera-editor-workspace [class~="text-white/70"],
+  .camera-editor-workspace [class~="text-white/65"],
+  .camera-editor-workspace [class~="text-white/60"],
+  .camera-editor-workspace [class~="text-white/55"] {
+    color: hsl(var(--foreground) / 0.78) !important;
+  }
+
+  .camera-editor-workspace [class~="text-white/50"],
+  .camera-editor-workspace [class~="text-white/45"],
+  .camera-editor-workspace [class~="text-white/40"] {
+    color: hsl(var(--foreground) / 0.62) !important;
+  }
+
+  .camera-editor-workspace [class~="border-white/15"],
+  .camera-editor-workspace [class~="border-white/10"],
+  .camera-editor-workspace [class~="border-white/[0.1]"],
+  .camera-editor-workspace [class~="border-white/[0.08]"],
+  .camera-editor-workspace [class~="border-white/[0.06]"] {
+    border-color: hsl(var(--border) / 0.68) !important;
+  }
+
+  .camera-editor-workspace [class~="bg-white/15"],
+  .camera-editor-workspace [class~="bg-white/10"],
+  .camera-editor-workspace [class~="bg-white/[0.12]"],
+  .camera-editor-workspace [class~="bg-white/[0.1]"],
+  .camera-editor-workspace [class~="bg-white/[0.06]"],
+  .camera-editor-workspace [class~="bg-white/[0.04]"],
+  .camera-editor-workspace [class~="bg-white/[0.03]"] {
+    background-color: hsl(var(--foreground) / 0.065) !important;
+  }
+
+  .camera-editor-workspace [class*="ring-white"] {
+    --tw-ring-color: hsl(var(--ring) / 0.35) !important;
+  }
+
+  /*
+   * The media editor lives in a side panel, so viewport breakpoints can produce
+   * four unusably narrow cards. Size its grid from the panel itself instead.
+   */
+  .media-manager-workspace {
+    container-type: inline-size;
+    overflow-anchor: none;
+  }
+
+  .media-manager-layout {
+    display: grid;
+    align-items: start;
+    gap: 1.25rem;
+  }
+
+  .media-manager-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(min(100%, 12.5rem), 1fr));
+    gap: 0.75rem;
+  }
+
+  .media-manager-inspector {
+    display: none;
+  }
+
+  .media-manager-mobile-confirm {
+    display: block;
+  }
+
+  @container (min-width: 700px) {
+    .media-manager-layout {
+      grid-template-columns: minmax(0, 1fr);
+    }
+
+    .media-manager-inspector {
+      order: -1;
+      display: grid;
+      grid-template-columns: minmax(11rem, 13rem) minmax(0, 1fr);
+    }
+
+    .media-manager-inspector-visual {
+      width: 100%;
+      min-height: 11rem;
+      aspect-ratio: auto !important;
+    }
+
+    .media-manager-inspector-body {
+      display: grid;
+      grid-template-columns: minmax(9rem, 0.72fr) minmax(0, 1.65fr);
+      align-content: center;
+      gap: 1rem;
+    }
+
+    .media-manager-inspector-actions {
+      margin-top: 0;
+      grid-template-columns: repeat(auto-fit, minmax(9.5rem, 1fr));
+      align-content: center;
+    }
+
+    .media-manager-inspector-confirm {
+      grid-column: 1 / -1;
+      margin-top: 0;
+    }
+
+    .media-manager-layout-reorder {
+      grid-template-columns: minmax(0, 1fr);
+    }
+
+    .media-manager-layout-reorder .media-manager-inspector {
+      display: none;
+    }
+
+    .media-manager-mobile-confirm {
+      display: none;
+    }
+
+    .media-manager-card-actions {
+      display: none !important;
+    }
+
+    .media-manager-card-meta {
+      margin-bottom: 0 !important;
+    }
+  }
+
+  /*
+   * The draft hero is aspect-driven, which is correct until the viewport is
+   * wider than it is tall. On a 14" laptop the content column is ~1180px, so a
+   * full-width 16:9 hero computes to ~660px — taller than what is left below the
+   * header, and the listing's own facts never appeared without scrolling past a
+   * single photo. Capping the height turns it into a band on short screens; the
+   * image is `object-cover`, so it crops rather than letterboxes. Phones keep
+   * the tall 16:10 hero, where filling the screen is the intent.
+   */
+  @media (min-width: 768px) {
+    .detail-hero-gallery {
+      /*
+       * `width` is not redundant next to the cap — it is the whole reason the
+       * cap is safe. With an `aspect-ratio` set and the height constrained, a
+       * width of `auto` gets resolved *from the ratio*, so capping the height
+       * shrank the box horizontally and left a band of empty frame down the
+       * right-hand side. Pinning the width keeps the box full-bleed and lets
+       * `object-cover` on the image absorb the cap by cropping.
+       */
+      width: 100%;
+      max-height: min(60vh, 38rem);
+    }
+  }
+
+  .glass-chip {
+    border: 1px solid hsl(var(--border) / 0.7);
+    background: hsl(var(--card) / 0.88);
+    box-shadow:
+      inset 0 1px 0 hsl(var(--card) / 0.94),
+      0 6px 20px hsl(var(--foreground) / 0.1);
+    color: hsl(var(--card-foreground));
+    -webkit-backdrop-filter: blur(14px) saturate(1.12);
+    backdrop-filter: blur(14px) saturate(1.12);
+  }
+
+  .editor-glass-surface,
+  .floating-panel {
+    border-color: hsl(var(--border) / 0.72);
+    background: hsl(var(--card) / 0.76);
+    box-shadow:
+      inset 0 1px 0 hsl(var(--card) / 0.9),
+      0 10px 32px hsl(var(--foreground) / 0.07);
+    -webkit-backdrop-filter: blur(22px) saturate(1.12);
+    backdrop-filter: blur(22px) saturate(1.12);
+  }
+
+  .editor-glass-control,
+  .floating-toolbar {
+    border-color: hsl(var(--border) / 0.68);
+    background: hsl(var(--card) / 0.82);
+    box-shadow:
+      inset 0 1px 0 hsl(var(--card) / 0.92),
+      0 6px 20px hsl(var(--foreground) / 0.08);
+    -webkit-backdrop-filter: blur(18px) saturate(1.1);
+    backdrop-filter: blur(18px) saturate(1.1);
+  }
+
+  .editor-control-capsule,
+  .floating-capsule {
+    border-color: hsl(var(--border) / 0.72);
+    background: hsl(var(--card) / 0.94);
+    color: hsl(var(--card-foreground));
+    box-shadow:
+      inset 0 1px 0 hsl(var(--card)),
+      0 3px 12px hsl(var(--foreground) / 0.06);
+    -webkit-backdrop-filter: blur(16px) saturate(1.08);
+    backdrop-filter: blur(16px) saturate(1.08);
+  }
+
+  .floating-panel {
+    border-width: 1px;
+    border-style: solid;
+    border-radius: var(--floating-panel-radius);
+  }
+
+  .floating-panel-shape {
+    border-radius: var(--floating-panel-radius);
+  }
+
+  .floating-panel-frame {
+    border-radius: var(--floating-frame-radius);
+  }
+
+  .floating-header {
+    min-height: var(--floating-header);
+    padding: 0.375rem 0.5rem;
+    border-radius: 9999px;
+  }
+
+  .floating-toolbar {
+    display: flex;
+    align-items: center;
+    gap: 0.25rem;
+    padding: 0.375rem;
+    border-width: 1px;
+    border-style: solid;
+    border-radius: 9999px;
+  }
+
+  .floating-toolbar-shape {
+    display: flex;
+    align-items: center;
+    gap: 0.25rem;
+    padding: 0.375rem;
+    border-radius: 9999px;
+  }
+
+  /* Segmented choices in sidebars share one material. This is deliberately
+     narrower than `floating-toolbar`: action docks keep their own hierarchy,
+     while mutually exclusive choices get one predictable glass track. */
+  .selection-capsule-track {
+    display: flex;
+    min-width: 0;
+    min-height: 52px;
+    align-items: stretch;
+    gap: 0.25rem;
+    padding: 0.3125rem;
+    border: 1px solid hsl(var(--border) / 0.66);
+    border-radius: 9999px;
+    background: linear-gradient(
+      180deg,
+      hsl(var(--card) / 0.84),
+      hsl(var(--muted) / 0.62)
+    );
+    box-shadow:
+      inset 0 1px 0 hsl(var(--card) / 0.96),
+      0 7px 24px hsl(var(--foreground) / 0.075);
+    -webkit-backdrop-filter: blur(18px) saturate(1.1);
+    backdrop-filter: blur(18px) saturate(1.1);
+  }
+
+  .selection-capsule-item {
+    display: inline-flex;
+    min-width: 0;
+    min-height: 44px;
+    align-items: center;
+    justify-content: center;
+    gap: 0.5rem;
+    border-radius: 9999px;
+    color: hsl(var(--foreground) / 0.58);
     font-weight: 600;
+    transition:
+      color 150ms ease,
+      background-color 150ms ease,
+      box-shadow 150ms ease;
+  }
+
+  .selection-capsule-item:hover {
+    background: hsl(var(--card) / 0.62);
+    color: hsl(var(--foreground) / 0.82);
+  }
+
+  .selection-capsule-item[aria-pressed="true"],
+  .selection-capsule-item[data-state="active"] {
+    background: hsl(var(--foreground));
+    color: hsl(var(--background));
+    box-shadow:
+      inset 0 1px 0 hsl(var(--background) / 0.12),
+      0 4px 14px hsl(var(--foreground) / 0.16);
+  }
+
+  .floating-capsule {
+    min-height: var(--floating-control);
+    border-width: 1px;
+    border-style: solid;
+    border-radius: 9999px;
+  }
+
+  .floating-control,
+  .floating-control-sm,
+  .floating-icon-button,
+  .floating-icon-button-sm {
+    display: inline-flex;
+    flex-shrink: 0;
+    align-items: center;
+    justify-content: center;
+    border-radius: 9999px;
+    font-weight: 600;
+    transition:
+      color var(--default-transition-duration) var(--motion-ease-smooth),
+      background-color var(--default-transition-duration) var(--motion-ease-smooth),
+      border-color var(--default-transition-duration) var(--motion-ease-smooth),
+      transform var(--default-transition-duration) var(--motion-ease-smooth);
+  }
+
+  .floating-control {
+    min-height: var(--floating-control);
+    padding-inline: 0.875rem;
+    font-size: 0.75rem;
+  }
+
+  .floating-control-sm {
+    min-height: var(--floating-control-sm);
+    padding-inline: 0.75rem;
+    font-size: 0.6875rem;
+  }
+
+  .floating-icon-button {
+    width: var(--floating-control);
+    height: var(--floating-control);
+  }
+
+  .floating-icon-button-sm {
+    width: var(--floating-control-sm);
+    height: var(--floating-control-sm);
+  }
+
+  .floating-tooltip {
+    min-height: 1.75rem;
+    border: 1px solid hsl(var(--border) / 0.65);
+    border-radius: 9999px;
+    background: hsl(var(--card) / 0.88);
+    padding: 0.375rem 0.75rem;
+    color: hsl(var(--card-foreground));
+    box-shadow: 0 6px 20px hsl(var(--foreground) / 0.1);
+    font-size: 0.625rem;
+    font-weight: 600;
+    line-height: 1;
+    white-space: nowrap;
+    -webkit-backdrop-filter: blur(18px) saturate(1.1);
+    backdrop-filter: blur(18px) saturate(1.1);
+  }
+
+  .floating-status {
+    min-height: var(--floating-status);
+    border-radius: 9999px;
+    padding-inline: 0.625rem;
+    font-size: 0.6875rem;
+    font-weight: 600;
+  }
+
+  .agent-media-version-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(min(100%, 18rem), 1fr));
+    align-items: start;
+    gap: 0.75rem;
+  }
+
+  .editor-number-input {
+    appearance: textfield;
+    -moz-appearance: textfield;
+  }
+
+  .editor-number-input::-webkit-inner-spin-button,
+  .editor-number-input::-webkit-outer-spin-button {
+    margin: 0;
+    -webkit-appearance: none;
+    appearance: none;
+  }
+
+  /*
+   * Keep critical editor controls comfortably targetable by fingers and pens.
+   * The class is intentionally opt-in so dense desktop-only controls can stay
+   * compact while tablet interactions retain a reliable 44px hit area.
+   */
+  .pen-touch-target {
+    min-width: 44px;
+    min-height: 44px;
+    touch-action: manipulation;
+    -webkit-tap-highlight-color: transparent;
+    user-select: none;
+  }
+
+  /*
+   * Geometry mirrors the iOS launch screen (AppStartupView.swift): a 2.5px rail
+   * on a 4px radius, track at 8% and fill at 50% of the primary colour. iOS can
+   * drive it determinately from AppStartupManager.progress; the web has no such
+   * signal, so the same rail carries an indeterminate sweep instead.
+   */
+  .loading-progress-track {
+    position: relative;
+    height: 2.5px;
+    overflow: hidden;
+    border-radius: 4px;
+    background: hsl(var(--foreground) / 0.08);
+  }
+
+  .loading-progress-indeterminate {
+    position: absolute;
+    inset-block: 0;
+    left: 0;
+    width: 38%;
+    border-radius: inherit;
+    background: hsl(var(--foreground) / 0.5);
+    animation: loadingProgressSmooth 1.35s cubic-bezier(0.45, 0, 0.55, 1) infinite;
+    will-change: transform, opacity;
   }
 }
 
@@ -114,6 +616,13 @@
   .animate-fade-in-up {
     animation: fadeInUp 0.5s var(--motion-ease-smooth) both;
   }
+  .async-stable-region,
+  [aria-busy="true"] {
+    overflow-anchor: none;
+  }
+  .animate-shimmer {
+    animation: shimmer 1.5s ease-in-out infinite;
+  }
 }
 
 @keyframes fadeIn {
@@ -124,14 +633,6 @@
   from { opacity: 0; transform: translateY(8px); }
   to { opacity: 1; transform: translateY(0); }
 }
-@keyframes slideUp {
-  from { opacity: 0; transform: translateY(100%); }
-  to { opacity: 1; transform: translateY(0); }
-}
-@keyframes fadeInScale {
-  from { opacity: 0; transform: scale(0.96); }
-  to { opacity: 1; transform: scale(1); }
-}
 @keyframes fadeOut {
   from { opacity: 1; }
   to { opacity: 0; }
@@ -140,33 +641,62 @@
   from { opacity: 0; transform: translateX(24px); }
   to { opacity: 1; transform: translateX(0); }
 }
+@keyframes sheetUp {
+  from { transform: translateY(100%); }
+  to { transform: translateY(0); }
+}
+@keyframes sheetDown {
+  from { transform: translateY(0); }
+  to { transform: translateY(100%); }
+}
 @keyframes panelOut {
   from { opacity: 1; transform: translateX(0); }
   to { opacity: 0; transform: translateX(24px); }
-}
-.animate-slide-up {
-  animation: slideUp 0.3s var(--motion-ease-smooth) both;
-}
-.animate-fade-in-scale {
-  animation: fadeInScale 0.2s var(--motion-ease-smooth) both;
 }
 @keyframes shimmer {
   0% { background-position: 200% 0; }
   100% { background-position: -200% 0; }
 }
-.animate-shimmer {
-  animation: shimmer 1.5s ease-in-out infinite;
-}
 @keyframes shimmer-bar {
   0% { transform: translateX(-100%); }
   100% { transform: translateX(200%); }
+}
+@keyframes loadingProgressSmooth {
+  0% { opacity: 0; transform: translate3d(-125%, 0, 0); }
+  14% { opacity: 0.55; }
+  24%, 76% { opacity: 1; }
+  88% { opacity: 0.55; }
+  100% { opacity: 0; transform: translate3d(365%, 0, 0); }
+}
+
+/*
+ * Every Radix dialog here — the side panels, the lightbox, the legal sheet —
+ * locks the page scroll through react-remove-scroll, which measures the
+ * scrollbar and pads the body by that width so the page does not reflow as the
+ * bar disappears.
+ *
+ * That compensation is wrong for this app: `scrollbar-gutter: stable` on `html`
+ * means the track is permanently reserved and never disappears in the first
+ * place. So the padding was pure surplus, and the whole page slid sideways by
+ * the scrollbar's width the instant any panel opened, and slid back on close.
+ * Cancel the padding; the scroll lock itself is untouched.
+ *
+ * `html body[...]` is deliberate. The library emits its own rule with
+ * `!important` and injects it into <head> at runtime, so it lands after this
+ * file — at equal specificity source order would hand it the win. The extra
+ * `html` outranks it regardless of order. It compensates with `margin-right`
+ * or `padding-right` depending on its gapMode, so both are neutralised.
+ */
+html body[data-scroll-locked] {
+  padding-right: 0 !important;
+  margin-right: 0 !important;
 }
 
 input:-webkit-autofill,
 input:-webkit-autofill:hover,
 input:-webkit-autofill:focus,
 input:-webkit-autofill:active {
-  -webkit-box-shadow: 0 0 0 30px hsl(var(--background)) inset !important;
+  -webkit-box-shadow: 0 0 0 30px hsl(var(--surface)) inset !important;
   -webkit-text-fill-color: hsl(var(--foreground)) !important;
   caret-color: hsl(var(--foreground)) !important;
   transition: background-color 5000s ease-in-out 0s;
@@ -176,5 +706,12 @@ input:-webkit-autofill:active {
   *, *::before, *::after {
     animation-duration: 0.01ms !important;
     transition-duration: 0.01ms !important;
+  }
+
+  .loading-progress-indeterminate {
+    left: 31%;
+    animation: none !important;
+    opacity: 0.45;
+    transform: none;
   }
 }

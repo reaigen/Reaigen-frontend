@@ -1,23 +1,58 @@
 "use client";
 
-import { useEffect, useState, use, type ReactNode } from "react";
+import { useEffect, useRef, useState, use, type ReactNode } from "react";
+import * as Dialog from "@radix-ui/react-dialog";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { useAuth } from "../../components/hooks/use-auth";
 import { AppShell } from "../../components/app-shell";
 import { Button } from "../../lib/ui/button";
-import { getDraft, getSplatsByDraft, translateDraftDescription } from "../../lib/api/client";
+import { getDraft, getDraftTourAssets, getSplatsByDraft, listUnits, refreshDraft, translateDraftDescription } from "../../lib/api/client";
 import { isApiNotFound } from "../../lib/api/error-message";
+import { writeDragItem } from "../../lib/agent-pool";
 import { getUserLanguage, t } from "../../lib/i18n";
+import { currentGalleryUploads } from "../../lib/media";
+import { readDraftDetailCache, writeDraftDetailCache } from "../../lib/resilient-draft-cache";
 import { DraftImageGallery } from "../../components/draft-image-gallery";
+import { DraftCacheNotice } from "../../components/draft-cache-notice";
 import FloorplanViewer from "../../components/floorplan-viewer";
-import type { DraftDetailItem, DraftUpload, SplatsByDraftPayload } from "../../lib/tour-types";
+import FloorplanEditor from "../../components/floorplan-editor";
+import { VolumesEditor } from "../../components/volumes-editor";
+import type { DraftDetailItem, DraftTourAssetsPayload, DraftUpload, SplatsByDraftPayload } from "../../lib/tour-types";
+import { baseUnitForCategory, resolveUnit, unitLabel, type UnitLookup } from "../../lib/unit-catalog";
 import { PageLoading } from "../../components/page-loading";
+import { CollectionLoading } from "../../components/collection-loading";
 import { cn } from "../../lib/utils";
 import { DraftEditor } from "../../components/draft-editor";
 import { DraftVersionManager } from "../../components/draft-version-manager";
-import { EditIcon, ShareIcon, TourIcon, VersionsIcon } from "../../components/icons";
+import { DraftMediaManager } from "../../components/draft-media-manager";
+import { DraftTourAssetsPanel } from "../../components/draft-tour-assets-panel";
+import { DraftSharingDock } from "../../components/draft-sharing-dock";
+import { FloorplanLightbox } from "../../components/floorplan-lightbox";
+import {
+  ArrowLeftIcon,
+  DocumentIcon,
+  EditIcon,
+  FloorplanIcon,
+  InfoIcon,
+  ImageIcon,
+  MapPinIcon,
+  MoreIcon,
+  PlusIcon,
+  PriceIcon,
+  SearchIcon,
+  ShareIcon,
+  StarIcon,
+  TourIcon,
+  VersionsIcon,
+} from "../../components/icons";
 import { StatusPill } from "../../components/status-pill";
+import { selectShareableTour } from "../../lib/tour-sharing";
+import {
+  REAI_VIEWER_ACTION_EVENT,
+  readReaiViewerAction,
+  type ReaiViewerAction,
+} from "../../lib/reai-viewer-actions";
 
 // ── Formatting ────────────────────────────────────────────────────────────
 
@@ -32,11 +67,19 @@ function fmtMoney(value: string | number | null | undefined, currency: string | 
   if (value == null || value === "") return null;
   const n = typeof value === "number" ? value : Number(value);
   if (!Number.isFinite(n) || n === 0) return null;
+  if (!currency) return fmt(n, lang);
   try {
-    return new Intl.NumberFormat(lang, { style: "currency", currency: currency || "EUR", maximumFractionDigits: 0 }).format(n);
+    return new Intl.NumberFormat(lang, { style: "currency", currency, maximumFractionDigits: 0 }).format(n);
   } catch {
-    return `${fmt(n, lang)}${currency ? ` ${currency}` : ""}`;
+    return fmt(n, lang);
   }
+}
+
+function fmtWithUnit(value: unknown, unit: UnitLookup | null, lang: string) {
+  const formatted = fmt(value as string | number | null | undefined, lang);
+  if (!formatted) return null;
+  const label = unitLabel(unit);
+  return `${formatted}${label ? ` ${label}` : ""}`;
 }
 
 function humanize(s: string) {
@@ -74,18 +117,14 @@ function stripFormatting(text: string): string {
 
 // ── Data extraction ───────────────────────────────────────────────────────
 
-function getImages(uploads: DraftUpload[]) {
-  return (uploads ?? [])
-    .filter((u) => u.mime_type?.startsWith("image") || u.asset_type === "photo")
-    .sort((a, b) => a.sort_order - b.sort_order)
-    .map((u) => ({ id: u.id, url: u.file_url }));
+function getImages(uploads: DraftUpload[], lang: string) {
+  return currentGalleryUploads(uploads, "image")
+    .map((upload, index) => ({ id: upload.id, url: upload.file_url, name: `${t("draft.media.photo", lang)} ${index + 1}` }));
 }
 
-function getVideos(uploads: DraftUpload[]) {
-  return (uploads ?? [])
-    .filter((u) => u.mime_type?.startsWith("video/") && u.is_master !== false)
-    .sort((a, b) => a.sort_order - b.sort_order)
-    .map((u) => ({ id: u.id, url: u.file_url, name: u.file_name }));
+function getVideos(uploads: DraftUpload[], lang: string) {
+  return currentGalleryUploads(uploads, "video")
+    .map((upload, index) => ({ id: upload.id, url: upload.file_url, name: `${t("draft.media.video", lang)} ${index + 1}` }));
 }
 
 /** Read from a specific spec section, e.g. sec("technical", "condition") */
@@ -123,43 +162,67 @@ const I = {
 
 // ── Facts grid (hero stats like iOS) ──────────────────────────────────────
 
-interface Fact { icon: ReactNode; value: string; label: string; sub?: string }
+/**
+ * `path` is the canonical field address the Agent acts on when this parameter
+ * is dragged into the Agent window. It is optional: a derived or composite
+ * value has no single field behind it, and stays undraggable rather than
+ * pointing the agent at the wrong one.
+ */
+interface Fact { icon: ReactNode; value: string; label: string; sub?: string; path?: string }
 
-function buildFacts(d: DraftDetailItem, lang: string): Fact[] {
+function buildFacts(d: DraftDetailItem, lang: string, units: readonly UnitLookup[]): Fact[] {
   const facts: Fact[] = [];
-  const addFact = (icon: ReactNode, value: unknown, label: string, sub?: string | null) => {
-    if (value != null && value !== "" && value !== 0) facts.push({ icon, value: String(value), label, sub: sub || undefined });
+  const addFact = (icon: ReactNode, value: unknown, label: string, sub?: string | null, path?: string) => {
+    if (value != null && value !== "" && value !== 0) facts.push({ icon, value: String(value), label, sub: sub || undefined, path });
   };
-  addFact(I.bed, sec(d, "layout", "bedrooms"), t("draft.bedrooms", lang));
-  addFact(I.bath, sec(d, "layout", "bathrooms"), t("draft.bathrooms", lang));
+  addFact(I.bed, sec(d, "layout", "bedrooms"), t("draft.bedrooms", lang), null, "specs.layout.bedrooms");
+  addFact(I.bath, sec(d, "layout", "bathrooms"), t("draft.bathrooms", lang), null, "specs.layout.bathrooms");
 
   // Area: show preferred, with original as sub if different unit
-  const area = d.area_preferred ?? d.area;
-  const areaUnit = d.area_preferred_unit ?? d.area_unit_display ?? "";
-  const origAreaStr = d.area && d.area_unit_display && d.area_preferred_unit !== d.area_unit_display
-    ? `${fmt(d.area, lang)} ${d.area_unit_display}`
+  const storedAreaUnit = resolveUnit(units, d.area_unit, "AREA")
+    ?? resolveUnit(units, d.area_unit_code, "AREA")
+    ?? resolveUnit(units, d.area_unit_display, "AREA");
+  const preferredAreaUnit = resolveUnit(units, d.area_preferred_unit, "AREA");
+  const usingPreferredArea = d.area_preferred != null;
+  const area = usingPreferredArea ? d.area_preferred : d.area;
+  const areaUnit = usingPreferredArea ? preferredAreaUnit : storedAreaUnit;
+  const origAreaStr = d.area && usingPreferredArea && storedAreaUnit && preferredAreaUnit?.id !== storedAreaUnit.id
+    ? fmtWithUnit(d.area, storedAreaUnit, lang)
     : null;
-  if (area) addFact(I.area, `${fmt(area, lang)} ${areaUnit}`.trim(), t("draft.area", lang), origAreaStr);
+  if (area) addFact(I.area, fmtWithUnit(area, areaUnit, lang), t("draft.area", lang), origAreaStr, "area");
 
-  addFact(I.floor, sec(d, "layout", "floors") ?? sec(d, "technical", "total_floors"), t("draft.totalFloors", lang));
-  addFact(I.parking, sec(d, "layout", "parking_spaces"), t("draft.parkingSpaces", lang));
-  addFact(I.year, d.year_built ?? sec(d, "technical", "year_built"), t("draft.yearBuilt", lang));
+  addFact(I.floor, sec(d, "layout", "floors") ?? sec(d, "technical", "total_floors"), t("draft.totalFloors", lang), null, "specs.layout.floors");
+  addFact(I.parking, sec(d, "layout", "parking_spaces"), t("draft.parkingSpaces", lang), null, "specs.layout.parking_spaces");
+  addFact(I.year, d.year_built ?? sec(d, "technical", "year_built"), t("draft.yearBuilt", lang), null, "year_built");
   return facts;
 }
 
 // ── Row builder (detail params — excludes facts shown in grid) ────────────
 
-interface Row { icon: ReactNode; label: string; value: string }
+interface Row { icon: ReactNode; label: string; value: string; path?: string }
 
-function buildRows(d: DraftDetailItem, lang: string): Row[] {
+function buildRows(d: DraftDetailItem, lang: string, units: readonly UnitLookup[]): Row[] {
   const rows: Row[] = [];
-  const push = (icon: ReactNode, label: string, value: unknown) => {
+  const push = (icon: ReactNode, label: string, value: unknown, path?: string) => {
     if (value == null || value === "" || value === false) return;
-    rows.push({ icon, label, value: value === true ? t("common.yes", lang) : String(value) });
+    rows.push({ icon, label, value: value === true ? t("common.yes", lang) : String(value), path });
   };
   type LK = import("../../lib/locales/en").LocaleKey;
-  const areaUnit = d.area_preferred_unit ?? d.area_unit_display ?? "";
-  const fmtArea = (v: unknown) => v && Number(v) > 0 ? `${fmt(v as number, lang)} ${areaUnit}`.trim() : null;
+  const storedAreaUnit = resolveUnit(units, d.area_unit, "AREA")
+    ?? resolveUnit(units, d.area_unit_code, "AREA")
+    ?? resolveUnit(units, d.area_unit_display, "AREA");
+  const areaUnit = d.area_preferred != null
+    ? resolveUnit(units, d.area_preferred_unit, "AREA")
+    : storedAreaUnit;
+  const storedLotUnit = resolveUnit(units, d.lot_size_unit, "AREA");
+  const lotUnit = d.lot_size_preferred != null
+    ? resolveUnit(units, d.lot_size_preferred_unit, "AREA")
+    : storedLotUnit;
+  const distanceUnit = baseUnitForCategory(units, "DISTANCE");
+  const currencyUnit = resolveUnit(units, d.currency, "CURRENCY");
+  const fmtArea = (v: unknown) => v && Number(v) > 0 ? fmtWithUnit(v, areaUnit, lang) : null;
+  const fmtLotArea = (v: unknown) => v && Number(v) > 0 ? fmtWithUnit(v, lotUnit, lang) : null;
+  const fmtStoredMoney = (v: unknown) => fmtMoney(v as string | number | null | undefined, currencyUnit?.code, lang);
 
   // ── Layout parameters (rooms beyond facts grid) ──
   push(I.rooms, t("draft.rooms", lang), sec(d, "layout", "rooms"));
@@ -178,8 +241,7 @@ function buildRows(d: DraftDetailItem, lang: string): Row[] {
 
   // ── Areas ──
   const lot = d.lot_size_preferred ?? d.lot_size;
-  const lotUnit = d.lot_size_unit ?? areaUnit;
-  if (lot && Number(lot) > 0) push(I.lot, t("draft.lotSize", lang), `${fmt(lot, lang)} ${lotUnit}`.trim());
+  if (lot && Number(lot) > 0) push(I.lot, t("draft.lotSize", lang), fmtWithUnit(lot, lotUnit, lang));
 
   const areaFields: [string, LK][] = [
     ["floor_area", "draft.floorArea"], ["land_area", "draft.landArea"],
@@ -191,39 +253,40 @@ function buildRows(d: DraftDetailItem, lang: string): Row[] {
   ];
   for (const [k, tKey] of areaFields) {
     const v = sec(d, "areas", k);
-    if (fmtArea(v)) push(I.area, t(tKey, lang), fmtArea(v));
+    const formatted = k === "land_area" ? fmtLotArea(v) : fmtArea(v);
+    if (formatted) push(I.area, t(tKey, lang), formatted, `specs.areas.${k}`);
   }
   // Plot dimensions (not area-formatted)
   const plotW = sec(d, "areas", "plot_width");
-  if (plotW && Number(plotW) > 0) push(I.lot, t("draft.plotWidth", lang), `${fmt(plotW as number, lang)} m`);
+  if (plotW && Number(plotW) > 0) push(I.lot, t("draft.plotWidth", lang), fmtWithUnit(plotW, distanceUnit, lang));
   const plotL = sec(d, "areas", "plot_length");
-  if (plotL && Number(plotL) > 0) push(I.lot, t("draft.plotLength", lang), `${fmt(plotL as number, lang)} m`);
+  if (plotL && Number(plotL) > 0) push(I.lot, t("draft.plotLength", lang), fmtWithUnit(plotL, distanceUnit, lang));
 
   // ── Taxonomy ──
   const propTypeVal = enumT("property", sec(d, "taxonomy", "property_type"), lang);
-  push(I.building, t("draft.propertyType", lang), propTypeVal);
+  push(I.building, t("draft.propertyType", lang), propTypeVal, "specs.taxonomy.property_type");
   const subtype = sec(d, "taxonomy", "property_subtype");
   const subtypeVal = subtype ? enumT("subtype", subtype, lang) : null;
-  if (subtypeVal && subtypeVal !== propTypeVal) push(I.building, t("draft.propertySubtype", lang), subtypeVal);
+  if (subtypeVal && subtypeVal !== propTypeVal) push(I.building, t("draft.propertySubtype", lang), subtypeVal, "specs.taxonomy.property_subtype");
 
   // ── Technical / Additional details ──
-  push(I.condition, t("draft.condition", lang), enumT("condition", sec(d, "technical", "condition"), lang));
+  push(I.condition, t("draft.condition", lang), enumT("condition", sec(d, "technical", "condition"), lang), "specs.technical.condition");
   const constrType = sec(d, "technical", "construction_type");
-  if (constrType) push(I.building, t("draft.constructionType", lang), enumT("construction", constrType, lang));
+  if (constrType) push(I.building, t("draft.constructionType", lang), enumT("construction", constrType, lang), "specs.technical.construction_type");
   const renovYear = sec(d, "technical", "renovation_year");
-  if (renovYear) push(I.year, t("draft.renovationYear", lang), renovYear);
-  push(I.floor, t("draft.floor", lang), sec(d, "technical", "floor"));
-  push(I.elevator, t("draft.elevator", lang), sec(d, "technical", "elevator"));
+  if (renovYear) push(I.year, t("draft.renovationYear", lang), renovYear, "specs.technical.renovation_year");
+  push(I.floor, t("draft.floor", lang), sec(d, "technical", "floor"), "specs.technical.floor");
+  push(I.elevator, t("draft.elevator", lang), sec(d, "technical", "elevator"), "specs.technical.elevator");
   push(I.energy, t("draft.energyRating", lang), enumT("energy", sec(d, "technical", "energy_certificate"), lang));
   const energyClass = sec(d, "technical", "energy_class");
   if (energyClass) push(I.energy, t("draft.energyClass", lang), enumT("energy", energyClass, lang));
-  push(I.compass, t("draft.orientation", lang), enumT("orientation", sec(d, "technical", "orientation"), lang));
+  push(I.compass, t("draft.orientation", lang), enumT("orientation", sec(d, "technical", "orientation"), lang), "specs.technical.orientation");
   const roofType = sec(d, "technical", "roof_type");
   if (roofType) push(I.building, t("draft.roofType", lang), enumT("roof", roofType, lang));
   const view = sec(d, "technical", "view");
   if (view) push(I.compass, t("draft.view", lang), humanize(String(view)));
   const ceilingH = sec(d, "technical", "ceiling_height");
-  if (ceilingH && Number(ceilingH) > 0) push(I.floor, t("draft.ceilingHeight", lang), `${fmt(ceilingH as number, lang)} m`);
+  if (ceilingH && Number(ceilingH) > 0) push(I.floor, t("draft.ceilingHeight", lang), fmtWithUnit(ceilingH, distanceUnit, lang));
 
   // ── Utilities ──
   push(I.heating, t("draft.heating", lang), enumT("heating", sec(d, "utilities", "heating_source"), lang));
@@ -264,34 +327,35 @@ function buildRows(d: DraftDetailItem, lang: string): Row[] {
 
   // ── Pricing extras ──
   const deposit = sec(d, "pricing_extra", "deposit");
-  if (deposit && Number(deposit) > 0) push(I.money, t("draft.deposit", lang), fmt(deposit as number, lang));
+  if (deposit && Number(deposit) > 0) push(I.money, t("draft.deposit", lang), fmtStoredMoney(deposit));
   const agencyFee = sec(d, "pricing_extra", "agency_fee");
-  if (agencyFee && Number(agencyFee) > 0) push(I.money, t("draft.agencyFee", lang), fmt(agencyFee as number, lang));
+  if (agencyFee && Number(agencyFee) > 0) push(I.money, t("draft.agencyFee", lang), fmtStoredMoney(agencyFee));
   const utilitiesAdv = sec(d, "pricing_extra", "utilities_advance");
-  if (utilitiesAdv && Number(utilitiesAdv) > 0) push(I.money, t("draft.utilitiesAdvance", lang), fmt(utilitiesAdv as number, lang));
+  if (utilitiesAdv && Number(utilitiesAdv) > 0) push(I.money, t("draft.utilitiesAdvance", lang), fmtStoredMoney(utilitiesAdv));
   const furnSepPrice = sec(d, "pricing_extra", "furnishing_separate_price");
-  if (furnSepPrice && Number(furnSepPrice) > 0) push(I.money, t("draft.furnishingSeparatePrice", lang), fmt(furnSepPrice as number, lang));
+  if (furnSepPrice && Number(furnSepPrice) > 0) push(I.money, t("draft.furnishingSeparatePrice", lang), fmtStoredMoney(furnSepPrice));
   const parkPrice = sec(d, "pricing_extra", "parking_standalone_price");
-  if (parkPrice && Number(parkPrice) > 0) push(I.money, t("draft.parkingStandalonePrice", lang), fmt(parkPrice as number, lang));
+  if (parkPrice && Number(parkPrice) > 0) push(I.money, t("draft.parkingStandalonePrice", lang), fmtStoredMoney(parkPrice));
   const storPrice = sec(d, "pricing_extra", "storage_price");
-  if (storPrice && Number(storPrice) > 0) push(I.money, t("draft.storagePrice", lang), fmt(storPrice as number, lang));
+  if (storPrice && Number(storPrice) > 0) push(I.money, t("draft.storagePrice", lang), fmtStoredMoney(storPrice));
   const vatMode = sec(d, "pricing_extra", "vat_mode");
   if (vatMode) push(I.money, t("draft.vatMode", lang), enumT("vat", vatMode, lang));
   const vatRate = sec(d, "pricing_extra", "vat_rate");
-  if (vatRate && Number(vatRate) > 0) push(I.money, t("draft.vatRate", lang), `${vatRate}%`);
+  if (vatRate && Number(vatRate) > 0) push(I.money, t("draft.vatRate", lang), fmt(vatRate as number, lang));
 
   return rows;
 }
 
 // ── Monthly costs builder ────────────────────────────────────────────────
 
-function buildMonthlyCosts(d: DraftDetailItem, lang: string): Row[] {
+function buildMonthlyCosts(d: DraftDetailItem, lang: string, units: readonly UnitLookup[]): Row[] {
   const rows: Row[] = [];
+  const currencyUnit = resolveUnit(units, d.currency, "CURRENCY");
   const push = (label: string, value: unknown) => {
     if (value == null || value === "") return;
     const n = Number(value);
     if (!Number.isFinite(n) || n <= 0) return;
-    rows.push({ icon: I.money, label, value: fmt(n, lang)! });
+    rows.push({ icon: I.money, label, value: fmtMoney(n, currencyUnit?.code, lang)! });
   };
   type LK = import("../../lib/locales/en").LocaleKey;
   const monthlyFields: [string, LK][] = [
@@ -371,36 +435,188 @@ function getFeatureChips(d: DraftDetailItem, lang: string): string[] {
 
 // ── Page ──────────────────────────────────────────────────────────────────
 
-export default function DraftPreviewPage({ params }: { params: Promise<{ id: string }> }) {
+function ExpandableDescription({ text, lang }: { text: string; lang: string }) {
+  const textRef = useRef<HTMLDivElement>(null);
+  const [expanded, setExpanded] = useState(false);
+  const [canExpand, setCanExpand] = useState(false);
+
+  useEffect(() => {
+    const node = textRef.current;
+    if (!node) return;
+
+    setExpanded(false);
+    const measure = () => {
+      const styles = window.getComputedStyle(node);
+      const lineHeight = Number.parseFloat(styles.lineHeight);
+      const collapsedHeight = Number.isFinite(lineHeight) ? lineHeight * 5 : 123;
+      setCanExpand(node.scrollHeight > collapsedHeight + 1);
+    };
+
+    const frame = window.requestAnimationFrame(measure);
+    const observer = new ResizeObserver(measure);
+    observer.observe(node);
+    window.addEventListener("resize", measure);
+
+    return () => {
+      window.cancelAnimationFrame(frame);
+      observer.disconnect();
+      window.removeEventListener("resize", measure);
+    };
+  }, [text]);
+
+  return (
+    <div className="rounded-[1.5rem] border border-border/70 bg-card px-5 py-5 shadow-card sm:rounded-2xl sm:px-6">
+      <div
+        ref={textRef}
+        className={cn(
+          // Listing copy, not chrome — agents paste this into portals and mail.
+          "select-text overflow-hidden whitespace-pre-line text-[14px] leading-[1.75] text-foreground/78 transition-[max-height] duration-300",
+          expanded ? "max-h-[200em]" : "max-h-[8.75em]",
+        )}
+      >
+        {text}
+      </div>
+      {canExpand ? (
+        <button
+          type="button"
+          aria-expanded={expanded}
+          onClick={() => setExpanded((value) => !value)}
+          className="-ml-2 mt-3 rounded-full px-2.5 py-1.5 text-[12px] font-semibold text-foreground/55 transition-colors hover:bg-foreground/[0.045] hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+        >
+          {expanded ? t("draft.showLess", lang) : t("draft.showMore", lang)}
+        </button>
+      ) : null}
+    </div>
+  );
+}
+
+export default function DraftPreviewPage({
+  params,
+  searchParams,
+}: {
+  params: Promise<{ id: string }>;
+  searchParams: Promise<{ sharing?: string | string[] }>;
+}) {
   const { id } = use(params);
+  const query = use(searchParams);
   const draftId = parseInt(id, 10);
   const { isAuthenticated, isLoading, user, logout } = useAuth();
   const router = useRouter();
   const lang = getUserLanguage(user?.localization);
+  const sharingRequested = Array.isArray(query.sharing)
+    ? query.sharing.includes("1")
+    : query.sharing === "1";
 
   const [draft, setDraft] = useState<DraftDetailItem | null>(null);
   const [splatData, setSplatData] = useState<SplatsByDraftPayload | null>(null);
+  const [tourAssets, setTourAssets] = useState<DraftTourAssetsPayload | null>(null);
+  const [unitCatalog, setUnitCatalog] = useState<UnitLookup[]>([]);
   const [error, setError] = useState<string | null>(null);
-  const [descExpanded, setDescExpanded] = useState(false);
+  const [detailsExpanded, setDetailsExpanded] = useState(false);
   const [translationPending, setTranslationPending] = useState(false);
   const [activeImageId, setActiveImageId] = useState<number | null>(null);
   const [editorOpen, setEditorOpen] = useState(false);
+  const [floorplanEditorOpen, setFloorplanEditorOpen] = useState(false);
+  const [floorplanFullscreen, setFloorplanFullscreen] = useState(false);
+  const [floorplanAgentAction, setFloorplanAgentAction] = useState<ReaiViewerAction | null>(null);
+  // Drawing walls, placing doors and dragging vertices needs a pointer and a
+  // canvas with room beside its inspector panels; on a phone the plan is pushed
+  // off-screen by its own chrome. Viewing the floorplan stays available
+  // everywhere — only authoring is desktop-only. Width, not pointer:
+  // touchscreen laptops report a coarse pointer and would lose editing they
+  // can perform perfectly well.
+  const [compactViewport, setCompactViewport] = useState(
+    () => typeof window !== "undefined" && window.matchMedia("(max-width: 767px)").matches,
+  );
   const [versionsOpen, setVersionsOpen] = useState(false);
+  const [mediaOpen, setMediaOpen] = useState(false);
+  const [sharingOpen, setSharingOpen] = useState(sharingRequested);
+  const [mobileActionsOpen, setMobileActionsOpen] = useState(false);
+  const [usingCachedDraft, setUsingCachedDraft] = useState(false);
+  const [retryAttempt, setRetryAttempt] = useState(0);
   const [reloadNonce, setReloadNonce] = useState(0);
+  const [manualRefreshPending, setManualRefreshPending] = useState(false);
+
+  useEffect(() => {
+    const handleViewerAction = (event: Event) => {
+      const action = readReaiViewerAction(event);
+      if (
+        action?.surface !== "floorplan"
+        || action.resource.draft_id !== draftId
+        || (draft?.floorplan_id && action.resource.floorplan_id !== draft.floorplan_id)
+      ) return;
+      setFloorplanAgentAction({ ...action });
+      setFloorplanFullscreen(true);
+    };
+    window.addEventListener(REAI_VIEWER_ACTION_EVENT, handleViewerAction);
+    return () => window.removeEventListener(REAI_VIEWER_ACTION_EVENT, handleViewerAction);
+  }, [draft?.floorplan_id, draftId]);
+
+  const refreshListing = () => {
+    setManualRefreshPending(true);
+    setReloadNonce((value) => value + 1);
+  };
 
   useEffect(() => {
     if (!isLoading && !isAuthenticated) router.replace("/");
   }, [isLoading, isAuthenticated, router]);
 
   useEffect(() => {
+    if (sharingRequested) setSharingOpen(true);
+  }, [sharingRequested]);
+
+  useEffect(() => {
+    const query = window.matchMedia("(max-width: 767px)");
+    const sync = () => setCompactViewport(query.matches);
+    sync();
+    query.addEventListener("change", sync);
+    return () => query.removeEventListener("change", sync);
+  }, []);
+
+  // Shrinking past the breakpoint mid-session must not strand the user inside
+  // an editor whose controls they can no longer reach.
+  useEffect(() => {
+    if (compactViewport) setFloorplanEditorOpen(false);
+  }, [compactViewport]);
+
+  const handleSharingOpenChange = (nextOpen: boolean) => {
+    setSharingOpen(nextOpen);
+    const nextUrl = nextOpen
+      ? `/draft/${draftId}?sharing=1`
+      : `/draft/${draftId}`;
+    window.history.replaceState(window.history.state, "", nextUrl);
+  };
+
+  useEffect(() => {
     if (!isAuthenticated || isNaN(draftId)) return;
+    let active = true;
     setError(null);
+    const cachedDraft = user?.id ? readDraftDetailCache(user.id, draftId) : null;
+    if (cachedDraft) {
+      // Paint the cached copy immediately, but do NOT raise the stale-listing
+      // notice here. The live request is already in flight, so on every visit
+      // with a warm cache the banner appeared, then removed itself a moment
+      // later when the fetch landed — and since it is an inline block with a
+      // bottom margin, the entire listing slid up underneath it every time.
+      // The notice only tells the truth in the catch branch below, where the
+      // request actually failed and this cached copy is all there is.
+      setDraft(cachedDraft);
+    }
     Promise.all([
       getDraft(draftId),
       getSplatsByDraft(draftId).catch(() => null),
-    ]).then(([d, s]) => {
+      getDraftTourAssets(draftId).catch(() => null),
+      listUnits().catch(() => []),
+    ]).then(([d, s, fetchedTourAssets, fetchedUnits]) => {
+      if (!active) return;
       setDraft(d);
       setSplatData(s);
+      setTourAssets(fetchedTourAssets);
+      setUnitCatalog(fetchedUnits);
+      setUsingCachedDraft(false);
+      setRetryAttempt(0);
+      setManualRefreshPending(false);
+      if (user?.id) writeDraftDetailCache(user.id, draftId, d);
       // Trigger description translation if not yet available and user's lang ≠ en
       if (d.description && lang !== "en" && d.translation_status !== "completed") {
         setTranslationPending(true);
@@ -424,9 +640,46 @@ export default function DraftPreviewPage({ params }: { params: Promise<{ id: str
           .catch(() => setTranslationPending(false));
       }
     }).catch((err) => {
-      setError(isApiNotFound(err) ? "notFound" : "loadFailed");
+      if (!active) return;
+      setManualRefreshPending(false);
+      if (isApiNotFound(err)) {
+        setUsingCachedDraft(false);
+        setError("notFound");
+      } else if (cachedDraft) {
+        setDraft(cachedDraft);
+        setUsingCachedDraft(true);
+        setError(null);
+      } else {
+        setError("loadFailed");
+      }
+      setRetryAttempt((attempt) => attempt + 1);
     });
-  }, [isAuthenticated, draftId, lang, reloadNonce]);
+    return () => { active = false; };
+  }, [isAuthenticated, draftId, lang, reloadNonce, user?.id]);
+
+  useEffect(() => {
+    if (!isAuthenticated || (error !== "loadFailed" && !usingCachedDraft)) return;
+    const delay = Math.min(30_000, 3_000 * (2 ** Math.min(retryAttempt, 3)));
+    let requested = false;
+    const retryWhenAvailable = () => {
+      if (requested || document.hidden || !navigator.onLine) return;
+      requested = true;
+      setReloadNonce((value) => value + 1);
+    };
+    const retryWhenVisible = () => {
+      if (document.visibilityState === "visible") retryWhenAvailable();
+    };
+    const timer = window.setTimeout(retryWhenAvailable, delay);
+    window.addEventListener("online", retryWhenAvailable);
+    window.addEventListener("focus", retryWhenAvailable);
+    document.addEventListener("visibilitychange", retryWhenVisible);
+    return () => {
+      window.clearTimeout(timer);
+      window.removeEventListener("online", retryWhenAvailable);
+      window.removeEventListener("focus", retryWhenAvailable);
+      document.removeEventListener("visibilitychange", retryWhenVisible);
+    };
+  }, [error, isAuthenticated, retryAttempt, usingCachedDraft]);
 
   useEffect(() => {
     const refreshMedia = (event: Event) => {
@@ -446,273 +699,613 @@ export default function DraftPreviewPage({ params }: { params: Promise<{ id: str
     return () => window.removeEventListener("reai-media-updated", refreshMedia);
   }, [draftId]);
 
-  if (isLoading || (!draft && !error)) {
+  if (isLoading || !user) {
     return <PageLoading />;
+  }
+
+  if (!draft && !error) {
+    return (
+      <AppShell user={user} onLogout={logout} hideMobileNav>
+        <div className="mx-auto flex min-h-[65vh] w-full max-w-[1180px] items-center justify-center pb-28 md:pb-10">
+          <CollectionLoading label={t("common.loading", lang)} className="min-h-0 p-0" />
+        </div>
+      </AppShell>
+    );
   }
 
   if (error) {
     const nf = error === "notFound";
-    return (
-      <div className="min-h-screen flex items-center justify-center px-4">
+    const errorContent = (
+      <div className="flex min-h-[60vh] items-center justify-center px-4">
         <div className="text-center space-y-4 max-w-xs">
           <div className="mx-auto w-12 h-12 rounded-full bg-foreground/[0.04] flex items-center justify-center">
             {nf
-              ? <svg width="20" height="20" viewBox="0 0 24 24" fill="none" className="text-foreground/30"><circle cx="11" cy="11" r="8" stroke="currentColor" strokeWidth="1.5"/><path d="M21 21l-4.35-4.35" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/><path d="M8 11h6" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/></svg>
-              : <svg width="20" height="20" viewBox="0 0 24 24" fill="none" className="text-foreground/30"><circle cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="1.5"/><path d="M12 8v4M12 16h.01" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/></svg>
+              ? <SearchIcon size={20} className="text-foreground/30" />
+              : <InfoIcon size={20} className="text-foreground/30" />
             }
           </div>
           <p className="text-[14px] font-medium text-foreground/70">{nf ? t("draft.error.notFoundTitle", lang) : t("draft.error.failedTitle", lang)}</p>
-          <p className="text-[13px] text-foreground/40 leading-relaxed">{nf ? t("draft.error.notFound", lang) : t("draft.error.loadFailed", lang)}</p>
+          <p className="text-[13px] text-foreground/40 leading-relaxed">{nf ? t("draft.error.notFound", lang) : t("draft.error.reconnectHint", lang)}</p>
           <div className="flex items-center justify-center gap-2 pt-1">
-            {!nf && <Button variant="outline" size="sm" onClick={() => setReloadNonce((value) => value + 1)}>{t("common.tryAgain", lang)}</Button>}
+            {!nf && <Button variant="outline" size="sm" onClick={refreshListing} loading={manualRefreshPending}>{t("draft.refreshListing", lang)}</Button>}
             <Button variant="outline" size="sm" onClick={() => router.push("/dashboard")}>{t("nav.dashboard", lang)}</Button>
           </div>
         </div>
       </div>
+    );
+    if (!user) return errorContent;
+    return (
+      <AppShell user={user} onLogout={logout}>
+        <div className="mx-auto w-full max-w-3xl pb-28 md:pb-10">{errorContent}</div>
+      </AppShell>
     );
   }
 
   if (!draft || !user) return null;
 
   // Price: show preferred (converted) price prominently, original smaller if different currency
-  const prefPrice = fmtMoney(draft.price_preferred, draft.price_preferred_currency, lang);
-  const origPrice = fmtMoney(draft.price, draft.currency, lang);
+  const preferredCurrency = resolveUnit(unitCatalog, draft.price_preferred_currency, "CURRENCY");
+  const storedCurrency = resolveUnit(unitCatalog, draft.currency, "CURRENCY");
+  const prefPrice = fmtMoney(draft.price_preferred, preferredCurrency?.code, lang);
+  const origPrice = fmtMoney(draft.price, storedCurrency?.code, lang);
   const price = prefPrice || origPrice;
-  const showOrigPrice = prefPrice && origPrice && draft.price_preferred_currency !== draft.currency;
+  const showOrigPrice = prefPrice && origPrice && preferredCurrency?.id !== storedCurrency?.id;
 
   const address = draft.display_address || [draft.city, draft.state, draft.country].filter(Boolean).join(", ");
-  const images = getImages(draft.raw_uploads);
-  const videos = getVideos(draft.raw_uploads);
-  const facts = buildFacts(draft, lang);
-  const rows = buildRows(draft, lang);
+  const images = getImages(draft.raw_uploads, lang);
+  const videos = getVideos(draft.raw_uploads, lang);
+  const facts = buildFacts(draft, lang, unitCatalog);
+  const rows = buildRows(draft, lang, unitCatalog);
   const features = getFeatureChips(draft, lang);
-  const monthlyCosts = buildMonthlyCosts(draft, lang);
+  const monthlyCosts = buildMonthlyCosts(draft, lang, unitCatalog);
   const hasTranslation = !!(draft.description_translated && draft.translation_status === "completed");
   const rawDesc = hasTranslation ? draft.description_translated! : draft.description;
   const description = rawDesc ? stripFormatting(rawDesc) : null;
-  const descLong = description && description.length > 200;
   const offerType = sec(draft, "taxonomy", "offer_type");
 
-  const primarySplat = splatData?.parent_splat_id
+  const legacyPrimarySplat = splatData?.parent_splat_id
     ? splatData.splats.find((s) => (s.splat_id ?? s.id) === splatData.parent_splat_id) ?? splatData.splats[0]
     : splatData?.splats[0];
-  const hasTour = !!primarySplat && primarySplat.status === "completed" && Boolean(
-    primarySplat.has_sog || primarySplat.has_splat || primarySplat.has_ply || primarySplat.url || primarySplat.format || primarySplat.available_formats?.length || Object.keys(primarySplat.signed_outputs ?? {}).length,
+  const legacyPrimarySplatId = legacyPrimarySplat
+    ? (legacyPrimarySplat.splat_id ?? legacyPrimarySplat.id)
+    : null;
+  const shareableTour = selectShareableTour(tourAssets, legacyPrimarySplatId);
+  const primarySplatId = shareableTour?.source_splat_id ?? undefined;
+  const hasTour = Boolean(
+    shareableTour,
   );
-  const primarySplatId = primarySplat ? (primarySplat.splat_id ?? primarySplat.id) : undefined;
-  const thumbUrl = primarySplat?.signed_outputs?.thumbnail ?? primarySplat?.thumbnail_url ?? null;
-  const hasMedia = images.length > 0 || videos.length > 0 || !!thumbUrl;
+  const hasMedia = images.length > 0 || videos.length > 0;
   const hasFloorplan = !!(
     draft.floorplan_id ||
     draft.draft_data?.some((d) => d.data_key === "captured_room_json" || d.data_key === "wall_graph_json")
   );
+  const detailsLong = rows.length > 8;
+  const visibleRows = detailsExpanded ? rows : rows.slice(0, 8);
+  const hasNarrative = Boolean(description || translationPending || hasFloorplan);
+  const hasSupportingDetails = rows.length > 0 || features.length > 0 || monthlyCosts.length > 0;
 
 
   return (
-    <AppShell user={user} onLogout={logout} hideMobileNav reaiDraftId={draftId} reaiDraftTitle={draft?.title} reaiUploadId={activeImageId ?? undefined} onReaiDraftUpdated={setDraft}>
-      <div className="mx-auto w-full max-w-4xl pb-16 md:pb-10">
-        {/* Creation toolbar */}
-        <div className="mb-4 flex items-center justify-between gap-3">
-          <button onClick={() => { if (window.history.length > 1) router.back(); else router.push("/dashboard"); }} className="inline-flex items-center gap-1.5 rounded-xl px-2 py-1.5 -ml-2 text-[13px] text-muted-foreground hover:text-foreground hover:bg-foreground/[0.04] transition-colors">
-            <svg width="15" height="15" viewBox="0 0 16 16" fill="none"><path d="M10 12L6 8L10 4" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/></svg>
-            {t("common.back", lang)}
+    <AppShell
+      user={user}
+      onLogout={logout}
+      hideMobileNav
+      reaiDraftId={draftId}
+      reaiDraftTitle={draft?.title}
+      reaiUploadId={activeImageId ?? undefined}
+      reaiWorkspaceContext={floorplanFullscreen || floorplanEditorOpen ? "floorplan" : "draft"}
+      onReaiDraftUpdated={(updatedDraft) => {
+        setDraft(updatedDraft);
+        writeDraftDetailCache(user.id, draftId, updatedDraft);
+      }}
+    >
+      <div className="relative mx-auto w-full max-w-[1120px] pb-24 md:pb-12">
+        {/*
+          Creation toolbar. Back stays the first thing on the page at every
+          width — the stale-listing notice below must never displace the way
+          out of this screen.
+        */}
+        <div className="mb-4 flex items-center justify-between gap-3 md:mb-6">
+          <button
+            type="button"
+            onClick={() => router.push("/dashboard")}
+            aria-label={t("common.back", lang)}
+            title={t("common.back", lang)}
+            className="floating-icon-button pen-touch-target border border-border/60 bg-card/75 text-foreground/65 shadow-sm backdrop-blur-xl transition-[background-color,color,box-shadow] hover:bg-foreground hover:text-background hover:shadow-control focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+          >
+            <ArrowLeftIcon size={17} />
           </button>
-          <div className="flex items-center gap-1.5">
-            <Button type="button" variant="ghost" size="icon-sm" onClick={() => setVersionsOpen(true)} aria-label={t("draft.versions.title", lang)} title={t("draft.versions.title", lang)}>
-              <VersionsIcon size={16} />
-            </Button>
-            <Button type="button" variant="outline" size="sm" onClick={() => setEditorOpen(true)} className="h-8 rounded-lg px-2.5 text-[11px] sm:px-3">
-              <EditIcon size={14} /> <span className="hidden sm:inline">{t("shareDialog.edit", lang)}</span>
-            </Button>
-            <Button type="button" variant="outline" size="sm" onClick={() => router.push(`/draft/${draftId}/sharing`)} className="hidden h-8 rounded-lg px-3 text-[11px] sm:inline-flex">
-              <ShareIcon size={14} /> {t("draft.share", lang)}
-            </Button>
-            {hasTour && (
-              <Button asChild size="sm" className="hidden h-8 rounded-lg px-3 text-[11px] sm:inline-flex">
-                <Link href={`/tour/${primarySplatId}`}><TourIcon size={14} /> {t("draft.viewTour", lang)}</Link>
-              </Button>
-            )}
-          </div>
         </div>
 
-        {/* Gallery — only when there are photos or a tour thumbnail */}
-        {hasMedia && (
-          <div className="-mx-4 md:mx-0">
-            {(images.length > 0 || thumbUrl) && (
-              <div className="md:rounded-xl overflow-hidden">
-                <DraftImageGallery images={images} alt={draft.title} fallbackUrl={thumbUrl} lang={lang} onActiveImageChange={setActiveImageId} />
-              </div>
+        {usingCachedDraft && (
+          /*
+            This notice describes the listing below it, so it sits above that
+            listing rather than floating over it — pinned, it covered the very
+            title, status and price it was warning about.
+          */
+          <DraftCacheNotice
+            lang={lang}
+            refreshing={manualRefreshPending}
+            onRefresh={refreshListing}
+          />
+        )}
+
+        {/* Media and property summary — one continuous workspace at every width. */}
+        <div className="space-y-6 lg:space-y-8">
+          {/*
+            A listing with no photos rendered no hero at all, so the page opened
+            on status pills floating in whitespace and never said the obvious
+            thing: it needs photographs. This holds the same slot the gallery
+            would, so the page has one structure either way, and carries the
+            action instead of leaving the gap unexplained. Bounded rather than
+            aspect-locked: a 16/10 box at desktop widths grew into a
+            viewport-filling droppool that dwarfed its own CTA.
+          */}
+          {!hasMedia && (
+            <button
+              type="button"
+              onClick={() => setMediaOpen(true)}
+              className="group relative block w-full overflow-hidden rounded-[1.5rem] border border-dashed border-border/70 bg-card/50 text-center transition-colors hover:border-foreground/25 hover:bg-card focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 sm:rounded-2xl"
+            >
+              {/*
+                The canvas itself is the ghost of the hero mosaic the photos
+                will form — the lead tile plus the four supporting ones — so
+                the page holds the shape it will have once filled, at a height
+                that suggests the gallery without swallowing the viewport.
+              */}
+              <span className="grid h-64 w-full grid-cols-2 grid-rows-2 gap-1.5 p-1.5 sm:h-80 lg:h-[26rem] lg:grid-cols-4">
+                {/*
+                  The pitch lives inside the lead tile — the slot the cover
+                  photo will take — instead of floating over the grid seams.
+                */}
+                <span className="col-span-2 flex flex-col items-center justify-center gap-3 rounded-[1.05rem] bg-surface-subtle px-6 lg:row-span-2">
+                  <span className="text-[15px] font-semibold">{t("draft.media.emptyTitle", lang)}</span>
+                  <span className="hidden max-w-md text-[12px] leading-relaxed text-muted-foreground sm:block">
+                    {t("draft.media.emptyBody", lang)}
+                  </span>
+                  <span className="floating-control mt-1 inline-flex items-center gap-2 bg-foreground px-4 text-[13px] font-semibold text-background shadow-control">
+                    <PlusIcon size={15} />
+                    {t("draft.media.addPhotos", lang)}
+                  </span>
+                </span>
+                <span aria-hidden="true" className="rounded-[1.05rem] bg-surface-subtle" />
+                <span aria-hidden="true" className="rounded-[1.05rem] bg-surface-subtle" />
+                <span aria-hidden="true" className="hidden rounded-[1.05rem] bg-surface-subtle lg:block" />
+                <span aria-hidden="true" className="hidden rounded-[1.05rem] bg-surface-subtle lg:block" />
+              </span>
+              <span aria-hidden="true" className="absolute bottom-4 right-4 flex h-9 w-9 items-center justify-center rounded-full bg-foreground text-background shadow-control transition-transform group-hover:scale-105">
+                <PlusIcon size={16} />
+              </span>
+            </button>
+          )}
+          {hasMedia && (
+            <div className="min-w-0 space-y-4">
+              {images.length > 0 && (
+                <div className="detail-hero-frame overflow-hidden rounded-[1.5rem] shadow-card ring-1 ring-border/75 sm:rounded-2xl">
+                  <DraftImageGallery
+                    images={images}
+                    alt={draft.title}
+                    lang={lang}
+                    onActiveImageChange={setActiveImageId}
+                    onManage={() => setMediaOpen(true)}
+                    manageLabel={t("draft.media.manage", lang)}
+                  />
+                </div>
+              )}
+              {videos.length > 0 && (
+                <div className="space-y-4">
+                  {videos.map((video) => (
+                    <video
+                      key={video.id}
+                      controls
+                      playsInline
+                      preload="metadata"
+                      className="aspect-[16/10] w-full rounded-[1.5rem] bg-black object-cover shadow-card ring-1 ring-border/75 sm:rounded-2xl"
+                      aria-label={video.name}
+                    >
+                      <source src={video.url} />
+                    </video>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* One column width whether or not photos exist. The old max-w-3xl
+              cap for photo-less drafts left the action rail ending mid-page
+              while the tour panel below ran the full column — two ragged
+              right edges stacked on top of each other. */}
+          <section className="min-w-0">
+            <div className="flex flex-wrap items-center gap-2">
+              {offerType ? (
+                <StatusPill className="uppercase tracking-[0.09em]">
+                  {enumT("offer", offerType, lang)}
+                </StatusPill>
+              ) : null}
+              <StatusPill tone={draft.is_complete ? "success" : "neutral"} dot>
+                {t(draft.is_complete ? "dashboard.listingComplete" : "dashboard.listingDraft", lang)}
+              </StatusPill>
+              {hasTour ? <StatusPill tone="strong">{t("dashboard.tourReady", lang)}</StatusPill> : null}
+            </div>
+
+            <div className="mt-3 flex items-start justify-between gap-3">
+              <h1 className="min-w-0 select-text text-[28px] font-semibold leading-[1.08] tracking-[-0.03em] sm:text-[30px] lg:text-[34px]">
+                {draft.title || t("dashboard.untitled", lang)}
+              </h1>
+              <Button
+                type="button"
+                data-testid="draft-mobile-more"
+                variant="outline"
+                size="icon"
+                aria-label={t("common.more", lang)}
+                title={t("common.more", lang)}
+                className="-mt-1 h-11 w-11 shrink-0 rounded-full border-border/65 bg-card p-0 text-foreground/65 shadow-control md:hidden"
+                onClick={() => setMobileActionsOpen(true)}
+              >
+                <MoreIcon size={16} />
+              </Button>
+            </div>
+            {address && (
+              <p className="mt-2 flex select-text items-start gap-1.5 text-[13px] leading-relaxed text-muted-foreground">
+                <MapPinIcon size={14} className="mt-0.5 shrink-0 text-foreground/40" />
+                <span>{address}</span>
+              </p>
             )}
-            {videos.length > 0 && (
-              <div className={cn("space-y-3", (images.length > 0 || thumbUrl) && "mt-4")}>
-                {videos.map((video) => (
-                  <video
-                    key={video.id}
-                    controls
-                    playsInline
-                    preload="metadata"
-                    className="aspect-video w-full bg-black md:rounded-xl"
-                    aria-label={video.name}
+            {price && (
+              <p className="mt-3 select-text text-[22px] font-semibold tracking-[-0.025em] tabular-nums sm:mt-4">
+                {price}
+                {showOrigPrice && (
+                  <span className="ml-2 text-[12px] font-normal tracking-normal text-muted-foreground tabular-nums">{origPrice}</span>
+                )}
+              </p>
+            )}
+
+            {facts.length > 0 && (
+              <div className="mt-5 grid grid-cols-2 gap-2.5 border-t border-border/70 pt-5 sm:grid-cols-3">
+                {facts.map((fact) => (
+                  <div
+                    key={fact.label}
+                    // Parameters with a canonical field behind them can be
+                    // dragged into the Agent window to be asked about or edited.
+                    draggable={Boolean(fact.path)}
+                    onDragStart={(event) => {
+                      if (!fact.path) return;
+                      writeDragItem(event.dataTransfer, {
+                        kind: "field",
+                        path: fact.path,
+                        label: fact.label,
+                        value: fact.value,
+                      });
+                    }}
+                    className={cn(
+                      "flex min-w-0 items-center gap-2.5 rounded-xl bg-surface-subtle px-3 py-2.5 ring-1 ring-inset ring-border/35",
+                      fact.path && "cursor-grab active:cursor-grabbing",
+                    )}
                   >
-                    <source src={video.url} />
-                  </video>
+                    <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-card text-foreground/60 shadow-control">
+                      {fact.icon}
+                    </span>
+                    <span className="min-w-0 leading-tight">
+                      <span className="block select-text truncate text-[13px] font-semibold tabular-nums">{fact.value}</span>
+                      <span className="mt-1 block truncate text-[10px] font-medium text-muted-foreground">{fact.label}{fact.sub ? ` · ${fact.sub}` : ""}</span>
+                    </span>
+                  </div>
                 ))}
               </div>
             )}
-          </div>
-        )}
 
-        {/* Header */}
-        <div className="mt-5 animate-fade-in-up">
-          <div className="mb-1.5 flex flex-wrap items-center gap-2">
-            {offerType ? (
-              <p className="text-[11px] font-medium uppercase tracking-wider text-muted-foreground">
-                {enumT("offer", offerType, lang)}
-              </p>
-            ) : null}
-            <StatusPill tone={draft.is_complete ? "success" : "neutral"} dot>
-              {t(draft.is_complete ? "dashboard.listingComplete" : "dashboard.listingDraft", lang)}
-            </StatusPill>
-            {hasTour ? <StatusPill tone="strong">{t("dashboard.tourReady", lang)}</StatusPill> : null}
-          </div>
-          <h1 className="text-[22px] font-semibold tracking-tight leading-tight">{draft.title || t("dashboard.untitled", lang)}</h1>
-          {address && (
-            <p className="mt-1 text-[13px] text-muted-foreground">{address}</p>
-          )}
-          {price && (
-            <p className="mt-2 text-[22px] font-semibold tabular-nums">
-              {price}
-              {showOrigPrice && (
-                <span className="ml-2 text-[13px] font-normal text-muted-foreground tabular-nums">{origPrice}</span>
-              )}
-            </p>
-          )}
-        </div>
-
-        {/* Key facts */}
-        {facts.length > 0 && (
-          <div className="mt-5 flex flex-wrap gap-2 animate-fade-in-up" style={{ animationDelay: "60ms" }}>
-            {facts.map((f, i) => (
-              <div key={i} className="flex items-center gap-2.5 rounded-xl bg-foreground/[0.04] px-3 py-2">
-                {f.icon}
-                <div className="leading-tight">
-                  <p className="text-[14px] font-semibold tabular-nums">{f.value}</p>
-                  <p className="text-[11px] text-muted-foreground">
-                    {f.label}
-                    {f.sub && <span className="text-muted-foreground/70"> · {f.sub}</span>}
-                  </p>
+            {/* One rail gives every listing action the same baseline and one
+                visual centre. The tour remains the dark primary segment; the
+                authoring tools divide the remaining width evenly instead of
+                forming a second, unrelated capsule on the opposite edge. */}
+            <div className="mt-5 hidden border-t border-border/70 pt-5 md:block">
+              {/* No fixed height: h-12 gave the 40px buttons a 38px inner box
+                  (p-1 wins over the class padding), so the active pill clipped
+                  against the capsule instead of floating centred in it. */}
+              <div className="floating-toolbar w-full overflow-x-auto p-1 scrollbar-hide">
+                {hasTour && (
+                  <Button asChild size="sm" className="h-10 min-w-[12rem] shrink-0 px-4 shadow-none">
+                    <Link href={`/tour/${primarySplatId}?tourId=${shareableTour?.id}`}>
+                      <TourIcon size={15} />
+                      {t("draft.viewTour", lang)}
+                    </Link>
+                  </Button>
+                )}
+                {hasTour ? <span aria-hidden="true" className="mx-1 h-5 w-px shrink-0 bg-border/70" /> : null}
+                <div className="flex min-w-[25rem] flex-1 items-center gap-0.5">
+                  <Button type="button" data-testid="draft-media-open" variant="ghost" size="sm" className="h-10 min-w-0 flex-1 shrink-0" aria-label={t("draft.media.manage", lang)} onClick={() => setMediaOpen(true)}>
+                    <ImageIcon size={15} /> {t("draft.media.gallery", lang)}
+                  </Button>
+                  <Button type="button" data-testid="draft-editor-open" variant="ghost" size="sm" className="h-10 min-w-0 flex-1 shrink-0" onClick={() => setEditorOpen(true)}>
+                    <EditIcon size={14} /> {t("shareDialog.edit", lang)}
+                  </Button>
+                  <Button type="button" data-testid="draft-sharing-open" variant="ghost" size="sm" className="h-10 min-w-0 flex-1 shrink-0" onClick={() => handleSharingOpenChange(true)}>
+                    <ShareIcon size={14} /> {t("draft.share", lang)}
+                  </Button>
+                  <Button type="button" data-testid="draft-versions-open" variant="ghost" size="sm" className="h-10 min-w-0 flex-1 shrink-0" onClick={() => setVersionsOpen(true)}>
+                    <VersionsIcon size={15} /> {t("draft.versions.short", lang)}
+                  </Button>
                 </div>
               </div>
-            ))}
-          </div>
-        )}
-
-        {/* Detail attributes */}
-        {rows.length > 0 && (
-          <div className="mt-5 animate-fade-in-up" style={{ animationDelay: "120ms" }}>
-            <h2 className="text-[14px] font-semibold mb-2">{t("draft.details", lang)}</h2>
-            <div className="rounded-2xl bg-foreground/[0.03] overflow-hidden">
-              {rows.map((r, i) => (
-                <div key={i} className={`flex items-baseline justify-between gap-4 px-4 py-2.5 ${i < rows.length - 1 ? "border-b border-black/[0.05]" : ""}`}>
-                  <span className="text-[13px] text-muted-foreground">{r.label}</span>
-                  <span className="text-right text-[13px] font-medium text-foreground tabular-nums">{r.value}</span>
-                </div>
-              ))}
             </div>
-          </div>
-        )}
+          </section>
+        </div>
 
-        {/* Description */}
-        {(description || translationPending) && (
-          <div className="mt-5 animate-fade-in-up" style={{ animationDelay: "180ms" }}>
-            <h2 className="text-[14px] font-semibold mb-2">{t("draft.description", lang)}</h2>
-            {translationPending && !hasTranslation && (
-              <p className="text-[12px] text-foreground/40 italic mb-2">{t("draft.descriptionPending", lang)}</p>
+        <DraftSharingDock
+          open={sharingOpen}
+          onOpenChange={handleSharingOpenChange}
+          draftId={draftId}
+          draft={draft}
+          splatData={splatData}
+          tourAssets={tourAssets}
+          lang={lang}
+          dateFormat={user.localization?.date_format}
+        />
+
+        <DraftTourAssetsPanel
+          draftId={draftId}
+          lang={lang}
+          splats={splatData?.splats}
+          initialPayload={tourAssets}
+          onPayloadChanged={setTourAssets}
+          onPrimaryChanged={(activeSplatId) => setSplatData((current) => (
+            current ? { ...current, parent_splat_id: activeSplatId } : current
+          ))}
+          onOpenSharing={() => handleSharingOpenChange(true)}
+        />
+
+        {(hasNarrative || hasSupportingDetails) && (
+          <div className="mt-8 space-y-7 lg:mt-10">
+            {hasNarrative && (
+              <div className="min-w-0 space-y-7">
+                {(description || translationPending) && (
+                  <section>
+                    <h2 className="mb-3 flex items-center gap-2 text-[14px] font-semibold">
+                      <DocumentIcon size={16} className="text-foreground/55" />
+                      {t("draft.description", lang)}
+                    </h2>
+                    {translationPending && !hasTranslation && (
+                      <p className="mb-2 text-[12px] text-foreground/50">{t("draft.descriptionPending", lang)}</p>
+                    )}
+                    {description && (
+                      <ExpandableDescription text={description} lang={lang} />
+                    )}
+                  </section>
+                )}
+
+                {hasFloorplan && (
+                  <section>
+                    <h2 className="mb-3 flex items-center gap-2 text-[14px] font-semibold">
+                      <FloorplanIcon size={16} className="text-foreground/55" />
+                      {t("draft.floorplan", lang)}
+                      {!compactViewport && (
+                        <button
+                          type="button"
+                          onClick={() => setFloorplanEditorOpen(true)}
+                          className="ml-auto rounded-full px-2.5 py-1 text-[12.5px] font-semibold text-foreground/55 transition-colors hover:bg-foreground/[0.05] hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+                        >
+                          {t("floorplan.edit", lang)}
+                        </button>
+                      )}
+                    </h2>
+                    {/*
+                      Tapping the plan opens it fullscreen, the same way tapping
+                      a photo does. The inline drawing is sized by its column,
+                      which on a phone is too small to read room by room. The
+                      viewer itself is not interactive, so an overlay button
+                      keeps one unambiguous target over the whole plan.
+                    */}
+                    {/*
+                      The plan's aspect ratio comes from the captured geometry,
+                      so a squarish plan left to fill this column rendered
+                      nearly as tall as it is wide. That used to be solved by
+                      capping the card's *width*, which left the floorplan
+                      visibly narrower than every other card on the page.
+
+                      The cap belongs on the drawing's height instead: the plan
+                      box carries its own `aspectRatio`, so bounding the height
+                      makes it give back width and centre itself, while the card
+                      keeps the full column and stays flush with its siblings.
+                      Fullscreen is still where the plan gets to be large.
+                    */}
+                    <div className="relative w-full overflow-hidden rounded-[1.5rem] sm:rounded-2xl">
+                      <FloorplanViewer
+                        draftData={draft.draft_data ?? []}
+                        floorplanId={draft.floorplan_id}
+                        lang={lang}
+                        units={unitCatalog}
+                        targetAreaUnit={draft.area_preferred_unit ?? draft.area_unit}
+                        planClassName="max-h-[min(56vh,32rem)]"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => setFloorplanFullscreen(true)}
+                        aria-label={t("draft.gallery.fullscreen", lang)}
+                        className="absolute inset-0 z-10 cursor-zoom-in rounded-[1.5rem] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset sm:rounded-2xl"
+                      />
+                    </div>
+
+                    {/*
+                      Volumes sit with the plan because they describe the same
+                      thing: which captured scene each room belongs to. Editing
+                      is deliberately available after creation, not only during
+                      the capture flow.
+                    */}
+                    <VolumesEditor
+                      draftId={draft.id}
+                      floorplanId={draft.floorplan_id}
+                      lang={lang}
+                      className="mt-6 border-t border-border/70 pt-6"
+                    />
+                  </section>
+                )}
+              </div>
             )}
-            {description && (
-              <div className="rounded-2xl bg-foreground/[0.03] px-4 py-3.5">
-                <div className={`overflow-hidden transition-all duration-300 ${!descExpanded && descLong ? "max-h-[7.5em]" : "max-h-[200em]"}`}>
-                  <p className="text-[13px] leading-[1.75] text-foreground/65 whitespace-pre-line">
-                    {description}
-                  </p>
-                </div>
-                {descLong && (
-                  <button onClick={() => setDescExpanded(!descExpanded)} className="mt-2 text-[12px] font-medium text-foreground/45 hover:text-foreground transition-colors">
-                    {descExpanded ? t("draft.showLess", lang) : t("draft.showMore", lang)}
-                  </button>
+
+            {hasSupportingDetails && (
+              <div className="min-w-0 space-y-7">
+                {rows.length > 0 && (
+                  <section>
+                    <h2 className="mb-3 flex items-center gap-2 text-[14px] font-semibold">
+                      <InfoIcon size={16} className="text-foreground/55" />
+                      {t("draft.details", lang)}
+                    </h2>
+                    <div className="overflow-hidden rounded-[1.5rem] border border-border/70 bg-card shadow-card sm:rounded-2xl">
+                      {visibleRows.map((row, index) => (
+                        <div
+                          key={`${row.label}-${index}`}
+                          draggable={Boolean(row.path)}
+                          onDragStart={(event) => {
+                            if (!row.path) return;
+                            writeDragItem(event.dataTransfer, {
+                              kind: "field",
+                              path: row.path,
+                              label: row.label,
+                              value: row.value,
+                            });
+                          }}
+                          className={cn(
+                            "flex items-start justify-between gap-4 px-4 py-3",
+                            (index < visibleRows.length - 1 || detailsLong) && "border-b border-border/45",
+                            row.path && "cursor-grab active:cursor-grabbing",
+                          )}
+                        >
+                          <span className="min-w-0 break-words text-[12px] leading-relaxed text-muted-foreground">{row.label}</span>
+                          <span className="min-w-0 max-w-[58%] select-text break-words text-right text-[12px] font-semibold leading-relaxed text-foreground tabular-nums">{row.value}</span>
+                        </div>
+                      ))}
+                      {detailsLong && (
+                        <div className="flex justify-center px-3 py-2.5">
+                          <button type="button" aria-expanded={detailsExpanded} onClick={() => setDetailsExpanded(!detailsExpanded)} className="rounded-full px-3 py-1.5 text-[12px] font-semibold text-foreground/55 transition-colors hover:bg-foreground/[0.045] hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2">
+                            {detailsExpanded ? t("draft.showLess", lang) : t("draft.showMore", lang)}
+                          </button>
+                        </div>
+                      )}
+                    </div>
+                  </section>
+                )}
+
+                {features.length > 0 && (
+                  <section>
+                    <h2 className="mb-3 flex items-center gap-2 text-[14px] font-semibold">
+                      <StarIcon size={16} className="text-foreground/55" />
+                      {t("draft.features", lang)}
+                    </h2>
+                    <div className="flex flex-wrap gap-2 rounded-[1.5rem] border border-border/70 bg-card p-4 shadow-card sm:rounded-2xl">
+                      {features.map((feature) => (
+                        <span key={feature} className="inline-flex min-h-8 items-center rounded-full border border-border/65 bg-surface-subtle px-3 py-1 text-[11px] font-medium text-foreground/75">
+                          {feature}
+                        </span>
+                      ))}
+                    </div>
+                  </section>
+                )}
+
+                {monthlyCosts.length > 0 && (
+                  <section>
+                    <h2 className="mb-3 flex items-center gap-2 text-[14px] font-semibold">
+                      <PriceIcon size={16} className="text-foreground/55" />
+                      {t("draft.monthlyCosts", lang)}
+                    </h2>
+                    <div className="overflow-hidden rounded-[1.5rem] border border-border/70 bg-card shadow-card sm:rounded-2xl">
+                      {monthlyCosts.map((row, index) => (
+                        <div key={`${row.label}-${index}`} className={cn("flex items-center justify-between gap-4 px-4 py-3", index < monthlyCosts.length - 1 && "border-b border-border/45")}>
+                          <span className="min-w-0 break-words text-[12px] text-muted-foreground">{row.label}</span>
+                          <span className="min-w-0 max-w-[58%] select-text break-words text-right text-[12px] font-semibold text-foreground tabular-nums">{row.value}</span>
+                        </div>
+                      ))}
+                    </div>
+                  </section>
                 )}
               </div>
             )}
           </div>
         )}
 
-        {/* Features */}
-        {features.length > 0 && (
-          <div className="mt-5 animate-fade-in-up" style={{ animationDelay: "240ms" }}>
-            <h2 className="text-[14px] font-semibold mb-2">{t("draft.features", lang)}</h2>
-            <div className="flex flex-wrap gap-1.5">
-              {features.map((f) => (
-                <span key={f} className="inline-flex items-center gap-1 rounded-full bg-foreground/[0.04] px-2.5 py-1 text-[12px] text-foreground/70">
-                  {I.check} {f}
-                </span>
-              ))}
-            </div>
-          </div>
-        )}
-
-        {/* Monthly costs */}
-        {monthlyCosts.length > 0 && (
-          <div className="mt-5 animate-fade-in-up" style={{ animationDelay: "300ms" }}>
-            <h2 className="text-[14px] font-semibold mb-2">{t("draft.monthlyCosts", lang)}</h2>
-            <div className="rounded-2xl bg-foreground/[0.03] overflow-hidden">
-              {monthlyCosts.map((r, i) => (
-                <div key={i} className={`flex items-baseline justify-between gap-4 px-4 py-2.5 ${i < monthlyCosts.length - 1 ? "border-b border-black/[0.05]" : ""}`}>
-                  <span className="text-[13px] text-muted-foreground">{r.label}</span>
-                  <span className="text-right text-[13px] font-medium text-foreground tabular-nums">{r.value}</span>
-                </div>
-              ))}
-            </div>
-          </div>
-        )}
-
-        {/* Floorplan */}
-        {hasFloorplan && (
-          <div className="mt-5 animate-fade-in-up" style={{ animationDelay: "360ms" }}>
-            <h2 className="text-[14px] font-semibold mb-2">{t("draft.floorplan", lang)}</h2>
-            <FloorplanViewer draftData={draft.draft_data ?? []} floorplanId={draft.floorplan_id} lang={lang} />
-          </div>
-        )}
-
       </div>
 
-      <DraftEditor open={editorOpen} onOpenChange={setEditorOpen} draft={draft} lang={lang} onSaved={setDraft} />
+      <DraftEditor open={editorOpen} onOpenChange={setEditorOpen} draft={draft} units={unitCatalog} lang={lang} onSaved={setDraft} />
+      <FloorplanLightbox
+        open={floorplanFullscreen}
+        onClose={() => setFloorplanFullscreen(false)}
+        draftData={draft.draft_data ?? []}
+        floorplanId={draft.floorplan_id}
+        lang={lang}
+        units={unitCatalog}
+        targetAreaUnit={draft.area_preferred_unit ?? draft.area_unit}
+        agentAction={floorplanAgentAction}
+      />
+
+      {/* Structural gate, so the editor cannot mount on a phone regardless of state. */}
+      {floorplanEditorOpen && !compactViewport && (
+        <FloorplanEditor
+          draftId={draftId}
+          draftData={draft.draft_data ?? []}
+          lang={lang}
+          onClose={() => setFloorplanEditorOpen(false)}
+          onSaved={(entries) =>
+            setDraft((current) => {
+              if (!current) return current;
+              const byId = new Map((current.draft_data ?? []).map((e) => [e.id, e]));
+              for (const entry of entries) byId.set(entry.id, entry);
+              return { ...current, draft_data: [...byId.values()] };
+            })
+          }
+        />
+      )}
+      <DraftMediaManager
+        open={mediaOpen}
+        onOpenChange={setMediaOpen}
+        draft={draft}
+        lang={lang}
+        onChanged={() => refreshDraft(draftId).then(setDraft)}
+      />
       <DraftVersionManager
         open={versionsOpen}
         onOpenChange={setVersionsOpen}
         draft={draft}
         splats={splatData}
+        units={unitCatalog}
         lang={lang}
         onActiveTourChanged={(activeSplatId) => setSplatData((current) => current ? { ...current, parent_splat_id: activeSplatId } : current)}
         onDraftRestored={setDraft}
       />
 
-      {/* Sticky mobile action bar */}
-      <div className="fixed inset-x-0 bottom-0 z-40 flex gap-2 border-t border-border/45 bg-background px-4 py-2.5 pb-safe md:hidden">
-        <Button variant="outline" size="sm" className="flex-1" onClick={() => setEditorOpen(true)}>
-          <EditIcon size={15} /> {t("shareDialog.edit", lang)}
-        </Button>
-        <Button variant="outline" size="icon-sm" className="h-9 w-9 shrink-0" onClick={() => router.push(`/draft/${draftId}/sharing`)} aria-label={t("draft.share", lang)}>
-          <ShareIcon size={15} />
-        </Button>
-        {hasTour && (
-          <Link href={`/tour/${primarySplatId}`} className="flex-1">
-            <Button variant="default" size="sm" className="w-full">
-              <TourIcon size={15} />
-              {t("draft.viewTour", lang)}
-            </Button>
-          </Link>
-        )}
-      </div>
+      {/* Secondary phone actions live in a focus-trapped sheet, opened from
+          the title. Nothing floats over or obscures the listing content. */}
+      <Dialog.Root open={mobileActionsOpen} onOpenChange={setMobileActionsOpen}>
+        <Dialog.Portal>
+          <Dialog.Overlay className="fixed inset-0 z-[80] bg-black/25 backdrop-blur-[2px] md:hidden" />
+          <Dialog.Content className="fixed inset-x-0 bottom-0 z-[90] rounded-t-[1.75rem] border border-b-0 border-border/70 bg-card px-4 pb-[max(1rem,env(safe-area-inset-bottom))] pt-3 shadow-elevated outline-none md:hidden">
+            <div aria-hidden="true" className="mx-auto mb-3 h-1 w-10 rounded-full bg-foreground/15" />
+            <Dialog.Title className="mb-3 text-center text-[15px] font-semibold">{t("common.more", lang)}</Dialog.Title>
+            <div className="grid gap-1">
+              <Dialog.Close asChild>
+                <Button type="button" data-testid="draft-mobile-editor-open" variant="ghost" className="h-12 justify-start rounded-xl px-4" onClick={() => setEditorOpen(true)}>
+                  <EditIcon size={16} /> {t("shareDialog.edit", lang)}
+                </Button>
+              </Dialog.Close>
+              {hasTour && (
+                <Dialog.Close asChild>
+                  <Button type="button" data-testid="draft-mobile-sharing-open" variant="ghost" className="h-12 justify-start rounded-xl px-4" onClick={() => handleSharingOpenChange(true)}>
+                    <ShareIcon size={16} /> {t("draft.share", lang)}
+                  </Button>
+                </Dialog.Close>
+              )}
+              <Dialog.Close asChild>
+                <Button type="button" data-testid="draft-mobile-media-open" variant="ghost" className="h-12 justify-start rounded-xl px-4" onClick={() => setMediaOpen(true)}>
+                  <ImageIcon size={16} /> {t("draft.media.gallery", lang)}
+                </Button>
+              </Dialog.Close>
+              <Dialog.Close asChild>
+                <Button type="button" data-testid="draft-mobile-versions-open" variant="ghost" className="h-12 justify-start rounded-xl px-4" onClick={() => setVersionsOpen(true)}>
+                  <VersionsIcon size={16} /> {t("draft.versions.title", lang)}
+                </Button>
+              </Dialog.Close>
+            </div>
+          </Dialog.Content>
+        </Dialog.Portal>
+      </Dialog.Root>
     </AppShell>
   );
 }

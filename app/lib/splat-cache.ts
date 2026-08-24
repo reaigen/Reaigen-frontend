@@ -1,10 +1,10 @@
 /**
  * IndexedDB cache for converted Gaussian splat buffers.
  *
- * Stores ArrayBuffer output of ConvertPLYWithSHToSplatAsync so repeat
- * visits skip both network download AND JS conversion.
+ * Stores immutable compressed source assets plus converted PLY buffers so
+ * repeat visits can skip network download and, where possible, conversion.
  *
- * Keys: splat:{id}:startup | splat:{id}:full
+ * Keys: splat:{id}:source | splat:{id}:startup | splat:{id}:full
  * TTL:  14 days
  * Budget: 1.5 GB — LRU eviction (oldest access first)
  */
@@ -36,7 +36,7 @@ function openDB(): Promise<IDBDatabase> {
 
 export async function getCache(
   splatId: number,
-  stage: "startup" | "full",
+  stage: "source" | "startup" | "full",
   version?: string | null,
 ): Promise<ArrayBuffer | null> {
   try {
@@ -72,7 +72,7 @@ export async function getCache(
 
 export async function putCache(
   splatId: number,
-  stage: "startup" | "full",
+  stage: "source" | "startup" | "full",
   buffer: ArrayBuffer,
   version?: string | null,
 ): Promise<void> {
@@ -89,6 +89,23 @@ export async function putCache(
       tx.onerror = () => reject(tx.error);
     });
   } catch { /* non-fatal */ }
+}
+
+/** Remove all private reconstruction data at an authentication boundary. */
+export async function clearSplatCache(): Promise<void> {
+  try {
+    const db = await openDB();
+    await new Promise<void>((resolve) => {
+      const tx = db.transaction(STORE, "readwrite");
+      tx.objectStore(STORE).clear();
+      tx.oncomplete = () => resolve();
+      tx.onerror = () => resolve();
+      tx.onabort = () => resolve();
+    });
+    db.close();
+  } catch {
+    // Private browsing and storage denial must not block logout.
+  }
 }
 
 async function evictIfNeeded(db: IDBDatabase, incomingBytes: number): Promise<void> {

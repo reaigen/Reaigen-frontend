@@ -8,8 +8,13 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "../lib/ui/tabs";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "../lib/ui/select";
 import { Separator } from "../lib/ui/separator";
 import { Switch } from "../lib/ui/switch";
+import { Checkbox } from "../lib/ui/checkbox";
+import { Textarea } from "../lib/ui/textarea";
+import { Avatar, AvatarFallback, AvatarImage } from "../lib/ui/avatar";
+import { BottomSheet } from "../lib/ui/bottom-sheet";
 import {
   updateProfile,
+  updateAccountConsent,
   updateSellerProfile,
   updateLocalization,
   updatePersonalizedData,
@@ -38,21 +43,36 @@ import {
   grantReaiImprovementConsent,
   revokeReaiImprovementConsent,
   type UserProfile,
+  type PersonalizedData,
   type AvailablePreferences,
   type PreferenceOption,
   type TotpStatus,
   type TotpSetupResponse,
   type LinkedAccountsResponse,
+  type DeviceSession,
+  getDeviceSessions,
+  revokeDeviceSession,
+  revokeOtherDeviceSessions,
+  revokeAllDeviceSessions,
+  logout as apiLogout,
   type ReaiAgentConsent,
   type ReaiToolCode,
   type ReaiToolPermissions,
   type ReaiImprovementConsent,
 } from "../lib/api/client";
 import { getSafeApiErrorMessage } from "../lib/api/error-message";
+import {
+  disableWebPushForUser,
+  enableWebPushForUser,
+  getWebPushStateForUser,
+  type WebPushState,
+} from "../lib/web-push";
+import { DeviceDesktopIcon, DeviceMobileIcon, ImageIcon, LinkIcon } from "./icons";
+import { formatPhoneDisplay } from "../lib/phone";
 import { t, getUserLanguage, formatDate as fmtDate } from "../lib/i18n";
+import type { LocaleKey } from "../lib/locales";
 import { cn } from "../lib/utils";
 import { ManagedLegalDocuments } from "./content-documents";
-import { ChevronDownIcon } from "./icons";
 
 function useAutoDismiss(value: boolean, setter: (v: boolean) => void, ms = 3000) {
   React.useEffect(() => {
@@ -62,29 +82,30 @@ function useAutoDismiss(value: boolean, setter: (v: boolean) => void, ms = 3000)
   }, [value, setter, ms]);
 }
 
+// Grouped card, mirroring the iOS app's Settings LiquidCard sections.
 function Card({ className, ...props }: React.HTMLAttributes<HTMLElement>) {
   return (
     <section
-      className={cn("border-t border-border/70 pt-6 first:border-t-0 first:pt-0", className)}
+      className={cn("rounded-[24px] border border-border/65 bg-card p-5 shadow-card sm:rounded-[28px] sm:p-6", className)}
       {...props}
     />
   );
 }
 
 function CardHeader({ className, ...props }: React.HTMLAttributes<HTMLDivElement>) {
-  return <div className={cn("pb-4", className)} {...props} />;
+  return <div className={cn("pb-5", className)} {...props} />;
 }
 
 function CardTitle({ className, ...props }: React.HTMLAttributes<HTMLHeadingElement>) {
-  return <h2 className={cn("text-[15px] font-semibold tracking-normal", className)} {...props} />;
+  return <h2 className={cn("text-[17px] font-semibold leading-tight tracking-[-0.02em]", className)} {...props} />;
 }
 
 function CardDescription({ className, ...props }: React.HTMLAttributes<HTMLParagraphElement>) {
-  return <p className={cn("mt-1 text-[13px] leading-relaxed text-muted-foreground", className)} {...props} />;
+  return <p className={cn("mt-1.5 text-[13px] leading-relaxed text-muted-foreground", className)} {...props} />;
 }
 
 function CardContent({ className, ...props }: React.HTMLAttributes<HTMLDivElement>) {
-  return <div className={cn("max-w-2xl", className)} {...props} />;
+  return <div className={cn("max-w-3xl", className)} {...props} />;
 }
 
 function formatAccountDate(value: string | null | undefined, lang: string, dateFormat?: string | null) {
@@ -94,10 +115,12 @@ function formatAccountDate(value: string | null | undefined, lang: string, dateF
 }
 
 function DataRow({ label, value }: { label: string; value: React.ReactNode }) {
+  // One line, label left and value right — the way a native settings list
+  // reads — instead of stacking into a tall label-over-value ladder on phones.
   return (
-    <div className="grid grid-cols-1 gap-1 border-b border-border/60 py-3 last:border-b-0 sm:grid-cols-[12rem_minmax(0,1fr)] sm:gap-4">
-      <dt className="text-[12px] text-muted-foreground">{label}</dt>
-      <dd className="min-w-0 text-[13px] font-medium text-foreground/85">{value}</dd>
+    <div className="flex min-h-11 items-baseline justify-between gap-6 border-b border-border/60 py-3 last:border-b-0">
+      <dt className="shrink-0 text-[12px] text-muted-foreground">{label}</dt>
+      <dd className="min-w-0 text-right text-[13px] font-medium text-foreground/85">{value}</dd>
     </div>
   );
 }
@@ -114,16 +137,11 @@ function CollapsibleSection({ title, defaultOpen, children }: {
     <div>
       <button
         type="button"
-        className="flex w-full items-center justify-between py-2 text-sm font-medium text-foreground/80 hover:text-foreground"
+        aria-expanded={open}
+        className={cn("flex w-full items-center py-2 text-left text-[14px] font-semibold text-foreground/65 transition-colors hover:text-foreground", open && "text-foreground")}
         onClick={() => setOpen(!open)}
       >
         {title}
-        <svg
-          className={cn("h-4 w-4 shrink-0 text-muted-foreground transition-transform", open && "rotate-180")}
-          fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}
-        >
-          <path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" />
-        </svg>
       </button>
       {open && <div className="pt-2 space-y-4">{children}</div>}
     </div>
@@ -149,6 +167,51 @@ async function uploadPresigned(
   await confirmFn(upload_key);
 }
 
+type JsonObject = Record<string, unknown>;
+
+function asJsonObject(value: unknown): JsonObject {
+  return value !== null && typeof value === "object" && !Array.isArray(value)
+    ? value as JsonObject
+    : {};
+}
+
+function optionalString(value: unknown): string {
+  return typeof value === "string" ? value : "";
+}
+
+function getSellerContactPreferences(preferences: unknown) {
+  const root = asJsonObject(preferences);
+  const canonical = asJsonObject(root.seller_contact);
+  const legacy = asJsonObject(root.sellerContact);
+  return {
+    root,
+    contact: { ...legacy, ...canonical },
+    publicEmail: optionalString(canonical.public_email ?? legacy.publicEmail),
+    secondaryPhone: optionalString(canonical.secondary_phone ?? legacy.secondaryPhone),
+  };
+}
+
+function withSellerContactPreferences(
+  preferences: unknown,
+  publicEmail: string,
+  secondaryPhone: string,
+): JsonObject {
+  const { root, contact } = getSellerContactPreferences(preferences);
+  const canonicalRoot = { ...root };
+  const canonicalContact = { ...contact };
+  delete canonicalRoot.sellerContact;
+  delete canonicalContact.publicEmail;
+  delete canonicalContact.secondaryPhone;
+  return {
+    ...canonicalRoot,
+    seller_contact: {
+      ...canonicalContact,
+      public_email: publicEmail,
+      secondary_phone: secondaryPhone,
+    },
+  };
+}
+
 /* ── Profile Tab ─────────────────────────────────────────────────────── */
 
 function ProfileTab({ user, onSaved, lang }: { user: UserProfile; onSaved: () => void; lang: string }) {
@@ -164,6 +227,12 @@ function ProfileTab({ user, onSaved, lang }: { user: UserProfile; onSaved: () =>
   const avatarInputRef = React.useRef<HTMLInputElement>(null);
   useAutoDismiss(success, setSuccess);
   useAutoDismiss(emailResent, setEmailResent);
+
+  React.useEffect(() => {
+    setFirstName(user.first_name ?? "");
+    setLastName(user.last_name ?? "");
+    setUsername(user.username ?? "");
+  }, [user.first_name, user.last_name, user.username]);
 
   async function handleAvatarChange(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
@@ -221,21 +290,17 @@ function ProfileTab({ user, onSaved, lang }: { user: UserProfile; onSaved: () =>
         <form className="space-y-4" onSubmit={handleSubmit}>
           {/* Avatar */}
           <div className="flex items-center gap-4">
-            <div className="relative h-16 w-16 shrink-0 overflow-hidden rounded-full bg-muted">
-              {avatarUrl ? (
-                // User-owned signed media URLs are already sized by the profile API.
-                // eslint-disable-next-line @next/next/no-img-element
-                <img src={avatarUrl} alt={t("settings.profile.avatar", lang)} className="h-full w-full object-cover" />
-              ) : (
-                <span className="flex h-full w-full items-center justify-center text-lg font-semibold text-muted-foreground">{initials}</span>
-              )}
-            </div>
+            <Avatar size="xl">
+              {avatarUrl && <AvatarImage src={avatarUrl} alt={t("settings.profile.avatar", lang)} />}
+              <AvatarFallback>{initials}</AvatarFallback>
+            </Avatar>
             <div>
               <input ref={avatarInputRef} type="file" accept="image/*" className="hidden" onChange={handleAvatarChange} />
               <Button
                 type="button"
                 variant="outline"
                 size="sm"
+                className="h-11"
                 loading={avatarUploading}
                 onClick={() => avatarInputRef.current?.click()}
               >
@@ -258,21 +323,30 @@ function ProfileTab({ user, onSaved, lang }: { user: UserProfile; onSaved: () =>
             <Label htmlFor="username">{t("settings.profile.username", lang)}</Label>
             <Input id="username" value={username} onChange={(e) => setUsername(e.target.value)} />
           </div>
+          {/*
+            The address is a fact, not a field — a disabled input reads as a
+            broken form. A quiet row states it, and the chip carries the
+            verification status the way the phone row does.
+          */}
           <div className="space-y-1.5">
-            <Label htmlFor="email">{t("settings.profile.email", lang)}</Label>
-            <div className="flex items-center gap-2">
-              <Input id="email" value={user.email} disabled className="opacity-50 cursor-not-allowed" />
+            <Label>{t("settings.profile.email", lang)}</Label>
+            <div className="flex min-h-11 items-center justify-between gap-4 rounded-2xl bg-muted/30 px-4 py-2.5">
+              <span className="min-w-0 truncate text-sm font-medium">{user.email}</span>
               {user.email_verified ? (
-                <span className="shrink-0 text-[12px] font-medium text-emerald-600">{t("settings.profile.emailVerified", lang)}</span>
+                <span className="shrink-0 rounded-full bg-success/10 px-2.5 py-0.5 text-[11px] font-semibold text-emerald-800">
+                  {t("settings.profile.emailVerified", lang)}
+                </span>
               ) : (
-                <span className="flex shrink-0 items-center gap-1.5">
-                  <span className="text-[12px] font-medium text-amber-600">{t("settings.profile.emailUnverified", lang)}</span>
+                <span className="flex shrink-0 items-center gap-2">
+                  <span className="rounded-full bg-amber-100 px-2.5 py-0.5 text-[11px] font-semibold text-amber-700">
+                    {t("settings.profile.emailUnverified", lang)}
+                  </span>
                   {emailResent ? (
-                    <span className="text-[11px] text-emerald-600">{t("settings.profile.emailResent", lang)}</span>
+                    <span className="text-[11px] text-success">{t("settings.profile.emailResent", lang)}</span>
                   ) : (
                     <button
                       type="button"
-                      className="text-[11px] font-medium text-primary underline underline-offset-2 hover:no-underline disabled:opacity-50"
+                      className="text-[11px] font-medium text-foreground underline underline-offset-2 hover:no-underline disabled:opacity-50"
                       onClick={handleResendVerification}
                       disabled={emailResending}
                     >
@@ -282,12 +356,11 @@ function ProfileTab({ user, onSaved, lang }: { user: UserProfile; onSaved: () =>
                 </span>
               )}
             </div>
-            <p className="text-[11px] text-muted-foreground">{t("settings.profile.emailHint", lang)}</p>
           </div>
           {error && <p className="text-[12px] text-destructive">{error}</p>}
-          {success && <p className="text-[12px] text-emerald-600">{t("settings.profile.saved", lang)}</p>}
+          {success && <p className="text-[12px] text-success">{t("settings.profile.saved", lang)}</p>}
           <div className="pt-2">
-            <Button type="submit" size="sm" loading={loading}>{t("settings.profile.save", lang)}</Button>
+            <Button type="submit" size="sm" className="h-11" loading={loading}>{t("settings.profile.save", lang)}</Button>
           </div>
         </form>
       </CardContent>
@@ -299,7 +372,10 @@ function ProfileTab({ user, onSaved, lang }: { user: UserProfile; onSaved: () =>
 
 function SellerTab({ user, onSaved, lang }: { user: UserProfile; onSaved: () => void; lang: string }) {
   const p = user.profile ?? {} as Partial<NonNullable<typeof user.profile>>;
+  const sellerContact = getSellerContactPreferences(user.personalized_data?.preferences);
   const [phone, setPhone] = React.useState(p?.phone ?? "");
+  const [publicEmail, setPublicEmail] = React.useState(sellerContact.publicEmail);
+  const [secondaryPhone, setSecondaryPhone] = React.useState(sellerContact.secondaryPhone);
   const [company, setCompany] = React.useState(p?.company ?? "");
   const [website, setWebsite] = React.useState(p?.website ?? "");
   const [bio, setBio] = React.useState(p?.bio ?? "");
@@ -315,18 +391,52 @@ function SellerTab({ user, onSaved, lang }: { user: UserProfile; onSaved: () => 
   const [state, setState] = React.useState(p?.state ?? "");
   const [country, setCountry] = React.useState(p?.country ?? "");
   const [postalCode, setPostalCode] = React.useState(p?.postal_code ?? "");
-  const [portfolioVis, setPortfolioVis] = React.useState(p?.portfolio_visibility ?? "private");
-  const [portfolioSlug, setPortfolioSlug] = React.useState(p?.portfolio_slug ?? "");
-  const [portfolioTitle, setPortfolioTitle] = React.useState(p?.portfolio_title ?? "");
-  const [portfolioHeadline, setPortfolioHeadline] = React.useState(p?.portfolio_headline ?? "");
   const [loading, setLoading] = React.useState(false);
   const [error, setError] = React.useState<string | null>(null);
   const [success, setSuccess] = React.useState(false);
   const [coverUploading, setCoverUploading] = React.useState(false);
-  const [portfolioCopied, setPortfolioCopied] = React.useState(false);
   const coverInputRef = React.useRef<HTMLInputElement>(null);
   useAutoDismiss(success, setSuccess);
-  useAutoDismiss(portfolioCopied, setPortfolioCopied);
+
+  React.useEffect(() => {
+    setPhone(p?.phone ?? "");
+    setPublicEmail(sellerContact.publicEmail);
+    setSecondaryPhone(sellerContact.secondaryPhone);
+    setCompany(p?.company ?? "");
+    setWebsite(p?.website ?? "");
+    setBio(p?.bio ?? "");
+    setJobTitle(p?.job_title ?? "");
+    setLinkedin(p?.linkedin_url ?? "");
+    setTwitter(p?.twitter_handle ?? "");
+    setInstagram(p?.instagram_handle ?? "");
+    setIsRePro(p?.is_real_estate_professional ?? false);
+    setLicense(p?.license_number ?? "");
+    setAgency(p?.agency_name ?? "");
+    setAddress(p?.address ?? "");
+    setCity(p?.city ?? "");
+    setState(p?.state ?? "");
+    setCountry(p?.country ?? "");
+    setPostalCode(p?.postal_code ?? "");
+  }, [
+    p?.address,
+    p?.agency_name,
+    p?.bio,
+    p?.city,
+    p?.company,
+    p?.country,
+    p?.instagram_handle,
+    p?.is_real_estate_professional,
+    p?.job_title,
+    p?.license_number,
+    p?.linkedin_url,
+    p?.phone,
+    p?.postal_code,
+    p?.state,
+    p?.twitter_handle,
+    p?.website,
+    sellerContact.publicEmail,
+    sellerContact.secondaryPhone,
+  ]);
 
   async function handleCoverChange(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
@@ -349,28 +459,33 @@ function SellerTab({ user, onSaved, lang }: { user: UserProfile; onSaved: () => 
     setSuccess(false);
     try {
       setLoading(true);
-      await updateSellerProfile({
-        phone: phone.trim(),
-        company: company.trim(),
-        website: website.trim(),
-        bio: bio.trim(),
-        job_title: jobTitle.trim(),
-        linkedin_url: linkedin.trim(),
-        twitter_handle: twitter.trim(),
-        instagram_handle: instagram.trim(),
-        is_real_estate_professional: isRePro,
-        license_number: license.trim(),
-        agency_name: agency.trim(),
-        address: address.trim(),
-        city: city.trim(),
-        state: state.trim(),
-        country: country.trim(),
-        postal_code: postalCode.trim(),
-        portfolio_visibility: portfolioVis,
-        portfolio_slug: portfolioSlug.trim(),
-        portfolio_title: portfolioTitle.trim(),
-        portfolio_headline: portfolioHeadline.trim(),
-      });
+      await Promise.all([
+        updateSellerProfile({
+          phone: phone.trim(),
+          company: company.trim(),
+          website: website.trim(),
+          bio: bio.trim(),
+          job_title: jobTitle.trim(),
+          linkedin_url: linkedin.trim(),
+          twitter_handle: twitter.trim(),
+          instagram_handle: instagram.trim(),
+          is_real_estate_professional: isRePro,
+          license_number: license.trim(),
+          agency_name: agency.trim(),
+          address: address.trim(),
+          city: city.trim(),
+          state: state.trim(),
+          country: country.trim(),
+          postal_code: postalCode.trim(),
+        }),
+        updatePersonalizedData({
+          preferences: withSellerContactPreferences(
+            user.personalized_data?.preferences,
+            publicEmail.trim(),
+            secondaryPhone.trim(),
+          ),
+        }),
+      ]);
       setSuccess(true);
       onSaved();
     } catch (err) {
@@ -382,10 +497,6 @@ function SellerTab({ user, onSaved, lang }: { user: UserProfile; onSaved: () => 
 
   const hasSocial = !!(linkedin || twitter || instagram);
   const hasAddress = !!(address || city || state || country || postalCode);
-  const hasPortfolio = !!(portfolioSlug || portfolioTitle || portfolioHeadline) || portfolioVis !== "private";
-
-  const portfolioLink = portfolioSlug ? `https://reaigen.com/p/${portfolioSlug}` : "";
-
   return (
     <Card>
       <CardHeader>
@@ -393,62 +504,92 @@ function SellerTab({ user, onSaved, lang }: { user: UserProfile; onSaved: () => 
         <CardDescription>{t("settings.seller.subtitle", lang)}</CardDescription>
       </CardHeader>
       <CardContent>
-        <form className="space-y-5" onSubmit={handleSubmit}>
+        <form className="space-y-4" onSubmit={handleSubmit}>
           {/* Cover Image */}
           <div className="relative">
-            <div className="h-28 w-full overflow-hidden rounded-lg bg-muted sm:h-36">
-              {p?.cover_image_url ? (
-                // User-owned signed media URLs are not compatible with a fixed Next image host.
-                // eslint-disable-next-line @next/next/no-img-element
-                <img src={p.cover_image_url} alt={t("settings.seller.coverImage", lang)} className="h-full w-full object-cover" />
-              ) : (
-                <div className="flex h-full w-full items-center justify-center text-sm text-muted-foreground">{t("settings.seller.coverImage", lang)}</div>
-              )}
-            </div>
             <input ref={coverInputRef} type="file" accept="image/*" className="hidden" onChange={handleCoverChange} />
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              loading={coverUploading}
-              className="absolute bottom-2 right-2 bg-background/80 backdrop-blur-sm"
-              onClick={() => coverInputRef.current?.click()}
-            >
-              {coverUploading ? t("settings.seller.coverUploading", lang) : t("settings.seller.coverChange", lang)}
-            </Button>
+            {p?.cover_image_url ? (
+              <>
+                <div className="h-28 w-full overflow-hidden rounded-xl bg-muted sm:h-36">
+                  {/* User-owned signed media URLs are not compatible with a fixed Next image host. */}
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img src={p.cover_image_url} alt={t("settings.seller.coverImage", lang)} className="h-full w-full object-cover" />
+                </div>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  loading={coverUploading}
+                  className="absolute bottom-2 right-2 bg-background/80 backdrop-blur-sm"
+                  onClick={() => coverInputRef.current?.click()}
+                >
+                  {coverUploading ? t("settings.seller.coverUploading", lang) : t("settings.seller.coverChange", lang)}
+                </Button>
+              </>
+            ) : (
+              /*
+                With no image there is nothing for a floating button to float
+                over — it just collided with the placeholder label. The whole
+                empty surface is the upload control instead.
+              */
+              <button
+                type="button"
+                disabled={coverUploading}
+                onClick={() => coverInputRef.current?.click()}
+                className="flex h-28 w-full flex-col items-center justify-center gap-2 rounded-xl border border-dashed border-border/70 bg-muted/30 px-4 text-center transition-colors hover:border-foreground/25 hover:bg-muted/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:opacity-60 sm:h-32"
+              >
+                <span className="flex h-9 w-9 items-center justify-center rounded-full bg-muted/80 text-foreground/40">
+                  <ImageIcon size={17} />
+                </span>
+                <span className="text-[13px] font-medium text-foreground/70">
+                  {coverUploading ? t("settings.seller.coverUploading", lang) : t("settings.seller.coverImage", lang)}
+                </span>
+              </button>
+            )}
           </div>
 
           {/* Contact */}
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div className="space-y-1.5">
-              <Label>{t("settings.seller.phone", lang)}</Label>
-              <Input value={phone} onChange={(e) => setPhone(e.target.value)} placeholder="+421 900 123 456" />
+              <Label htmlFor="seller-phone">{t("settings.seller.phone", lang)}</Label>
+              <Input id="seller-phone" value={phone} onChange={(e) => setPhone(e.target.value)} placeholder="+421 900 123 456" />
             </div>
             <div className="space-y-1.5">
-              <Label>{t("settings.seller.company", lang)}</Label>
-              <Input value={company} onChange={(e) => setCompany(e.target.value)} />
+              <Label htmlFor="seller-company">{t("settings.seller.company", lang)}</Label>
+              <Input id="seller-company" value={company} onChange={(e) => setCompany(e.target.value)} />
             </div>
           </div>
 
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div className="space-y-1.5">
-              <Label>{t("settings.seller.jobTitle", lang)}</Label>
-              <Input value={jobTitle} onChange={(e) => setJobTitle(e.target.value)} />
+              <Label htmlFor="seller-public-email">{t("settings.seller.publicEmail", lang)}</Label>
+              <Input id="seller-public-email" value={publicEmail} onChange={(e) => setPublicEmail(e.target.value)} type="email" />
             </div>
             <div className="space-y-1.5">
-              <Label>{t("settings.seller.website", lang)}</Label>
-              <Input value={website} onChange={(e) => setWebsite(e.target.value)} placeholder="https://www.example.com" />
+              <Label htmlFor="seller-secondary-phone">{t("settings.seller.secondaryPhone", lang)}</Label>
+              <Input id="seller-secondary-phone" value={secondaryPhone} onChange={(e) => setSecondaryPhone(e.target.value)} placeholder="+421 900 123 456" />
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div className="space-y-1.5">
+              <Label htmlFor="seller-job-title">{t("settings.seller.jobTitle", lang)}</Label>
+              <Input id="seller-job-title" value={jobTitle} onChange={(e) => setJobTitle(e.target.value)} />
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="seller-website">{t("settings.seller.website", lang)}</Label>
+              <Input id="seller-website" value={website} onChange={(e) => setWebsite(e.target.value)} placeholder="https://www.example.com" />
             </div>
           </div>
 
           <div className="space-y-1.5">
-            <Label>{t("settings.seller.bio", lang)}</Label>
-            <textarea
+            <Label htmlFor="seller-bio">{t("settings.seller.bio", lang)}</Label>
+            <Textarea
+              id="seller-bio"
               value={bio}
               onChange={(e) => setBio(e.target.value)}
               rows={3}
               placeholder={t("settings.seller.bio", lang) + "…"}
-              className="flex w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
             />
           </div>
 
@@ -457,16 +598,16 @@ function SellerTab({ user, onSaved, lang }: { user: UserProfile; onSaved: () => 
           <CollapsibleSection title={t("settings.seller.sectionSocial", lang)} defaultOpen={hasSocial}>
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
               <div className="space-y-1.5">
-                <Label>{t("settings.seller.linkedin", lang)}</Label>
-                <Input value={linkedin} onChange={(e) => setLinkedin(e.target.value)} placeholder="https://linkedin.com/in/your-name" />
+                <Label htmlFor="seller-linkedin">{t("settings.seller.linkedin", lang)}</Label>
+                <Input id="seller-linkedin" value={linkedin} onChange={(e) => setLinkedin(e.target.value)} placeholder="https://linkedin.com/in/your-name" />
               </div>
               <div className="space-y-1.5">
-                <Label>{t("settings.seller.twitter", lang)}</Label>
-                <Input value={twitter} onChange={(e) => setTwitter(e.target.value)} placeholder="@yourhandle" />
+                <Label htmlFor="seller-twitter">{t("settings.seller.twitter", lang)}</Label>
+                <Input id="seller-twitter" value={twitter} onChange={(e) => setTwitter(e.target.value)} placeholder="@yourhandle" />
               </div>
               <div className="space-y-1.5">
-                <Label>{t("settings.seller.instagram", lang)}</Label>
-                <Input value={instagram} onChange={(e) => setInstagram(e.target.value)} placeholder="@yourhandle" />
+                <Label htmlFor="seller-instagram">{t("settings.seller.instagram", lang)}</Label>
+                <Input id="seller-instagram" value={instagram} onChange={(e) => setInstagram(e.target.value)} placeholder="@yourhandle" />
               </div>
             </div>
           </CollapsibleSection>
@@ -477,18 +618,18 @@ function SellerTab({ user, onSaved, lang }: { user: UserProfile; onSaved: () => 
             <div className="min-w-0">
               <p className="text-sm font-medium">{t("settings.seller.reAgent", lang)}</p>
             </div>
-            <Switch checked={isRePro} onCheckedChange={setIsRePro} />
+            <Switch aria-label={t("settings.seller.reAgent", lang)} checked={isRePro} onCheckedChange={setIsRePro} />
           </div>
 
           {isRePro && (
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div className="space-y-1.5">
-                <Label>{t("settings.seller.license", lang)}</Label>
-                <Input value={license} onChange={(e) => setLicense(e.target.value)} />
+                <Label htmlFor="seller-license">{t("settings.seller.license", lang)}</Label>
+                <Input id="seller-license" value={license} onChange={(e) => setLicense(e.target.value)} />
               </div>
               <div className="space-y-1.5">
-                <Label>{t("settings.seller.agency", lang)}</Label>
-                <Input value={agency} onChange={(e) => setAgency(e.target.value)} />
+                <Label htmlFor="seller-agency">{t("settings.seller.agency", lang)}</Label>
+                <Input id="seller-agency" value={agency} onChange={(e) => setAgency(e.target.value)} />
               </div>
             </div>
           )}
@@ -497,86 +638,31 @@ function SellerTab({ user, onSaved, lang }: { user: UserProfile; onSaved: () => 
           <Separator />
           <CollapsibleSection title={t("settings.seller.sectionAddress", lang)} defaultOpen={hasAddress}>
             <div className="space-y-1.5">
-              <Label>{t("settings.seller.address", lang)}</Label>
-              <Input value={address} onChange={(e) => setAddress(e.target.value)} />
+              <Label htmlFor="seller-address">{t("settings.seller.address", lang)}</Label>
+              <Input id="seller-address" value={address} onChange={(e) => setAddress(e.target.value)} />
             </div>
             <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
               <div className="space-y-1.5">
-                <Label>{t("settings.seller.city", lang)}</Label>
-                <Input value={city} onChange={(e) => setCity(e.target.value)} />
+                <Label htmlFor="seller-city">{t("settings.seller.city", lang)}</Label>
+                <Input id="seller-city" value={city} onChange={(e) => setCity(e.target.value)} />
               </div>
               <div className="space-y-1.5">
-                <Label>{t("settings.seller.state", lang)}</Label>
-                <Input value={state} onChange={(e) => setState(e.target.value)} />
+                <Label htmlFor="seller-state">{t("settings.seller.state", lang)}</Label>
+                <Input id="seller-state" value={state} onChange={(e) => setState(e.target.value)} />
               </div>
               <div className="space-y-1.5">
-                <Label>{t("settings.seller.country", lang)}</Label>
-                <Input value={country} onChange={(e) => setCountry(e.target.value)} maxLength={2} placeholder="SK" />
+                <Label htmlFor="seller-country">{t("settings.seller.country", lang)}</Label>
+                <Input id="seller-country" value={country} onChange={(e) => setCountry(e.target.value)} maxLength={2} placeholder="SK" />
               </div>
               <div className="space-y-1.5">
-                <Label>{t("settings.seller.postalCode", lang)}</Label>
-                <Input value={postalCode} onChange={(e) => setPostalCode(e.target.value)} />
+                <Label htmlFor="seller-postal-code">{t("settings.seller.postalCode", lang)}</Label>
+                <Input id="seller-postal-code" value={postalCode} onChange={(e) => setPostalCode(e.target.value)} />
               </div>
             </div>
-          </CollapsibleSection>
-
-          {/* Portfolio — collapsible */}
-          <Separator />
-          <CollapsibleSection title={t("settings.seller.sectionPortfolio", lang)} defaultOpen={hasPortfolio}>
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              <div className="space-y-1.5">
-                <Label>{t("settings.seller.portfolioVisibility", lang)}</Label>
-                <Select value={portfolioVis} onValueChange={setPortfolioVis}>
-                  <SelectTrigger><SelectValue /></SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="private">{t("settings.seller.portfolioPrivate", lang)}</SelectItem>
-                    <SelectItem value="unlisted">{t("settings.seller.portfolioUnlisted", lang)}</SelectItem>
-                    <SelectItem value="public">{t("settings.seller.portfolioPublic", lang)}</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-              <div className="space-y-1.5">
-                <Label>{t("settings.seller.portfolioSlug", lang)}</Label>
-                <div className="flex items-center gap-0">
-                  <span className="shrink-0 rounded-l-md border border-r-0 border-input bg-muted px-2.5 py-2 text-xs text-muted-foreground">
-                    {t("settings.seller.portfolioSlugPrefix", lang)}
-                  </span>
-                  <Input
-                    value={portfolioSlug}
-                    onChange={(e) => setPortfolioSlug(e.target.value)}
-                    className="rounded-l-none"
-                  />
-                </div>
-              </div>
-            </div>
-            <div className="space-y-1.5">
-              <Label>{t("settings.seller.portfolioTitleLabel", lang)}</Label>
-              <Input value={portfolioTitle} onChange={(e) => setPortfolioTitle(e.target.value)} maxLength={120} />
-            </div>
-            <div className="space-y-1.5">
-              <Label>{t("settings.seller.portfolioHeadline", lang)}</Label>
-              <Input value={portfolioHeadline} onChange={(e) => setPortfolioHeadline(e.target.value)} maxLength={200} />
-            </div>
-            {portfolioVis !== "private" && portfolioLink && (
-              <div className="space-y-1.5">
-                <Label>{t("settings.seller.portfolioLink", lang)}</Label>
-                <div className="flex items-center gap-2">
-                  <Input value={portfolioLink} readOnly className="opacity-70" />
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="sm"
-                    onClick={() => { navigator.clipboard.writeText(portfolioLink); setPortfolioCopied(true); }}
-                  >
-                    {portfolioCopied ? t("settings.seller.portfolioCopied", lang) : t("shares.copyLink", lang)}
-                  </Button>
-                </div>
-              </div>
-            )}
           </CollapsibleSection>
 
           {error && <p className="text-[12px] text-destructive">{error}</p>}
-          {success && <p className="text-[12px] text-emerald-600">{t("settings.seller.saved", lang)}</p>}
+          {success && <p className="text-[12px] text-success">{t("settings.seller.saved", lang)}</p>}
           <div className="pt-2">
             <Button type="submit" size="sm" loading={loading}>{t("settings.seller.save", lang)}</Button>
           </div>
@@ -588,11 +674,27 @@ function SellerTab({ user, onSaved, lang }: { user: UserProfile; onSaved: () => 
 
 /* ── Reai Tab ───────────────────────────────────────────────────────── */
 
+const REAI_BOUNDARY_KEYS: Record<string, LocaleKey> = {
+  local_viewer_only: "settings.reai.boundary.local_viewer_only",
+  local_deterministic: "settings.reai.boundary.local_deterministic",
+  redacted_creation_context: "settings.reai.boundary.redacted_creation_context",
+  redacted_creation_catalogue: "settings.reai.boundary.redacted_creation_catalogue",
+  derived_floorplan_facts: "settings.reai.boundary.derived_floorplan_facts",
+  approved_translation_service: "settings.reai.boundary.approved_translation_service",
+  approved_media_processor: "settings.reai.boundary.approved_media_processor",
+  approved_cloud_media_processor: "settings.reai.boundary.approved_cloud_media_processor",
+  derived_media_metadata: "settings.reai.boundary.derived_media_metadata",
+  approved_location_services: "settings.reai.boundary.approved_location_services",
+  redacted_financial_scenario: "settings.reai.boundary.redacted_financial_scenario",
+  local_tinyui_renderer: "settings.reai.boundary.local_tinyui_renderer",
+};
+
 function ReaiTab({ lang }: { lang: string }) {
   const [consent, setConsent] = React.useState<ReaiAgentConsent | null>(null);
   const [toolPermissions, setToolPermissions] = React.useState<ReaiToolPermissions | null>(null);
   const [improvementConsent, setImprovementConsent] = React.useState<ReaiImprovementConsent | null>(null);
   const [acknowledged, setAcknowledged] = React.useState(false);
+  const [confirmingDisable, setConfirmingDisable] = React.useState(false);
   const [loading, setLoading] = React.useState(true);
   const [saving, setSaving] = React.useState(false);
   const [error, setError] = React.useState<string | null>(null);
@@ -641,6 +743,7 @@ function ReaiTab({ lang }: { lang: string }) {
     setSuccess(null);
     try {
       setConsent(await revokeReaiAgentConsent());
+      setConfirmingDisable(false);
       setSuccess(t("settings.reai.disabled", lang));
       window.dispatchEvent(new CustomEvent("reai-consent-changed", { detail: { enabled: false } }));
     } catch (err) {
@@ -676,10 +779,7 @@ function ReaiTab({ lang }: { lang: string }) {
     setError(null);
     setSuccess(null);
     try {
-      const payload = allowAll
-        ? { allow_all_tools: true }
-        : { allow_all_tools: false, tools: toolPermissions.tools };
-      setToolPermissions(await updateReaiToolPermissions(payload));
+      setToolPermissions(await updateReaiToolPermissions({ allow_all_tools: allowAll }));
       setSuccess(t("settings.reai.toolsSaved", lang));
     } catch (err) {
       setError(getSafeApiErrorMessage(err, lang));
@@ -715,7 +815,7 @@ function ReaiTab({ lang }: { lang: string }) {
             <p className="text-[13px] text-muted-foreground">{t("reai.working", lang)}</p>
           ) : consent ? (
             <div className="space-y-4">
-              <div className="flex flex-col gap-3 rounded-lg border border-border/70 px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
+              <div className="flex flex-col gap-3 rounded-lg border border-border/60 px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
                 <div>
                   <p className="text-[13px] font-medium">{t("settings.reai.access", lang)}</p>
                   <p className="mt-1 text-[12px] text-muted-foreground">
@@ -723,8 +823,8 @@ function ReaiTab({ lang }: { lang: string }) {
                   </p>
                 </div>
                 <span className={cn(
-                  "w-fit rounded-full px-2.5 py-1 text-[11px] font-medium",
-                  consent.consented ? "bg-emerald-500/10 text-emerald-700" : "bg-foreground/10 text-foreground/60",
+                  "w-fit rounded-full px-2.5 py-0.5 text-[11px] font-medium",
+                  consent.consented ? "bg-success/10 text-emerald-800" : "bg-foreground/10 text-foreground/60",
                 )}>
                   {consent.consented ? t("common.allowed", lang) : t("common.notAllowed", lang)}
                 </span>
@@ -738,16 +838,29 @@ function ReaiTab({ lang }: { lang: string }) {
               </div>
 
               {consent.consented ? (
-                <Button type="button" size="sm" variant="outline" loading={saving} onClick={disableReai}>
-                  {t("settings.reai.disable", lang)}
-                </Button>
+                confirmingDisable ? (
+                  <div className="space-y-3">
+                    <p className="text-[12px] text-muted-foreground">{t("settings.reai.disableConfirmHint", lang)}</p>
+                    <div className="flex items-center gap-2">
+                      <Button type="button" size="sm" variant="destructive" loading={saving} onClick={disableReai}>
+                        {t("settings.reai.disable", lang)}
+                      </Button>
+                      <Button type="button" size="sm" variant="outline" onClick={() => setConfirmingDisable(false)}>
+                        {t("common.cancel", lang)}
+                      </Button>
+                    </div>
+                  </div>
+                ) : (
+                  <Button type="button" size="sm" variant="outline" onClick={() => setConfirmingDisable(true)}>
+                    {t("settings.reai.disable", lang)}
+                  </Button>
+                )
               ) : (
                 <div className="space-y-3">
-                  <label className="flex cursor-pointer items-start gap-2 text-[12px] leading-relaxed text-foreground/75">
-                    <input
-                      type="checkbox"
+                  <label className="flex cursor-pointer items-start gap-2.5 text-[12px] leading-relaxed text-foreground/75">
+                    <Checkbox
                       checked={acknowledged}
-                      onChange={(event) => setAcknowledged(event.target.checked)}
+                      onCheckedChange={(checked) => setAcknowledged(checked === true)}
                       className="mt-0.5"
                     />
                     <span>{t("reai.consentLabel", lang)} · v{consent.policy_version}</span>
@@ -770,7 +883,7 @@ function ReaiTab({ lang }: { lang: string }) {
           </CardHeader>
           <CardContent>
             <div className="space-y-3">
-              <div className="flex items-start justify-between gap-4 rounded-lg border border-border/70 px-4 py-3">
+              <div className="flex items-start justify-between gap-4 rounded-lg border border-border/60 px-4 py-3">
                 <div className="min-w-0">
                   <p className="text-[13px] font-medium">{t("settings.reai.allTools", lang)}</p>
                   <p className="mt-1 text-[12px] leading-relaxed text-muted-foreground">{t("settings.reai.allToolsHelp", lang)}</p>
@@ -783,28 +896,45 @@ function ReaiTab({ lang }: { lang: string }) {
                 />
               </div>
 
-              {!toolPermissions.allow_all_tools && (
-                <div className="divide-y divide-border/50 rounded-lg border border-border/70 px-4">
-                  {toolPermissions.available_tools.map((code) => (
-                    <div key={code} className="flex items-center justify-between gap-4 py-3">
-                      <div className="min-w-0">
-                        <p className="text-[13px] font-medium">{t(`settings.reai.tool.${code}`, lang)}</p>
-                        <p className="mt-0.5 text-[11px] leading-relaxed text-muted-foreground">
-                          {t(`settings.reai.tool.${code}.help`, lang)}
-                        </p>
+              <div className="divide-y divide-border/60 rounded-lg border border-border/60 px-4">
+                  {toolPermissions.available_tools.map((code) => {
+                    // A tool the plan excludes can never be switched on: the
+                    // backend keeps the preference but still reports it off,
+                    // so an enabled switch would silently snap back.
+                    const entitled = toolPermissions.tool_status?.[code]?.entitled ?? true;
+                    const catalog = toolPermissions.tool_catalog?.[code];
+                    const boundaryKey = catalog ? REAI_BOUNDARY_KEYS[catalog.data_boundary] : undefined;
+                    return (
+                      <div key={code} className="flex items-center justify-between gap-4 py-3">
+                        <div className="min-w-0">
+                          <p className="text-[13px] font-medium">{t(`settings.reai.tool.${code}`, lang)}</p>
+                          <p className="mt-0.5 text-[12px] leading-relaxed text-muted-foreground">
+                            {t(`settings.reai.tool.${code}.help`, lang)}
+                          </p>
+                          {boundaryKey && (
+                            <p className="mt-1 text-[11px] leading-relaxed text-muted-foreground/80">
+                              {t(boundaryKey, lang)}
+                              {catalog.persistent_change ? ` · ${t("settings.reai.persistentChange", lang)}` : ` · ${t("settings.reai.sessionOnly", lang)}`}
+                            </p>
+                          )}
+                          {!entitled && (
+                            <p className="mt-0.5 text-[12px] leading-relaxed text-muted-foreground/80">
+                              {t("settings.reai.toolTierBlocked", lang)}
+                            </p>
+                          )}
+                        </div>
+                        <Switch
+                          checked={toolPermissions.tools[code]}
+                          disabled={saving || !entitled || toolPermissions.allow_all_tools}
+                          onCheckedChange={(checked) => void setTool(code, checked)}
+                          aria-label={t(`settings.reai.tool.${code}`, lang)}
+                        />
                       </div>
-                      <Switch
-                        checked={toolPermissions.tools[code]}
-                        disabled={saving}
-                        onCheckedChange={(checked) => void setTool(code, checked)}
-                        aria-label={t(`settings.reai.tool.${code}`, lang)}
-                      />
-                    </div>
-                  ))}
-                </div>
-              )}
+                    );
+                  })}
+              </div>
 
-              <p className="text-[11px] leading-relaxed text-muted-foreground">{t("settings.reai.toolsConfirmation", lang)}</p>
+              <p className="text-[12px] leading-relaxed text-muted-foreground">{t("settings.reai.toolsConfirmation", lang)}</p>
             </div>
           </CardContent>
         </Card>
@@ -817,7 +947,7 @@ function ReaiTab({ lang }: { lang: string }) {
         </CardHeader>
         <CardContent>
           {improvementConsent && (
-            <div className="flex items-start justify-between gap-4 rounded-lg border border-border/70 px-4 py-3">
+            <div className="flex items-start justify-between gap-4 rounded-lg border border-border/60 px-4 py-3">
               <div className="min-w-0">
                 <p className="text-[13px] font-medium">{t("settings.reai.improvementPermission", lang)}</p>
                 <p className="mt-1 text-[12px] leading-relaxed text-muted-foreground">
@@ -826,7 +956,7 @@ function ReaiTab({ lang }: { lang: string }) {
               </div>
               <Switch
                 checked={improvementConsent.consented}
-                disabled={saving}
+                disabled={saving || (!consent?.consented && !improvementConsent.consented)}
                 onCheckedChange={() => void toggleImprovement()}
                 aria-label={t("settings.reai.improvementPermission", lang)}
               />
@@ -836,7 +966,7 @@ function ReaiTab({ lang }: { lang: string }) {
       </Card>
 
       {error && <p className="text-[12px] text-destructive" role="alert">{error}</p>}
-      {success && <p className="text-[12px] text-emerald-600" role="status">{success}</p>}
+      {success && <p className="text-[12px] text-success" role="status">{success}</p>}
     </div>
   );
 }
@@ -852,14 +982,94 @@ function PrivacyTab({ user, onSaved, lang }: { user: UserProfile; onSaved: () =>
   const [loading, setLoading] = React.useState(false);
   const [error, setError] = React.useState<string | null>(null);
   const [success, setSuccess] = React.useState(false);
+  const [marketingConsent, setMarketingConsent] = React.useState(user.gdpr?.marketing_consent ?? false);
+  const [marketingSaving, setMarketingSaving] = React.useState(false);
+  const [marketingError, setMarketingError] = React.useState<string | null>(null);
+  const [agentPrivacy, setAgentPrivacy] = React.useState<{
+    consent: ReaiAgentConsent;
+    tools: ReaiToolPermissions | null;
+    improvement: ReaiImprovementConsent;
+  } | null>(null);
+  const [agentPrivacySaving, setAgentPrivacySaving] = React.useState(false);
+  const [agentPrivacyError, setAgentPrivacyError] = React.useState<string | null>(null);
+  useAutoDismiss(success, setSuccess);
 
   React.useEffect(() => {
-    if (!isPublic) {
-      setShowEmail(false);
-      setShowPhone(false);
-      setAllowContact(false);
+    setIsPublic(p?.is_public ?? true);
+    setShowEmail(p?.show_email ?? false);
+    setShowPhone(p?.show_phone ?? false);
+    setAllowContact(p?.allow_contact ?? true);
+    setMarketingConsent(user.gdpr?.marketing_consent ?? false);
+  }, [
+    p?.allow_contact,
+    p?.is_public,
+    p?.show_email,
+    p?.show_phone,
+    user.gdpr?.marketing_consent,
+  ]);
+
+  React.useEffect(() => {
+    let active = true;
+    Promise.all([getReaiAgentConsent(), getReaiImprovementConsent()])
+      .then(async ([consent, improvement]) => {
+        const tools = consent.consented ? await getReaiToolPermissions() : null;
+        if (active) setAgentPrivacy({ consent, tools, improvement });
+      })
+      .catch(() => {
+        if (active) setAgentPrivacy(null);
+      });
+    return () => { active = false; };
+  }, []);
+
+  async function setPrivacyTools(payload: {
+    allow_all_tools?: boolean;
+    tools?: Partial<Record<ReaiToolCode, boolean>>;
+  }) {
+    if (!agentPrivacy?.tools || agentPrivacySaving) return;
+    setAgentPrivacySaving(true);
+    setAgentPrivacyError(null);
+    try {
+      const tools = await updateReaiToolPermissions(payload);
+      setAgentPrivacy((current) => current ? { ...current, tools } : current);
+    } catch (err) {
+      setAgentPrivacyError(getSafeApiErrorMessage(err, lang));
+    } finally {
+      setAgentPrivacySaving(false);
     }
-  }, [isPublic]);
+  }
+
+  async function togglePrivacyImprovement() {
+    if (!agentPrivacy || agentPrivacySaving) return;
+    setAgentPrivacySaving(true);
+    setAgentPrivacyError(null);
+    try {
+      const improvement = agentPrivacy.improvement.consented
+        ? await revokeReaiImprovementConsent()
+        : await grantReaiImprovementConsent(agentPrivacy.improvement.policy_version);
+      setAgentPrivacy((current) => current ? { ...current, improvement } : current);
+    } catch (err) {
+      setAgentPrivacyError(getSafeApiErrorMessage(err, lang));
+    } finally {
+      setAgentPrivacySaving(false);
+    }
+  }
+
+  async function handleMarketingConsent(nextValue: boolean) {
+    const previous = marketingConsent;
+    setMarketingConsent(nextValue);
+    setMarketingSaving(true);
+    setMarketingError(null);
+    try {
+      const saved = await updateAccountConsent({ marketing_consent: nextValue });
+      setMarketingConsent(saved.marketing_consent);
+      onSaved();
+    } catch (err) {
+      setMarketingConsent(previous);
+      setMarketingError(getSafeApiErrorMessage(err, lang));
+    } finally {
+      setMarketingSaving(false);
+    }
+  }
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -913,20 +1123,20 @@ function PrivacyTab({ user, onSaved, lang }: { user: UserProfile; onSaved: () =>
             id="privacy-status-summary"
             role="status"
             aria-live="polite"
-            className="rounded-lg border border-border bg-muted/25 px-4 py-3"
+            className="rounded-lg border border-border/60 bg-muted/25 px-4 py-3"
           >
             <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
               <div className="min-w-0">
                 <p className="text-sm font-medium">{statusLabel}</p>
                 <p className="text-[12px] text-muted-foreground mt-1 leading-relaxed">{statusHint}</p>
               </div>
-              <span className="shrink-0 rounded-full bg-foreground/10 px-2.5 py-1 text-[11px] font-medium text-foreground/70">
+              <span className="shrink-0 self-start rounded-full bg-foreground/10 px-2.5 py-0.5 text-[11px] font-medium text-foreground/70 sm:self-auto">
                 {isPublic ? t("settings.privacy.badgePublic", lang) : t("settings.privacy.badgePrivate", lang)}
               </span>
             </div>
           </div>
 
-          <fieldset className="divide-y divide-border">
+          <fieldset className="divide-y divide-border/60">
             <legend className="sr-only">{t("settings.privacy.title", lang)}</legend>
             <ToggleRow
               label={t("settings.privacy.publicProfile", lang)}
@@ -957,16 +1167,104 @@ function PrivacyTab({ user, onSaved, lang }: { user: UserProfile; onSaved: () =>
             />
           </fieldset>
           {hasPublicContactDetails && (
-            <div className="rounded-lg border border-border bg-muted/25 px-3 py-2" role="note">
+            <div className="rounded-lg border border-border/60 bg-muted/25 px-3 py-2" role="note">
               <p className="text-[12px] text-muted-foreground">{t("settings.privacy.publicContactWarning", lang)}</p>
             </div>
           )}
           {error && <p className="text-[12px] text-destructive pt-3" role="alert">{error}</p>}
-          {success && <p className="text-[12px] text-emerald-600 pt-3" role="status">{t("settings.privacy.saved", lang)}</p>}
+          {success && <p className="text-[12px] text-success pt-3" role="status">{t("settings.privacy.saved", lang)}</p>}
             <div className="pt-1">
               <Button type="submit" size="sm" loading={loading}>{t("settings.privacy.save", lang)}</Button>
             </div>
           </form>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>{t("settings.privacy.agentTitle", lang)}</CardTitle>
+          <CardDescription>{t("settings.privacy.agentSubtitle", lang)}</CardDescription>
+        </CardHeader>
+        <CardContent>
+          <dl className="space-y-3 rounded-lg border border-border/60 px-4 py-3">
+            <DataRow
+              label={t("settings.privacy.agentAccess", lang)}
+              value={agentPrivacy?.consent.consented ? t("common.allowed", lang) : t("common.notAllowed", lang)}
+            />
+            <DataRow
+              label={t("settings.privacy.agentTools", lang)}
+              value={agentPrivacy?.tools
+                ? `${Object.values(agentPrivacy.tools.tools).filter(Boolean).length} / ${agentPrivacy.tools.available_tools.length}`
+                : t("common.notRecorded", lang)}
+            />
+            <DataRow
+              label={t("settings.privacy.agentImprovement", lang)}
+              value={agentPrivacy?.improvement.consented ? t("common.allowed", lang) : t("common.notAllowed", lang)}
+            />
+          </dl>
+          <p className="mt-3 text-[12px] leading-relaxed text-muted-foreground">
+            {t("settings.privacy.agentViewerBoundary", lang)}
+          </p>
+          {agentPrivacy?.tools ? (
+            <div className="mt-4 space-y-3">
+              <div className="flex items-start justify-between gap-4 rounded-lg border border-border/60 px-3 py-2.5">
+                <div>
+                  <p className="text-[12px] font-medium">{t("settings.reai.allTools", lang)}</p>
+                  <p className="mt-0.5 text-[11px] text-muted-foreground">{t("settings.reai.allToolsHelp", lang)}</p>
+                </div>
+                <Switch
+                  checked={agentPrivacy.tools.allow_all_tools}
+                  disabled={agentPrivacySaving}
+                  onCheckedChange={(checked) => void setPrivacyTools({ allow_all_tools: checked })}
+                  aria-label={t("settings.reai.allTools", lang)}
+                />
+              </div>
+              <div className="divide-y divide-border/60 rounded-lg border border-border/60 px-3">
+                  {agentPrivacy.tools.available_tools.map((code) => {
+                    const entitled = agentPrivacy.tools?.tool_status[code]?.entitled ?? false;
+                    const dataBoundary = agentPrivacy.tools?.tool_catalog[code]?.data_boundary;
+                    const boundaryKey = dataBoundary
+                      ? REAI_BOUNDARY_KEYS[dataBoundary]
+                      : undefined;
+                    return (
+                      <div key={code} className="flex items-center justify-between gap-4 py-2.5">
+                        <div className="min-w-0">
+                          <p className="text-[12px] font-medium">{t(`settings.reai.tool.${code}`, lang)}</p>
+                          <p className="mt-0.5 text-[11px] leading-relaxed text-muted-foreground">
+                            {t(boundaryKey ?? "settings.reai.boundary.local_deterministic", lang)}
+                          </p>
+                        </div>
+                        <Switch
+                          checked={agentPrivacy.tools?.tools[code] ?? false}
+                          disabled={agentPrivacySaving || !entitled || agentPrivacy.tools?.allow_all_tools}
+                          onCheckedChange={(checked) => void setPrivacyTools({ tools: { [code]: checked } })}
+                          aria-label={t(`settings.reai.tool.${code}`, lang)}
+                        />
+                      </div>
+                    );
+                  })}
+              </div>
+              <div className="flex items-start justify-between gap-4 rounded-lg border border-border/60 px-3 py-2.5">
+                <div>
+                  <p className="text-[12px] font-medium">{t("settings.reai.improvementPermission", lang)}</p>
+                  <p className="mt-0.5 text-[11px] text-muted-foreground">{t("reai.improvementConsent", lang)}</p>
+                </div>
+                <Switch
+                  checked={agentPrivacy.improvement.consented}
+                  disabled={agentPrivacySaving}
+                  onCheckedChange={() => void togglePrivacyImprovement()}
+                  aria-label={t("settings.reai.improvementPermission", lang)}
+                />
+              </div>
+            </div>
+          ) : null}
+          {agentPrivacyError ? <p className="mt-3 text-[12px] text-destructive" role="alert">{agentPrivacyError}</p> : null}
+          <a
+            href="#reai"
+            className="mt-4 inline-flex min-h-9 items-center rounded-md border border-border bg-background px-3 text-[12px] font-medium text-foreground transition-colors hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+          >
+            {t("settings.privacy.manageAgent", lang)}
+          </a>
         </CardContent>
       </Card>
 
@@ -978,7 +1276,7 @@ function PrivacyTab({ user, onSaved, lang }: { user: UserProfile; onSaved: () =>
           </CardDescription>
         </CardHeader>
         <CardContent>
-          <dl className="rounded-lg border border-border/70 px-4">
+          <dl className="rounded-lg border border-border/60 px-4">
             <DataRow
               label={t("settings.privacy.legal.dataProcessing", lang)}
               value={gdpr?.data_processing_consent ? t("common.allowed", lang) : t("common.notAllowed", lang)}
@@ -992,10 +1290,6 @@ function PrivacyTab({ user, onSaved, lang }: { user: UserProfile; onSaved: () =>
               value={gdpr?.consent_version || t("common.notRecorded", lang)}
             />
             <DataRow
-              label={t("settings.privacy.legal.marketingConsent", lang)}
-              value={gdpr?.marketing_consent ? t("common.allowed", lang) : t("common.notAllowed", lang)}
-            />
-            <DataRow
               label={t("settings.privacy.legal.terms", lang)}
               value={`${t("settings.privacy.legal.termsAcceptedOn", lang)} ${formatAccountDate(user.date_joined, lang, user.localization?.date_format)}`}
             />
@@ -1004,6 +1298,16 @@ function PrivacyTab({ user, onSaved, lang }: { user: UserProfile; onSaved: () =>
               value={licenseStatus}
             />
           </dl>
+          <div className="mt-3 rounded-lg border border-border/60 px-4">
+            <ToggleRow
+              label={t("settings.privacy.legal.marketingConsent", lang)}
+              hint={t("settings.privacy.legal.marketingConsentHint", lang)}
+              checked={marketingConsent}
+              onChange={handleMarketingConsent}
+              disabled={marketingSaving}
+            />
+          </div>
+          {marketingError && <p className="mt-2 text-[12px] text-destructive" role="alert">{marketingError}</p>}
           <p className="mt-3 text-[12px] leading-relaxed text-muted-foreground">
             {t("settings.privacy.legal.hint", lang)}
           </p>
@@ -1027,44 +1331,175 @@ function NotificationsTab({ user, onSaved, lang }: { user: UserProfile; onSaved:
   const pd = user.personalized_data;
   const [enabled, setEnabled] = React.useState(pd?.notifications_enabled ?? true);
   const [email, setEmail] = React.useState(pd?.email_notifications ?? true);
+  const [push, setPush] = React.useState(pd?.push_notifications ?? false);
   const [processing, setProcessing] = React.useState(pd?.notify_processing_complete ?? true);
   const [processingFailed, setProcessingFailed] = React.useState(pd?.notify_processing_failed ?? true);
-  const [newFeatures, setNewFeatures] = React.useState(pd?.notify_new_features ?? true);
-  const [systemUpdates, setSystemUpdates] = React.useState(pd?.notify_system_updates ?? true);
-  const [billing, setBilling] = React.useState(pd?.notify_billing ?? true);
-  const [theme, setTheme] = React.useState(pd?.theme ?? "auto");
+  const [uploadLanded, setUploadLanded] = React.useState(pd?.notify_upload_landed ?? false);
+  const [sound, setSound] = React.useState(pd?.notification_sound ?? true);
+  const [quietHours, setQuietHours] = React.useState(Boolean(
+    pd?.notification_quiet_hours_start
+    && pd?.notification_quiet_hours_end,
+  ));
+  const [quietStart, setQuietStart] = React.useState(
+    pd?.notification_quiet_hours_start?.slice(0, 5) ?? "22:00",
+  );
+  const [quietEnd, setQuietEnd] = React.useState(
+    pd?.notification_quiet_hours_end?.slice(0, 5) ?? "08:00",
+  );
+  const [browserPushState, setBrowserPushState] = React.useState<WebPushState>("available");
+  const [browserPushBusy, setBrowserPushBusy] = React.useState(false);
   const [saving, setSaving] = React.useState(false);
   const [error, setError] = React.useState<string | null>(null);
   const [success, setSuccess] = React.useState(false);
+  const saveRevision = React.useRef(0);
+  const confirmedSyncSignature = React.useRef<string | null>(null);
   useAutoDismiss(success, setSuccess);
+
+  const applyConfirmedPreferences = React.useCallback((value: PersonalizedData | null | undefined) => {
+    confirmedSyncSignature.current = JSON.stringify([
+      value?.notifications_enabled ?? true,
+      value?.email_notifications ?? true,
+      value?.push_notifications ?? false,
+      value?.notify_processing_complete ?? true,
+      value?.notify_processing_failed ?? true,
+      value?.notify_upload_landed ?? false,
+      value?.notification_sound ?? true,
+      Boolean(value?.notification_quiet_hours_start && value?.notification_quiet_hours_end),
+      value?.notification_quiet_hours_start?.slice(0, 5) ?? "22:00",
+      value?.notification_quiet_hours_end?.slice(0, 5) ?? "08:00",
+    ]);
+    setEnabled(value?.notifications_enabled ?? true);
+    setEmail(value?.email_notifications ?? true);
+    setPush(value?.push_notifications ?? false);
+    setProcessing(value?.notify_processing_complete ?? true);
+    setProcessingFailed(value?.notify_processing_failed ?? true);
+    setUploadLanded(value?.notify_upload_landed ?? false);
+    setSound(value?.notification_sound ?? true);
+    setQuietHours(Boolean(
+      value?.notification_quiet_hours_start
+      && value?.notification_quiet_hours_end,
+    ));
+    setQuietStart(value?.notification_quiet_hours_start?.slice(0, 5) ?? "22:00");
+    setQuietEnd(value?.notification_quiet_hours_end?.slice(0, 5) ?? "08:00");
+  }, []);
+
+  React.useEffect(() => {
+    applyConfirmedPreferences(pd);
+  }, [applyConfirmedPreferences, pd]);
+
+  React.useEffect(() => {
+    let active = true;
+    void getWebPushStateForUser(user.id).then((state) => {
+      if (active) setBrowserPushState(state);
+    });
+    return () => { active = false; };
+  }, [user.id]);
+
+  const toggleThisBrowser = React.useCallback(async (value: boolean) => {
+    setBrowserPushBusy(true);
+    setError(null);
+    try {
+      if (!value) {
+        await disableWebPushForUser(user.id);
+        setBrowserPushState("available");
+        return;
+      }
+      const result = await enableWebPushForUser(user.id);
+      if (result.status === "enabled") {
+        setBrowserPushState("enabled");
+        if (!push) setPush(true);
+        setSuccess(true);
+      } else if (result.status === "denied") {
+        setBrowserPushState("denied");
+        setError(t("settings.notifications.browserDenied", lang));
+      } else if (result.status === "unsupported") {
+        setBrowserPushState("unsupported");
+        setError(t("settings.notifications.browserUnsupported", lang));
+      } else if (result.status === "not_configured") {
+        setError(t("settings.notifications.browserUnavailable", lang));
+      } else {
+        setError(t("settings.notifications.browserFailed", lang));
+      }
+    } finally {
+      setBrowserPushBusy(false);
+    }
+  }, [lang, push, user.id]);
 
   // Auto-save on any change (debounced to avoid rapid fire)
   const isFirstRender = React.useRef(true);
   React.useEffect(() => {
     if (isFirstRender.current) {
       isFirstRender.current = false;
+      confirmedSyncSignature.current = null;
       return;
     }
+    const currentSignature = JSON.stringify([
+      enabled,
+      email,
+      push,
+      processing,
+      processingFailed,
+      uploadLanded,
+      sound,
+      quietHours,
+      quietStart,
+      quietEnd,
+    ]);
+    if (confirmedSyncSignature.current === currentSignature) {
+      confirmedSyncSignature.current = null;
+      return;
+    }
+    confirmedSyncSignature.current = null;
     const timeout = setTimeout(() => {
+      const revision = ++saveRevision.current;
       setSaving(true);
       setError(null);
       updatePersonalizedData({
         notifications_enabled: enabled,
         email_notifications: email,
+        push_notifications: push,
         notify_processing_complete: processing,
         notify_processing_failed: processingFailed,
-        notify_new_features: newFeatures,
-        notify_system_updates: systemUpdates,
-        notify_billing: billing,
-        theme,
+        notify_upload_landed: uploadLanded,
+        notification_sound: sound,
+        notification_quiet_hours_start: quietHours
+          ? `${quietStart || "22:00"}:00`
+          : null,
+        notification_quiet_hours_end: quietHours
+          ? `${quietEnd || "08:00"}:00`
+          : null,
+        notification_timezone: Intl.DateTimeFormat()
+          .resolvedOptions().timeZone || "UTC",
       })
-        .then(() => { setSuccess(true); onSaved(); })
-        .catch((err) => setError(getSafeApiErrorMessage(err, lang)))
-        .finally(() => setSaving(false));
+        .then((saved) => {
+          if (revision !== saveRevision.current) return;
+          applyConfirmedPreferences(saved);
+          setSuccess(true);
+          onSaved();
+        })
+        .catch((err) => {
+          if (revision !== saveRevision.current) return;
+          applyConfirmedPreferences(pd);
+          setError(getSafeApiErrorMessage(err, lang));
+        })
+        .finally(() => {
+          if (revision === saveRevision.current) setSaving(false);
+        });
     }, 400);
     return () => clearTimeout(timeout);
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [enabled, email, processing, processingFailed, newFeatures, systemUpdates, billing, theme]);
+  }, [
+    enabled,
+    email,
+    push,
+    processing,
+    processingFailed,
+    uploadLanded,
+    sound,
+    quietHours,
+    quietStart,
+    quietEnd,
+  ]);
 
   return (
     <Card>
@@ -1074,7 +1509,7 @@ function NotificationsTab({ user, onSaved, lang }: { user: UserProfile; onSaved:
       </CardHeader>
       <CardContent>
         <div className="space-y-1">
-          <div className="divide-y divide-border">
+          <div className="divide-y divide-border/60">
             <ToggleRow
               label={t("settings.notifications.master", lang)}
               checked={enabled}
@@ -1088,6 +1523,31 @@ function NotificationsTab({ user, onSaved, lang }: { user: UserProfile; onSaved:
                   onChange={setEmail}
                 />
                 <ToggleRow
+                  label={t("settings.notifications.push", lang)}
+                  hint={t("settings.notifications.pushHint", lang)}
+                  checked={push}
+                  onChange={setPush}
+                />
+                {push && (
+                  <ToggleRow
+                    label={t("settings.notifications.thisBrowser", lang)}
+                    hint={
+                      browserPushState === "denied"
+                        ? t("settings.notifications.browserDenied", lang)
+                        : browserPushState === "unsupported"
+                          ? t("settings.notifications.browserUnsupported", lang)
+                          : t("settings.notifications.thisBrowserHint", lang)
+                    }
+                    checked={browserPushState === "enabled"}
+                    onChange={(value) => { void toggleThisBrowser(value); }}
+                    disabled={
+                      browserPushBusy
+                      || browserPushState === "denied"
+                      || browserPushState === "unsupported"
+                    }
+                  />
+                )}
+                <ToggleRow
                   label={t("settings.notifications.processing", lang)}
                   checked={processing}
                   onChange={setProcessing}
@@ -1098,47 +1558,49 @@ function NotificationsTab({ user, onSaved, lang }: { user: UserProfile; onSaved:
                   onChange={setProcessingFailed}
                 />
                 <ToggleRow
-                  label={t("settings.notifications.newFeatures", lang)}
-                  checked={newFeatures}
-                  onChange={setNewFeatures}
+                  label={t("settings.notifications.uploadLanded", lang)}
+                  hint={t("settings.notifications.uploadLandedHint", lang)}
+                  checked={uploadLanded}
+                  onChange={setUploadLanded}
                 />
                 <ToggleRow
-                  label={t("settings.notifications.systemUpdates", lang)}
-                  checked={systemUpdates}
-                  onChange={setSystemUpdates}
+                  label={t("settings.notifications.sound", lang)}
+                  checked={sound}
+                  onChange={setSound}
                 />
                 <ToggleRow
-                  label={t("settings.notifications.billing", lang)}
-                  checked={billing}
-                  onChange={setBilling}
+                  label={t("settings.notifications.quietHours", lang)}
+                  hint={t("settings.notifications.quietHoursHint", lang)}
+                  checked={quietHours}
+                  onChange={setQuietHours}
                 />
+                {quietHours && (
+                  <div className="grid grid-cols-2 gap-3 py-3.5">
+                    <SettingsField label={t("settings.notifications.quietFrom", lang)}>
+                      <Input
+                        type="time"
+                        value={quietStart}
+                        onChange={(event) => setQuietStart(event.target.value)}
+                      />
+                    </SettingsField>
+                    <SettingsField label={t("settings.notifications.quietUntil", lang)}>
+                      <Input
+                        type="time"
+                        value={quietEnd}
+                        onChange={(event) => setQuietEnd(event.target.value)}
+                      />
+                    </SettingsField>
+                  </div>
+                )}
               </>
             )}
           </div>
 
-          <Separator className="!my-4" />
-
-          {/* Appearance / Theme */}
-          <div className="space-y-2">
-            <p className="text-sm font-medium">{t("settings.notifications.appearance", lang)}</p>
-            <div className="space-y-1.5">
-              <Label>{t("settings.notifications.theme", lang)}</Label>
-              <Select value={theme} onValueChange={setTheme}>
-                <SelectTrigger className="w-48"><SelectValue /></SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="light">{t("settings.notifications.themeLight", lang)}</SelectItem>
-                  <SelectItem value="dark">{t("settings.notifications.themeDark", lang)}</SelectItem>
-                  <SelectItem value="auto">{t("settings.notifications.themeSystem", lang)}</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-          </div>
-
           {/* Status feedback */}
-          <div className="h-6 pt-3">
-            {saving && <p className="text-[12px] text-muted-foreground">{t("common.saved", lang)}…</p>}
+          <div className="min-h-6 pt-3">
+            {saving && <p className="text-[12px] text-muted-foreground">{t("common.saving", lang)}</p>}
             {error && <p className="text-[12px] text-destructive">{error}</p>}
-            {success && !saving && <p className="text-[12px] text-emerald-600">{t("settings.notifications.saved", lang)}</p>}
+            {success && !saving && <p className="text-[12px] text-success">{t("settings.notifications.saved", lang)}</p>}
           </div>
         </div>
       </CardContent>
@@ -1163,7 +1625,7 @@ function ToggleRow({ label, hint, checked, onChange, disabled = false }: {
     <div className={`flex items-start justify-between gap-4 py-3.5 ${disabled ? "opacity-60" : ""}`}>
       <div className="min-w-0 pr-2">
         <p id={labelId} className="text-sm font-medium">{label}</p>
-        {hint && <p id={hintId} className="text-[11px] text-muted-foreground mt-0.5">{hint}</p>}
+        {hint && <p id={hintId} className="text-[12px] text-muted-foreground mt-0.5">{hint}</p>}
       </div>
       <Switch
         checked={checked}
@@ -1183,10 +1645,6 @@ function flattenUnits(grouped: { METRIC?: PreferenceOption[]; IMPERIAL?: Prefere
   return [...(grouped.METRIC ?? []), ...(grouped.IMPERIAL ?? [])];
 }
 
-function optionName(options: PreferenceOption[], code: string): string {
-  return options.find((option) => option.code === code)?.name ?? code;
-}
-
 function symbolFor(options: PreferenceOption[], code: string): string {
   return options.find((option) => option.code === code)?.symbol ?? code;
 }
@@ -1200,7 +1658,7 @@ function SettingsField({ label, children, hint }: { label: string; children: Rea
     <div className="space-y-1.5">
       <Label>{label}</Label>
       {children}
-      {hint && <p className="text-[11px] leading-4 text-muted-foreground">{hint}</p>}
+      {hint && <p className="text-[12px] leading-4 text-muted-foreground">{hint}</p>}
     </div>
   );
 }
@@ -1208,15 +1666,14 @@ function SettingsField({ label, children, hint }: { label: string; children: Rea
 function LocalizationTab({ user, lang }: { user: UserProfile; lang: string }) {
   const loc = user.localization;
   const [language, setLanguage] = React.useState(loc?.language ?? "en");
-  const [currency, setCurrency] = React.useState(loc?.currency ?? "EUR");
-  const [areaUnit, setAreaUnit] = React.useState(loc?.area_unit ?? "SQM");
-  const [distanceUnit, setDistanceUnit] = React.useState(loc?.distance_unit ?? "M");
+  const [currency, setCurrency] = React.useState(loc?.currency ?? "");
+  const [areaUnit, setAreaUnit] = React.useState(loc?.area_unit ?? "");
+  const [distanceUnit, setDistanceUnit] = React.useState(loc?.distance_unit ?? "");
   const browserTz = typeof Intl !== "undefined" ? Intl.DateTimeFormat().resolvedOptions().timeZone : "UTC";
   const [timezone, setTimezone] = React.useState(loc?.timezone || browserTz);
   const [dateFormat, setDateFormat] = React.useState(loc?.date_format ?? "EU");
   const [loading, setLoading] = React.useState(false);
   const [error, setError] = React.useState<string | null>(null);
-  const [success, setSuccess] = React.useState(false);
   const [prefs, setPrefs] = React.useState<AvailablePreferences | null>(null);
   const [prefsLoading, setPrefsLoading] = React.useState(true);
   const [prefsError, setPrefsError] = React.useState(false);
@@ -1225,17 +1682,30 @@ function LocalizationTab({ user, lang }: { user: UserProfile; lang: string }) {
     setPrefsLoading(true);
     setPrefsError(false);
     getAvailablePreferences()
-      .then(setPrefs)
+      .then((available) => {
+        setPrefs(available);
+        setCurrency((current) => current || available.currencies[0]?.code || "");
+        setAreaUnit((current) => current || flattenUnits(available.area_units)[0]?.code || "");
+        setDistanceUnit((current) => current || flattenUnits(available.distance_units)[0]?.code || "");
+      })
       .catch(() => setPrefsError(true))
       .finally(() => setPrefsLoading(false));
   }, []);
 
   React.useEffect(() => { loadPrefs(); }, [loadPrefs]);
 
+  React.useEffect(() => {
+    setLanguage(loc?.language ?? "en");
+    setCurrency(loc?.currency ?? "");
+    setAreaUnit(loc?.area_unit ?? "");
+    setDistanceUnit(loc?.distance_unit ?? "");
+    setTimezone(loc?.timezone || browserTz);
+    setDateFormat(loc?.date_format ?? "EU");
+  }, [loc, browserTz]);
+
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     setError(null);
-    setSuccess(false);
     try {
       setLoading(true);
       await updateLocalization({
@@ -1281,8 +1751,8 @@ function LocalizationTab({ user, lang }: { user: UserProfile; lang: string }) {
             <Button type="button" variant="outline" size="sm" onClick={loadPrefs}>{t("settings.localization.retry", lang)}</Button>
           </div>
         ) : (
-        <form className="space-y-5" onSubmit={handleSubmit}>
-          <div className="rounded-lg border border-border bg-muted/20 px-4 py-3">
+        <form className="space-y-4" onSubmit={handleSubmit}>
+          <div className="rounded-lg border border-border/60 bg-muted/20 px-4 py-3">
             <p className="text-[13px] font-medium">{t("settings.localization.preview", lang)}</p>
             <div className="mt-2 grid grid-cols-1 gap-x-4 gap-y-1 text-[12px] sm:grid-cols-2">
               <p className="text-muted-foreground">{t("settings.localization.previewDate", lang)} <span className="font-medium text-foreground">{formattedDateSample}</span></p>
@@ -1292,10 +1762,10 @@ function LocalizationTab({ user, lang }: { user: UserProfile; lang: string }) {
             </div>
           </div>
 
-          <div className="grid grid-cols-1 gap-x-4 gap-y-3 md:grid-cols-2">
-            <SettingsField label={t("settings.localization.language", lang)} hint={optionName(languages, language)}>
+          <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+            <SettingsField label={t("settings.localization.language", lang)}>
               <Select value={language} onValueChange={setLanguage}>
-                <SelectTrigger className="h-11 rounded-md shadow-none"><SelectValue /></SelectTrigger>
+                <SelectTrigger aria-label={t("settings.localization.language", lang)}><SelectValue /></SelectTrigger>
                 <SelectContent>
                   {languages.map((l) => (
                     <SelectItem key={l.code} value={l.code}>{stableOptionLabel(l)}</SelectItem>
@@ -1303,9 +1773,9 @@ function LocalizationTab({ user, lang }: { user: UserProfile; lang: string }) {
                 </SelectContent>
               </Select>
             </SettingsField>
-            <SettingsField label={t("settings.localization.timezone", lang)} hint={timezone}>
+            <SettingsField label={t("settings.localization.timezone", lang)}>
               <Select value={timezone} onValueChange={setTimezone}>
-                <SelectTrigger className="h-11 rounded-md shadow-none"><SelectValue placeholder={timezone || "—"} /></SelectTrigger>
+                <SelectTrigger aria-label={t("settings.localization.timezone", lang)}><SelectValue placeholder={timezone || "—"} /></SelectTrigger>
                 <SelectContent>
                   {timezones.map((tz) => (
                     <SelectItem key={tz.code} value={tz.code}>{tz.name}</SelectItem>
@@ -1317,10 +1787,10 @@ function LocalizationTab({ user, lang }: { user: UserProfile; lang: string }) {
 
           <Separator />
 
-          <div className="grid grid-cols-1 gap-x-4 gap-y-3 md:grid-cols-2">
-            <SettingsField label={t("settings.localization.currency", lang)} hint={optionName(currencies, currency)}>
+          <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+            <SettingsField label={t("settings.localization.currency", lang)}>
               <Select value={currency} onValueChange={setCurrency}>
-                <SelectTrigger className="h-11 rounded-md shadow-none"><SelectValue /></SelectTrigger>
+                <SelectTrigger aria-label={t("settings.localization.currency", lang)}><SelectValue /></SelectTrigger>
                 <SelectContent>
                   {currencies.map((c) => (
                     <SelectItem key={c.code} value={c.code}>
@@ -1330,9 +1800,9 @@ function LocalizationTab({ user, lang }: { user: UserProfile; lang: string }) {
                 </SelectContent>
               </Select>
             </SettingsField>
-            <SettingsField label={t("settings.localization.dateFormat", lang)} hint={formattedDateSample}>
+            <SettingsField label={t("settings.localization.dateFormat", lang)}>
               <Select value={dateFormat} onValueChange={setDateFormat}>
-                <SelectTrigger className="h-11 rounded-md shadow-none"><SelectValue /></SelectTrigger>
+                <SelectTrigger aria-label={t("settings.localization.dateFormat", lang)}><SelectValue /></SelectTrigger>
                 <SelectContent>
                   {dateFormats.map((d) => (
                     <SelectItem key={d.code} value={d.code}>{d.code} · {d.name}</SelectItem>
@@ -1342,10 +1812,10 @@ function LocalizationTab({ user, lang }: { user: UserProfile; lang: string }) {
             </SettingsField>
           </div>
 
-          <div className="grid grid-cols-1 gap-x-4 gap-y-3 md:grid-cols-2">
-            <SettingsField label={t("settings.localization.areaUnit", lang)} hint={formattedAreaSample}>
+          <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+            <SettingsField label={t("settings.localization.areaUnit", lang)}>
               <Select value={areaUnit} onValueChange={setAreaUnit}>
-                <SelectTrigger className="h-11 rounded-md shadow-none"><SelectValue /></SelectTrigger>
+                <SelectTrigger aria-label={t("settings.localization.areaUnit", lang)}><SelectValue /></SelectTrigger>
                 <SelectContent>
                   {areaUnits.map((u) => (
                     <SelectItem key={u.code} value={u.code}>
@@ -1355,9 +1825,9 @@ function LocalizationTab({ user, lang }: { user: UserProfile; lang: string }) {
                 </SelectContent>
               </Select>
             </SettingsField>
-            <SettingsField label={t("settings.localization.distanceUnit", lang)} hint={formattedDistanceSample}>
+            <SettingsField label={t("settings.localization.distanceUnit", lang)}>
               <Select value={distanceUnit} onValueChange={setDistanceUnit}>
-                <SelectTrigger className="h-11 rounded-md shadow-none"><SelectValue /></SelectTrigger>
+                <SelectTrigger aria-label={t("settings.localization.distanceUnit", lang)}><SelectValue /></SelectTrigger>
                 <SelectContent>
                   {distanceUnits.map((u) => (
                     <SelectItem key={u.code} value={u.code}>
@@ -1370,7 +1840,6 @@ function LocalizationTab({ user, lang }: { user: UserProfile; lang: string }) {
           </div>
 
           {error && <p className="text-[12px] text-destructive">{error}</p>}
-          {success && <p className="text-[12px] text-emerald-600">{t("settings.localization.saved", lang)}</p>}
           <div className="pt-2">
             <Button type="submit" size="sm" loading={loading}>{t("settings.localization.save", lang)}</Button>
           </div>
@@ -1384,9 +1853,10 @@ function LocalizationTab({ user, lang }: { user: UserProfile; lang: string }) {
 /* ── Billing Tab ─────────────────────────────────────────────────────── */
 
 function UsageBar({ current, max, label, unit }: { current: number; max: number; label: string; unit?: string }) {
-  const unlimited = max === 0;
+  // 0 = not applicable and -1 = unlimited; neither draws a fill.
+  const unlimited = max <= 0;
   const pct = unlimited ? 0 : Math.min((current / max) * 100, 100);
-  const color = pct >= 100 ? "bg-destructive" : pct >= 75 ? "bg-amber-500" : "bg-emerald-500";
+  const color = pct >= 100 ? "bg-destructive" : pct >= 75 ? "bg-amber-500" : "bg-success";
   return (
     <div className="space-y-1.5">
       <div className="flex items-baseline justify-between text-[12px]">
@@ -1404,17 +1874,15 @@ function UsageBar({ current, max, label, unit }: { current: number; max: number;
 
 const tierBadgeColors: Record<string, string> = {
   FREE: "bg-muted text-muted-foreground",
-  TRIAL: "bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-300",
-  LITE: "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300",
-  PRO: "bg-purple-100 text-purple-700 dark:bg-purple-900/40 dark:text-purple-300",
-  ENTERPRISE: "bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300",
+  STANDARD: "bg-blue-100 text-blue-700",
+  PRO: "bg-purple-100 text-purple-700",
+  ENTERPRISE: "bg-amber-100 text-amber-700",
 };
 
 function tierBadgeKey(code: string, lang: string): string {
   const map: Record<string, string> = {
     FREE: t("settings.billing.badgeFree", lang),
-    TRIAL: t("settings.billing.badgeTrial", lang),
-    LITE: t("settings.billing.badgeLite", lang),
+    STANDARD: t("settings.billing.badgeStandard", lang),
     PRO: t("settings.billing.badgePro", lang),
     ENTERPRISE: t("settings.billing.badgeEnterprise", lang),
   };
@@ -1438,6 +1906,16 @@ function BillingTab({ user, onSaved, lang }: { user: UserProfile; onSaved: () =>
   const [error, setError] = React.useState<string | null>(null);
   const [success, setSuccess] = React.useState(false);
   useAutoDismiss(success, setSuccess);
+
+  React.useEffect(() => {
+    setBillingName(ba?.billing_name ?? "");
+    setBillingEmail(ba?.billing_email ?? "");
+    setBillingAddress(ba?.billing_address ?? "");
+    setBillingCity(ba?.billing_city ?? "");
+    setBillingPostal(ba?.billing_postal_code ?? "");
+    setBillingCountry(ba?.billing_country ?? "");
+    setVat(ba?.vat_number ?? "");
+  }, [ba]);
 
   const hasAddressData = !!(billingName || billingEmail || billingAddress || billingCity || billingPostal || billingCountry || vat);
 
@@ -1472,9 +1950,18 @@ function BillingTab({ user, onSaved, lang }: { user: UserProfile; onSaved: () =>
       : t("settings.billing.cycleNa", lang);
 
   const maxPosts = tier?.max_posts ?? 0;
-  const maxStorage = tier?.max_storage_gb ?? 0;
   const currentPosts = ba?.current_posts_count ?? 0;
-  const currentStorage = parseFloat(ba?.current_storage_gb ?? "0");
+  const credits = ba?.compute_credits ?? null;
+  const trialActive = ba?.subscription_status === "trial" && !!ba?.trial_ends_at;
+  const trialDaysLeft = trialActive
+    ? Math.max(
+        0,
+        Math.ceil(
+          (new Date(ba!.trial_ends_at as string).getTime() - Date.now()) /
+            86_400_000,
+        ),
+      )
+    : null;
 
   return (
     <div className="space-y-6">
@@ -1485,13 +1972,13 @@ function BillingTab({ user, onSaved, lang }: { user: UserProfile; onSaved: () =>
           <CardDescription>{t("settings.billing.subtitle", lang)}</CardDescription>
         </CardHeader>
         <CardContent>
-          <dl className="rounded-lg border border-border/70 px-4">
+          <dl className="rounded-lg border border-border/60 px-4">
             <DataRow
               label={t("settings.billing.plan", lang)}
               value={
                 <span className="flex items-center gap-2">
                   {tier?.name ?? "—"}
-                  <span className={cn("rounded-full px-2 py-0.5 text-[10px] font-semibold", tierBadgeColors[tierCode] ?? tierBadgeColors.FREE)}>
+                  <span className={cn("rounded-full px-2.5 py-0.5 text-[11px] font-semibold", tierBadgeColors[tierCode] ?? tierBadgeColors.FREE)}>
                     {tierBadgeKey(tierCode, lang)}
                   </span>
                 </span>
@@ -1499,26 +1986,63 @@ function BillingTab({ user, onSaved, lang }: { user: UserProfile; onSaved: () =>
             />
             <DataRow label={t("settings.billing.status", lang)} value={ba?.subscription_status ?? "—"} />
             <DataRow label={t("settings.billing.cycle", lang)} value={cycleLabel} />
-            {ba?.is_trial && ba.days_until_expiry != null && (
-              <DataRow label={t("settings.billing.trial", lang)} value={`${ba.days_until_expiry} ${t("settings.billing.trialDaysLeft", lang)}`} />
+            {trialActive && trialDaysLeft != null && (
+              <DataRow label={t("settings.billing.trial", lang)} value={`${trialDaysLeft} ${t("settings.billing.trialDaysLeft", lang)}`} />
+            )}
+            {tier?.is_custom_pricing && (
+              <DataRow label={t("settings.billing.pricing", lang)} value={t("settings.billing.customPricing", lang)} />
             )}
             <DataRow label={t("settings.billing.provider", lang)} value={ba?.payment_provider || t("common.none", lang)} />
           </dl>
         </CardContent>
       </Card>
 
-      {/* Usage */}
+      {/* Usage — storage is intentionally absent: it is counted internally
+          but is not a tier limit. */}
       <Card>
         <CardHeader>
           <CardTitle>{t("settings.billing.usageTitle", lang)}</CardTitle>
         </CardHeader>
         <CardContent>
-          <div className="space-y-4 rounded-lg border border-border/70 p-4">
+          <div className="space-y-4 rounded-lg border border-border/60 p-4">
             <UsageBar current={currentPosts} max={maxPosts} label={t("settings.billing.posts", lang)} />
-            <UsageBar current={currentStorage} max={maxStorage} label={t("settings.billing.storage", lang)} unit="GB" />
           </div>
         </CardContent>
       </Card>
+
+      {/* Compute credits */}
+      {credits && (
+        <Card>
+          <CardHeader>
+            <CardTitle>{t("settings.billing.creditsTitle", lang)}</CardTitle>
+            <CardDescription>{t("settings.billing.creditsSubtitle", lang)}</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <dl className="rounded-lg border border-border/60 px-4">
+              <DataRow
+                label={t("settings.billing.creditsTotal", lang)}
+                value={
+                  credits.unlimited
+                    ? t("settings.billing.creditsUnlimited", lang)
+                    : String(credits.total)
+                }
+              />
+              {!credits.unlimited && (
+                <>
+                  <DataRow
+                    label={t("settings.billing.creditsIncluded", lang)}
+                    value={`${credits.included} / ${credits.monthly_allowance}`}
+                  />
+                  <DataRow
+                    label={t("settings.billing.creditsPurchased", lang)}
+                    value={String(credits.purchased)}
+                  />
+                </>
+              )}
+            </dl>
+          </CardContent>
+        </Card>
+      )}
 
       {/* Billing Address */}
       <Card>
@@ -1562,7 +2086,7 @@ function BillingTab({ user, onSaved, lang }: { user: UserProfile; onSaved: () =>
                 </div>
               </div>
               {error && <p className="text-[12px] text-destructive">{error}</p>}
-              {success && <p className="text-[12px] text-emerald-600">{t("settings.billing.saved", lang)}</p>}
+              {success && <p className="text-[12px] text-success">{t("settings.billing.saved", lang)}</p>}
               <div className="pt-2">
                 <Button type="submit" size="sm" loading={loading}>{t("settings.billing.save", lang)}</Button>
               </div>
@@ -1579,28 +2103,41 @@ function BillingTab({ user, onSaved, lang }: { user: UserProfile; onSaved: () =>
 function SecurityTab({ user, onSaved, lang }: { user: UserProfile; onSaved: () => void; lang: string }) {
   return (
     <div className="space-y-6">
-      <Card>
-        <CardHeader>
-          <CardTitle>{t("settings.security.title", lang)}</CardTitle>
-          <CardDescription>{t("settings.security.subtitle", lang)}</CardDescription>
-        </CardHeader>
-      </Card>
-      <PasswordSection lang={lang} />
+      <PasswordSection hasExistingPassword={user.has_password} lang={lang} />
       <TwoFactorSection lang={lang} />
+      <DevicesSection lang={lang} />
       <LinkedAccountsSection lang={lang} />
       <PhoneSection user={user} onSaved={onSaved} lang={lang} />
     </div>
   );
 }
 
-function PasswordSection({ lang }: { lang: string }) {
+function PasswordSection({ hasExistingPassword, lang }: { hasExistingPassword: boolean; lang: string }) {
+  const [sheetOpen, setSheetOpen] = React.useState(false);
   const [currentPassword, setCurrentPassword] = React.useState("");
   const [newPassword, setNewPassword] = React.useState("");
   const [confirmPassword, setConfirmPassword] = React.useState("");
   const [loading, setLoading] = React.useState(false);
   const [error, setError] = React.useState<string | null>(null);
   const [success, setSuccess] = React.useState(false);
-  const canSubmit = currentPassword.length > 0 && newPassword.length >= 8 && newPassword === confirmPassword;
+  useAutoDismiss(success, setSuccess);
+  const passwordReused = hasExistingPassword && newPassword.length > 0 && newPassword === currentPassword;
+  const canSubmit = (!hasExistingPassword || currentPassword.length > 0)
+    && newPassword.length >= 8
+    && newPassword === confirmPassword
+    && !passwordReused;
+  const actionLabel = t(hasExistingPassword ? "settings.security.save" : "settings.security.createPassword", lang);
+
+  function handleSheetChange(open: boolean) {
+    setSheetOpen(open);
+    if (!open) {
+      // Half-typed secrets must not survive a dismissed sheet.
+      setCurrentPassword("");
+      setNewPassword("");
+      setConfirmPassword("");
+      setError(null);
+    }
+  }
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -1609,11 +2146,13 @@ function PasswordSection({ lang }: { lang: string }) {
     if (!canSubmit) return;
     try {
       setLoading(true);
-      await changePassword({ current_password: currentPassword, new_password: newPassword });
+      await changePassword({
+        old_password: currentPassword,
+        new_password: newPassword,
+        new_password_confirm: confirmPassword,
+      });
+      handleSheetChange(false);
       setSuccess(true);
-      setCurrentPassword("");
-      setNewPassword("");
-      setConfirmPassword("");
     } catch (err) {
       setError(getSafeApiErrorMessage(err, lang));
     } finally {
@@ -1625,16 +2164,41 @@ function PasswordSection({ lang }: { lang: string }) {
     <Card>
       <CardHeader>
         <CardTitle>{t("settings.security.passwordTitle", lang)}</CardTitle>
-        <CardDescription>{t("settings.security.passwordSubtitle", lang)}</CardDescription>
+        <CardDescription>{t(hasExistingPassword ? "settings.security.passwordSubtitle" : "settings.security.passwordCreateSubtitle", lang)}</CardDescription>
       </CardHeader>
       <CardContent>
+        <div className="flex min-h-11 items-center justify-between gap-4">
+          {hasExistingPassword ? (
+            <p aria-hidden="true" className="select-none text-[15px] font-medium leading-none tracking-[0.22em] text-foreground/70">
+              ••••••••••
+            </p>
+          ) : (
+            <span aria-hidden="true" />
+          )}
+          <Button type="button" variant="outline" size="sm" className="shrink-0" onClick={() => setSheetOpen(true)}>
+            {actionLabel}
+          </Button>
+        </div>
+        {success && <p className="mt-2 text-[12px] text-success" role="status">{t("settings.security.saved", lang)}</p>}
+      </CardContent>
+
+      <BottomSheet
+        open={sheetOpen}
+        onOpenChange={handleSheetChange}
+        title={actionLabel}
+        description={hasExistingPassword ? undefined : t("settings.security.passwordCreateSubtitle", lang)}
+      >
         <form className="space-y-4" onSubmit={handleSubmit}>
-          <div className="space-y-1.5">
-            <Label htmlFor="current-password">{t("settings.security.currentPassword", lang)}</Label>
-            <Input id="current-password" type="password" value={currentPassword}
-              onChange={(e) => setCurrentPassword(e.target.value)} autoComplete="current-password" />
-          </div>
-          <Separator />
+          {hasExistingPassword && (
+            <>
+              <div className="space-y-1.5">
+                <Label htmlFor="current-password">{t("settings.security.currentPassword", lang)}</Label>
+                <Input id="current-password" type="password" value={currentPassword}
+                  onChange={(e) => setCurrentPassword(e.target.value)} autoComplete="current-password" />
+              </div>
+              <Separator />
+            </>
+          )}
           <div className="space-y-1.5">
             <Label htmlFor="new-password">{t("settings.security.newPassword", lang)}</Label>
             <Input id="new-password" type="password" value={newPassword}
@@ -1646,14 +2210,220 @@ function PasswordSection({ lang }: { lang: string }) {
               onChange={(e) => setConfirmPassword(e.target.value)} autoComplete="new-password" />
           </div>
           {!canSubmit && confirmPassword.length > 0 && newPassword !== confirmPassword && (
-            <p className="text-[11px] text-destructive">{t("settings.security.mismatch", lang)}</p>
+            <p className="text-[12px] text-destructive">{t("settings.security.mismatch", lang)}</p>
           )}
-          {error && <p className="text-[12px] text-destructive">{error}</p>}
-          {success && <p className="text-[12px] text-emerald-600">{t("settings.security.saved", lang)}</p>}
-          <div className="pt-2">
-            <Button type="submit" size="sm" loading={loading} disabled={!canSubmit || loading}>{t("settings.security.save", lang)}</Button>
+          {passwordReused && (
+            <p className="text-[12px] text-destructive">{t("settings.security.mustDiffer", lang)}</p>
+          )}
+          {error && <p className="text-[12px] text-destructive" role="alert">{error}</p>}
+          <div className="pt-1">
+            <Button type="submit" className="w-full" loading={loading} disabled={!canSubmit || loading}>
+              {actionLabel}
+            </Button>
           </div>
         </form>
+      </BottomSheet>
+    </Card>
+  );
+}
+
+function DevicesSection({ lang }: { lang: string }) {
+  const [sessions, setSessions] = React.useState<DeviceSession[] | null>(null);
+  const [loading, setLoading] = React.useState(true);
+  const [busyId, setBusyId] = React.useState<string | null>(null);
+  const [error, setError] = React.useState<string | null>(null);
+
+  const load = React.useCallback(() => {
+    setLoading(true);
+    getDeviceSessions()
+      .then((data) => {
+        setSessions(data.sessions);
+        setError(null);
+      })
+      .catch((err) => setError(getSafeApiErrorMessage(err, lang)))
+      .finally(() => setLoading(false));
+  }, [lang]);
+
+  React.useEffect(() => { load(); }, [load]);
+
+  async function handleRevoke(session: DeviceSession) {
+    setError(null);
+    try {
+      setBusyId(session.id);
+      const result = await revokeDeviceSession(session.id);
+      if (result.was_current) {
+        // We just signed ourselves out — clear local state and leave.
+        try { await apiLogout(); } catch { /* cookies already dead */ }
+        window.location.assign("/");
+        return;
+      }
+      load();
+    } catch (err) {
+      setError(getSafeApiErrorMessage(err, lang));
+    } finally {
+      setBusyId(null);
+    }
+  }
+
+  async function handleRevokeOthers() {
+    setError(null);
+    try {
+      setBusyId("others");
+      await revokeOtherDeviceSessions();
+      load();
+    } catch (err) {
+      setError(getSafeApiErrorMessage(err, lang));
+    } finally {
+      setBusyId(null);
+    }
+  }
+
+  async function handleRevokeAll() {
+    setError(null);
+    try {
+      setBusyId("all");
+      await revokeAllDeviceSessions();
+    } catch (err) {
+      setError(getSafeApiErrorMessage(err, lang));
+      setBusyId(null);
+      return;
+    }
+    // Everything is revoked server-side, this session included — clear
+    // local cookies and leave.
+    try { await apiLogout(); } catch { /* tokens already dead */ }
+    window.location.assign("/");
+  }
+
+  if (loading && sessions === null) {
+    return (
+      <Card aria-busy="true">
+        <CardHeader>
+          <CardTitle>{t("settings.security.devicesTitle", lang)}</CardTitle>
+          <CardDescription>{t("settings.security.devicesSubtitle", lang)}</CardDescription>
+        </CardHeader>
+        <CardContent>
+          <div className="flex min-h-11 items-center justify-between gap-4" aria-hidden="true">
+            <div className="space-y-2">
+              <div className="h-3 w-32 animate-pulse rounded-full bg-muted/70 motion-reduce:animate-none" />
+              <div className="h-3 w-44 animate-pulse rounded-full bg-muted/45 motion-reduce:animate-none" />
+            </div>
+            <div className="h-9 w-24 animate-pulse rounded-full bg-muted/55 motion-reduce:animate-none" />
+          </div>
+        </CardContent>
+      </Card>
+    );
+  }
+
+  const rows = sessions ?? [];
+  const others = rows.filter((row) => !row.current);
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle>{t("settings.security.devicesTitle", lang)}</CardTitle>
+        <CardDescription>{t("settings.security.devicesSubtitle", lang)}</CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-3">
+        {error && (
+          <div className="space-y-2">
+            <p className="text-[13px] text-destructive" role="alert">{error}</p>
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              disabled={loading}
+              onClick={load}
+            >
+              {loading ? t("common.loading", lang) : t("common.retry", lang)}
+            </Button>
+          </div>
+        )}
+        {!error && (
+        <ul className="space-y-2.5">
+          {rows.map((session) => (
+            <li
+              key={session.id}
+              className="rounded-2xl border border-border/60 bg-background/60 p-4"
+            >
+              <div className="flex items-center justify-between gap-3">
+                <div className="flex min-w-0 items-start gap-3">
+                  <span className="mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-muted/70 text-foreground/70">
+                    {session.platform === "ios" ? (
+                      <DeviceMobileIcon size={16} />
+                    ) : (
+                      <DeviceDesktopIcon size={16} />
+                    )}
+                  </span>
+                  <div className="min-w-0">
+                    <p className="flex flex-wrap items-center gap-x-2 gap-y-1 text-[13px] font-medium">
+                      <span className="truncate">{session.device_label}</span>
+                      {session.current && (
+                        <span className="whitespace-nowrap rounded-full bg-success/10 px-2.5 py-0.5 text-[11px] font-semibold text-emerald-800">
+                          {t("settings.security.devicesThisDevice", lang)}
+                        </span>
+                      )}
+                    </p>
+                    <p className="mt-0.5 break-words text-[12px] leading-relaxed text-muted-foreground">
+                      {session.ip_address ? `${session.ip_address} · ` : ""}
+                      {t("settings.security.devicesLastActive", lang)}{" "}
+                      {formatAccountDate(session.last_seen_at, lang)}
+                    </p>
+                  </div>
+                </div>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  className="shrink-0 whitespace-nowrap rounded-full"
+                  disabled={busyId !== null}
+                  onClick={() => handleRevoke(session)}
+                >
+                  {busyId === session.id
+                    ? t("common.loading", lang)
+                    : session.current
+                      ? t("settings.security.devicesSignOut", lang)
+                      : t("settings.security.devicesRevoke", lang)}
+                </Button>
+              </div>
+            </li>
+          ))}
+          {rows.length === 0 && (
+            <li className="rounded-2xl border border-border/60 bg-background/60 p-4 text-[13px] text-muted-foreground">
+              {t("settings.security.devicesEmpty", lang)}
+            </li>
+          )}
+        </ul>
+        )}
+        {!error && (
+        <div className="flex flex-wrap gap-2 pt-1">
+          {others.length > 0 && (
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              className="whitespace-nowrap rounded-full"
+              disabled={busyId !== null}
+              onClick={handleRevokeOthers}
+            >
+              {busyId === "others"
+                ? t("common.loading", lang)
+                : t("settings.security.devicesRevokeOthers", lang)}
+            </Button>
+          )}
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            className="whitespace-nowrap rounded-full"
+            disabled={busyId !== null}
+            onClick={handleRevokeAll}
+          >
+            {busyId === "all"
+              ? t("common.loading", lang)
+              : t("settings.security.devicesRevokeAll", lang)}
+          </Button>
+        </div>
+        )}
       </CardContent>
     </Card>
   );
@@ -1672,10 +2442,13 @@ function TwoFactorSection({ lang }: { lang: string }) {
   const loadStatus = React.useCallback(() => {
     setFetchLoading(true);
     getTotpStatus()
-      .then(setStatus)
-      .catch(() => {})
+      .then((nextStatus) => {
+        setStatus(nextStatus);
+        setError(null);
+      })
+      .catch((err) => setError(getSafeApiErrorMessage(err, lang)))
       .finally(() => setFetchLoading(false));
-  }, []);
+  }, [lang]);
 
   React.useEffect(() => { loadStatus(); }, [loadStatus]);
 
@@ -1725,7 +2498,41 @@ function TwoFactorSection({ lang }: { lang: string }) {
     }
   }
 
-  if (fetchLoading) return null;
+  if (fetchLoading) {
+    return (
+      <Card aria-busy="true">
+        <CardHeader>
+          <CardTitle>{t("settings.security.twoFaTitle", lang)}</CardTitle>
+          <CardDescription>{t("settings.security.twoFaSubtitle", lang)}</CardDescription>
+        </CardHeader>
+        <CardContent>
+          <div className="flex min-h-11 items-center justify-between gap-4" aria-hidden="true">
+            <div className="h-7 w-24 animate-pulse rounded-full bg-muted/70 motion-reduce:animate-none" />
+            <div className="h-9 w-28 animate-pulse rounded-full bg-muted/55 motion-reduce:animate-none" />
+          </div>
+        </CardContent>
+      </Card>
+    );
+  }
+
+  if (!status && error) {
+    return (
+      <Card>
+        <CardHeader>
+          <CardTitle>{t("settings.security.twoFaTitle", lang)}</CardTitle>
+          <CardDescription>{t("settings.security.twoFaSubtitle", lang)}</CardDescription>
+        </CardHeader>
+        <CardContent>
+          <div className="flex items-center justify-between gap-4">
+            <p className="text-[12px] text-destructive">{error}</p>
+            <Button type="button" variant="outline" size="sm" onClick={loadStatus}>
+              {t("common.retry", lang)}
+            </Button>
+          </div>
+        </CardContent>
+      </Card>
+    );
+  }
 
   return (
     <Card>
@@ -1739,7 +2546,8 @@ function TwoFactorSection({ lang }: { lang: string }) {
           <div className="space-y-3 mb-4">
             <p className="text-sm font-medium">{t("settings.security.twoFaBackupTitle", lang)}</p>
             <p className="text-[12px] text-muted-foreground">{t("settings.security.twoFaBackupHint", lang)}</p>
-            <div className="grid grid-cols-2 gap-1 rounded-lg border border-border p-3 font-mono text-[13px]">
+            {/* Recovery codes are worthless if they cannot be copied out. */}
+            <div className="grid select-all grid-cols-2 gap-1 rounded-lg border border-border p-3 font-mono text-[13px]">
               {backupCodes.map((c) => <span key={c}>{c}</span>)}
             </div>
             <Button type="button" variant="outline" size="sm" onClick={() => setBackupCodes(null)}>
@@ -1811,9 +2619,9 @@ function TwoFactorSection({ lang }: { lang: string }) {
         {/* Idle state */}
         {!setup && !disabling && !backupCodes && (
           <div className="flex items-center justify-between">
-            <span className={cn("rounded-full px-2.5 py-1 text-[11px] font-semibold",
+            <span className={cn("rounded-full px-2.5 py-0.5 text-[11px] font-semibold",
               status?.enabled
-                ? "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300"
+                ? "bg-success/10 text-emerald-800"
                 : "bg-muted text-muted-foreground"
             )}>
               {status?.enabled ? t("settings.security.twoFaEnabled", lang) : t("settings.security.twoFaDisabled", lang)}
@@ -1846,10 +2654,13 @@ function LinkedAccountsSection({ lang }: { lang: string }) {
   const load = React.useCallback(() => {
     setLoading(true);
     getLinkedAccounts()
-      .then(setData)
-      .catch(() => {})
+      .then((nextData) => {
+        setData(nextData);
+        setError(null);
+      })
+      .catch((err) => setError(getSafeApiErrorMessage(err, lang)))
       .finally(() => setLoading(false));
-  }, []);
+  }, [lang]);
 
   React.useEffect(() => { load(); }, [load]);
 
@@ -1866,7 +2677,25 @@ function LinkedAccountsSection({ lang }: { lang: string }) {
     }
   }
 
-  if (loading) return null;
+  if (loading) {
+    return (
+      <Card aria-busy="true">
+        <CardHeader>
+          <CardTitle>{t("settings.security.linkedTitle", lang)}</CardTitle>
+          <CardDescription>{t("settings.security.linkedSubtitle", lang)}</CardDescription>
+        </CardHeader>
+        <CardContent>
+          <div className="flex min-h-11 items-center justify-between gap-4" aria-hidden="true">
+            <div className="space-y-2">
+              <div className="h-3 w-24 animate-pulse rounded-full bg-muted/70 motion-reduce:animate-none" />
+              <div className="h-3 w-40 animate-pulse rounded-full bg-muted/45 motion-reduce:animate-none" />
+            </div>
+            <div className="h-9 w-24 animate-pulse rounded-full bg-muted/55 motion-reduce:animate-none" />
+          </div>
+        </CardContent>
+      </Card>
+    );
+  }
 
   const accounts = data?.social_accounts ?? [];
   const canUnlink = data?.has_password || accounts.length > 1;
@@ -1878,10 +2707,23 @@ function LinkedAccountsSection({ lang }: { lang: string }) {
         <CardDescription>{t("settings.security.linkedSubtitle", lang)}</CardDescription>
       </CardHeader>
       <CardContent>
-        {accounts.length === 0 ? (
-          <p className="text-[13px] text-muted-foreground">{t("settings.security.linkedNone", lang)}</p>
-        ) : (
-          <div className="divide-y divide-border">
+        {!data && error ? (
+          <div className="flex items-center justify-between gap-4">
+            <p className="text-[12px] text-destructive">{error}</p>
+            <Button type="button" variant="outline" size="sm" onClick={load}>
+              {t("common.retry", lang)}
+            </Button>
+          </div>
+        ) : null}
+        {data && accounts.length === 0 ? (
+          <div className="flex items-center gap-3 rounded-2xl bg-muted/30 px-4 py-3.5">
+            <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-muted/70 text-foreground/55">
+              <LinkIcon size={16} />
+            </span>
+            <p className="text-[13px] text-muted-foreground">{t("settings.security.linkedNone", lang)}</p>
+          </div>
+        ) : data ? (
+          <div className="divide-y divide-border/60">
             {accounts.map((acc) => (
               <div key={acc.id} className="flex items-center justify-between py-3">
                 <div className="min-w-0">
@@ -1906,8 +2748,8 @@ function LinkedAccountsSection({ lang }: { lang: string }) {
               </div>
             ))}
           </div>
-        )}
-        {error && <p className="mt-2 text-[12px] text-destructive">{error}</p>}
+        ) : null}
+        {data && error && <p className="mt-2 text-[12px] text-destructive">{error}</p>}
       </CardContent>
     </Card>
   );
@@ -1915,6 +2757,7 @@ function LinkedAccountsSection({ lang }: { lang: string }) {
 
 function PhoneSection({ user, onSaved, lang }: { user: UserProfile; onSaved: () => void; lang: string }) {
   const phone = user.profile?.phone;
+  const phoneDisplay = formatPhoneDisplay(phone);
   const verified = user.phone_verified;
   const [otpSent, setOtpSent] = React.useState(false);
   const [code, setCode] = React.useState("");
@@ -1959,45 +2802,62 @@ function PhoneSection({ user, onSaved, lang }: { user: UserProfile; onSaved: () 
       </CardHeader>
       <CardContent>
         {!phone ? (
-          <p className="text-[13px] text-muted-foreground">{t("settings.security.phoneNoPhone", lang)}</p>
+          <div className="flex items-center gap-3 rounded-2xl bg-muted/30 px-4 py-3.5">
+            <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-muted/70 text-foreground/55">
+              <DeviceMobileIcon size={16} />
+            </span>
+            <p className="text-[13px] text-muted-foreground">{t("settings.security.phoneNoPhone", lang)}</p>
+          </div>
         ) : (
           <div className="space-y-3">
-            <div className="flex items-center gap-3">
-              <span className="text-sm font-medium">{phone}</span>
-              <span className={cn("rounded-full px-2.5 py-0.5 text-[10px] font-semibold",
-                verified
-                  ? "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300"
-                  : "bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300"
-              )}>
-                {verified ? t("settings.security.phoneVerified", lang) : t("settings.security.phoneUnverified", lang)}
-              </span>
+            <div className="flex min-h-11 items-center justify-between gap-4">
+              <div className="flex min-w-0 items-center gap-3">
+                <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-muted/70 text-foreground/70">
+                  {phoneDisplay.flag ? (
+                    <span aria-hidden="true" className="text-[17px] leading-none">{phoneDisplay.flag}</span>
+                  ) : (
+                    <DeviceMobileIcon size={16} />
+                  )}
+                </span>
+                <span className="min-w-0 truncate text-sm font-medium tabular-nums">{phoneDisplay.display}</span>
+              </div>
+              {verified ? (
+                <span className="shrink-0 rounded-full bg-success/10 px-2.5 py-0.5 text-[11px] font-semibold text-emerald-800">
+                  {t("settings.security.phoneVerified", lang)}
+                </span>
+              ) : otpSent ? (
+                <span className="shrink-0 rounded-full bg-amber-100 px-2.5 py-0.5 text-[11px] font-semibold text-amber-700">
+                  {t("settings.security.phoneUnverified", lang)}
+                </span>
+              ) : (
+                <Button type="button" variant="outline" size="sm" className="shrink-0" loading={loading} onClick={handleRequestOtp}>
+                  {t("settings.security.phoneVerify", lang)}
+                </Button>
+              )}
             </div>
 
-            {!verified && !otpSent && (
-              <Button type="button" size="sm" loading={loading} onClick={handleRequestOtp}>
-                {t("settings.security.phoneVerify", lang)}
-              </Button>
-            )}
-
             {otpSent && (
-              <div className="flex items-end gap-2">
-                <div className="space-y-1.5">
-                  <Label>{t("settings.security.phoneOtpSent", lang)}</Label>
+              <div className="space-y-2 rounded-2xl border border-border/60 bg-muted/20 p-4">
+                <Label htmlFor="phone-otp-code">{t("settings.security.phoneOtpSent", lang)}</Label>
+                <div className="flex items-center gap-2">
                   <Input
+                    id="phone-otp-code"
                     value={code}
                     onChange={(e) => setCode(e.target.value.replace(/\D/g, "").slice(0, 6))}
                     placeholder={t("settings.security.phoneOtpPlaceholder", lang)}
                     maxLength={6}
-                    className="w-40 font-mono"
+                    inputMode="numeric"
+                    autoComplete="one-time-code"
+                    className="w-full max-w-[10.5rem] font-mono tracking-[0.2em]"
                   />
+                  <Button type="button" size="sm" className="shrink-0" loading={loading} disabled={code.length < 4} onClick={handleVerify}>
+                    {t("settings.security.phoneOtpConfirm", lang)}
+                  </Button>
                 </div>
-                <Button type="button" size="sm" loading={loading} disabled={code.length < 4} onClick={handleVerify}>
-                  {t("settings.security.phoneOtpConfirm", lang)}
-                </Button>
               </div>
             )}
 
-            {error && <p className="text-[12px] text-destructive">{error}</p>}
+            {error && <p className="text-[12px] text-destructive" role="alert">{error}</p>}
           </div>
         )}
       </CardContent>
@@ -2032,8 +2892,33 @@ export function SettingsForm({ user, onSaved }: { user: UserProfile; onSaved: ()
       window.removeEventListener("reai-settings-navigate", navigateFromAgent);
     };
   }, []);
+  // One trigger, two shapes: a pill chip in the mobile rail, a full-width row
+  // in the desktop list. Active state is the same inversion in both.
   const triggerClassName =
-    "shrink-0 justify-start rounded-none border-b-2 border-transparent px-1.5 pb-3 pt-0 text-[13px] shadow-none data-[state=active]:border-foreground data-[state=active]:bg-transparent data-[state=active]:shadow-none md:h-9 md:w-full md:rounded-lg md:border-0 md:px-3 md:py-0 md:text-left md:data-[state=active]:bg-foreground/[0.065]";
+    "h-11 shrink-0 justify-center whitespace-nowrap rounded-full border border-border/65 bg-card px-4 py-0 text-[13px] font-medium shadow-none data-[state=active]:border-foreground data-[state=active]:bg-foreground data-[state=active]:text-background data-[state=active]:shadow-control lg:w-full lg:justify-start lg:rounded-2xl lg:border-0 lg:bg-transparent lg:text-left lg:data-[state=active]:bg-foreground";
+  const tabsListRef = React.useRef<HTMLDivElement>(null);
+  React.useEffect(() => {
+    // Keep the active chip visible in the mobile rail (deep links land on
+    // #security, whose chip starts off-screen). No-op on the desktop column.
+    const list = tabsListRef.current;
+    if (!list || list.scrollWidth <= list.clientWidth) return;
+    const active = list.querySelector<HTMLElement>('[data-state="active"]');
+    if (!active) return;
+    list.scrollTo({
+      left: active.offsetLeft - (list.clientWidth - active.offsetWidth) / 2,
+      behavior: "smooth",
+    });
+  }, [activeTab]);
+  const settingsTabs = [
+    { value: "profile", label: "settings.tab.profile" },
+    { value: "seller", label: "settings.tab.seller" },
+    { value: "privacy", label: "settings.tab.privacy" },
+    { value: "reai", label: "settings.tab.reai" },
+    { value: "localization", label: "settings.tab.localization" },
+    { value: "notifications", label: "settings.tab.notifications" },
+    { value: "billing", label: "settings.tab.billing" },
+    { value: "security", label: "settings.tab.security" },
+  ] as const;
 
   return (
     <Tabs
@@ -2042,42 +2927,27 @@ export function SettingsForm({ user, onSaved }: { user: UserProfile; onSaved: ()
         setActiveTab(value);
         window.history.replaceState(null, "", `#${value}`);
       }}
-      className="w-full md:grid md:grid-cols-[190px_minmax(0,1fr)] md:items-start md:gap-9"
+      className="w-full lg:grid lg:grid-cols-[220px_minmax(0,1fr)] lg:items-start lg:gap-8 xl:gap-10"
     >
-      <div className="mb-7 md:sticky md:top-20 md:mb-0">
-        <div className="relative md:hidden">
-          <select
-            value={activeTab}
-            onChange={(event) => {
-              setActiveTab(event.target.value);
-              window.history.replaceState(null, "", `#${event.target.value}`);
-            }}
-            aria-label={t("settings.title", lang)}
-            className="h-11 w-full appearance-none rounded-xl border border-border/65 bg-surface px-3 pr-10 text-[13px] font-medium outline-none focus:border-foreground/30 focus:ring-2 focus:ring-foreground/[0.06]"
-          >
-            <option value="profile">{t("settings.tab.profile", lang)}</option>
-            <option value="seller">{t("settings.tab.seller", lang)}</option>
-            <option value="privacy">{t("settings.tab.privacy", lang)}</option>
-            <option value="reai">{t("settings.tab.reai", lang)}</option>
-            <option value="localization">{t("settings.tab.localization", lang)}</option>
-            <option value="notifications">{t("settings.tab.notifications", lang)}</option>
-            <option value="billing">{t("settings.tab.billing", lang)}</option>
-            <option value="security">{t("settings.tab.security", lang)}</option>
-          </select>
-          <ChevronDownIcon size={15} className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-foreground/40" />
-        </div>
-        <TabsList className="hidden min-h-0 w-full flex-col items-stretch gap-1 rounded-2xl border border-border/55 bg-surface p-2 text-muted-foreground md:flex">
-          <TabsTrigger value="profile" className={triggerClassName}>{t("settings.tab.profile", lang)}</TabsTrigger>
-          <TabsTrigger value="seller" className={triggerClassName}>{t("settings.tab.seller", lang)}</TabsTrigger>
-          <TabsTrigger value="privacy" className={triggerClassName}>{t("settings.tab.privacy", lang)}</TabsTrigger>
-          <TabsTrigger value="reai" className={triggerClassName}>{t("settings.tab.reai", lang)}</TabsTrigger>
-          <TabsTrigger value="localization" className={triggerClassName}>{t("settings.tab.localization", lang)}</TabsTrigger>
-          <TabsTrigger value="notifications" className={triggerClassName}>{t("settings.tab.notifications", lang)}</TabsTrigger>
-          <TabsTrigger value="billing" className={triggerClassName}>{t("settings.tab.billing", lang)}</TabsTrigger>
-          <TabsTrigger value="security" className={triggerClassName}>{t("settings.tab.security", lang)}</TabsTrigger>
+      <div className="mb-5 lg:sticky lg:top-6 lg:mb-0">
+        {/*
+          One list, two forms: a horizontally scrolling chip rail on phones —
+          every section visible and one tap away, the way the app's other
+          segmented surfaces read — and the vertical column on desktop. The
+          full-bleed negative margin lets the rail scroll edge to edge.
+        */}
+        <TabsList
+          ref={tabsListRef}
+          className="-mx-4 flex h-auto min-h-0 w-auto items-stretch justify-start gap-1.5 overflow-x-auto rounded-none bg-transparent px-4 py-1 text-muted-foreground [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden lg:mx-0 lg:w-full lg:flex-col lg:gap-1 lg:overflow-visible lg:rounded-[24px] lg:border lg:border-border/65 lg:bg-card lg:p-2 lg:shadow-card"
+        >
+          {settingsTabs.map((tab) => (
+            <TabsTrigger key={tab.value} value={tab.value} className={triggerClassName}>
+              <span className="min-w-0 truncate">{t(tab.label, lang)}</span>
+            </TabsTrigger>
+          ))}
         </TabsList>
       </div>
-      <div className="min-w-0">
+      <div className="min-w-0 max-lg:[&_button]:min-h-11">
         <TabsContent value="profile" className="mt-0">
           <ProfileTab user={user} onSaved={onSaved} lang={lang} />
         </TabsContent>

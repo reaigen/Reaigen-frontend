@@ -10,9 +10,10 @@ import {
   type AppContentDocumentType,
   type AppContentScope,
 } from "../lib/api/client";
-import { t } from "../lib/i18n";
+import { formatDate, t } from "../lib/i18n";
 import { Button } from "../lib/ui/button";
 import { cn } from "../lib/utils";
+import { useAuth } from "./hooks/use-auth";
 
 const LEGAL_DOCUMENT_KEYS = ["terms", "privacy", "gdpr", "license"];
 const ALLOWED_HTML_TAGS = new Set([
@@ -130,11 +131,8 @@ function sanitizeHtml(html: string) {
   return template.innerHTML;
 }
 
-function formatDocumentDate(value: string | null | undefined, lang: string) {
-  if (!value) return t("common.notRecorded", lang);
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return t("common.notRecorded", lang);
-  return date.toLocaleDateString(lang, { year: "numeric", month: "short", day: "numeric" });
+function formatDocumentDate(value: string | null | undefined, lang: string, dateFormat?: string | null) {
+  return formatDate(value, dateFormat, lang) || t("common.notRecorded", lang);
 }
 
 function metadataString(metadata: Record<string, unknown> | null | undefined, key: string) {
@@ -217,7 +215,7 @@ function DocumentBody({ document, compact = false }: { document: AppContentDocum
     [document.body, document.body_format],
   );
   const className = cn(
-    "max-w-none text-foreground/82",
+    "max-w-none text-foreground",
     compact ? "text-[13px] leading-relaxed" : "text-[14px] leading-7",
     "[&_a]:font-medium [&_a]:underline [&_a]:underline-offset-4",
     "[&_h1]:mb-3 [&_h1]:text-xl [&_h2]:mb-2 [&_h2]:mt-5 [&_h2]:text-lg [&_p]:mb-3 [&_ul]:mb-3 [&_ul]:list-disc [&_ul]:pl-5",
@@ -239,6 +237,9 @@ export function ContentDocumentDialog({
   lang: string;
   onClose: () => void;
 }) {
+  const { user } = useAuth();
+  const dialogRef = React.useRef<HTMLDivElement>(null);
+
   React.useEffect(() => {
     function handleKeyDown(event: KeyboardEvent) {
       if (event.key === "Escape") onClose();
@@ -247,33 +248,42 @@ export function ContentDocumentDialog({
     return () => window.removeEventListener("keydown", handleKeyDown);
   }, [onClose]);
 
+  React.useEffect(() => {
+    const previousOverflow = window.document.body.style.overflow;
+    window.document.body.style.overflow = "hidden";
+    dialogRef.current?.focus();
+    return () => {
+      window.document.body.style.overflow = previousOverflow;
+    };
+  }, []);
+
   return (
-    <div className="fixed inset-0 z-[10000] flex items-end bg-black/35 sm:items-center sm:justify-center" role="dialog" aria-modal="true">
+    <div className="fixed inset-0 z-[10000] flex items-end bg-black/25 backdrop-blur-[2px] animate-fade-in sm:items-center sm:justify-center" role="dialog" aria-modal="true">
       <button className="absolute inset-0 cursor-default" type="button" aria-label={t("common.close", lang)} onClick={onClose} />
-      <div className="relative max-h-[88dvh] w-full overflow-hidden rounded-t-2xl border border-border bg-background shadow-2xl sm:max-w-3xl sm:rounded-2xl">
-        <div className="flex items-start justify-between gap-4 border-b border-border/70 px-5 py-4 sm:px-6">
+      <div ref={dialogRef} tabIndex={-1} className="relative max-h-[88dvh] w-full overflow-hidden rounded-t-2xl border border-border/60 bg-background shadow-2xl outline-none animate-fade-in sm:max-w-3xl sm:rounded-2xl">
+        <div className="flex items-start justify-between gap-4 border-b border-border/40 px-5 py-4 sm:px-6">
           <div className="min-w-0">
             <p className="text-[11px] font-medium uppercase tracking-[0.08em] text-muted-foreground">
               {document.document_type_display}
             </p>
-            <h2 className="mt-1 text-[19px] font-semibold tracking-normal text-foreground sm:text-xl">
+            <h2 className="mt-1 text-[20px] font-semibold tracking-tight text-foreground">
               {document.title || fallbackTitle(document.key, lang)}
             </h2>
             <p className="mt-1 text-[12px] text-muted-foreground">
-              {t("common.version", lang)} {document.version} - {t("common.updated", lang)} {formatDocumentDate(document.updated_at, lang)}
+              {t("common.version", lang)} {document.version} · {t("common.updated", lang)} {formatDocumentDate(document.updated_at, lang, user?.localization?.date_format)}
             </p>
           </div>
           <button
             type="button"
             onClick={onClose}
-            className="shrink-0 rounded-lg px-2 py-1 text-[13px] font-medium text-foreground/55 transition-colors hover:bg-foreground/[0.05] hover:text-foreground"
+            className="shrink-0 rounded-full px-3 py-1 text-[13px] font-medium text-foreground/55 transition-colors hover:bg-foreground/[0.04] hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
           >
             {t("common.close", lang)}
           </button>
         </div>
         <div className="max-h-[calc(88dvh-5.8rem)] overflow-y-auto px-5 py-5 sm:px-6">
           {document.summary && (
-            <p className="mb-5 rounded-lg border border-border bg-muted/25 px-3 py-2 text-[13px] leading-relaxed text-muted-foreground">
+            <p className="mb-5 rounded-xl border border-border/60 bg-muted/25 px-3 py-2 text-[13px] leading-relaxed text-muted-foreground">
               {document.summary}
             </p>
           )}
@@ -345,6 +355,7 @@ export function ManagedLegalDocuments({
   });
   const [selectedDocument, setSelectedDocument] = React.useState<AppContentDocument | null>(null);
   const [acceptingId, setAcceptingId] = React.useState<number | null>(null);
+  const [acceptError, setAcceptError] = React.useState<string | null>(null);
   const [acceptedIds, setAcceptedIds] = React.useState<Set<number>>(() => new Set());
   const orderedDocuments = React.useMemo(
     () => [...documents].sort((a, b) => LEGAL_DOCUMENT_KEYS.indexOf(a.key) - LEGAL_DOCUMENT_KEYS.indexOf(b.key)),
@@ -353,6 +364,7 @@ export function ManagedLegalDocuments({
 
   async function acceptDocument(document: AppContentDocument) {
     setAcceptingId(document.id);
+    setAcceptError(null);
     try {
       await acceptAppContentDocument({
         document_id: document.id,
@@ -362,6 +374,8 @@ export function ManagedLegalDocuments({
       });
       setAcceptedIds((current) => new Set(current).add(document.id));
       onAccepted?.();
+    } catch {
+      setAcceptError(t("content.acceptFailed", lang));
     } finally {
       setAcceptingId(null);
     }
@@ -381,6 +395,9 @@ export function ManagedLegalDocuments({
 
   return (
     <>
+      {acceptError ? (
+        <p role="alert" className="mb-3 rounded-xl border border-destructive/20 bg-destructive/[0.045] px-3 py-2.5 text-[12px] text-destructive">{acceptError}</p>
+      ) : null}
       <div className="divide-y divide-border/70 rounded-lg border border-border/70">
         {orderedDocuments.map((document) => {
           const accepted = acceptedIds.has(document.id);
@@ -390,7 +407,7 @@ export function ManagedLegalDocuments({
                 <div className="flex flex-wrap items-center gap-2">
                   <p className="text-[13px] font-medium text-foreground/88">{document.title || fallbackTitle(document.key, lang)}</p>
                   {document.requires_acceptance && (
-                    <span className="rounded-full bg-foreground/[0.07] px-2 py-0.5 text-[10px] font-medium text-foreground/60">
+                    <span className="rounded-full bg-foreground/[0.07] px-2 py-0.5 text-[11px] font-medium text-foreground/60">
                       {t("common.required", lang)}
                     </span>
                   )}
@@ -499,7 +516,7 @@ export function AppContentMessages({
                 <button
                   type="button"
                   onClick={() => dismiss(document.id)}
-                  className="shrink-0 rounded-md px-2 py-1 text-[12px] text-muted-foreground transition-colors hover:bg-foreground/[0.05] hover:text-foreground"
+                  className="shrink-0 rounded-full px-3 py-1 text-[12px] text-muted-foreground transition-colors hover:bg-foreground/[0.05] hover:text-foreground"
                 >
                   {t("common.dismiss", lang)}
                 </button>

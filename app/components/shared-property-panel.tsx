@@ -1,15 +1,19 @@
 "use client";
 
+import Image from "next/image";
 import { useState } from "react";
 import { t } from "../lib/i18n";
 import type { SharedDraftData } from "../lib/tour-types";
+import { resolveUnit, unitLabel, type UnitLookup } from "../lib/unit-catalog";
+import { ChevronDownIcon, CloseIcon, DocumentIcon, MapPinIcon } from "./icons";
+import { PropertyFactTile } from "./property-fact-tile";
 
-function formatPrice(price: string | number | null | undefined, currency?: string): string {
+function formatPrice(price: string | number | null | undefined, currency: string | undefined, lang: string): string {
   if (price == null || price === "") return "";
   const num = typeof price === "string" ? parseFloat(price) : price;
   if (Number.isNaN(num) || num === 0) return "";
   try {
-    return new Intl.NumberFormat(undefined, {
+    return new Intl.NumberFormat(lang, {
       style: currency ? "currency" : "decimal",
       currency: currency || undefined,
       maximumFractionDigits: 0,
@@ -20,8 +24,28 @@ function formatPrice(price: string | number | null | undefined, currency?: strin
 }
 
 /** Floating overlay panel for the 3D tour viewer — shows property info on top of the splat. */
-export function SharedPropertyPanel({ draftData, lang }: { draftData: SharedDraftData; lang: string }) {
-  const [open, setOpen] = useState(false);
+export function SharedPropertyPanel({
+  draftData,
+  lang,
+  units,
+  open: controlledOpen,
+  onOpenChange,
+}: {
+  draftData: SharedDraftData;
+  lang: string;
+  units: readonly UnitLookup[];
+  open?: boolean;
+  onOpenChange?: (open: boolean) => void;
+}) {
+  const [internalOpen, setInternalOpen] = useState(false);
+  const open = controlledOpen ?? internalOpen;
+  const setOpen = (next: boolean) => {
+    if (controlledOpen == null) setInternalOpen(next);
+    onOpenChange?.(next);
+  };
+  const currency = resolveUnit(units, draftData.currency, "CURRENCY");
+  const areaUnit = resolveUnit(units, draftData.area_unit, "AREA");
+  const areaLabel = unitLabel(areaUnit);
 
   const hasPrice = draftData.price != null && draftData.price !== "";
   const hasAddress = !!draftData.display_address || !!draftData.city;
@@ -29,71 +53,131 @@ export function SharedPropertyPanel({ draftData, lang }: { draftData: SharedDraf
   const hasDescription = !!draftData.description;
   const hasPhotos = (draftData.uploads?.length ?? 0) > 0;
   const hasFeatures = (draftData.data?.length ?? 0) > 0;
-  const hasAnyContent = hasPrice || hasAddress || hasFacts || hasDescription || hasPhotos || hasFeatures;
+  const hasTitle = !!draftData.title;
+  const hasAnyContent = hasTitle || hasPrice || hasAddress || hasFacts || hasDescription || hasPhotos || hasFeatures;
 
   if (!hasAnyContent) return null;
 
   const addressText = draftData.display_address || [draftData.city, draftData.state, draftData.country].filter(Boolean).join(", ");
   const photos = (draftData.uploads ?? []).slice(0, 6);
+  const facts = [
+    draftData.bedrooms != null
+      ? { label: t("draft.bedrooms", lang), value: String(draftData.bedrooms) }
+      : null,
+    draftData.bathrooms != null
+      ? { label: t("draft.bathrooms", lang), value: String(draftData.bathrooms) }
+      : null,
+    draftData.area != null && draftData.area !== ""
+      ? { label: t("draft.area", lang), value: `${draftData.area}${areaLabel ? ` ${areaLabel}` : ""}` }
+      : null,
+    draftData.year_built != null
+      ? { label: t("draft.yearBuilt", lang), value: String(draftData.year_built) }
+      : null,
+  ].filter((fact): fact is { label: string; value: string } => fact !== null);
 
   return (
-    <div className="absolute left-3 bottom-3 z-20 sm:left-4 sm:bottom-4 animate-fade-in" style={{ width: "min(calc(100% - 1.5rem), 360px)" }}>
+    <div
+      className="pointer-events-none absolute left-3 top-[calc(3.75rem+env(safe-area-inset-top,0px))] z-20 animate-fade-in sm:bottom-4 sm:left-4 sm:top-auto"
+      style={{ width: "min(calc(100% - 1.5rem), 24rem)" }}
+    >
       <button
-        onClick={() => setOpen((v) => !v)}
-        className="flex items-center gap-1.5 bg-black/40 backdrop-blur-xl text-white/70 rounded-full px-3 py-1.5 text-[11px] font-medium border border-white/10 hover:bg-black/50 transition-colors"
+        type="button"
+        aria-expanded={open}
+        onClick={() => setOpen(!open)}
+        className="floating-control pointer-events-auto flex items-center gap-1.5 border border-border/60 bg-card/90 px-3 text-[11px] font-semibold text-foreground/70 shadow-elevated backdrop-blur-2xl transition-colors hover:bg-card hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
       >
-        <svg width="12" height="12" viewBox="0 0 16 16" fill="none"><path d="M2 4h12M2 8h12M2 12h8" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" /></svg>
+        <DocumentIcon size={12} />
         {t("shared.propertyInfo", lang)}
-        <svg width="10" height="10" viewBox="0 0 16 16" fill="none" className={`transition-transform ${open ? "rotate-180" : ""}`}>
-          <path d="M4 6l4 4 4-4" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
-        </svg>
+        <ChevronDownIcon size={10} className={`transition-transform ${open ? "rotate-180" : ""}`} />
       </button>
 
       {open && (
-        <div className="mt-1.5 bg-black/50 backdrop-blur-xl border border-white/10 rounded-xl max-h-[50dvh] overflow-y-auto p-3.5 space-y-3">
-          {hasPrice && (
-            <p className="text-[16px] font-semibold text-white">{formatPrice(draftData.price, draftData.currency)}</p>
-          )}
+        <section
+          aria-label={t("shared.propertyInfo", lang)}
+          className="floating-panel pointer-events-auto mt-2 max-h-[min(64dvh,36rem)] overflow-y-auto border border-border/60 bg-card/[0.92] p-4 text-foreground shadow-elevated backdrop-blur-2xl scrollbar-thin"
+        >
+          <header className="mb-3 flex items-start justify-between gap-3 border-b border-border/45 pb-3">
+            <div className="min-w-0">
+              <p className="text-[10px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">
+                {t("shared.propertyInfo", lang)}
+              </p>
+              {hasTitle ? (
+                <h2 className="mt-1 truncate text-[15px] font-semibold tracking-[-0.015em]">
+                  {draftData.title}
+                </h2>
+              ) : null}
+            </div>
+            <button
+              type="button"
+              aria-label={t("common.close", lang)}
+              onClick={() => setOpen(false)}
+              className="floating-icon-button -mr-1 -mt-1 shrink-0 text-foreground/45 hover:bg-foreground/[0.055] hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
+            >
+              <CloseIcon size={14} />
+            </button>
+          </header>
+
+          {hasPrice ? (
+            <p className="text-[18px] font-semibold tabular-nums">
+              {formatPrice(draftData.price, currency?.code, lang)}
+            </p>
+          ) : null}
 
           {hasAddress && addressText && (
-            <div className="flex items-start gap-1.5">
-              <svg width="12" height="12" viewBox="0 0 16 16" fill="none" className="text-white/50 mt-0.5 shrink-0">
-                <path d="M8 1C5.24 1 3 3.24 3 6c0 3.75 5 9 5 9s5-5.25 5-9c0-2.76-2.24-5-5-5z" stroke="currentColor" strokeWidth="1.5" />
-                <circle cx="8" cy="6" r="1.5" stroke="currentColor" strokeWidth="1.5" />
-              </svg>
-              <p className="text-[12px] text-white/60 leading-snug">{addressText}</p>
+            <div className="mt-2 flex items-start gap-2">
+              <MapPinIcon size={13} className="mt-0.5 shrink-0 text-muted-foreground" />
+              <p className="text-[12px] leading-relaxed text-foreground/65">{addressText}</p>
             </div>
           )}
 
-          {hasFacts && (
-            <div className="flex flex-wrap gap-1.5">
-              {draftData.bedrooms != null && <span className="bg-white/[0.08] text-white/70 rounded-md px-2 py-0.5 text-[11px]">{draftData.bedrooms} {t("shared.bed", lang)}</span>}
-              {draftData.bathrooms != null && <span className="bg-white/[0.08] text-white/70 rounded-md px-2 py-0.5 text-[11px]">{draftData.bathrooms} {t("shared.bath", lang)}</span>}
-              {draftData.area != null && draftData.area !== "" && <span className="bg-white/[0.08] text-white/70 rounded-md px-2 py-0.5 text-[11px]">{draftData.area} {draftData.area_unit || "m²"}</span>}
-              {draftData.year_built != null && <span className="bg-white/[0.08] text-white/70 rounded-md px-2 py-0.5 text-[11px]">{draftData.year_built}</span>}
+          {facts.length > 0 && (
+            <div className="mt-3 grid grid-cols-2 gap-2">
+              {facts.map((fact) => (
+                <PropertyFactTile key={fact.label} label={fact.label} value={fact.value} compact />
+              ))}
             </div>
           )}
 
-          {hasDescription && <p className="text-[12px] text-white/50 leading-relaxed line-clamp-4">{draftData.description}</p>}
+          {hasDescription && (
+            <div className="mt-4 border-t border-border/40 pt-3">
+              <p className="mb-1.5 text-[10px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">
+                {t("draft.description", lang)}
+              </p>
+              <p className="line-clamp-5 whitespace-pre-line text-[12px] leading-relaxed text-foreground/65">
+                {draftData.description}
+              </p>
+            </div>
+          )}
 
           {hasPhotos && (
-            <div>
-              <p className="text-[10px] text-white/40 font-medium mb-1.5">{t("shared.photos", lang)}</p>
-              <div className="flex gap-1.5 overflow-x-auto pb-1">
-                {/* eslint-disable-next-line @next/next/no-img-element */}
-                {photos.map((p, i) => <img key={i} src={p.url} alt={p.name || ""} className="w-16 h-16 rounded-lg object-cover shrink-0 border border-white/10" />)}
+            <div className="mt-4 border-t border-border/40 pt-3">
+              <p className="mb-2 text-[10px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">{t("shared.photos", lang)}</p>
+              <div className="flex gap-2 overflow-x-auto pb-1 scrollbar-thin">
+                {photos.map((photo, index) => (
+                  <Image
+                    key={`${photo.url}-${index}`}
+                    src={photo.url}
+                    alt={photo.name || ""}
+                    width={80}
+                    height={64}
+                    unoptimized
+                    className="h-16 w-20 shrink-0 rounded-xl border border-border/50 bg-muted/20 object-cover"
+                  />
+                ))}
               </div>
             </div>
           )}
 
           {hasFeatures && (
-            <div className="flex flex-wrap gap-1">
-              {draftData.data!.map((d, i) => (
-                <span key={i} className="bg-white/[0.06] text-white/50 rounded px-1.5 py-0.5 text-[10px]">{d.key}: {d.value}</span>
+            <div className="mt-4 flex flex-wrap gap-1.5 border-t border-border/40 pt-3">
+              {draftData.data!.map((detail, index) => (
+                <span key={`${detail.key}-${index}`} className="rounded-full border border-border/50 bg-surface-subtle px-2.5 py-1 text-[10px] font-medium text-foreground/60">
+                  {detail.key}: {detail.value}
+                </span>
               ))}
             </div>
           )}
-        </div>
+        </section>
       )}
     </div>
   );

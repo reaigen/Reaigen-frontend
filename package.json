@@ -8,7 +8,21 @@
     "start": "next start --port 3055",
     "lint": "eslint .",
     "typecheck": "tsc --noEmit",
-    "check": "npm run lint && npm run typecheck && npm run build"
+    "ux:audit": "node scripts/ux-audit.mjs",
+    "ux:audit:full": "node scripts/ux-audit-full.mjs",
+    "analyze-floorplan-patterns": "node scripts/analyze-floorplan-patterns.mjs",
+    "validate-floorplan": "node --test \"$PWD/node_modules/@reaigen/floorplan-solver/test/solver.test.mjs\"",
+    "validate-floorplan-integration": "node --experimental-strip-types --test scripts/validate-floorplan-integration.mjs",
+    "validate-proxy-path": "node --experimental-strip-types --test scripts/validate-proxy-path.test.mjs",
+    "check": "npm run lint && npm run typecheck && npm run validate-proxy-path && npm run validate-auth-paths && npm run validate-camera-bounds && npm run validate-live-scan-device && npm run validate-live-scan-ui && npm run validate-splat-render-profile && npm run validate-floorplan && npm run validate-floorplan-integration && npm run build",
+    "validate-floorplan-rendering": "node --experimental-strip-types --test scripts/validate-floorplan-rendering.test.mjs",
+    "validate-floorplan-presentation": "node --experimental-strip-types --test scripts/validate-floorplan-presentation.test.mjs",
+    "validate-splat-render-profile": "node --experimental-strip-types --test scripts/validate-splat-render-profile.test.mjs",
+    "sog-metrics": "node --experimental-strip-types scripts/sog-render-metrics.mjs",
+    "validate-auth-paths": "node --experimental-strip-types --test scripts/validate-auth-paths.test.mjs",
+    "validate-camera-bounds": "node --experimental-strip-types --test app/lib/camera-bounds.test.mjs",
+    "validate-live-scan-device": "node --experimental-strip-types --test app/lib/live-scan-device.test.mjs app/lib/live-scan-preview.test.mjs app/lib/point-cloud-bounds.test.mjs",
+    "validate-live-scan-ui": "node --test scripts/validate-live-scan-ui.test.mjs"
   },
   "dependencies": {
     "@babylonjs/core": "^9.10.1",
@@ -23,29 +37,38 @@
     "@radix-ui/react-slot": "^1.2.3",
     "@radix-ui/react-switch": "^1.1.3",
     "@radix-ui/react-tabs": "^1.1.3",
+    "@reaigen/floorplan-solver": "file:vendor/reaigen-floorplan-solver-0.1.0.tgz",
+    "@reaigen/spinoff": "file:vendor/reaigen-spinoff-0.1.48.tgz",
+    "@sparkjsdev/spark": "^2.1.0",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
     "fflate": "^0.8.3",
     "framer-motion": "^12.35.0",
-    "next": "^16.1.6",
+    "next": "16.2.12",
     "react": "^19.2.4",
     "react-dom": "^19.2.4",
-    "tailwind-merge": "^3.5.0"
+    "sharp": "^0.35.3",
+    "tailwind-merge": "^3.5.0",
+    "three": "^0.185.1"
   },
   "devDependencies": {
+    "@axe-core/playwright": "^4.13.0",
+    "@playwright/test": "^1.62.1",
     "@types/node": "^22.15.0",
     "@types/react": "^19.2.14",
     "@types/react-dom": "^19.2.3",
+    "@types/three": "^0.185.4",
     "autoprefixer": "^10.4.27",
     "eslint": "^9.39.5",
-    "eslint-config-next": "^16.2.6",
-    "postcss": "^8.5.8",
+    "eslint-config-next": "16.2.12",
+    "postcss": "8.5.19",
     "tailwindcss": "^3.4.17",
     "typescript": "^5.9.3"
   },
   "overrides": {
     "next": {
-      "postcss": "8.5.19"
+      "postcss": "8.5.19",
+      "sharp": "0.35.3"
     }
   }
 }

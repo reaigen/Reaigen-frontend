@@ -3,8 +3,13 @@ import type { NextConfig } from "next";
 const isProduction = process.env.NODE_ENV === "production";
 
 function contentSecurityPolicy() {
-  const scriptSrc = ["'self'", "'unsafe-inline'"];
-  const connectSrc = ["'self'", "https:"];
+  // The SparkJS splat decoder ships its WebAssembly inlined as a data: URL and
+  // instantiates it inside a blob worker. 'wasm-unsafe-eval' is the narrow
+  // token for that — it permits WebAssembly compilation without granting
+  // 'unsafe-eval' to JavaScript — and connect-src needs data:/blob: so the
+  // worker can fetch the module it was bundled with.
+  const scriptSrc = ["'self'", "'unsafe-inline'", "'wasm-unsafe-eval'"];
+  const connectSrc = ["'self'", "https:", "data:", "blob:"];
 
   if (!isProduction) {
     scriptSrc.push("'unsafe-eval'");
@@ -44,7 +49,7 @@ const securityHeaders = [
   { key: "Cross-Origin-Resource-Policy", value: "same-origin" },
   { key: "Origin-Agent-Cluster", value: "?1" },
   { key: "Content-Security-Policy", value: contentSecurityPolicy() },
-  { key: "Permissions-Policy", value: "camera=(), microphone=(), geolocation=(), payment=(), browsing-topics=()" },
+  { key: "Permissions-Policy", value: "camera=(self), microphone=(), geolocation=(), payment=(), browsing-topics=()" },
   ...(isProduction
     ? [{ key: "Strict-Transport-Security", value: "max-age=63072000; includeSubDomains; preload" }]
     : []),
@@ -52,6 +57,7 @@ const securityHeaders = [
 
 const nextConfig: NextConfig = {
   output: "standalone",
+  devIndicators: false,
   skipTrailingSlashRedirect: true,
   allowedDevOrigins: ["127.0.0.1", "localhost", "0.0.0.0", "100.115.47.42", "100.78.1.23", "app-reaigen.publicrouter.sk"],
   async headers() {
@@ -61,26 +67,46 @@ const nextConfig: NextConfig = {
         headers: securityHeaders,
       },
       {
-        source: "/api/reaigen/users/:path*",
-        headers: [
-          ...securityHeaders,
-          { key: "Cache-Control", value: "private, max-age=300" },
-        ],
-      },
-      {
-        source: "/api/reaigen/content/:path*",
-        headers: [
-          ...securityHeaders,
-          { key: "Cache-Control", value: "private, max-age=600" },
-        ],
-      },
-      {
         source: "/api/:path*",
         headers: [
           ...securityHeaders,
-          { key: "Cache-Control", value: "private, no-store" },
+          { key: "Cache-Control", value: "private, no-store, no-cache, max-age=0, must-revalidate" },
+          { key: "Pragma", value: "no-cache" },
+          { key: "Expires", value: "0" },
         ],
       },
+      {
+        // Authenticated SOGs are immutable by fingerprint (`?v=`). Let the
+        // browser retain range responses while keeping them private to the
+        // signed-in session; the general API no-store rule above otherwise
+        // forces every viewer/editor transition to fetch the scene again.
+        source: "/api/sog/:path*",
+        headers: [
+          ...securityHeaders,
+          { key: "Cache-Control", value: "private, max-age=3600" },
+        ],
+      },
+      ...[
+        "/",
+        "/forgot-password",
+        "/reset-password",
+        "/verify-email",
+        "/dashboard/:path*",
+        "/draft/:path*",
+        "/tour/:path*",
+        "/tours/:path*",
+        "/shares/:path*",
+        "/settings/:path*",
+        "/create/:path*",
+      ].map((source) => ({
+        source,
+        headers: [
+          ...securityHeaders,
+          { key: "Cache-Control", value: "private, no-store, no-cache, max-age=0, must-revalidate" },
+          { key: "Pragma", value: "no-cache" },
+          { key: "Expires", value: "0" },
+        ],
+      })),
     ];
   },
 };
