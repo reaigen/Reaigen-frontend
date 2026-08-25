@@ -62,6 +62,17 @@ const nextConfig: NextConfig = {
   allowedDevOrigins: ["127.0.0.1", "localhost", "0.0.0.0", "100.115.47.42", "100.78.1.23", "app-reaigen.publicrouter.sk"],
   async headers() {
     return [
+      ...[
+        "/apple-app-site-association",
+        "/.well-known/apple-app-site-association",
+      ].map((source) => ({
+        source,
+        headers: [
+          ...securityHeaders,
+          { key: "Content-Type", value: "application/json" },
+          { key: "Cache-Control", value: "public, max-age=3600, must-revalidate" },
+        ],
+      })),
       {
         source: "/:path*",
         headers: securityHeaders,

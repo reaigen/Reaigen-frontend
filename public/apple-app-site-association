@@ -1,0 +1,22 @@
+{
+  "applinks": {
+    "details": [
+      {
+        "appIDs": [
+          "98U89WF65J.Dev.Reai-UI"
+        ],
+        "components": [
+          {
+            "/": "/shared/*",
+            "comment": "Open Reaigen draft and tour share links in the iOS app."
+          }
+        ]
+      }
+    ]
+  },
+  "webcredentials": {
+    "apps": [
+      "98U89WF65J.Dev.Reai-UI"
+    ]
+  }
+}
