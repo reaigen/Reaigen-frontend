@@ -6,7 +6,7 @@ This pass matures the authenticated Reaigen frontend and its public shared-conte
 surfaces as one visual system. It aligns the desktop experience with the iOS app
 without copying mobile navigation patterns that do not scale on larger screens.
 
-The production application is deployed to **reagen.io**. **reagen.com is a separate
+The production application is deployed to **reaigen.io**. **reaigen.com is a separate
 landing-page property and must not be changed or aliased by this deployment.**
 
 ## Visual system decisions
@@ -101,5 +101,4 @@ landing-page property and must not be changed or aliased by this deployment.**
 - Required checks before deployment: TypeScript, ESLint, repository validation tests,
   production build, and `git diff --check`.
 - Deploy the linked Vercel project `reaigen-frontend` to production, verify
-  `https://reagen.io`, and confirm that no `reagen.com` alias is created or changed.
-
+  `https://reaigen.io`, and confirm that no `reaigen.com` alias is created or changed.
