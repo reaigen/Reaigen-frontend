@@ -68,12 +68,15 @@ export function GlassVideoPlayer({ src, ariaLabel, className }: { src: string; a
         playsInline
         preload="metadata"
         aria-label={ariaLabel}
-        className="h-full w-full object-contain"
+        className="h-full w-full object-cover"
         onClick={() => { void togglePlayback(); }}
         onPlay={() => setPlaying(true)}
         onPause={() => setPlaying(false)}
         onEnded={() => setPlaying(false)}
-        onTimeUpdate={(event) => setCurrentTime(event.currentTarget.currentTime)}
+        onTimeUpdate={(event) => {
+          const nextTime = event.currentTarget.currentTime;
+          setCurrentTime(nextTime);
+        }}
         onLoadedMetadata={(event) => setDuration(event.currentTarget.duration)}
         onDurationChange={(event) => setDuration(event.currentTarget.duration)}
       />
@@ -82,19 +85,19 @@ export function GlassVideoPlayer({ src, ariaLabel, className }: { src: string; a
         <button
           type="button"
           onClick={() => { void togglePlayback(); }}
-          className="floating-icon-button pen-touch-target absolute left-1/2 top-1/2 z-10 h-14 w-14 -translate-x-1/2 -translate-y-1/2 border border-white/24 bg-black/64 text-white shadow-[inset_0_1px_0_rgba(255,255,255,.18),0_14px_38px_rgba(0,0,0,.28)] backdrop-blur-xl transition-[transform,background-color] hover:scale-[1.04] hover:bg-black/76 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/75 sm:h-16 sm:w-16"
+          className="floating-icon-button pen-touch-target absolute left-1/2 top-1/2 z-10 h-14 w-14 -translate-x-1/2 -translate-y-1/2 border border-white/55 bg-white/88 text-black shadow-[inset_0_1px_0_rgba(255,255,255,.7),0_14px_38px_rgba(0,0,0,.24)] backdrop-blur-xl transition-[transform,background-color] hover:scale-[1.04] hover:bg-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/80 sm:h-16 sm:w-16"
           aria-label="Play"
         >
           <PlayerGlyph kind="play" />
         </button>
       ) : null}
 
-      <div aria-hidden="true" className="pointer-events-none absolute inset-x-0 bottom-0 h-24 bg-gradient-to-t from-black/72 via-black/34 to-transparent" />
+      <div aria-hidden="true" className="pointer-events-none absolute inset-x-0 bottom-0 h-28 bg-gradient-to-t from-black/58 via-black/18 to-transparent" />
       <div className={cn(
-        "absolute inset-x-0 bottom-0 z-10 flex h-14 items-center gap-2 px-2.5 pb-[max(.25rem,env(safe-area-inset-bottom))] text-white transition-opacity duration-200 sm:h-16 sm:gap-2.5 sm:px-3.5",
+        "absolute inset-x-3 bottom-3 z-10 flex h-12 items-center gap-1.5 rounded-full border border-white/20 bg-black/42 px-1.5 text-white shadow-[inset_0_1px_0_rgba(255,255,255,.14),0_10px_30px_rgba(0,0,0,.2)] backdrop-blur-xl transition-opacity duration-200 sm:gap-2 sm:px-2",
         playing ? "opacity-0 group-hover/video:opacity-100 group-focus-within/video:opacity-100" : "opacity-100",
       )}>
-        <button type="button" onClick={() => { void togglePlayback(); }} className="floating-icon-button h-9 w-9 shrink-0 border border-white/12 bg-black/20 text-white/94 backdrop-blur-md hover:bg-white/14 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/70" aria-label={playing ? "Pause" : "Play"}>
+        <button type="button" onClick={() => { void togglePlayback(); }} className="floating-icon-button h-9 w-9 shrink-0 text-white/94 hover:bg-white/14 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/70" aria-label={playing ? "Pause" : "Play"}>
           <PlayerGlyph kind={playing ? "pause" : "play"} />
         </button>
         <input

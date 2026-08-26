@@ -690,6 +690,10 @@
     .draft-tour-assets .draft-tour-actions > * {
       width: 100% !important;
     }
+
+    .draft-tour-assets .draft-tour-actions > :only-child {
+      grid-column: 1 / -1;
+    }
   }
 
   /*

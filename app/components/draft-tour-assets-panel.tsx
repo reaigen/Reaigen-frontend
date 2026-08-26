@@ -10,7 +10,7 @@ import {
   removeDraftTourAsset,
   updateDraftTourPublication,
 } from "../lib/api/client";
-import { getSafeApiErrorMessage } from "../lib/api/error-message";
+import { getSafeApiErrorMessage, isApiNotFound } from "../lib/api/error-message";
 import { t } from "../lib/i18n";
 import type {
   DraftSplatVersion,
@@ -516,10 +516,13 @@ export function DraftTourAssetsPanel({
       const workspace = await createWebTour({ draft_id: draftId });
       router.push(`/create/tour/${workspace.tour_id}`);
     } catch (reason) {
-      setError(getSafeApiErrorMessage(reason, lang));
+      // A cached/deleted draft may briefly remain visible in the creator. Do
+      // not surface the backend's raw English "Draft not found" on a Slovak
+      // page; the empty-state guidance is the useful recovery information.
+      setError(isApiNotFound(reason) ? text.empty : getSafeApiErrorMessage(reason, lang));
       setCreatingInWeb(false);
     }
-  }, [draftId, lang, router]);
+  }, [draftId, lang, router, text.empty]);
 
   const applyPayload = React.useCallback((next: DraftTourAssetsPayload) => {
     const mapped = selectionsFromPayload(next);
@@ -541,7 +544,19 @@ export function DraftTourAssetsPanel({
     try {
       applyPayload(await getDraftTourAssets(draftId));
     } catch (reason) {
-      setError(getSafeApiErrorMessage(reason, lang));
+      if (isApiNotFound(reason)) {
+        // The tour inventory is optional for legacy and cached drafts. A 404
+        // means "nothing to manage here", not a broken detail page.
+        applyPayload({
+          schema: "com.reaigen.draft-tour-assets",
+          version: 1,
+          draft_id: draftId,
+          assets: [],
+          publication: null,
+        });
+      } else {
+        setError(getSafeApiErrorMessage(reason, lang));
+      }
     } finally {
       setLoading(false);
     }
@@ -811,7 +826,7 @@ export function DraftTourAssetsPanel({
             </p>
           </div>
         </div>
-        <div className="draft-tour-actions flex shrink-0 items-center gap-1.5">
+        <div className="draft-tour-actions flex shrink-0 items-center gap-1.5 empty:hidden">
           {payload?.assets.length ? (
             <Button
               type="button"
@@ -830,14 +845,14 @@ export function DraftTourAssetsPanel({
           {createAccessLoading ? (
             <span
               aria-hidden="true"
-              className="h-9 w-9 shrink-0 animate-pulse rounded-full bg-foreground/[0.055] motion-reduce:animate-none sm:w-32"
+              className="hidden h-9 w-32 shrink-0 animate-pulse rounded-full bg-foreground/[0.055] motion-reduce:animate-none md:block"
             />
           ) : canCreateInWeb ? (
             <Button
               type="button"
               variant="outline"
               size="sm"
-              className="pen-touch-target h-11 w-11 shrink-0 px-0 sm:w-auto sm:px-3"
+              className="pen-touch-target hidden h-11 w-auto shrink-0 px-3 md:inline-flex"
               loading={creatingInWeb}
               onClick={() => { void createInWeb(); }}
               aria-label={t("webCreate.tourAction", lang)}
@@ -849,7 +864,7 @@ export function DraftTourAssetsPanel({
                 fit, so the icon stands down while the spinner is showing.
               */}
               {creatingInWeb ? null : <PlusIcon size={14} />}
-              <span className="hidden sm:inline">{t("webCreate.tourAction", lang)}</span>
+              <span>{t("webCreate.tourAction", lang)}</span>
             </Button>
           ) : null}
         </div>
@@ -1004,7 +1019,10 @@ export function DraftTourAssetsPanel({
                 </div>
 
                 {(canOpen || canEdit || createAccessLoading) ? (
-                  <div className="col-span-2 grid grid-cols-2 gap-2 border-t border-border/45 pt-3">
+                  <div className={cn(
+                    "col-span-2 grid grid-cols-2 gap-2 border-t border-border/45 pt-3",
+                    !canOpen && "hidden md:grid",
+                  )}>
                     {createAccessLoading ? (
                       <span
                         aria-hidden="true"
@@ -1016,7 +1034,7 @@ export function DraftTourAssetsPanel({
                         variant="outline"
                         size="sm"
                         className={cn(
-                          "pen-touch-target order-2 h-10 w-full rounded-full",
+                          "pen-touch-target order-2 hidden h-10 w-full rounded-full md:inline-flex",
                           !canOpen && "col-span-2",
                         )}
                       >
@@ -1034,7 +1052,8 @@ export function DraftTourAssetsPanel({
                         variant={selection?.isPrimary && state.ready ? "default" : "secondary"}
                         className={cn(
                           "pen-touch-target order-1 h-10 w-full rounded-full",
-                          !canEdit && "col-span-2",
+                          "col-span-2 md:col-span-1",
+                          !canEdit && "md:col-span-2",
                         )}
                       >
                         <Link href={state.ready
@@ -1353,7 +1372,7 @@ export function DraftTourAssetsPanel({
                                 </Button>
                               ) : null}
                               {canCreateInWeb && (asset.editor_workspace || asset.source_splat_id) ? (
-                                <Button asChild variant="outline" size="sm" className="mt-3 h-11 w-full">
+                                <Button asChild variant="outline" size="sm" className="mt-3 hidden h-11 w-full md:inline-flex">
                                   <Link href={`/create/tour/${asset.id}`}>
                                     <EditIcon size={13} />
                                     {t("webCreate.openEditor", lang)}

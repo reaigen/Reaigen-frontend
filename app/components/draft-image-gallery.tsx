@@ -457,7 +457,7 @@ export function DraftImageGallery({ images, alt, fallbackUrl, lang = "en", onAct
 
   if (count === 0) {
     return (
-      <div className="detail-hero-gallery relative aspect-[16/10] w-full overflow-hidden bg-white ring-1 ring-inset ring-black/[0.045] md:aspect-video md:rounded-xl">
+      <div className="detail-hero-gallery relative aspect-[4/3] w-full overflow-hidden bg-white ring-1 ring-inset ring-black/[0.045] sm:aspect-[16/10] md:aspect-video md:rounded-xl">
         <div className="flex h-full w-full items-center justify-center">
           <svg width="48" height="48" viewBox="0 0 24 24" fill="none" className="text-black/10" aria-hidden="true">
             <rect x="3" y="3" width="18" height="18" rx="2" stroke="currentColor" strokeWidth="1.5" />
@@ -477,7 +477,7 @@ export function DraftImageGallery({ images, alt, fallbackUrl, lang = "en", onAct
         aria-label={alt}
         onKeyDown={handleKeyboardNavigation}
         className={cn(
-          "detail-hero-gallery group relative aspect-[16/10] w-full overflow-hidden bg-white ring-1 ring-inset ring-black/[0.045] md:aspect-video md:rounded-xl",
+          "detail-hero-gallery group relative aspect-[4/3] w-full overflow-hidden bg-white ring-1 ring-inset ring-black/[0.045] sm:aspect-[16/10] md:aspect-video md:rounded-xl",
           count === 1 && "detail-hero-gallery-single",
         )}
       >
@@ -565,7 +565,7 @@ export function DraftImageGallery({ images, alt, fallbackUrl, lang = "en", onAct
           <button
             type="button"
             onClick={onManage}
-            className="floating-capsule floating-control pen-touch-target absolute left-3 top-3 gap-2 border border-black/10 bg-white/90 px-4 text-[12px] font-medium text-black/70 shadow-sm backdrop-blur-xl transition-[background-color,color,box-shadow] hover:bg-black hover:text-white hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-black/25"
+            className="floating-capsule floating-control-sm pen-touch-target absolute left-3 top-3 gap-2 border border-black/10 bg-white/88 px-3 text-[11px] font-semibold text-black/72 shadow-control backdrop-blur-xl transition-[background-color,color,box-shadow] hover:bg-black hover:text-white hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-black/25 sm:min-h-11 sm:px-4 sm:text-[12px] sm:font-medium"
             aria-label={manageLabel}
           >
             <EditIcon size={15} />
@@ -578,7 +578,7 @@ export function DraftImageGallery({ images, alt, fallbackUrl, lang = "en", onAct
           data-testid="draft-gallery-icon-overview-open"
           onClick={() => openLightbox(activeIndex, true)}
           className={cn(
-            "pen-touch-target absolute right-3 top-3 inline-flex min-h-11 items-center justify-center border border-black/10 bg-white/90 text-black/70 shadow-sm backdrop-blur-xl transition-[background-color,color,box-shadow] hover:bg-black hover:text-white hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-black/25",
+            "pen-touch-target absolute right-3 top-3 inline-flex h-9 min-h-9 items-center justify-center border border-black/10 bg-white/88 text-black/72 shadow-control backdrop-blur-xl transition-[background-color,color,box-shadow] hover:bg-black hover:text-white hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-black/25 sm:h-11 sm:min-h-11",
             mobileOverviewLabel
               ? "floating-capsule gap-2 rounded-full px-3.5 text-[11px] font-semibold"
               : "floating-icon-button w-11 rounded-full",
@@ -625,7 +625,7 @@ export function DraftImageGallery({ images, alt, fallbackUrl, lang = "en", onAct
                  * fullscreen gallery open. A spent arrow now simply absorbs
                  * the click, which is what pressing a dead control should do.
                  */
-                "floating-icon-button pen-touch-target absolute left-3 top-1/2 -translate-y-1/2 border border-black/10 bg-white/90 text-black/70 shadow-sm backdrop-blur-xl hover:scale-105 hover:bg-black hover:text-white hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-black/25 disabled:cursor-default disabled:opacity-30 disabled:hover:scale-100 disabled:hover:bg-white/90 disabled:hover:text-black/70 disabled:hover:shadow-sm",
+                "floating-icon-button pen-touch-target absolute left-3 top-1/2 hidden -translate-y-1/2 border border-black/10 bg-white/90 text-black/70 shadow-sm backdrop-blur-xl hover:scale-105 hover:bg-black hover:text-white hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-black/25 disabled:cursor-default disabled:opacity-30 disabled:hover:scale-100 disabled:hover:bg-white/90 disabled:hover:text-black/70 disabled:hover:shadow-sm sm:inline-flex",
                 mosaicAvailable && "lg:hidden",
               )}
               aria-label={t("draft.gallery.previous", lang)}
@@ -639,7 +639,7 @@ export function DraftImageGallery({ images, alt, fallbackUrl, lang = "en", onAct
               className={cn(
                 // Same reasoning as the previous arrow: a disabled arrow must
                 // still swallow the click rather than let it reach the image.
-                "floating-icon-button pen-touch-target absolute right-3 top-1/2 -translate-y-1/2 border border-black/10 bg-white/90 text-black/70 shadow-sm backdrop-blur-xl hover:scale-105 hover:bg-black hover:text-white hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-black/25 disabled:cursor-default disabled:opacity-30 disabled:hover:scale-100 disabled:hover:bg-white/90 disabled:hover:text-black/70 disabled:hover:shadow-sm",
+                "floating-icon-button pen-touch-target absolute right-3 top-1/2 hidden -translate-y-1/2 border border-black/10 bg-white/90 text-black/70 shadow-sm backdrop-blur-xl hover:scale-105 hover:bg-black hover:text-white hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-black/25 disabled:cursor-default disabled:opacity-30 disabled:hover:scale-100 disabled:hover:bg-white/90 disabled:hover:text-black/70 disabled:hover:shadow-sm sm:inline-flex",
                 mosaicAvailable && "lg:hidden",
               )}
               aria-label={t("draft.gallery.next", lang)}

@@ -48,10 +48,6 @@ import {
   prepareFloorplanPresentationObjects,
   solveFurnitureLayout,
   STROKE_COLOR,
-  STROKE_WIDTH,
-  DOOR_PANEL_WIDTH,
-  DOOR_ARC_WIDTH,
-  DOOR_HINGE_RADIUS,
   WALL_THICKNESS,
   type AdjustedGeometry,
   type CustomOpening,
@@ -119,79 +115,26 @@ const cloneGraph = (g: WallGraphState): WallGraphState => ({
   edges: g.edges.map((e) => ({ ...e })),
 });
 /**
- * Compute once, for the lifetime of the editor.
- *
- * `useMemo` is not enough here and that is the whole point. Every edit saves,
- * the save calls `onSaved`, the page merges the new draft data and hands it
- * back as a prop — so `base` is rebuilt from the freshly saved walls a moment
- * after each change. Anything memoised on `base` therefore recomputes on every
- * edit no matter how narrow its dependency list looks.
- *
- * React also treats `useMemo` as a cache it may drop, so it is not a guarantee
- * of "once" even without that. State initialised lazily is.
+ * iOS parity: a shared corner moves freely and every connected wall follows
+ * because all incident edges reference the same vertex. The gesture operates
+ * from its immutable drag-start graph, so pointer events never compound.
  */
-function useConstant<T>(create: () => T): T {
-  const [value] = useState(create);
-  return value;
-}
-
-/** Was this wall running along Z (vertical in plan) before the drag? */
-const wallWasVertical = (a: V2, b: V2) => Math.abs(b[0] - a[0]) <= Math.abs(b[1] - a[1]);
-
-/**
- * Drag a corner and carry the walls that meet it, so they stay square.
- *
- * Dragging used to write the cursor position straight into the vertex, which
- * let any corner be pulled to any angle — one drag turned a scanned room into a
- * triangle. Snapping the vertex back onto its neighbours' axes within a
- * tolerance was not enough either: past that tolerance it skewed exactly as
- * before, so the guarantee only held for drags too small to matter.
- *
- * The corner cannot be constrained on its own, because a corner joins two walls
- * at right angles and moving it necessarily lengthens one and shifts the other.
- * So the neighbours move too. A wall that ran vertical takes the corner's new X
- * and keeps its own Z — it slides sideways and stays vertical; a horizontal one
- * takes the new Z and keeps its X. Every wall touching the corner is still
- * exactly on an axis afterwards, by construction rather than by tolerance.
- *
- * This is what dragging a corner of a room looks like everywhere else, and it
- * is the only version that cannot produce a shape the scan could not have
- * measured.
- */
-function dragCornerSquare(
+function moveGraphVertex(
   target: V2,
   vertexIndex: number,
   base: WallGraphState,
 ): WallGraphState {
-  const origin = base.vertices[vertexIndex];
-  if (!origin) return base;
-
+  if (!base.vertices[vertexIndex]) return base;
   const next = cloneGraph(base);
   next.vertices[vertexIndex] = [target[0], target[1]];
-
-  for (const edge of base.edges) {
-    const otherIndex = edge.a === vertexIndex ? edge.b : edge.b === vertexIndex ? edge.a : null;
-    if (otherIndex == null) continue;
-    const other = base.vertices[otherIndex];
-    if (!other) continue;
-    next.vertices[otherIndex] = wallWasVertical(origin, other)
-      ? [target[0], other[1]]
-      : [other[0], target[1]];
-  }
   return next;
 }
 
 /**
- * Slide a whole wall, perpendicular to itself.
- *
- * Translating both endpoints by the raw cursor delta moved a wall diagonally,
- * which breaks every wall joined to it. A wall only has one degree of freedom
- * worth having here: a vertical one moves left and right, a horizontal one up
- * and down. Its own length is unchanged and the walls it meets simply grow or
- * shrink to follow, which keeps the room rectilinear without moving anything
- * the user did not grab.
+ * iOS parity: dragging a wall body translates both endpoints by the same 2D
+ * delta. Connected walls remain joined because they share those endpoints.
  */
-function slideWallSquare(
+function translateGraphEdge(
   delta: V2,
   edgeIndex: number,
   base: WallGraphState,
@@ -203,14 +146,26 @@ function slideWallSquare(
   if (!a || !b) return base;
 
   const next = cloneGraph(base);
-  if (wallWasVertical(a, b)) {
-    next.vertices[edge.a] = [a[0] + delta[0], a[1]];
-    next.vertices[edge.b] = [b[0] + delta[0], b[1]];
-  } else {
-    next.vertices[edge.a] = [a[0], a[1] + delta[1]];
-    next.vertices[edge.b] = [b[0], b[1] + delta[1]];
-  }
+  next.vertices[edge.a] = [a[0] + delta[0], a[1] + delta[1]];
+  next.vertices[edge.b] = [b[0] + delta[0], b[1] + delta[1]];
   return next;
+}
+
+/** Merge one dropped corner into another and remove duplicate/self edges. */
+function mergeGraphVertex(graph: WallGraphState, from: number, into: number): WallGraphState {
+  if (from === into || !graph.vertices[from] || !graph.vertices[into]) return graph;
+  const next = cloneGraph(graph);
+  next.edges = next.edges
+    .map((edge) => ({
+      a: edge.a === from ? into : edge.a,
+      b: edge.b === from ? into : edge.b,
+    }))
+    .filter((edge) => edge.a !== edge.b)
+    .filter((edge, index, edges) => edges.findIndex((candidate) => (
+      (candidate.a === edge.a && candidate.b === edge.b)
+      || (candidate.a === edge.b && candidate.b === edge.a)
+    )) === index);
+  return pruneOrphans(next);
 }
 
 const cloneEdits = (e: OpeningEditsState): OpeningEditsState => ({
@@ -221,6 +176,14 @@ const cloneEdits = (e: OpeningEditsState): OpeningEditsState => ({
 const dist = (a: V2, b: V2) => Math.hypot(a[0] - b[0], a[1] - b[1]);
 const mid = (a: V2, b: V2): V2 => [(a[0] + b[0]) / 2, (a[1] + b[1]) / 2];
 const fmt = (v: number, d = 2) => (Number.isFinite(v) ? v.toFixed(d) : "n/a");
+const projectPointToSegment = (point: V2, a: V2, b: V2): V2 => {
+  const dx = b[0] - a[0];
+  const dz = b[1] - a[1];
+  const denominator = dx * dx + dz * dz;
+  if (denominator < 1e-8) return [...a] as V2;
+  const t = Math.max(0, Math.min(1, ((point[0] - a[0]) * dx + (point[1] - a[1]) * dz) / denominator));
+  return [a[0] + dx * t, a[1] + dz * t];
+};
 
 /** Weld raw wall segments into a shared-vertex graph (iOS baseline build). */
 function graphFromSegments(segs: [V2, V2][], eps = WELD_EPS): WallGraphState {
@@ -348,6 +311,7 @@ export default function FloorplanEditor({ draftId, draftData, lang, onClose, onS
     edgeIndex?: number;
     labelN?: number;
     baseGraph?: WallGraphState;
+    baseEdits?: OpeningEditsState;
     basePan?: { x: number; y: number };
     baseOffset?: V2;
     moved?: boolean;
@@ -544,42 +508,29 @@ export default function FloorplanEditor({ draftId, draftData, lang, onClose, onS
   }, [segs, proj0]);
 
   /*
-   * Solved once, from the capture — not from the walls as they are being
-   * edited.
-   *
-   * This used to re-run on every wall, door and window change, and the effect
-   * was that erasing one wall rearranged the room: the solver is global, so a
-   * changed room boundary re-places every object at once and the sofa, table
-   * and chairs all jump. Nobody erasing a stray wall is asking for the
-   * furniture to be reconsidered, and there is no way to tell from the screen
-   * that it happened or to get the old arrangement back.
-   *
-   * The furniture belongs to the scan. It is laid out once against the walls
-   * the scan produced and then left alone, so an edit changes only the thing
-   * that was edited. A wall moved far enough can leave a piece the wrong side
-   * of it, which is visible and correctable, and is a much smaller problem than
-   * the whole room silently reshuffling.
+   * Architectural edits immediately feed the same constrained layout solve as
+   * the consumer viewer. This is the collision contract: furniture cannot be
+   * previewed through an edited wall, inside a door reserve, or outside the
+   * current room and only jump into a valid location after the editor closes.
+   * Rejected observations remain in solver diagnostics but are intentionally
+   * absent from this presentation layer.
    */
-  const furniture = useConstant(
-    () => {
-      const baseGraph = base.initialGraph;
-      const baseSegs = graphSegs(baseGraph);
-      const baseDoors = (base.geom?.doors ?? []).map((d) => ({ id: d.id, p1: d.p1, p2: d.p2 }));
+  const furniture = useMemo(() => {
       const solved = USE_CONSTRAINT_SOLVER
         ? solveReaigenFloorplan({
-            walls: baseSegs,
-            doors: baseDoors,
-            windows: base.geom?.windows ?? [],
-            openings: base.geom?.openings ?? [],
+            walls: segs,
+            doors,
+            windows,
+            openings,
             objects: base.geom?.objects ?? [], // solver conditions internally
             doorConfigs,
             rooms: base.geom?.solverRooms ?? [],
           }).objects
         : solveFurnitureLayout(
-            prepareObjects(base.geom?.objects ?? [], computeBounds(baseGraph.vertices)),
-            baseSegs,
-            base.geom?.interiorCentroid ?? [0, 0],
-            baseDoors,
+            prepareObjects(base.geom?.objects ?? [], computeBounds(graph.vertices)),
+            segs,
+            interior,
+            doors,
             base.geom?.rooms ?? []
           );
       const layer = (object: (typeof solved)[number]): number => {
@@ -594,8 +545,7 @@ export default function FloorplanEditor({ draftId, draftData, lang, onClose, onS
         || 4 * b.halfW * b.halfD - 4 * a.halfW * a.halfD
         || a.id.localeCompare(b.id)
       );
-    },
-  );
+    }, [base.geom, doorConfigs, doors, graph.vertices, interior, openings, segs, windows]);
 
   const roomNumbers = useMemo(() => {
     const set = new Set(roomNumbersInTextData(base.textData));
@@ -654,6 +604,36 @@ export default function FloorplanEditor({ draftId, draftData, lang, onClose, onS
     [graph, pxPerMeter]
   );
 
+  const snapDrawStart = useCallback((point: V2): V2 => {
+    const vertex = nearestVertex(point);
+    if (vertex != null) return graph.vertices[vertex];
+    const edgeIndex = nearestEdge(point, VERTEX_PICK_PX);
+    if (edgeIndex == null) return point;
+    const edge = graph.edges[edgeIndex];
+    return projectPointToSegment(point, graph.vertices[edge.a], graph.vertices[edge.b]);
+  }, [graph, nearestEdge, nearestVertex]);
+
+  /**
+   * Keep the new wall orthogonal while snapping its free axis to a nearby
+   * corner. A circular vertex hit-test is insufficient here: an otherwise
+   * perfect closing wall can be far from a corner on its locked axis.
+   */
+  const snapDrawEnd = useCallback((start: V2, point: V2): V2 => {
+    const horizontal = Math.abs(point[0] - start[0]) >= Math.abs(point[1] - start[1]);
+    const aligned: V2 = horizontal ? [point[0], start[1]] : [start[0], point[1]];
+    const tolerance = VERTEX_PICK_PX / pxPerMeter;
+    let best = tolerance;
+    for (const vertex of graph.vertices) {
+      const distance = horizontal ? Math.abs(vertex[0] - aligned[0]) : Math.abs(vertex[1] - aligned[1]);
+      if (distance < best) {
+        best = distance;
+        if (horizontal) aligned[0] = vertex[0];
+        else aligned[1] = vertex[1];
+      }
+    }
+    return aligned;
+  }, [graph.vertices, pxPerMeter]);
+
   const commitDraw = useCallback(
     (from: V2, to: V2) => {
       if (dist(from, to) < MIN_WALL_DRAW) return;
@@ -693,6 +673,20 @@ export default function FloorplanEditor({ draftId, draftData, lang, onClose, onS
         if (!deleted.has(s.id) && hitSeg(s.p1, s.p2, openTol)) deleted.add(s.id);
       }
       e.customOpenings = e.customOpenings.filter((o) => !hitSeg(o.p1, o.p2, openTol));
+      if (removedEdges.size) {
+        const hostedByRemovedEdge = (point: V2) => [...removedEdges].some((index) => {
+          const edge = g.edges[index];
+          return !!edge && distancePointToSegment(point, g.vertices[edge.a], g.vertices[edge.b]) <= 0.3;
+        });
+        // Deleting a host wall owns its openings too. Persisting that relation
+        // avoids a deleted RoomPlan door/window reappearing after reload.
+        for (const source of [...(base.geom?.doors ?? []), ...(base.geom?.windows ?? [])]) {
+          if (!deleted.has(source.id) && hostedByRemovedEdge(mid(source.p1, source.p2))) {
+            deleted.add(source.id);
+          }
+        }
+        e.customOpenings = e.customOpenings.filter((opening) => !hostedByRemovedEdge(mid(opening.p1, opening.p2)));
+      }
       if (!removedEdges.size && deleted.size === e.deletedSourceOpeningIDs.length &&
           e.customOpenings.length === edits.customOpenings.length) {
         return;
@@ -749,18 +743,55 @@ export default function FloorplanEditor({ draftId, draftData, lang, onClose, onS
   const reprojectOpenings = useCallback(
     (before: WallGraphState, after: WallGraphState, e: OpeningEditsState): OpeningEditsState => {
       const next = cloneEdits(e);
+      const affectedEdges = before.edges.flatMap((edge, index) => {
+        const nextEdge = after.edges[index];
+        if (!nextEdge) return [];
+        const oldA = before.vertices[edge.a];
+        const oldB = before.vertices[edge.b];
+        const newA = after.vertices[nextEdge.a];
+        const newB = after.vertices[nextEdge.b];
+        return oldA && oldB && newA && newB && (dist(oldA, newA) > 1e-5 || dist(oldB, newB) > 1e-5)
+          ? [index]
+          : [];
+      });
+      if (!affectedEdges.length) return next;
+
+      const nearestAffectedEdge = (point: V2): number | null => {
+        let best: number | null = null;
+        let bestDistance = 0.3;
+        for (const index of affectedEdges) {
+          const edge = before.edges[index];
+          if (!edge) continue;
+          const distance = distancePointToSegment(point, before.vertices[edge.a], before.vertices[edge.b]);
+          if (distance <= bestDistance) {
+            bestDistance = distance;
+            best = index;
+          }
+        }
+        return best;
+      };
+
+      // RoomPlan openings are immutable scan observations. As on iOS, turn an
+      // opening hosted by a moved wall into an authored opening with the same
+      // identity before transforming it. Otherwise the source marker remains
+      // behind and disappears as soon as the wall leaves its old position.
+      const deleted = new Set(next.deletedSourceOpeningIDs);
+      for (const source of [
+        ...(base.geom?.doors ?? []).map((opening) => ({ ...opening, kind: "door" as const })),
+        ...(base.geom?.windows ?? []).map((opening) => ({ ...opening, kind: "window" as const })),
+      ]) {
+        if (deleted.has(source.id) || nearestAffectedEdge(mid(source.p1, source.p2)) == null) continue;
+        deleted.add(source.id);
+        if (!next.customOpenings.some((opening) => opening.id === source.id)) {
+          next.customOpenings.push({ id: source.id, kind: source.kind, p1: source.p1, p2: source.p2 });
+        }
+      }
+      next.deletedSourceOpeningIDs = [...deleted];
+
       next.customOpenings = next.customOpenings.map((o) => {
         const m = mid(o.p1, o.p2);
-        let bestI = -1;
-        let bestD = Infinity;
-        before.edges.forEach((ed, i) => {
-          const d = distancePointToSegment(m, before.vertices[ed.a], before.vertices[ed.b]);
-          if (d < bestD) {
-            bestD = d;
-            bestI = i;
-          }
-        });
-        if (bestI < 0 || bestD > 0.3) return o;
+        const bestI = nearestAffectedEdge(m);
+        if (bestI == null) return o;
         const oldA = before.vertices[before.edges[bestI].a];
         const oldB = before.vertices[before.edges[bestI].b];
         const newA = after.vertices[after.edges[bestI]?.a ?? before.edges[bestI].a];
@@ -768,9 +799,11 @@ export default function FloorplanEditor({ draftId, draftData, lang, onClose, onS
         if (!newA || !newB) return o;
         const oldLen = Math.max(dist(oldA, oldB), 1e-4);
         const newLen = Math.max(dist(newA, newB), 1e-4);
-        const len = dist(o.p1, o.p2);
-        if (newLen < Math.max(MIN_WALL_FOR_OPENING, len + 0.02)) return o;
-        const tMid = ((m[0] - oldA[0]) * (oldB[0] - oldA[0]) + (m[1] - oldA[1]) * (oldB[1] - oldA[1])) / (oldLen * oldLen);
+        if (newLen <= MIN_WALL_FOR_OPENING) return o;
+        const len = Math.min(dist(o.p1, o.p2), Math.max(MIN_OPENING, newLen - 0.1));
+        const rawTMid = ((m[0] - oldA[0]) * (oldB[0] - oldA[0]) + (m[1] - oldA[1]) * (oldB[1] - oldA[1])) / (oldLen * oldLen);
+        const halfT = len / newLen / 2;
+        const tMid = Math.max(halfT + 0.02, Math.min(1 - halfT - 0.02, rawTMid));
         const ux = (newB[0] - newA[0]) / newLen;
         const uz = (newB[1] - newA[1]) / newLen;
         const c: V2 = [newA[0] + (newB[0] - newA[0]) * tMid, newA[1] + (newB[1] - newA[1]) * tMid];
@@ -782,7 +815,7 @@ export default function FloorplanEditor({ draftId, draftData, lang, onClose, onS
       });
       return next;
     },
-    []
+    [base.geom]
   );
 
   // ── pointer handlers ──────────────────────────────────────────────────────
@@ -827,9 +860,8 @@ export default function FloorplanEditor({ draftId, draftData, lang, onClose, onS
       }
       switch (tool) {
         case "draw": {
-          const vi = nearestVertex(w);
           g.kind = "draw";
-          g.start = vi != null ? graph.vertices[vi] : w;
+          g.start = snapDrawStart(w);
           setDrawPreview([g.start, g.start]);
           return;
         }
@@ -843,6 +875,7 @@ export default function FloorplanEditor({ draftId, draftData, lang, onClose, onS
             g.kind = "moveVertex";
             g.vertexIndex = vi;
             g.baseGraph = cloneGraph(graph);
+            g.baseEdits = cloneEdits(edits);
             pushUndo();
             return;
           }
@@ -851,6 +884,7 @@ export default function FloorplanEditor({ draftId, draftData, lang, onClose, onS
             g.kind = "moveEdge";
             g.edgeIndex = ei;
             g.baseGraph = cloneGraph(graph);
+            g.baseEdits = cloneEdits(edits);
             pushUndo();
             return;
           }
@@ -866,7 +900,7 @@ export default function FloorplanEditor({ draftId, draftData, lang, onClose, onS
       }
     },
     [tool, screenToWorld, screenPx, pan, zoom, proj, doors, roomNumbers, labelPositions, labelOffsets,
-     nearestVertex, nearestEdge, graph, pxPerMeter, pushUndo, editingDoor, editingLabel]
+     nearestVertex, nearestEdge, graph, edits, pxPerMeter, pushUndo, editingDoor, editingLabel, snapDrawStart]
   );
 
   const onPointerMove = useCallback(
@@ -885,29 +919,26 @@ export default function FloorplanEditor({ draftId, draftData, lang, onClose, onS
           return;
         }
         case "draw": {
-          // Manhattan snap + vertex snap (iOS drawSnapRadius).
-          let end: V2 =
-            Math.abs(w[0] - g.start[0]) >= Math.abs(w[1] - g.start[1])
-              ? [w[0], g.start[1]]
-              : [g.start[0], w[1]];
-          const vi = nearestVertex(end);
-          if (vi != null) end = graph.vertices[vi];
-          setDrawPreview([g.start, end]);
+          setDrawPreview([g.start, snapDrawEnd(g.start, w)]);
           return;
         }
         case "erase":
           setEraseStroke((prev) => [...prev, w]);
           return;
         case "moveVertex": {
-          setGraph(dragCornerSquare(w, g.vertexIndex!, g.baseGraph!));
+          const nextGraph = moveGraphVertex(w, g.vertexIndex!, g.baseGraph!);
+          setGraph(nextGraph);
+          setEdits(reprojectOpenings(g.baseGraph!, nextGraph, g.baseEdits!));
           return;
         }
         case "moveEdge": {
-          setGraph(slideWallSquare(
+          const nextGraph = translateGraphEdge(
             [w[0] - g.start[0], w[1] - g.start[1]],
             g.edgeIndex!,
             g.baseGraph!,
-          ));
+          );
+          setGraph(nextGraph);
+          setEdits(reprojectOpenings(g.baseGraph!, nextGraph, g.baseEdits!));
           return;
         }
         case "label": {
@@ -922,7 +953,7 @@ export default function FloorplanEditor({ draftId, draftData, lang, onClose, onS
         }
       }
     },
-    [screenToWorld, screenPx, nearestVertex, graph]
+    [screenToWorld, screenPx, snapDrawEnd, reprojectOpenings]
   );
 
   const onPointerUp = useCallback(
@@ -933,7 +964,7 @@ export default function FloorplanEditor({ draftId, draftData, lang, onClose, onS
       const w = screenToWorld(ev.clientX, ev.clientY);
       switch (kind) {
         case "draw": {
-          if (drawPreview) commitDraw(drawPreview[0], drawPreview[1]);
+          commitDraw(g.start, snapDrawEnd(g.start, w));
           setDrawPreview(null);
           return;
         }
@@ -944,8 +975,29 @@ export default function FloorplanEditor({ draftId, draftData, lang, onClose, onS
         }
         case "moveVertex":
         case "moveEdge": {
-          const nextEdits = reprojectOpenings(g.baseGraph!, graph, edits);
-          commit(cloneGraph(graph), nextEdits);
+          let nextGraph = kind === "moveVertex"
+            ? moveGraphVertex(w, g.vertexIndex!, g.baseGraph!)
+            : translateGraphEdge(
+                [w[0] - g.start[0], w[1] - g.start[1]],
+                g.edgeIndex!,
+                g.baseGraph!,
+              );
+          const nextEdits = reprojectOpenings(g.baseGraph!, nextGraph, g.baseEdits!);
+          if (kind === "moveVertex" && g.vertexIndex != null) {
+            const movedVertex = nextGraph.vertices[g.vertexIndex];
+            let nearest: number | null = null;
+            let best = WELD_EPS;
+            nextGraph.vertices.forEach((vertex, index) => {
+              if (index === g.vertexIndex) return;
+              const distance = dist(movedVertex, vertex);
+              if (distance <= best) {
+                best = distance;
+                nearest = index;
+              }
+            });
+            if (nearest != null) nextGraph = mergeGraphVertex(nextGraph, g.vertexIndex, nearest);
+          }
+          commit(nextGraph, nextEdits);
           return;
         }
         case "label": {
@@ -974,10 +1026,22 @@ export default function FloorplanEditor({ draftId, draftData, lang, onClose, onS
         }
       }
     },
-    [screenToWorld, drawPreview, commitDraw, eraseStroke, eraseAlongStroke, graph, edits, commit,
+    [screenToWorld, snapDrawEnd, commitDraw, eraseStroke, eraseAlongStroke, commit,
      reprojectOpenings, labelPositions, labelOffsets, labels, proj, zoom, pan, persist, tool,
      placeOpening, addRoom]
   );
+
+  const onPointerCancel = useCallback(() => {
+    const current = gesture.current;
+    if ((current.kind === "moveVertex" || current.kind === "moveEdge") && current.baseGraph && current.baseEdits) {
+      setGraph(cloneGraph(current.baseGraph));
+      setEdits(cloneEdits(current.baseEdits));
+      undoStack.current.pop();
+    }
+    current.kind = null;
+    setDrawPreview(null);
+    setEraseStroke([]);
+  }, []);
 
   const onWheel = useCallback(
     (ev: React.WheelEvent<SVGSVGElement>) => {
@@ -1182,6 +1246,7 @@ export default function FloorplanEditor({ draftId, draftData, lang, onClose, onS
           onPointerDown={onPointerDown}
           onPointerMove={onPointerMove}
           onPointerUp={onPointerUp}
+          onPointerCancel={onPointerCancel}
           onWheel={onWheel}
           xmlns="http://www.w3.org/2000/svg"
         >

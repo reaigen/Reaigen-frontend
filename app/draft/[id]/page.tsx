@@ -1,7 +1,6 @@
 "use client";
 
 import { useEffect, useRef, useState, use, type ReactNode } from "react";
-import * as Dialog from "@radix-ui/react-dialog";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { useAuth } from "../../components/hooks/use-auth";
@@ -40,7 +39,6 @@ import {
   InfoIcon,
   ImageIcon,
   MapPinIcon,
-  MoreIcon,
   PlusIcon,
   PriceIcon,
   SearchIcon,
@@ -449,12 +447,12 @@ function ExpandableDescription({ text, lang }: { text: string; lang: string }) {
   }, [text]);
 
   return (
-    <div className="rounded-[1.5rem] border border-border/70 bg-card px-5 py-5 shadow-card sm:rounded-2xl sm:px-6">
+    <div className="rounded-[1.25rem] border border-border/65 bg-card/88 px-4 py-4 shadow-control backdrop-blur-xl sm:rounded-2xl sm:px-6 sm:py-5 sm:shadow-card">
       <div
         ref={textRef}
         className={cn(
           // Listing copy, not chrome — agents paste this into portals and mail.
-          "select-text overflow-hidden whitespace-pre-line text-[15px] leading-[1.75] text-foreground/85 transition-[max-height] duration-300",
+          "select-text overflow-hidden whitespace-pre-line text-[15px] leading-[1.7] text-foreground/88 transition-[max-height] duration-300 sm:leading-[1.75]",
           expanded ? "max-h-[200em]" : "max-h-[8.75em]",
         )}
       >
@@ -519,7 +517,6 @@ export default function DraftPreviewPage({
   const [mediaOpen, setMediaOpen] = useState(false);
   const mediaManagerRef = useRef<DraftMediaManagerHandle>(null);
   const [sharingOpen, setSharingOpen] = useState(sharingRequested);
-  const [mobileActionsOpen, setMobileActionsOpen] = useState(false);
   const [usingCachedDraft, setUsingCachedDraft] = useState(false);
   const [retryAttempt, setRetryAttempt] = useState(0);
   const [reloadNonce, setReloadNonce] = useState(0);
@@ -833,7 +830,7 @@ export default function DraftPreviewPage({
         )}
 
         {/* Media and property summary — one continuous workspace at every width. */}
-        <div className="flex flex-col overflow-hidden rounded-[1.65rem] border border-border/65 bg-card shadow-card">
+        <div className="draft-mobile-workspace flex flex-col overflow-visible border-0 bg-transparent shadow-none md:overflow-hidden md:rounded-[1.65rem] md:border md:border-border/65 md:bg-card md:shadow-card">
           {/*
             A listing with no photos rendered no hero at all, so the page opened
             on status pills floating in whitespace and never said the obvious
@@ -847,7 +844,7 @@ export default function DraftPreviewPage({
             <button
               type="button"
               onClick={() => mediaManagerRef.current?.requestUpload()}
-              className="group w-full border-t border-border/60 bg-card p-3 text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring sm:p-4"
+              className="group w-full bg-transparent p-0 text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring md:border-t md:border-border/60 md:bg-card md:p-4"
             >
               <span className="flex min-h-40 min-w-0 items-center justify-center gap-4 rounded-[1.25rem] border border-dashed border-border/80 bg-surface-subtle/35 p-5 text-center transition-[background-color,border-color] group-hover:border-foreground/25 group-hover:bg-surface-subtle/60 sm:p-7">
                 <span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full border border-border/70 bg-card text-foreground/55 shadow-control">
@@ -864,7 +861,7 @@ export default function DraftPreviewPage({
             </button>
           )}
           {hasMedia && (
-            <div className="min-w-0 space-y-4 border-t border-border/60 p-4 sm:p-5">
+            <div className="draft-mobile-media min-w-0 space-y-3 border-0 p-0 md:space-y-4 md:border-t md:border-border/60 md:p-5">
               {images.length > 0 && videos.length > 0 ? (
                 <div
                   role="tablist"
@@ -903,7 +900,7 @@ export default function DraftPreviewPage({
               ) : null}
 
               {!showingVideo && images.length > 0 ? (
-                <div className="detail-hero-frame overflow-hidden rounded-[1.35rem] ring-1 ring-border/70 sm:rounded-2xl">
+                <div className="detail-hero-frame overflow-hidden rounded-[1.5rem] ring-0 md:rounded-2xl md:ring-1 md:ring-border/70">
                   <DraftImageGallery
                     images={images}
                     alt={draft.title}
@@ -916,7 +913,7 @@ export default function DraftPreviewPage({
               ) : null}
 
               {showingVideo && activeVideo ? (
-                <div className="relative aspect-video w-full overflow-hidden rounded-[1.35rem] bg-black ring-1 ring-border/70 sm:rounded-2xl">
+                <div className="relative aspect-[4/3] w-full overflow-hidden rounded-[1.5rem] bg-black ring-1 ring-black/[0.08] sm:aspect-video md:rounded-2xl md:ring-border/70">
                   <GlassVideoPlayer key={activeVideo.id} src={activeVideo.url} ariaLabel={activeVideo.name} />
                   {videos.length > 1 ? (
                     <>
@@ -924,7 +921,7 @@ export default function DraftPreviewPage({
                         type="button"
                         onClick={() => setActiveVideoIndex(Math.max(0, videoIndex - 1))}
                         disabled={videoIndex === 0}
-                        className="floating-icon-button pen-touch-target absolute left-3 top-1/2 -translate-y-1/2 border border-white/20 bg-black/55 text-white shadow-control backdrop-blur-md transition-colors hover:bg-black/75 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/70 disabled:invisible"
+                        className="floating-icon-button pen-touch-target absolute left-3 top-1/2 hidden -translate-y-1/2 border border-white/20 bg-black/55 text-white shadow-control backdrop-blur-md transition-colors hover:bg-black/75 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/70 disabled:invisible sm:inline-flex"
                         aria-label={t("draft.gallery.previous", lang)}
                       >
                         <ArrowLeftIcon size={18} />
@@ -933,7 +930,7 @@ export default function DraftPreviewPage({
                         type="button"
                         onClick={() => setActiveVideoIndex(Math.min(videos.length - 1, videoIndex + 1))}
                         disabled={videoIndex === videos.length - 1}
-                        className="floating-icon-button pen-touch-target absolute right-3 top-1/2 -translate-y-1/2 border border-white/20 bg-black/55 text-white shadow-control backdrop-blur-md transition-colors hover:bg-black/75 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/70 disabled:invisible"
+                        className="floating-icon-button pen-touch-target absolute right-3 top-1/2 hidden -translate-y-1/2 border border-white/20 bg-black/55 text-white shadow-control backdrop-blur-md transition-colors hover:bg-black/75 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/70 disabled:invisible sm:inline-flex"
                         aria-label={t("draft.gallery.next", lang)}
                       >
                         <ArrowRightIcon size={18} />
@@ -948,43 +945,64 @@ export default function DraftPreviewPage({
             </div>
           )}
 
+          {/* On a phone these actions belong to the media workspace, not in
+              the identity block above it. Keeping them directly below the
+              hero produces one readable sequence: listing, media, actions. */}
+          <div className="editor-glass-control mx-1 mt-3 grid grid-cols-3 gap-1 rounded-full border border-border/55 bg-card/76 p-1 shadow-control backdrop-blur-2xl md:hidden">
+            <button
+              type="button"
+              data-testid="draft-mobile-editor-open"
+              onClick={() => { setDescriptionEditRequested(false); setEditorOpen(true); }}
+              className="glossy-capsule flex h-10 min-w-0 items-center justify-center gap-1.5 rounded-full text-[11px] font-semibold text-foreground transition-colors hover:brightness-[1.015] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/25"
+            >
+              <EditIcon size={14} />
+              <span className="truncate">{t("shareDialog.edit", lang)}</span>
+            </button>
+            <button
+              type="button"
+              data-testid="draft-mobile-sharing-open"
+              onClick={() => handleSharingOpenChange(true)}
+              className="flex h-10 min-w-0 items-center justify-center gap-1.5 rounded-full text-[11px] font-semibold text-foreground/62 transition-colors hover:bg-card hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/25"
+            >
+              <ShareIcon size={14} />
+              <span className="truncate">{t("draft.share", lang)}</span>
+            </button>
+            <button
+              type="button"
+              data-testid="draft-mobile-versions-open"
+              onClick={() => setVersionsOpen(true)}
+              className="flex h-10 min-w-0 items-center justify-center gap-1.5 rounded-full text-[11px] font-semibold text-foreground/62 transition-colors hover:bg-card hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/25"
+            >
+              <VersionsIcon size={14} />
+              <span className="truncate">{t("draft.versions.short", lang)}</span>
+            </button>
+          </div>
+
           {/* One column width whether or not photos exist. The old max-w-3xl
               cap for photo-less drafts left the action rail ending mid-page
               while the tour panel below ran the full column — two ragged
               right edges stacked on top of each other. */}
           <section
             className={cn(
-              "order-first relative z-10 min-w-0 bg-card p-4 sm:p-6",
+              "order-first relative z-10 min-w-0 bg-transparent px-1 pb-5 pt-1 md:bg-card md:p-6",
             )}
           >
-            <div className="flex flex-wrap items-center gap-2">
-              {offerType ? (
-                <StatusPill tone="strong" className="uppercase tracking-[0.09em]">
-                  {enumT("offer", offerType, lang)}
+            <div className="flex min-w-0 flex-wrap items-center gap-2">
+                {offerType ? (
+                  <StatusPill tone="strong" className="uppercase tracking-[0.09em]">
+                    {enumT("offer", offerType, lang)}
+                  </StatusPill>
+                ) : null}
+                <StatusPill tone={draft.is_complete ? "success" : "neutral"} dot>
+                  {t(draft.is_complete ? "dashboard.listingComplete" : "dashboard.listingDraft", lang)}
                 </StatusPill>
-              ) : null}
-              <StatusPill tone={draft.is_complete ? "success" : "neutral"} dot>
-                {t(draft.is_complete ? "dashboard.listingComplete" : "dashboard.listingDraft", lang)}
-              </StatusPill>
-              {hasTour ? <StatusPill tone="success" dot>{t("dashboard.tourReady", lang)}</StatusPill> : null}
+                {hasTour ? <StatusPill tone="success" dot>{t("dashboard.tourReady", lang)}</StatusPill> : null}
             </div>
 
-            <div className="mt-3 flex items-start justify-between gap-3">
-              <h1 className="min-w-0 select-text text-[30px] font-semibold leading-[1.08] tracking-[-0.03em] sm:text-[34px] lg:text-[40px]">
+            <div className="mt-3">
+              <h1 className="min-w-0 select-text text-[30px] font-semibold leading-[1.06] tracking-[-0.035em] sm:text-[34px] lg:text-[40px]">
                 {draft.title || t("dashboard.untitled", lang)}
               </h1>
-              <Button
-                type="button"
-                data-testid="draft-mobile-more"
-                variant="outline"
-                size="icon"
-                aria-label={t("common.more", lang)}
-                title={t("common.more", lang)}
-                className="-mt-1 h-11 w-11 shrink-0 rounded-full border-border/65 bg-card p-0 text-foreground/65 shadow-control md:hidden"
-                onClick={() => setMobileActionsOpen(true)}
-              >
-                <MoreIcon size={16} />
-              </Button>
             </div>
             {address && (
               <p className="mt-2 flex select-text items-start gap-2 text-[14px] leading-relaxed text-foreground/65 sm:text-[15px]">
@@ -1002,7 +1020,7 @@ export default function DraftPreviewPage({
             )}
 
             {facts.length > 0 && (
-              <div className="draft-facts-grid mt-5 grid grid-cols-2 gap-2.5 border-t border-border/70 pt-5 sm:grid-cols-3">
+              <div className="draft-facts-grid mt-4 flex gap-2.5 overflow-x-auto pb-1 scrollbar-hide sm:grid sm:grid-cols-3 sm:overflow-visible sm:pb-0 md:mt-5 md:border-t md:border-border/70 md:pt-5">
                 {facts.map((fact) => (
                   <div
                     key={fact.label}
@@ -1019,7 +1037,7 @@ export default function DraftPreviewPage({
                       });
                     }}
                     className={cn(
-                      "flex min-w-0 items-center gap-2.5 rounded-xl bg-surface-subtle px-3 py-2.5 ring-1 ring-inset ring-border/35",
+                      "flex w-[9.75rem] flex-none items-center gap-2.5 rounded-[1.125rem] border border-border/45 bg-card/72 px-3 py-2.5 shadow-control backdrop-blur-xl sm:w-auto sm:min-w-0 md:rounded-xl md:border-0 md:bg-surface-subtle md:shadow-none md:ring-1 md:ring-inset md:ring-border/35",
                       fact.path && "cursor-grab active:cursor-grabbing",
                     )}
                   >
@@ -1086,7 +1104,7 @@ export default function DraftPreviewPage({
         {(hasNarrative || hasSupportingDetails) && (
           <div className={cn(
             "draft-support-grid",
-            "mt-8 grid gap-7 lg:mt-10",
+            "mt-6 grid gap-6 md:mt-8 md:gap-7 lg:mt-10",
             detailCardCount > 1 && !sparseNarrativeDetails && "lg:grid-cols-2 lg:items-start",
           )}>
             {hasNarrative && (
@@ -1107,7 +1125,7 @@ export default function DraftPreviewPage({
                         <button
                           type="button"
                           onClick={() => setVersionsOpen(true)}
-                          className="inline-flex h-9 items-center gap-1.5 rounded-full px-3 text-[11px] font-semibold text-foreground/52 transition-colors hover:bg-foreground/[0.045] hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/25"
+                          className="hidden h-9 items-center gap-1.5 rounded-full px-3 text-[11px] font-semibold text-foreground/52 transition-colors hover:bg-foreground/[0.045] hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/25 md:inline-flex"
                         >
                           <VersionsIcon size={13} /> {t("draft.versions.short", lang)}
                         </button>
@@ -1351,41 +1369,6 @@ export default function DraftPreviewPage({
         onDraftRestored={setDraft}
       />
 
-      {/* Secondary phone actions live in a focus-trapped sheet, opened from
-          the title. Nothing floats over or obscures the listing content. */}
-      <Dialog.Root open={mobileActionsOpen} onOpenChange={setMobileActionsOpen}>
-        <Dialog.Portal>
-          <Dialog.Overlay className="fixed inset-0 z-[80] bg-black/25 backdrop-blur-[2px] md:hidden" />
-          <Dialog.Content className="fixed inset-x-0 bottom-0 z-[90] rounded-t-[1.75rem] border border-b-0 border-border/70 bg-card px-4 pb-[max(1rem,env(safe-area-inset-bottom))] pt-3 shadow-elevated outline-none md:hidden">
-            <div aria-hidden="true" className="mx-auto mb-3 h-1 w-10 rounded-full bg-foreground/15" />
-            <Dialog.Title className="mb-3 text-center text-[15px] font-semibold">{t("common.more", lang)}</Dialog.Title>
-            <div className="grid gap-1">
-              <Dialog.Close asChild>
-                <Button type="button" data-testid="draft-mobile-editor-open" variant="ghost" className="h-12 justify-start rounded-xl px-4" onClick={() => { setDescriptionEditRequested(false); setEditorOpen(true); }}>
-                  <EditIcon size={16} /> {t("shareDialog.edit", lang)}
-                </Button>
-              </Dialog.Close>
-              {hasTour && (
-                <Dialog.Close asChild>
-                  <Button type="button" data-testid="draft-mobile-sharing-open" variant="ghost" className="h-12 justify-start rounded-xl px-4" onClick={() => handleSharingOpenChange(true)}>
-                    <ShareIcon size={16} /> {t("draft.share", lang)}
-                  </Button>
-                </Dialog.Close>
-              )}
-              <Dialog.Close asChild>
-                <Button type="button" data-testid="draft-mobile-media-open" variant="ghost" className="h-12 justify-start rounded-xl px-4" onClick={() => setMediaOpen(true)}>
-                  <ImageIcon size={16} /> {t("draft.media.gallery", lang)}
-                </Button>
-              </Dialog.Close>
-              <Dialog.Close asChild>
-                <Button type="button" data-testid="draft-mobile-versions-open" variant="ghost" className="h-12 justify-start rounded-xl px-4" onClick={() => setVersionsOpen(true)}>
-                  <VersionsIcon size={16} /> {t("draft.versions.title", lang)}
-                </Button>
-              </Dialog.Close>
-            </div>
-          </Dialog.Content>
-        </Dialog.Portal>
-      </Dialog.Root>
     </AppShell>
   );
 }
