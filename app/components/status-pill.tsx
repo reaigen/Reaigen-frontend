@@ -3,7 +3,7 @@ import { cn } from "../lib/utils";
 
 const tones = {
   neutral: "border-border/80 bg-card text-foreground/75",
-  strong: "border-foreground bg-foreground text-background",
+  strong: "glossy-primary-capsule border-foreground bg-foreground text-background",
   success: "border-border/80 bg-card text-foreground/75",
   warning: "border-border/80 bg-card text-foreground/75",
   danger: "border-border/80 bg-card text-foreground/75",

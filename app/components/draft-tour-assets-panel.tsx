@@ -796,15 +796,12 @@ export function DraftTourAssetsPanel({
   };
 
   return (
-    <section className="mt-5 overflow-hidden rounded-[1.75rem] border border-border/65 bg-card/[0.68] shadow-control backdrop-blur-xl sm:mt-7">
-      <header className="flex items-center gap-3 border-b border-border/55 px-4 py-4 sm:justify-between sm:px-5">
+    <section className="draft-tour-assets mt-7 sm:mt-9">
+      <header className="draft-tour-header mb-3 flex items-center gap-3 px-1 sm:justify-between">
         <div className="flex min-w-0 flex-1 items-center gap-3">
-          <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-foreground/[0.045] text-foreground/55 ring-1 ring-inset ring-border/35">
-            <TourIcon size={17} />
-          </span>
           <div className="min-w-0">
-            <h2 className="text-[14px] font-semibold">{text.title}</h2>
-            <p className="mt-0.5 truncate text-[11px] text-muted-foreground">
+            <h2 className="text-[16px] font-semibold tracking-[-0.015em]">{text.title}</h2>
+            <p className="mt-1 truncate text-[12px] text-muted-foreground">
               {text.summary(
                 visibleAssets.length,
                 readyAssets.length,
@@ -814,14 +811,14 @@ export function DraftTourAssetsPanel({
             </p>
           </div>
         </div>
-        <div className="flex shrink-0 items-center gap-1.5">
+        <div className="draft-tour-actions flex shrink-0 items-center gap-1.5">
           {payload?.assets.length ? (
             <Button
               type="button"
               data-testid="draft-tour-assets-open"
               variant="ghost"
               size="sm"
-              className="h-11 w-11 shrink-0 px-0 sm:w-auto sm:px-3"
+              className="h-10 w-10 shrink-0 px-0 text-foreground/62 sm:w-auto sm:px-3"
               onClick={() => setOpen(true)}
               aria-label={text.manage}
               title={text.manage}
@@ -861,10 +858,10 @@ export function DraftTourAssetsPanel({
       {loading && !payload ? (
         <CollectionLoading
           label={t("common.loading", lang)}
-          className="min-h-36 pt-10 sm:min-h-[6.25rem] sm:pt-6"
+          className="min-h-36 rounded-[1.5rem] border border-border/65 bg-card pt-10 shadow-control sm:min-h-[6.25rem] sm:pt-6"
         />
       ) : error && !payload ? (
-        <div className="flex items-center gap-3 p-4 sm:px-5">
+        <div className="flex items-center gap-3 rounded-[1.5rem] border border-border/65 bg-card p-4 shadow-control sm:px-5">
           <InfoIcon size={18} className="shrink-0 text-destructive" />
           <p className="min-w-0 flex-1 text-[12px] text-muted-foreground">{error}</p>
           <Button type="button" variant="outline" size="sm" onClick={() => { void load(); }}>
@@ -872,19 +869,19 @@ export function DraftTourAssetsPanel({
           </Button>
         </div>
       ) : !payload?.assets.length ? (
-        <div className="flex items-start gap-3 p-5 sm:items-center">
-          <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-foreground/[0.045] text-foreground/45">
+        <div className="flex items-start gap-3.5 rounded-[1.5rem] border border-border/70 bg-card p-5 shadow-control sm:items-center">
+          <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-surface-subtle text-foreground/52 ring-1 ring-inset ring-border/40">
             <TourIcon size={18} />
           </span>
           <div className="min-w-0 flex-1">
-            <h3 className="text-[13px] font-semibold">{text.emptyTitle}</h3>
-            <p className="mt-1 max-w-2xl text-[11px] leading-relaxed text-muted-foreground">
+            <h3 className="text-[14px] font-semibold">{text.emptyTitle}</h3>
+            <p className="mt-1 max-w-2xl text-[12px] leading-relaxed text-muted-foreground">
               {text.empty}
             </p>
           </div>
         </div>
       ) : (
-        <div className="divide-y divide-border/50 bg-card/30">
+        <div className="draft-tour-asset-grid grid grid-cols-1 gap-3 lg:grid-cols-2">
           {overviewAssets.map((asset, index) => {
             const selection = selections[asset.id];
             const state = assetStatus(asset, selection, text, lang);
@@ -916,11 +913,13 @@ export function DraftTourAssetsPanel({
                   one now that the platform badges no longer force a second row
                   of pills beside it; desktop keeps actions on their own column.
                 */
-                className="grid grid-cols-[auto_minmax(0,1fr)] items-center gap-3 px-4 py-4 sm:grid-cols-[auto_minmax(0,1fr)_auto] sm:gap-4 sm:px-5"
+                className="draft-tour-asset-card grid min-w-0 grid-cols-[auto_minmax(0,1fr)] items-center gap-3 rounded-[1.4rem] border border-border/65 bg-card/88 p-3.5 shadow-control backdrop-blur-xl transition-[border-color,box-shadow,transform] hover:-translate-y-px hover:border-foreground/18 hover:shadow-card sm:gap-4 sm:p-4"
               >
                 <div className={cn(
                   "relative shrink-0 overflow-hidden bg-surface-subtle ring-1 ring-inset ring-border/45",
-                  "h-16 w-24 rounded-[1rem] sm:h-[72px] sm:w-28",
+                  thumbnail
+                    ? "h-14 w-20 rounded-xl sm:h-16 sm:w-24"
+                    : "h-11 w-11 rounded-full bg-foreground/[0.045]",
                 )}>
                   {thumbnail ? (
                     <Thumbnail
@@ -982,7 +981,7 @@ export function DraftTourAssetsPanel({
                       {state.label}
                     </StatusPill>
                     {selection?.isPrimary ? (
-                      <StatusPill tone="strong">{text.primaryBadge}</StatusPill>
+                      <StatusPill>{text.primaryBadge}</StatusPill>
                     ) : null}
                   </div>
 
@@ -1005,7 +1004,7 @@ export function DraftTourAssetsPanel({
                 </div>
 
                 {(canOpen || canEdit || createAccessLoading) ? (
-                  <div className="col-span-2 grid grid-cols-2 gap-2 sm:col-span-1 sm:w-[21rem] sm:justify-self-end">
+                  <div className="col-span-2 grid grid-cols-2 gap-2 border-t border-border/45 pt-3">
                     {createAccessLoading ? (
                       <span
                         aria-hidden="true"
@@ -1017,7 +1016,7 @@ export function DraftTourAssetsPanel({
                         variant="outline"
                         size="sm"
                         className={cn(
-                          "pen-touch-target order-2 w-full sm:order-1",
+                          "pen-touch-target order-2 h-10 w-full rounded-full",
                           !canOpen && "col-span-2",
                         )}
                       >
@@ -1032,8 +1031,9 @@ export function DraftTourAssetsPanel({
                       <Button
                         asChild
                         size="sm"
+                        variant={selection?.isPrimary && state.ready ? "default" : "secondary"}
                         className={cn(
-                          "pen-touch-target order-1 w-full sm:order-2",
+                          "pen-touch-target order-1 h-10 w-full rounded-full",
                           !canEdit && "col-span-2",
                         )}
                       >
@@ -1061,7 +1061,7 @@ export function DraftTourAssetsPanel({
             <button
               type="button"
               onClick={() => setOpen(true)}
-                    className="mx-auto my-3 flex min-h-10 items-center justify-center rounded-full px-4 text-[11px] font-semibold text-foreground/60 transition-colors hover:bg-foreground/[0.045] hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              className="floating-capsule mx-auto flex min-h-11 items-center justify-center rounded-full px-5 text-[11px] font-semibold text-foreground/62 shadow-control transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring lg:col-span-2"
             >
               {text.more(remainingAssets)}
             </button>
@@ -1148,14 +1148,14 @@ export function DraftTourAssetsPanel({
                 ))}
               </div>
             ) : !payload?.assets.length ? (
-              <div className="rounded-2xl border border-dashed border-border p-7 text-center">
-                <span className="mx-auto flex h-10 w-10 items-center justify-center rounded-full bg-foreground/[0.045] text-foreground/45">
+              <div className="editor-glass-surface flex items-start gap-3.5 rounded-[1.4rem] border p-4 sm:p-5">
+                <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full border border-border/55 bg-card/86 text-foreground/48 shadow-control">
                   <TourIcon size={18} />
                 </span>
-                <h4 className="mt-3 text-[13px] font-semibold">{text.emptyTitle}</h4>
-                <p className="mx-auto mt-1 max-w-sm text-[11px] leading-relaxed text-muted-foreground">
-                  {text.empty}
-                </p>
+                <div className="min-w-0 pt-0.5">
+                  <h4 className="text-[14px] font-semibold">{text.emptyTitle}</h4>
+                  <p className="mt-1 max-w-md text-[11px] leading-relaxed text-muted-foreground">{text.empty}</p>
+                </div>
               </div>
             ) : (
               <div className="space-y-3">
@@ -1375,7 +1375,7 @@ export function DraftTourAssetsPanel({
                                 carries it.
                               */}
                               {confirmRemoveId === asset.id ? (
-                                <div className="floating-panel-shape border border-border/60 bg-surface-subtle p-3">
+                                <div className="border-t border-border/45 pt-3">
                                   <p className="text-[12px] font-semibold text-destructive">
                                     {text.removeConfirmTitle}
                                   </p>
@@ -1392,7 +1392,7 @@ export function DraftTourAssetsPanel({
                                   {/* Side by side once there is room; two
                                       full-width stacked pills made a routine
                                       confirmation look like a major event. */}
-                                  <div className="mt-3 grid gap-2 sm:grid-cols-2">
+                                  <div className="mt-3 grid grid-cols-2 gap-2">
                                     <Button
                                       type="button"
                                       variant="outline"
@@ -1405,9 +1405,9 @@ export function DraftTourAssetsPanel({
                                     </Button>
                                     <Button
                                       type="button"
-                                      variant="destructive"
+                                      variant="outline"
                                       size="xs"
-                                      className="h-auto min-h-9 w-full justify-center whitespace-normal py-2 text-center leading-tight"
+                                      className="h-auto min-h-9 w-full justify-center whitespace-normal border-destructive/18 !bg-destructive/[0.045] py-2 text-center leading-tight text-destructive shadow-none hover:!bg-destructive/[0.08]"
                                       loading={removingId === asset.id}
                                       disabled={changed}
                                       onClick={() => { void removeTour(asset); }}
@@ -1452,18 +1452,25 @@ export function DraftTourAssetsPanel({
             tour reads "Published" and there is nowhere to get a URL or set a
             PIN. It only routes; it never creates a share by itself.
           */}
-          <div className="floating-panel overflow-hidden p-0">
+          {!loading && payload ? <div className="editor-glass-surface overflow-hidden rounded-[1.4rem] border border-border/60">
           {onOpenSharing ? (
             <div className="p-4">
-              <p className="text-[10px] leading-relaxed text-muted-foreground">
-                {text.openSharingHint}
-              </p>
+              <div className="flex items-start gap-3">
+                <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full border border-border/55 bg-card/82 text-foreground/62 shadow-control">
+                  <ShareIcon size={15} />
+                </span>
+                <span className="min-w-0 pt-0.5">
+                  <span className="block text-[12px] font-semibold">{text.openSharing}</span>
+                  <span className="mt-0.5 block text-[10px] leading-relaxed text-muted-foreground">{text.openSharingHint}</span>
+                </span>
+              </div>
               {/*
                 Sized above the card's own "Otvoriť prehliadku" (sm): this is
                 the panel's primary action, and at xs it read as a footnote.
               */}
               <Button
-                className="mt-3 w-full"
+                variant="outline"
+                className="glossy-capsule mt-3 h-11 w-full border-border/65 bg-card/86 text-foreground shadow-control"
                 onClick={() => {
                   setOpen(false);
                   onOpenSharing();
@@ -1487,9 +1494,9 @@ export function DraftTourAssetsPanel({
               aria-label={text.shareTitle}
             />
           </label>
-          </div>
+          </div> : null}
 
-          {(payload?.publication?.entries.length ?? 0) > 0 ? (
+          {!loading && (payload?.publication?.entries.length ?? 0) > 0 ? (
             <div className="floating-panel p-4">
               <p className="text-[10px] leading-relaxed text-muted-foreground">
                 {text.unpublishAllHint}

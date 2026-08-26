@@ -53,6 +53,7 @@ import {
 import { SearchField } from "./search-field";
 import { SegmentedControl } from "./segmented-control";
 import { SidePanel } from "./side-panel";
+import { FormattedDescription } from "./formatted-description";
 
 type EditorValues = {
   title: string;
@@ -314,10 +315,10 @@ function normalizedSpecsNumbers(
   return normalized;
 }
 
-const fieldClass = "editor-control-capsule h-12 rounded-full border !bg-card/90 px-4 text-[16px] focus-visible:ring-2 focus-visible:ring-ring/20 focus-visible:ring-offset-0 sm:h-11 sm:text-[14px]";
+const fieldClass = "editor-control-capsule h-11 rounded-full border !bg-card px-3.5 text-[16px] !shadow-none focus-visible:border-foreground/25 focus-visible:ring-1 focus-visible:ring-ring/12 focus-visible:ring-offset-0 sm:text-[14px]";
 
 function Field({ id, label, children }: { id: string; label: React.ReactNode; children: React.ReactNode }) {
-  return <div className="space-y-1.5"><Label htmlFor={id} className="text-[13px] font-medium text-foreground/70">{label}</Label>{children}</div>;
+  return <div className="space-y-1"><Label htmlFor={id} className="text-[12px] font-medium text-foreground/65">{label}</Label>{children}</div>;
 }
 
 function UnitPicker({
@@ -344,23 +345,31 @@ function UnitPicker({
       <SelectTrigger
         aria-label={label}
         className={cn(
-          "pen-touch-target !h-full !min-h-0 shrink-0 rounded-full border-border/65 bg-surface-subtle px-3 text-[12px] font-semibold shadow-none hover:bg-secondary focus:ring-2",
+          "pen-touch-target my-auto !h-9 !min-h-0 shrink-0 rounded-full border border-white/70 bg-card/78 px-2.5 text-[12px] font-semibold shadow-[inset_0_1px_0_rgba(255,255,255,.94),0_2px_7px_rgba(35,31,27,.06)] backdrop-blur-xl hover:bg-card focus:ring-2",
           category === "CURRENCY"
-            ? "!w-[5.25rem] !min-w-[5.25rem]"
-            : "!w-[4.625rem] !min-w-[4.625rem]",
+            ? "!w-[4.875rem] !min-w-[4.875rem]"
+            : "!w-[4.25rem] !min-w-[4.25rem]",
         )}
       >
         <span className="tabular-nums">
           {selected ? (showCode ? selected.code : selected.symbol) : "—"}
         </span>
       </SelectTrigger>
-      <SelectContent align="end" className="min-w-[15rem]">
+      <SelectContent
+        align="end"
+        sideOffset={6}
+        className="max-h-64 min-w-[10.5rem] rounded-2xl p-1.5"
+      >
         {options.map((unit) => (
-          <SelectItem key={unit.id} value={unit.code}>
-            <span className="flex w-full items-center justify-between gap-4">
-              <span>{unit.name}</span>
+          <SelectItem
+            key={unit.id}
+            value={unit.code}
+            className="!min-h-9 rounded-full py-1.5 pl-8 pr-2.5 text-[12px]"
+          >
+            <span className="flex w-full items-center justify-between gap-3">
+              <span className="font-medium uppercase tracking-[0.02em]">{unit.code}</span>
               <span className="font-semibold tabular-nums text-muted-foreground">
-                {showCode ? unit.code : unit.symbol}
+                {unit.symbol}
               </span>
             </span>
           </SelectItem>
@@ -409,6 +418,7 @@ function DirectValueField({
   unitControl?: React.ReactNode;
   className?: string;
 }) {
+  const [mathToolsOpen, setMathToolsOpen] = React.useState(false);
   const parsed = numeric ? parseNumericExpression(value, numericContext) : null;
   const invalid = numeric && Boolean(value.trim()) && (
     !parsed
@@ -428,6 +438,11 @@ function DirectValueField({
     if (result != null && (!integer || Number.isInteger(result.value))) {
       onChange(formatEditableNumber(result.value, integer));
     }
+  };
+  const appendOperator = (operator: string) => {
+    const base = value.trimEnd();
+    if (!base) return;
+    onChange(`${base}${operator}`);
   };
 
   return (
@@ -459,8 +474,18 @@ function DirectValueField({
           maxLength={maxLength ?? (numeric ? 64 : undefined)}
           placeholder={placeholder}
           aria-invalid={invalid || undefined}
-          onFocus={selectOnFocus || numeric ? (event) => event.currentTarget.select() : undefined}
-          onBlur={commitNumericValue}
+          onFocus={(event) => {
+            if (selectOnFocus) event.currentTarget.select();
+            else if (numeric) {
+              const input = event.currentTarget;
+              window.requestAnimationFrame(() => input.setSelectionRange(input.value.length, input.value.length));
+            }
+            if (numeric) setMathToolsOpen(true);
+          }}
+          onBlur={() => {
+            commitNumericValue();
+            window.setTimeout(() => setMathToolsOpen(false), 100);
+          }}
           onChange={(event) => {
             const next = numeric
               ? event.target.value.replace(/[\r\n]/g, "")
@@ -469,7 +494,7 @@ function DirectValueField({
           }}
           className={cn(
             fieldClass,
-            unitControl && showClear ? "pr-[8.5rem]" : unitControl ? "pr-[5.5rem]" : showStaticUnit && showClear ? "pr-[8.5rem]" : showStaticUnit ? "pr-[5.5rem]" : showClear ? "pr-12" : undefined,
+            unitControl && showClear ? "pr-[8rem]" : unitControl ? "pr-[5rem]" : showStaticUnit && showClear ? "pr-[8rem]" : showStaticUnit ? "pr-[5rem]" : showClear ? "pr-11" : undefined,
             invalid && "border-destructive/60 focus-visible:ring-destructive/20",
             className,
           )}
@@ -478,7 +503,7 @@ function DirectValueField({
           <span className="absolute inset-y-0 right-0 flex items-center">
             {unitControl}
             {showStaticUnit ? (
-              <span className="pointer-events-none flex h-full min-h-0 w-[4.625rem] shrink-0 items-center justify-center rounded-full border border-border/65 bg-surface-subtle px-3 text-[12px] font-semibold tabular-nums text-foreground/65">
+              <span className="pointer-events-none my-auto flex h-9 min-h-0 w-[4.25rem] shrink-0 items-center justify-center rounded-full border border-white/70 bg-card/78 px-2.5 text-[12px] font-semibold tabular-nums text-foreground/65 shadow-[inset_0_1px_0_rgba(255,255,255,.94),0_2px_7px_rgba(35,31,27,.06)] backdrop-blur-xl">
                 {unitLabel}
               </span>
             ) : null}
@@ -486,7 +511,7 @@ function DirectValueField({
               <button
                 type="button"
                 onClick={() => onChange("")}
-                className="pen-touch-target flex h-full w-12 shrink-0 items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-foreground/[0.05] hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
+                className="pen-touch-target mx-1 flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-foreground/[0.05] hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
                 aria-label={`${t("draft.editor.clearValue", lang)}: ${labelText}`}
               >
                 <CloseIcon size={14} />
@@ -495,6 +520,41 @@ function DirectValueField({
           </span>
         ) : null}
       </div>
+      {numeric && mathToolsOpen ? (
+        <div className="mt-1.5 flex min-h-11 items-center gap-1 rounded-full border border-border/55 bg-card/78 p-1 shadow-[inset_0_1px_0_rgba(255,255,255,.95),0_7px_18px_-14px_rgba(0,0,0,.24)] backdrop-blur-xl" aria-label={t("draft.editor.expressionHint", lang)}>
+          {["+", "−", "×", "÷"].map((operator) => (
+            <button
+              key={operator}
+              type="button"
+              onMouseDown={(event) => event.preventDefault()}
+              onClick={() => appendOperator(operator === "−" ? "-" : operator === "×" ? "*" : operator === "÷" ? "/" : operator)}
+              className="flex h-9 min-w-9 items-center justify-center rounded-full border border-transparent bg-transparent px-2 text-[14px] font-semibold text-foreground/68 transition-[background-color,color,border-color] hover:border-border/55 hover:bg-card/80 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/25"
+            >
+              {operator}
+            </button>
+          ))}
+          <button
+            type="button"
+            onMouseDown={(event) => event.preventDefault()}
+            onClick={commitNumericValue}
+            className="flex h-9 min-w-9 items-center justify-center rounded-full border border-transparent bg-transparent px-2 text-[14px] font-bold text-foreground/72 transition-[background-color,color,border-color] hover:border-border/55 hover:bg-card/80 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/25"
+          >
+            =
+          </button>
+          <span className="min-w-0 flex-1" />
+          <button
+            type="button"
+            onMouseDown={(event) => event.preventDefault()}
+            onClick={() => {
+              commitNumericValue();
+              setMathToolsOpen(false);
+            }}
+            className="flex h-9 items-center justify-center rounded-full border border-foreground/14 bg-foreground px-4 text-[11px] font-semibold text-background shadow-control transition-[transform,background-color] hover:scale-[1.015] hover:bg-foreground/88 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/25"
+          >
+            {t("draft.editor.descriptionDone", lang)}
+          </button>
+        </div>
+      ) : null}
       {preview ? <p className="px-1 text-right text-[11px] font-medium tabular-nums text-foreground/55" aria-live="polite">{preview}</p> : null}
     </Field>
   );
@@ -503,8 +563,8 @@ function DirectValueField({
 // Web translation of the iOS 40pt GlassIconTile: cool, opaque, and restrained.
 function IconTile({ icon: Icon }: { icon: React.ComponentType<IconProps> }) {
   return (
-    <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-[0.9rem] border border-border/45 bg-surface-subtle text-foreground/70 shadow-control">
-      <Icon size={17} />
+    <span className="glossy-capsule flex h-11 w-11 shrink-0 items-center justify-center rounded-full text-foreground/72">
+      <Icon size={19} strokeWidth={1.8} />
     </span>
   );
 }
@@ -560,21 +620,21 @@ function NumericStepper({
     <Field id={id} label={label}>
       <div
         className={cn(
-          "editor-control-capsule flex h-12 items-center rounded-full border sm:h-11",
+          "editor-control-capsule flex h-11 items-center rounded-full border !shadow-none",
           invalid ? "border-destructive/60" : "border-border/65",
         )}
       >
         {optional && !value.trim() ? (
           <button
             type="button"
-            className="pen-touch-target flex h-full w-full min-w-0 items-center justify-between gap-2 rounded-full pl-4 text-left transition-colors hover:bg-foreground/[0.035] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
+            className="pen-touch-target flex h-full w-full min-w-0 items-center justify-between gap-2 rounded-full pl-3.5 text-left transition-colors hover:bg-foreground/[0.035] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
             onClick={startValue}
             aria-label={`${t("draft.editor.addValue", lang)}: ${label}`}
           >
             <span className="min-w-0 flex-1 truncate text-[14px] text-muted-foreground">
               {t("draft.editor.noValue", lang)}
             </span>
-            <span className="inline-flex h-full shrink-0 items-center gap-2 rounded-full bg-surface-subtle px-3 text-[12px] font-semibold text-foreground">
+            <span className="mr-1 inline-flex h-9 shrink-0 items-center gap-2 rounded-full border border-white/70 bg-card/78 px-3 text-[12px] font-semibold text-foreground shadow-[inset_0_1px_0_rgba(255,255,255,.94),0_2px_7px_rgba(35,31,27,.06)]">
               <PlusIcon size={14} />
               {t("common.add", lang)}
             </span>
@@ -592,7 +652,7 @@ function NumericStepper({
               type="button"
               onClick={() => adjust(-1)}
               disabled={numericValue <= min}
-              className="pen-touch-target flex h-full w-full items-center justify-center rounded-full bg-surface-subtle text-foreground/70 transition-colors hover:bg-secondary hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring disabled:text-muted-foreground disabled:opacity-45"
+              className="pen-touch-target m-auto flex h-9 w-9 items-center justify-center rounded-full bg-surface-subtle text-foreground/70 transition-colors hover:bg-secondary hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring disabled:text-muted-foreground disabled:opacity-45"
               aria-label={`${label}: −`}
             >
               <MinusIcon size={14} />
@@ -621,7 +681,7 @@ function NumericStepper({
               type="button"
               onClick={() => adjust(1)}
               disabled={numericValue >= max}
-              className="pen-touch-target flex h-full w-full items-center justify-center rounded-full bg-surface-subtle text-foreground/70 transition-colors hover:bg-secondary hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring disabled:text-muted-foreground disabled:opacity-45"
+              className="pen-touch-target m-auto flex h-9 w-9 items-center justify-center rounded-full bg-surface-subtle text-foreground/70 transition-colors hover:bg-secondary hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring disabled:text-muted-foreground disabled:opacity-45"
               aria-label={`${label}: +`}
             >
               <PlusIcon size={14} />
@@ -630,7 +690,7 @@ function NumericStepper({
               <button
                 type="button"
                 onClick={() => onChange("")}
-                className="pen-touch-target flex h-full w-full items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-foreground/[0.05] hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
+                className="pen-touch-target m-auto flex h-9 w-9 items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-foreground/[0.05] hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
                 aria-label={`${t("draft.editor.clearValue", lang)}: ${label}`}
               >
                 <CloseIcon size={14} />
@@ -659,7 +719,7 @@ function sectionIcon(key: string): React.ComponentType<IconProps> {
 // Grouped card, mirroring the iOS app's inset-grouped edit sections.
 function Section({ title, icon: Icon, children }: { title: React.ReactNode; icon?: React.ComponentType<IconProps>; children: React.ReactNode }) {
   return (
-    <section className="space-y-5 rounded-[1.75rem] border border-border/65 bg-card p-4 shadow-card sm:p-5">
+    <section className="space-y-4 rounded-2xl border border-border/65 bg-card p-4 shadow-sm sm:p-5">
       <div className="flex items-center gap-3">
         {Icon ? <IconTile icon={Icon} /> : null}
         <h3 className="text-[16px] font-semibold tracking-[-0.015em] text-foreground">{title}</h3>
@@ -721,7 +781,7 @@ function AdvancedField({
               <span
                 className={cn(
                   "flex h-9 w-full min-w-0 items-center justify-center truncate rounded-full px-2 text-[11px] font-semibold transition-colors",
-                  option.active ? "bg-foreground text-background shadow-sm" : "text-muted-foreground hover:bg-surface-subtle hover:text-foreground",
+                  option.active ? "glossy-capsule text-foreground" : "text-muted-foreground hover:bg-surface-subtle hover:text-foreground",
                 )}
               >
                 {option.label}
@@ -752,7 +812,7 @@ function AdvancedField({
                 }}
                 className={cn(
                   "pen-touch-target min-h-11 rounded-full border px-3.5 py-2 text-[12px] font-medium transition-colors",
-                  active ? "border-foreground bg-foreground text-background" : "border-border/70 bg-surface text-foreground/65 hover:border-foreground/25 hover:text-foreground",
+                  active ? "glossy-capsule border-foreground/10 text-foreground" : "border-border/70 bg-surface text-foreground/65 hover:border-foreground/25 hover:text-foreground",
                 )}
                 aria-pressed={active}
               >
@@ -863,6 +923,47 @@ function descriptionMetrics(value: string) {
   };
 }
 
+function escapeEditorHtml(value: string) {
+  return value.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+}
+
+function descriptionToEditorHtml(value: string) {
+  const inline = (line: string) => escapeEditorHtml(line)
+    .replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>")
+    .replace(/__([^_]+)__/g, "<strong>$1</strong>")
+    .replace(/\*([^*]+)\*/g, "<em>$1</em>")
+    .replace(/_([^_]+)_/g, "<em>$1</em>");
+  return value.trim().split(/\n\s*\n/u).filter(Boolean).map((block) => {
+    const lines = block.split("\n");
+    if (lines.every((line) => /^\s*[-*+]\s+/.test(line))) {
+      return `<ul>${lines.map((line) => `<li>${inline(line.replace(/^\s*[-*+]\s+/, ""))}</li>`).join("")}</ul>`;
+    }
+    return `<p>${lines.map(inline).join("<br>")}</p>`;
+  }).join("");
+}
+
+function editorHtmlToDescription(root: HTMLElement) {
+  const render = (node: Node): string => {
+    if (node.nodeType === Node.TEXT_NODE) return node.textContent?.replace(/\u00a0/g, " ") ?? "";
+    if (!(node instanceof HTMLElement)) return "";
+    const children = Array.from(node.childNodes).map(render).join("");
+    switch (node.tagName) {
+      case "BR": return "\n";
+      case "STRONG":
+      case "B": return `**${children}**`;
+      case "EM":
+      case "I": return `*${children}*`;
+      case "LI": return `- ${children.trim()}\n`;
+      case "UL":
+      case "OL": return `${children.trimEnd()}\n\n`;
+      case "P":
+      case "DIV": return `${children.trimEnd()}\n\n`;
+      default: return children;
+    }
+  };
+  return Array.from(root.childNodes).map(render).join("").replace(/\n{3,}/g, "\n\n").trim();
+}
+
 export function DraftEditor({
   open,
   onOpenChange,
@@ -870,6 +971,7 @@ export function DraftEditor({
   units,
   lang,
   onSaved,
+  startWithDescription = false,
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
@@ -877,6 +979,7 @@ export function DraftEditor({
   units: readonly UnitLookup[];
   lang: string;
   onSaved: (draft: DraftDetailItem) => void;
+  startWithDescription?: boolean;
 }) {
   const [values, setValues] = React.useState<EditorValues>(() => valuesFromDraft(draft, units));
   const [baseline, setBaseline] = React.useState<EditorValues>(() => valuesFromDraft(draft, units));
@@ -897,7 +1000,7 @@ export function DraftEditor({
   const [confirmDescriptionDiscard, setConfirmDescriptionDiscard] = React.useState(false);
   const editorScrollRef = React.useRef<HTMLDivElement>(null);
   const editorFormRef = React.useRef<HTMLFormElement>(null);
-  const descriptionTextareaRef = React.useRef<HTMLTextAreaElement>(null);
+  const descriptionEditorRef = React.useRef<HTMLDivElement>(null);
   const currency = values.currency.trim().toUpperCase();
   const distanceUnit = baseUnitForCategory(units, "DISTANCE")?.code ?? "";
   const numericEnvironment = React.useMemo<EditorNumericEnvironment>(() => ({
@@ -927,19 +1030,14 @@ export function DraftEditor({
     setConfirmDiscard(false);
     setEditorFieldFocused(false);
     setDescriptionDraft(next.description);
-    setDescriptionEditorOpen(false);
+    setDescriptionEditorOpen(startWithDescription);
     setConfirmDescriptionDiscard(false);
-  }, [draft, open, units]);
+  }, [draft, open, startWithDescription, units]);
 
   const dirty = JSON.stringify(values) !== JSON.stringify(baseline)
     || JSON.stringify(specs) !== JSON.stringify(baselineSpecs)
     || JSON.stringify(unitValues) !== JSON.stringify(baselineUnitValues);
   const numbersValid = editorNumbersValid(values, specs, numericEnvironment);
-  const set = (key: keyof EditorValues) => (event: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
-    setValues((current) => ({ ...current, [key]: event.target.value }));
-    setError(null);
-    setConfirmDiscard(false);
-  };
   const setValue = React.useCallback((key: keyof EditorValues, value: string) => {
     setValues((current) => ({ ...current, [key]: value }));
     setError(null);
@@ -972,7 +1070,7 @@ export function DraftEditor({
       return;
     }
     if (descriptionDraft !== values.description) {
-      descriptionTextareaRef.current?.blur();
+      descriptionEditorRef.current?.blur();
       setConfirmDescriptionDiscard(true);
       return;
     }
@@ -991,21 +1089,22 @@ export function DraftEditor({
     setDescriptionEditorOpen(false);
   };
 
-  const formatDescriptionSelection = (marker: "*" | "**") => {
-    const textarea = descriptionTextareaRef.current;
-    if (!textarea) return;
-    const start = textarea.selectionStart ?? descriptionDraft.length;
-    const end = textarea.selectionEnd ?? start;
-    const selected = descriptionDraft.slice(start, end);
-    const next = `${descriptionDraft.slice(0, start)}${marker}${selected}${marker}${descriptionDraft.slice(end)}`;
-    const nextStart = start + marker.length;
-    const nextEnd = selected ? end + marker.length : nextStart;
-    setDescriptionDraft(next);
-    window.requestAnimationFrame(() => {
-      textarea.focus();
-      textarea.setSelectionRange(nextStart, nextEnd);
-    });
+  const applyDescriptionCommand = (command: "bold" | "italic" | "insertUnorderedList") => {
+    const editor = descriptionEditorRef.current;
+    if (!editor) return;
+    editor.focus();
+    document.execCommand(command, false);
+    setDescriptionDraft(editorHtmlToDescription(editor));
+    setConfirmDescriptionDiscard(false);
   };
+
+  React.useLayoutEffect(() => {
+    if (!descriptionEditorOpen || !descriptionEditorRef.current) return;
+    descriptionEditorRef.current.innerHTML = descriptionToEditorHtml(descriptionDraft);
+  // Only seed the editable DOM when the dedicated editor opens. Re-seeding on
+  // every keystroke would move the caret to the start of the document.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [descriptionEditorOpen]);
 
   const setSpecValue = React.useCallback((section: PropertySpecSection, key: string, value: unknown) => {
     setSpecs((current) => {
@@ -1170,7 +1269,8 @@ export function DraftEditor({
           type="submit"
           form="draft-editor-form"
           size="xs"
-          className="h-11 min-w-[4.75rem] px-3"
+          variant={dirty && values.title.trim() && numbersValid ? "default" : "ghost"}
+          className="h-11 min-w-[4.75rem] px-3 disabled:opacity-45"
           loading={saving}
           disabled={!dirty || !values.title.trim() || !numbersValid}
           aria-label={t("draft.editor.save", lang)}
@@ -1182,7 +1282,7 @@ export function DraftEditor({
         <div className="grid grid-cols-2 gap-2 sm:flex sm:items-center sm:gap-3">
           <p className="col-span-2 min-w-0 text-[11px] leading-relaxed text-foreground/60 sm:flex-1">{t("draft.editor.discardPrompt", lang)}</p>
           <Button type="button" variant="ghost" size="sm" className="w-full sm:w-auto" onClick={() => setConfirmDiscard(false)}>{t("shares.cancel", lang)}</Button>
-          <Button type="button" variant="destructive" size="sm" className="w-full sm:w-auto" onClick={() => onOpenChange(false)}>{t("draft.editor.discard", lang)}</Button>
+          <Button type="button" variant="outline" size="sm" className="w-full border-destructive/18 !bg-destructive/[0.045] text-destructive shadow-none hover:!bg-destructive/[0.08] sm:w-auto" onClick={() => onOpenChange(false)}>{t("draft.editor.discard", lang)}</Button>
         </div>
       ) : undefined}
       className="sm:max-w-[720px] xl:max-w-[760px]"
@@ -1197,7 +1297,7 @@ export function DraftEditor({
           }
         }}
         onBlurCapture={() => window.requestAnimationFrame(refreshEditorFieldFocus)}
-        className="space-y-6"
+        className="space-y-4"
       >
         <div className={cn(
           "space-y-2.5",
@@ -1244,21 +1344,25 @@ export function DraftEditor({
                 required
                 maxLength={255}
               />
-              <div className="sm:hidden">
-                <Field id="draft-description-mobile" label={t("shareDialog.field.description", lang)}>
+              <div>
+                <Field id="draft-description" label={t("shareDialog.field.description", lang)}>
                   <button
-                    id="draft-description-mobile"
+                    id="draft-description"
                     type="button"
                     onClick={openDescriptionEditor}
-                    className="group w-full rounded-2xl border border-border/65 bg-card px-4 py-4 text-left shadow-control transition-[border-color,box-shadow] hover:border-foreground/25 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/20"
+                    className="group w-full rounded-[1.6rem] border border-border/65 bg-card/88 px-5 py-5 text-left shadow-control backdrop-blur-xl transition-[border-color,box-shadow,transform] hover:-translate-y-px hover:border-foreground/22 hover:shadow-[0_16px_36px_-28px_rgba(0,0,0,0.32)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/20 sm:px-6 sm:py-6"
                   >
-                    <span className={cn(
-                      "block whitespace-pre-wrap text-[16px] leading-7",
-                      values.description ? "line-clamp-4 text-foreground" : "text-muted-foreground",
-                    )}>
-                      {values.description || t("draft.editor.descriptionPlaceholder", lang)}
-                    </span>
-                    <span className="mt-4 flex items-center justify-between gap-2 border-t border-border/45 pt-3">
+                    {values.description ? (
+                      <FormattedDescription
+                        text={values.description}
+                        className="line-clamp-5 max-w-[68ch] text-[16px] leading-7 text-foreground/88 sm:text-[17px] sm:leading-8"
+                      />
+                    ) : (
+                      <span className="block max-w-[68ch] text-[16px] leading-7 text-muted-foreground sm:text-[17px] sm:leading-8">
+                        {t("draft.editor.descriptionPlaceholder", lang)}
+                      </span>
+                    )}
+                    <span className="mt-5 flex flex-wrap items-center justify-between gap-3 border-t border-border/45 pt-4">
                       <span className="inline-flex min-w-0 items-center gap-1.5 whitespace-nowrap text-[12px] font-semibold text-foreground/70 group-hover:text-foreground">
                         <EditIcon size={14} />
                         {t("draft.editor.editDescription", lang)}
@@ -1276,17 +1380,12 @@ export function DraftEditor({
                   </button>
                 </Field>
               </div>
-              <div className="hidden sm:block">
-                <Field id="draft-description" label={t("shareDialog.field.description", lang)}>
-                  <textarea id="draft-description" value={values.description} onChange={set("description")} rows={7} className="w-full resize-y rounded-xl border border-border/65 bg-card px-4 py-3 text-[14px] leading-relaxed shadow-control outline-none transition-[border-color,box-shadow] placeholder:text-muted-foreground focus:border-foreground/30 focus:ring-2 focus:ring-ring/20" />
-                </Field>
-              </div>
               </Section>
             </div>
 
             <div className={cn(mobilePanel !== "property" && "hidden sm:block")}>
               <Section title={t("draft.editor.property", lang)} icon={LayoutIcon}>
-              <div className="space-y-3">
+              <div className="space-y-3.5">
                 {!hasAreaUnits || !hasCurrencyUnits ? (
                   <p className="rounded-2xl border border-border/55 bg-surface-subtle px-3.5 py-3 text-[11px] leading-relaxed text-muted-foreground">
                     {t("draft.editor.unitsUnavailable", lang)}
@@ -1354,7 +1453,7 @@ export function DraftEditor({
                     ) : undefined}
                   />
                 </div>
-                <div className="grid grid-cols-1 gap-3 min-[720px]:grid-cols-3">
+                <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
                   <NumericStepper
                     id="draft-year-built"
                     label={t("draft.yearBuilt", lang)}
@@ -1429,7 +1528,7 @@ export function DraftEditor({
                     </span>
                   </button>
                   {expanded ? (
-                    <div className="grid items-start gap-x-4 gap-y-4 border-t border-border/45 bg-surface-subtle/35 px-4 py-4 sm:grid-cols-2 sm:px-5 sm:py-5">
+                    <div className="grid items-start gap-x-4 gap-y-4 border-t border-border/45 bg-card px-4 py-4 sm:grid-cols-2 sm:px-5 sm:py-5">
                       {section.fields.map((field) => (
                         <div key={field.key} className={cn(field.kind === "multiselect" && "sm:col-span-2")}>
                           <AdvancedField
@@ -1468,7 +1567,7 @@ export function DraftEditor({
       lang={lang}
       headerMode="editor"
       closeIcon="back"
-      initialFocusRef={descriptionTextareaRef}
+      initialFocusRef={descriptionEditorRef}
       headerAction={!confirmDescriptionDiscard ? (
         <Button
           type="button"
@@ -1483,27 +1582,48 @@ export function DraftEditor({
         <div className="grid grid-cols-2 gap-2 sm:flex sm:items-center sm:gap-3">
           <p className="col-span-2 min-w-0 text-[11px] leading-relaxed text-foreground/60 sm:flex-1">{t("draft.editor.discardPrompt", lang)}</p>
           <Button type="button" variant="ghost" size="sm" className="w-full sm:w-auto" onClick={() => setConfirmDescriptionDiscard(false)}>{t("common.cancel", lang)}</Button>
-          <Button type="button" variant="destructive" size="sm" className="w-full sm:w-auto" onClick={discardDescriptionDraft}>{t("draft.editor.discard", lang)}</Button>
+          <Button type="button" variant="outline" size="sm" className="w-full border-destructive/18 !bg-destructive/[0.045] text-destructive shadow-none hover:!bg-destructive/[0.08] sm:w-auto" onClick={discardDescriptionDraft}>{t("draft.editor.discard", lang)}</Button>
         </div>
       ) : undefined}
-      className="border-0 sm:hidden"
-      contentClassName="flex flex-col overflow-hidden bg-card p-0 sm:p-0"
+      className="border-0 sm:max-w-[800px]"
+      contentClassName="flex flex-col overflow-y-auto bg-background/45 p-4 sm:p-6"
     >
-      <div className="relative min-h-0 flex-1 bg-card">
+      <div className="mx-auto flex min-h-full w-full max-w-[720px] flex-1 flex-col gap-4">
+      <div className="floating-panel flex min-h-[30rem] flex-1 flex-col overflow-hidden bg-card/92">
+        <div className="flex shrink-0 items-center gap-1 border-b border-border/45 bg-card/78 px-3 py-2 backdrop-blur-xl">
+          <button type="button" onClick={() => applyDescriptionCommand("bold")} aria-label={t("draft.editor.descriptionBold", lang)} title={t("draft.editor.descriptionBold", lang)} className="flex h-10 min-w-10 items-center justify-center rounded-full px-3 text-[15px] font-bold text-foreground/70 transition-colors hover:bg-foreground/[0.055] hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/25">B</button>
+          <button type="button" onClick={() => applyDescriptionCommand("italic")} aria-label={t("draft.editor.descriptionItalic", lang)} title={t("draft.editor.descriptionItalic", lang)} className="flex h-10 min-w-10 items-center justify-center rounded-full px-3 text-[15px] italic text-foreground/70 transition-colors hover:bg-foreground/[0.055] hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/25">I</button>
+          <span aria-hidden="true" className="mx-1 h-5 w-px bg-border/60" />
+          <button type="button" onClick={() => applyDescriptionCommand("insertUnorderedList")} aria-label="List" title="List" className="flex h-10 min-w-10 items-center justify-center rounded-full px-3 text-[15px] font-semibold text-foreground/70 transition-colors hover:bg-foreground/[0.055] hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/25">• —</button>
+          <span className="flex-1" />
+          <span className="hidden text-[11px] font-medium text-foreground/42 sm:inline">⌘B · ⌘I · ⌘↵</span>
+        </div>
+        <div className="relative min-h-[24rem] flex-1 bg-card/80">
         {!descriptionDraft ? (
           <div className="pointer-events-none absolute inset-x-5 top-5 z-10">
-            <p className="text-[17px] font-medium text-foreground/35">{t("draft.editor.descriptionPlaceholder", lang)}</p>
-            <p className="mt-2 text-[14px] leading-relaxed text-foreground/25">{t("draft.editor.descriptionHint", lang)}</p>
+            <p className="text-[18px] font-medium text-foreground/35">{t("draft.editor.descriptionPlaceholder", lang)}</p>
+            <p className="mt-2 max-w-[58ch] text-[14px] leading-relaxed text-foreground/30">{t("draft.editor.descriptionHint", lang)}</p>
           </div>
         ) : null}
-        <textarea
-          ref={descriptionTextareaRef}
-          value={descriptionDraft}
-          onChange={(event) => {
-            setDescriptionDraft(event.target.value);
+        <div
+          ref={descriptionEditorRef}
+          contentEditable
+          suppressContentEditableWarning
+          onInput={(event) => {
+            setDescriptionDraft(editorHtmlToDescription(event.currentTarget));
             setConfirmDescriptionDiscard(false);
           }}
           onKeyDown={(event) => {
+            if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "b") {
+              event.preventDefault();
+              applyDescriptionCommand("bold");
+              return;
+            }
+            if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "i") {
+              event.preventDefault();
+              applyDescriptionCommand("italic");
+              return;
+            }
             if (event.key === "Enter" && (event.metaKey || event.ctrlKey)) {
               event.preventDefault();
               applyDescriptionDraft();
@@ -1513,38 +1633,23 @@ export function DraftEditor({
           autoCorrect="on"
           spellCheck
           aria-label={t("shareDialog.field.description", lang)}
-          className="absolute inset-0 h-full w-full resize-none overflow-y-auto bg-transparent px-5 py-5 text-[17px] leading-7 text-foreground outline-none scrollbar-thin"
+          role="textbox"
+          aria-multiline="true"
+          className="absolute inset-0 h-full w-full overflow-y-auto bg-transparent px-5 py-6 text-[17px] leading-[1.72] tracking-[-0.005em] text-foreground outline-none scrollbar-thin [&_p]:mb-5 [&_p:last-child]:mb-0 [&_ul]:mb-5 [&_ul]:list-disc [&_ul]:space-y-1.5 [&_ul]:pl-6 [&_strong]:font-semibold sm:px-8 sm:py-8"
         />
+        </div>
       </div>
-      <div className="flex shrink-0 items-center gap-1 border-t border-border/45 bg-card px-3 pb-[max(0.5rem,env(safe-area-inset-bottom))] pt-2">
+      <div className="flex shrink-0 items-center justify-end sm:hidden">
         <button
           type="button"
-          onClick={() => formatDescriptionSelection("**")}
-          aria-label={t("draft.editor.descriptionBold", lang)}
-          title={t("draft.editor.descriptionBold", lang)}
-          className="flex h-11 min-w-11 items-center justify-center rounded-full px-3 text-[16px] font-bold text-foreground/70 transition-colors hover:bg-foreground/[0.055] hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-        >
-          B
-        </button>
-        <button
-          type="button"
-          onClick={() => formatDescriptionSelection("*")}
-          aria-label={t("draft.editor.descriptionItalic", lang)}
-          title={t("draft.editor.descriptionItalic", lang)}
-          className="flex h-11 min-w-11 items-center justify-center rounded-full px-3 text-[16px] italic text-foreground/70 transition-colors hover:bg-foreground/[0.055] hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-        >
-          I
-        </button>
-        <span className="flex-1" />
-        <button
-          type="button"
-          onClick={() => descriptionTextareaRef.current?.blur()}
+          onClick={() => descriptionEditorRef.current?.blur()}
           aria-label={t("draft.editor.hideKeyboard", lang)}
           title={t("draft.editor.hideKeyboard", lang)}
           className="flex h-11 w-11 items-center justify-center rounded-full text-foreground/70 transition-colors hover:bg-foreground/[0.055] hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
         >
           <ChevronDownIcon size={18} />
         </button>
+      </div>
       </div>
     </SidePanel>
     </>

@@ -124,14 +124,14 @@ export function SidePanel({
             "data-[state=closed]:animate-[panelOut_180ms_ease-in] data-[state=open]:animate-[panelIn_220ms_var(--motion-ease-smooth)]",
             "sm:max-w-[520px]",
             headerMode === "editor"
-              ? "bg-background/90 backdrop-blur-2xl sm:inset-y-3 sm:right-3 sm:w-[calc(100%-1.5rem)] sm:overflow-hidden sm:rounded-[var(--floating-frame-radius)] sm:border sm:shadow-[0_24px_70px_-24px_rgba(0,0,0,0.32)]"
+              ? "editor-glass-surface bg-background/82 backdrop-blur-2xl sm:inset-y-3 sm:right-3 sm:w-[calc(100%-1.5rem)] sm:overflow-hidden sm:rounded-[var(--floating-frame-radius)] sm:border sm:shadow-[0_24px_70px_-24px_rgba(0,0,0,0.32)]"
               : "bg-background",
             className,
           )}
         >
           {headerMode === "editor" ? (
             <header className={cn(
-              "grid min-h-[4.25rem] shrink-0 items-center gap-2 border-b border-border/50 bg-card/85 px-3 pb-2 pt-[max(0.5rem,env(safe-area-inset-top))] backdrop-blur-xl sm:grid-cols-[5.5rem_minmax(0,1fr)_5.5rem] sm:px-4 sm:pt-2",
+              "grid min-h-[4.25rem] shrink-0 items-center gap-2 border-b border-border/50 bg-card/85 px-3 pb-2 pt-[max(0.5rem,env(safe-area-inset-top))] backdrop-blur-xl sm:grid-cols-[3rem_minmax(0,1fr)_auto] sm:px-4 sm:pt-2",
               headerAction
                 ? "grid-cols-[3rem_minmax(0,1fr)_auto]"
                 : "grid-cols-[3rem_minmax(0,1fr)_3rem]",
@@ -149,26 +149,26 @@ export function SidePanel({
                   </Dialog.Close>
                 )}
               </div>
+              <div className="min-w-0 text-center sm:text-left">
+                <Dialog.Title className="truncate text-[15px] font-semibold tracking-[-0.01em]">{title}</Dialog.Title>
+                {description ? <Dialog.Description className="mt-0.5 truncate text-[11px] text-muted-foreground">{description}</Dialog.Description> : null}
+              </div>
+              <div className="flex min-w-11 justify-end [&_button]:min-h-11">{headerAction}</div>
+            </header>
+          ) : (
+            <header className="grid min-h-16 shrink-0 grid-cols-[3rem_minmax(0,1fr)_3rem] items-center gap-2 border-b border-border/40 px-4 pb-2 pt-[max(0.5rem,env(safe-area-inset-top))] sm:grid-cols-[5.5rem_minmax(0,1fr)_5.5rem] sm:px-5">
+              <div className="flex justify-start">
+                <Dialog.Close asChild>
+                  <button type="button" aria-label={t("common.close", lang)} className="floating-icon-button pen-touch-target text-foreground/45 hover:bg-foreground/[0.055] hover:text-foreground focus-visible:bg-foreground/[0.045] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40">
+                    <CloseIcon size={17} />
+                  </button>
+                </Dialog.Close>
+              </div>
               <div className="min-w-0 text-center">
                 <Dialog.Title className="truncate text-[15px] font-semibold tracking-[-0.01em]">{title}</Dialog.Title>
                 {description ? <Dialog.Description className="mt-0.5 truncate text-[11px] text-muted-foreground">{description}</Dialog.Description> : null}
               </div>
               <div className="flex justify-end [&_button]:min-h-11">{headerAction}</div>
-            </header>
-          ) : (
-            <header className="flex min-h-16 shrink-0 items-start justify-between gap-4 border-b border-border/40 px-5 pb-4 pt-[max(1rem,env(safe-area-inset-top))] sm:px-6">
-              <div className="min-w-0">
-                <Dialog.Title className="text-[15px] font-semibold tracking-[-0.01em]">{title}</Dialog.Title>
-                {description ? <Dialog.Description className="mt-0.5 text-[12px] leading-relaxed text-muted-foreground">{description}</Dialog.Description> : null}
-              </div>
-              <div className="flex shrink-0 items-center gap-2">
-                {headerAction}
-                <Dialog.Close asChild>
-                  <button type="button" aria-label={t("common.close", lang)} className="floating-icon-button text-foreground/40 hover:bg-foreground/[0.055] hover:text-foreground focus-visible:bg-foreground/[0.045] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40">
-                    <CloseIcon size={17} />
-                  </button>
-                </Dialog.Close>
-              </div>
             </header>
           )}
           <div
@@ -182,7 +182,7 @@ export function SidePanel({
           >
             {children}
           </div>
-          {footer ? <footer className="shrink-0 border-t border-border/40 bg-background/95 px-5 pb-[max(0.75rem,env(safe-area-inset-bottom))] pt-3 backdrop-blur-xl [&_button]:min-h-11 sm:px-6">{footer}</footer> : null}
+          {footer ? <footer className="shrink-0 border-t border-white/55 bg-card/72 px-5 pb-[max(0.75rem,env(safe-area-inset-bottom))] pt-3 shadow-[0_-12px_32px_-24px_rgba(0,0,0,0.22)] backdrop-blur-2xl [&_button]:min-h-11 sm:px-6">{footer}</footer> : null}
         </Dialog.Content>
       </Dialog.Portal>
     </Dialog.Root>

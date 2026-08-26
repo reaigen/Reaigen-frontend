@@ -12,14 +12,10 @@ import { cn } from "../lib/utils";
 import { t, getUserLanguage } from "../lib/i18n";
 import { AppContentMessages } from "./content-documents";
 import { ReaiAgentCard } from "./reai-agent-card";
+import { REAI_COMPOSE_EVENT } from "../lib/reai-compose";
+import { ReaigenWordmark } from "./reaigen-wordmark";
 import { AgentIcon, CloseIcon, MainHomeIcon, MainSettingsIcon, MainSignOutIcon, MainTourIcon, PlusIcon } from "./icons";
 
-/*
- * A rail item in the Material-rail idiom: a small pill behind the icon only,
- * caption free below it — not one tall grey slab swallowing both. The rail is
- * the only desktop nav; with two destinations plus Settings, a wide labelled
- * column was dead space.
- */
 function NavRailItem({ href, label, icon: Icon, active }: {
   href: string;
   label: string;
@@ -32,19 +28,22 @@ function NavRailItem({ href, label, icon: Icon, active }: {
       title={label}
       aria-current={active ? "page" : undefined}
       className={cn(
-        "group/nav flex w-full flex-col items-center justify-center gap-1 rounded-2xl py-1 text-[11px] leading-none transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2",
-        active ? "font-semibold text-foreground" : "font-medium text-muted-foreground hover:text-foreground",
+        "group/nav flex min-h-[4.5rem] w-full shrink-0 flex-col items-center justify-center gap-1.5 rounded-[1.125rem] px-1 py-1.5 text-center text-[11px] leading-none transition-colors",
+        "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2",
+        active ? "font-semibold text-foreground" : "font-medium text-foreground/58 hover:text-foreground",
       )}
     >
       <span
         className={cn(
-          "flex h-8 w-14 items-center justify-center rounded-full transition-colors",
-          active ? "bg-foreground/[0.08]" : "group-hover/nav:bg-foreground/[0.05]",
+          "flex h-10 w-16 items-center justify-center rounded-full border border-transparent transition-[background-color,border-color,transform] duration-200",
+          active
+            ? "glossy-capsule border-white/65 text-foreground"
+            : "text-foreground/52 group-hover/nav:bg-surface-subtle/70 group-hover/nav:text-foreground",
         )}
       >
-        <Icon size={23} filled={active} strokeWidth={1.9} className={cn("shrink-0", active ? "text-foreground" : "text-foreground/55")} />
+        <Icon size={24} filled={active} strokeWidth={1.9} className="shrink-0" />
       </span>
-      <span className="max-w-full truncate">{label}</span>
+      <span className="max-w-full truncate px-1">{label}</span>
     </Link>
   );
 }
@@ -55,7 +54,7 @@ function getInitials(user: UserProfile): string {
   return (f + l).toUpperCase() || (user.email?.[0] ?? "?").toUpperCase();
 }
 
-const SIDEBAR_W = 88;
+const SIDEBAR_W = 96;
 const REAI_PANEL_MIN_W = 420;
 const REAI_PANEL_MAX_W = 960;
 const REAI_PANEL_WIDTH_KEY = "reaigen:agentPanelWidth.v2";
@@ -270,6 +269,7 @@ function AppShellFrame({
     { href: "/dashboard", label: t("nav.dashboard", lang), icon: MainHomeIcon },
     { href: "/tours", label: t("nav.tours", lang), icon: MainTourIcon },
   ];
+  const settingsActive = pathname === "/settings" || pathname.startsWith("/settings/");
   const reaiContext = reaiWorkspaceContext
     ?? (pathname.startsWith("/settings") ? "settings" : (reaiDraftId ? "draft" : "creator"));
   const reaiContextLabel = reaiContext === "settings"
@@ -277,8 +277,6 @@ function AppShellFrame({
     : reaiDraftId
       ? (reaiDraftTitle || t("reai.draftContext", lang))
       : t("reai.noDraftContext", lang);
-  const settingsActive = pathname === "/settings" || pathname.startsWith("/settings/");
-
   React.useLayoutEffect(() => {
     const stored = Number(window.localStorage.getItem(REAI_PANEL_WIDTH_KEY));
     if (!Number.isFinite(stored) || stored <= 0) return;
@@ -297,6 +295,15 @@ function AppShellFrame({
   React.useEffect(() => {
     writeAgentPanelOpen(reaiOpen);
   }, [reaiOpen]);
+
+  React.useEffect(() => {
+    const openComposer = () => {
+      setMobileAccountOpen(false);
+      setReaiOpen(true);
+    };
+    window.addEventListener(REAI_COMPOSE_EVENT, openComposer);
+    return () => window.removeEventListener(REAI_COMPOSE_EVENT, openComposer);
+  }, []);
 
   React.useEffect(() => {
     if (!reaiResizing) return;
@@ -455,13 +462,6 @@ function AppShellFrame({
     }
   };
 
-  /*
-   * The launcher lives on the same edge as the panel it opens. It used to sit
-   * in the left rail while the workspace slid in from the right, which put the
-   * control and its result on opposite sides of the screen. On phones the
-   * header is already right-aligned; on desktop it floats over the canvas,
-   * where the glass material has a grey background to actually lift off.
-   */
   const reaiLauncher = (variant: "header" | "floating") => reaiEnabled ? (
     <button
       type="button"
@@ -474,17 +474,9 @@ function AppShellFrame({
         "group inline-flex shrink-0 items-center justify-center gap-2 rounded-full font-semibold transition-[transform,box-shadow,background-color,color] duration-200",
         "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2",
         variant === "header"
-          // Phone header: a circle beside the avatar, not a second text pill.
           ? "floating-capsule h-11 w-11 gap-0 p-0 text-foreground/80 shadow-control hover:bg-card hover:text-foreground"
-          /*
-           * Desktop: solid and inverted. Glass over the grey canvas of a large
-           * display gave it almost nothing to separate from, so on a 27" screen
-           * it disappeared into the page. This is the one filled control on the
-           * canvas, and it scales from 1280px up rather than waiting for a
-           * 2560px viewport a scaled 27" display never reports.
-           */
           : cn(
-            "fixed bottom-6 right-6 z-40 hidden h-14 w-14 gap-0 overflow-visible border border-white/20 bg-black p-0 text-white md:inline-flex",
+            "glossy-primary-capsule fixed bottom-6 right-6 z-40 hidden h-14 w-14 gap-0 overflow-visible border border-white/20 p-0 text-white md:inline-flex",
             "shadow-[inset_0_1px_0_rgba(255,255,255,0.18),0_0_0_1px_rgba(0,0,0,0.12),0_0_20px_5px_rgba(255,255,255,0.32),0_14px_34px_rgba(0,0,0,0.24)]",
             "hover:-translate-y-0.5 hover:shadow-[inset_0_1px_0_rgba(255,255,255,0.22),0_0_0_1px_rgba(0,0,0,0.12),0_0_26px_7px_rgba(255,255,255,0.42),0_16px_38px_rgba(0,0,0,0.28)] active:translate-y-0",
             "min-[1728px]:bottom-8 min-[1728px]:right-8 min-[1728px]:h-16 min-[1728px]:w-16",
@@ -537,7 +529,7 @@ function AppShellFrame({
         // Room for the fixed header (plus the notch inset it absorbs).
         paddingTop: immersive
           ? "0px"
-          : "calc(var(--header-h) + env(safe-area-inset-top, 0px))",
+          : "var(--header-total-h)",
         paddingRight: "var(--reai-docked-width, 0px)",
         /*
           How much room the docked agent is actually taking, or 0px when it is
@@ -550,22 +542,19 @@ function AppShellFrame({
         ...(reaiPanelWidth ? { "--reai-panel-width": `${reaiPanelWidth}px` } : {}),
       } as React.CSSProperties}
     >
-      {/* ── Desktop sidebar — nav only, below the header (YouTube frame) ── */}
-      {!immersive ? <aside className="fixed bottom-0 left-0 top-[var(--header-h)] z-40 hidden w-[88px] border-r border-border bg-card pl-safe text-foreground md:flex md:flex-col">
-        <nav className="flex-1 space-y-1.5 px-2 pt-3">
-          {NAV_ITEMS.map((item) => {
-            const active = pathname === item.href || pathname.startsWith(item.href + "/") || (item.href === "/dashboard" && pathname.startsWith("/draft/"));
-            return (
-              <NavRailItem key={item.href} href={item.href} label={item.label} icon={item.icon} active={active} />
-            );
-          })}
-        </nav>
-
-        {/* Settings keeps a pinned spot; account actions live in the header's avatar menu. */}
-        <div className="px-2 pb-4">
-          <NavRailItem href="/settings" label={t("nav.settings", lang)} icon={MainSettingsIcon} active={settingsActive} />
-        </div>
-      </aside> : null}
+      {!immersive ? (
+        <aside className="fixed bottom-0 left-0 top-[var(--header-total-h)] z-40 hidden w-24 flex-col border-r border-border/65 bg-card px-2 pb-3 pt-2 text-foreground md:flex">
+          <nav className="min-h-0 flex-1 space-y-1 overflow-y-auto overscroll-contain scrollbar-thin" aria-label={t("nav.dashboard", lang)}>
+            {NAV_ITEMS.map((item) => {
+              const active = pathname === item.href || pathname.startsWith(item.href + "/") || (item.href === "/dashboard" && pathname.startsWith("/draft/"));
+              return <NavRailItem key={item.href} href={item.href} label={item.label} icon={item.icon} active={active} />;
+            })}
+          </nav>
+          <div className="mt-2 shrink-0 border-t border-border/55 pt-2">
+            <NavRailItem href="/settings" label={t("nav.settings", lang)} icon={MainSettingsIcon} active={settingsActive} />
+          </div>
+        </aside>
+      ) : null}
 
       {/* ── Top header (all widths — the YouTube frame) ──────────── */}
       {!immersive ? <header
@@ -581,15 +570,15 @@ function AppShellFrame({
          * and it silently scrolls away again. Fixed cannot move, in any
          * browser; the canvas below compensates with matching top padding.
          */
-        className="fixed inset-x-0 top-0 z-50 border-b border-border bg-card pt-safe text-foreground"
+        className="fixed inset-x-0 top-0 z-50 bg-card text-foreground"
       >
         {/*
           Sized from --header-h, which the theme already defined but nothing
           used. At 56px the wordmark and the 44px agent capsule left barely
           6px of air between them and the rules above and below.
         */}
-        <div className="flex h-[var(--header-h)] items-center justify-between gap-3 pl-[max(1rem,env(safe-area-inset-left))] pr-[max(1rem,env(safe-area-inset-right))]">
-          <Link href="/dashboard" className="flex min-h-11 min-w-0 items-center">
+        <div className="grid h-[var(--header-total-h)] grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-3 border-b border-border pl-[max(1rem,env(safe-area-inset-left))] pr-[max(1rem,env(safe-area-inset-right))] pt-safe">
+          <Link href="/dashboard" aria-label="Reaigen" className="flex min-h-11 min-w-0 items-center">
             {/*
               The wordmark sat at 22px while the page title below it ran at
               32px, so the brand read as secondary to whatever screen you
@@ -604,15 +593,10 @@ function AppShellFrame({
               fontWeight 500 a no-op, and display serifs want tracking in
               rather than out.
             */}
-            <span
-              className="text-[29px] leading-none text-foreground min-[390px]:text-[31px]"
-              style={{ fontFamily: 'var(--font-brand), ui-serif, Georgia, serif', fontWeight: 400, letterSpacing: '-0.01em' }}
-            >
-              Reaigen
-            </span>
+            <ReaigenWordmark className="text-[29px] leading-none text-foreground min-[390px]:text-[31px]" />
           </Link>
+          <span aria-hidden="true" />
           <div className="flex items-center gap-2">
-            {/* Desktop already has the floating corner launcher; one entry point per breakpoint. */}
             <span className="inline-flex md:hidden">{reaiLauncher("header")}</span>
             <button
               type="button"
@@ -621,8 +605,9 @@ function AppShellFrame({
               aria-haspopup="dialog"
               aria-expanded={mobileAccountOpen}
               onClick={() => setMobileAccountOpen((open) => !open)}
-              className="floating-icon-button p-1 transition-colors hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+              className="floating-icon-button gap-2 p-1 transition-colors hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 md:w-auto md:pl-3"
             >
+              <span className="hidden max-w-40 truncate text-[12px] font-semibold text-foreground/70 md:block">{displayName}</span>
               <Avatar size="sm">
                 {avatarUrl && <AvatarImage src={avatarUrl as string} />}
                 <AvatarFallback>{getInitials(user)}</AvatarFallback>
@@ -674,9 +659,10 @@ function AppShellFrame({
       {/* ── Content ──────────────────────────────────────────────── */}
       <main
         className={cn(
+          "[container-name:app-workspace] [container-type:inline-size]",
           immersive
             ? "min-h-dvh p-0"
-            : "min-h-[calc(100dvh-var(--header-h))] pb-24 pt-6 pl-[max(1rem,env(safe-area-inset-left))] pr-[max(1rem,env(safe-area-inset-right))] md:px-8 md:pb-7 md:pt-5 xl:px-10 2xl:px-12",
+            : "min-h-[calc(100dvh-var(--header-total-h))] pb-24 pt-6 pl-[max(1rem,env(safe-area-inset-left))] pr-[max(1rem,env(safe-area-inset-right))] md:px-8 md:pb-7 md:pt-5 xl:px-10 2xl:px-12",
           // The labeled rail stays stable across desktop widths. Only its
           // outer gutter grows slightly on a wide canvas.
         )}
@@ -698,8 +684,8 @@ function AppShellFrame({
       {!immersive && !hideMobileNav && (
       /* Opaque for the same reason as the header — on screen for every scrolled frame. */
       <nav className="fixed inset-x-0 bottom-0 z-40 border-t border-border bg-card pb-safe text-foreground md:hidden">
-        <div className="grid h-16 grid-cols-2 px-4">
-          {NAV_ITEMS.map((item) => {
+        <div className="grid h-16 grid-cols-3 px-4">
+          {[...NAV_ITEMS, { href: "/settings", label: t("nav.settings", lang), icon: MainSettingsIcon }].map((item) => {
             const active = pathname === item.href || pathname.startsWith(item.href + "/") || (item.href === "/dashboard" && pathname.startsWith("/draft/"));
             const Icon = item.icon;
             return (
@@ -731,7 +717,6 @@ function AppShellFrame({
       </nav>
       )}
 
-      {/* Hidden while the panel is open: the panel is the launcher's own result. */}
       {!immersive && !reaiOpen && reaiLauncher("floating")}
 
       {!immersive && reaiEnabled && (
@@ -740,7 +725,7 @@ function AppShellFrame({
             <div
               onClick={() => setReaiOpen(false)}
               aria-hidden="true"
-              className="fixed inset-0 z-[65] bg-black/25 backdrop-blur-[1px]"
+              className="fixed inset-0 z-[95] bg-black/25 backdrop-blur-[1px]"
             />
           )}
           <div
@@ -757,9 +742,13 @@ function AppShellFrame({
             }}
             style={{
               bottom: "auto",
-              height: reaiViewport.height == null ? "100dvh" : `${reaiViewport.height}px`,
+              height: dockedAgentViewport
+                ? "100dvh"
+                : reaiViewport.height == null
+                  ? "100dvh"
+                  : `${reaiViewport.height}px`,
               maxWidth: compactAgentViewport ? "none" : undefined,
-              top: `${reaiViewport.offsetTop}px`,
+              top: dockedAgentViewport ? "0px" : `${reaiViewport.offsetTop}px`,
               width: compactAgentViewport
                 ? "100%"
                 : dockedAgentViewport
@@ -767,8 +756,10 @@ function AppShellFrame({
                   : "min(460px, calc(100vw - 4rem))",
             }}
             className={cn(
-              "agent-canvas fixed inset-y-0 right-0 z-[70] flex w-full flex-col border-l border-border bg-background transition-[transform,visibility] duration-200",
-              dockedAgentViewport ? "shadow-none" : "shadow-[-18px_0_48px_-30px_rgba(0,0,0,0.28)]",
+              "agent-canvas fixed inset-y-0 right-0 z-[100] flex w-full flex-col bg-background transition-[transform,visibility] duration-200",
+              dockedAgentViewport
+                ? "shadow-none"
+                : "border-l border-border shadow-[-18px_0_48px_-30px_rgba(0,0,0,0.28)]",
               reaiOpen ? "visible translate-x-0" : "pointer-events-none invisible translate-x-full",
             )}
           >
@@ -835,7 +826,7 @@ function AppShellFrame({
               docks beside the page the two heads read as one continuous bar —
               same height token, same border color, one horizontal line.
             */}
-            <div className="flex min-h-[var(--header-h)] shrink-0 items-center justify-between border-b border-border bg-card px-4 pt-safe">
+            <div className="flex h-[var(--header-total-h)] shrink-0 items-center justify-between border-b border-border bg-card px-4 pt-safe">
               <div className="flex min-w-0 items-center gap-2.5">
                 <span className="flex h-8 w-8 shrink-0 items-center justify-center text-foreground">
                   <AgentIcon size={20} strokeWidth={1.8} />
@@ -872,14 +863,20 @@ function AppShellFrame({
                 </button>
               </div>
             </div>
-            <div className="min-h-0 flex-1">
+            {/*
+              The navigation rail and docked Agent now follow the same edge
+              rule: their vertical divider begins below the shared app header.
+              Keeping the panel-level border only for the overlay composition
+              prevents a stray vertical line from cutting through one header
+              while the opposite side stays open for the full wordmark.
+            */}
+            <div className={cn("min-h-0 flex-1", dockedAgentViewport && "border-l border-border")}>
               <ReaiAgentCard draftId={reaiDraftId} currentUploadId={reaiUploadId} currentTourId={reaiTourId} workspaceContext={reaiContext} lang={lang} onDraftUpdated={onReaiDraftUpdated} panel compact={compactAgentViewport} />
             </div>
           </div>
         </>
       )}
 
-      {/* CSS variables keep the rail and the page offset aligned. */}
       <style>{`
         :root { --reai-panel-width: clamp(${AGENT_PANEL_BASE_W}px, 33vw, 720px); }
         @media (min-width: 768px) {

@@ -434,7 +434,7 @@ export function DraftImageEditor({
         "h-11 rounded-full px-3 text-[12px] font-medium transition-colors",
         "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
         showOriginal === originalView
-          ? "bg-foreground text-background"
+          ? "glossy-capsule text-foreground"
           : "text-muted-foreground hover:text-foreground",
       )}
     >

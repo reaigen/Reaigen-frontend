@@ -27,11 +27,11 @@ export default function SettingsPage() {
 
   return (
     <AppShell user={user} onLogout={logout}>
-      <div className="mx-auto w-full max-w-[1180px] pb-12">
+      <div className="mx-auto w-full max-w-[1120px] pb-12">
         <PageHeader
           title={t("settings.title", lang)}
           description={t("settings.subtitle", lang)}
-          className="mb-6 sm:mb-8"
+          className="mb-4 sm:mb-5"
         />
         <SettingsForm user={user} onSaved={() => refreshProfile()} />
       </div>

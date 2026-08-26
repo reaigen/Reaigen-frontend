@@ -17,15 +17,15 @@ const buttonVariants = cva(
     variants: {
       variant: {
         default:
-          "bg-primary text-primary-foreground shadow-control hover:bg-primary/88 active:bg-primary/80",
+          "glossy-primary-capsule bg-primary text-primary-foreground hover:brightness-[1.08] active:brightness-95",
         secondary:
-          "bg-secondary text-secondary-foreground hover:bg-secondary/80",
+          "glossy-capsule bg-secondary text-secondary-foreground hover:brightness-[1.015]",
         outline:
-          "border border-border bg-card hover:bg-accent hover:text-accent-foreground",
+          "glossy-capsule border border-border bg-card hover:brightness-[1.015] hover:text-accent-foreground",
         ghost:
           "hover:bg-accent hover:text-accent-foreground",
         destructive:
-          "bg-destructive text-destructive-foreground hover:bg-destructive/90 shadow-sm",
+          "glossy-destructive-capsule bg-destructive text-destructive-foreground hover:brightness-[1.06]",
         success:
           "bg-success text-success-foreground hover:bg-success/90 shadow-sm",
         link:

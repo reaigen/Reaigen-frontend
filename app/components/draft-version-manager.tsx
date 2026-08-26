@@ -773,7 +773,7 @@ function VersionTabTrigger({
   count: number;
 }) {
   return (
-    <TabsTrigger value={value} className="selection-capsule-item pen-touch-target group h-auto w-full gap-1.5 px-2 text-[11px] data-[state=active]:!bg-foreground data-[state=active]:!text-background data-[state=active]:shadow-sm sm:text-[12px]">
+    <TabsTrigger value={value} className="selection-capsule-item pen-touch-target group h-auto w-full gap-1.5 px-2 text-[11px] sm:text-[12px]">
       <Icon size={14} />
       <span>{label}</span>
       {count > 0 ? <span className="hidden min-w-5 rounded-full bg-foreground/[0.07] px-1.5 py-0.5 text-[9px] font-semibold tabular-nums group-data-[state=active]:bg-background/15 min-[430px]:inline-flex">{count}</span> : null}

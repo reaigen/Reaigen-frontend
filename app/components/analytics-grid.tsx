@@ -32,17 +32,17 @@ export function AnalyticsGrid({
         : "grid-cols-1";
 
   return (
-    <dl className={cn("grid gap-2", columns, className)}>
+    <dl className={cn("grid gap-2.5", columns, className)}>
       {items.map((item, index) => (
         <div
           key={item.label}
           className={cn(
-            "flex min-w-0 flex-col rounded-lg bg-surface-subtle px-3 py-2.5 text-center",
+            "flex min-w-0 flex-col rounded-[1.1rem] border border-border/55 bg-card/72 px-3.5 py-3 text-left shadow-[inset_0_1px_0_rgba(255,255,255,.92),0_7px_20px_-18px_rgba(0,0,0,.28)] backdrop-blur-xl",
             items.length === 3 && index === 2 && "col-span-2 sm:col-span-1",
           )}
         >
-          <dt className="order-2 mt-0.5 truncate text-[10px] font-medium text-foreground/50" title={item.label}>{item.label}</dt>
-          <dd className="order-1 text-[17px] font-semibold leading-tight tracking-[-0.02em] tabular-nums">{item.value}</dd>
+          <dt className="order-2 mt-1 truncate text-[10px] font-medium text-foreground/48" title={item.label}>{item.label}</dt>
+          <dd className="order-1 text-[19px] font-semibold leading-none tracking-[-0.025em] tabular-nums">{item.value}</dd>
         </div>
       ))}
     </dl>

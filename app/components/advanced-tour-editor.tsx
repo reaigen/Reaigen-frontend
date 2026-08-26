@@ -103,7 +103,7 @@ function ModeButton({
       className={cn(
         "floating-control group pen-touch-target relative gap-2 text-[11px] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
         active
-          ? "bg-foreground text-background shadow-sm"
+          ? "glossy-capsule text-foreground"
           : "text-foreground/55 hover:bg-foreground/[0.06] hover:text-foreground active:scale-95",
       )}
     >
@@ -147,7 +147,7 @@ function ViewportToolButton({
       className={cn(
         "floating-icon-button group pen-touch-target relative",
         active
-          ? "bg-foreground text-background shadow-sm"
+          ? "glossy-capsule text-foreground"
           : "text-foreground/48 hover:bg-foreground/[0.06] hover:text-foreground active:scale-95",
         disabled && "cursor-not-allowed opacity-30",
       )}
@@ -411,7 +411,7 @@ export function AdvancedTourEditor({
     <div className="pointer-events-none absolute inset-0 z-30 text-foreground">
       <header className="floating-panel floating-header pointer-events-auto absolute inset-x-3 top-[calc(0.75rem+env(safe-area-inset-top,0px))] mx-auto flex max-w-[38rem] items-center justify-between gap-3 sm:inset-x-auto sm:left-1/2 sm:w-[min(38rem,calc(100vw-7rem))] sm:-translate-x-1/2">
         <span className="flex min-w-0 items-center gap-2.5 pl-1">
-          <span className="floating-icon-button-sm bg-foreground text-background">
+          <span className="glossy-primary-capsule floating-icon-button-sm text-background">
             <TechnicalIcon size={15} />
           </span>
           <span className="min-w-0">
@@ -513,7 +513,7 @@ export function AdvancedTourEditor({
           className={cn(
             "floating-icon-button pen-touch-target group relative",
             sceneOpen
-              ? "bg-foreground text-background"
+              ? "glossy-capsule text-foreground"
               : "text-foreground/55 hover:bg-foreground/[0.06] hover:text-foreground",
           )}
           title={t("spatialEditor.usdStructure", lang)}
@@ -740,7 +740,7 @@ export function AdvancedTourEditor({
                 onClick={() => setPrecisionOpen((open) => !open)}
                 className={cn(
                   "floating-capsule floating-control pen-touch-target gap-2 text-[10px]",
-                  precisionOpen && "bg-foreground text-background",
+                  precisionOpen && "glossy-capsule text-foreground",
                 )}
               >
                 <TechnicalIcon size={14} />

@@ -25,12 +25,15 @@ import { CollectionLoading } from "../../components/collection-loading";
 import { cn } from "../../lib/utils";
 import { DraftEditor } from "../../components/draft-editor";
 import { DraftVersionManager } from "../../components/draft-version-manager";
-import { DraftMediaManager } from "../../components/draft-media-manager";
+import { DraftMediaManager, type DraftMediaManagerHandle } from "../../components/draft-media-manager";
 import { DraftTourAssetsPanel } from "../../components/draft-tour-assets-panel";
 import { DraftSharingDock } from "../../components/draft-sharing-dock";
 import { FloorplanLightbox } from "../../components/floorplan-lightbox";
+import { GlassVideoPlayer } from "../../components/glass-video-player";
+import { FormattedDescription } from "../../components/formatted-description";
 import {
   ArrowLeftIcon,
+  ArrowRightIcon,
   DocumentIcon,
   EditIcon,
   FloorplanIcon,
@@ -44,6 +47,7 @@ import {
   ShareIcon,
   StarIcon,
   TourIcon,
+  VideoIcon,
   VersionsIcon,
 } from "../../components/icons";
 import { StatusPill } from "../../components/status-pill";
@@ -93,26 +97,6 @@ function enumT(prefix: string, value: unknown, lang: string): string | null {
   const key = `enum.${prefix}.${v}` as import("../../lib/locales/en").LocaleKey;
   const translated = t(key, lang);
   return translated === key ? humanize(String(value)) : translated;
-}
-
-/** Strip markdown formatting characters from description text */
-function stripFormatting(text: string): string {
-  return text
-    .replace(/#{1,6}\s*/g, "")         // headings
-    .replace(/\*\*(.+?)\*\*/g, "$1")   // bold
-    .replace(/__(.+?)__/g, "$1")       // bold alt
-    .replace(/\*(.+?)\*/g, "$1")       // italic
-    .replace(/_(.+?)_/g, "$1")         // italic alt
-    .replace(/~~(.+?)~~/g, "$1")       // strikethrough
-    .replace(/`(.+?)`/g, "$1")         // inline code
-    .replace(/^\s*[-*+]\s+/gm, "• ")   // list items → bullet
-    .replace(/^\s*\d+\.\s+/gm, "• ")    // numbered list → bullet
-    .replace(/\[([^\]]+)\]\([^)]+\)/g, "$1") // links
-    .replace(/!\[([^\]]*)\]\([^)]+\)/g, "")  // images
-    .replace(/^>\s*/gm, "")            // blockquotes
-    .replace(/---+/g, "")              // horizontal rules
-    .replace(/\n{3,}/g, "\n\n")        // excess newlines
-    .trim();
 }
 
 // ── Data extraction ───────────────────────────────────────────────────────
@@ -470,11 +454,11 @@ function ExpandableDescription({ text, lang }: { text: string; lang: string }) {
         ref={textRef}
         className={cn(
           // Listing copy, not chrome — agents paste this into portals and mail.
-          "select-text overflow-hidden whitespace-pre-line text-[14px] leading-[1.75] text-foreground/78 transition-[max-height] duration-300",
+          "select-text overflow-hidden whitespace-pre-line text-[15px] leading-[1.75] text-foreground/85 transition-[max-height] duration-300",
           expanded ? "max-h-[200em]" : "max-h-[8.75em]",
         )}
       >
-        {text}
+        <FormattedDescription text={text} />
       </div>
       {canExpand ? (
         <button
@@ -515,7 +499,10 @@ export default function DraftPreviewPage({
   const [detailsExpanded, setDetailsExpanded] = useState(false);
   const [translationPending, setTranslationPending] = useState(false);
   const [activeImageId, setActiveImageId] = useState<number | null>(null);
+  const [activeMediaView, setActiveMediaView] = useState<"photos" | "video">("photos");
+  const [activeVideoIndex, setActiveVideoIndex] = useState(0);
   const [editorOpen, setEditorOpen] = useState(false);
+  const [descriptionEditRequested, setDescriptionEditRequested] = useState(false);
   const [floorplanEditorOpen, setFloorplanEditorOpen] = useState(false);
   const [floorplanFullscreen, setFloorplanFullscreen] = useState(false);
   const [floorplanAgentAction, setFloorplanAgentAction] = useState<ReaiViewerAction | null>(null);
@@ -530,6 +517,7 @@ export default function DraftPreviewPage({
   );
   const [versionsOpen, setVersionsOpen] = useState(false);
   const [mediaOpen, setMediaOpen] = useState(false);
+  const mediaManagerRef = useRef<DraftMediaManagerHandle>(null);
   const [sharingOpen, setSharingOpen] = useState(sharingRequested);
   const [mobileActionsOpen, setMobileActionsOpen] = useState(false);
   const [usingCachedDraft, setUsingCachedDraft] = useState(false);
@@ -760,7 +748,7 @@ export default function DraftPreviewPage({
   const monthlyCosts = buildMonthlyCosts(draft, lang, unitCatalog);
   const hasTranslation = !!(draft.description_translated && draft.translation_status === "completed");
   const rawDesc = hasTranslation ? draft.description_translated! : draft.description;
-  const description = rawDesc ? stripFormatting(rawDesc) : null;
+  const description = rawDesc?.trim() || null;
   const offerType = sec(draft, "taxonomy", "offer_type");
 
   const legacyPrimarySplat = splatData?.parent_splat_id
@@ -775,6 +763,9 @@ export default function DraftPreviewPage({
     shareableTour,
   );
   const hasMedia = images.length > 0 || videos.length > 0;
+  const videoIndex = Math.max(0, Math.min(activeVideoIndex, videos.length - 1));
+  const activeVideo = videos[videoIndex] ?? null;
+  const showingVideo = videos.length > 0 && (images.length === 0 || activeMediaView === "video");
   const hasFloorplan = !!(
     draft.floorplan_id ||
     draft.draft_data?.some((d) => d.data_key === "captured_room_json" || d.data_key === "wall_graph_json")
@@ -783,6 +774,16 @@ export default function DraftPreviewPage({
   const visibleRows = detailsExpanded ? rows : rows.slice(0, 8);
   const hasNarrative = Boolean(description || translationPending || hasFloorplan);
   const hasSupportingDetails = rows.length > 0 || features.length > 0 || monthlyCosts.length > 0;
+  const nonFloorCardCount = Number(Boolean(description || translationPending))
+    + Number(rows.length > 0)
+    + Number(features.length > 0)
+    + Number(monthlyCosts.length > 0);
+  const detailCardCount = nonFloorCardCount + Number(hasFloorplan);
+  const sparseNarrativeDetails = Boolean(description || translationPending)
+    && rows.length <= 1
+    && features.length === 0
+    && monthlyCosts.length === 0
+    && !hasFloorplan;
 
 
   return (
@@ -799,21 +800,22 @@ export default function DraftPreviewPage({
         writeDraftDetailCache(user.id, draftId, updatedDraft);
       }}
     >
-      <div className="relative mx-auto w-full max-w-[1120px] pb-24 md:pb-12">
+      <div className="draft-detail-page relative mx-auto w-full max-w-[1280px] pb-24 md:pb-12">
         {/*
           Creation toolbar. Back stays the first thing on the page at every
           width — the stale-listing notice below must never displace the way
           out of this screen.
         */}
-        <div className="mb-4 flex items-center justify-between gap-3 md:mb-6">
+        <div className="mb-4 flex items-center justify-between gap-3 md:mb-5">
           <button
             type="button"
             onClick={() => router.push("/dashboard")}
             aria-label={t("common.back", lang)}
             title={t("common.back", lang)}
-            className="floating-icon-button pen-touch-target border border-border/60 bg-card/75 text-foreground/65 shadow-sm backdrop-blur-xl transition-[background-color,color,box-shadow] hover:bg-foreground hover:text-background hover:shadow-control focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+            className="floating-capsule pen-touch-target inline-flex h-11 items-center gap-2 border border-border/60 bg-card/85 px-3.5 text-[12px] font-semibold text-foreground/65 shadow-sm backdrop-blur-xl transition-[background-color,color,box-shadow] hover:bg-card hover:text-foreground hover:shadow-control focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
           >
             <ArrowLeftIcon size={17} />
+            <span>{t("nav.dashboard", lang)}</span>
           </button>
         </div>
 
@@ -831,7 +833,7 @@ export default function DraftPreviewPage({
         )}
 
         {/* Media and property summary — one continuous workspace at every width. */}
-        <div className="space-y-6 lg:space-y-8">
+        <div className="flex flex-col overflow-hidden rounded-[1.65rem] border border-border/65 bg-card shadow-card">
           {/*
             A listing with no photos rendered no hero at all, so the page opened
             on status pills floating in whitespace and never said the obvious
@@ -844,44 +846,64 @@ export default function DraftPreviewPage({
           {!hasMedia && (
             <button
               type="button"
-              onClick={() => setMediaOpen(true)}
-              className="group relative block w-full overflow-hidden rounded-[1.5rem] border border-dashed border-border/70 bg-card/50 text-center transition-colors hover:border-foreground/25 hover:bg-card focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 sm:rounded-2xl"
+              onClick={() => mediaManagerRef.current?.requestUpload()}
+              className="group w-full border-t border-border/60 bg-card p-3 text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring sm:p-4"
             >
-              {/*
-                The canvas itself is the ghost of the hero mosaic the photos
-                will form — the lead tile plus the four supporting ones — so
-                the page holds the shape it will have once filled, at a height
-                that suggests the gallery without swallowing the viewport.
-              */}
-              <span className="grid h-64 w-full grid-cols-2 grid-rows-2 gap-1.5 p-1.5 sm:h-80 lg:h-[26rem] lg:grid-cols-4">
-                {/*
-                  The pitch lives inside the lead tile — the slot the cover
-                  photo will take — instead of floating over the grid seams.
-                */}
-                <span className="col-span-2 flex flex-col items-center justify-center gap-3 rounded-[1.05rem] bg-surface-subtle px-6 lg:row-span-2">
-                  <span className="text-[15px] font-semibold">{t("draft.media.emptyTitle", lang)}</span>
-                  <span className="hidden max-w-md text-[12px] leading-relaxed text-muted-foreground sm:block">
-                    {t("draft.media.emptyBody", lang)}
-                  </span>
-                  <span className="floating-control mt-1 inline-flex items-center gap-2 bg-foreground px-4 text-[13px] font-semibold text-background shadow-control">
-                    <PlusIcon size={15} />
-                    {t("draft.media.addPhotos", lang)}
+              <span className="flex min-h-40 min-w-0 items-center justify-center gap-4 rounded-[1.25rem] border border-dashed border-border/80 bg-surface-subtle/35 p-5 text-center transition-[background-color,border-color] group-hover:border-foreground/25 group-hover:bg-surface-subtle/60 sm:p-7">
+                <span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full border border-border/70 bg-card text-foreground/55 shadow-control">
+                  <ImageIcon size={21} />
+                </span>
+                <span className="min-w-0 text-left">
+                  <span className="block text-[18px] font-semibold tracking-[-0.02em]">{t("draft.media.emptyTitle", lang)}</span>
+                  <span className="mt-1.5 block max-w-xl text-[13px] leading-relaxed text-foreground/58">{t("draft.media.emptyBody", lang)}</span>
+                  <span className="mt-4 inline-flex min-h-10 items-center gap-2 rounded-full border border-border/70 bg-card px-4 text-[13px] font-semibold text-foreground shadow-control transition-colors group-hover:border-foreground/20">
+                    <PlusIcon size={15} /> {t("draft.media.addPhotos", lang)}
                   </span>
                 </span>
-                <span aria-hidden="true" className="rounded-[1.05rem] bg-surface-subtle" />
-                <span aria-hidden="true" className="rounded-[1.05rem] bg-surface-subtle" />
-                <span aria-hidden="true" className="hidden rounded-[1.05rem] bg-surface-subtle lg:block" />
-                <span aria-hidden="true" className="hidden rounded-[1.05rem] bg-surface-subtle lg:block" />
-              </span>
-              <span aria-hidden="true" className="absolute bottom-4 right-4 flex h-9 w-9 items-center justify-center rounded-full bg-foreground text-background shadow-control transition-transform group-hover:scale-105">
-                <PlusIcon size={16} />
               </span>
             </button>
           )}
           {hasMedia && (
-            <div className="min-w-0 space-y-4">
-              {images.length > 0 && (
-                <div className="detail-hero-frame overflow-hidden rounded-[1.5rem] shadow-card ring-1 ring-border/75 sm:rounded-2xl">
+            <div className="min-w-0 space-y-4 border-t border-border/60 p-4 sm:p-5">
+              {images.length > 0 && videos.length > 0 ? (
+                <div
+                  role="tablist"
+                  aria-label={t("draft.media.title", lang)}
+                  className="inline-flex items-center gap-1 rounded-full border border-border/65 bg-card p-1 shadow-sm"
+                >
+                  <button
+                    type="button"
+                    role="tab"
+                    aria-selected={!showingVideo}
+                    onClick={() => setActiveMediaView("photos")}
+                    className={cn(
+                      "inline-flex h-9 items-center gap-2 rounded-full px-3.5 text-[12px] font-semibold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+                      !showingVideo ? "glossy-capsule text-foreground" : "text-muted-foreground hover:bg-surface-subtle hover:text-foreground",
+                    )}
+                  >
+                    <ImageIcon size={14} />
+                    {t("draft.media.gallery", lang)}
+                    <span className={cn("tabular-nums", !showingVideo ? "text-foreground/45" : "text-foreground/35")}>{images.length}</span>
+                  </button>
+                  <button
+                    type="button"
+                    role="tab"
+                    aria-selected={showingVideo}
+                    onClick={() => setActiveMediaView("video")}
+                    className={cn(
+                      "inline-flex h-9 items-center gap-2 rounded-full px-3.5 text-[12px] font-semibold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+                      showingVideo ? "glossy-capsule text-foreground" : "text-muted-foreground hover:bg-surface-subtle hover:text-foreground",
+                    )}
+                  >
+                    <VideoIcon size={14} />
+                    {t("draft.media.video", lang)}
+                    <span className={cn("tabular-nums", showingVideo ? "text-foreground/45" : "text-foreground/35")}>{videos.length}</span>
+                  </button>
+                </div>
+              ) : null}
+
+              {!showingVideo && images.length > 0 ? (
+                <div className="detail-hero-frame overflow-hidden rounded-[1.35rem] ring-1 ring-border/70 sm:rounded-2xl">
                   <DraftImageGallery
                     images={images}
                     alt={draft.title}
@@ -891,23 +913,38 @@ export default function DraftPreviewPage({
                     manageLabel={t("draft.media.manage", lang)}
                   />
                 </div>
-              )}
-              {videos.length > 0 && (
-                <div className="space-y-4">
-                  {videos.map((video) => (
-                    <video
-                      key={video.id}
-                      controls
-                      playsInline
-                      preload="metadata"
-                      className="aspect-[16/10] w-full rounded-[1.5rem] bg-black object-cover shadow-card ring-1 ring-border/75 sm:rounded-2xl"
-                      aria-label={video.name}
-                    >
-                      <source src={video.url} />
-                    </video>
-                  ))}
+              ) : null}
+
+              {showingVideo && activeVideo ? (
+                <div className="relative aspect-video w-full overflow-hidden rounded-[1.35rem] bg-black ring-1 ring-border/70 sm:rounded-2xl">
+                  <GlassVideoPlayer key={activeVideo.id} src={activeVideo.url} ariaLabel={activeVideo.name} />
+                  {videos.length > 1 ? (
+                    <>
+                      <button
+                        type="button"
+                        onClick={() => setActiveVideoIndex(Math.max(0, videoIndex - 1))}
+                        disabled={videoIndex === 0}
+                        className="floating-icon-button pen-touch-target absolute left-3 top-1/2 -translate-y-1/2 border border-white/20 bg-black/55 text-white shadow-control backdrop-blur-md transition-colors hover:bg-black/75 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/70 disabled:invisible"
+                        aria-label={t("draft.gallery.previous", lang)}
+                      >
+                        <ArrowLeftIcon size={18} />
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setActiveVideoIndex(Math.min(videos.length - 1, videoIndex + 1))}
+                        disabled={videoIndex === videos.length - 1}
+                        className="floating-icon-button pen-touch-target absolute right-3 top-1/2 -translate-y-1/2 border border-white/20 bg-black/55 text-white shadow-control backdrop-blur-md transition-colors hover:bg-black/75 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/70 disabled:invisible"
+                        aria-label={t("draft.gallery.next", lang)}
+                      >
+                        <ArrowRightIcon size={18} />
+                      </button>
+                      <span className="pointer-events-none absolute right-3 top-3 rounded-full bg-black/60 px-2.5 py-1 text-[11px] font-semibold tabular-nums text-white backdrop-blur-md">
+                        {videoIndex + 1} / {videos.length}
+                      </span>
+                    </>
+                  ) : null}
                 </div>
-              )}
+              ) : null}
             </div>
           )}
 
@@ -915,21 +952,25 @@ export default function DraftPreviewPage({
               cap for photo-less drafts left the action rail ending mid-page
               while the tour panel below ran the full column — two ragged
               right edges stacked on top of each other. */}
-          <section className="min-w-0">
+          <section
+            className={cn(
+              "order-first relative z-10 min-w-0 bg-card p-4 sm:p-6",
+            )}
+          >
             <div className="flex flex-wrap items-center gap-2">
               {offerType ? (
-                <StatusPill className="uppercase tracking-[0.09em]">
+                <StatusPill tone="strong" className="uppercase tracking-[0.09em]">
                   {enumT("offer", offerType, lang)}
                 </StatusPill>
               ) : null}
               <StatusPill tone={draft.is_complete ? "success" : "neutral"} dot>
                 {t(draft.is_complete ? "dashboard.listingComplete" : "dashboard.listingDraft", lang)}
               </StatusPill>
-              {hasTour ? <StatusPill tone="strong">{t("dashboard.tourReady", lang)}</StatusPill> : null}
+              {hasTour ? <StatusPill tone="success" dot>{t("dashboard.tourReady", lang)}</StatusPill> : null}
             </div>
 
             <div className="mt-3 flex items-start justify-between gap-3">
-              <h1 className="min-w-0 select-text text-[28px] font-semibold leading-[1.08] tracking-[-0.03em] sm:text-[30px] lg:text-[34px]">
+              <h1 className="min-w-0 select-text text-[30px] font-semibold leading-[1.08] tracking-[-0.03em] sm:text-[34px] lg:text-[40px]">
                 {draft.title || t("dashboard.untitled", lang)}
               </h1>
               <Button
@@ -946,13 +987,13 @@ export default function DraftPreviewPage({
               </Button>
             </div>
             {address && (
-              <p className="mt-2 flex select-text items-start gap-1.5 text-[13px] leading-relaxed text-muted-foreground">
-                <MapPinIcon size={14} className="mt-0.5 shrink-0 text-foreground/40" />
+              <p className="mt-2 flex select-text items-start gap-2 text-[14px] leading-relaxed text-foreground/65 sm:text-[15px]">
+                <MapPinIcon size={15} className="mt-0.5 shrink-0 text-foreground/50" />
                 <span>{address}</span>
               </p>
             )}
             {price && (
-              <p className="mt-3 select-text text-[22px] font-semibold tracking-[-0.025em] tabular-nums sm:mt-4">
+                <p className="mt-3 select-text text-[24px] font-semibold tracking-[-0.025em] tabular-nums sm:mt-4 sm:text-[28px]">
                 {price}
                 {showOrigPrice && (
                   <span className="ml-2 text-[12px] font-normal tracking-normal text-muted-foreground tabular-nums">{origPrice}</span>
@@ -961,7 +1002,7 @@ export default function DraftPreviewPage({
             )}
 
             {facts.length > 0 && (
-              <div className="mt-5 grid grid-cols-2 gap-2.5 border-t border-border/70 pt-5 sm:grid-cols-3">
+              <div className="draft-facts-grid mt-5 grid grid-cols-2 gap-2.5 border-t border-border/70 pt-5 sm:grid-cols-3">
                 {facts.map((fact) => (
                   <div
                     key={fact.label}
@@ -986,8 +1027,8 @@ export default function DraftPreviewPage({
                       {fact.icon}
                     </span>
                     <span className="min-w-0 leading-tight">
-                      <span className="block select-text truncate text-[13px] font-semibold tabular-nums">{fact.value}</span>
-                      <span className="mt-1 block truncate text-[10px] font-medium text-muted-foreground">{fact.label}{fact.sub ? ` · ${fact.sub}` : ""}</span>
+                      <span className="block select-text truncate text-[14px] font-semibold tabular-nums">{fact.value}</span>
+                      <span className="mt-1 block truncate text-[11px] font-medium text-foreground/55">{fact.label}{fact.sub ? ` · ${fact.sub}` : ""}</span>
                     </span>
                   </div>
                 ))}
@@ -1002,27 +1043,27 @@ export default function DraftPreviewPage({
               {/* No fixed height: h-12 gave the 40px buttons a 38px inner box
                   (p-1 wins over the class padding), so the active pill clipped
                   against the capsule instead of floating centred in it. */}
-              <div className="floating-toolbar w-full overflow-x-auto p-1 scrollbar-hide">
+              <div className="draft-action-toolbar floating-toolbar glossy-capsule w-full overflow-x-auto scrollbar-hide">
                 {hasTour && (
-                  <Button asChild size="sm" className="h-10 min-w-[12rem] shrink-0 px-4 shadow-none">
+                  <Button asChild size="sm" className="draft-action-tour h-10 min-w-[12rem] shrink-0 px-4 shadow-none">
                     <Link href={`/tour/${primarySplatId}?tourId=${shareableTour?.id}`}>
                       <TourIcon size={15} />
                       {t("draft.viewTour", lang)}
                     </Link>
                   </Button>
                 )}
-                {hasTour ? <span aria-hidden="true" className="mx-1 h-5 w-px shrink-0 bg-border/70" /> : null}
-                <div className="flex min-w-[25rem] flex-1 items-center gap-0.5">
-                  <Button type="button" data-testid="draft-media-open" variant="ghost" size="sm" className="h-10 min-w-0 flex-1 shrink-0" aria-label={t("draft.media.manage", lang)} onClick={() => setMediaOpen(true)}>
+                {hasTour ? <span aria-hidden="true" className="draft-action-divider mx-1 h-6 w-px shrink-0 bg-border/70" /> : null}
+                <div className="draft-action-items flex min-w-[25rem] flex-1 items-center gap-0.5">
+                  <Button type="button" data-testid="draft-media-open" variant="ghost" size="sm" className="h-10 min-w-0 flex-1 shrink-0 rounded-full" aria-label={t("draft.media.manage", lang)} onClick={() => setMediaOpen(true)}>
                     <ImageIcon size={15} /> {t("draft.media.gallery", lang)}
                   </Button>
-                  <Button type="button" data-testid="draft-editor-open" variant="ghost" size="sm" className="h-10 min-w-0 flex-1 shrink-0" onClick={() => setEditorOpen(true)}>
+                  <Button type="button" data-testid="draft-editor-open" variant={hasTour ? "ghost" : "default"} size="sm" className="h-10 min-w-0 flex-1 shrink-0 rounded-full" onClick={() => { setDescriptionEditRequested(false); setEditorOpen(true); }}>
                     <EditIcon size={14} /> {t("shareDialog.edit", lang)}
                   </Button>
-                  <Button type="button" data-testid="draft-sharing-open" variant="ghost" size="sm" className="h-10 min-w-0 flex-1 shrink-0" onClick={() => handleSharingOpenChange(true)}>
+                  <Button type="button" data-testid="draft-sharing-open" variant="ghost" size="sm" className="h-10 min-w-0 flex-1 shrink-0 rounded-full" onClick={() => handleSharingOpenChange(true)}>
                     <ShareIcon size={14} /> {t("draft.share", lang)}
                   </Button>
-                  <Button type="button" data-testid="draft-versions-open" variant="ghost" size="sm" className="h-10 min-w-0 flex-1 shrink-0" onClick={() => setVersionsOpen(true)}>
+                  <Button type="button" data-testid="draft-versions-open" variant="ghost" size="sm" className="h-10 min-w-0 flex-1 shrink-0 rounded-full" onClick={() => setVersionsOpen(true)}>
                     <VersionsIcon size={15} /> {t("draft.versions.short", lang)}
                   </Button>
                 </div>
@@ -1042,27 +1083,35 @@ export default function DraftPreviewPage({
           dateFormat={user.localization?.date_format}
         />
 
-        <DraftTourAssetsPanel
-          draftId={draftId}
-          lang={lang}
-          splats={splatData?.splats}
-          initialPayload={tourAssets}
-          onPayloadChanged={setTourAssets}
-          onPrimaryChanged={(activeSplatId) => setSplatData((current) => (
-            current ? { ...current, parent_splat_id: activeSplatId } : current
-          ))}
-          onOpenSharing={() => handleSharingOpenChange(true)}
-        />
-
         {(hasNarrative || hasSupportingDetails) && (
-          <div className="mt-8 space-y-7 lg:mt-10">
+          <div className={cn(
+            "draft-support-grid",
+            "mt-8 grid gap-7 lg:mt-10",
+            detailCardCount > 1 && !sparseNarrativeDetails && "lg:grid-cols-2 lg:items-start",
+          )}>
             {hasNarrative && (
-              <div className="min-w-0 space-y-7">
+              <div className="draft-support-contents min-w-0 space-y-7 lg:contents">
                 {(description || translationPending) && (
-                  <section>
-                    <h2 className="mb-3 flex items-center gap-2 text-[14px] font-semibold">
-                      <DocumentIcon size={16} className="text-foreground/55" />
+                  <section className={cn(nonFloorCardCount === 1 && "lg:col-span-2")}>
+                    <h2 className="mb-3 flex flex-wrap items-center gap-2 text-[16px] font-semibold tracking-[-0.015em]">
+                      <DocumentIcon size={17} className="text-foreground/65" />
                       {t("draft.description", lang)}
+                      <span className="ml-auto flex items-center gap-1.5">
+                        <button
+                          type="button"
+                          onClick={() => { setDescriptionEditRequested(true); setEditorOpen(true); }}
+                          className="glossy-capsule inline-flex h-9 items-center gap-1.5 rounded-full px-3 text-[11px] font-semibold text-foreground/72 transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/25"
+                        >
+                          <EditIcon size={13} /> {t("shareDialog.edit", lang)}
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setVersionsOpen(true)}
+                          className="inline-flex h-9 items-center gap-1.5 rounded-full px-3 text-[11px] font-semibold text-foreground/52 transition-colors hover:bg-foreground/[0.045] hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/25"
+                        >
+                          <VersionsIcon size={13} /> {t("draft.versions.short", lang)}
+                        </button>
+                      </span>
                     </h2>
                     {translationPending && !hasTranslation && (
                       <p className="mb-2 text-[12px] text-foreground/50">{t("draft.descriptionPending", lang)}</p>
@@ -1074,9 +1123,9 @@ export default function DraftPreviewPage({
                 )}
 
                 {hasFloorplan && (
-                  <section>
-                    <h2 className="mb-3 flex items-center gap-2 text-[14px] font-semibold">
-                      <FloorplanIcon size={16} className="text-foreground/55" />
+                  <section className="lg:col-span-2">
+                    <h2 className="mb-3 flex items-center gap-2 text-[16px] font-semibold tracking-[-0.015em]">
+                      <FloorplanIcon size={17} className="text-foreground/65" />
                       {t("draft.floorplan", lang)}
                       {!compactViewport && (
                         <button
@@ -1143,14 +1192,14 @@ export default function DraftPreviewPage({
             )}
 
             {hasSupportingDetails && (
-              <div className="min-w-0 space-y-7">
+              <div className="draft-support-contents min-w-0 space-y-7 lg:contents">
                 {rows.length > 0 && (
-                  <section>
-                    <h2 className="mb-3 flex items-center gap-2 text-[14px] font-semibold">
-                      <InfoIcon size={16} className="text-foreground/55" />
+                  <section className={cn(nonFloorCardCount === 1 && "lg:col-span-2")}>
+                    <h2 className="mb-3 flex items-center gap-2 text-[16px] font-semibold tracking-[-0.015em]">
+                      <InfoIcon size={17} className="text-foreground/65" />
                       {t("draft.details", lang)}
                     </h2>
-                    <div className="overflow-hidden rounded-[1.5rem] border border-border/70 bg-card shadow-card sm:rounded-2xl">
+                    <div className="draft-detail-grid grid grid-cols-1 gap-2.5 sm:grid-cols-2">
                       {visibleRows.map((row, index) => (
                         <div
                           key={`${row.label}-${index}`}
@@ -1165,18 +1214,22 @@ export default function DraftPreviewPage({
                             });
                           }}
                           className={cn(
-                            "flex items-start justify-between gap-4 px-4 py-3",
-                            (index < visibleRows.length - 1 || detailsLong) && "border-b border-border/45",
-                            row.path && "cursor-grab active:cursor-grabbing",
+                            "group flex min-w-0 items-center gap-3 rounded-[1.25rem] border border-border/65 bg-card/88 px-3.5 py-3.5 shadow-control backdrop-blur-xl transition-[border-color,box-shadow,transform]",
+                            row.path && "cursor-grab hover:-translate-y-px hover:border-foreground/20 hover:shadow-card active:cursor-grabbing",
                           )}
                         >
-                          <span className="min-w-0 break-words text-[12px] leading-relaxed text-muted-foreground">{row.label}</span>
-                          <span className="min-w-0 max-w-[58%] select-text break-words text-right text-[12px] font-semibold leading-relaxed text-foreground tabular-nums">{row.value}</span>
+                          <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full border border-border/55 bg-surface-subtle/75 text-foreground/62 shadow-[inset_0_1px_0_rgba(255,255,255,0.82)]">
+                            {row.icon}
+                          </span>
+                          <span className="min-w-0 flex-1 leading-tight">
+                            <span className="block break-words text-[11px] font-medium text-foreground/52">{row.label}</span>
+                            <span className="mt-1.5 block select-text break-words text-[14px] font-semibold leading-snug text-foreground tabular-nums">{row.value}</span>
+                          </span>
                         </div>
                       ))}
                       {detailsLong && (
-                        <div className="flex justify-center px-3 py-2.5">
-                          <button type="button" aria-expanded={detailsExpanded} onClick={() => setDetailsExpanded(!detailsExpanded)} className="rounded-full px-3 py-1.5 text-[12px] font-semibold text-foreground/55 transition-colors hover:bg-foreground/[0.045] hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2">
+                        <div className="flex justify-center pt-1 sm:col-span-2">
+                          <button type="button" aria-expanded={detailsExpanded} onClick={() => setDetailsExpanded(!detailsExpanded)} className="floating-capsule min-h-10 rounded-full px-4 text-[12px] font-semibold text-foreground/62 shadow-control transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2">
                             {detailsExpanded ? t("draft.showLess", lang) : t("draft.showMore", lang)}
                           </button>
                         </div>
@@ -1186,14 +1239,14 @@ export default function DraftPreviewPage({
                 )}
 
                 {features.length > 0 && (
-                  <section>
-                    <h2 className="mb-3 flex items-center gap-2 text-[14px] font-semibold">
-                      <StarIcon size={16} className="text-foreground/55" />
+                  <section className={cn(nonFloorCardCount === 1 && "lg:col-span-2")}>
+                    <h2 className="mb-3 flex items-center gap-2 text-[16px] font-semibold tracking-[-0.015em]">
+                      <StarIcon size={17} className="text-foreground/65" />
                       {t("draft.features", lang)}
                     </h2>
                     <div className="flex flex-wrap gap-2 rounded-[1.5rem] border border-border/70 bg-card p-4 shadow-card sm:rounded-2xl">
                       {features.map((feature) => (
-                        <span key={feature} className="inline-flex min-h-8 items-center rounded-full border border-border/65 bg-surface-subtle px-3 py-1 text-[11px] font-medium text-foreground/75">
+                        <span key={feature} className="inline-flex min-h-9 items-center rounded-full border border-border/65 bg-surface-subtle px-3.5 py-1 text-[12px] font-medium text-foreground/80">
                           {feature}
                         </span>
                       ))}
@@ -1202,16 +1255,19 @@ export default function DraftPreviewPage({
                 )}
 
                 {monthlyCosts.length > 0 && (
-                  <section>
-                    <h2 className="mb-3 flex items-center gap-2 text-[14px] font-semibold">
-                      <PriceIcon size={16} className="text-foreground/55" />
+                  <section className={cn(nonFloorCardCount === 1 && "lg:col-span-2")}>
+                    <h2 className="mb-3 flex items-center gap-2 text-[16px] font-semibold tracking-[-0.015em]">
+                      <PriceIcon size={17} className="text-foreground/65" />
                       {t("draft.monthlyCosts", lang)}
                     </h2>
-                    <div className="overflow-hidden rounded-[1.5rem] border border-border/70 bg-card shadow-card sm:rounded-2xl">
+                    <div className="draft-cost-grid grid grid-cols-1 gap-2.5 sm:grid-cols-2">
                       {monthlyCosts.map((row, index) => (
-                        <div key={`${row.label}-${index}`} className={cn("flex items-center justify-between gap-4 px-4 py-3", index < monthlyCosts.length - 1 && "border-b border-border/45")}>
-                          <span className="min-w-0 break-words text-[12px] text-muted-foreground">{row.label}</span>
-                          <span className="min-w-0 max-w-[58%] select-text break-words text-right text-[12px] font-semibold text-foreground tabular-nums">{row.value}</span>
+                        <div key={`${row.label}-${index}`} className="flex min-w-0 items-center gap-3 rounded-[1.25rem] border border-border/65 bg-card/88 px-3.5 py-3.5 shadow-control backdrop-blur-xl">
+                          <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full border border-border/55 bg-surface-subtle/75 text-foreground/62 shadow-[inset_0_1px_0_rgba(255,255,255,0.82)]">{I.money}</span>
+                          <span className="min-w-0 flex-1 leading-tight">
+                            <span className="block break-words text-[11px] font-medium text-foreground/52">{row.label}</span>
+                            <span className="mt-1.5 block select-text break-words text-[14px] font-semibold text-foreground tabular-nums">{row.value}</span>
+                          </span>
                         </div>
                       ))}
                     </div>
@@ -1222,9 +1278,32 @@ export default function DraftPreviewPage({
           </div>
         )}
 
+        <DraftTourAssetsPanel
+          draftId={draftId}
+          lang={lang}
+          splats={splatData?.splats}
+          initialPayload={tourAssets}
+          onPayloadChanged={setTourAssets}
+          onPrimaryChanged={(activeSplatId) => setSplatData((current) => (
+            current ? { ...current, parent_splat_id: activeSplatId } : current
+          ))}
+          onOpenSharing={() => handleSharingOpenChange(true)}
+        />
+
       </div>
 
-      <DraftEditor open={editorOpen} onOpenChange={setEditorOpen} draft={draft} units={unitCatalog} lang={lang} onSaved={setDraft} />
+      <DraftEditor
+        open={editorOpen}
+        onOpenChange={(next) => {
+          setEditorOpen(next);
+          if (!next) setDescriptionEditRequested(false);
+        }}
+        draft={draft}
+        units={unitCatalog}
+        lang={lang}
+        onSaved={setDraft}
+        startWithDescription={descriptionEditRequested}
+      />
       <FloorplanLightbox
         open={floorplanFullscreen}
         onClose={() => setFloorplanFullscreen(false)}
@@ -1254,6 +1333,7 @@ export default function DraftPreviewPage({
         />
       )}
       <DraftMediaManager
+        ref={mediaManagerRef}
         open={mediaOpen}
         onOpenChange={setMediaOpen}
         draft={draft}
@@ -1281,7 +1361,7 @@ export default function DraftPreviewPage({
             <Dialog.Title className="mb-3 text-center text-[15px] font-semibold">{t("common.more", lang)}</Dialog.Title>
             <div className="grid gap-1">
               <Dialog.Close asChild>
-                <Button type="button" data-testid="draft-mobile-editor-open" variant="ghost" className="h-12 justify-start rounded-xl px-4" onClick={() => setEditorOpen(true)}>
+                <Button type="button" data-testid="draft-mobile-editor-open" variant="ghost" className="h-12 justify-start rounded-xl px-4" onClick={() => { setDescriptionEditRequested(false); setEditorOpen(true); }}>
                   <EditIcon size={16} /> {t("shareDialog.edit", lang)}
                 </Button>
               </Dialog.Close>

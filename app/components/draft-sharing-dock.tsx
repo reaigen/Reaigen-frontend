@@ -37,7 +37,9 @@ import {
   ClockIcon,
   CopyIcon,
   ExternalLinkIcon,
+  LinkIcon,
   LockIcon,
+  PlusIcon,
 } from "./icons";
 import {
   ShareCreateForm,
@@ -45,6 +47,7 @@ import {
   type ShareFormData,
 } from "./sharing/share-create-form";
 import type { ContentScope } from "./sharing/content-scope-selector";
+import { SegmentedControl } from "./segmented-control";
 import { SidePanel } from "./side-panel";
 import { StatusPill } from "./status-pill";
 
@@ -61,6 +64,8 @@ type ShareFeedback =
   | { kind: "copied"; shareId: number }
   | { kind: "saved" }
   | { kind: "copyFailed"; url: string };
+
+type SharingView = "links" | "create";
 
 function primaryShareSplat(data: SplatsByDraftPayload | null) {
   if (!data?.splats.length) return null;
@@ -173,9 +178,10 @@ export function DraftSharingDock({
   const [actionLoading, setActionLoading] = React.useState(false);
   const [actionError, setActionError] = React.useState(false);
   const [confirmRevoke, setConfirmRevoke] = React.useState(false);
+  const [activeView, setActiveView] = React.useState<SharingView>("links");
   const wasOpenRef = React.useRef(false);
+  const viewInitializedRef = React.useRef(false);
   const headingRef = React.useRef<HTMLHeadingElement | null>(null);
-  const formSectionRef = React.useRef<HTMLDivElement | null>(null);
   const requestIdRef = React.useRef(0);
   const feedbackTimerRef = React.useRef<number | null>(null);
 
@@ -212,6 +218,7 @@ export function DraftSharingDock({
       // Reset on close, otherwise a remount looks like "already handled" and
       // the panel never asks for links again.
       wasOpenRef.current = false;
+      viewInitializedRef.current = false;
       return;
     }
     if (!wasOpenRef.current) {
@@ -222,6 +229,12 @@ export function DraftSharingDock({
     // previous attempt was dropped — ask again rather than sit on a skeleton.
     if (!linksLoaded && !linksLoading && !linksError) void loadLinks();
   }, [linksError, linksLoaded, linksLoading, loadLinks, open]);
+
+  React.useEffect(() => {
+    if (!open || !linksLoaded || viewInitializedRef.current) return;
+    viewInitializedRef.current = true;
+    setActiveView(shares.length > 0 ? "links" : "create");
+  }, [linksLoaded, open, shares.length]);
 
   React.useEffect(() => {
     const refresh = () => {
@@ -289,6 +302,16 @@ export function DraftSharingDock({
     setFormVersion((version) => version + 1);
   }, [hasFloorplan, hasPhotos, hasTour, showFeedback]);
 
+  const showCreateView = React.useCallback(() => {
+    resetForm();
+    setActiveView("create");
+  }, [resetForm]);
+
+  const showLinksView = React.useCallback(() => {
+    resetForm();
+    setActiveView("links");
+  }, [resetForm]);
+
   const selectShare = React.useCallback((shareId: number) => {
     setSelectedShareId(shareId);
     setFormError(null);
@@ -306,7 +329,7 @@ export function DraftSharingDock({
       floorplan: hasFloorplan,
     }));
     setFormVersion((version) => version + 1);
-    formSectionRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+    setActiveView("create");
   }, [hasFloorplan, hasPhotos, hasTour, selectedShare, showFeedback]);
 
   const handleSubmit = React.useCallback(async (formData: ShareFormData) => {
@@ -339,6 +362,7 @@ export function DraftSharingDock({
         setEditingShare(null);
         setScope(defaultContentScope(hasTour, hasPhotos, hasFloorplan));
         setFormVersion((version) => version + 1);
+        setActiveView("links");
         showFeedback({ kind: "saved" });
         return;
       }
@@ -356,6 +380,7 @@ export function DraftSharingDock({
       // instead of leaving the settings of the one just created.
       setScope(defaultContentScope(hasTour, hasPhotos, hasFloorplan));
       setFormVersion((version) => version + 1);
+      setActiveView("links");
       await copyShare(created);
     } catch (error) {
       setFormError(
@@ -399,6 +424,7 @@ export function DraftSharingDock({
         const remaining = shares.filter((share) => share.id !== selectedShare.id);
         setShares(remaining);
         setSelectedShareId(remaining[0]?.id ?? null);
+        if (remaining.length === 0) setActiveView("create");
       }
     } catch {
       setActionError(true);
@@ -449,23 +475,41 @@ export function DraftSharingDock({
       initialFocusRef={headingRef}
       lang={lang}
     >
-      {/*
-        One scrolling surface: the form to make a link, then the links that
-        exist. Swapping the panel between a "create" view and a "list" view
-        meant the same state could land you in either one depending on whether
-        the panel had been opened before, and there was no way to read your
-        existing links while setting up a new one.
-      */}
-      <div className="space-y-7">
+      <div className="sharing-workspace space-y-4">
       <h2 ref={headingRef} tabIndex={-1} className="sr-only outline-none">{t("sharing.pageTitle", lang)}</h2>
 
-      <section ref={formSectionRef} className="space-y-3 scroll-mt-4">
+      <SegmentedControl
+        value={activeView}
+        onChange={(view) => {
+          if (view === "create") showCreateView();
+          else showLinksView();
+        }}
+        ariaLabel={t("sharing.pageTitle", lang)}
+        className="grid w-full grid-cols-2"
+        itemClassName="w-full gap-2 text-[12px] font-semibold"
+        options={[
+          {
+            value: "links",
+            label: t("shares.title", lang),
+            icon: <LinkIcon size={14} />,
+            count: linksLoaded ? shares.length : undefined,
+          },
+          {
+            value: "create",
+            label: editingShare ? t("shares.editSettings", lang) : t("shares.createLink", lang),
+            icon: <PlusIcon size={14} />,
+          },
+        ]}
+      />
+
+      {activeView === "create" ? (
+      <section className="space-y-3">
         <div className="flex items-center justify-between gap-3 px-0.5">
           <h3 className="text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">
             {t(editingShare ? "shares.editSettings" : "sharing.createNewLink", lang)}
           </h3>
           {editingShare ? (
-            <Button type="button" variant="ghost" size="xs" onClick={resetForm} disabled={saving}>
+            <Button type="button" variant="ghost" size="xs" onClick={showLinksView} disabled={saving}>
               {t("common.cancel", lang)}
             </Button>
           ) : null}
@@ -482,31 +526,29 @@ export function DraftSharingDock({
           saving={saving}
           error={formError}
           initialShare={editingShare}
-          onCancelEdit={editingShare ? resetForm : undefined}
+          onCancelEdit={editingShare ? showLinksView : undefined}
           layout="stacked"
           detailsMode="inline"
           stickyActions={false}
         />
       </section>
+      ) : (
 
       <div className="space-y-4">
-      <h3 className="px-0.5 text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">
-        {t("shares.title", lang)}{linksLoaded ? ` · ${shares.length}` : ""}
-      </h3>
 
       {/*
         A 64px progress hairline alone in an empty panel read as a rendering
         fault rather than as loading. This traces the layout that is about to
-        arrive — link chips, then the selected link's card — so nothing shifts
+        arrive — link rows, then the selected link's card — so nothing shifts
         when it does. Only on the first load: a background refresh already has
         real content on screen and must not replace it with placeholders.
       */}
       {linksLoading && !linksLoaded ? (
         <div className="space-y-4" role="status" aria-busy="true" aria-label={t("common.loading", lang)}>
           <span className="sr-only">{t("common.loading", lang)}</span>
-          <div className="flex gap-2" aria-hidden="true">
-            <span className="h-11 w-28 animate-pulse rounded-full bg-foreground/[0.06] motion-reduce:animate-none" />
-            <span className="h-11 w-24 animate-pulse rounded-full bg-foreground/[0.04] motion-reduce:animate-none" />
+          <div className="grid gap-2" aria-hidden="true">
+            <span className="h-[3.75rem] animate-pulse rounded-xl bg-foreground/[0.055] motion-reduce:animate-none" />
+            <span className="h-[3.75rem] animate-pulse rounded-xl bg-foreground/[0.035] motion-reduce:animate-none" />
           </div>
           <div aria-hidden="true" className="overflow-hidden rounded-2xl border border-border/70 bg-card shadow-control">
             <div className="p-4 sm:p-5">
@@ -546,31 +588,54 @@ export function DraftSharingDock({
       ) : null}
 
       {shares.length ? (
-        <nav className="flex items-center gap-2 overflow-x-auto pb-1 scrollbar-hide" aria-label={t("shares.title", lang)}>
+        <nav className="grid gap-2" aria-label={t("shares.title", lang)}>
           {shares.map((share, index) => {
             const selected = share.id === selectedShareId;
             const status = STATUS_CONFIG[share.status] ?? STATUS_CONFIG.revoked;
             const views = `${share.access_count} ${t(share.access_count === 1 ? "shares.viewSingular" : "shares.viewPlural", lang)}`;
             return (
-              <button
+              <div
                 key={share.id}
-                type="button"
-                aria-pressed={selected}
-                // The chip is too small for status and view wording, but a
-                // bare trailing number reads as an ID unless it's spelled out.
-                aria-label={`${t("sharing.linkLabel", lang)} ${index + 1} · ${t(status.labelKey, lang)} · ${views}`}
-                title={`${t(status.labelKey, lang)} · ${views}`}
-                onClick={() => selectShare(share.id)}
-                className={`floating-control min-w-fit gap-2 px-3 text-[11px] font-semibold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 ${
+                className={`grid grid-cols-[minmax(0,1fr)_2.75rem] overflow-hidden rounded-xl border transition-colors ${
                   selected
-                    ? "bg-foreground text-background shadow-sm"
-                    : "border border-border/70 bg-card text-foreground/60 hover:bg-accent hover:text-foreground"
+                    ? "border-foreground/25 bg-surface-subtle"
+                    : "border-border/65 bg-card hover:border-foreground/20"
                 }`}
               >
-                <span className={`h-1.5 w-1.5 rounded-full ${selected ? "bg-background/75" : statusDotClass(share.status)}`} aria-hidden="true" />
-                <span aria-hidden="true">{t("sharing.linkLabel", lang)} {index + 1}</span>
-                <span aria-hidden="true" className={selected ? "text-background/60" : "text-foreground/35"}>{share.access_count}</span>
-              </button>
+                <button
+                  type="button"
+                  aria-pressed={selected}
+                  aria-label={`${t("sharing.linkLabel", lang)} ${index + 1} · ${t(status.labelKey, lang)} · ${views}`}
+                  onClick={() => selectShare(share.id)}
+                  className="flex min-w-0 items-center gap-3 px-3.5 py-3 text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
+                >
+                  <span className={`h-2 w-2 shrink-0 rounded-full ${statusDotClass(share.status)}`} aria-hidden="true" />
+                  <span className="min-w-0 flex-1">
+                    <span className="flex min-w-0 items-center gap-2">
+                      <span className="truncate text-[13px] font-semibold">
+                        {share.title || `${t("sharing.linkLabel", lang)} ${index + 1}`}
+                      </span>
+                      <span className="shrink-0 text-[10px] font-medium text-muted-foreground">
+                        {t(status.labelKey, lang)}
+                      </span>
+                    </span>
+                    <span className="mt-0.5 block text-[10px] text-muted-foreground">
+                      {formatDate(share.created_at, dateFormat, lang)} · {views}
+                    </span>
+                  </span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => void copyShare(share)}
+                  className="flex min-h-11 items-center justify-center border-l border-border/55 text-muted-foreground transition-colors hover:bg-accent hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
+                  aria-label={`${t("shares.copyLink", lang)}: ${share.title || `${t("sharing.linkLabel", lang)} ${index + 1}`}`}
+                  title={t("shares.copyLink", lang)}
+                >
+                  {feedback?.kind === "copied" && feedback.shareId === share.id
+                    ? <CheckIcon size={15} />
+                    : <CopyIcon size={15} />}
+                </button>
+              </div>
             );
           })}
         </nav>
@@ -668,15 +733,23 @@ export function DraftSharingDock({
             the routine actions it could be mistaken for.
           */}
           {confirmRevoke ? (
-            <div className="border-t border-border/50 bg-destructive/[0.035] p-3 sm:px-4">
+            <div className="border-t border-border/50 bg-card/58 p-3 sm:px-4">
               <p className="text-[12px] font-semibold text-destructive">{t("shares.revokeConfirm", lang)}</p>
               <p className="mt-1 text-[11px] leading-relaxed text-foreground/60">{t("shares.revokeConsequence", lang)}</p>
               <div className="mt-3 flex gap-2">
-                <Button type="button" variant="destructive" size="sm" disabled={actionLoading} loading={actionLoading} onClick={() => void runAction("revoke")}>
-                  {t("shares.revoke", lang)}
-                </Button>
                 <Button type="button" variant="outline" size="sm" disabled={actionLoading} onClick={() => setConfirmRevoke(false)}>
                   {t("shares.cancel", lang)}
+                </Button>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  className="border-destructive/22 bg-destructive/[0.045] text-destructive shadow-none hover:bg-destructive/[0.08] hover:text-destructive"
+                  disabled={actionLoading}
+                  loading={actionLoading}
+                  onClick={() => void runAction("revoke")}
+                >
+                  {t("shares.revoke", lang)}
                 </Button>
               </div>
             </div>
@@ -705,14 +778,16 @@ export function DraftSharingDock({
           )}
         </div>
       ) : linksLoaded && !linksError ? (
-        /* The create form is directly above, so this only has to say the
-           shelf is empty — it no longer needs its own call to action. */
         <div className="flex min-h-40 flex-col items-center justify-center rounded-[1.75rem] border border-dashed border-border/70 bg-card/45 px-6 py-7 text-center">
           <p className="text-[12px] font-medium">{t("shares.noShares", lang)}</p>
           <p className="mx-auto mt-1 max-w-[22rem] text-[11px] leading-relaxed text-muted-foreground">{t("shares.noSharesHint", lang)}</p>
+          <Button type="button" size="sm" className="mt-4" onClick={showCreateView}>
+            <PlusIcon size={14} /> {t("shares.createLink", lang)}
+          </Button>
         </div>
       ) : null}
       </div>
+      )}
       </div>
     </SidePanel>
   );

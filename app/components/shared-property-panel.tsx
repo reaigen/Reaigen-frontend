@@ -6,6 +6,7 @@ import { t } from "../lib/i18n";
 import type { SharedDraftData } from "../lib/tour-types";
 import { resolveUnit, unitLabel, type UnitLookup } from "../lib/unit-catalog";
 import { ChevronDownIcon, CloseIcon, DocumentIcon, MapPinIcon } from "./icons";
+import { FormattedDescription } from "./formatted-description";
 import { PropertyFactTile } from "./property-fact-tile";
 
 function formatPrice(price: string | number | null | undefined, currency: string | undefined, lang: string): string {
@@ -51,7 +52,10 @@ export function SharedPropertyPanel({
   const hasAddress = !!draftData.display_address || !!draftData.city;
   const hasFacts = draftData.bedrooms != null || draftData.bathrooms != null || (draftData.area != null && draftData.area !== "") || draftData.year_built != null;
   const hasDescription = !!draftData.description;
-  const hasPhotos = (draftData.uploads?.length ?? 0) > 0;
+  const photos = (draftData.uploads ?? [])
+    .filter((upload) => !upload.mime_type || upload.mime_type.startsWith("image/"))
+    .slice(0, 6);
+  const hasPhotos = photos.length > 0;
   const hasFeatures = (draftData.data?.length ?? 0) > 0;
   const hasTitle = !!draftData.title;
   const hasAnyContent = hasTitle || hasPrice || hasAddress || hasFacts || hasDescription || hasPhotos || hasFeatures;
@@ -59,7 +63,6 @@ export function SharedPropertyPanel({
   if (!hasAnyContent) return null;
 
   const addressText = draftData.display_address || [draftData.city, draftData.state, draftData.country].filter(Boolean).join(", ");
-  const photos = (draftData.uploads ?? []).slice(0, 6);
   const facts = [
     draftData.bedrooms != null
       ? { label: t("draft.bedrooms", lang), value: String(draftData.bedrooms) }
@@ -143,9 +146,10 @@ export function SharedPropertyPanel({
               <p className="mb-1.5 text-[10px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">
                 {t("draft.description", lang)}
               </p>
-              <p className="line-clamp-5 whitespace-pre-line text-[12px] leading-relaxed text-foreground/65">
-                {draftData.description}
-              </p>
+              <FormattedDescription
+                text={draftData.description!}
+                className="line-clamp-5 text-[12px] leading-relaxed text-foreground/65"
+              />
             </div>
           )}
 

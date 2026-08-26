@@ -49,9 +49,9 @@ export function PrivacyLevelSelector({ level, pin, onLevelChange, onPinChange, l
                 onLevelChange(option.value);
                 if (option.value !== "pin") onPinChange("");
               }}
-              className="editor-control-capsule floating-panel-shape pen-touch-target relative flex min-h-16 items-center gap-2.5 border border-border/55 px-3 py-2.5 text-left transition-colors hover:bg-card focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+              className={`floating-panel-shape pen-touch-target relative flex min-h-16 items-center gap-2.5 border px-3 py-2.5 text-left transition-colors hover:bg-card focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 ${active ? "glossy-capsule border-foreground/20 bg-card/90 shadow-control" : "editor-control-capsule border-border/65 bg-muted/28"}`}
             >
-              <span className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-full ${active ? "bg-foreground text-background" : "bg-secondary/80 text-foreground/50"}`}>
+              <span className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-full ${active ? "bg-foreground/[0.09] text-foreground" : "bg-secondary/80 text-foreground/50"}`}>
                 {option.icon}
               </span>
               {/* Check sits in the flow, so wrapping copy can never run under it. */}

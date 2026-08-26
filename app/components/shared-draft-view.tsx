@@ -6,12 +6,27 @@
  * photos with lightbox, specs, and description in a clean branded layout.
  */
 
+import { useState } from "react";
 import { t } from "../lib/i18n";
 import FloorplanViewer from "./floorplan-viewer";
 import { DraftImageGallery } from "./draft-image-gallery";
+import { GlassVideoPlayer } from "./glass-video-player";
 import type { SharedDraftData, RoomData, SharedTourSummary } from "../lib/tour-types";
 import { resolveUnit, unitLabel, type UnitLookup } from "../lib/unit-catalog";
 import { ReaigenWordmark } from "./reaigen-wordmark";
+import { FormattedDescription } from "./formatted-description";
+import {
+  ArrowLeftIcon,
+  ArrowRightIcon,
+  DocumentIcon,
+  FloorplanIcon,
+  ImageIcon,
+  MapPinIcon,
+  TechnicalIcon,
+  TourIcon,
+  VideoIcon,
+} from "./icons";
+import { cn } from "../lib/utils";
 
 // ── Helpers ────────────────────────────────────────────────────────────
 
@@ -34,7 +49,6 @@ const I = {
   area: <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" className="text-foreground/55"><rect x="3" y="3" width="18" height="18" rx="1"/><path d="M3 9h18"/><path d="M9 3v18"/></svg>,
   year: <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" className="text-foreground/55"><rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4"/><path d="M8 2v4"/><path d="M3 10h18"/></svg>,
   lot:  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" className="text-foreground/55"><path d="M2 22l5-5"/><path d="M7 22H2v-5"/><path d="M22 2l-5 5"/><path d="M17 2h5v5"/><rect x="6" y="6" width="12" height="12" rx="1"/></svg>,
-  pin:  <svg width="12" height="12" viewBox="0 0 16 16" fill="none" className="text-muted-foreground shrink-0"><path d="M8 1.5a4.5 4.5 0 0 1 4.5 4.5c0 3.5-4.5 8.5-4.5 8.5S3.5 9.5 3.5 6A4.5 4.5 0 0 1 8 1.5Z" stroke="currentColor" strokeWidth="1.2"/><circle cx="8" cy="6" r="1.5" stroke="currentColor" strokeWidth="1.2"/></svg>,
 };
 
 // ── Shared floorplan (composite + room labels, no geometry/zoom) ──────
@@ -128,12 +142,18 @@ export function SharedDraftView({ draftData, lang, hasTour, tours, onOpenTour, f
   rooms?: RoomData[];
   units: readonly UnitLookup[];
 }) {
+  const [activeMediaView, setActiveMediaView] = useState<"photos" | "video">("photos");
+  const [activeVideoIndex, setActiveVideoIndex] = useState(0);
   const currency = resolveUnit(units, draftData.currency, "CURRENCY");
   const areaUnit = resolveUnit(units, draftData.area_unit, "AREA");
   const lotUnit = resolveUnit(units, draftData.lot_size_unit, "AREA");
   const price = formatPrice(draftData.price, currency?.code);
   const addressText = draftData.display_address || [draftData.city, draftData.state, draftData.country].filter(Boolean).join(", ");
   const photos = (draftData.uploads ?? []).filter((upload) => !upload.mime_type || upload.mime_type.startsWith("image/"));
+  const videos = (draftData.uploads ?? []).filter((upload) => upload.mime_type?.startsWith("video/"));
+  const videoIndex = Math.max(0, Math.min(activeVideoIndex, videos.length - 1));
+  const activeVideo = videos[videoIndex] ?? null;
+  const showingVideo = videos.length > 0 && (photos.length === 0 || activeMediaView === "video");
   const webTours = (tours ?? draftData.tours ?? [])
     .filter((tour) => !tour.targets.length || tour.targets.includes("web"))
     .sort((left, right) => left.sort_order - right.sort_order);
@@ -159,22 +179,25 @@ export function SharedDraftView({ draftData, lang, hasTour, tours, onOpenTour, f
     title: !!draftData.title,
     address: !!addressText,
     price: !!price,
-    facts: draftData.bedrooms != null || draftData.bathrooms != null || (draftData.area != null && draftData.area !== "") || draftData.year_built != null,
+    facts: draftData.bedrooms != null || draftData.bathrooms != null || (draftData.area != null && draftData.area !== "") || (draftData.lot_size != null && draftData.lot_size !== "") || draftData.year_built != null,
     description: !!draftData.description,
-    photos: photos.length > 0,
+    photos: photos.length > 0 || videos.length > 0,
     floorplan: !!draftData.floorplan,
     tours: Boolean(hasTour),
+    features: (draftData.data?.length ?? 0) > 0,
   };
-  const hasAny = has.title || has.address || has.price || has.facts || has.description || has.photos || has.floorplan || has.tours;
+  const hasSummary = has.title || has.address || has.price || has.facts;
+  const hasAny = hasSummary || has.description || has.photos || has.floorplan || has.tours || has.features;
 
   return (
-    <div className="min-h-screen bg-background">
-      {/* Branded header */}
-      <header className="border-b border-border/40 px-5 py-3.5 sm:px-8">
-        <ReaigenWordmark className="text-[20px] text-foreground/80" />
+    <div className="flex min-h-screen flex-col bg-background">
+      <header className="h-[calc(4rem+env(safe-area-inset-top))] shrink-0 border-b border-border/75 bg-card/92 pl-[max(1rem,env(safe-area-inset-left))] pr-[max(1rem,env(safe-area-inset-right))] pt-safe backdrop-blur-xl sm:px-8 sm:pt-safe">
+        <div className="mx-auto flex h-full w-full max-w-[1120px] items-center">
+          <ReaigenWordmark className="text-[29px] leading-none text-foreground min-[390px]:text-[31px]" />
+        </div>
       </header>
 
-      <main className="mx-auto max-w-2xl px-5 py-8 sm:px-8 animate-fade-in">
+      <main className="mx-auto w-full max-w-[1120px] flex-1 pb-[max(1.5rem,env(safe-area-inset-bottom))] pl-[max(1rem,env(safe-area-inset-left))] pr-[max(1rem,env(safe-area-inset-right))] pt-5 sm:px-8 sm:py-7 animate-fade-in">
         {/* Empty state */}
         {!hasAny && (
           <div className="flex flex-col items-center justify-center py-24 text-center">
@@ -187,19 +210,147 @@ export function SharedDraftView({ draftData, lang, hasTour, tours, onOpenTour, f
         )}
 
         {hasAny && (
-          <div className="space-y-6">
-            {/* One canonical gallery: original ratios in the viewer and fullscreen. */}
-            {has.photos && (
-              <DraftImageGallery images={photos} alt={draftData.title || t("shared.propertyInfo", lang)} lang={lang} />
-            )}
+          <div className="flex flex-col gap-7">
+            {has.photos ? (
+              <section className="space-y-3" aria-label={t("draft.media.title", lang)}>
+                {photos.length > 0 && videos.length > 0 ? (
+                  <div
+                    role="tablist"
+                    aria-label={t("draft.media.title", lang)}
+                    className="inline-flex items-center gap-1 rounded-full border border-border/65 bg-card p-1 shadow-sm"
+                  >
+                    <button
+                      type="button"
+                      role="tab"
+                      aria-selected={!showingVideo}
+                      onClick={() => setActiveMediaView("photos")}
+                      className={cn(
+                        "inline-flex h-9 items-center gap-2 rounded-full px-3.5 text-[12px] font-semibold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+                        !showingVideo ? "glossy-capsule text-foreground" : "text-muted-foreground hover:bg-surface-subtle hover:text-foreground",
+                      )}
+                    >
+                      <ImageIcon size={14} /> {t("draft.media.gallery", lang)}
+                      <span className={cn("tabular-nums", !showingVideo ? "text-foreground/45" : "text-foreground/35")}>{photos.length}</span>
+                    </button>
+                    <button
+                      type="button"
+                      role="tab"
+                      aria-selected={showingVideo}
+                      onClick={() => setActiveMediaView("video")}
+                      className={cn(
+                        "inline-flex h-9 items-center gap-2 rounded-full px-3.5 text-[12px] font-semibold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+                        showingVideo ? "glossy-capsule text-foreground" : "text-muted-foreground hover:bg-surface-subtle hover:text-foreground",
+                      )}
+                    >
+                      <VideoIcon size={14} /> {t("draft.media.video", lang)}
+                      <span className={cn("tabular-nums", showingVideo ? "text-foreground/45" : "text-foreground/35")}>{videos.length}</span>
+                    </button>
+                  </div>
+                ) : null}
+
+                {!showingVideo && photos.length > 0 ? (
+                  <div className="detail-hero-frame overflow-hidden rounded-[1.5rem] shadow-card ring-1 ring-border/75 sm:rounded-2xl">
+                    <DraftImageGallery
+                      images={photos}
+                      alt={draftData.title || t("shared.propertyInfo", lang)}
+                      lang={lang}
+                      mobileOverviewLabel
+                    />
+                  </div>
+                ) : null}
+
+                {showingVideo && activeVideo ? (
+                  <div className="relative aspect-video w-full overflow-hidden rounded-[1.5rem] bg-black shadow-card ring-1 ring-border/75 sm:rounded-2xl">
+                    <GlassVideoPlayer key={activeVideo.url} src={activeVideo.url} ariaLabel={activeVideo.name || t("draft.media.video", lang)} />
+                    {videos.length > 1 ? (
+                      <>
+                        <button
+                          type="button"
+                          onClick={() => setActiveVideoIndex(Math.max(0, videoIndex - 1))}
+                          disabled={videoIndex === 0}
+                          className="floating-icon-button absolute left-3 top-1/2 -translate-y-1/2 border border-white/20 bg-black/55 text-white backdrop-blur-md hover:bg-black/75 disabled:invisible"
+                          aria-label={t("draft.gallery.previous", lang)}
+                        ><ArrowLeftIcon size={18} /></button>
+                        <button
+                          type="button"
+                          onClick={() => setActiveVideoIndex(Math.min(videos.length - 1, videoIndex + 1))}
+                          disabled={videoIndex === videos.length - 1}
+                          className="floating-icon-button absolute right-3 top-1/2 -translate-y-1/2 border border-white/20 bg-black/55 text-white backdrop-blur-md hover:bg-black/75 disabled:invisible"
+                          aria-label={t("draft.gallery.next", lang)}
+                        ><ArrowRightIcon size={18} /></button>
+                      </>
+                    ) : null}
+                  </div>
+                ) : null}
+              </section>
+            ) : null}
+
+            {hasSummary ? (
+              <section
+                aria-label={t("shared.propertyInfo", lang)}
+                className={cn(
+                  "relative z-10 rounded-[1.65rem] border border-border/65 bg-card p-4 shadow-card sm:p-6",
+                  has.photos && "mx-2 -mt-16 sm:mx-5 sm:-mt-20",
+                )}
+              >
+                <div className="grid gap-4 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-end">
+                  <div className="min-w-0">
+                    <p className="mb-2 text-[10px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">
+                      {t("shared.propertyInfo", lang)}
+                    </p>
+                    {has.title ? (
+                      <h1 className="select-text text-[28px] font-semibold leading-[1.05] tracking-[-0.035em] sm:text-[38px]">
+                        {draftData.title}
+                      </h1>
+                    ) : null}
+                    {has.address ? (
+                      <p className="mt-2 flex select-text items-start gap-2 text-[13px] leading-relaxed text-muted-foreground sm:text-[14px]">
+                        <MapPinIcon size={15} className="mt-0.5 shrink-0 text-foreground/45" />
+                        <span>{addressText}</span>
+                      </p>
+                    ) : null}
+                  </div>
+                  {has.price ? (
+                    <div className="glossy-capsule rounded-2xl px-4 py-3 text-foreground sm:min-w-40 sm:text-right">
+                      <p className="select-text text-[24px] font-semibold leading-none tabular-nums sm:text-[28px]">{price}</p>
+                      <p className="mt-2 text-[9px] font-semibold uppercase tracking-[0.14em] text-foreground/48">
+                        {lang.toLowerCase().startsWith("sk") ? "Cena" : "Price"}
+                      </p>
+                    </div>
+                  ) : null}
+                </div>
+
+                {has.facts ? (
+                  <div className="mt-5 grid grid-cols-2 gap-2 border-t border-border/55 pt-4 sm:grid-cols-3 lg:grid-cols-5">
+                    {([
+                      [I.bed, draftData.bedrooms, t("shared.bed", lang)],
+                      [I.bath, draftData.bathrooms, t("shared.bath", lang)],
+                      [I.area, draftData.area != null && draftData.area !== "" ? `${draftData.area}${unitLabel(areaUnit) ? ` ${unitLabel(areaUnit)}` : ""}` : null, t("draft.area", lang)],
+                      [I.year, draftData.year_built, t("draft.yearBuilt", lang)],
+                      [I.lot, draftData.lot_size != null && draftData.lot_size !== "" ? `${draftData.lot_size}${unitLabel(lotUnit) ? ` ${unitLabel(lotUnit)}` : ""}` : null, t("draft.lotSize", lang)],
+                    ] as [React.ReactNode, string | number | null | undefined, string | null][])
+                      .filter(([, value]) => value != null && value !== "")
+                      .map(([icon, value, label], index) => (
+                        <div key={index} className="flex min-w-0 items-center gap-2.5 rounded-xl bg-surface-subtle px-3 py-2.5">
+                          <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-card text-foreground/65 shadow-control">{icon}</span>
+                          <span className="min-w-0 leading-tight">
+                            <span className="block select-text truncate text-[13px] font-semibold tabular-nums">{value}</span>
+                            {label ? <span className="mt-1 block truncate text-[9px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">{label}</span> : null}
+                          </span>
+                        </div>
+                      ))}
+                  </div>
+                ) : null}
+              </section>
+            ) : null}
 
             {/* Virtual tour is the primary shared-property action. */}
             {hasTour && onOpenTour && webTours.length <= 1 && (
               <button
                 onClick={() => onOpenTour(webTours[0]?.tour_id)}
-                className="flex w-full items-center justify-center gap-2.5 rounded-full bg-foreground py-3 text-background transition-colors hover:bg-foreground/90"
+                className="glossy-primary-capsule flex min-h-11 w-full items-center justify-center gap-2.5 rounded-full px-5 py-2.5 text-background transition-[filter,transform] hover:brightness-[1.08] active:scale-[0.99] sm:w-auto"
               >
-                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/><path d="M3.27 6.96 12 12.01l8.73-5.05M12 22.08V12"/></svg>
+                <TourIcon size={18} />
                 <span className="text-[14px] font-semibold">{t("draft.viewTour", lang)}</span>
               </button>
             )}
@@ -232,7 +383,7 @@ export function SharedDraftView({ draftData, lang, hasTour, tours, onOpenTour, f
                         className="flex w-full items-center gap-3 rounded-2xl border border-border/55 bg-background px-3.5 py-3 text-left transition-colors hover:bg-foreground/[0.025]"
                       >
                         <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-foreground/[0.055] text-foreground/65">
-                          <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4a2 2 0 0 0 1-1.73Z"/><path d="m3.3 7 8.7 5 8.7-5M12 22V12"/></svg>
+                          <TourIcon size={17} />
                         </span>
                         <span className="min-w-0 flex-1">
                           <span className="flex flex-wrap items-center gap-2">
@@ -255,56 +406,45 @@ export function SharedDraftView({ draftData, lang, hasTour, tours, onOpenTour, f
               </section>
             )}
 
-            {/* Title block */}
-            {(has.title || has.address || has.price) && (
-              <div className="space-y-1.5">
-                {has.title && <h1 className="select-text text-[24px] font-semibold tracking-tight leading-tight">{draftData.title}</h1>}
-                {has.address && (
-                  <p className="flex select-text items-center gap-1.5 text-[13px] text-muted-foreground">{I.pin} {addressText}</p>
-                )}
-                {has.price && <p className="mt-1 select-text text-[20px] font-semibold text-foreground">{price}</p>}
-              </div>
-            )}
-
-            {/* Key facts — same chip design as the draft detail page */}
-            {has.facts && (
-              <div className="flex flex-wrap gap-2">
-                {([
-                  [I.bed, draftData.bedrooms, t("shared.bed", lang)],
-                  [I.bath, draftData.bathrooms, t("shared.bath", lang)],
-                  [I.area, draftData.area, unitLabel(areaUnit) || null],
-                  [I.year, draftData.year_built, null],
-                  [I.lot, draftData.lot_size, unitLabel(lotUnit) || null],
-                ] as [React.ReactNode, string | number | null | undefined, string | null][])
-                  .filter(([, value]) => value != null && value !== "")
-                  .map(([icon, value, label], i) => (
-                    <div key={i} className="flex items-center gap-2.5 rounded-xl bg-foreground/[0.04] px-3 py-2">
-                      {icon}
-                      <div className="leading-tight">
-                        <p className="text-[14px] font-semibold tabular-nums">{value}</p>
-                        {label && <p className="text-[11px] text-muted-foreground">{label}</p>}
-                      </div>
-                    </div>
-                  ))}
-              </div>
-            )}
-
             {/* Description */}
             {has.description && (
-              <div>
-                <h2 className="text-[14px] font-semibold mb-2">{t("draft.description", lang)}</h2>
-                <div className="rounded-2xl bg-foreground/[0.03] px-4 py-3.5">
-                  {/* Recipients copy listing copy out of the public page too. */}
-                  <p className="select-text text-[13px] leading-[1.75] text-foreground/65 whitespace-pre-line">{draftData.description}</p>
+              <section className="rounded-[1.35rem] border border-border/60 bg-card p-4 shadow-sm sm:p-5">
+                <div className="mb-3 flex items-center gap-2.5">
+                  <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-surface-subtle text-foreground/60"><DocumentIcon size={16} /></span>
+                  <h2 className="text-[16px] font-semibold tracking-[-0.015em]">{t("draft.description", lang)}</h2>
                 </div>
-              </div>
+                <div className="max-w-3xl">
+                  {/* Recipients copy listing copy out of the public page too. */}
+                  <FormattedDescription text={draftData.description!} className="select-text text-[15px] leading-[1.75] text-foreground/72" />
+                </div>
+              </section>
             )}
+
+            {has.features ? (
+              <section className="rounded-[1.35rem] border border-border/60 bg-card p-4 shadow-sm sm:p-5">
+                <div className="mb-3 flex items-center gap-2.5">
+                  <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-surface-subtle text-foreground/60"><TechnicalIcon size={16} /></span>
+                  <h2 className="text-[16px] font-semibold tracking-[-0.015em]">{t("draft.details", lang)}</h2>
+                </div>
+                <dl className="grid gap-x-8 sm:grid-cols-2">
+                  {draftData.data!.map((detail, index) => (
+                    <div key={`${detail.key}-${index}`} className="flex items-baseline justify-between gap-4 border-t border-border/45 py-3 first:border-t-0 sm:[&:nth-child(2)]:border-t-0">
+                      <dt className="text-[12px] text-muted-foreground">{detail.key}</dt>
+                      <dd className="select-text text-right text-[13px] font-semibold text-foreground/80">{detail.value}</dd>
+                    </div>
+                  ))}
+                </dl>
+              </section>
+            ) : null}
 
             {/* Floorplan — same vector renderer as the app when the share
                 includes the floorplan block; legacy composite as fallback */}
             {(draftData.floorplan || floorplanUrl) && (
-              <div>
-                <h2 className="text-[14px] font-semibold mb-2">{t("draft.floorplan", lang)}</h2>
+              <section className="rounded-[1.35rem] border border-border/60 bg-card p-4 shadow-sm sm:p-5">
+                <div className="mb-3 flex items-center gap-2.5">
+                  <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-surface-subtle text-foreground/60"><FloorplanIcon size={16} /></span>
+                  <h2 className="text-[16px] font-semibold tracking-[-0.015em]">{t("draft.floorplan", lang)}</h2>
+                </div>
                 {draftData.floorplan ? (
                   <FloorplanViewer
                     draftData={draftData.floorplan.draft_data}
@@ -316,7 +456,7 @@ export function SharedDraftView({ draftData, lang, hasTour, tours, onOpenTour, f
                 ) : (
                   <SharedFloorplan floorplanUrl={floorplanUrl!} rooms={rooms ?? []} lang={lang} />
                 )}
-              </div>
+              </section>
             )}
 
           </div>
@@ -324,19 +464,21 @@ export function SharedDraftView({ draftData, lang, hasTour, tours, onOpenTour, f
       </main>
 
       {/* Footer — localized "Shared via {name}" with the brand span injected at the placeholder */}
-      <footer className="border-t border-border/30 mt-8 px-5 py-4 sm:px-8 text-center">
-        <span className="text-[11px] text-muted-foreground">
+      <footer className="mt-auto shrink-0 border-t border-border/30 bg-background pb-[max(1rem,env(safe-area-inset-bottom))] pl-[max(1rem,env(safe-area-inset-left))] pr-[max(1rem,env(safe-area-inset-right))] pt-4 sm:px-8 sm:py-5">
+        <div className="mx-auto flex w-full max-w-[1120px] items-center justify-center text-center">
+        <span className="glossy-capsule inline-flex min-h-10 items-baseline gap-2 rounded-full px-4 text-[10px] font-medium tracking-[0.01em] text-foreground/58">
           {(() => {
             const [before, after = ""] = t("shared.footerSharedVia", lang).split("{name}");
             return (
               <>
-                {before}
-                <ReaigenWordmark className="text-foreground/60" />
-                {after}
+                {before.trim()}
+                <ReaigenWordmark className="inline-block text-[18px] leading-none text-foreground/86" />
+                {after.trim()}
               </>
             );
           })()}
         </span>
+        </div>
       </footer>
 
     </div>

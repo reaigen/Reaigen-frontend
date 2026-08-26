@@ -55,7 +55,7 @@ export function SegmentedControl<T extends string | number>({
             {option.icon}
             {option.label}
             {option.count !== undefined ? (
-              <span className={cn("tabular-nums", active ? "text-background/65" : "text-foreground/40")}>{option.count}</span>
+              <span className={cn("tabular-nums", active ? "text-foreground/52" : "text-foreground/40")}>{option.count}</span>
             ) : null}
           </button>
         );

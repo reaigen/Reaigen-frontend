@@ -111,13 +111,10 @@ export function VolumesEditor({
     );
   };
 
-  if (loading) {
-    return (
-      <div className={cn("text-sm text-foreground/60", className)} aria-busy="true">
-        {t("volumes.title", lang)}…
-      </div>
-    );
-  }
+  // This is supporting metadata, not an empty-state destination. Keep the
+  // property page quiet unless it has captured spaces to manage. A real load
+  // error still renders below so a failed request is not mistaken for none.
+  if (loading || (!error && volumes.length === 0)) return null;
 
   return (
     <section className={cn("flex flex-col gap-4", className)}>
@@ -139,9 +136,7 @@ export function VolumesEditor({
         </p>
       ) : null}
 
-      {volumes.length === 0 ? (
-        <p className="text-sm text-foreground/60">{t("volumes.empty", lang)}</p>
-      ) : (
+      {volumes.length > 0 ? (
         <ul className="flex flex-col gap-3">
           {volumes.map((volume) => {
             const volumeBusy = busy?.kind === "volume" && busy.id === volume.id;
@@ -310,7 +305,7 @@ export function VolumesEditor({
             );
           })}
         </ul>
-      )}
+      ) : null}
       {confirmDialog}
     </section>
   );

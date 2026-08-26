@@ -10,7 +10,7 @@ export function CollectionCard({
   return (
     <article
       className={cn(
-        "group relative overflow-hidden rounded-[1.5rem] border border-border/75 bg-card shadow-card focus-within:ring-2 focus-within:ring-ring/80 focus-within:ring-offset-2 focus-within:ring-offset-background sm:rounded-2xl",
+        "group relative overflow-hidden rounded-[1.5rem] border border-border/75 bg-card shadow-card focus-within:border-foreground/30 focus-within:shadow-[0_12px_30px_-20px_rgba(39,34,28,0.28)] sm:rounded-2xl",
         /*
          * Hover is pointer-only. On a touchscreen the lift latches after a tap
          * and stays raised until you touch something else, so a scrolled list

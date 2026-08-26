@@ -61,6 +61,7 @@ import {
 import { baseUnitForCategory, resolveUnit, unitLabel, type UnitLookup } from "../lib/unit-catalog";
 import { Button } from "../lib/ui/button";
 import { cn } from "../lib/utils";
+import { REAI_COMPOSE_EVENT, readReaiComposeDetail } from "../lib/reai-compose";
 import { AgentMiniUi } from "./agent-mini-ui";
 import { AgentTinyUi } from "./agent-tiny-ui";
 import { MediaVersionCard, type MediaAction } from "./draft-version-manager";
@@ -442,6 +443,7 @@ export function ReaiAgentCard({
   const [improvementConsent, setImprovementConsent] = useState<ReaiImprovementConsent | null>(null);
   const [improvementConversationId, setImprovementConversationId] = useState<string | null>(null);
   const [message, setMessage] = useState("");
+  const composerRef = useRef<HTMLTextAreaElement>(null);
   const [turns, setTurns] = useState<ChatTurn[]>([]);
   const [busy, setBusy] = useState(false);
   const [showHistory, setShowHistory] = useState(false);
@@ -521,6 +523,22 @@ export function ReaiAgentCard({
     : draftId
     ? (["reai.quickImproveDescription", "reai.quickCheckFields", "reai.quickEditCurrent"] as const)
     : (["reai.quickFind", "reai.quickCompare", "reai.quickBulk"] as const);
+
+  useEffect(() => {
+    const compose = (event: Event) => {
+      const detail = readReaiComposeDetail(event);
+      if (!detail) return;
+      setShowHistory(false);
+      setShowMediaHistory(false);
+      setMessage(detail.prompt);
+      window.setTimeout(() => {
+        composerRef.current?.focus({ preventScroll: true });
+        composerRef.current?.setSelectionRange(detail.prompt.length, detail.prompt.length);
+      }, 240);
+    };
+    window.addEventListener(REAI_COMPOSE_EVENT, compose);
+    return () => window.removeEventListener(REAI_COMPOSE_EVENT, compose);
+  }, []);
 
   // Each page mounts its own shell, so this component is recreated on every
   // navigation. Rehydrate the parked transcript on mount, then keep the parked
@@ -1974,6 +1992,7 @@ export function ReaiAgentCard({
             compactPanel ? "p-1.5" : "p-2",
           )}>
             <textarea
+              ref={composerRef}
               value={message}
               onChange={(event) => setMessage(event.target.value)}
               onFocus={() => setComposerFocused(true)}

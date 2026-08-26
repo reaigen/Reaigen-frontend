@@ -86,14 +86,15 @@ function useAutoDismiss(value: boolean, setter: (v: boolean) => void, ms = 3000)
 function Card({ className, ...props }: React.HTMLAttributes<HTMLElement>) {
   return (
     <section
-      className={cn("rounded-[24px] border border-border/65 bg-card p-5 shadow-card sm:rounded-[28px] sm:p-6", className)}
+      data-settings-card
+      className={cn("rounded-[20px] border border-border/65 bg-card p-4 shadow-card sm:rounded-[22px] sm:p-5", className)}
       {...props}
     />
   );
 }
 
 function CardHeader({ className, ...props }: React.HTMLAttributes<HTMLDivElement>) {
-  return <div className={cn("pb-5", className)} {...props} />;
+  return <div className={cn("pb-4", className)} {...props} />;
 }
 
 function CardTitle({ className, ...props }: React.HTMLAttributes<HTMLHeadingElement>) {
@@ -105,7 +106,7 @@ function CardDescription({ className, ...props }: React.HTMLAttributes<HTMLParag
 }
 
 function CardContent({ className, ...props }: React.HTMLAttributes<HTMLDivElement>) {
-  return <div className={cn("max-w-3xl", className)} {...props} />;
+  return <div className={cn("w-full", className)} {...props} />;
 }
 
 function formatAccountDate(value: string | null | undefined, lang: string, dateFormat?: string | null) {
@@ -338,7 +339,7 @@ function ProfileTab({ user, onSaved, lang }: { user: UserProfile; onSaved: () =>
                 </span>
               ) : (
                 <span className="flex shrink-0 items-center gap-2">
-                  <span className="rounded-full bg-amber-100 px-2.5 py-0.5 text-[11px] font-semibold text-amber-700">
+                  <span className="rounded-full bg-foreground/[0.07] px-2.5 py-0.5 text-[11px] font-semibold text-foreground/70">
                     {t("settings.profile.emailUnverified", lang)}
                   </span>
                   {emailResent ? (
@@ -1622,7 +1623,7 @@ function ToggleRow({ label, hint, checked, onChange, disabled = false }: {
   const hintId = hint ? `${id}-hint` : undefined;
 
   return (
-    <div className={`flex items-start justify-between gap-4 py-3.5 ${disabled ? "opacity-60" : ""}`}>
+    <div className={`flex items-start justify-between gap-4 py-2.5 ${disabled ? "opacity-60" : ""}`}>
       <div className="min-w-0 pr-2">
         <p id={labelId} className="text-sm font-medium">{label}</p>
         {hint && <p id={hintId} className="text-[12px] text-muted-foreground mt-0.5">{hint}</p>}
@@ -1856,7 +1857,7 @@ function UsageBar({ current, max, label, unit }: { current: number; max: number;
   // 0 = not applicable and -1 = unlimited; neither draws a fill.
   const unlimited = max <= 0;
   const pct = unlimited ? 0 : Math.min((current / max) * 100, 100);
-  const color = pct >= 100 ? "bg-destructive" : pct >= 75 ? "bg-amber-500" : "bg-success";
+  const color = pct >= 100 ? "bg-destructive" : pct >= 75 ? "bg-foreground/60" : "bg-success";
   return (
     <div className="space-y-1.5">
       <div className="flex items-baseline justify-between text-[12px]">
@@ -1874,9 +1875,9 @@ function UsageBar({ current, max, label, unit }: { current: number; max: number;
 
 const tierBadgeColors: Record<string, string> = {
   FREE: "bg-muted text-muted-foreground",
-  STANDARD: "bg-blue-100 text-blue-700",
-  PRO: "bg-purple-100 text-purple-700",
-  ENTERPRISE: "bg-amber-100 text-amber-700",
+  STANDARD: "bg-foreground/[0.05] text-foreground/65",
+  PRO: "bg-foreground/[0.07] text-foreground/72",
+  ENTERPRISE: "bg-foreground/[0.09] text-foreground/80",
 };
 
 function tierBadgeKey(code: string, lang: string): string {
@@ -2826,7 +2827,7 @@ function PhoneSection({ user, onSaved, lang }: { user: UserProfile; onSaved: () 
                   {t("settings.security.phoneVerified", lang)}
                 </span>
               ) : otpSent ? (
-                <span className="shrink-0 rounded-full bg-amber-100 px-2.5 py-0.5 text-[11px] font-semibold text-amber-700">
+                <span className="shrink-0 rounded-full bg-foreground/[0.07] px-2.5 py-0.5 text-[11px] font-semibold text-foreground/70">
                   {t("settings.security.phoneUnverified", lang)}
                 </span>
               ) : (
@@ -2892,23 +2893,10 @@ export function SettingsForm({ user, onSaved }: { user: UserProfile; onSaved: ()
       window.removeEventListener("reai-settings-navigate", navigateFromAgent);
     };
   }, []);
-  // One trigger, two shapes: a pill chip in the mobile rail, a full-width row
-  // in the desktop list. Active state is the same inversion in both.
+  // Desktop settings navigation is a stable vertical list. Compact layouts
+  // use the selector below instead of hiding destinations in a chip carousel.
   const triggerClassName =
-    "h-11 shrink-0 justify-center whitespace-nowrap rounded-full border border-border/65 bg-card px-4 py-0 text-[13px] font-medium shadow-none data-[state=active]:border-foreground data-[state=active]:bg-foreground data-[state=active]:text-background data-[state=active]:shadow-control lg:w-full lg:justify-start lg:rounded-2xl lg:border-0 lg:bg-transparent lg:text-left lg:data-[state=active]:bg-foreground";
-  const tabsListRef = React.useRef<HTMLDivElement>(null);
-  React.useEffect(() => {
-    // Keep the active chip visible in the mobile rail (deep links land on
-    // #security, whose chip starts off-screen). No-op on the desktop column.
-    const list = tabsListRef.current;
-    if (!list || list.scrollWidth <= list.clientWidth) return;
-    const active = list.querySelector<HTMLElement>('[data-state="active"]');
-    if (!active) return;
-    list.scrollTo({
-      left: active.offsetLeft - (list.clientWidth - active.offsetWidth) / 2,
-      behavior: "smooth",
-    });
-  }, [activeTab]);
+    "h-11 w-full justify-start rounded-full border border-transparent bg-transparent px-4 py-0 text-left text-[13px] font-medium text-foreground/58 shadow-none transition-all hover:bg-foreground/[0.035] hover:text-foreground/80 data-[state=active]:border-foreground/15 data-[state=active]:bg-muted/70 data-[state=active]:text-foreground data-[state=active]:shadow-[inset_0_1px_0_rgba(255,255,255,0.9),0_5px_14px_rgba(32,29,25,0.09)] data-[state=active]:backdrop-blur-xl";
   const settingsTabs = [
     { value: "profile", label: "settings.tab.profile" },
     { value: "seller", label: "settings.tab.seller" },
@@ -2927,18 +2915,35 @@ export function SettingsForm({ user, onSaved }: { user: UserProfile; onSaved: ()
         setActiveTab(value);
         window.history.replaceState(null, "", `#${value}`);
       }}
-      className="w-full lg:grid lg:grid-cols-[220px_minmax(0,1fr)] lg:items-start lg:gap-8 xl:gap-10"
+      className="settings-surface w-full lg:grid lg:grid-cols-[210px_minmax(0,1fr)] lg:items-stretch lg:overflow-hidden lg:rounded-[26px] lg:border lg:border-border/65 lg:bg-card lg:shadow-card"
     >
-      <div className="mb-5 lg:sticky lg:top-6 lg:mb-0">
-        {/*
-          One list, two forms: a horizontally scrolling chip rail on phones —
-          every section visible and one tap away, the way the app's other
-          segmented surfaces read — and the vertical column on desktop. The
-          full-bleed negative margin lets the rail scroll edge to edge.
-        */}
+      <div className="mb-5 lg:mb-0 lg:h-full lg:border-r lg:border-border/60 lg:bg-card lg:p-3">
+        <div className="lg:hidden">
+          <Select
+            value={activeTab}
+            onValueChange={(value) => {
+              setActiveTab(value);
+              window.history.replaceState(null, "", `#${value}`);
+            }}
+          >
+            <SelectTrigger
+              aria-label={t("settings.title", lang)}
+              className="h-12 rounded-2xl border-border/65 bg-card px-4 font-medium shadow-card"
+            >
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {settingsTabs.map((tab) => (
+                <SelectItem key={tab.value} value={tab.value}>
+                  {t(tab.label, lang)}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+
         <TabsList
-          ref={tabsListRef}
-          className="-mx-4 flex h-auto min-h-0 w-auto items-stretch justify-start gap-1.5 overflow-x-auto rounded-none bg-transparent px-4 py-1 text-muted-foreground [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden lg:mx-0 lg:w-full lg:flex-col lg:gap-1 lg:overflow-visible lg:rounded-[24px] lg:border lg:border-border/65 lg:bg-card lg:p-2 lg:shadow-card"
+          className="hidden min-h-0 w-full flex-col items-stretch justify-start gap-1 rounded-none border-0 bg-transparent p-0 text-muted-foreground shadow-none lg:flex lg:h-auto"
         >
           {settingsTabs.map((tab) => (
             <TabsTrigger key={tab.value} value={tab.value} className={triggerClassName}>
@@ -2947,7 +2952,7 @@ export function SettingsForm({ user, onSaved }: { user: UserProfile; onSaved: ()
           ))}
         </TabsList>
       </div>
-      <div className="min-w-0 max-lg:[&_button]:min-h-11">
+      <div className="min-w-0 max-lg:[&_button]:min-h-11 lg:p-3">
         <TabsContent value="profile" className="mt-0">
           <ProfileTab user={user} onSaved={onSaved} lang={lang} />
         </TabsContent>

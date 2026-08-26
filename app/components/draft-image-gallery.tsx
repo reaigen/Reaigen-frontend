@@ -24,6 +24,8 @@ interface DraftImageGalleryProps {
   onActiveImageChange?: (imageId: number | null) => void;
   onManage?: () => void;
   manageLabel?: string;
+  /** Public shared pages expose the collage as a labelled phone action. */
+  mobileOverviewLabel?: boolean;
 }
 
 function counterLabel(index: number, count: number, lang: string) {
@@ -193,17 +195,16 @@ function GalleryLightbox({
       aria-label={alt}
       className="fixed inset-0 z-[9999] flex overscroll-contain bg-surface text-foreground animate-in fade-in duration-200"
     >
-      <div className="pointer-events-none absolute inset-x-0 top-0 z-40 grid h-20 grid-cols-[1fr_auto_1fr] items-center px-3 pt-safe sm:h-24 sm:px-8">
+      <div className="editor-glass-control pointer-events-none absolute left-1/2 top-[max(.75rem,env(safe-area-inset-top))] z-40 grid h-12 w-[min(calc(100%_-_1.5rem),36rem)] -translate-x-1/2 grid-cols-[1fr_minmax(0,auto)_1fr] items-center rounded-full border border-border/55 bg-card/78 px-1.5 shadow-control backdrop-blur-2xl sm:top-[max(1rem,env(safe-area-inset-top))]">
         <div className="flex min-w-0 justify-start">
           <button
             ref={closeRef}
             type="button"
             onClick={onClose}
-            className="floating-capsule floating-icon-button pen-touch-target pointer-events-auto gap-2 bg-card/95 text-foreground shadow-control hover:bg-foreground hover:text-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 sm:w-auto sm:px-4"
+            className="pen-touch-target pointer-events-auto flex h-9 w-9 items-center justify-center rounded-full text-foreground/72 transition-colors hover:bg-foreground/[0.075] hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/30"
             aria-label={t("common.close", lang)}
           >
             <CloseIcon size={17} />
-            <span className="hidden text-sm font-semibold sm:inline">{t("common.close", lang)}</span>
           </button>
         </div>
         {/*
@@ -217,16 +218,18 @@ function GalleryLightbox({
           at a single image, and the capsule was the only chrome left claiming
           there was something to page through.
         */}
-        {viewMode === "overview" || count > 1 ? (
+        {viewMode === "overview" && count > 1 ? (
           <span
             aria-live="polite"
             aria-atomic="true"
-            className="floating-capsule inline-flex h-9 items-center justify-center px-3.5 text-sm font-semibold tabular-nums tracking-[-0.01em] text-foreground/85 sm:h-10 sm:px-4 sm:text-base"
+            className="inline-flex h-9 items-center justify-center px-3.5 text-[12px] font-semibold tabular-nums tracking-[-0.01em] text-foreground/78"
           >
-            {viewMode === "overview" ? t("draft.gallery.allPhotos", lang) : `${index + 1} / ${count}`}
+            {t("draft.gallery.allPhotos", lang)}
           </span>
         ) : (
-          <span />
+          <span className="max-w-[min(52vw,28rem)] truncate px-4 py-2 text-[12px] font-semibold text-foreground/72">
+            {count > 1 ? counterLabel(index, count, lang) : alt}
+          </span>
         )}
         <div className="flex min-w-0 justify-end">
           {overviewAvailable ? (
@@ -240,14 +243,11 @@ function GalleryLightbox({
                   setViewMode("overview");
                 }
               }}
-              className="floating-capsule floating-icon-button pen-touch-target pointer-events-auto gap-2 bg-card/95 text-foreground shadow-control hover:bg-foreground hover:text-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 sm:w-auto sm:px-4"
+              className="pen-touch-target pointer-events-auto flex h-9 w-9 items-center justify-center rounded-full text-foreground/72 transition-colors hover:bg-foreground/[0.075] hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/30"
               aria-label={t(viewMode === "overview" ? "draft.gallery.photoView" : "draft.gallery.allPhotos", lang)}
               aria-pressed={viewMode === "overview"}
             >
               {viewMode === "overview" ? <ExpandIcon /> : <GridIcon size={16} />}
-              <span className="hidden text-sm font-semibold sm:inline">
-                {t(viewMode === "overview" ? "draft.gallery.photoView" : "draft.gallery.allPhotos", lang)}
-              </span>
             </button>
           ) : null}
         </div>
@@ -284,26 +284,28 @@ function GalleryLightbox({
           {images.map((image, imageIndex) => (
             <div
               key={`${image.id ?? image.url}-${imageIndex}`}
-              className="flex h-full w-full flex-none snap-start items-center justify-center px-4 pb-8 pt-20 sm:px-28 sm:pb-10 sm:pt-24 lg:px-40"
+              className="flex h-full w-full flex-none snap-start items-center justify-center pb-[max(1rem,env(safe-area-inset-bottom))] pl-[max(1rem,env(safe-area-inset-left))] pr-[max(1rem,env(safe-area-inset-right))] pt-[calc(4.75rem+env(safe-area-inset-top))] sm:pl-[max(4.5rem,env(safe-area-inset-left))] sm:pr-[max(4.5rem,env(safe-area-inset-right))] sm:pt-[calc(5.25rem+env(safe-area-inset-top))] lg:pl-[max(6rem,env(safe-area-inset-left))] lg:pr-[max(6rem,env(safe-area-inset-right))]"
             >
-              {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img
-                src={image.url}
-                alt={`${alt} ${imageIndex + 1}`}
-                className={cn(
-                  // The field behind it is white, so a light photo used to bleed
-                  // straight into the background with no edge. The shadow and
-                  // hairline give it one without tinting the surround.
-                  "max-h-[calc(100dvh-7rem)] max-w-full select-none rounded-[var(--radius)] object-contain shadow-soft ring-1 ring-black/[0.06] transition-opacity duration-200 ease-out motion-reduce:transition-none sm:max-h-[calc(100dvh-10rem)]",
-                  imageIndex === index ? "opacity-100" : "opacity-80",
-                )}
-                draggable={false}
-              />
+              <div className="relative inline-flex max-h-[calc(100dvh-6.5rem-env(safe-area-inset-top)-env(safe-area-inset-bottom))] max-w-full">
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img
+                  src={image.url}
+                  alt={`${alt} ${imageIndex + 1}`}
+                  className={cn(
+                    // The field behind it is white, so a light photo used to bleed
+                    // straight into the background with no edge. The shadow and
+                    // hairline give it one without tinting the surround.
+                    "max-h-[calc(100dvh-6.5rem-env(safe-area-inset-top)-env(safe-area-inset-bottom))] max-w-full select-none rounded-[var(--radius)] object-contain shadow-soft ring-1 ring-black/[0.06] transition-opacity duration-200 ease-out motion-reduce:transition-none",
+                    imageIndex === index ? "opacity-100" : "opacity-80",
+                  )}
+                  draggable={false}
+                />
+              </div>
             </div>
           ))}
         </div>
       ) : (
-        <div className="flex h-full w-full flex-col overflow-y-auto overscroll-y-contain px-3 pb-8 pt-20 scrollbar-none sm:px-8 sm:pb-12 sm:pt-24">
+        <div className="flex h-full w-full flex-col overflow-y-auto overscroll-y-contain pb-[max(2rem,env(safe-area-inset-bottom))] pl-[max(.75rem,env(safe-area-inset-left))] pr-[max(.75rem,env(safe-area-inset-right))] pt-[calc(5rem+env(safe-area-inset-top))] scrollbar-none sm:pb-[max(3rem,env(safe-area-inset-bottom))] sm:pl-[max(2rem,env(safe-area-inset-left))] sm:pr-[max(2rem,env(safe-area-inset-right))] sm:pt-[calc(6rem+env(safe-area-inset-top))]">
           <div className="mx-auto mt-3 grid w-full max-w-[100rem] grid-flow-dense auto-rows-[clamp(8rem,34vw,13rem)] grid-cols-2 gap-2 sm:mt-4 sm:gap-3 md:auto-rows-[clamp(9.5rem,14vw,16rem)] md:grid-cols-4">
             {images.map((image, imageIndex) => {
               const isFeatureTile = imageIndex % 5 === 0;
@@ -345,7 +347,7 @@ function GalleryLightbox({
                   <span
                     className={cn(
                       "floating-capsule floating-control-sm pointer-events-none absolute bottom-2 left-2 min-w-9 bg-card/90 px-2.5 text-[11px] tabular-nums shadow-control backdrop-blur-md sm:bottom-3 sm:left-3",
-                      imageIndex === index ? "bg-foreground text-background" : "text-foreground/75",
+                      imageIndex === index ? "glass-chip text-foreground" : "text-foreground/75",
                     )}
                   >
                     {imageIndex + 1}
@@ -361,7 +363,7 @@ function GalleryLightbox({
   );
 }
 
-export function DraftImageGallery({ images, alt, fallbackUrl, lang = "en", onActiveImageChange, onManage, manageLabel }: DraftImageGalleryProps) {
+export function DraftImageGallery({ images, alt, fallbackUrl, lang = "en", onActiveImageChange, onManage, manageLabel, mobileOverviewLabel = false }: DraftImageGalleryProps) {
   const galleryRef = React.useRef<HTMLDivElement>(null);
   const scrollRef = React.useRef<HTMLDivElement>(null);
   const pointerStartRef = React.useRef<{ x: number; y: number } | null>(null);
@@ -474,7 +476,10 @@ export function DraftImageGallery({ images, alt, fallbackUrl, lang = "en", onAct
         role="region"
         aria-label={alt}
         onKeyDown={handleKeyboardNavigation}
-        className="detail-hero-gallery group relative aspect-[16/10] w-full overflow-hidden bg-white ring-1 ring-inset ring-black/[0.045] md:aspect-video md:rounded-xl"
+        className={cn(
+          "detail-hero-gallery group relative aspect-[16/10] w-full overflow-hidden bg-white ring-1 ring-inset ring-black/[0.045] md:aspect-video md:rounded-xl",
+          count === 1 && "detail-hero-gallery-single",
+        )}
       >
         <div
           ref={scrollRef}
@@ -568,18 +573,27 @@ export function DraftImageGallery({ images, alt, fallbackUrl, lang = "en", onAct
           </button>
         ) : null}
 
-        <button
+        {mosaicAvailable ? <button
           type="button"
           data-testid="draft-gallery-icon-overview-open"
           onClick={() => openLightbox(activeIndex, true)}
           className={cn(
-            "floating-icon-button pen-touch-target absolute right-3 top-3 border border-black/10 bg-white/90 text-black/70 shadow-sm backdrop-blur-xl hover:bg-black hover:text-white hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-black/25",
+            "pen-touch-target absolute right-3 top-3 inline-flex min-h-11 items-center justify-center border border-black/10 bg-white/90 text-black/70 shadow-sm backdrop-blur-xl transition-[background-color,color,box-shadow] hover:bg-black hover:text-white hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-black/25",
+            mobileOverviewLabel
+              ? "floating-capsule gap-2 rounded-full px-3.5 text-[11px] font-semibold"
+              : "floating-icon-button w-11 rounded-full",
             mosaicAvailable && "lg:hidden",
           )}
           aria-label={t("draft.gallery.allPhotos", lang)}
         >
           <GridIcon size={16} />
-        </button>
+          {mobileOverviewLabel ? (
+            <>
+              <span>{t("draft.gallery.allPhotos", lang)}</span>
+              <span className="tabular-nums opacity-55">{count}</span>
+            </>
+          ) : null}
+        </button> : null}
 
         {mosaicAvailable ? (
         <button

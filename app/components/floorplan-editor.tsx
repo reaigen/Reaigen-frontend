@@ -1104,7 +1104,7 @@ export default function FloorplanEditor({ draftId, draftData, lang, onClose, onS
         "flex min-h-9 items-center gap-2 rounded-full px-3 text-[12.5px] font-semibold transition-colors",
         "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2",
         tool === tl
-          ? "bg-foreground text-background"
+          ? "glossy-capsule text-foreground"
           : "text-foreground/60 hover:bg-foreground/[0.05] hover:text-foreground",
       )}
     >

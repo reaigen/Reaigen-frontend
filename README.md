@@ -176,6 +176,9 @@ This handles:
 
 The frontend follows the research notes in `docs/frontend-production-research.md`:
 
+- The August 2026 production UI pass and its deployment boundary are recorded in
+  `docs/production-ui-pass-2026-08-26.md`.
+
 - authenticated and tokenized app routes are marked non-indexable
 - global security headers and CSP are configured in `next.config.ts`
 - API proxy responses are private and no-store

@@ -15,7 +15,7 @@
  *   4. Render: property card + optional tour overlay
  */
 
-import { useEffect, useState, useRef, useCallback, useMemo, use } from "react";
+import { useEffect, useState, useRef, useCallback, useMemo, use, type ReactNode } from "react";
 import { getSharedTourViewer, verifySharePin, getSharedDraftData, listUnits } from "../../lib/api/client";
 import { getApiErrorJson, getSafeApiErrorMessage } from "../../lib/api/error-message";
 import type {
@@ -127,7 +127,31 @@ function classifyError(msg: string, lang: string): { kind: SharedErrorKind; mess
 
 function Brand() {
   return (
-    <ReaigenWordmark className="text-[22px] text-foreground/80" />
+    <ReaigenWordmark className="text-[29px] leading-none text-foreground min-[390px]:text-[31px]" />
+  );
+}
+
+function SharedAccessShell({ children, lang }: { children: ReactNode; lang: string }) {
+  const [before, after = ""] = t("shared.footerSharedVia", lang).split("{name}");
+  return (
+    <div className="flex min-h-screen flex-col bg-background">
+      <header className="h-[calc(4rem+env(safe-area-inset-top))] shrink-0 border-b border-border/65 bg-card/88 pl-[max(1rem,env(safe-area-inset-left))] pr-[max(1rem,env(safe-area-inset-right))] pt-safe backdrop-blur-xl">
+        <div className="mx-auto flex h-full w-full max-w-[70rem] items-center">
+          <Brand />
+        </div>
+      </header>
+      <main className="relative flex flex-1 items-center justify-center overflow-hidden pb-[max(2rem,env(safe-area-inset-bottom))] pl-[max(1rem,env(safe-area-inset-left))] pr-[max(1rem,env(safe-area-inset-right))] pt-8 sm:py-12">
+        <div aria-hidden="true" className="pointer-events-none absolute left-1/2 top-1/2 h-[28rem] w-[28rem] -translate-x-1/2 -translate-y-1/2 rounded-full bg-foreground/[0.025] blur-3xl" />
+        <section className="editor-glass-surface relative w-full max-w-[31rem] overflow-hidden rounded-[2rem] border border-border/60 px-5 py-6 text-center shadow-card sm:px-8 sm:py-8">
+          {children}
+        </section>
+      </main>
+      <footer className="shrink-0 border-t border-border/30 bg-background pb-[max(1rem,env(safe-area-inset-bottom))] pt-4 text-center">
+        <span className="glossy-capsule inline-flex min-h-10 items-baseline gap-2 rounded-full px-4 text-[10px] font-medium tracking-[0.01em] text-foreground/58">
+          {before.trim()}<ReaigenWordmark className="text-[18px] leading-none text-foreground/86" />{after.trim()}
+        </span>
+      </footer>
+    </div>
   );
 }
 
@@ -448,29 +472,26 @@ export default function SharedPage({ params }: { params: Promise<{ token: string
   // PIN gate
   if (requiresPin) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-[hsl(var(--muted))]/35 px-4">
-        <div className="w-full max-w-xs space-y-6 px-6">
-          <div className="text-center space-y-2">
-            <Brand />
-            <div className="pt-2">
-              <div className="mx-auto w-12 h-12 rounded-full bg-muted flex items-center justify-center mb-3">
+      <SharedAccessShell lang={lang}>
+          <div className="space-y-6">
+            <div>
+              <div className="editor-glass-control mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-full border text-foreground/58 shadow-control">
                 <svg width="20" height="20" viewBox="0 0 24 24" fill="none" className="text-muted-foreground"><rect x="3" y="11" width="18" height="11" rx="2" stroke="currentColor" strokeWidth="2" /><path d="M7 11V7a5 5 0 0110 0v4" stroke="currentColor" strokeWidth="2" strokeLinecap="round" /></svg>
               </div>
-              <h2 className="text-[15px] font-semibold">{t("shared.pin.title", lang)}</h2>
-              <p className="text-[13px] text-muted-foreground mt-1">{t("shared.pin.subtitle", lang)}</p>
+              <h1 className="text-[22px] font-semibold tracking-[-0.025em]">{t("shared.pin.title", lang)}</h1>
+              <p className="mx-auto mt-2 max-w-sm text-[13px] leading-relaxed text-muted-foreground">{t("shared.pin.subtitle", lang)}</p>
             </div>
-          </div>
-          <form onSubmit={handlePinSubmit} className="space-y-3">
+          <form onSubmit={handlePinSubmit} className="space-y-3 text-left">
             <div className="space-y-1.5">
-              <Input type="text" inputMode="numeric" pattern="[0-9]*" placeholder={t("shared.pin.placeholder", lang)} value={pin} onChange={(e) => setPin(e.target.value.replace(/\D/g, "").slice(0, 10))} disabled={pinLoading} autoFocus autoComplete="off" className="h-10 text-center text-[13px] tracking-[0.2em] tabular-nums" />
+              <Input type="text" inputMode="numeric" pattern="[0-9]*" placeholder={t("shared.pin.placeholder", lang)} value={pin} onChange={(e) => setPin(e.target.value.replace(/\D/g, "").slice(0, 10))} disabled={pinLoading} autoFocus autoComplete="off" className="editor-control-capsule h-12 rounded-full border bg-card/88 text-center text-[16px] tracking-[0.24em] tabular-nums shadow-control" />
               <p className="text-[11px] text-foreground/50 text-center">{t("shared.pin.minLength", lang)}</p>
             </div>
-            {pinError && <div role="alert" className="rounded-lg bg-foreground/[0.04] border border-foreground/[0.08] px-3 py-2"><p className="text-xs text-foreground/60 text-center">{pinError}</p></div>}
+            {pinError && <div role="alert" className="rounded-2xl border border-destructive/15 bg-destructive/[0.035] px-3 py-2.5"><p className="text-[11px] text-destructive text-center">{pinError}</p></div>}
             {/* Neutral CTA — at gate time we don't yet know whether the share includes a tour */}
-            <Button className="w-full h-10" loading={pinLoading} disabled={pinLoading || pin.length < 4}>{t("shared.pin.continue", lang)}</Button>
+            <Button className="glossy-primary-capsule h-12 w-full rounded-full" loading={pinLoading} disabled={pinLoading || pin.length < 4}>{t("shared.pin.continue", lang)}</Button>
           </form>
-        </div>
-      </div>
+          </div>
+      </SharedAccessShell>
     );
   }
 
@@ -483,11 +504,9 @@ export default function SharedPage({ params }: { params: Promise<{ token: string
     const isAuthRequired = errorKind === "auth";
     const showRetry = !isUnavailable && !isExpired && !isPaused && !isLimitReached && !isAuthRequired;
     return (
-      <div className="min-h-screen flex items-center justify-center bg-[hsl(var(--muted))]/35 px-4">
-        <div className="text-center space-y-4 px-6 max-w-xs">
-          <Brand />
-          <div className="pt-2">
-            <div className="mx-auto w-12 h-12 rounded-full bg-foreground/[0.04] flex items-center justify-center mb-3">
+      <SharedAccessShell lang={lang}>
+          <div>
+            <div className="editor-glass-control mx-auto mb-5 flex h-14 w-14 items-center justify-center rounded-full border text-foreground/46 shadow-control">
               {isExpired || isUnavailable ? (
                 <svg width="20" height="20" viewBox="0 0 24 24" fill="none" className="text-foreground/30"><circle cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="1.5" /><path d="M12 6v6l4 2" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" /></svg>
               ) : isPaused ? (
@@ -496,19 +515,20 @@ export default function SharedPage({ params }: { params: Promise<{ token: string
                 <svg width="20" height="20" viewBox="0 0 24 24" fill="none" className="text-foreground/30"><circle cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="1.5" /><path d="M12 8v4M12 16h.01" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" /></svg>
               )}
             </div>
-            <p className="text-[14px] font-medium text-foreground/70 mb-1">
+            <h1 className="mb-2 text-[22px] font-semibold tracking-[-0.025em] text-foreground">
               {isUnavailable ? t("shared.error.titleUnavailable", lang) : isExpired ? t("shared.error.titleExpired", lang) : isPaused ? t("shared.error.titlePaused", lang) : isLimitReached ? t("shared.error.titleLimit", lang) : isAuthRequired ? t("shared.error.titleSignIn", lang) : t("shared.error.titleGeneric", lang)}
-            </p>
-            <p className="text-[13px] text-foreground/40 leading-relaxed">{error}</p>
+            </h1>
+            <p className="mx-auto max-w-sm text-[13px] leading-relaxed text-muted-foreground">{error}</p>
           </div>
-          {isAuthRequired && (
-            <Button variant="outline" size="sm" onClick={() => { window.location.href = `/?next=${encodeURIComponent(`/shared/${token}`)}`; }}>
+          {isAuthRequired || showRetry ? <div className="mt-6 flex justify-center">
+          {isAuthRequired ? (
+            <Button className="glossy-primary-capsule h-11 rounded-full px-5" onClick={() => { window.location.href = `/?next=${encodeURIComponent(`/shared/${token}`)}`; }}>
               {t("shared.error.signIn", lang)}
             </Button>
-          )}
-          {showRetry && <Button variant="outline" size="sm" onClick={() => { setError(null); loadContent(); }}>{t("common.tryAgain", lang)}</Button>}
-        </div>
-      </div>
+          ) : null}
+          {showRetry ? <Button variant="outline" className="glossy-capsule h-11 rounded-full px-5" onClick={() => { setError(null); loadContent(); }}>{t("common.tryAgain", lang)}</Button> : null}
+          </div> : null}
+      </SharedAccessShell>
     );
   }
 
@@ -600,7 +620,7 @@ export default function SharedPage({ params }: { params: Promise<{ token: string
 
         {/* Branding */}
         <div className="absolute right-3 top-[calc(0.75rem+env(safe-area-inset-top,0px))] z-20 animate-fade-in sm:right-4 sm:top-[calc(1rem+env(safe-area-inset-top,0px))]">
-          <ReaigenWordmark className="floating-status flex items-center bg-black/20 text-[13px] text-white/60 backdrop-blur-sm" />
+          <ReaigenWordmark className="floating-capsule inline-flex h-9 items-center bg-black/25 px-3.5 text-[18px] leading-none text-white/80 backdrop-blur-md" />
         </div>
 
         {availableTours.length > 1 && (

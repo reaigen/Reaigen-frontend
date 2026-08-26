@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useCallback } from "react";
+import { useState, useCallback, useEffect } from "react";
 
 interface ThumbnailProps {
   src: string;
@@ -20,6 +20,14 @@ export function Thumbnail({ src, alt, className = "", priority = false }: Thumbn
   const [loaded, setLoaded] = useState(false);
   const [error, setError] = useState(false);
 
+  /* Signed media URLs can refresh after hydration. A result from the old URL
+     must not poison the replacement, and a cached load event must never be a
+     prerequisite for making valid media visible. */
+  useEffect(() => {
+    setLoaded(false);
+    setError(false);
+  }, [src]);
+
   const onLoad = useCallback(() => setLoaded(true), []);
   const onError = useCallback(() => setError(true), []);
 
@@ -37,9 +45,10 @@ export function Thumbnail({ src, alt, className = "", priority = false }: Thumbn
 
   return (
     <>
-      {/* Shimmer placeholder */}
+      {/* A still tonal bed keeps layout stable without making media appear to
+          slide across the card while it loads. */}
       {!loaded && (
-        <div className="absolute inset-0 animate-shimmer bg-gradient-to-r from-muted/30 via-muted/60 to-muted/30 bg-[length:200%_100%]" />
+        <div className="absolute inset-0 bg-surface-subtle" />
       )}
       {/* eslint-disable-next-line @next/next/no-img-element */}
       <img
@@ -50,7 +59,7 @@ export function Thumbnail({ src, alt, className = "", priority = false }: Thumbn
         fetchPriority={priority ? "high" : "low"}
         onLoad={onLoad}
         onError={onError}
-        className={`${className} transition-opacity duration-300 ${loaded ? "opacity-100" : "opacity-0"}`}
+        className={`${className} opacity-100`}
       />
     </>
   );

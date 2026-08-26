@@ -91,7 +91,7 @@ test("the scan workspace is one responsive viewport with a portrait camera inset
   assert.match(workspace, /<AppShell[^>]*immersive>/);
   assert.match(shell, /immersive\s*\?\s*"min-h-dvh p-0"/);
   assert.match(shell, /!immersive \? <header/);
-  assert.match(shell, /!immersive \? <aside/);
+  assert.match(shell, /!immersive\s*\?\s*\(\s*<aside/);
   assert.doesNotMatch(workspace, /<header className=/);
   assert.match(workspace, /safe-area-inset-top/);
   assert.match(workspace, /safe-area-inset-bottom/);
