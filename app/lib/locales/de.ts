@@ -1353,6 +1353,7 @@ const de: LocaleStrings = {
   "floorplan.measureDistanceHint":        "Distanzmessung · zwei Punkte auswählen",
   "floorplan.measureAreaHint":            "Flächenmessung · Grenzpunkte auswählen",
   "floorplan.editor.title":              "Grundriss-Editor",
+  "floorplan.editor.backToDetail":       "Zurück zum Exposé",
   "floorplan.editor.draw":               "Zeichnen",
   "floorplan.editor.erase":              "Radieren",
   "floorplan.editor.move":               "Verschieben",

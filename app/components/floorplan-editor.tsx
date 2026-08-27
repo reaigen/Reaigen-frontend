@@ -44,8 +44,10 @@ import {
   openingCut,
   computeBounds,
   furnitureKind,
+  objectCorners,
   prepareObjects,
   prepareFloorplanPresentationObjects,
+  removeRedundantCountertopFixtures,
   solveFurnitureLayout,
   STROKE_COLOR,
   WALL_THICKNESS,
@@ -55,6 +57,7 @@ import {
   type V2,
 } from "../lib/floorplan-geometry";
 import {
+  ArrowLeftIcon,
   DoorToolIcon,
   DrawWallIcon,
   EraseIcon,
@@ -70,6 +73,23 @@ import {
 } from "./icons";
 import { solveReaigenFloorplan, USE_CONSTRAINT_SOLVER } from "../lib/floorplan-solver-adapter";
 import { iconForKind, type IconShape } from "../lib/floorplan-icon-shapes";
+import {
+  applyFurnitureEdits,
+  cloneFurnitureEdits,
+  collinearEdgeChain,
+  moveFurniture,
+  moveWall,
+  parseFurnitureEdits,
+  pointInsideFurnitureDepth,
+  recordFurnitureCenters,
+  translateWallChain,
+  wallNormalTranslation,
+  type FloorplanFurnitureEdits,
+} from "../lib/floorplan-collision-solver";
+import {
+  applyFurnitureWallAttachment,
+  closestFurnitureWallBaseline,
+} from "../lib/floorplan-wall-attachment";
 
 // iOS WallDrawEraseOverlay tolerances
 const WELD_EPS = 0.1; // m
@@ -83,6 +103,7 @@ const EDGE_PICK_PX = 24;
 const OPENING_PLACE_PX = 42;
 const MAX_UNDO = 20;
 const VIEW = 720; // square viewBox so 90° rotations always fit
+const DEFAULT_VIEW_ZOOM = 1.12;
 
 interface WallGraphState {
   vertices: V2[];
@@ -97,9 +118,14 @@ interface OpeningEditsState {
 interface Snapshot {
   graph: WallGraphState;
   edits: OpeningEditsState;
+  furnitureEdits: FloorplanFurnitureEdits;
 }
 
 type Tool = "draw" | "erase" | "move" | "door" | "window" | "room";
+
+type MoveSelection =
+  | { kind: "edge"; index: number; blocked: boolean }
+  | { kind: "furniture"; id: string; blocked: boolean };
 
 interface Props {
   draftId: number;
@@ -114,60 +140,6 @@ const cloneGraph = (g: WallGraphState): WallGraphState => ({
   vertices: g.vertices.map((v) => [v[0], v[1]]),
   edges: g.edges.map((e) => ({ ...e })),
 });
-/**
- * iOS parity: a shared corner moves freely and every connected wall follows
- * because all incident edges reference the same vertex. The gesture operates
- * from its immutable drag-start graph, so pointer events never compound.
- */
-function moveGraphVertex(
-  target: V2,
-  vertexIndex: number,
-  base: WallGraphState,
-): WallGraphState {
-  if (!base.vertices[vertexIndex]) return base;
-  const next = cloneGraph(base);
-  next.vertices[vertexIndex] = [target[0], target[1]];
-  return next;
-}
-
-/**
- * iOS parity: dragging a wall body translates both endpoints by the same 2D
- * delta. Connected walls remain joined because they share those endpoints.
- */
-function translateGraphEdge(
-  delta: V2,
-  edgeIndex: number,
-  base: WallGraphState,
-): WallGraphState {
-  const edge = base.edges[edgeIndex];
-  if (!edge) return base;
-  const a = base.vertices[edge.a];
-  const b = base.vertices[edge.b];
-  if (!a || !b) return base;
-
-  const next = cloneGraph(base);
-  next.vertices[edge.a] = [a[0] + delta[0], a[1] + delta[1]];
-  next.vertices[edge.b] = [b[0] + delta[0], b[1] + delta[1]];
-  return next;
-}
-
-/** Merge one dropped corner into another and remove duplicate/self edges. */
-function mergeGraphVertex(graph: WallGraphState, from: number, into: number): WallGraphState {
-  if (from === into || !graph.vertices[from] || !graph.vertices[into]) return graph;
-  const next = cloneGraph(graph);
-  next.edges = next.edges
-    .map((edge) => ({
-      a: edge.a === from ? into : edge.a,
-      b: edge.b === from ? into : edge.b,
-    }))
-    .filter((edge) => edge.a !== edge.b)
-    .filter((edge, index, edges) => edges.findIndex((candidate) => (
-      (candidate.a === edge.a && candidate.b === edge.b)
-      || (candidate.a === edge.b && candidate.b === edge.a)
-    )) === index);
-  return pruneOrphans(next);
-}
-
 const cloneEdits = (e: OpeningEditsState): OpeningEditsState => ({
   deletedSourceOpeningIDs: [...e.deletedSourceOpeningIDs],
   customOpenings: e.customOpenings.map((o) => ({ ...o, p1: [...o.p1] as V2, p2: [...o.p2] as V2 })),
@@ -224,56 +196,87 @@ function pruneOrphans(g: WallGraphState): WallGraphState {
 const graphSegs = (g: WallGraphState): [V2, V2][] =>
   g.edges.map((e) => [g.vertices[e.a], g.vertices[e.b]] as [V2, V2]);
 
+/**
+ * Parse the scan evidence once for an editor session.
+ *
+ * Autosave merges the returned draft-data entries into the parent listing. If
+ * this baseline is rebuilt from that new prop, the freshly saved wall graph is
+ * mistaken for new scan evidence and the viewport projection is recomputed.
+ * The result is the delayed whole-plan resize/jump that used to happen just
+ * after a drag completed. Live edits belong in component state; this object is
+ * deliberately immutable until the editor is closed and opened again.
+ */
+function buildEditorBaseline(draftData: DraftDataEntry[]) {
+  const textData = buildTextDataMap(draftData);
+  let geom: AdjustedGeometry | null = null;
+  const raw = textData["captured_structure_json"] ?? textData["captured_room_json"];
+  if (raw) {
+    try {
+      const parsed = parseCapturedRoom(JSON.parse(raw));
+      if (parsed) geom = manhattanAdjust(parsed);
+    } catch {
+      /* graph-only editing */
+    }
+  }
+
+  let initialGraph: WallGraphState | null = null;
+  const rawGraph = textData["wall_graph_json"];
+  if (rawGraph) {
+    try {
+      const g = JSON.parse(rawGraph) as WallGraphState;
+      if (Array.isArray(g?.vertices) && Array.isArray(g?.edges) && g.edges.length) {
+        initialGraph = {
+          vertices: g.vertices.map((v) => [v[0], v[1]] as V2),
+          edges: g.edges.map((e) => ({ a: e.a, b: e.b })),
+        };
+      }
+    } catch {
+      /* rebuild from scan */
+    }
+  }
+
+  const baselineGraph = graphFromSegments((geom?.walls ?? []).map((w) => [w.p1, w.p2]));
+  const parsedEdits = parseOpeningEdits(textData);
+  const parsedFurnitureEdits = parseFurnitureEdits(textData);
+  return {
+    textData,
+    geom,
+    baselineGraph,
+    initialGraph: initialGraph ?? cloneGraph(baselineGraph),
+    initialEdits: {
+      deletedSourceOpeningIDs: [...parsedEdits.deletedSourceOpeningIDs],
+      customOpenings: parsedEdits.customOpenings,
+    } as OpeningEditsState,
+    initialFurnitureEdits: parsedFurnitureEdits,
+  };
+}
+
+function initialProjection(base: ReturnType<typeof buildEditorBaseline>) {
+  const pts = [
+    ...base.initialGraph.vertices,
+    ...(base.geom?.walls ?? []).flatMap((wall) => [wall.p1, wall.p2]),
+  ];
+  const bounds = computeBounds(pts.length ? pts : [[-4, -3], [4, 3]])!;
+  const cx = (bounds.minX + bounds.maxX) / 2;
+  const cz = (bounds.minZ + bounds.maxZ) / 2;
+  const span = Math.max(bounds.maxX - bounds.minX, bounds.maxZ - bounds.minZ, 2) + 3;
+  return { cx, cz, s: VIEW / span };
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 
 export default function FloorplanEditor({ draftId, draftData, lang, onClose, onSaved }: Props) {
   // ── immutable scan baseline ────────────────────────────────────────────────
-  const base = useMemo(() => {
-    const textData = buildTextDataMap(draftData);
-    let geom: AdjustedGeometry | null = null;
-    const raw = textData["captured_structure_json"] ?? textData["captured_room_json"];
-    if (raw) {
-      try {
-        const parsed = parseCapturedRoom(JSON.parse(raw));
-        if (parsed) geom = manhattanAdjust(parsed);
-      } catch {
-        /* graph-only editing */
-      }
-    }
-    let initialGraph: WallGraphState | null = null;
-    const rawGraph = textData["wall_graph_json"];
-    if (rawGraph) {
-      try {
-        const g = JSON.parse(rawGraph) as WallGraphState;
-        if (Array.isArray(g?.vertices) && Array.isArray(g?.edges) && g.edges.length) {
-          initialGraph = {
-            vertices: g.vertices.map((v) => [v[0], v[1]] as V2),
-            edges: g.edges.map((e) => ({ a: e.a, b: e.b })),
-          };
-        }
-      } catch {
-        /* rebuild from scan */
-      }
-    }
-    const baselineGraph = graphFromSegments((geom?.walls ?? []).map((w) => [w.p1, w.p2]));
-    const parsedEdits = parseOpeningEdits(textData);
-    return {
-      textData,
-      geom,
-      baselineGraph,
-      initialGraph: initialGraph ?? cloneGraph(baselineGraph),
-      initialEdits: {
-        deletedSourceOpeningIDs: [...parsedEdits.deletedSourceOpeningIDs],
-        customOpenings: parsedEdits.customOpenings,
-      } as OpeningEditsState,
-    };
-  }, [draftData]);
+  const [base] = useState(() => buildEditorBaseline(draftData));
 
   const [graph, setGraph] = useState<WallGraphState>(() => cloneGraph(base.initialGraph));
   const [edits, setEdits] = useState<OpeningEditsState>(() => cloneEdits(base.initialEdits));
+  const [furnitureEdits, setFurnitureEdits] = useState<FloorplanFurnitureEdits>(() =>
+    cloneFurnitureEdits(base.initialFurnitureEdits)
+  );
   const [rotationDeg, setRotationDeg] = useState(() => floorplanRotationDegrees(base.textData));
   const [tool, setTool] = useState<Tool | null>(null);
-  const [zoom, setZoom] = useState(1);
+  const [zoom, setZoom] = useState(DEFAULT_VIEW_ZOOM);
   const [pan, setPan] = useState<{ x: number; y: number }>({ x: 0, y: 0 });
   const [layersOpen, setLayersOpen] = useState(false);
   const [layers, setLayers] = useState({ doors: true, windows: true, labels: true, furniture: true });
@@ -304,34 +307,28 @@ export default function FloorplanEditor({ draftId, draftData, lang, onClose, onS
   const persistTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const svgRef = useRef<SVGSVGElement | null>(null);
   const gesture = useRef<{
-    kind: "pan" | "draw" | "erase" | "moveVertex" | "moveEdge" | "label" | null;
+    kind: "pan" | "draw" | "erase" | "moveEdge" | "moveFurniture" | "label" | null;
     start: V2;
     startScreen: [number, number];
-    vertexIndex?: number;
     edgeIndex?: number;
+    furnitureId?: string;
     labelN?: number;
     baseGraph?: WallGraphState;
     baseEdits?: OpeningEditsState;
+    baseFurniture?: ReturnType<typeof applyFurnitureEdits>;
+    baseFurnitureEdits?: FloorplanFurnitureEdits;
+    baseDoors?: Array<[V2, V2]>;
     basePan?: { x: number; y: number };
     baseOffset?: V2;
     moved?: boolean;
+    undoCaptured?: boolean;
   }>({ kind: null, start: [0, 0], startScreen: [0, 0] });
   const [drawPreview, setDrawPreview] = useState<[V2, V2] | null>(null);
   const [eraseStroke, setEraseStroke] = useState<V2[]>([]);
+  const [moveSelection, setMoveSelection] = useState<MoveSelection | null>(null);
 
   // ── projection (fixed at mount; pan/zoom layered on top) ──────────────────
-  const proj0 = useMemo(() => {
-    const pts = [
-      ...base.initialGraph.vertices,
-      ...(base.geom?.walls ?? []).flatMap((w) => [w.p1, w.p2]),
-    ];
-    const b = computeBounds(pts.length ? pts : [[-4, -3], [4, 3]])!;
-    const cx = (b.minX + b.maxX) / 2;
-    const cz = (b.minZ + b.maxZ) / 2;
-    const span = Math.max(b.maxX - b.minX, b.maxZ - b.minZ, 2) + 3; // margin to draw outside
-    const s = VIEW / span;
-    return { cx, cz, s };
-  }, [base]);
+  const [proj0] = useState(() => initialProjection(base));
 
   const rad = (rotationDeg * Math.PI) / 180;
   const rotW = useCallback(
@@ -427,7 +424,7 @@ export default function FloorplanEditor({ draftId, draftData, lang, onClose, onS
   );
 
   const wallFields = useCallback(
-    (g: WallGraphState, e: OpeningEditsState): Record<string, string> => ({
+    (g: WallGraphState, e: OpeningEditsState, f: FloorplanFurnitureEdits): Record<string, string> => ({
       wall_graph_json: JSON.stringify({
         vertices: g.vertices.map((v) => [v[0], v[1]]),
         edges: g.edges.map((ed) => ({ a: ed.a, b: ed.b })),
@@ -436,14 +433,18 @@ export default function FloorplanEditor({ draftId, draftData, lang, onClose, onS
         deletedSourceOpeningIDs: e.deletedSourceOpeningIDs,
         customOpenings: e.customOpenings.map((o) => ({ id: o.id, kind: o.kind, p1: o.p1, p2: o.p2 })),
       }),
+      floorplan_furniture_edits_json: JSON.stringify({
+        deletedSourceObjectIDs: f.deletedSourceObjectIDs,
+        objectCenterOverrides: f.objectCenterOverrides,
+      }),
     }),
     []
   );
 
   const schedulePersistWalls = useCallback(
-    (g: WallGraphState, e: OpeningEditsState) => {
+    (g: WallGraphState, e: OpeningEditsState, f: FloorplanFurnitureEdits) => {
       if (persistTimer.current) clearTimeout(persistTimer.current);
-      persistTimer.current = setTimeout(() => void persist(wallFields(g, e)), 300);
+      persistTimer.current = setTimeout(() => void persist(wallFields(g, e, f)), 300);
     },
     [persist, wallFields]
   );
@@ -452,15 +453,20 @@ export default function FloorplanEditor({ draftId, draftData, lang, onClose, onS
   }, []);
 
   const pushUndo = useCallback(() => {
-    undoStack.current.push({ graph: cloneGraph(graph), edits: cloneEdits(edits) });
+    undoStack.current.push({
+      graph: cloneGraph(graph),
+      edits: cloneEdits(edits),
+      furnitureEdits: cloneFurnitureEdits(furnitureEdits),
+    });
     if (undoStack.current.length > MAX_UNDO) undoStack.current.shift();
-  }, [graph, edits]);
+  }, [graph, edits, furnitureEdits]);
 
   const commit = useCallback(
-    (g: WallGraphState, e: OpeningEditsState) => {
+    (g: WallGraphState, e: OpeningEditsState, f: FloorplanFurnitureEdits) => {
       setGraph(g);
       setEdits(e);
-      schedulePersistWalls(g, e);
+      setFurnitureEdits(f);
+      schedulePersistWalls(g, e, f);
     },
     [schedulePersistWalls]
   );
@@ -508,44 +514,92 @@ export default function FloorplanEditor({ draftId, draftData, lang, onClose, onS
   }, [segs, proj0]);
 
   /*
-   * Architectural edits immediately feed the same constrained layout solve as
-   * the consumer viewer. This is the collision contract: furniture cannot be
-   * previewed through an edited wall, inside a door reserve, or outside the
-   * current room and only jump into a valid location after the editor closes.
-   * Rejected observations remain in solver diagnostics but are intentionally
-   * absent from this presentation layer.
+   * Match iOS's two-stage contract. The expensive deterministic solve runs
+   * once against immutable scan evidence. Live wall edits only run the rigid
+   * wall-attachment/collision pass, so a pointer frame can never cause global
+   * merge/rejection decisions or make an object disappear and return.
    */
-  const furniture = useMemo(() => {
+  const furnitureBaselineWalls = useMemo(() => {
+    const rawWalls = (base.geom?.walls ?? []).map((wall) => [wall.p1, wall.p2] as [V2, V2]);
+    const weldedWalls = graphSegs(base.baselineGraph);
+    return closestFurnitureWallBaseline(rawWalls, weldedWalls, graphSegs(base.initialGraph));
+  }, [base.baselineGraph, base.geom?.walls, base.initialGraph]);
+
+  const baselineFurniture = useMemo(
+    () => {
       const solved = USE_CONSTRAINT_SOLVER
         ? solveReaigenFloorplan({
-            walls: segs,
-            doors,
-            windows,
-            openings,
+            walls: furnitureBaselineWalls,
+            doors: base.geom?.doors ?? [],
+            windows: base.geom?.windows ?? [],
+            openings: base.geom?.openings ?? [],
             objects: base.geom?.objects ?? [], // solver conditions internally
             doorConfigs,
             rooms: base.geom?.solverRooms ?? [],
           }).objects
         : solveFurnitureLayout(
-            prepareObjects(base.geom?.objects ?? [], computeBounds(graph.vertices)),
-            segs,
-            interior,
-            doors,
+            prepareObjects(base.geom?.objects ?? [], computeBounds(base.baselineGraph.vertices)),
+            furnitureBaselineWalls,
+            base.geom?.interiorCentroid ?? [proj0.cx, proj0.cz],
+            base.geom?.doors ?? [],
             base.geom?.rooms ?? []
           );
-      const layer = (object: (typeof solved)[number]): number => {
+      return removeRedundantCountertopFixtures(solved);
+    },
+    [base.baselineGraph.vertices, base.geom, doorConfigs, furnitureBaselineWalls, proj0.cx, proj0.cz],
+  );
+
+  const baselinePresentedFurniture = useMemo(() => {
+      const presented = prepareFloorplanPresentationObjects(baselineFurniture);
+      const layer = (object: (typeof presented)[number]): number => {
         const kind = furnitureKind(object.category);
         if (kind === "table") return 0;
         if (kind === "bed" || kind === "sofa") return 1;
         if (kind === "chair") return 3;
         return 2;
       };
-      return prepareFloorplanPresentationObjects(solved).sort((a, b) =>
+      const ordered = presented.sort((a, b) =>
         layer(a) - layer(b)
         || 4 * b.halfW * b.halfD - 4 * a.halfW * a.halfD
         || a.id.localeCompare(b.id)
       );
-    }, [base.geom, doorConfigs, doors, graph.vertices, interior, openings, segs, windows]);
+      return ordered;
+    }, [baselineFurniture]);
+
+  // Physics and visual presentation deliberately remain separate. Collision
+  // uses the immutable solver footprint. The web-only symbol preparation runs
+  // once at baseline, then receives only the solved centre; it cannot regroup
+  // cabinetry or resize a symbol halfway through a drag.
+  const collisionFurniture = useMemo(
+    () => applyFurnitureEdits(
+      applyFurnitureWallAttachment(baselineFurniture, furnitureBaselineWalls, segs),
+      furnitureEdits,
+    ),
+    [baselineFurniture, furnitureBaselineWalls, furnitureEdits, segs],
+  );
+  const furniture = useMemo(() => {
+    const collisionById = new Map(collisionFurniture.map((object) => [object.id, object]));
+    const baselineById = new Map(baselineFurniture.map((object) => [object.id, object]));
+    return baselinePresentedFurniture.flatMap((object) => {
+      const collisionObject = collisionById.get(object.id);
+      const baselineObject = baselineById.get(object.id);
+      return collisionObject
+        && baselineObject
+        ? [{
+            ...object,
+            center: [
+              object.center[0] + collisionObject.center[0] - baselineObject.center[0],
+              object.center[1] + collisionObject.center[1] - baselineObject.center[1],
+            ] as V2,
+          }]
+        : [];
+    });
+  }, [baselineFurniture, baselinePresentedFurniture, collisionFurniture]);
+  useEffect(() => {
+    if (tool !== "move") {
+      setMoveSelection(null);
+    }
+  }, [tool]);
 
   const roomNumbers = useMemo(() => {
     const set = new Set(roomNumbersInTextData(base.textData));
@@ -649,14 +703,32 @@ export default function FloorplanEditor({ draftId, draftData, lang, onClose, onS
       if (a !== b && !g.edges.some((e) => (e.a === a && e.b === b) || (e.a === b && e.b === a))) {
         g.edges.push({ a, b });
       }
-      commit(g, cloneEdits(edits));
+      commit(g, cloneEdits(edits), cloneFurnitureEdits(furnitureEdits));
     },
-    [graph, edits, pushUndo, commit]
+    [graph, edits, furnitureEdits, pushUndo, commit]
   );
 
   const eraseAlongStroke = useCallback(
     (stroke: V2[]) => {
       if (stroke.length < 1) return;
+      const furnitureHit = furniture
+        .map((object) => ({
+          object,
+          depth: Math.max(...stroke.map((point) => pointInsideFurnitureDepth(point, object))),
+        }))
+        .filter((hit) => hit.depth >= 0.025)
+        .sort((a, b) => b.depth - a.depth || a.object.id.localeCompare(b.object.id))[0];
+      if (furnitureHit) {
+        pushUndo();
+        const nextFurnitureEdits = cloneFurnitureEdits(furnitureEdits);
+        const id = furnitureHit.object.id.toLowerCase();
+        if (!nextFurnitureEdits.deletedSourceObjectIDs.includes(id)) {
+          nextFurnitureEdits.deletedSourceObjectIDs.push(id);
+        }
+        delete nextFurnitureEdits.objectCenterOverrides[id];
+        commit(cloneGraph(graph), cloneEdits(edits), nextFurnitureEdits);
+        return;
+      }
       const wallTol = WALL_THICKNESS * 0.5 + 6 / pxPerMeter;
       const openTol = wallTol + 8 / pxPerMeter;
       const hitSeg = (p1: V2, p2: V2, tol: number) =>
@@ -694,9 +766,9 @@ export default function FloorplanEditor({ draftId, draftData, lang, onClose, onS
       pushUndo();
       e.deletedSourceOpeningIDs = [...deleted];
       g.edges = g.edges.filter((_, i) => !removedEdges.has(i));
-      commit(pruneOrphans(g), e);
+      commit(pruneOrphans(g), e, cloneFurnitureEdits(furnitureEdits));
     },
-    [graph, edits, base.geom, pxPerMeter, pushUndo, commit]
+    [graph, edits, furniture, furnitureEdits, base.geom, pxPerMeter, pushUndo, commit]
   );
 
   const placeOpening = useCallback(
@@ -719,9 +791,9 @@ export default function FloorplanEditor({ draftId, draftData, lang, onClose, onS
       pushUndo();
       const next = cloneEdits(edits);
       next.customOpenings.push({ id: crypto.randomUUID().toLowerCase(), kind, p1, p2 });
-      commit(cloneGraph(graph), next);
+      commit(cloneGraph(graph), next, cloneFurnitureEdits(furnitureEdits));
     },
-    [graph, edits, nearestEdge, pushUndo, commit]
+    [graph, edits, furnitureEdits, nearestEdge, pushUndo, commit]
   );
 
   const addRoom = useCallback(
@@ -833,6 +905,19 @@ export default function FloorplanEditor({ draftId, draftData, lang, onClose, onS
       g.start = w;
       g.startScreen = sp;
       g.moved = false;
+      g.undoCaptured = false;
+      // Desktop DCC convention: the middle mouse button always pans, even
+      // while a drawing or transform tool is active.
+      if (ev.button === 1) {
+        ev.preventDefault();
+        g.kind = "pan";
+        g.basePan = { ...pan };
+        return;
+      }
+      if (ev.button !== 0) {
+        g.kind = null;
+        return;
+      }
       if (!tool) {
         // Label hit first, then door config target, else pan.
         const labelTol = 16 / pxPerMeter;
@@ -870,24 +955,50 @@ export default function FloorplanEditor({ draftId, draftData, lang, onClose, onS
           setEraseStroke([w]);
           return;
         case "move": {
-          const vi = nearestVertex(w);
-          if (vi != null) {
-            g.kind = "moveVertex";
-            g.vertexIndex = vi;
+          const furnitureHit = furniture
+            .map((object) => ({ object, depth: pointInsideFurnitureDepth(w, object) }))
+            .filter((hit) => hit.depth >= 0)
+            .sort((a, b) =>
+              Number(Boolean(b.object.parentId)) - Number(Boolean(a.object.parentId))
+              || b.depth - a.depth
+              || a.object.id.localeCompare(b.object.id)
+            )[0];
+          const edgeAtPointer = nearestEdge(w, EDGE_PICK_PX);
+          if (furnitureHit && (furnitureHit.depth >= 0.025 || edgeAtPointer == null)) {
+            g.kind = "moveFurniture";
+            g.furnitureId = furnitureHit.object.id;
+            setMoveSelection({ kind: "furniture", id: furnitureHit.object.id, blocked: false });
             g.baseGraph = cloneGraph(graph);
             g.baseEdits = cloneEdits(edits);
-            pushUndo();
+            g.baseFurniture = collisionFurniture.map((object) => ({ ...object, center: [...object.center] as V2 }));
+            g.baseFurnitureEdits = cloneFurnitureEdits(furnitureEdits);
+            g.baseDoors = doors.map((door) => [[...door.p1] as V2, [...door.p2] as V2]);
             return;
           }
-          const ei = nearestEdge(w, EDGE_PICK_PX);
+          const ei = edgeAtPointer;
           if (ei != null) {
             g.kind = "moveEdge";
             g.edgeIndex = ei;
+            setMoveSelection({ kind: "edge", index: ei, blocked: false });
             g.baseGraph = cloneGraph(graph);
             g.baseEdits = cloneEdits(edits);
-            pushUndo();
+            g.baseFurniture = collisionFurniture.map((object) => ({ ...object, center: [...object.center] as V2 }));
+            g.baseFurnitureEdits = cloneFurnitureEdits(furnitureEdits);
+            g.baseDoors = doors.map((door) => [[...door.p1] as V2, [...door.p2] as V2]);
             return;
           }
+          if (furnitureHit) {
+            g.kind = "moveFurniture";
+            g.furnitureId = furnitureHit.object.id;
+            setMoveSelection({ kind: "furniture", id: furnitureHit.object.id, blocked: false });
+            g.baseGraph = cloneGraph(graph);
+            g.baseEdits = cloneEdits(edits);
+            g.baseFurniture = collisionFurniture.map((object) => ({ ...object, center: [...object.center] as V2 }));
+            g.baseFurnitureEdits = cloneFurnitureEdits(furnitureEdits);
+            g.baseDoors = doors.map((door) => [[...door.p1] as V2, [...door.p2] as V2]);
+            return;
+          }
+          setMoveSelection(null);
           g.kind = "pan";
           g.basePan = { ...pan };
           return;
@@ -900,7 +1011,7 @@ export default function FloorplanEditor({ draftId, draftData, lang, onClose, onS
       }
     },
     [tool, screenToWorld, screenPx, pan, zoom, proj, doors, roomNumbers, labelPositions, labelOffsets,
-     nearestVertex, nearestEdge, graph, edits, pxPerMeter, pushUndo, editingDoor, editingLabel, snapDrawStart]
+     nearestEdge, graph, edits, collisionFurniture, furniture, furnitureEdits, pxPerMeter, editingDoor, editingLabel, snapDrawStart]
   );
 
   const onPointerMove = useCallback(
@@ -910,6 +1021,14 @@ export default function FloorplanEditor({ draftId, draftData, lang, onClose, onS
       const w = screenToWorld(ev.clientX, ev.clientY);
       const sp = screenPx(ev.clientX, ev.clientY);
       if (Math.hypot(sp[0] - g.startScreen[0], sp[1] - g.startScreen[1]) > 3) g.moved = true;
+      if (
+        g.moved
+        && !g.undoCaptured
+        && (g.kind === "moveEdge" || g.kind === "moveFurniture")
+      ) {
+        pushUndo();
+        g.undoCaptured = true;
+      }
       switch (g.kind) {
         case "pan": {
           setPan({
@@ -925,20 +1044,44 @@ export default function FloorplanEditor({ draftId, draftData, lang, onClose, onS
         case "erase":
           setEraseStroke((prev) => [...prev, w]);
           return;
-        case "moveVertex": {
-          const nextGraph = moveGraphVertex(w, g.vertexIndex!, g.baseGraph!);
-          setGraph(nextGraph);
-          setEdits(reprojectOpenings(g.baseGraph!, nextGraph, g.baseEdits!));
-          return;
-        }
         case "moveEdge": {
-          const nextGraph = translateGraphEdge(
+          const requestedDelta = wallNormalTranslation(
             [w[0] - g.start[0], w[1] - g.start[1]],
             g.edgeIndex!,
             g.baseGraph!,
           );
+          const movement = moveWall(
+            g.baseFurniture ?? [],
+            g.baseGraph!,
+            g.edgeIndex!,
+            requestedDelta,
+            g.baseDoors ?? [],
+          );
+          const nextGraph = translateWallChain(g.baseGraph!, g.edgeIndex!, movement.wallDelta);
           setGraph(nextGraph);
           setEdits(reprojectOpenings(g.baseGraph!, nextGraph, g.baseEdits!));
+          setFurnitureEdits(recordFurnitureCenters(
+            g.baseFurnitureEdits!,
+            g.baseFurniture ?? [],
+            movement.objects,
+          ));
+          setMoveSelection({ kind: "edge", index: g.edgeIndex!, blocked: movement.blocked });
+          return;
+        }
+        case "moveFurniture": {
+          const movement = moveFurniture(
+            g.baseFurniture ?? [],
+            g.furnitureId!,
+            g.baseGraph!,
+            [w[0] - g.start[0], w[1] - g.start[1]],
+            g.baseDoors ?? [],
+          );
+          setFurnitureEdits(recordFurnitureCenters(
+            g.baseFurnitureEdits!,
+            g.baseFurniture ?? [],
+            movement.objects,
+          ));
+          setMoveSelection({ kind: "furniture", id: g.furnitureId!, blocked: movement.blocked });
           return;
         }
         case "label": {
@@ -953,7 +1096,7 @@ export default function FloorplanEditor({ draftId, draftData, lang, onClose, onS
         }
       }
     },
-    [screenToWorld, screenPx, snapDrawEnd, reprojectOpenings]
+    [screenToWorld, screenPx, snapDrawEnd, reprojectOpenings, pushUndo]
   );
 
   const onPointerUp = useCallback(
@@ -973,31 +1116,53 @@ export default function FloorplanEditor({ draftId, draftData, lang, onClose, onS
           setEraseStroke([]);
           return;
         }
-        case "moveVertex":
         case "moveEdge": {
-          let nextGraph = kind === "moveVertex"
-            ? moveGraphVertex(w, g.vertexIndex!, g.baseGraph!)
-            : translateGraphEdge(
-                [w[0] - g.start[0], w[1] - g.start[1]],
-                g.edgeIndex!,
-                g.baseGraph!,
-              );
-          const nextEdits = reprojectOpenings(g.baseGraph!, nextGraph, g.baseEdits!);
-          if (kind === "moveVertex" && g.vertexIndex != null) {
-            const movedVertex = nextGraph.vertices[g.vertexIndex];
-            let nearest: number | null = null;
-            let best = WELD_EPS;
-            nextGraph.vertices.forEach((vertex, index) => {
-              if (index === g.vertexIndex) return;
-              const distance = dist(movedVertex, vertex);
-              if (distance <= best) {
-                best = distance;
-                nearest = index;
-              }
-            });
-            if (nearest != null) nextGraph = mergeGraphVertex(nextGraph, g.vertexIndex, nearest);
+          if (!g.moved) {
+            setMoveSelection(null);
+            return;
           }
-          commit(nextGraph, nextEdits);
+          const requestedDelta = wallNormalTranslation(
+            [w[0] - g.start[0], w[1] - g.start[1]],
+            g.edgeIndex!,
+            g.baseGraph!,
+          );
+          const movement = moveWall(
+            g.baseFurniture ?? [],
+            g.baseGraph!,
+            g.edgeIndex!,
+            requestedDelta,
+            g.baseDoors ?? [],
+          );
+          const nextGraph = translateWallChain(g.baseGraph!, g.edgeIndex!, movement.wallDelta);
+          const nextEdits = reprojectOpenings(g.baseGraph!, nextGraph, g.baseEdits!);
+          const nextFurnitureEdits = recordFurnitureCenters(
+            g.baseFurnitureEdits!,
+            g.baseFurniture ?? [],
+            movement.objects,
+          );
+          setMoveSelection(null);
+          commit(nextGraph, nextEdits, nextFurnitureEdits);
+          return;
+        }
+        case "moveFurniture": {
+          if (!g.moved) {
+            setMoveSelection(null);
+            return;
+          }
+          const movement = moveFurniture(
+            g.baseFurniture ?? [],
+            g.furnitureId!,
+            g.baseGraph!,
+            [w[0] - g.start[0], w[1] - g.start[1]],
+            g.baseDoors ?? [],
+          );
+          const nextFurnitureEdits = recordFurnitureCenters(
+            g.baseFurnitureEdits!,
+            g.baseFurniture ?? [],
+            movement.objects,
+          );
+          setMoveSelection(null);
+          commit(cloneGraph(g.baseGraph!), cloneEdits(g.baseEdits!), nextFurnitureEdits);
           return;
         }
         case "label": {
@@ -1033,12 +1198,18 @@ export default function FloorplanEditor({ draftId, draftData, lang, onClose, onS
 
   const onPointerCancel = useCallback(() => {
     const current = gesture.current;
-    if ((current.kind === "moveVertex" || current.kind === "moveEdge") && current.baseGraph && current.baseEdits) {
+    if (
+      (current.kind === "moveEdge" || current.kind === "moveFurniture")
+      && current.baseGraph
+      && current.baseEdits
+    ) {
       setGraph(cloneGraph(current.baseGraph));
       setEdits(cloneEdits(current.baseEdits));
-      undoStack.current.pop();
+      if (current.baseFurnitureEdits) setFurnitureEdits(cloneFurnitureEdits(current.baseFurnitureEdits));
+      if (current.undoCaptured) undoStack.current.pop();
     }
     current.kind = null;
+    setMoveSelection(null);
     setDrawPreview(null);
     setEraseStroke([]);
   }, []);
@@ -1063,7 +1234,7 @@ export default function FloorplanEditor({ draftId, draftData, lang, onClose, onS
   const undo = useCallback(() => {
     const snap = undoStack.current.pop();
     if (!snap) return;
-    commit(snap.graph, snap.edits);
+    commit(snap.graph, snap.edits, snap.furnitureEdits);
   }, [commit]);
 
   const rotate = useCallback(() => {
@@ -1074,8 +1245,50 @@ export default function FloorplanEditor({ draftId, draftData, lang, onClose, onS
 
   const resetAll = useCallback(() => {
     pushUndo();
-    commit(cloneGraph(base.baselineGraph), { deletedSourceOpeningIDs: [], customOpenings: [] });
+    commit(
+      cloneGraph(base.baselineGraph),
+      { deletedSourceOpeningIDs: [], customOpenings: [] },
+      { deletedSourceObjectIDs: [], objectCenterOverrides: {} },
+    );
   }, [base.baselineGraph, pushUndo, commit]);
+
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      const target = event.target as HTMLElement | null;
+      const isTyping = target?.isContentEditable || target?.tagName === "INPUT" || target?.tagName === "TEXTAREA";
+
+      if (event.key === "Escape") {
+        setMoveSelection(null);
+        setEditingDoor(null);
+        setEditingLabel(null);
+        setTool(null);
+        return;
+      }
+      if (isTyping) return;
+
+      if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "z") {
+        event.preventDefault();
+        undo();
+        return;
+      }
+
+      const shortcutTools: Partial<Record<string, Tool>> = {
+        v: "move",
+        w: "draw",
+        e: "erase",
+        d: "door",
+        n: "window",
+        r: "room",
+      };
+      const shortcutTool = shortcutTools[event.key.toLowerCase()];
+      if (shortcutTool) {
+        event.preventDefault();
+        setTool(shortcutTool);
+      }
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [undo]);
 
   const saveDoorConfig = useCallback(
     (doorId: string, cfg: DoorConfig) => {
@@ -1144,15 +1357,19 @@ export default function FloorplanEditor({ draftId, draftData, lang, onClose, onS
 
   const mapBounds = useMemo(() => {
     const pts = [
-      ...base.initialGraph.vertices,
-      ...(base.geom?.walls ?? []).flatMap((w) => [w.p1, w.p2]),
-      ...(base.geom?.doors ?? []).flatMap((d) => [d.p1, d.p2]),
-      ...(base.geom?.windows ?? []).flatMap((d) => [d.p1, d.p2]),
-      ...(base.geom?.openings ?? []).flatMap((d) => [d.p1, d.p2]),
-      ...furniture.map((o) => o.center),
+      ...graph.vertices,
+      ...doors.flatMap((door) => [door.p1, door.p2]),
+      ...windows.flatMap((window) => [window.p1, window.p2]),
+      ...openings.flatMap((opening) => [opening.p1, opening.p2]),
     ];
     return computeBounds(pts);
-  }, [base.initialGraph.vertices, base.geom?.walls, base.geom?.doors, base.geom?.windows, base.geom?.openings, furniture]);
+  }, [doors, graph.vertices, openings, windows]);
+  const selectedEdgeIndices = useMemo(
+    () => moveSelection?.kind === "edge"
+      ? collinearEdgeChain(graph, moveSelection.index)
+      : new Set<number>(),
+    [graph, moveSelection],
+  );
   const mapW = mapBounds ? mapBounds.maxX - mapBounds.minX : 0;
   const mapZ = mapBounds ? mapBounds.maxZ - mapBounds.minZ : 0;
   const ratioText = mapBounds ? `${fmt(mapW)}m × ${fmt(mapZ)}m` : "n/a";
@@ -1163,17 +1380,18 @@ export default function FloorplanEditor({ draftId, draftData, lang, onClose, onS
       type="button"
       onClick={() => setTool((prev) => (prev === tl ? null : tl))}
       aria-pressed={tool === tl}
+      aria-label={label}
       title={label}
       className={cn(
-        "flex min-h-9 items-center gap-2 rounded-full px-3 text-[12.5px] font-semibold transition-colors",
+        "floorplan-tool-button group flex h-12 shrink-0 items-center justify-center gap-2.5 rounded-full px-4 text-[13px] font-semibold transition-[background-color,color,box-shadow,transform]",
         "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2",
         tool === tl
-          ? "glossy-capsule text-foreground"
-          : "text-foreground/60 hover:bg-foreground/[0.05] hover:text-foreground",
+          ? "bg-foreground text-background shadow-[inset_0_1px_0_hsl(var(--card)/0.2),0_7px_18px_hsl(var(--foreground)/0.15)]"
+          : "text-foreground/62 hover:bg-foreground/[0.055] hover:text-foreground active:scale-[0.98]",
       )}
     >
-      <Icon size={16} className="shrink-0" />
-      <span className="whitespace-nowrap">{label}</span>
+      <Icon size={21} strokeWidth={1.9} className="shrink-0" />
+      <span className="floorplan-tool-label whitespace-nowrap">{label}</span>
     </button>
   );
 
@@ -1196,39 +1414,61 @@ export default function FloorplanEditor({ draftId, draftData, lang, onClose, onS
 
   return (
     /*
-      Starts where the navigation rail ends. `inset-0` put the editor's left
-      edge at viewport 0, underneath the sidebar, which is where its own
-      overlay panels sit — so the compass and the room statistics were drawn
-      into a strip the rail covers and read as clipped mid-word.
+      Starts where both persistent pieces of app chrome end. Earlier the
+      editor began at viewport 0, underneath the sidebar and shared header, so
+      its own close control and title were hidden even though the canvas was
+      visible. That left users with no discoverable route back to the detail.
 
-      Offset rather than a higher z-index: the rail stays reachable, which is
-      right for a full-screen editor you need to leave, and the canvas then
-      measures the width it is actually given. It is desktop-only (the mount is
-      gated on !compactViewport), so --sidebar-offset is always set.
+      Offset rather than a higher z-index: the Reaigen shell stays stable, the
+      editor owns only the remaining workspace, and its labelled back action
+      is always visible. It is desktop-only (the mount is gated on
+      !compactViewport), so --sidebar-offset is always set.
     */
     <div
-      className="fixed inset-y-0 z-50 flex flex-col bg-background transition-[left,right] duration-200"
+      className="fixed bottom-0 z-50 flex flex-col overflow-hidden bg-background transition-[left,right,top] duration-200"
       style={{
+        top: "var(--header-total-h, 0px)",
         left: "var(--sidebar-offset, 0px)",
         right: "var(--reai-docked-width, 0px)",
       }}
     >
       {/* top bar */}
-      <div className="flex items-center justify-between border-b border-border/50 px-4 py-3">
+      <div className="editor-glass-control relative z-30 flex min-h-[70px] shrink-0 items-center gap-4 border-b border-border/60 px-5 py-2.5">
         <button
           type="button"
           onClick={onClose}
-          className="rounded-full px-3 py-1.5 text-[13px] font-semibold text-foreground/60 hover:text-foreground"
+          className="glossy-capsule flex min-h-11 shrink-0 items-center gap-2.5 rounded-full px-4 text-[13px] font-semibold text-foreground/72 transition-[color,transform] hover:text-foreground active:scale-[0.98] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
         >
-          {t("common.close", lang)}
+          <ArrowLeftIcon size={19} strokeWidth={1.9} />
+          {t("floorplan.editor.backToDetail", lang)}
         </button>
-        <span className="text-[14px] font-semibold">{t("floorplan.editor.title", lang)}</span>
+
+        <div className="min-w-0 flex-1">
+          <div className="truncate text-[15px] font-semibold tracking-[-0.01em] text-foreground">
+            {t("floorplan.editor.title", lang)}
+          </div>
+          <div className="mt-0.5 flex min-w-0 items-center gap-2 text-[11.5px] font-medium text-muted-foreground">
+            <span className="truncate">{ratioText}</span>
+            <span aria-hidden="true" className="h-1 w-1 shrink-0 rounded-full bg-foreground/25" />
+            <span className="whitespace-nowrap">{t("floorplan.rooms", lang)}: {roomNumbers.length}</span>
+          </div>
+        </div>
+
         <span
           className={cn(
-            "min-w-16 text-right text-[12px] font-medium",
-            saveState === "error" ? "text-red-600" : "text-muted-foreground"
+            "inline-flex min-h-9 shrink-0 items-center gap-2 rounded-full border border-border/65 bg-card/72 px-3 text-[12px] font-semibold shadow-[inset_0_1px_0_hsl(var(--card)),0_4px_14px_hsl(var(--foreground)/0.055)]",
+            saveState === "error" ? "text-destructive" : "text-foreground/58"
           )}
         >
+          <span
+            aria-hidden="true"
+            className={cn(
+              "h-1.5 w-1.5 rounded-full",
+              saveState === "saving" && "animate-pulse bg-foreground/45",
+              saveState === "error" && "bg-destructive",
+              saveState === "idle" && "bg-foreground/30",
+            )}
+          />
           {saveState === "saving"
             ? t("floorplan.editor.saving", lang)
             : saveState === "error"
@@ -1238,16 +1478,26 @@ export default function FloorplanEditor({ draftId, draftData, lang, onClose, onS
       </div>
 
       {/* canvas */}
-      <div className="relative min-h-0 flex-1 overflow-hidden bg-white">
+      <div className="floorplan-editor-canvas relative min-h-0 flex-1 overflow-hidden">
         <svg
           ref={svgRef}
           viewBox={`0 0 ${VIEW} ${VIEW}`}
-          className="h-full w-full touch-none select-none"
+          className={cn(
+            "h-full w-full touch-none select-none",
+            tool === "draw" || tool === "door" || tool === "window" || tool === "room"
+              ? "cursor-crosshair"
+              : tool === "move"
+                ? "cursor-default"
+                : tool === "erase"
+                  ? "cursor-cell"
+                  : "cursor-grab active:cursor-grabbing",
+          )}
           onPointerDown={onPointerDown}
           onPointerMove={onPointerMove}
           onPointerUp={onPointerUp}
           onPointerCancel={onPointerCancel}
           onWheel={onWheel}
+          onContextMenu={(event) => event.preventDefault()}
           xmlns="http://www.w3.org/2000/svg"
         >
           <g transform={`translate(${pan.x} ${pan.y}) scale(${zoom})`}>
@@ -1260,7 +1510,7 @@ export default function FloorplanEditor({ draftId, draftData, lang, onClose, onS
               </mask>
             </defs>
 
-            {/* furniture (read-only) */}
+            {/* furniture — desktop DCC selection with rigid-body drag */}
             {layers.furniture &&
               [...furniture]
                 .sort(
@@ -1291,9 +1541,20 @@ export default function FloorplanEditor({ draftId, draftData, lang, onClose, onS
                   o.halfD / rotatedHalfD
                 );
                 const fit = `rotate(${quarterTurns * 90}) scale(${uniformScale})`;
+                const selected = moveSelection?.kind === "furniture" && moveSelection.id === o.id;
                 return (
-                  <g
-                    key={`f${i}`}
+                  <g key={`f${i}`}>
+                    {selected && (
+                      <polygon
+                        points={toPts(objectCorners(o))}
+                        fill="rgba(17,17,17,0.035)"
+                        stroke="rgba(17,17,17,0.72)"
+                        strokeWidth={moveSelection.blocked ? 2.4 : 1.6}
+                        strokeDasharray={moveSelection.blocked ? "4 3" : undefined}
+                        vectorEffect="non-scaling-stroke"
+                      />
+                    )}
+                    <g
                     transform={`matrix(${pW[0] - c[0]} ${pW[1] - c[1]} ${pD[0] - c[0]} ${pD[1] - c[1]} ${c[0]} ${c[1]}) ${fit}`}
                     fill="none"
                     stroke={STROKE_COLOR}
@@ -1318,6 +1579,7 @@ export default function FloorplanEditor({ draftId, draftData, lang, onClose, onS
                     {icon.shapes.map((s, j) => (
                       <EditorIconShape key={j} shape={s} />
                     ))}
+                    </g>
                   </g>
                 );
               })}
@@ -1328,6 +1590,43 @@ export default function FloorplanEditor({ draftId, draftData, lang, onClose, onS
                 <polygon key={i} points={toPts(poly)} fill={STROKE_COLOR} />
               ))}
             </g>
+
+            {/* Selected wall chain. Movement is constrained to its normal. */}
+            {tool === "move" && [...selectedEdgeIndices].map((index) => {
+              const edge = graph.edges[index];
+              if (!edge) return null;
+              const [x1, y1] = proj(...graph.vertices[edge.a]);
+              const [x2, y2] = proj(...graph.vertices[edge.b]);
+              return (
+                <line
+                  key={`selected-edge-${index}`}
+                  x1={x1}
+                  y1={y1}
+                  x2={x2}
+                  y2={y2}
+                  stroke="rgba(17,17,17,0.28)"
+                  strokeWidth={9}
+                  strokeLinecap="round"
+                  vectorEffect="non-scaling-stroke"
+                />
+              );
+            })}
+            {tool === "move" && moveSelection?.kind === "edge" && (() => {
+              const edge = graph.edges[moveSelection.index];
+              if (!edge) return null;
+              const [x, y] = proj(...mid(graph.vertices[edge.a], graph.vertices[edge.b]));
+              return (
+                <circle
+                  cx={x}
+                  cy={y}
+                  r={7}
+                  fill="rgba(255,255,255,0.96)"
+                  stroke="rgba(17,17,17,0.72)"
+                  strokeWidth={moveSelection.blocked ? 2.4 : 1.4}
+                  vectorEffect="non-scaling-stroke"
+                />
+              );
+            })()}
 
             {/* windows */}
             {layers.windows &&
@@ -1385,13 +1684,6 @@ export default function FloorplanEditor({ draftId, draftData, lang, onClose, onS
                 );
               })}
 
-            {/* move handles */}
-            {tool === "move" &&
-              graph.vertices.map((v, i) => {
-                const [x, y] = proj(v[0], v[1]);
-                return <circle key={i} cx={x} cy={y} r={5} fill="#2563eb" fillOpacity={0.55} />;
-              })}
-
             {/* draw preview */}
             {drawPreview && (
               <g>
@@ -1400,11 +1692,11 @@ export default function FloorplanEditor({ draftId, draftData, lang, onClose, onS
                   y1={proj(...drawPreview[0])[1]}
                   x2={proj(...drawPreview[1])[0]}
                   y2={proj(...drawPreview[1])[1]}
-                  stroke="#2563eb"
+                  stroke="hsl(var(--foreground))"
                   strokeWidth={2.2}
                 />
-                <circle cx={proj(...drawPreview[0])[0]} cy={proj(...drawPreview[0])[1]} r={4.5} fill="#2563eb" />
-                <circle cx={proj(...drawPreview[1])[0]} cy={proj(...drawPreview[1])[1]} r={4.5} fill="#2563eb" />
+                <circle cx={proj(...drawPreview[0])[0]} cy={proj(...drawPreview[0])[1]} r={4.5} fill="hsl(var(--foreground))" />
+                <circle cx={proj(...drawPreview[1])[0]} cy={proj(...drawPreview[1])[1]} r={4.5} fill="hsl(var(--foreground))" />
               </g>
             )}
 
@@ -1413,8 +1705,8 @@ export default function FloorplanEditor({ draftId, draftData, lang, onClose, onS
               <polyline
                 points={eraseStroke.map((p) => proj(p[0], p[1]).join(",")).join(" ")}
                 fill="none"
-                stroke="#dc2626"
-                strokeOpacity={0.6}
+                stroke="hsl(var(--foreground))"
+                strokeOpacity={0.46}
                 strokeWidth={6}
                 strokeLinecap="round"
                 strokeLinejoin="round"
@@ -1448,32 +1740,6 @@ export default function FloorplanEditor({ draftId, draftData, lang, onClose, onS
           </g>
         </svg>
 
-        {/*
-          One quiet readout, not three cards of drafting furniture.
-
-          The column used to carry a compass rose, a tally of walls/doors/
-          windows, and a legend of line styles. None of it helps someone
-          correcting a scan of a flat: an estate agent does not orient a room
-          plan by north, does not care that the scan produced five wall
-          segments, and does not need a key explaining that a dashed line is a
-          window — the plan is the thing being read, and a legend for it is
-          documentation the reader did not ask for. The compass was also pinned
-          top-left while north points up, so it sat on the opposite side of the
-          drawing from the direction it described.
-
-          What is left is what you check against the room you are standing in:
-          how big it is, and how many rooms the scan found. Layer visibility
-          already has a real control in the toolbar.
-        */}
-        <div className="pointer-events-none absolute left-3 top-3 z-20">
-          <div className="rounded-xl border border-border/40 bg-card/90 px-3 py-2 text-[11px] leading-5 text-foreground/70 shadow-card backdrop-blur-md">
-            <div className="text-[12px] font-semibold text-foreground">{ratioText}</div>
-            <div>
-              {t("floorplan.rooms", lang)}: {roomNumbers.length}
-            </div>
-          </div>
-        </div>
-
         {/* door config popover */}
         {editingDoor && editingDoorCfg && (
           <DoorConfigPanel
@@ -1504,60 +1770,50 @@ export default function FloorplanEditor({ draftId, draftData, lang, onClose, onS
             />
           </div>
         )}
-      </div>
 
-      {/* bottom bars */}
-      <div className="border-t border-border/50 px-3 pb-[calc(0.75rem+env(safe-area-inset-bottom,0px))] pt-2">
-        {layersOpen && (
-          <div className="mb-2 flex flex-wrap items-center justify-center gap-1.5 border-b border-border/40 pb-2">
-            {chip("doors", t("floorplan.doors", lang))}
-            {chip("windows", t("floorplan.windows", lang))}
-            {chip("labels", t("floorplan.roomLabels", lang))}
-            {chip("furniture", t("floorplan.editor.furniture", lang))}
-          </div>
-        )}
-        {/*
-          One palette, not two rows of links. The tools and the utilities were
-          separate centred rows of bare text, so nothing said which of them was
-          a mode you were in and which was a thing that happens once — and with
-          no glyphs the whole bar read as navigation rather than a toolbox. They
-          share one bar now, split by a rule: modes on the left, actions on the
-          right.
+        {/* A single command dock, grouped like a DCC viewport but deliberately
+            labelled and softened for a non-technical property workflow. */}
+        <div className="pointer-events-none absolute inset-x-0 bottom-0 z-20 flex flex-col items-center gap-2 px-4 pb-[calc(1rem+env(safe-area-inset-bottom,0px))]">
+          {layersOpen && (
+            <div className="editor-glass-control pointer-events-auto flex max-w-[calc(100%-1rem)] flex-wrap items-center justify-center gap-1 rounded-full border border-border/65 p-1.5 shadow-[0_10px_30px_hsl(var(--foreground)/0.09)]">
+              {chip("doors", t("floorplan.doors", lang))}
+              {chip("windows", t("floorplan.windows", lang))}
+              {chip("labels", t("floorplan.roomLabels", lang))}
+              {chip("furniture", t("floorplan.editor.furniture", lang))}
+            </div>
+          )}
 
-          Everything keeps its label at every width. The audience is estate
-          agents, not people who have learned a CAD program, so an icon is a way
-          to find a button again after reading it — never a substitute for the
-          word.
+          <div className="floorplan-command-dock pointer-events-auto flex max-w-full flex-nowrap items-center justify-start gap-1 overflow-x-auto rounded-[26px] border border-border/70 p-1.5">
+            <div className="flex shrink-0 flex-nowrap items-center gap-1">
+              {toolButton("move", t("floorplan.editor.move", lang), MoveToolIcon)}
+              {toolButton("draw", t("floorplan.editor.draw", lang), DrawWallIcon)}
+              {toolButton("erase", t("floorplan.editor.erase", lang), EraseIcon)}
+            </div>
 
-          And when it runs out of room it wraps. It used to scroll with the
-          scrollbar hidden, which meant the last control was simply sliced in
-          half at the edge — with the agent panel open, "Prispôsobiť" ended
-          mid-word and there was nothing to say it was still there. A second row
-          is honest; a cut-off button is a lost one.
-        */}
-        <div className="flex justify-center">
-          <div className="floating-toolbar flex max-w-full flex-wrap items-center justify-center gap-1 rounded-3xl p-1">
-            {toolButton("draw", t("floorplan.editor.draw", lang), DrawWallIcon)}
-            {toolButton("erase", t("floorplan.editor.erase", lang), EraseIcon)}
-            {toolButton("move", t("floorplan.editor.move", lang), MoveToolIcon)}
-            {toolButton("door", t("floorplan.editor.door", lang), DoorToolIcon)}
-            {toolButton("window", t("floorplan.editor.window", lang), WindowToolIcon)}
-            {toolButton("room", t("floorplan.editor.room", lang), RoomToolIcon)}
+            <span aria-hidden="true" className="mx-1 h-8 w-px shrink-0 bg-border/70" />
 
-            <span aria-hidden="true" className="mx-1 h-6 w-px shrink-0 bg-border/70" />
+            <div className="flex shrink-0 flex-nowrap items-center gap-1">
+              {toolButton("door", t("floorplan.editor.door", lang), DoorToolIcon)}
+              {toolButton("window", t("floorplan.editor.window", lang), WindowToolIcon)}
+              {toolButton("room", t("floorplan.editor.room", lang), RoomToolIcon)}
+            </div>
 
-            <UtilButton onClick={rotate} label={t("floorplan.editor.rotate", lang)} icon={RotateIcon} />
-            <UtilButton onClick={undo} disabled={!canUndo} label={t("floorplan.editor.undo", lang)} icon={UndoIcon} />
-            <UtilButton onClick={() => setLayersOpen((v) => !v)} label={t("floorplan.editor.layers", lang)} active={layersOpen} icon={LayersToolIcon} />
-            <UtilButton onClick={resetAll} label={t("floorplan.editor.reset", lang)} icon={ResetToolIcon} />
-            <UtilButton
-              onClick={() => {
-                setZoom(1);
-                setPan({ x: 0, y: 0 });
-              }}
-              label={t("floorplan.editor.fitView", lang)}
-              icon={FrameIcon}
-            />
+            <span aria-hidden="true" className="mx-1 h-8 w-px shrink-0 bg-border/70" />
+
+            <div className="flex shrink-0 flex-nowrap items-center gap-1">
+              <UtilButton onClick={undo} disabled={!canUndo} label={t("floorplan.editor.undo", lang)} icon={UndoIcon} />
+              <UtilButton onClick={rotate} label={t("floorplan.editor.rotate", lang)} icon={RotateIcon} />
+              <UtilButton onClick={() => setLayersOpen((v) => !v)} label={t("floorplan.editor.layers", lang)} active={layersOpen} icon={LayersToolIcon} />
+              <UtilButton onClick={resetAll} label={t("floorplan.editor.reset", lang)} icon={ResetToolIcon} />
+              <UtilButton
+                onClick={() => {
+                  setZoom(DEFAULT_VIEW_ZOOM);
+                  setPan({ x: 0, y: 0 });
+                }}
+                label={t("floorplan.editor.fitView", lang)}
+                icon={FrameIcon}
+              />
+            </div>
           </div>
         </div>
       </div>
@@ -1568,11 +1824,10 @@ export default function FloorplanEditor({ draftId, draftData, lang, onClose, onS
 /**
  * A one-shot action in the toolbox: rotate, undo, layers, reset, fit.
  *
- * Always labelled, never icon-only. This editor is used by estate agents, not
- * by anyone who has learned a CAD program, and an unlabelled glyph asks the
- * user to already know what it means — the one thing a tool for non-specialists
- * cannot do. The icon is there to make the button findable again once you have
- * read it, not to replace reading it.
+ * Labelled at comfortable widths. When the Agent narrows the drawing viewport,
+ * the visible label collapses but remains the button's accessible name and
+ * native tooltip. This keeps the DCC strip one row high without making the
+ * commands cryptic.
  *
  * Kept visually quieter than the tools instead: lighter weight, no fill. These
  * are things that happen once, not modes you are in.
@@ -1596,19 +1851,20 @@ function UtilButton({
       onClick={onClick}
       disabled={disabled}
       aria-pressed={active}
+      aria-label={label}
       title={label}
       className={cn(
-        "flex min-h-9 shrink-0 items-center gap-2 rounded-full px-3 text-[12.5px] font-medium transition-colors",
+        "floorplan-util-button flex h-12 shrink-0 items-center justify-center gap-2.5 rounded-full px-3.5 text-[13px] font-medium transition-[background-color,color,transform]",
         "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2",
         disabled
           ? "text-foreground/25"
           : active
-            ? "bg-foreground/[0.08] text-foreground"
-            : "text-foreground/55 hover:bg-foreground/[0.05] hover:text-foreground",
+            ? "bg-foreground/[0.09] text-foreground shadow-inner"
+            : "text-foreground/58 hover:bg-foreground/[0.05] hover:text-foreground active:scale-[0.98]",
       )}
     >
-      <Icon size={16} className="shrink-0" />
-      <span className="whitespace-nowrap">{label}</span>
+      <Icon size={20} strokeWidth={1.9} className="shrink-0" />
+      <span className="floorplan-util-label whitespace-nowrap">{label}</span>
     </button>
   );
 }

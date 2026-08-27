@@ -57,21 +57,23 @@ import {
   furnitureKind,
   prepareObjects,
   prepareFloorplanPresentationObjects,
+  removeRedundantCountertopFixtures,
   conditionWallSegmentsForPresentation,
   doorObservationUsable,
   solveFurnitureLayout,
   WALL_THICKNESS,
   STROKE_COLOR,
   LABEL_FILL,
-  STROKE_WIDTH,
-  DOOR_PANEL_WIDTH,
-  DOOR_ARC_WIDTH,
-  DOOR_HINGE_RADIUS,
   type V2,
   type DoorConfig,
   type ObjectXZ,
 } from "../lib/floorplan-geometry";
 import { solveReaigenFloorplan, USE_CONSTRAINT_SOLVER } from "../lib/floorplan-solver-adapter";
+import { applyFurnitureEdits, parseFurnitureEdits } from "../lib/floorplan-collision-solver";
+import {
+  applyFurnitureWallAttachment,
+  closestFurnitureWallBaseline,
+} from "../lib/floorplan-wall-attachment";
 import { iconForKind, type IconShape } from "../lib/floorplan-icon-shapes";
 import { assignLabelsToRoomPolygons } from "../lib/floorplan-label-placement";
 import { inferDoorPresentationConfig } from "../lib/floorplan-door-presentation";
@@ -98,6 +100,11 @@ interface Props {
   measurementMode?: "distance" | "area" | null;
   /** Incremented for a fresh measurement, including repeated same-mode requests. */
   measurementSession?: number;
+  /**
+   * Fullscreen presentation lives inside the lightbox's single glass surface,
+   * so it must not introduce a second bordered card around the drawing.
+   */
+  presentation?: "card" | "lightbox";
 }
 
 const SVG_W = 400;
@@ -235,6 +242,7 @@ export default function FloorplanViewer({
   planClassName,
   measurementMode,
   measurementSession,
+  presentation = "card",
 }: Props) {
   const [rendering, setRendering] = useState<FloorplanRenderingData | null>(null);
   const [renderingLoading, setRenderingLoading] = useState(Boolean(floorplanId && !publicFloorplan));
@@ -313,7 +321,10 @@ export default function FloorplanViewer({
   if (!model.local && renderingLoading) {
     return (
       <div
-        className="overflow-hidden rounded-xl border border-border/40 bg-surface shadow-card"
+        className={cn(
+          "overflow-hidden",
+          presentation === "card" && "rounded-xl border border-border/40 bg-surface shadow-card",
+        )}
         role="status"
         aria-label={t("draft.media.loading", lang)}
         aria-busy="true"
@@ -321,7 +332,10 @@ export default function FloorplanViewer({
         {/* Carries the caller's height cap too, so the skeleton occupies the
             same box as the plan that replaces it and nothing shifts on swap. */}
         <div className={cn("mx-auto aspect-[4/3] w-full animate-pulse bg-muted/55 motion-reduce:animate-none", planClassName)} />
-        <div className="min-h-16 space-y-2 border-t border-border/40 px-4 py-3">
+        <div className={cn(
+          "min-h-16 space-y-2 px-4 py-3",
+          presentation === "card" ? "border-t border-border/40" : "bg-black/[0.025]",
+        )}>
           <div className="h-3 w-2/5 rounded-full bg-muted/65" />
           <div className="h-3 w-3/5 rounded-full bg-muted/45" />
         </div>
@@ -359,10 +373,18 @@ export default function FloorplanViewer({
   }
 
   return (
-    <div className="overflow-hidden rounded-xl border border-border/40 bg-surface shadow-card">
+    <div className={cn(
+      "overflow-hidden",
+      presentation === "card" && "rounded-xl border border-border/40 bg-surface shadow-card",
+    )}>
       {plan}
       {legendEntries.length > 0 && (
-        <div className="px-4 py-2.5 border-t border-border/40">
+        <div className={cn(
+          "px-4 py-2.5",
+          presentation === "card"
+            ? "border-t border-border/40"
+            : "bg-black/[0.025] shadow-[0_-14px_32px_-32px_rgba(0,0,0,0.45)] backdrop-blur-xl sm:px-6",
+        )}>
           <div className={`grid gap-x-6 gap-y-1.5 ${legendEntries.length > 4 ? "grid-cols-2 max-sm:grid-cols-1" : "grid-cols-1"}`}>
             {legendEntries.map((e) => (
               <div key={e.n} className="flex items-center gap-2 min-w-0">
@@ -381,7 +403,12 @@ export default function FloorplanViewer({
         </div>
       )}
       {totalArea > 0 && (
-        <div className="flex items-center justify-between border-t border-border/40 px-4 py-3">
+        <div className={cn(
+          "flex items-center justify-between px-4 py-3",
+          presentation === "card"
+            ? "border-t border-border/40"
+            : "bg-black/[0.035] shadow-[inset_0_1px_0_rgba(0,0,0,0.045)] sm:px-6",
+        )}>
           <span className="text-[13px] font-semibold text-foreground">{t("floorplan.total", lang)}</span>
           <span className="text-[13px] font-semibold text-foreground tabular-nums">{formatArea(totalArea)}</span>
         </div>
@@ -500,35 +527,38 @@ function buildLocalModel(
     axisD: rotAxis(o.axisD),
   });
   const rawObjects = geom?.objects ?? [];
+  const rawFurnitureWalls = (geom?.walls ?? []).map((wall) => [wall.p1, wall.p2] as [V2, V2]);
+  const baselineFurnitureWalls = closestFurnitureWallBaseline(
+    rawFurnitureWalls,
+    rawFurnitureWalls,
+    stableSegs,
+  );
   const solveInput = {
-    // Furniture must solve against the same conditioned current graph that is
-    // published, never the stale/raw fragment set.
-    walls: stableSegs,
-    doors: fittedDoors,
-    windows: fittedWindows,
-    openings: fittedOpenings,
+    // Match iOS: solve against immutable scan evidence, then rigidly attach
+    // supported furniture to translated live walls. Re-solving against every
+    // wall edit makes objects merge, disappear, and return between frames.
+    walls: baselineFurnitureWalls,
+    doors: geom?.doors ?? [],
+    windows: geom?.windows ?? [],
+    openings: geom?.openings ?? [],
     objects: rawObjects, // constraint solver conditions/dedupes internally
     doorConfigs: parseDoorConfigs(textData),
     rooms: geom?.solverRooms ?? [],
   };
   const solveResult = USE_CONSTRAINT_SOLVER ? solveReaigenFloorplan(solveInput) : null;
   const solvedObjects = solveResult
-    ? solveResult.objects
-    : solveFurnitureLayout(
+      ? solveResult.objects
+      : solveFurnitureLayout(
         prepareObjects(rawObjects, preBounds),
-        wallSegs,
+        baselineFurnitureWalls,
         geom?.interiorCentroid ?? pivot,
-        fittedDoors,
+        geom?.doors ?? [],
         geom?.rooms ?? []
       );
-  const composedObjects = solvedObjects.filter((object) => {
-    if (furnitureKind(object.category) !== "oven") return true;
-    return !solvedObjects.some(
-      (other) =>
-        furnitureKind(other.category) === "stove" &&
-        Math.hypot(other.center[0] - object.center[0], other.center[1] - object.center[1]) <= 0.18
-    );
-  });
+  // Match iOS: authored furniture centres and deletion tombstones are applied
+  // after the deterministic solve so deleting one source object cannot make a
+  // previously merged/hidden duplicate unexpectedly appear.
+  const composedObjects = removeRedundantCountertopFixtures(solvedObjects);
   // Architectural draw order: broad horizontal surfaces establish the base,
   // then seating and compact fixtures remain legible above them. RoomPlan's
   // source order is capture order and must not determine SVG occlusion.
@@ -539,13 +569,19 @@ function buildLocalModel(
     if (kind === "chair") return 3;
     return 2;
   };
-  const objectsR = prepareFloorplanPresentationObjects(composedObjects)
+  const attachedObjects = applyFurnitureWallAttachment(
+    composedObjects,
+    baselineFurnitureWalls,
+    stableSegs,
+  );
+  const authoredObjects = applyFurnitureEdits(attachedObjects, parseFurnitureEdits(textData));
+  const presentedObjects = prepareFloorplanPresentationObjects(authoredObjects)
     .sort((a, b) =>
       furnitureLayer(a) - furnitureLayer(b)
       || 4 * b.halfW * b.halfD - 4 * a.halfW * a.halfD
       || a.id.localeCompare(b.id)
-    )
-    .map(rotObj);
+    );
+  const objectsR = presentedObjects.map(rotObj);
 
   const wallQuads = wallSegsR.map(([a, b]) => wallQuad(a, b));
   const cutQuads = [...doorsR, ...windowsR, ...openingsR].map((o) => openingCut(o.p1, o.p2));

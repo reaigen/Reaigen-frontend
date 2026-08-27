@@ -1372,6 +1372,7 @@ const en = {
   "floorplan.measureDistanceHint":        "Distance measurement · select two points",
   "floorplan.measureAreaHint":            "Area measurement · select boundary points",
   "floorplan.editor.title":              "Floorplan editor",
+  "floorplan.editor.backToDetail":       "Back to details",
   "floorplan.editor.draw":               "Draw",
   "floorplan.editor.erase":              "Erase",
   "floorplan.editor.move":               "Move",

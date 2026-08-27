@@ -1353,6 +1353,7 @@ const cs: LocaleStrings = {
   "floorplan.measureDistanceHint":        "Měření vzdálenosti · vyberte dva body",
   "floorplan.measureAreaHint":            "Měření plochy · vyznačte hraniční body",
   "floorplan.editor.title":              "Editor půdorysu",
+  "floorplan.editor.backToDetail":       "Zpět na detail",
   "floorplan.editor.draw":               "Kreslit",
   "floorplan.editor.erase":              "Gumovat",
   "floorplan.editor.move":               "Posunout",

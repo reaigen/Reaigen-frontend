@@ -241,20 +241,19 @@ export function FloorplanLightbox({
       aria-label={t("draft.floorplan", lang)}
       className="fixed inset-0 z-[9999] flex items-center justify-center overscroll-contain bg-black/22 pb-[max(1rem,env(safe-area-inset-bottom))] pl-[max(1rem,env(safe-area-inset-left))] pr-[max(1rem,env(safe-area-inset-right))] pt-[max(1rem,env(safe-area-inset-top))] text-foreground backdrop-blur-md animate-fade-in sm:pb-[max(2rem,env(safe-area-inset-bottom))] sm:pl-[max(2rem,env(safe-area-inset-left))] sm:pr-[max(2rem,env(safe-area-inset-right))] sm:pt-[max(2rem,env(safe-area-inset-top))] lg:pb-[max(3rem,env(safe-area-inset-bottom))] lg:pl-[max(3rem,env(safe-area-inset-left))] lg:pr-[max(3rem,env(safe-area-inset-right))] lg:pt-[max(3rem,env(safe-area-inset-top))]"
     >
-      <div className="editor-glass-surface flex max-h-[calc(100dvh-2rem)] w-full max-w-[72rem] flex-col overflow-hidden rounded-[2rem] border border-white/70 shadow-[0_34px_100px_-34px_rgba(0,0,0,0.42)] sm:max-h-[calc(100dvh-4rem)] lg:max-h-[calc(100dvh-6rem)]">
-      <header className="grid min-h-[4.5rem] shrink-0 grid-cols-[minmax(0,1fr)_auto] items-center gap-4 border-b border-white/60 bg-card/72 px-5 backdrop-blur-2xl sm:px-7">
+      <div className="editor-glass-surface flex max-h-[calc(100dvh-2rem)] w-full max-w-[76rem] flex-col overflow-hidden rounded-[2rem] border border-white/65 shadow-[0_34px_100px_-34px_rgba(0,0,0,0.42)] sm:max-h-[calc(100dvh-4rem)] lg:max-h-[calc(100dvh-6rem)]">
+      <header className="grid min-h-[4.5rem] shrink-0 grid-cols-[minmax(0,1fr)_auto] items-center gap-4 bg-card/58 px-5 backdrop-blur-2xl sm:px-7">
         <div className="min-w-0">
           <span className="block text-[16px] font-semibold tracking-[-0.015em] text-foreground">
             {t("draft.floorplan", lang)}
           </span>
-          <span className="mt-0.5 block text-[11px] text-foreground/48">{t("draft.gallery.fullscreen", lang)}</span>
         </div>
         <div className="flex min-w-0 justify-end">
           <button
             ref={closeRef}
             type="button"
             onClick={onClose}
-            className="glossy-capsule floating-icon-button pen-touch-target text-foreground/65 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+            className="floating-icon-button pen-touch-target bg-white/68 text-foreground/58 shadow-[0_10px_30px_-18px_rgba(0,0,0,0.42),inset_0_1px_0_rgba(255,255,255,0.92)] backdrop-blur-xl transition-colors hover:bg-white/88 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
             aria-label={t("common.close", lang)}
           >
             <CloseIcon size={17} />
@@ -275,7 +274,7 @@ export function FloorplanLightbox({
       */}
       <div
         ref={viewportRef}
-        className="min-h-0 flex-1 touch-none overflow-auto bg-background/28 p-4 sm:p-7 lg:p-9"
+        className="min-h-0 flex-1 touch-none overflow-auto bg-[radial-gradient(circle_at_50%_35%,rgba(255,255,255,0.58),rgba(255,255,255,0.16)_56%,rgba(15,23,42,0.025))] px-4 pb-4 pt-2 sm:px-7 sm:pb-7 sm:pt-3 lg:px-9 lg:pb-9"
         onPointerDown={onPointerDown}
         onPointerMove={onPointerMove}
         onPointerUp={endPointer}
@@ -283,7 +282,7 @@ export function FloorplanLightbox({
         onDoubleClick={toggleZoom}
       >
         <div
-          className="mx-auto w-full max-w-[min(100%,52rem)] origin-center rounded-[1.6rem] bg-card/78 p-2 shadow-[0_18px_55px_-34px_rgba(0,0,0,0.34)] backdrop-blur-xl will-change-transform sm:p-3"
+          className="mx-auto w-full max-w-[min(100%,58rem)] origin-center will-change-transform"
           style={{
             transform: `translate3d(${offset.x}px, ${offset.y}px, 0) rotate(${rotationDeg}deg) scale(${scale})`,
             transition: gesturing ? "none" : "transform 200ms var(--motion-ease-smooth)",
@@ -298,6 +297,7 @@ export function FloorplanLightbox({
             planClassName="max-h-[min(62dvh,38rem)]"
             measurementMode={measurementMode}
             measurementSession={measurementSession}
+            presentation="lightbox"
           />
         </div>
       </div>

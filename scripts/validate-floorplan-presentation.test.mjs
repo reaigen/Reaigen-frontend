@@ -1,7 +1,12 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import { readFile } from "node:fs/promises";
 
 import { iconForKind } from "../app/lib/floorplan-icon-shapes.ts";
+import {
+  attachFloorplanFixtureHierarchy,
+  removeRedundantCountertopFixtures,
+} from "../app/lib/floorplan-fixture-hierarchy.ts";
 import {
   assignLabelsToRoomPolygons,
   highClearanceLabelPoint,
@@ -36,6 +41,51 @@ test("storage glyph occupies the measured footprint instead of a fixed aspect bo
   assert.equal(rectangles[0].w, icon.w);
   assert.equal(rectangles[0].h, icon.d);
   assert.ok(lines.length >= 3);
+});
+
+const planObject = (id, category, center, halfW = 0.3, halfD = 0.3) => ({
+  id,
+  category,
+  center,
+  axisW: [1, 0],
+  axisD: [0, 1],
+  halfW,
+  halfD,
+});
+
+test("countertop fixtures receive a stable cabinet parent before presentation", () => {
+  const source = [
+    planObject("counter", "storage", [0, 0], 1.2, 0.25),
+    planObject("hob", "stove", [0.35, 0.04]),
+  ];
+  const hierarchical = attachFloorplanFixtureHierarchy(source);
+  assert.equal(hierarchical[1].parentId, "counter");
+});
+
+test("an oven below a co-located hob is not rendered as a second front-facing appliance", () => {
+  const source = [
+    planObject("counter", "storage", [0, 0], 1.2, 0.25),
+    planObject("hob", "stove", [0.2, 0.02]),
+    planObject("oven", "oven", [0.22, 0.02]),
+  ];
+  const composed = removeRedundantCountertopFixtures(source);
+  assert.deepEqual(composed.map(({ id }) => id), ["counter", "hob"]);
+
+  const integratedOven = iconForKind("oven", 0.28, 0.24, "counter-fixture");
+  assert.equal(integratedOven.shapes.filter((shape) => shape.t === "circle").length, 4);
+  assert.equal(integratedOven.shapes.some((shape) => shape.t === "rect"), false);
+});
+
+test("the captured 11949 kitchen composes its real hob and oven as one top view", async () => {
+  const captured = JSON.parse(await readFile(
+    new URL("../fixtures/floorplan/draft-11949-captured-input.json", import.meta.url),
+    "utf8",
+  ));
+  const composed = removeRedundantCountertopFixtures(captured.objects);
+  const parent = "a1ffe66c-17cc-452a-9bec-0e2d1eef01ad";
+  const mounted = composed.filter((object) => object.parentId === parent);
+
+  assert.deepEqual(mounted.map((object) => object.category), ["stove"]);
 });
 
 test("labels are assigned one-to-one to supported room polygons", () => {

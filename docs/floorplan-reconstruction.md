@@ -320,8 +320,10 @@ Run:
 ```bash
 npm run validate-floorplan
 npm run validate-floorplan-integration
+npm run validate-floorplan-collision
 npm run validate-floorplan-presentation
 npm run validate-floorplan-rendering
+npm run validate-currency-display
 npm run typecheck
 ```
 
@@ -334,7 +336,8 @@ Release acceptance requires:
 - zero storage intervals crossing openings;
 - deterministic output;
 - reasons for all moved, merged, or rejected objects;
-- current editor wall/opening changes feeding the next solve.
+- editor wall/opening/furniture changes surviving save and reload without
+  changing the immutable session projection.
 
 To mine or compare prior artifacts without changing runtime behavior:
 
@@ -344,26 +347,51 @@ npm run analyze-floorplan-patterns
 
 ## Editor contract
 
-The editor must solve against current state:
-
-```ts
-solveFurnitureLayout(
-  observations,
-  graphSegs(graph),
-  rooms,
-  doors,
-  windows,
-  doorConfigs
-)
-```
-
-It must never solve against `base.initialGraph` or stale captured openings.
-Wall, door, window, and room changes invalidate affected placements
-immediately. Editor preview and consumer rendering use the same symbol and
+The global placement solve uses the closest immutable raw/welded scan-wall
+baseline, exactly as iOS does. Edited walls do not invalidate object identity:
+the rigid wall-attachment pass maps supported objects from that baseline onto
+the live graph, while the collision solver handles only the active transform.
+Editor preview and consumer rendering use the same attachment, symbol, and
 door-presentation pipeline.
 
-Furniture editing remains read-only until persistence includes source pose,
-solved pose, relationship updates, status, and reasons.
+The web editor persists direct furniture authorship separately from solver
+metadata in `floorplan_furniture_edits_json`:
+
+- `deletedSourceObjectIDs` is the case-insensitive source-object tombstone set;
+- `objectCenterOverrides` stores absolute snapped-world `[x, z]` centres.
+
+The deterministic baseline solve always runs first. A lightweight rigid
+wall-attachment pass follows it; authored centres and deletions are then
+applied as absolute overrides so provenance remains intact and deleting an
+observation cannot make a merged duplicate reappear. Furniture movement uses
+swept oriented-box collision with wall, door-swing, and furniture obstacles.
+Wall movement follows the iOS rigid-push behavior: normal-only wall translation,
+connected collinear chains, furniture push propagation, and a single clamped
+wall delta when fixed geometry blocks the train.
+
+Kitchen worktop fixtures form a narrow editable hierarchy. A cooktop, sink,
+integrated oven, or dishwasher is mounted to its containing cabinet run and is
+excluded from independent floor-body collision. It may slide along the
+cabinet's local run, while cabinet moves and wall pushes carry the fixture by
+the identical delta. This mounted rule is category-specific: semantic
+RoomPlan links such as chairs related to a table remain independent bodies. If
+RoomPlan reports both a cooktop and its oven at the same cabinet position, the
+top-down presentation draws the cooktop once and suppresses the redundant
+front-facing oven footprint.
+
+The editor session also freezes its parsed scan baseline and initial projection
+at mount. Debounced saves merge new `draft_data` into the parent listing, but
+those acknowledgements are persistence results—not new geometry input—and must
+not rebuild the solver baseline or viewport scale. This is what keeps the whole
+plan stationary after a wall or furniture drop.
+
+On desktop the editor presents those rules as a compact DCC-style shell around
+the same iOS gesture lifecycle. The selected wall chain or object is visible
+during the active drag, every frame is computed from the same start scene, and
+the target is cleared on release. The global solver is cached outside the drag
+loop; only collision and rigid attachment run per frame. This prevents the
+visible sticking, dancing, and hiding failure while retaining precise mouse pan
+and zoom behavior.
 
 ## Docker deployment
 
@@ -385,5 +413,5 @@ a temporary collaborative server may run on another explicitly selected port.
   resolves it.
 - Dataset priors are currently engineering defaults and fixture-derived
   behavior, not a trained production model.
-- Furniture persistence requires a dedicated data contract before interactive
-  repositioning is enabled.
+- Rotation and dimension overrides are not yet part of the furniture-edit
+  persistence contract; current authorship covers deletion and centre moves.

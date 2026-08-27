@@ -19,6 +19,7 @@ import FloorplanEditor from "../../components/floorplan-editor";
 import { VolumesEditor } from "../../components/volumes-editor";
 import type { DraftDetailItem, DraftTourAssetsPayload, DraftUpload, SplatsByDraftPayload } from "../../lib/tour-types";
 import { baseUnitForCategory, resolveUnit, unitLabel, type UnitLookup } from "../../lib/unit-catalog";
+import { currencyDisplaySymbol } from "../../lib/currency-display";
 import { PageLoading } from "../../components/page-loading";
 import { CollectionLoading } from "../../components/collection-loading";
 import { cn } from "../../lib/utils";
@@ -137,10 +138,25 @@ const I = {
   compass: <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" className="text-foreground/55 flex-shrink-0"><circle cx="12" cy="12" r="10"/><path d="M16.24 7.76l-2.12 6.36-6.36 2.12 2.12-6.36 6.36-2.12Z"/></svg>,
   water: <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" className="text-foreground/55 flex-shrink-0"><path d="M12 2s-6 7-6 11a6 6 0 0 0 12 0c0-4-6-11-6-11Z"/></svg>,
   legal: <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" className="text-foreground/55 flex-shrink-0"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10Z"/></svg>,
-  money: <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" className="text-foreground/55 flex-shrink-0"><path d="M12 2v20M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>,
   dot: <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" className="text-foreground/55 flex-shrink-0"><circle cx="12" cy="12" r="4"/></svg>,
   check: <svg width="10" height="10" viewBox="0 0 16 16" fill="none" className="text-foreground/30 flex-shrink-0"><path d="M2 8l4 4 8-8" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/></svg>,
 };
+
+function currencyIcon(
+  currency: string | null | undefined,
+  lang: string,
+  catalogSymbol?: string | null,
+): ReactNode {
+  const symbol = currencyDisplaySymbol(currency, lang, catalogSymbol);
+  return (
+    <span
+      aria-hidden="true"
+      className="inline-flex min-w-4 items-center justify-center text-[18px] font-medium leading-none tracking-[-0.04em] text-foreground/58"
+    >
+      {symbol}
+    </span>
+  );
+}
 
 // ── Facts grid (hero stats like iOS) ──────────────────────────────────────
 
@@ -202,9 +218,12 @@ function buildRows(d: DraftDetailItem, lang: string, units: readonly UnitLookup[
     : storedLotUnit;
   const distanceUnit = baseUnitForCategory(units, "DISTANCE");
   const currencyUnit = resolveUnit(units, d.currency, "CURRENCY");
+  const currencyCode = currencyUnit?.code
+    ?? (typeof d.currency === "string" && /^[a-z]{3}$/i.test(d.currency.trim()) ? d.currency : null);
+  const moneyIcon = currencyIcon(currencyCode, lang, currencyUnit?.symbol);
   const fmtArea = (v: unknown) => v && Number(v) > 0 ? fmtWithUnit(v, areaUnit, lang) : null;
   const fmtLotArea = (v: unknown) => v && Number(v) > 0 ? fmtWithUnit(v, lotUnit, lang) : null;
-  const fmtStoredMoney = (v: unknown) => fmtMoney(v as string | number | null | undefined, currencyUnit?.code, lang);
+  const fmtStoredMoney = (v: unknown) => fmtMoney(v as string | number | null | undefined, currencyCode, lang);
 
   // ── Layout parameters (rooms beyond facts grid) ──
   push(I.rooms, t("draft.rooms", lang), sec(d, "layout", "rooms"));
@@ -309,21 +328,21 @@ function buildRows(d: DraftDetailItem, lang: string, units: readonly UnitLookup[
 
   // ── Pricing extras ──
   const deposit = sec(d, "pricing_extra", "deposit");
-  if (deposit && Number(deposit) > 0) push(I.money, t("draft.deposit", lang), fmtStoredMoney(deposit));
+  if (deposit && Number(deposit) > 0) push(moneyIcon, t("draft.deposit", lang), fmtStoredMoney(deposit));
   const agencyFee = sec(d, "pricing_extra", "agency_fee");
-  if (agencyFee && Number(agencyFee) > 0) push(I.money, t("draft.agencyFee", lang), fmtStoredMoney(agencyFee));
+  if (agencyFee && Number(agencyFee) > 0) push(moneyIcon, t("draft.agencyFee", lang), fmtStoredMoney(agencyFee));
   const utilitiesAdv = sec(d, "pricing_extra", "utilities_advance");
-  if (utilitiesAdv && Number(utilitiesAdv) > 0) push(I.money, t("draft.utilitiesAdvance", lang), fmtStoredMoney(utilitiesAdv));
+  if (utilitiesAdv && Number(utilitiesAdv) > 0) push(moneyIcon, t("draft.utilitiesAdvance", lang), fmtStoredMoney(utilitiesAdv));
   const furnSepPrice = sec(d, "pricing_extra", "furnishing_separate_price");
-  if (furnSepPrice && Number(furnSepPrice) > 0) push(I.money, t("draft.furnishingSeparatePrice", lang), fmtStoredMoney(furnSepPrice));
+  if (furnSepPrice && Number(furnSepPrice) > 0) push(moneyIcon, t("draft.furnishingSeparatePrice", lang), fmtStoredMoney(furnSepPrice));
   const parkPrice = sec(d, "pricing_extra", "parking_standalone_price");
-  if (parkPrice && Number(parkPrice) > 0) push(I.money, t("draft.parkingStandalonePrice", lang), fmtStoredMoney(parkPrice));
+  if (parkPrice && Number(parkPrice) > 0) push(moneyIcon, t("draft.parkingStandalonePrice", lang), fmtStoredMoney(parkPrice));
   const storPrice = sec(d, "pricing_extra", "storage_price");
-  if (storPrice && Number(storPrice) > 0) push(I.money, t("draft.storagePrice", lang), fmtStoredMoney(storPrice));
+  if (storPrice && Number(storPrice) > 0) push(moneyIcon, t("draft.storagePrice", lang), fmtStoredMoney(storPrice));
   const vatMode = sec(d, "pricing_extra", "vat_mode");
-  if (vatMode) push(I.money, t("draft.vatMode", lang), enumT("vat", vatMode, lang));
+  if (vatMode) push(moneyIcon, t("draft.vatMode", lang), enumT("vat", vatMode, lang));
   const vatRate = sec(d, "pricing_extra", "vat_rate");
-  if (vatRate && Number(vatRate) > 0) push(I.money, t("draft.vatRate", lang), fmt(vatRate as number, lang));
+  if (vatRate && Number(vatRate) > 0) push(moneyIcon, t("draft.vatRate", lang), fmt(vatRate as number, lang));
 
   return rows;
 }
@@ -333,11 +352,14 @@ function buildRows(d: DraftDetailItem, lang: string, units: readonly UnitLookup[
 function buildMonthlyCosts(d: DraftDetailItem, lang: string, units: readonly UnitLookup[]): Row[] {
   const rows: Row[] = [];
   const currencyUnit = resolveUnit(units, d.currency, "CURRENCY");
+  const currencyCode = currencyUnit?.code
+    ?? (typeof d.currency === "string" && /^[a-z]{3}$/i.test(d.currency.trim()) ? d.currency : null);
+  const moneyIcon = currencyIcon(currencyCode, lang, currencyUnit?.symbol);
   const push = (label: string, value: unknown) => {
     if (value == null || value === "") return;
     const n = Number(value);
     if (!Number.isFinite(n) || n <= 0) return;
-    rows.push({ icon: I.money, label, value: fmtMoney(n, currencyUnit?.code, lang)! });
+    rows.push({ icon: moneyIcon, label, value: fmtMoney(n, currencyCode, lang)! });
   };
   type LK = import("../../lib/locales/en").LocaleKey;
   const monthlyFields: [string, LK][] = [
@@ -1281,7 +1303,7 @@ export default function DraftPreviewPage({
                     <div className="draft-cost-grid grid grid-cols-1 gap-2.5 sm:grid-cols-2">
                       {monthlyCosts.map((row, index) => (
                         <div key={`${row.label}-${index}`} className="flex min-w-0 items-center gap-3 rounded-[1.25rem] border border-border/65 bg-card/88 px-3.5 py-3.5 shadow-control backdrop-blur-xl">
-                          <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full border border-border/55 bg-surface-subtle/75 text-foreground/62 shadow-[inset_0_1px_0_rgba(255,255,255,0.82)]">{I.money}</span>
+                          <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full border border-border/55 bg-surface-subtle/75 text-foreground/62 shadow-[inset_0_1px_0_rgba(255,255,255,0.82)]">{row.icon}</span>
                           <span className="min-w-0 flex-1 leading-tight">
                             <span className="block break-words text-[11px] font-medium text-foreground/52">{row.label}</span>
                             <span className="mt-1.5 block select-text break-words text-[14px] font-semibold text-foreground tabular-nums">{row.value}</span>

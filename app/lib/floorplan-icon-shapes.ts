@@ -441,8 +441,30 @@ export function iconForKind(
       return FURNITURE_ICONS.washer_dryer_var_01;
     case "dishwasher":
       return FURNITURE_ICONS.dishwasher_var_01;
-    case "oven":
-      return FURNITURE_ICONS.oven_var_01;
+    case "oven": {
+      // An oven integrated below a worktop is not viewed from the front in a
+      // top-down floorplan. RoomPlan frequently reports the combined hob/oven
+      // as `oven`, so use the same planar burner language as a cooktop when it
+      // is attached to counter casework. Standalone ovens keep their own glyph.
+      if (presentationVariant !== "counter-fixture") {
+        return FURNITURE_ICONS.oven_var_01;
+      }
+      const w = Math.max(2 * halfW, 0.01);
+      const d = Math.max(2 * halfD, 0.01);
+      const r = Math.min(w, d) * 0.14;
+      const px = Math.min(w * 0.24, Math.max(0, w / 2 - r * 1.35));
+      const py = Math.min(d * 0.24, Math.max(0, d / 2 - r * 1.35));
+      return {
+        w,
+        d,
+        shapes: [
+          circle(-px, -py, r),
+          circle(px, -py, r),
+          circle(-px, py, r),
+          circle(px, py, r),
+        ],
+      };
+    }
     case "television":
       return FURNITURE_ICONS.television_var_01;
     case "stairs":

@@ -12,6 +12,17 @@ import type { DraftDataEntry } from "./tour-types";
 import { parseRoomPlanJSON, type RoomType } from "@reaigen/floorplan-solver";
 import { LAYOUT_PRIORS } from "./floorplan-layout-priors";
 import { solveLayout } from "./floorplan-layout-solver";
+import {
+  isFloorplanRefrigerator,
+  isFloorplanStorage,
+  isKitchenFixture,
+  removeRedundantCountertopFixtures,
+} from "./floorplan-fixture-hierarchy";
+
+export {
+  attachFloorplanFixtureHierarchy,
+  removeRedundantCountertopFixtures,
+} from "./floorplan-fixture-hierarchy";
 
 export type V2 = [number, number]; // [x, z] world metres
 
@@ -55,6 +66,10 @@ export interface ObjectXZ {
   parentId?: string;
   attributes?: string[];
   sourceRoomId?: string;
+  /** Presentation-only role. Physics continues to use the measured footprint. */
+  presentationVariant?: "kitchen-counter" | "counter-fixture";
+  /** Local X offsets, in metres, for seams in a presented counter run. */
+  counterSeams?: number[];
 }
 
 export interface SolverRoomXZ {
@@ -995,14 +1010,8 @@ export function rawRoomLabel(n: number, map: Record<string, string>): { label: s
   return { label: explicit, typeCode };
 }
 
-const INTEGRATED_APPLIANCE_KINDS = new Set(["stove", "oven", "sink", "dishwasher"]);
+const objectDot = (a: V2, b: V2): number => a[0] * b[0] + a[1] * b[1];
 
-/**
- * Consumer-plan geometry for appliances contained by casework. The solver and
- * debug layers retain the measured OBB; only the presentation copy is aligned
- * and depth-fitted to its cabinet run so two complete boxes are not drawn on
- * top of one another.
- */
 /**
  * Converts noisy RoomPlan service-fixture observations into readable plan
  * symbols without changing solver geometry. Kitchen base storage containing a
@@ -1011,56 +1020,17 @@ const INTEGRATED_APPLIANCE_KINDS = new Set(["stove", "oven", "sink", "dishwasher
  * the room.
  */
 export function prepareFloorplanPresentationObjects(objects: ObjectXZ[]): ObjectXZ[] {
-  const normalizedKind = (object: ObjectXZ): string =>
-    String(object.category ?? "")
-      .toLowerCase()
-      .replace(/[\s_-]+/g, "");
-
-  const isStorage = (object: ObjectXZ): boolean => {
-    const kind = normalizedKind(object);
-    return kind.includes("storage") || kind.includes("cabinet");
-  };
-
-  const isKitchenFixture = (object: ObjectXZ): boolean => {
-    const kind = normalizedKind(object);
-    return (
-      kind.includes("stove") ||
-      kind.includes("cooktop") ||
-      kind.includes("oven") ||
-      kind.includes("sink") ||
-      kind.includes("dishwasher")
-    );
-  };
-
-  const isRefrigerator = (object: ObjectXZ): boolean =>
-    normalizedKind(object).includes("refrigerator");
-
-  const dot = (a: V2, b: V2): number => a[0] * b[0] + a[1] * b[1];
-  const storages = objects.filter(isStorage);
+  objects = removeRedundantCountertopFixtures(objects);
+  const dot = objectDot;
+  const storages = objects.filter(isFloorplanStorage);
   const fixtures = objects.filter(isKitchenFixture);
   const overrides = new Map<ObjectXZ, ObjectXZ>();
 
   const fixturesByStorage = new Map<ObjectXZ, ObjectXZ[]>();
   for (const fixture of fixtures) {
-    let matched: ObjectXZ | null = null;
-    let bestDistance = Number.POSITIVE_INFINITY;
-
-    for (const storage of storages) {
-      const delta: V2 = [
-        fixture.center[0] - storage.center[0],
-        fixture.center[1] - storage.center[1],
-      ];
-      const along = Math.abs(dot(delta, storage.axisW));
-      const across = Math.abs(dot(delta, storage.axisD));
-      const withinRun = along <= storage.halfW + 0.15;
-      const withinCounterBand = across <= Math.max(0.45, storage.halfD + 0.2);
-      const distance = along * along + across * across;
-
-      if (withinRun && withinCounterBand && distance < bestDistance) {
-        matched = storage;
-        bestDistance = distance;
-      }
-    }
+    const matched = storages.find(
+      (storage) => storage.id.toLowerCase() === fixture.parentId?.toLowerCase()
+    ) ?? null;
 
     if (matched) {
       const group = fixturesByStorage.get(matched) ?? [];
@@ -1070,7 +1040,7 @@ export function prepareFloorplanPresentationObjects(objects: ObjectXZ[]): Object
   }
 
   const referenceObjects = objects.filter(
-    (object) => !isStorage(object) && !isKitchenFixture(object)
+    (object) => !isFloorplanStorage(object) && !isKitchenFixture(object)
   );
 
   for (const [storage, groupedFixtures] of fixturesByStorage) {
@@ -1125,7 +1095,7 @@ export function prepareFloorplanPresentationObjects(objects: ObjectXZ[]): Object
       axisD: inwardAxisD,
       halfD: counterHalfDepth,
       presentationVariant: "kitchen-counter",
-    } as ObjectXZ & { presentationVariant: "kitchen-counter" });
+    });
 
     const occupiedIntervals: Array<[number, number]> = [];
     for (const fixture of groupedFixtures) {
@@ -1172,7 +1142,7 @@ export function prepareFloorplanPresentationObjects(objects: ObjectXZ[]): Object
         halfW: fixtureHalfWidth,
         halfD: fixtureHalfDepth,
         presentationVariant: "counter-fixture",
-      } as ObjectXZ & { presentationVariant: "counter-fixture" });
+      });
     }
 
     const counterSeams: number[] = [];
@@ -1203,7 +1173,7 @@ export function prepareFloorplanPresentationObjects(objects: ObjectXZ[]): Object
       counterSeams: [...new Set(counterSeams.map((value) => Math.round(value * 1000) / 1000))]
         .filter((value) => Math.abs(value) < storage.halfW - 0.04)
         .sort((a, b) => a - b),
-    } as ObjectXZ & { counterSeams: number[] });
+    });
   }
 
   // Generic wall storage keeps its exact solved footprint. Only orient the
@@ -1243,7 +1213,7 @@ export function prepareFloorplanPresentationObjects(objects: ObjectXZ[]): Object
   // furnished room so the symbol remains readable instead of using an
   // abstract appliance asterisk.
   const refrigeratorReferences = referenceObjects.filter(
-    (object) => !isRefrigerator(object)
+    (object) => !isFloorplanRefrigerator(object)
   );
   if (refrigeratorReferences.length > 0) {
     const referenceCenter: V2 = [
@@ -1252,7 +1222,7 @@ export function prepareFloorplanPresentationObjects(objects: ObjectXZ[]): Object
       refrigeratorReferences.reduce((sum, object) => sum + object.center[1], 0) /
         refrigeratorReferences.length,
     ];
-    for (const refrigerator of objects.filter(isRefrigerator)) {
+    for (const refrigerator of objects.filter(isFloorplanRefrigerator)) {
       const towardRoom: V2 = [
         referenceCenter[0] - refrigerator.center[0],
         referenceCenter[1] - refrigerator.center[1],
