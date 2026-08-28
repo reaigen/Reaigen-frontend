@@ -8,6 +8,7 @@ import { resolveUnit, unitLabel, type UnitLookup } from "../lib/unit-catalog";
 import { ChevronDownIcon, CloseIcon, DocumentIcon, MapPinIcon } from "./icons";
 import { FormattedDescription } from "./formatted-description";
 import { PropertyFactTile } from "./property-fact-tile";
+import { localizeSharedAddress, sharedPropertyDisplayItems } from "../lib/shared-property-display";
 
 function formatPrice(price: string | number | null | undefined, currency: string | undefined, lang: string): string {
   if (price == null || price === "") return "";
@@ -20,7 +21,7 @@ function formatPrice(price: string | number | null | undefined, currency: string
       maximumFractionDigits: 0,
     }).format(num);
   } catch {
-    return num.toLocaleString();
+    return num.toLocaleString(lang);
   }
 }
 
@@ -56,13 +57,14 @@ export function SharedPropertyPanel({
     .filter((upload) => !upload.mime_type || upload.mime_type.startsWith("image/"))
     .slice(0, 6);
   const hasPhotos = photos.length > 0;
-  const hasFeatures = (draftData.data?.length ?? 0) > 0;
+  const details = sharedPropertyDisplayItems(draftData.data, lang, units, currency?.code ?? draftData.currency, draftData.area_unit);
+  const hasFeatures = details.length > 0;
   const hasTitle = !!draftData.title;
   const hasAnyContent = hasTitle || hasPrice || hasAddress || hasFacts || hasDescription || hasPhotos || hasFeatures;
 
   if (!hasAnyContent) return null;
 
-  const addressText = draftData.display_address || [draftData.city, draftData.state, draftData.country].filter(Boolean).join(", ");
+  const addressText = localizeSharedAddress(draftData.display_address, draftData.city, draftData.state, draftData.country, lang);
   const facts = [
     draftData.bedrooms != null
       ? { label: t("draft.bedrooms", lang), value: String(draftData.bedrooms) }
@@ -174,9 +176,9 @@ export function SharedPropertyPanel({
 
           {hasFeatures && (
             <div className="mt-4 flex flex-wrap gap-1.5 border-t border-border/40 pt-3">
-              {draftData.data!.map((detail, index) => (
-                <span key={`${detail.key}-${index}`} className="rounded-full border border-border/50 bg-surface-subtle px-2.5 py-1 text-[10px] font-medium text-foreground/60">
-                  {detail.key}: {detail.value}
+              {details.map((detail) => (
+                <span key={detail.key} className="rounded-full bg-surface-subtle px-2.5 py-1 text-[10px] font-medium text-foreground/65">
+                  {detail.label}: {detail.value}
                 </span>
               ))}
             </div>

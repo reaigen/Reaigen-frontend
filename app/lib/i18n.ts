@@ -30,6 +30,30 @@ export function getBrowserLanguage(): string {
 }
 
 /**
+ * Resolve the language for an anonymous public share. Explicit links remain
+ * deterministic, while the deployment can use its trusted country header for
+ * recipients who have no Reaigen profile. Browser language is the safe
+ * fallback for local development and privacy relays that omit country data.
+ */
+export async function getPublicShareLanguage(): Promise<string> {
+  if (typeof window === "undefined") return "en";
+  const explicit = new URLSearchParams(window.location.search).get("lang");
+  if (explicit && SUPPORTED_LOCALES.includes(explicit.slice(0, 2).toLowerCase() as (typeof SUPPORTED_LOCALES)[number])) {
+    return normalizeLanguage(explicit);
+  }
+  try {
+    const response = await fetch("/api/public-locale", { cache: "no-store", credentials: "omit" });
+    if (response.ok) {
+      const payload = await response.json() as { language?: string | null };
+      if (payload.language) return normalizeLanguage(payload.language);
+    }
+  } catch {
+    // Browser locale remains a complete offline/local-development fallback.
+  }
+  return getBrowserLanguage();
+}
+
+/**
  * Format a date string according to the user's date_format preference.
  * Supports "EU" (DD.MM.YYYY), "US" (MM/DD/YYYY), "ISO" (YYYY-MM-DD).
  * Falls back to locale-aware short format.

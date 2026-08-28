@@ -20,24 +20,33 @@ import {
   ArrowRightIcon,
   DocumentIcon,
   FloorplanIcon,
+  HomeIcon,
   ImageIcon,
+  InfoIcon,
+  LayoutIcon,
   MapPinIcon,
+  PriceIcon,
+  RulerIcon,
+  StarIcon,
   TechnicalIcon,
   TourIcon,
+  UtilitiesIcon,
   VideoIcon,
 } from "./icons";
+import type { PropertySpecSection } from "../lib/property-field-registry";
 import { cn } from "../lib/utils";
+import { localizeSharedAddress, sharedPropertyDisplayItems } from "../lib/shared-property-display";
 
 // ── Helpers ────────────────────────────────────────────────────────────
 
-function formatPrice(price: string | number | null | undefined, currency?: string): string {
+function formatPrice(price: string | number | null | undefined, currency: string | undefined, lang: string): string {
   if (price == null || price === "") return "";
   const num = typeof price === "string" ? parseFloat(price) : price;
   if (Number.isNaN(num) || num === 0) return "";
   try {
-    return new Intl.NumberFormat(undefined, { style: currency ? "currency" : "decimal", currency: currency || undefined, maximumFractionDigits: 0 }).format(num);
+    return new Intl.NumberFormat(lang, { style: currency ? "currency" : "decimal", currency: currency || undefined, maximumFractionDigits: 0 }).format(num);
   } catch {
-    return num.toLocaleString();
+    return num.toLocaleString(lang);
   }
 }
 
@@ -50,6 +59,24 @@ const I = {
   year: <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" className="text-foreground/55"><rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4"/><path d="M8 2v4"/><path d="M3 10h18"/></svg>,
   lot:  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" className="text-foreground/55"><path d="M2 22l5-5"/><path d="M7 22H2v-5"/><path d="M22 2l-5 5"/><path d="M17 2h5v5"/><rect x="6" y="6" width="12" height="12" rx="1"/></svg>,
 };
+
+function propertyDetailIcon(key: string, section: PropertySpecSection) {
+  if (key === "bedrooms") return I.bed;
+  if (key === "bathrooms" || key === "toilets" || key === "separate_toilets") return I.bath;
+  if (key === "year_built" || key === "renovation_year") return I.year;
+  if (key === "floor_area" || key === "land_area") return I.area;
+  if (key === "offer_type") return <PriceIcon size={16} />;
+  if (key === "property_type") return <HomeIcon size={16} />;
+  if (key === "property_subtype") return <LayoutIcon size={16} />;
+  if (section === "areas") return <RulerIcon size={16} />;
+  if (section === "technical") return <TechnicalIcon size={16} />;
+  if (section === "utilities") return <UtilitiesIcon size={16} />;
+  if (section === "features") return <StarIcon size={16} />;
+  if (section === "legal") return <DocumentIcon size={16} />;
+  if (section === "pricing_extra") return <PriceIcon size={16} />;
+  if (section === "layout") return <LayoutIcon size={16} />;
+  return <InfoIcon size={16} />;
+}
 
 // ── Shared floorplan (composite + room labels, no geometry/zoom) ──────
 
@@ -147,8 +174,9 @@ export function SharedDraftView({ draftData, lang, hasTour, tours, onOpenTour, f
   const currency = resolveUnit(units, draftData.currency, "CURRENCY");
   const areaUnit = resolveUnit(units, draftData.area_unit, "AREA");
   const lotUnit = resolveUnit(units, draftData.lot_size_unit, "AREA");
-  const price = formatPrice(draftData.price, currency?.code);
-  const addressText = draftData.display_address || [draftData.city, draftData.state, draftData.country].filter(Boolean).join(", ");
+  const price = formatPrice(draftData.price, currency?.code, lang);
+  const addressText = localizeSharedAddress(draftData.display_address, draftData.city, draftData.state, draftData.country, lang);
+  const details = sharedPropertyDisplayItems(draftData.data, lang, units, currency?.code ?? draftData.currency, draftData.area_unit);
   const photos = (draftData.uploads ?? []).filter((upload) => !upload.mime_type || upload.mime_type.startsWith("image/"));
   const videos = (draftData.uploads ?? []).filter((upload) => upload.mime_type?.startsWith("video/"));
   const videoIndex = Math.max(0, Math.min(activeVideoIndex, videos.length - 1));
@@ -157,23 +185,46 @@ export function SharedDraftView({ draftData, lang, hasTour, tours, onOpenTour, f
   const webTours = (tours ?? draftData.tours ?? [])
     .filter((tour) => !tour.targets.length || tour.targets.includes("web"))
     .sort((left, right) => left.sort_order - right.sort_order);
-  const tourCopy = lang.toLowerCase().startsWith("sk")
-    ? {
+  const publicCopy = {
+    sk: {
         title: "Virtuálne prehliadky",
         subtitle: "Vyberte si, ktorú verziu nehnuteľnosti chcete vidieť.",
         primary: "Predvolená",
         open: "Otvoriť",
         renovation: "Po rekonštrukcii",
         rescan: "Nové snímanie",
-      }
-    : {
+        price: "Cena",
+      },
+    cs: {
+        title: "Virtuální prohlídky",
+        subtitle: "Vyberte verzi nemovitosti, kterou chcete zobrazit.",
+        primary: "Výchozí",
+        open: "Otevřít",
+        renovation: "Po rekonstrukci",
+        rescan: "Nové snímání",
+        price: "Cena",
+      },
+    de: {
+        title: "Virtuelle Rundgänge",
+        subtitle: "Wählen Sie die Version der Immobilie aus, die Sie ansehen möchten.",
+        primary: "Standard",
+        open: "Öffnen",
+        renovation: "Nach der Renovierung",
+        rescan: "Neue Aufnahme",
+        price: "Preis",
+      },
+    en: {
         title: "Virtual tours",
         subtitle: "Choose which version of the property you want to explore.",
         primary: "Default",
         open: "Open",
         renovation: "After renovation",
         rescan: "New capture",
-      };
+        price: "Price",
+      },
+  } as const;
+  const language = lang.slice(0, 2).toLowerCase() as keyof typeof publicCopy;
+  const tourCopy = publicCopy[language] ?? publicCopy.en;
 
   const has = {
     title: !!draftData.title,
@@ -184,7 +235,7 @@ export function SharedDraftView({ draftData, lang, hasTour, tours, onOpenTour, f
     photos: photos.length > 0 || videos.length > 0,
     floorplan: !!draftData.floorplan,
     tours: Boolean(hasTour),
-    features: (draftData.data?.length ?? 0) > 0,
+    features: details.length > 0,
   };
   const hasSummary = has.title || has.address || has.price || has.facts;
   const hasAny = hasSummary || has.description || has.photos || has.floorplan || has.tours || has.features;
@@ -314,7 +365,7 @@ export function SharedDraftView({ draftData, lang, hasTour, tours, onOpenTour, f
                     <div className="glossy-capsule rounded-2xl px-4 py-3 text-foreground sm:min-w-40 sm:text-right">
                       <p className="select-text text-[24px] font-semibold leading-none tabular-nums sm:text-[28px]">{price}</p>
                       <p className="mt-2 text-[9px] font-semibold uppercase tracking-[0.14em] text-foreground/48">
-                        {lang.toLowerCase().startsWith("sk") ? "Cena" : "Price"}
+                        {tourCopy.price}
                       </p>
                     </div>
                   ) : null}
@@ -323,11 +374,11 @@ export function SharedDraftView({ draftData, lang, hasTour, tours, onOpenTour, f
                 {has.facts ? (
                   <div className="mt-5 grid grid-cols-2 gap-2 border-t border-border/55 pt-4 sm:grid-cols-3 lg:grid-cols-5">
                     {([
-                      [I.bed, draftData.bedrooms, t("shared.bed", lang)],
-                      [I.bath, draftData.bathrooms, t("shared.bath", lang)],
-                      [I.area, draftData.area != null && draftData.area !== "" ? `${draftData.area}${unitLabel(areaUnit) ? ` ${unitLabel(areaUnit)}` : ""}` : null, t("draft.area", lang)],
+                      [I.bed, draftData.bedrooms != null ? new Intl.NumberFormat(lang).format(draftData.bedrooms) : null, t("shared.bed", lang)],
+                      [I.bath, draftData.bathrooms != null ? new Intl.NumberFormat(lang).format(draftData.bathrooms) : null, t("shared.bath", lang)],
+                      [I.area, draftData.area != null && draftData.area !== "" ? `${new Intl.NumberFormat(lang, { maximumFractionDigits: 2 }).format(Number(draftData.area))}${unitLabel(areaUnit) ? ` ${unitLabel(areaUnit)}` : ""}` : null, t("draft.area", lang)],
                       [I.year, draftData.year_built, t("draft.yearBuilt", lang)],
-                      [I.lot, draftData.lot_size != null && draftData.lot_size !== "" ? `${draftData.lot_size}${unitLabel(lotUnit) ? ` ${unitLabel(lotUnit)}` : ""}` : null, t("draft.lotSize", lang)],
+                      [I.lot, draftData.lot_size != null && draftData.lot_size !== "" ? `${new Intl.NumberFormat(lang, { maximumFractionDigits: 2 }).format(Number(draftData.lot_size))}${unitLabel(lotUnit) ? ` ${unitLabel(lotUnit)}` : ""}` : null, t("draft.lotSize", lang)],
                     ] as [React.ReactNode, string | number | null | undefined, string | null][])
                       .filter(([, value]) => value != null && value !== "")
                       .map(([icon, value, label], index) => (
@@ -426,11 +477,16 @@ export function SharedDraftView({ draftData, lang, hasTour, tours, onOpenTour, f
                   <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-surface-subtle text-foreground/60"><TechnicalIcon size={16} /></span>
                   <h2 className="text-[16px] font-semibold tracking-[-0.015em]">{t("draft.details", lang)}</h2>
                 </div>
-                <dl className="grid gap-x-8 sm:grid-cols-2">
-                  {draftData.data!.map((detail, index) => (
-                    <div key={`${detail.key}-${index}`} className="flex items-baseline justify-between gap-4 border-t border-border/45 py-3 first:border-t-0 sm:[&:nth-child(2)]:border-t-0">
-                      <dt className="text-[12px] text-muted-foreground">{detail.key}</dt>
-                      <dd className="select-text text-right text-[13px] font-semibold text-foreground/80">{detail.value}</dd>
+                <dl className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
+                  {details.map((detail) => (
+                    <div key={detail.key} className="flex min-w-0 items-center gap-3 rounded-2xl bg-surface-subtle px-3.5 py-3">
+                      <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-card text-foreground/58 shadow-control">
+                        {propertyDetailIcon(detail.key, detail.section)}
+                      </span>
+                      <span className="min-w-0">
+                        <dt className="truncate text-[10px] font-semibold uppercase tracking-[0.07em] text-muted-foreground">{detail.label}</dt>
+                        <dd className="mt-1 select-text truncate text-[14px] font-semibold text-foreground/82">{detail.value}</dd>
+                      </span>
                     </div>
                   ))}
                 </dl>
@@ -463,16 +519,16 @@ export function SharedDraftView({ draftData, lang, hasTour, tours, onOpenTour, f
         )}
       </main>
 
-      {/* Footer — localized "Shared via {name}" with the brand span injected at the placeholder */}
-      <footer className="mt-auto shrink-0 border-t border-border/30 bg-background pb-[max(1rem,env(safe-area-inset-bottom))] pl-[max(1rem,env(safe-area-inset-left))] pr-[max(1rem,env(safe-area-inset-right))] pt-4 sm:px-8 sm:py-5">
+      {/* The public brand belongs to the page edge, not in an in-content pill. */}
+      <footer className="mt-8 shrink-0 border-t border-border/45 bg-card/55 pb-[max(1.25rem,env(safe-area-inset-bottom))] pl-[max(1rem,env(safe-area-inset-left))] pr-[max(1rem,env(safe-area-inset-right))] pt-5 sm:px-8 sm:py-6">
         <div className="mx-auto flex w-full max-w-[1120px] items-center justify-center text-center">
-        <span className="glossy-capsule inline-flex min-h-10 items-baseline gap-2 rounded-full px-4 text-[10px] font-medium tracking-[0.01em] text-foreground/58">
+        <span className="inline-flex items-baseline gap-1.5 text-[11px] font-medium tracking-[0.01em] text-muted-foreground">
           {(() => {
             const [before, after = ""] = t("shared.footerSharedVia", lang).split("{name}");
             return (
               <>
                 {before.trim()}
-                <ReaigenWordmark className="inline-block text-[18px] leading-none text-foreground/86" />
+                <ReaigenWordmark className="inline-block text-[17px] leading-none text-foreground/82" />
                 {after.trim()}
               </>
             );

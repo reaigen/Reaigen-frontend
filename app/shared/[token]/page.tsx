@@ -33,7 +33,7 @@ import { SharedPropertyPanel } from "../../components/shared-property-panel";
 import { SharedDraftView } from "../../components/shared-draft-view";
 import { Button } from "../../lib/ui/button";
 import { Input } from "../../lib/ui/input";
-import { getBrowserLanguage, t } from "../../lib/i18n";
+import { getBrowserLanguage, getPublicShareLanguage, t } from "../../lib/i18n";
 import { PageLoading } from "../../components/page-loading";
 import type { SplatViewerHandle } from "../../components/splat-viewer";
 import type { UnitLookup } from "../../lib/unit-catalog";
@@ -146,9 +146,9 @@ function SharedAccessShell({ children, lang }: { children: ReactNode; lang: stri
           {children}
         </section>
       </main>
-      <footer className="shrink-0 border-t border-border/30 bg-background pb-[max(1rem,env(safe-area-inset-bottom))] pt-4 text-center">
-        <span className="glossy-capsule inline-flex min-h-10 items-baseline gap-2 rounded-full px-4 text-[10px] font-medium tracking-[0.01em] text-foreground/58">
-          {before.trim()}<ReaigenWordmark className="text-[18px] leading-none text-foreground/86" />{after.trim()}
+      <footer className="shrink-0 border-t border-border/45 bg-card/55 pb-[max(1.25rem,env(safe-area-inset-bottom))] pt-5 text-center">
+        <span className="inline-flex items-baseline gap-1.5 text-[11px] font-medium tracking-[0.01em] text-muted-foreground">
+          {before.trim()}<ReaigenWordmark className="text-[17px] leading-none text-foreground/82" />{after.trim()}
         </span>
       </footer>
     </div>
@@ -162,7 +162,16 @@ export default function SharedPage({ params }: { params: Promise<{ token: string
 
   const [lang, setLang] = useState("en");
   const langRef = useRef(lang);
-  useEffect(() => { setLang(getBrowserLanguage()); }, []);
+  useEffect(() => {
+    // Paint in the browser language immediately, then use the deployment's
+    // trusted country hint when available. An explicit ?lang= always wins.
+    setLang(getBrowserLanguage());
+    let active = true;
+    void getPublicShareLanguage().then((resolved) => {
+      if (active) setLang(resolved);
+    });
+    return () => { active = false; };
+  }, []);
   useEffect(() => { langRef.current = lang; }, [lang]);
 
   // Data
