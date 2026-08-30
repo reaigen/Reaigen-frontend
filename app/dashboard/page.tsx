@@ -16,7 +16,7 @@ import { PageHeader } from "../components/page-header";
 import { StatusPill } from "../components/status-pill";
 import { SearchField } from "../components/search-field";
 import { GridLayoutToggle } from "../components/grid-layout-toggle";
-import { ImageIcon, InfoIcon, ShareIcon } from "../components/icons";
+import { ImageIcon, InfoIcon } from "../components/icons";
 import { Button } from "../lib/ui/button";
 import { currentGalleryUploads } from "../lib/media";
 import { readDraftPageCache, writeDraftPageCache } from "../lib/resilient-draft-cache";
@@ -435,15 +435,6 @@ export default function DashboardPage() {
                     </div>
                   </Link>
 
-                  <Link
-                    href={`/draft/${draft.id}?sharing=1`}
-                    prefetch
-                    // No backdrop blur: one per card puts a blurred region per row on the scroll path.
-                    className="floating-icon-button-sm pen-touch-target absolute right-4 top-4 z-10 flex items-center justify-center border border-white/15 bg-black/55 text-white/85 shadow-sm sm:right-5 sm:top-5 transition-[background-color,color,opacity] hover:bg-black/75 hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white focus-visible:ring-offset-2 focus-visible:ring-offset-black md:opacity-0 md:group-hover:opacity-100 md:group-focus-within:opacity-100"
-                    aria-label={t("draft.share", lang)}
-                  >
-                    <ShareIcon size={14} />
-                  </Link>
                 </CollectionCard>
               );
             })}

@@ -896,7 +896,10 @@ export function DraftTourAssetsPanel({
           </div>
         </div>
       ) : (
-        <div className="draft-tour-asset-grid grid grid-cols-1 gap-3 lg:grid-cols-2">
+        <div className={cn(
+          "draft-tour-asset-grid grid grid-cols-1 gap-3",
+          overviewAssets.length > 1 && "lg:grid-cols-2",
+        )}>
           {overviewAssets.map((asset, index) => {
             const selection = selections[asset.id];
             const state = assetStatus(asset, selection, text, lang);
@@ -928,7 +931,10 @@ export function DraftTourAssetsPanel({
                   one now that the platform badges no longer force a second row
                   of pills beside it; desktop keeps actions on their own column.
                 */
-                className="draft-tour-asset-card grid min-w-0 grid-cols-[auto_minmax(0,1fr)] items-center gap-3 rounded-[1.4rem] border border-border/65 bg-card/88 p-3.5 shadow-control backdrop-blur-xl transition-[border-color,box-shadow,transform] hover:-translate-y-px hover:border-foreground/18 hover:shadow-card sm:gap-4 sm:p-4"
+                className={cn(
+                  "draft-tour-asset-card grid min-w-0 grid-cols-[auto_minmax(0,1fr)] items-center gap-3 rounded-[1.4rem] border border-border/65 bg-card/88 p-3.5 shadow-control backdrop-blur-xl transition-[border-color,box-shadow,transform] hover:-translate-y-px hover:border-foreground/18 hover:shadow-card sm:gap-4 sm:p-4",
+                  overviewAssets.length === 1 && "lg:grid-cols-[auto_minmax(0,1fr)_minmax(18rem,auto)] lg:px-5",
+                )}
               >
                 <div className={cn(
                   "relative shrink-0 overflow-hidden bg-surface-subtle ring-1 ring-inset ring-border/45",
@@ -1022,6 +1028,7 @@ export function DraftTourAssetsPanel({
                   <div className={cn(
                     "col-span-2 grid grid-cols-2 gap-2 border-t border-border/45 pt-3",
                     !canOpen && "hidden md:grid",
+                    overviewAssets.length === 1 && "lg:col-span-1 lg:col-start-3 lg:row-start-1 lg:self-center lg:border-l lg:border-t-0 lg:pl-4 lg:pt-0",
                   )}>
                     {createAccessLoading ? (
                       <span

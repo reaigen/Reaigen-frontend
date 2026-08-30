@@ -1234,12 +1234,12 @@ export default function DraftPreviewPage({
             {hasSupportingDetails && (
               <div className="draft-support-contents min-w-0 space-y-7 lg:contents">
                 {rows.length > 0 && (
-                  <section className={cn(nonFloorCardCount === 1 && "lg:col-span-2")}>
+                  <section className={cn("draft-details-section", nonFloorCardCount === 1 && "lg:col-span-2")}>
                     <h2 className="mb-3 flex items-center gap-2 text-[16px] font-semibold tracking-[-0.015em]">
                       <InfoIcon size={17} className="text-foreground/65" />
                       {t("draft.details", lang)}
                     </h2>
-                    <div className="draft-detail-grid grid grid-cols-1 gap-2.5 sm:grid-cols-2">
+                    <div className="draft-detail-grid grid grid-cols-1 gap-2.5">
                       {visibleRows.map((row, index) => (
                         <div
                           key={`${row.label}-${index}`}

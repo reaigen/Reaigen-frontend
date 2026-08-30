@@ -1397,8 +1397,8 @@ export const DraftMediaManager = React.forwardRef<DraftMediaManagerHandle, {
         </div>
       ) : null}
 
-      <div className="mb-3 flex items-center justify-between gap-3">
-        <div className="min-w-0 flex-1 sm:max-w-[330px]">
+      <div className="media-manager-command-row mb-4">
+        <div className="min-w-0">
           <div className="media-filter-track selection-capsule-track grid h-auto w-full grid-cols-2" role="group" aria-label={t("draft.media.filter", lang)}>
             {(["gallery", "hidden"] as const).map((value) => {
               const count = value === "gallery" ? visibleGroups.length : hiddenGroups.length;
@@ -1427,7 +1427,7 @@ export const DraftMediaManager = React.forwardRef<DraftMediaManagerHandle, {
             })}
           </div>
         </div>
-        <div className="grid shrink-0 grid-cols-2 items-center gap-1">
+        <div className="media-manager-command-actions shrink-0 items-center gap-1">
           <Button
             type="button"
             variant={reorderMode ? "default" : "ghost"}
@@ -1573,7 +1573,7 @@ export const DraftMediaManager = React.forwardRef<DraftMediaManagerHandle, {
       ) : null}
 
       {!reorderMode && selected ? (
-        <section className="editor-glass-control mb-4 grid gap-3 rounded-[1.35rem] border px-3.5 py-3 min-[720px]:grid-cols-[minmax(0,1fr)_auto] min-[720px]:items-center" aria-label={selectedLabel}>
+        <section className="media-manager-selection editor-glass-control mb-4 rounded-[1.35rem] border px-3.5 py-3" aria-label={selectedLabel}>
           <div className="min-w-0 px-1 py-0.5">
             <div className="flex min-w-0 items-center gap-2">
               <p className="truncate text-[12px] font-semibold" title={selectedLabel}>{selectedLabel}</p>
@@ -1589,24 +1589,24 @@ export const DraftMediaManager = React.forwardRef<DraftMediaManagerHandle, {
               {selected.active.uploaded_at ? <span>{formatDate(selected.active.uploaded_at, undefined, lang)}</span> : null}
             </p>
           </div>
-          <div className="flex min-w-0 flex-wrap items-center gap-1 border-t border-border/40 pt-2.5 min-[720px]:justify-end min-[720px]:border-l min-[720px]:border-t-0 min-[720px]:pl-3 min-[720px]:pt-0">
+          <div className="media-manager-selection-actions">
             {selected.kind === "image" ? (
               <>
-                <Button data-testid="draft-media-edit-photo" type="button" variant="secondary" size="sm" onClick={() => openImageEditor(selected)} disabled={busy}>
+                <Button data-testid="draft-media-edit-photo" type="button" variant="secondary" size="sm" className="media-manager-selection-primary" onClick={() => openImageEditor(selected)} disabled={busy}>
                   <EditIcon size={13} /> {t("draft.media.editPhoto", lang)}
                 </Button>
-                <Button type="button" variant="ghost" size="sm" onClick={() => requestVersionUpload(selected)} disabled={busy || !selected.active.logical_asset_id} title={t("draft.media.uploadVersionHint", lang)}>
-                  <UploadIcon size={13} /> <span className="hidden min-[520px]:inline">{t("draft.media.uploadVersion", lang)}</span>
+                <Button type="button" variant="ghost" size="icon-sm" onClick={() => requestVersionUpload(selected)} disabled={busy || !selected.active.logical_asset_id} aria-label={t("draft.media.uploadVersion", lang)} title={t("draft.media.uploadVersionHint", lang)}>
+                  <UploadIcon size={14} />
                 </Button>
               </>
             ) : null}
-            <Button type="button" variant="ghost" size="sm" onClick={() => switchView("versions")}>
-              <VersionsIcon size={13} /> {t("draft.media.versions", lang)}
+            <Button type="button" variant="ghost" size="sm" className="min-w-12 px-2" onClick={() => switchView("versions")} aria-label={t("draft.media.versions", lang)} title={t("draft.media.versions", lang)}>
+              <VersionsIcon size={14} />
               <span className="tabular-nums text-foreground/45">{selected.versions.length}</span>
             </Button>
             {selected.visible && selected.kind === "image" && selected.id !== coverId ? (
-              <Button type="button" variant="ghost" size="sm" onClick={() => void makeCover(selected)} disabled={busy}>
-                <StarIcon size={13} /> <span className="hidden min-[620px]:inline">{t("draft.media.setCover", lang)}</span>
+              <Button type="button" variant="ghost" size="icon-sm" onClick={() => void makeCover(selected)} disabled={busy} aria-label={t("draft.media.setCover", lang)} title={t("draft.media.setCover", lang)}>
+                <StarIcon size={14} />
               </Button>
             ) : null}
             {selected.kind === "image" && selected.visible ? (
@@ -1769,8 +1769,8 @@ export const DraftMediaManager = React.forwardRef<DraftMediaManagerHandle, {
               <>
             <div className="media-manager-grid">
               {filter === "gallery" ? pending.map((item) => (
-                <article key={item.id} className="floating-panel overflow-hidden">
-                  <div className="relative aspect-[16/9] overflow-hidden bg-surface-subtle">
+                <article key={item.id} className="media-manager-card floating-panel overflow-hidden">
+                  <div className="media-manager-card-visual relative overflow-hidden bg-surface-subtle">
                     <img src={item.url} alt={item.name} className="h-full w-full object-cover" />
                     {item.state === "failed" ? (
                       <button
@@ -1783,7 +1783,7 @@ export const DraftMediaManager = React.forwardRef<DraftMediaManagerHandle, {
                       </button>
                     ) : <LoadingMark label={t(item.state === "queued" ? "draft.media.queued" : "draft.media.uploading", lang)} />}
                   </div>
-                  <p className="truncate px-3 py-2.5 text-[10px] font-medium text-foreground/65">{item.name}</p>
+                  <p className="media-manager-card-footer truncate text-[10px] font-medium text-foreground/65">{item.name}</p>
                 </article>
               )) : null}
 
@@ -1796,15 +1796,15 @@ export const DraftMediaManager = React.forwardRef<DraftMediaManagerHandle, {
                   <motion.article
                     key={group.id}
                     className={cn(
-                      "floating-panel min-w-0 overflow-hidden transition",
+                      "media-manager-card floating-panel min-w-0 overflow-hidden transition",
                       isSelected
-                        ? "border-foreground/45 shadow-card"
+                        ? "border-foreground/30 shadow-card"
                         : isCover
                           ? "border-foreground/25"
                           : "border-border/65 hover:border-foreground/30",
                     )}
                   >
-                    <div className="relative aspect-[16/9] overflow-hidden bg-surface-subtle">
+                    <div className="media-manager-card-visual relative overflow-hidden bg-surface-subtle">
                       <button
                         type="button"
                         onClick={() => {
@@ -1869,8 +1869,8 @@ export const DraftMediaManager = React.forwardRef<DraftMediaManagerHandle, {
 
                     </div>
 
-                    <div className="p-2.5">
-                      <div className="media-manager-card-meta mb-2 flex min-w-0 items-center justify-between gap-2 px-0.5">
+                    <div className="media-manager-card-footer">
+                      <div className="media-manager-card-meta flex min-w-0 flex-1 items-center justify-between gap-2">
                         <p className="truncate text-[11px] font-semibold text-foreground/75" title={label}>{label}</p>
                         <span className="flex shrink-0 items-center gap-1.5 text-[9px] text-muted-foreground">
                           {group.kind === "video" ? <VideoIcon size={12} /> : group.versions.length > 1 ? <span>{group.versions.length}×</span> : null}
@@ -1886,10 +1886,12 @@ export const DraftMediaManager = React.forwardRef<DraftMediaManagerHandle, {
                   type="button"
                   onClick={requestUpload}
                   disabled={busy}
-                  className="floating-panel group flex aspect-[16/9] min-h-[10rem] flex-col items-center justify-center gap-3 overflow-hidden border-dashed bg-card/36 px-4 text-center text-muted-foreground transition-[border-color,background-color,color,transform] hover:-translate-y-px hover:border-foreground/30 hover:bg-card/62 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50"
+                  className="media-manager-card floating-panel group min-w-0 overflow-hidden border-dashed bg-card/36 text-muted-foreground transition-[border-color,background-color,color,transform] hover:-translate-y-px hover:border-foreground/30 hover:bg-card/62 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50"
                 >
-                  <span className="floating-capsule floating-icon-button"><UploadIcon size={17} /></span>
-                  <span className="text-[11px] font-semibold">{t("draft.media.addPhotos", lang)}</span>
+                  <span className="media-manager-card-visual flex items-center justify-center bg-card/22">
+                    <span className="floating-capsule floating-icon-button"><UploadIcon size={17} /></span>
+                  </span>
+                  <span className="media-manager-card-footer text-[11px] font-semibold">{t("draft.media.addPhotos", lang)}</span>
                 </button>
               ) : null}
             </div>

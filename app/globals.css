@@ -241,13 +241,87 @@
     display: block;
   }
 
+  /*
+   * Media browsing uses one alignment grid from the filter row through the
+   * selected-item tools and the cards. Previously each row chose its own
+   * split, so the toolbar divider landed well before the gap between the two
+   * cards and the whole workspace looked staggered.
+   */
+  .media-manager-command-row {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-items: center;
+    gap: 0.75rem;
+  }
+
+  .media-manager-command-actions {
+    display: flex;
+    min-width: 0;
+    justify-content: flex-end;
+  }
+
+  .media-manager-selection {
+    display: grid;
+    min-width: 0;
+    gap: 0.75rem;
+  }
+
+  .media-manager-selection-actions {
+    display: flex;
+    min-width: 0;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.25rem;
+    border-top: 1px solid hsl(var(--border) / 0.4);
+    padding-top: 0.625rem;
+  }
+
+  .media-manager-selection-primary {
+    flex: 1 1 100%;
+  }
+
   .media-manager-grid {
     display: grid;
     grid-template-columns: repeat(auto-fit, minmax(min(100%, 12.5rem), 1fr));
     gap: 0.75rem;
   }
 
+  .media-manager-card {
+    display: grid;
+    grid-template-rows: auto 3rem;
+  }
+
+  .media-manager-card-visual {
+    aspect-ratio: 16 / 9;
+  }
+
+  .media-manager-card-footer {
+    display: flex;
+    min-width: 0;
+    min-height: 3rem;
+    align-items: center;
+    border-top: 1px solid hsl(var(--border) / 0.55);
+    padding: 0 0.875rem;
+  }
+
   @container (min-width: 700px) {
+    .media-manager-command-row,
+    .media-manager-selection {
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+
+    .media-manager-selection-actions {
+      flex-wrap: nowrap;
+      border-top: 0;
+      border-left: 1px solid hsl(var(--border) / 0.4);
+      padding-top: 0;
+      padding-left: 0.75rem;
+    }
+
+    .media-manager-selection-primary {
+      flex: 1 1 auto;
+    }
+
     .media-manager-grid {
       grid-template-columns: repeat(auto-fit, minmax(min(100%, 15.5rem), 1fr));
     }
@@ -755,6 +829,27 @@
 
     .draft-tour-assets .draft-tour-actions > :only-child {
       grid-column: 1 / -1;
+    }
+  }
+
+  /*
+   * Detail cards can live either across the page or inside one half of the
+   * support grid. A viewport breakpoint split the latter into two again,
+   * producing quarter-page tiles with a large empty area beside them. The
+   * section's own width is the only useful signal here.
+   */
+  .draft-details-section {
+    container-type: inline-size;
+    container-name: draft-details;
+  }
+
+  .draft-details-section .draft-detail-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  @container draft-details (min-width: 760px) {
+    .draft-details-section .draft-detail-grid {
+      grid-template-columns: repeat(2, minmax(0, 1fr));
     }
   }
 
