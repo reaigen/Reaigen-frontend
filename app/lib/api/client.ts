@@ -3711,7 +3711,10 @@ export async function getSharedDraftData(token: string): Promise<SharedDraftData
   return {
     title: raw.title,
     description: raw.description,
-    display_address: raw.display_address,
+    // Public shares never expose the creator's precise/street address. The
+    // proxy also strips it at the network boundary; this is defense in depth
+    // for direct test fixtures and older responses.
+    display_address: undefined,
     price: raw.price,
     currency: raw.currency,
     bedrooms: raw.bedrooms,

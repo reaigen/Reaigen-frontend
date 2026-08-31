@@ -55,6 +55,54 @@ function proxyResponseBody(status: number, data: string): string | null {
   return status === 204 || status === 205 || status === 304 ? null : data;
 }
 
+const PUBLIC_PRIVATE_LOCATION_KEYS = new Set([
+  "address",
+  "display_address",
+  "postal_code",
+  "latitude",
+  "longitude",
+  "lat",
+  "lng",
+]);
+
+function isPublicSharedDraftRequest(method: string, joined: string): boolean {
+  const parts = joined.split("/");
+  return method === "GET" && parts.length === 2 && parts[0] === "shared" && Boolean(parts[1]);
+}
+
+/**
+ * Defense-in-depth for public property delivery. Django remains the primary
+ * authorization boundary, but a backend serializer regression must not send
+ * an owner's street address or precise coordinates to a public browser.
+ *
+ * This intentionally applies only to the shared draft response. Tour-viewer
+ * payloads contain unrelated spatial coordinates that must remain intact.
+ */
+function sanitizePublicSharedDraft(data: string, contentType: string): string {
+  if (!contentType.includes("application/json")) return data;
+  try {
+    const payload = JSON.parse(data) as Record<string, unknown>;
+    if (!payload || typeof payload !== "object" || Array.isArray(payload)) return data;
+
+    for (const key of PUBLIC_PRIVATE_LOCATION_KEYS) delete payload[key];
+
+    for (const collectionKey of ["draft_data", "data"] as const) {
+      const collection = payload[collectionKey];
+      if (!Array.isArray(collection)) continue;
+      payload[collectionKey] = collection.filter((entry) => {
+        if (!entry || typeof entry !== "object" || Array.isArray(entry)) return true;
+        const item = entry as Record<string, unknown>;
+        const key = String(item.data_key ?? item.key ?? "").trim().toLowerCase();
+        return !PUBLIC_PRIVATE_LOCATION_KEYS.has(key);
+      });
+    }
+
+    return JSON.stringify(payload);
+  } catch {
+    return data;
+  }
+}
+
 function sharePinCookieName(token: string): string {
   return `${SHARE_PIN_COOKIE_PREFIX}${createHash("sha256").update(token).digest("hex").slice(0, 24)}`;
 }
@@ -230,8 +278,11 @@ async function proxy(
           headers["Authorization"] = `Bearer ${refreshed.access}`;
           res = await fetchBackend(target, { ...init, headers, cache: "no-store" }, timeoutMs);
 
-          const data = await res.text();
+          const rawData = await res.text();
           const contentType = res.headers.get("Content-Type") ?? "application/json";
+          const data = isPublicSharedDraftRequest(req.method, joined)
+            ? sanitizePublicSharedDraft(rawData, contentType)
+            : rawData;
           const response = new NextResponse(proxyResponseBody(res.status, data), {
             status: res.status,
             headers: noStoreHeaders(contentType),
@@ -255,8 +306,11 @@ async function proxy(
         }
       }
 
-      const data = await res.text();
+      const rawData = await res.text();
       const contentType = res.headers.get("Content-Type") ?? "application/json";
+      const data = isPublicSharedDraftRequest(req.method, joined)
+        ? sanitizePublicSharedDraft(rawData, contentType)
+        : rawData;
       const response = new NextResponse(proxyResponseBody(res.status, data), {
         status: res.status,
         // Authenticated responses must never enter the browser HTTP cache:

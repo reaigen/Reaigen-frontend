@@ -571,7 +571,7 @@ export default function CameraEditor({ splatId, viewerRef, activeShotIdx, initia
   if (mode === "preview") {
     return (
       <div data-testid="camera-editor-preview" className={`absolute inset-x-2 bottom-[calc(0.75rem+env(safe-area-inset-bottom,0px))] z-30 flex justify-center animate-fade-in md:inset-x-6 ${dockBottom} xl:inset-x-auto xl:bottom-auto xl:right-4 xl:justify-end ${appearance === "workspace" ? "camera-editor-workspace xl:top-[3.75rem]" : "xl:top-4"}`}>
-        <div className="floating-toolbar-shape max-w-full border border-white/[0.1] bg-black/70 text-white shadow-2xl backdrop-blur-2xl">
+        <div className="floating-toolbar-shape max-w-full border border-white/[0.16] bg-black/60 text-white shadow-2xl backdrop-blur-2xl">
           {/* Play / Pause */}
           <button
             type="button"
@@ -675,7 +675,7 @@ export default function CameraEditor({ splatId, viewerRef, activeShotIdx, initia
   if (isCollapsed) {
     return (
       <div data-testid="camera-editor-collapsed" className={`absolute inset-x-2 bottom-[calc(0.75rem+env(safe-area-inset-bottom,0px))] z-30 flex justify-center animate-fade-in md:inset-x-6 ${dockBottom} xl:inset-x-auto xl:bottom-auto xl:right-4 xl:justify-end ${appearance === "workspace" ? "camera-editor-workspace xl:top-[3.75rem]" : "xl:top-4"}`}>
-        <div className="floating-toolbar-shape max-w-full border border-white/[0.1] bg-black/70 text-white shadow-2xl backdrop-blur-2xl">
+        <div className="floating-toolbar-shape max-w-full border border-white/[0.16] bg-black/60 text-white shadow-2xl backdrop-blur-2xl">
           <button
             type="button"
             data-testid="camera-editor-expand"
@@ -768,7 +768,7 @@ export default function CameraEditor({ splatId, viewerRef, activeShotIdx, initia
   // ── Edit mode expanded: full camera panel ───────────────────────────────
   return (
     <div data-testid="camera-editor-expanded" className={`absolute inset-x-0 bottom-0 z-30 animate-fade-in md:inset-x-6 ${dockBottom} md:mx-auto md:max-w-[42rem] xl:inset-x-auto xl:bottom-auto xl:right-4 xl:mx-0 xl:w-[20rem] ${appearance === "workspace" ? "camera-editor-workspace xl:top-[3.75rem]" : "xl:top-4"}`}>
-      <div className="max-h-[56dvh] overflow-hidden rounded-t-[var(--floating-panel-radius)] border border-white/[0.1] bg-black/70 pb-[env(safe-area-inset-bottom,0px)] text-white shadow-2xl backdrop-blur-2xl md:max-h-[60dvh] md:rounded-[var(--floating-panel-radius)] md:pb-0 xl:max-h-[calc(100dvh-6.5rem)]">
+      <div className="max-h-[56dvh] overflow-hidden rounded-t-[var(--floating-panel-radius)] border border-white/[0.16] bg-black/60 pb-[env(safe-area-inset-bottom,0px)] text-white shadow-2xl backdrop-blur-2xl md:max-h-[60dvh] md:rounded-[var(--floating-panel-radius)] md:pb-0 xl:max-h-[calc(100dvh-6.5rem)]">
         <div className="flex h-4 items-center justify-center md:hidden" aria-hidden="true">
           <span className="h-1 w-9 rounded-full bg-white/25" />
         </div>

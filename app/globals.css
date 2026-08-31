@@ -68,7 +68,7 @@
 
   @media (min-width: 768px) {
     :root {
-      --header-h: 64px;
+      --header-h: 72px;
     }
   }
 
@@ -167,6 +167,23 @@
 @layer components {
   .app-canvas {
     background: hsl(var(--background));
+  }
+
+  /* Fixed-size tool rail: hover never resizes or covers the workspace. */
+  .app-sidebar {
+    width: 5.5rem;
+  }
+
+  .app-sidebar-brand {
+    position: relative;
+  }
+
+  .app-sidebar-brand-short {
+    opacity: 1;
+  }
+
+  .app-sidebar-nav-icon {
+    box-shadow: none;
   }
 
   .agent-canvas {

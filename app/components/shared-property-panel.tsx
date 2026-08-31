@@ -50,7 +50,7 @@ export function SharedPropertyPanel({
   const areaLabel = unitLabel(areaUnit);
 
   const hasPrice = draftData.price != null && draftData.price !== "";
-  const hasAddress = !!draftData.display_address || !!draftData.city;
+  const hasAddress = !!draftData.city || !!draftData.state || !!draftData.country;
   const hasFacts = draftData.bedrooms != null || draftData.bathrooms != null || (draftData.area != null && draftData.area !== "") || draftData.year_built != null;
   const hasDescription = !!draftData.description;
   const photos = (draftData.uploads ?? [])

@@ -201,19 +201,19 @@ export function localizeCountryName(country: string | null | undefined, lang: st
 }
 
 export function localizeSharedAddress(
-  displayAddress: string | null | undefined,
+  _displayAddress: string | null | undefined,
   city: string | null | undefined,
   state: string | null | undefined,
   country: string | null | undefined,
   lang: string,
 ) {
   const localizedCountry = localizeCountryName(country, lang);
-  if (displayAddress?.trim()) {
-    if (country?.trim() && localizedCountry && localizedCountry !== country.trim()) {
-      const index = displayAddress.toLocaleLowerCase("en").lastIndexOf(country.trim().toLocaleLowerCase("en"));
-      if (index >= 0) return `${displayAddress.slice(0, index)}${localizedCountry}${displayAddress.slice(index + country.trim().length)}`;
-    }
-    return displayAddress.trim();
-  }
-  return [city, state, localizedCountry].filter(Boolean).join(", ");
+  // `display_address` is an owner-only value and must never be rendered in a
+  // public share, even if an older backend payload still contains it. Public
+  // delivery deliberately stops at locality/region/country.
+  return [...new Set(
+    [city, state, localizedCountry]
+      .map((part) => part?.trim() ?? "")
+      .filter(Boolean),
+  )].join(", ");
 }

@@ -27,7 +27,16 @@ Copy `.env.local.example` to `.env.local`:
 ```bash
 # Backend URL (Django API) — server-side only, not exposed to browser
 REAIGEN_BACKEND_URL=http://localhost:80
+
+# Google Static Maps API key — server-side only
+GOOGLE_MAPS_KEY=your_restricted_google_maps_key
 ```
+
+`GOOGLE_MAPS_KEY` is proxied by the frontend's map route and is never embedded in browser JavaScript. Restrict the key to the Google Static Maps API and configure a usage quota in Google Cloud.
+
+The public/private location boundary and the no-layout-shift requirements for
+async detail and tour data are documented in
+[`docs/privacy-and-stable-loading-contract.md`](docs/privacy-and-stable-loading-contract.md).
 
 In standalone frontend Docker, this is set to `http://host.docker.internal:80` so the container reaches backend Nginx on the host.
 

@@ -60,6 +60,13 @@ export default function WebCreatePage() {
   }, [isAuthenticated, isLoading, router]);
 
   React.useEffect(() => {
+    const requestedMode = new URLSearchParams(window.location.search).get("mode");
+    if (requestedMode === "draft" || requestedMode === "tour") {
+      setMode(requestedMode);
+    }
+  }, []);
+
+  React.useEffect(() => {
     if (!allowed || mode !== "tour" || draftsLoaded || draftsLoading) return;
     let active = true;
     setDraftsLoading(true);

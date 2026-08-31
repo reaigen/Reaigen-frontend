@@ -6,6 +6,7 @@ import { currentGalleryUploads } from "../../lib/media";
 import { resolveUnit, unitLabel, type UnitLookup } from "../../lib/unit-catalog";
 import { PropertyFactTile } from "../property-fact-tile";
 import { MainTourIcon, PlayIcon } from "../icons";
+import { localizeSharedAddress } from "../../lib/shared-property-display";
 import type { ContentScope } from "./content-scope-selector";
 
 interface SharePreviewProps {
@@ -46,7 +47,7 @@ export function SharePreview({ draft, scope, hasTour, hasFloorplan, thumbUrl, un
   const origPrice = formatPreviewPrice(draft.price, storedCurrency?.code, lang);
   const price = prefPrice || origPrice;
   const showOrigPrice = prefPrice && origPrice && preferredCurrency?.id !== storedCurrency?.id;
-  const address = draft.display_address || [draft.city, draft.state, draft.country].filter(Boolean).join(", ");
+  const address = localizeSharedAddress(null, draft.city, draft.state, draft.country, lang);
 
   const fields = scope.selectedFields;
   const showTitle = fields.has("title");

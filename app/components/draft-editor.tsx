@@ -54,6 +54,7 @@ import { SearchField } from "./search-field";
 import { SegmentedControl } from "./segmented-control";
 import { SidePanel } from "./side-panel";
 import { FormattedDescription } from "./formatted-description";
+import { PropertyMapCard } from "./property-map-card";
 
 type EditorValues = {
   title: string;
@@ -1249,6 +1250,20 @@ export function DraftEditor({
       };
     })
     .filter((section) => section.fields.length > 0);
+  // The address field can already contain the complete formatted address.
+  // Prefer it as the canonical private target so city/postcode are not
+  // duplicated in the map label.
+  const editorMapAddress = values.address.trim() || [values.city, values.state, values.postalCode, values.country]
+    .map((part) => part.trim())
+    .filter(Boolean)
+    .join(", ");
+  const locationStillMatchesSavedDraft = (
+    values.address.trim() === (draft.address ?? "").trim()
+    && values.city.trim() === (draft.city ?? "").trim()
+    && values.state.trim() === (draft.state ?? "").trim()
+    && values.country.trim() === (draft.country ?? "").trim()
+    && values.postalCode.trim() === (draft.postal_code ?? "").trim()
+  );
   const hasAreaUnits = unitsForCategory(units, "AREA").length > 0;
   const hasCurrencyUnits = unitsForCategory(units, "CURRENCY").length > 0;
   const currentDescriptionMetrics = descriptionMetrics(values.description);
@@ -1481,6 +1496,14 @@ export function DraftEditor({
                 <DirectValueField id="draft-country" label={t("settings.seller.country", lang)} labelText={t("settings.seller.country", lang)} value={values.country} onChange={(value) => setValue("country", value)} lang={lang} autoComplete="country-name" />
                 <DirectValueField id="draft-postal-code" label={t("settings.seller.postalCode", lang)} labelText={t("settings.seller.postalCode", lang)} value={values.postalCode} onChange={(value) => setValue("postalCode", value)} lang={lang} autoComplete="postal-code" />
               </div>
+              <PropertyMapCard
+                address={editorMapAddress}
+                latitude={locationStillMatchesSavedDraft ? draft.latitude : null}
+                longitude={locationStillMatchesSavedDraft ? draft.longitude : null}
+                lang={lang}
+                compact
+                className="mt-4"
+              />
               </Section>
             </div>
           </>

@@ -31,6 +31,7 @@ import { DraftSharingDock } from "../../components/draft-sharing-dock";
 import { FloorplanLightbox } from "../../components/floorplan-lightbox";
 import { GlassVideoPlayer } from "../../components/glass-video-player";
 import { FormattedDescription } from "../../components/formatted-description";
+import { PropertyMapCard } from "../../components/property-map-card";
 import {
   ArrowLeftIcon,
   ArrowRightIcon,
@@ -514,6 +515,11 @@ export default function DraftPreviewPage({
   const [draft, setDraft] = useState<DraftDetailItem | null>(null);
   const [splatData, setSplatData] = useState<SplatsByDraftPayload | null>(null);
   const [tourAssets, setTourAssets] = useState<DraftTourAssetsPayload | null>(null);
+  // A cached draft can paint before its tour relationship is known. Keep the
+  // action rail neutral until that relationship resolves; otherwise Edit is
+  // briefly promoted to the dark primary action and then jumps sideways when
+  // the View tour action arrives.
+  const [tourDataResolved, setTourDataResolved] = useState(false);
   const [unitCatalog, setUnitCatalog] = useState<UnitLookup[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [detailsExpanded, setDetailsExpanded] = useState(false);
@@ -619,6 +625,7 @@ export default function DraftPreviewPage({
       setDraft(d);
       setSplatData(s);
       setTourAssets(fetchedTourAssets);
+      setTourDataResolved(true);
       setUnitCatalog(fetchedUnits);
       setUsingCachedDraft(false);
       setRetryAttempt(0);
@@ -648,6 +655,7 @@ export default function DraftPreviewPage({
       }
     }).catch((err) => {
       if (!active) return;
+      setTourDataResolved(true);
       setManualRefreshPending(false);
       if (isApiNotFound(err)) {
         setUsingCachedDraft(false);
@@ -712,7 +720,14 @@ export default function DraftPreviewPage({
 
   if (!draft && !error) {
     return (
-      <AppShell user={user} onLogout={logout} hideMobileNav>
+      <AppShell
+        user={user}
+        onLogout={logout}
+        hideMobileNav
+        headerBackHref="/dashboard"
+        headerBackLabel={t("nav.dashboard", lang)}
+        headerTitleLoading
+      >
         <div className="mx-auto flex min-h-[65vh] w-full max-w-[1180px] items-center justify-center pb-28 md:pb-10">
           <CollectionLoading label={t("common.loading", lang)} className="min-h-0 p-0" />
         </div>
@@ -742,7 +757,12 @@ export default function DraftPreviewPage({
     );
     if (!user) return errorContent;
     return (
-      <AppShell user={user} onLogout={logout}>
+      <AppShell
+        user={user}
+        onLogout={logout}
+        headerBackHref="/dashboard"
+        headerBackLabel={t("nav.dashboard", lang)}
+      >
         <div className="mx-auto w-full max-w-3xl pb-28 md:pb-10">{errorContent}</div>
       </AppShell>
     );
@@ -759,6 +779,14 @@ export default function DraftPreviewPage({
   const showOrigPrice = prefPrice && origPrice && preferredCurrency?.id !== storedCurrency?.id;
 
   const address = draft.display_address || [draft.city, draft.state, draft.country].filter(Boolean).join(", ");
+  // Django may already return a complete street address in `address`. Do not
+  // append the locality a second time (the previous composition produced the
+  // duplicated address visible in the owner map card).
+  const privateStreetAddress = draft.address?.trim() ?? "";
+  const ownerMapAddress = privateStreetAddress || [draft.city, draft.state, draft.postal_code, draft.country]
+    .map((part) => typeof part === "string" ? part.trim() : "")
+    .filter(Boolean)
+    .join(", ");
   const images = getImages(draft.raw_uploads, lang);
   const videos = getVideos(draft.raw_uploads, lang);
   const facts = buildFacts(draft, lang, unitCatalog);
@@ -814,6 +842,10 @@ export default function DraftPreviewPage({
       reaiDraftTitle={draft?.title}
       reaiUploadId={activeImageId ?? undefined}
       reaiWorkspaceContext={floorplanFullscreen || floorplanEditorOpen ? "floorplan" : "draft"}
+      headerBackHref="/dashboard"
+      headerBackLabel={t("nav.dashboard", lang)}
+      headerTitle={draft.title}
+      headerMeta={address || undefined}
       onReaiDraftUpdated={(updatedDraft) => {
         setDraft(updatedDraft);
         writeDraftDetailCache(user.id, draftId, updatedDraft);
@@ -825,7 +857,7 @@ export default function DraftPreviewPage({
           width — the stale-listing notice below must never displace the way
           out of this screen.
         */}
-        <div className="mb-4 flex items-center justify-between gap-3 md:mb-5">
+        <div className="mb-4 flex items-center justify-between gap-3 md:hidden">
           <button
             type="button"
             onClick={() => router.push("/dashboard")}
@@ -1083,31 +1115,41 @@ export default function DraftPreviewPage({
               {/* No fixed height: h-12 gave the 40px buttons a 38px inner box
                   (p-1 wins over the class padding), so the active pill clipped
                   against the capsule instead of floating centred in it. */}
-              <div className="draft-action-toolbar floating-toolbar glossy-capsule w-full overflow-x-auto scrollbar-hide">
-                {hasTour && (
-                  <Button asChild size="sm" className="draft-action-tour h-10 min-w-[12rem] shrink-0 px-4 shadow-none">
-                    <Link href={`/tour/${primarySplatId}?tourId=${shareableTour?.id}`}>
-                      <TourIcon size={15} />
-                      {t("draft.viewTour", lang)}
-                    </Link>
-                  </Button>
-                )}
-                {hasTour ? <span aria-hidden="true" className="draft-action-divider mx-1 h-6 w-px shrink-0 bg-border/70" /> : null}
-                <div className="draft-action-items flex min-w-[25rem] flex-1 items-center gap-0.5">
-                  <Button type="button" data-testid="draft-media-open" variant="ghost" size="sm" className="h-10 min-w-0 flex-1 shrink-0 rounded-full" aria-label={t("draft.media.manage", lang)} onClick={() => setMediaOpen(true)}>
-                    <ImageIcon size={15} /> {t("draft.media.gallery", lang)}
-                  </Button>
-                  <Button type="button" data-testid="draft-editor-open" variant={hasTour ? "ghost" : "default"} size="sm" className="h-10 min-w-0 flex-1 shrink-0 rounded-full" onClick={() => { setDescriptionEditRequested(false); setEditorOpen(true); }}>
-                    <EditIcon size={14} /> {t("shareDialog.edit", lang)}
-                  </Button>
-                  <Button type="button" data-testid="draft-sharing-open" variant="ghost" size="sm" className="h-10 min-w-0 flex-1 shrink-0 rounded-full" onClick={() => handleSharingOpenChange(true)}>
-                    <ShareIcon size={14} /> {t("draft.share", lang)}
-                  </Button>
-                  <Button type="button" data-testid="draft-versions-open" variant="ghost" size="sm" className="h-10 min-w-0 flex-1 shrink-0 rounded-full" onClick={() => setVersionsOpen(true)}>
-                    <VersionsIcon size={15} /> {t("draft.versions.short", lang)}
-                  </Button>
+              {!tourDataResolved ? (
+                <div
+                  aria-label={t("common.loading", lang)}
+                  aria-busy="true"
+                  className="draft-action-toolbar floating-toolbar glossy-capsule min-h-12 w-full p-1"
+                >
+                  <span className="h-10 w-full animate-pulse rounded-full bg-foreground/[0.045] motion-reduce:animate-none" />
                 </div>
-              </div>
+              ) : (
+                <div className="draft-action-toolbar floating-toolbar glossy-capsule w-full overflow-x-auto scrollbar-hide">
+                  {hasTour && (
+                    <Button asChild size="sm" className="draft-action-tour h-10 min-w-[12rem] shrink-0 px-4 shadow-none">
+                      <Link href={`/tour/${primarySplatId}?tourId=${shareableTour?.id}`}>
+                        <TourIcon size={15} />
+                        {t("draft.viewTour", lang)}
+                      </Link>
+                    </Button>
+                  )}
+                  {hasTour ? <span aria-hidden="true" className="draft-action-divider mx-1 h-6 w-px shrink-0 bg-border/70" /> : null}
+                  <div className="draft-action-items flex min-w-[25rem] flex-1 items-center gap-0.5">
+                    <Button type="button" data-testid="draft-media-open" variant="ghost" size="sm" className="h-10 min-w-0 flex-1 shrink-0 rounded-full" aria-label={t("draft.media.manage", lang)} onClick={() => setMediaOpen(true)}>
+                      <ImageIcon size={15} /> {t("draft.media.gallery", lang)}
+                    </Button>
+                    <Button type="button" data-testid="draft-editor-open" variant={hasTour ? "ghost" : "default"} size="sm" className="h-10 min-w-0 flex-1 shrink-0 rounded-full" onClick={() => { setDescriptionEditRequested(false); setEditorOpen(true); }}>
+                      <EditIcon size={14} /> {t("shareDialog.edit", lang)}
+                    </Button>
+                    <Button type="button" data-testid="draft-sharing-open" variant="ghost" size="sm" className="h-10 min-w-0 flex-1 shrink-0 rounded-full" onClick={() => handleSharingOpenChange(true)}>
+                      <ShareIcon size={14} /> {t("draft.share", lang)}
+                    </Button>
+                    <Button type="button" data-testid="draft-versions-open" variant="ghost" size="sm" className="h-10 min-w-0 flex-1 shrink-0 rounded-full" onClick={() => setVersionsOpen(true)}>
+                      <VersionsIcon size={15} /> {t("draft.versions.short", lang)}
+                    </Button>
+                  </div>
+                </div>
+              )}
             </div>
           </section>
         </div>
@@ -1317,6 +1359,16 @@ export default function DraftPreviewPage({
             )}
           </div>
         )}
+
+        {(ownerMapAddress || (draft.latitude != null && draft.longitude != null)) ? (
+          <PropertyMapCard
+            address={ownerMapAddress || address}
+            latitude={draft.latitude}
+            longitude={draft.longitude}
+            lang={lang}
+            className="mt-6 md:mt-8"
+          />
+        ) : null}
 
         <DraftTourAssetsPanel
           draftId={draftId}

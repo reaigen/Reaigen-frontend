@@ -435,11 +435,11 @@ export default function TourPage({
 
       {/* Top bar */}
       <>
-          <div className="absolute left-3 top-[calc(0.75rem+env(safe-area-inset-top,0px))] z-20 flex items-center gap-2 animate-fade-in sm:left-4 sm:top-[calc(1rem+env(safe-area-inset-top,0px))] xl:left-6 xl:top-[calc(1.5rem+env(safe-area-inset-top,0px))]">
+          <div className="absolute left-3 top-[calc(0.75rem+env(safe-area-inset-top,0px))] z-20 flex items-center gap-2 animate-fade-in sm:left-4 sm:top-[calc(1rem+env(safe-area-inset-top,0px))] xl:left-6">
             <button
               onClick={() => router.push(viewer.draft_id ? `/draft/${viewer.draft_id}` : "/tours")}
               aria-label={t("common.back", lang)}
-              className="floating-icon-button pen-touch-target flex items-center justify-center border border-black/10 bg-white/90 text-black/70 shadow-control backdrop-blur-xl transition-colors hover:bg-white hover:text-black active:scale-95"
+              className="floating-icon-button pen-touch-target flex items-center justify-center border border-white/[0.16] bg-black/60 text-white/82 shadow-2xl backdrop-blur-2xl transition-colors hover:bg-black/72 hover:text-white active:scale-95 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/70"
             >
               <ArrowLeftIcon size={16} />
             </button>

@@ -91,6 +91,7 @@ function formatUpdated(value: string, lang: string) {
 export default function ToursPage() {
   const { isAuthenticated, isLoading, user, logout } = useAuth();
   const router = useRouter();
+  const lang = getUserLanguage(user?.localization);
   const [items, setItems] = React.useState<SplatListItem[]>([]);
   const [loading, setLoading] = React.useState(true);
   const [loadingMore, setLoadingMore] = React.useState(false);
@@ -99,6 +100,14 @@ export default function ToursPage() {
   const [query, setQuery] = React.useState("");
   const [searchQuery, setSearchQuery] = React.useState("");
   const [gridCols, setGridCols] = React.useState<1 | 2>(2);
+  const clearSearch = React.useCallback(() => setQuery(""), []);
+  const headerSearch = React.useMemo(() => ({
+    value: query,
+    onChange: setQuery,
+    onClear: clearSearch,
+    placeholder: t("tours.search", lang),
+    clearLabel: t("dashboard.clearSearch", lang),
+  }), [clearSearch, lang, query]);
   const pageRef = React.useRef(1);
   const requestRef = React.useRef(0);
   // Raw pages as fetched; `items` is always the deduped view of this list,
@@ -175,23 +184,28 @@ export default function ToursPage() {
 
   if (isLoading || !user) return <PageLoading />;
 
-  const lang = getUserLanguage(user.localization);
-
   return (
-    <AppShell user={user} onLogout={logout}>
+    <AppShell user={user} onLogout={logout} headerSearch={headerSearch}>
       <div className="mx-auto w-full max-w-[1360px] pb-10">
         <PageHeader
           title={t("tours.title", lang)}
           description={t("tours.subtitle", lang)}
-          actions={<WebCreateAction lang={lang} labelKey="webCreate.tourAction" />}
+          actions={(
+            <>
+              <span className="hidden md:inline-flex">
+                <GridLayoutToggle value={gridCols} onChange={handleGridCols} lang={lang} />
+              </span>
+              <WebCreateAction lang={lang} labelKey="webCreate.tourAction" />
+            </>
+          )}
           className="mb-5 sm:mb-8"
         />
 
-        <div className="mb-5 flex min-w-0 items-center gap-2 border-b border-border/75 pb-2 sm:mb-6">
+        <div className="mb-5 flex min-w-0 items-center gap-2 border-b border-border/75 pb-2 sm:mb-6 md:hidden">
           <SearchField
             value={query}
             onChange={setQuery}
-            onClear={() => setQuery("")}
+            onClear={clearSearch}
             placeholder={t("tours.search", lang)}
             clearLabel={t("dashboard.clearSearch", lang)}
             className="flex-1 px-1"

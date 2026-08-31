@@ -19,7 +19,7 @@ export default function TourControls({ shots, currentIdx, onGoToShot, onPrev, on
 
   return (
     <div className="absolute bottom-[calc(0.75rem+env(safe-area-inset-bottom,0px))] left-1/2 z-20 max-w-[calc(100%-1rem)] -translate-x-1/2 animate-fade-in-up sm:bottom-[calc(1.5rem+env(safe-area-inset-bottom,0px))] sm:max-w-[calc(100%-2rem)]">
-      <div className="floating-toolbar-shape flex w-fit max-w-full items-center justify-center gap-1 border border-white/10 bg-black/70 p-1 shadow-2xl backdrop-blur-2xl">
+      <div className="floating-toolbar-shape flex w-fit max-w-full items-center justify-center gap-1 border border-white/[0.16] bg-black/60 p-1 shadow-2xl backdrop-blur-2xl">
         <button type="button" onClick={onPrev} className="floating-icon-button flex shrink-0 items-center justify-center text-white/70 transition-colors hover:bg-white/10 hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/70" aria-label={t("tour.controls.previousShot", lang)}>
           <ArrowLeftIcon size={14} />
         </button>

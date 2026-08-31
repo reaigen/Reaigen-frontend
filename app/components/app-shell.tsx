@@ -14,7 +14,8 @@ import { AppContentMessages } from "./content-documents";
 import { ReaiAgentCard } from "./reai-agent-card";
 import { REAI_COMPOSE_EVENT } from "../lib/reai-compose";
 import { ReaigenWordmark } from "./reaigen-wordmark";
-import { AgentIcon, CloseIcon, MainHomeIcon, MainSettingsIcon, MainSignOutIcon, MainTourIcon, PlusIcon } from "./icons";
+import { SearchField } from "./search-field";
+import { AgentIcon, ArrowLeftIcon, CloseIcon, DocumentIcon, MainHomeIcon, MainSettingsIcon, MainSignOutIcon, MainTourIcon, PlusIcon, TourIcon } from "./icons";
 
 function NavRailItem({ href, label, icon: Icon, active }: {
   href: string;
@@ -28,22 +29,24 @@ function NavRailItem({ href, label, icon: Icon, active }: {
       title={label}
       aria-current={active ? "page" : undefined}
       className={cn(
-        "group/nav flex min-h-[4.5rem] w-full shrink-0 flex-col items-center justify-center gap-1.5 rounded-[1.125rem] px-1 py-1.5 text-center text-[11px] leading-none transition-colors",
+        "group/nav relative flex min-h-14 w-full shrink-0 items-center justify-center rounded-full p-1 text-[12px] leading-none",
         "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2",
         active ? "font-semibold text-foreground" : "font-medium text-foreground/58 hover:text-foreground",
       )}
     >
       <span
         className={cn(
-          "flex h-10 w-16 items-center justify-center rounded-full border border-transparent transition-[background-color,border-color,transform] duration-200",
+          "app-sidebar-nav-icon flex h-12 w-12 shrink-0 items-center justify-center rounded-full border border-transparent transition-colors duration-150",
           active
-            ? "glossy-capsule border-white/65 text-foreground"
+            ? "border-border/55 bg-card text-foreground shadow-control"
             : "text-foreground/52 group-hover/nav:bg-surface-subtle/70 group-hover/nav:text-foreground",
         )}
       >
-        <Icon size={24} filled={active} strokeWidth={1.9} className="shrink-0" />
+        <Icon size={26} filled={active} strokeWidth={1.9} className="shrink-0" />
       </span>
-      <span className="max-w-full truncate px-1">{label}</span>
+      <span className="app-sidebar-label pointer-events-none absolute left-[calc(100%+0.55rem)] top-1/2 z-[75] -translate-y-1/2 whitespace-nowrap rounded-full border border-border/60 bg-card/95 px-3 py-2 text-[12px] font-semibold text-foreground opacity-0 shadow-control backdrop-blur-xl transition-opacity duration-100 group-hover/nav:opacity-100 group-focus-visible/nav:opacity-100">
+        {label}
+      </span>
     </Link>
   );
 }
@@ -54,7 +57,7 @@ function getInitials(user: UserProfile): string {
   return (f + l).toUpperCase() || (user.email?.[0] ?? "?").toUpperCase();
 }
 
-const SIDEBAR_W = 96;
+const SIDEBAR_W = 88;
 const REAI_PANEL_MIN_W = 420;
 const REAI_PANEL_MAX_W = 960;
 const REAI_PANEL_WIDTH_KEY = "reaigen:agentPanelWidth.v2";
@@ -124,12 +127,27 @@ export type AppShellProps = {
   /** Owner-scoped tour resource currently open in the viewer. */
   reaiTourId?: number;
   onReaiDraftUpdated?: (draft: DraftDetailItem) => void;
+  /** Optional route-owned search rendered in the desktop top navigation. */
+  headerSearch?: {
+    value: string;
+    onChange: (value: string) => void;
+    onClear?: () => void;
+    placeholder: string;
+    clearLabel: string;
+  };
+  /** Stable route context rendered in the desktop top bar instead of an empty header. */
+  headerBackHref?: string;
+  headerBackLabel?: string;
+  headerTitle?: string;
+  /** Reserve the title line while route data is loading. */
+  headerTitleLoading?: boolean;
+  headerMeta?: string;
   children: React.ReactNode;
 };
 
 type AppShellOverrides = Pick<
   AppShellProps,
-  "immersive" | "hideMobileNav" | "reaiDraftId" | "reaiDraftTitle" | "reaiUploadId" | "reaiWorkspaceContext" | "reaiTourId" | "onReaiDraftUpdated"
+  "immersive" | "hideMobileNav" | "reaiDraftId" | "reaiDraftTitle" | "reaiUploadId" | "reaiWorkspaceContext" | "reaiTourId" | "onReaiDraftUpdated" | "headerSearch" | "headerBackHref" | "headerBackLabel" | "headerTitle" | "headerTitleLoading" | "headerMeta"
 >;
 
 type PersistentShellBridge = {
@@ -147,6 +165,12 @@ function NestedAppShell({
   reaiWorkspaceContext,
   reaiTourId,
   onReaiDraftUpdated,
+  headerSearch,
+  headerBackHref,
+  headerBackLabel,
+  headerTitle,
+  headerTitleLoading,
+  headerMeta,
   children,
 }: AppShellProps) {
   const bridge = React.useContext(PersistentShellContext);
@@ -170,11 +194,23 @@ function NestedAppShell({
       reaiWorkspaceContext,
       reaiTourId,
       onReaiDraftUpdated: registeredDraftUpdate,
+      headerSearch,
+      headerBackHref,
+      headerBackLabel,
+      headerTitle,
+      headerTitleLoading,
+      headerMeta,
     });
   }, [
     bridge,
     forwardDraftUpdate,
     hideMobileNav,
+    headerSearch,
+    headerBackHref,
+    headerBackLabel,
+    headerTitle,
+    headerTitleLoading,
+    headerMeta,
     immersive,
     registeredDraftUpdate,
     reaiDraftId,
@@ -227,6 +263,12 @@ export function PersistentAppShell({
         reaiWorkspaceContext={overrides.reaiWorkspaceContext}
         reaiTourId={overrides.reaiTourId}
         onReaiDraftUpdated={overrides.onReaiDraftUpdated}
+        headerSearch={overrides.headerSearch}
+        headerBackHref={overrides.headerBackHref}
+        headerBackLabel={overrides.headerBackLabel}
+        headerTitle={overrides.headerTitle}
+        headerTitleLoading={overrides.headerTitleLoading}
+        headerMeta={overrides.headerMeta}
       >
         {children}
       </AppShellFrame>
@@ -245,11 +287,18 @@ function AppShellFrame({
   reaiWorkspaceContext,
   reaiTourId,
   onReaiDraftUpdated,
+  headerSearch,
+  headerBackHref,
+  headerBackLabel,
+  headerTitle,
+  headerTitleLoading,
+  headerMeta,
   children,
 }: AppShellProps) {
   const pathname = usePathname();
   const [reaiEnabled, setReaiEnabled] = React.useState(false);
   const [reaiOpen, setReaiOpen] = React.useState(false);
+  const [createOpen, setCreateOpen] = React.useState(false);
   const [mobileAccountOpen, setMobileAccountOpen] = React.useState(false);
   const [reaiViewport, setReaiViewport] = React.useState<{ height: number | null; offsetTop: number }>({ height: null, offsetTop: 0 });
   const [compactAgentViewport, setCompactAgentViewport] = React.useState(false);
@@ -442,7 +491,17 @@ function AppShellFrame({
 
   React.useEffect(() => {
     setMobileAccountOpen(false);
+    setCreateOpen(false);
   }, [pathname]);
+
+  React.useEffect(() => {
+    if (!createOpen) return;
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setCreateOpen(false);
+    };
+    window.addEventListener("keydown", closeOnEscape);
+    return () => window.removeEventListener("keydown", closeOnEscape);
+  }, [createOpen]);
 
   React.useEffect(() => {
     if (!reaiOpen || !compactAgentViewport) return;
@@ -456,6 +515,7 @@ function AppShellFrame({
   const openReai = (event: React.MouseEvent<HTMLButtonElement>) => {
     reaiReturnFocusRef.current = event.currentTarget;
     setMobileAccountOpen(false);
+    setCreateOpen(false);
     setReaiOpen(true);
     if (!window.matchMedia("(min-width: 1440px)").matches) {
       window.setTimeout(() => reaiCloseRef.current?.focus({ preventScroll: true }), 0);
@@ -543,17 +603,101 @@ function AppShellFrame({
       } as React.CSSProperties}
     >
       {!immersive ? (
-        <aside className="fixed bottom-0 left-0 top-[var(--header-total-h)] z-40 hidden w-24 flex-col border-r border-border/65 bg-card px-2 pb-3 pt-2 text-foreground md:flex">
-          <nav className="min-h-0 flex-1 space-y-1 overflow-y-auto overscroll-contain scrollbar-thin" aria-label={t("nav.dashboard", lang)}>
-            {NAV_ITEMS.map((item) => {
-              const active = pathname === item.href || pathname.startsWith(item.href + "/") || (item.href === "/dashboard" && pathname.startsWith("/draft/"));
-              return <NavRailItem key={item.href} href={item.href} label={item.label} icon={item.icon} active={active} />;
-            })}
-          </nav>
-          <div className="mt-2 shrink-0 border-t border-border/55 pt-2">
-            <NavRailItem href="/settings" label={t("nav.settings", lang)} icon={MainSettingsIcon} active={settingsActive} />
+        <aside className="app-sidebar fixed inset-y-0 left-0 z-[60] hidden flex-col overflow-visible bg-card text-foreground md:flex">
+          <Link
+            href="/dashboard"
+            aria-label="Reaigen"
+            className="app-sidebar-brand relative flex h-[var(--header-total-h)] shrink-0 items-center justify-center pt-safe focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
+          >
+            <span
+              className="app-sidebar-brand-short text-[28px] font-normal leading-none tracking-[-0.025em]"
+              style={{ fontFamily: "var(--font-brand), ui-serif, Georgia, serif" }}
+            >
+              Re
+            </span>
+          </Link>
+          <div className="flex min-h-0 flex-1 flex-col px-2.5 pb-3 pt-4">
+            <nav className="min-h-0 flex-1 space-y-3 overflow-visible" aria-label={t("nav.dashboard", lang)}>
+              {NAV_ITEMS.map((item) => {
+                const active = pathname === item.href || pathname.startsWith(item.href + "/") || (item.href === "/dashboard" && pathname.startsWith("/draft/"));
+                return <NavRailItem key={item.href} href={item.href} label={item.label} icon={item.icon} active={active} />;
+              })}
+              <button
+                type="button"
+                aria-expanded={createOpen}
+                aria-controls="app-create-panel"
+                onClick={(event) => {
+                  setCreateOpen((open) => !open);
+                  setReaiOpen(false);
+                  event.currentTarget.blur();
+                }}
+                className={cn(
+                  "group/nav relative flex min-h-14 w-full items-center justify-center rounded-full p-1 text-[12px] font-medium leading-none",
+                  "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2",
+                  createOpen ? "font-semibold text-foreground" : "text-foreground/58 hover:text-foreground",
+                )}
+              >
+                <span className={cn(
+                  "app-sidebar-nav-icon flex h-12 w-12 shrink-0 items-center justify-center rounded-full border transition-colors duration-150",
+                  createOpen
+                    ? "glossy-primary-capsule border-foreground/15 text-background"
+                    : "border-transparent text-foreground/52 group-hover/nav:bg-surface-subtle/70 group-hover/nav:text-foreground",
+                )}>
+                  <PlusIcon size={26} />
+                </span>
+                <span className="app-sidebar-label pointer-events-none absolute left-[calc(100%+0.55rem)] top-1/2 z-[75] -translate-y-1/2 whitespace-nowrap rounded-full border border-border/60 bg-card/95 px-3 py-2 text-[12px] font-semibold text-foreground opacity-0 shadow-control backdrop-blur-xl transition-opacity duration-100 group-hover/nav:opacity-100 group-focus-visible/nav:opacity-100">
+                  {t("webCreate.menuTitle", lang)}
+                </span>
+              </button>
+            </nav>
+            <div className="mt-3 shrink-0 pt-3">
+              <NavRailItem href="/settings" label={t("nav.settings", lang)} icon={MainSettingsIcon} active={settingsActive} />
+            </div>
           </div>
         </aside>
+      ) : null}
+
+      {!immersive && createOpen ? (
+        <section
+          id="app-create-panel"
+          role="dialog"
+          aria-modal="false"
+          aria-labelledby="app-create-title"
+          className="fixed bottom-0 left-[var(--sidebar-offset)] top-0 z-[55] hidden w-[min(28rem,calc(100vw-var(--sidebar-offset)-2rem))] flex-col border-r border-border/70 bg-card/[0.98] text-foreground shadow-[20px_0_55px_rgba(0,0,0,0.10)] backdrop-blur-2xl md:flex"
+        >
+          <header className="flex h-[var(--header-total-h)] shrink-0 items-center justify-between border-b border-border/70 px-6 pt-safe">
+            <h2 id="app-create-title" className="text-[26px] font-bold tracking-[-0.03em]">{t("webCreate.menuTitle", lang)}</h2>
+            <button
+              type="button"
+              onClick={() => setCreateOpen(false)}
+              aria-label={t("common.close", lang)}
+              className="floating-icon-button flex items-center justify-center text-foreground/55 transition-colors hover:bg-foreground/[0.055] hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+            >
+              <CloseIcon size={18} />
+            </button>
+          </header>
+          <nav className="space-y-3 overflow-y-auto p-5" aria-label={t("webCreate.menuTitle", lang)}>
+            {([
+              ["/create?mode=draft", DocumentIcon, "webCreate.draftTitle", "webCreate.draftDescription"],
+              ["/create?mode=tour", TourIcon, "webCreate.tourTitle", "webCreate.tourDescription"],
+            ] as const).map(([href, Icon, titleKey, descriptionKey]) => (
+              <Link
+                key={href}
+                href={href}
+                onClick={() => setCreateOpen(false)}
+                className="group flex items-center gap-4 rounded-[1.35rem] p-3 transition-colors hover:bg-foreground/[0.045] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              >
+                <span className="glossy-capsule flex h-16 w-16 shrink-0 items-center justify-center rounded-[1.2rem] text-foreground/72 transition-transform group-hover:scale-[1.03]">
+                  <Icon size={25} />
+                </span>
+                <span className="min-w-0">
+                  <span className="block text-[16px] font-semibold tracking-[-0.015em]">{t(titleKey, lang)}</span>
+                  <span className="mt-1 block text-[12px] leading-relaxed text-muted-foreground">{t(descriptionKey, lang)}</span>
+                </span>
+              </Link>
+            ))}
+          </nav>
+        </section>
       ) : null}
 
       {/* ── Top header (all widths — the YouTube frame) ──────────── */}
@@ -570,33 +714,60 @@ function AppShellFrame({
          * and it silently scrolls away again. Fixed cannot move, in any
          * browser; the canvas below compensates with matching top padding.
          */
-        className="fixed inset-x-0 top-0 z-50 bg-card text-foreground"
+        className="fixed inset-x-0 top-0 z-50 bg-card text-foreground md:left-[var(--sidebar-offset)] md:right-[var(--reai-docked-width)]"
       >
         {/*
           Sized from --header-h, which the theme already defined but nothing
           used. At 56px the wordmark and the 44px agent capsule left barely
           6px of air between them and the rules above and below.
         */}
-        <div className="grid h-[var(--header-total-h)] grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-3 border-b border-border pl-[max(1rem,env(safe-area-inset-left))] pr-[max(1rem,env(safe-area-inset-right))] pt-safe">
-          <Link href="/dashboard" aria-label="Reaigen" className="flex min-h-11 min-w-0 items-center">
-            {/*
-              The wordmark sat at 22px while the page title below it ran at
-              32px, so the brand read as secondary to whatever screen you
-              happened to be on. Steps down on narrow phones so it never
-              crowds the agent capsule and avatar beside it.
-            */}
-            {/*
-              DM Serif Display is a narrower, higher-contrast face than the
-              Georgia these sizes were originally tuned against, so it reads
-              noticeably smaller at the same pixel size — hence the step up
-              here. It also ships a single 400 cut, which made the old
-              fontWeight 500 a no-op, and display serifs want tracking in
-              rather than out.
-            */}
+        <div className="flex h-[var(--header-total-h)] items-center gap-3 pl-[max(1rem,env(safe-area-inset-left))] pr-[max(1rem,env(safe-area-inset-right))] pt-safe md:gap-5 md:pl-5">
+          <Link href="/dashboard" aria-label="Reaigen" className="flex min-h-11 min-w-0 items-center md:hidden">
             <ReaigenWordmark className="text-[29px] leading-none text-foreground min-[390px]:text-[31px]" />
           </Link>
-          <span aria-hidden="true" />
-          <div className="flex items-center gap-2">
+          <div className="hidden min-w-0 flex-1 items-center md:flex">
+            {headerSearch ? (
+              <SearchField
+                value={headerSearch.value}
+                onChange={headerSearch.onChange}
+                onClear={headerSearch.onClear}
+                placeholder={headerSearch.placeholder}
+                clearLabel={headerSearch.clearLabel}
+                appearance="navbar"
+                className="w-full"
+              />
+            ) : headerBackHref ? (
+              <div className="flex min-w-0 items-center gap-3">
+                <Link
+                  href={headerBackHref}
+                  aria-label={headerBackLabel || t("common.back", lang)}
+                  title={headerBackLabel || t("common.back", lang)}
+                  className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full border border-border/60 bg-card text-foreground/65 shadow-control transition-colors hover:bg-surface-subtle hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+                >
+                  <ArrowLeftIcon size={18} />
+                </Link>
+                <div className="min-w-0 leading-tight">
+                  {headerBackLabel ? (
+                    <p className="truncate text-[11px] font-semibold text-muted-foreground">{headerBackLabel}</p>
+                  ) : null}
+                  {headerTitleLoading ? (
+                    <span
+                      aria-label={t("common.loading", lang)}
+                      className="mt-1 block h-4 w-48 max-w-[28vw] animate-pulse rounded-full bg-foreground/10"
+                    />
+                  ) : headerTitle ? (
+                    <p className="truncate text-[14px] font-semibold tracking-[-0.015em] text-foreground">{headerTitle}</p>
+                  ) : null}
+                </div>
+                {headerMeta ? (
+                  <span className="ml-1 max-w-[22rem] truncate rounded-full bg-surface-subtle px-3 py-1.5 text-[11px] font-medium text-foreground/58">
+                    {headerMeta}
+                  </span>
+                ) : null}
+              </div>
+            ) : <span aria-hidden="true" />}
+          </div>
+          <div className="ml-auto flex items-center gap-2">
             <span className="inline-flex md:hidden">{reaiLauncher("header")}</span>
             <button
               type="button"
@@ -821,12 +992,8 @@ function AppShellFrame({
                 />
               </button>
             ) : null}
-            {/*
-              Sized and ruled exactly like the app navbar, so when the panel
-              docks beside the page the two heads read as one continuous bar —
-              same height token, same border color, one horizontal line.
-            */}
-            <div className="flex h-[var(--header-total-h)] shrink-0 items-center justify-between border-b border-border bg-card px-4 pt-safe">
+            {/* Same height and surface as the app navbar, without a dividing rule. */}
+            <div className="flex h-[var(--header-total-h)] shrink-0 items-center justify-between bg-card px-4 pt-safe">
               <div className="flex min-w-0 items-center gap-2.5">
                 <span className="flex h-8 w-8 shrink-0 items-center justify-center text-foreground">
                   <AgentIcon size={20} strokeWidth={1.8} />

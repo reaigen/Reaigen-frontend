@@ -59,6 +59,7 @@ function getTourState(item: SplatListItem): DashboardTourState {
 export default function DashboardPage() {
   const { isAuthenticated, isLoading, user, logout } = useAuth();
   const router = useRouter();
+  const lang = getUserLanguage(user?.localization);
 
   const [drafts, setDrafts] = React.useState<DraftListingItem[]>([]);
   const [draftsLoading, setDraftsLoading] = React.useState(true);
@@ -76,6 +77,17 @@ export default function DashboardPage() {
   const [searchInput, setSearchInput] = React.useState("");
   const [searchQuery, setSearchQuery] = React.useState("");
   const [gridCols, setGridCols] = React.useState<1 | 2>(2);
+  const clearSearch = React.useCallback(() => {
+    setSearchInput("");
+    setSearchQuery("");
+  }, []);
+  const headerSearch = React.useMemo(() => ({
+    value: searchInput,
+    onChange: setSearchInput,
+    onClear: clearSearch,
+    placeholder: t("dashboard.searchPlaceholder", lang),
+    clearLabel: t("dashboard.clearSearch", lang),
+  }), [clearSearch, lang, searchInput]);
   // Apply the persisted layout before the browser paints. Reading it in a
   // passive effect visibly reshaped every card after the first frame.
   React.useLayoutEffect(() => {
@@ -278,10 +290,8 @@ export default function DashboardPage() {
     return <PageLoading />;
   }
 
-  const lang = getUserLanguage(user.localization);
-
   return (
-    <AppShell user={user} onLogout={logout}>
+    <AppShell user={user} onLogout={logout} headerSearch={headerSearch}>
       <div className="mx-auto w-full max-w-[1360px]">
         {/*
           The count goes to `meta`, not `actions`. In the action row it was not
@@ -292,18 +302,27 @@ export default function DashboardPage() {
         <PageHeader
           title={t("dashboard.creationsTitle", lang)}
           meta={`${totalCount} ${t("dashboard.items", lang)}`}
-          actions={<WebCreateAction lang={lang} />}
+          actions={(
+            <>
+              <span className="hidden md:inline-flex">
+                <GridLayoutToggle value={gridCols} onChange={handleGridCols} lang={lang} />
+              </span>
+              <span className="md:hidden">
+                <WebCreateAction lang={lang} />
+              </span>
+            </>
+          )}
           className="mb-3 sm:mb-5"
         />
         {/* Search bar */}
-        <div className="mb-3 flex items-center gap-2 border-b border-border/75 pb-2 sm:mb-4">
+        <div className="mb-3 flex items-center gap-2 border-b border-border/75 pb-2 sm:mb-4 md:hidden">
           <SearchField
             value={searchInput}
             onChange={setSearchInput}
-            onClear={() => setSearchQuery("")}
+            onClear={clearSearch}
             placeholder={t("dashboard.searchPlaceholder", lang)}
             clearLabel={t("dashboard.clearSearch", lang)}
-            className="flex-1 px-1"
+            className="min-w-0 flex-1 px-1"
             appearance="toolbar"
           />
           <GridLayoutToggle value={gridCols} onChange={handleGridCols} lang={lang} />
@@ -343,7 +362,7 @@ export default function DashboardPage() {
             icon={<ImageIcon size={20} />}
             title={t(searchQuery ? "dashboard.noResults" : "dashboard.noSplatsTitle", lang)}
             description={t(searchQuery ? "dashboard.noResultsHint" : "dashboard.noSplats", lang)}
-            action={searchQuery ? <Button type="button" variant="outline" size="sm" onClick={() => { setSearchInput(""); setSearchQuery(""); }}>{t("dashboard.clearSearch", lang)}</Button> : undefined}
+            action={searchQuery ? <Button type="button" variant="outline" size="sm" onClick={clearSearch}>{t("dashboard.clearSearch", lang)}</Button> : undefined}
           />
         ) : (
           <>
