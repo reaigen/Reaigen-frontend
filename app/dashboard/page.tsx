@@ -23,6 +23,7 @@ import { readDraftPageCache, writeDraftPageCache } from "../lib/resilient-draft-
 import { resolveUnit, type UnitLookup } from "../lib/unit-catalog";
 import { WebCreateAction } from "../components/web-create-action";
 import { CollectionLoading } from "../components/collection-loading";
+import { mediaProxyUrl } from "../lib/image-preview";
 
 function compactNumber(value: string | number | null | undefined, lang?: string) {
   if (value == null || value === "") return null;
@@ -44,6 +45,11 @@ function formatMoney(value: string | number | null | undefined, currency: string
 }
 
 function getDraftThumbnail(draft: DraftListingItem): string | null {
+  const upload = currentGalleryUploads(draft.raw_uploads, "image")[0];
+  return upload ? mediaProxyUrl(upload.id, 1280) : null;
+}
+
+function getDraftThumbnailFallback(draft: DraftListingItem): string | null {
   return currentGalleryUploads(draft.raw_uploads, "image")[0]?.file_url ?? null;
 }
 
@@ -376,6 +382,7 @@ export default function DashboardPage() {
               const showOrigPrice = prefPrice && origPrice && preferredCurrency?.id !== storedCurrency?.id;
               const address = draft.display_address || [draft.city, draft.state, draft.country].filter(Boolean).join(", ");
               const thumbUrl = getDraftThumbnail(draft);
+              const thumbFallback = getDraftThumbnailFallback(draft);
               const draftTour = tourStates[draft.id];
               const tourStatusLabel = draftTour === "ready"
                 ? t("dashboard.tourReady", lang)
@@ -395,7 +402,7 @@ export default function DashboardPage() {
                   >
                     <div className="relative aspect-[16/10] overflow-hidden bg-surface-subtle">
                       {thumbUrl ? (
-                        <Thumbnail src={thumbUrl} alt={draft.title} className="absolute inset-0 h-full w-full object-cover [@media(hover:hover)]:transition-transform [@media(hover:hover)]:duration-500 [@media(hover:hover)]:ease-out [@media(hover:hover)]:group-hover:scale-[1.03]" priority={idx < 4} />
+                        <Thumbnail src={thumbUrl} fallbackSrc={thumbFallback} alt={draft.title} className="absolute inset-0 h-full w-full object-cover" priority={idx < 2} />
                       ) : (
                         <div
                           aria-hidden="true"

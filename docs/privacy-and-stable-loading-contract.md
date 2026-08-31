@@ -15,9 +15,12 @@ requirements rather than optional presentation details.
 - The frontend proxy sanitizes public shared-property responses as a second
   boundary. It removes exact address and coordinate fields from both the root
   response and nested property data before the response reaches browser code.
-- The map image route requires creator authentication, keeps the Google Maps
-  key on the server, and returns private, non-cacheable responses. A public
-  shared page must not request this route.
+- The map image route requires creator authentication and returns only a
+  privately cacheable, composed image. Google credentials, provider tile URLs,
+  coordinates, and geocoding responses remain server-side. When a draft has an
+  address but no saved coordinates, fallback geocoding is also performed only
+  inside this authenticated route and cached server-side to minimize repeated
+  disclosure. A public shared page must not request this route.
 - Expanded maps remain inside Reaigen. Do not provide an external Google Maps
   deep link that could expose the address through a third-party URL or browser
   history.

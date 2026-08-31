@@ -339,10 +339,11 @@ function GalleryLightbox({
                   aria-current={imageIndex === index ? "true" : undefined}
                 >
                   <Thumbnail
-                    src={isFeatureTile ? image.url : image.thumbnail_url || image.url}
+                    src={image.thumbnail_url || image.url}
                     alt={`${alt} ${imageIndex + 1}`}
-                    className="absolute inset-0 h-full w-full select-none object-cover transition-transform duration-500 ease-out group-hover:scale-[1.015] motion-reduce:transition-none"
-                    priority={imageIndex < 5}
+                    fallbackSrc={image.url}
+                    className="absolute inset-0 h-full w-full select-none object-cover"
+                    priority={imageIndex < 2}
                   />
                   <span
                     className={cn(
@@ -525,7 +526,8 @@ export function DraftImageGallery({ images, alt, fallbackUrl, lang = "en", onAct
                 )}
               >
                 <Thumbnail
-                  src={image.url}
+                  src={image.thumbnail_url || image.url}
+                  fallbackSrc={image.url}
                   alt={`${alt} · ${counterLabel(imageIndex, count, lang)}`}
                   className="pointer-events-none absolute inset-0 h-full w-full select-none object-cover"
                   priority={imageIndex === 0}
@@ -550,10 +552,11 @@ export function DraftImageGallery({ images, alt, fallbackUrl, lang = "en", onAct
                 aria-label={`${t("draft.gallery.photoView", lang)}: ${counterLabel(imageIndex, count, lang)}`}
               >
                 <Thumbnail
-                  src={imageIndex === 0 ? image.url : image.thumbnail_url || image.url}
+                  src={image.thumbnail_url || image.url}
+                  fallbackSrc={image.url}
                   alt={`${alt} ${imageIndex + 1}`}
-                  className="absolute inset-0 h-full w-full select-none object-cover transition-transform duration-500 ease-out group-hover/tile:scale-[1.012] motion-reduce:transition-none"
-                  priority
+                  className="absolute inset-0 h-full w-full select-none object-cover"
+                  priority={imageIndex < 2}
                 />
                 <span className="pointer-events-none absolute inset-0 bg-black/0 transition-colors duration-200 group-hover/tile:bg-black/[0.035]" />
               </button>

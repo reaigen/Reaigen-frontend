@@ -78,7 +78,11 @@ const nextConfig: NextConfig = {
         headers: securityHeaders,
       },
       {
-        source: "/api/:path*",
+        // Media previews and private map images set status-aware cache headers
+        // in their route handlers. Excluding them here keeps successful bytes
+        // reusable without accidentally caching an authentication or upstream
+        // error response.
+        source: "/api/:path((?!media-proxy$|maps/static$).*)",
         headers: [
           ...securityHeaders,
           { key: "Cache-Control", value: "private, no-store, no-cache, max-age=0, must-revalidate" },

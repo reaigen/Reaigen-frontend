@@ -89,10 +89,18 @@ function backendCandidates(): string[] {
   return [...new Set(candidates)];
 }
 
-function headersFor(contentType: string) {
+function headersFor(contentType: string, cacheable = false) {
   return {
     "Content-Type": contentType,
-    "Cache-Control": "private, no-store, no-cache, max-age=0, must-revalidate",
+    // Upload ids are immutable media versions. Keep resized bytes in the
+    // signed-in browser for a short session so reopening a concept or media
+    // panel does not download and decode the original again. Varying on the
+    // complete cookie prevents reuse after logout or by another account in the
+    // same browser profile.
+    "Cache-Control": cacheable
+      ? "private, max-age=3600, stale-while-revalidate=86400, no-transform"
+      : "private, no-store, max-age=0",
+    "Vary": "Cookie",
     "Cross-Origin-Resource-Policy": "same-origin",
     "X-Content-Type-Options": "nosniff",
   };
@@ -214,9 +222,9 @@ export async function GET(req: NextRequest) {
   const success = reduced
     ? new NextResponse(new Uint8Array(reduced.body), {
         status: 200,
-        headers: headersFor(reduced.contentType),
+        headers: headersFor(reduced.contentType, true),
       })
-    : new NextResponse(bytes, { status: 200, headers: headersFor(contentType) });
+    : new NextResponse(bytes, { status: 200, headers: headersFor(contentType, true) });
   if (rotated) setAuthCookies(success, rotated, refreshToken);
   return success;
 }

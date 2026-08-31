@@ -40,6 +40,8 @@ export function PropertyMapCard({
   const [target, setTarget] = useState(rawTarget);
   const [mapSource, setMapSource] = useState<string | null>(null);
   const [failed, setFailed] = useState(false);
+  const [loading, setLoading] = useState(Boolean(rawTarget));
+  const [retryNonce, setRetryNonce] = useState(0);
   const [expanded, setExpanded] = useState(false);
 
   useEffect(() => {
@@ -57,16 +59,14 @@ export function PropertyMapCard({
   }, [expanded]);
 
   useEffect(() => {
-    const timer = window.setTimeout(() => {
-      setTarget(rawTarget);
-      setFailed(false);
-    }, 500);
-    return () => window.clearTimeout(timer);
+    setTarget(rawTarget);
+    setFailed(false);
   }, [rawTarget]);
 
   useEffect(() => {
     if (!target) {
       setMapSource(null);
+      setLoading(false);
       return;
     }
 
@@ -74,6 +74,7 @@ export function PropertyMapCard({
     let objectUrl: string | null = null;
     setMapSource(null);
     setFailed(false);
+    setLoading(true);
     void fetch("/api/maps/static", {
       method: "POST",
       credentials: "same-origin",
@@ -94,18 +95,20 @@ export function PropertyMapCard({
         if (controller.signal.aborted) return;
         objectUrl = URL.createObjectURL(blob);
         setMapSource(objectUrl);
+        setLoading(false);
       })
       .catch(() => {
         if (controller.signal.aborted) return;
         setMapSource(null);
         setFailed(true);
+        setLoading(false);
       });
 
     return () => {
       controller.abort();
       if (objectUrl) URL.revokeObjectURL(objectUrl);
     };
-  }, [lang, target]);
+  }, [lang, retryNonce, target]);
 
   if (!target) return null;
 
@@ -113,7 +116,7 @@ export function PropertyMapCard({
     <>
       <section
         aria-label={t("draft.location", lang)}
-        aria-busy={!mapSource && !failed}
+        aria-busy={loading}
         className={cn(
           "group relative isolate overflow-hidden rounded-[1.6rem] border border-border/65 bg-[#e9eae7] shadow-card",
           compact ? "aspect-[4/3] min-h-[15rem] sm:aspect-[16/7]" : "aspect-[4/3] min-h-[17rem] sm:aspect-[18/7]",
@@ -131,23 +134,33 @@ export function PropertyMapCard({
             key={mapSource}
             src={mapSource}
             alt={target.address || t("draft.location", lang)}
-            loading="lazy"
+            loading="eager"
+            decoding="async"
+            fetchPriority="high"
             onError={() => setFailed(true)}
             className="absolute inset-0 h-full w-full object-cover"
           />
         ) : failed ? (
           <div className="absolute inset-0 flex items-center justify-center px-6 text-center">
             <div className="max-w-[18rem]">
-              <span className="mx-auto flex h-12 w-12 items-center justify-center rounded-full border border-foreground/10 bg-white/78 text-foreground/58 shadow-control backdrop-blur-xl">
+              <span className="mx-auto flex h-12 w-12 items-center justify-center rounded-full border border-foreground/10 bg-white/88 text-foreground/58 shadow-control backdrop-blur-xl">
                 <MapPinIcon size={20} />
               </span>
               <p className="mt-3 text-[13px] font-semibold text-foreground/68">{t("draft.mapPreviewUnavailable", lang)}</p>
+              <button
+                type="button"
+                onClick={() => setRetryNonce((value) => value + 1)}
+                className="mt-3 inline-flex min-h-9 items-center justify-center rounded-full border border-foreground/10 bg-white/88 px-4 text-[11px] font-semibold text-foreground/72 shadow-control transition-colors hover:bg-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              >
+                {t("common.tryAgain", lang)}
+              </button>
             </div>
           </div>
         ) : (
-          <div aria-hidden="true" className="absolute inset-0 flex items-center justify-center">
-            <span className="flex h-12 w-12 items-center justify-center rounded-full border border-foreground/8 bg-white/58 text-foreground/38 shadow-control backdrop-blur-xl">
-              <MapPinIcon size={20} />
+          <div className="absolute inset-0 flex items-center justify-center" role="status" aria-label={t("common.loading", lang)}>
+            <span className="inline-flex min-h-11 items-center gap-2.5 rounded-full border border-foreground/8 bg-white/78 px-4 text-[11px] font-semibold text-foreground/55 shadow-control backdrop-blur-xl">
+              <span className="h-3.5 w-3.5 animate-spin rounded-full border border-foreground/15 border-t-foreground/55 motion-reduce:animate-none" aria-hidden="true" />
+              {t("common.loading", lang)}
             </span>
           </div>
         )}
@@ -201,8 +214,14 @@ export function PropertyMapCard({
               {mapSource && !failed ? (
                 // eslint-disable-next-line @next/next/no-img-element
                 <img src={mapSource} alt={target.address || t("draft.location", lang)} className="h-full w-full object-cover" />
+              ) : failed ? (
+                <div className="flex h-full flex-col items-center justify-center gap-3 px-6 text-center text-foreground/55">
+                  <MapPinIcon size={28} />
+                  <p className="text-[13px] font-semibold">{t("draft.mapPreviewUnavailable", lang)}</p>
+                  <button type="button" onClick={() => setRetryNonce((value) => value + 1)} className="rounded-full border border-border bg-card px-4 py-2 text-[11px] font-semibold shadow-control hover:bg-surface-subtle">{t("common.tryAgain", lang)}</button>
+                </div>
               ) : (
-                <div className="flex h-full items-center justify-center text-foreground/45"><MapPinIcon size={28} /></div>
+                <div className="flex h-full items-center justify-center text-foreground/45"><span className="h-5 w-5 animate-spin rounded-full border-2 border-foreground/15 border-t-foreground/55 motion-reduce:animate-none" /></div>
               )}
             </div>
             {target.address ? (

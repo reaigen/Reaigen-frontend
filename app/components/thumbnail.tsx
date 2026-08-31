@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useCallback, useEffect } from "react";
+import { useState, useCallback, useEffect, useRef } from "react";
 
 interface ThumbnailProps {
   src: string;
@@ -8,28 +8,48 @@ interface ThumbnailProps {
   className?: string;
   /** Priority image (above the fold) — skips lazy loading */
   priority?: boolean;
+  /** Direct signed URL used only when the same-origin preview cannot load. */
+  fallbackSrc?: string | null;
 }
 
 /**
  * Optimized image component with:
  * - Native lazy loading + async decoding
- * - CSS fade-in on load (no layout shift)
- * - Shimmer placeholder while loading
+ * - A short opacity settle on load (no movement or layout shift)
+ * - A still tonal bed while the image decodes
  */
-export function Thumbnail({ src, alt, className = "", priority = false }: ThumbnailProps) {
+export function Thumbnail({ src, alt, className = "", priority = false, fallbackSrc = null }: ThumbnailProps) {
   const [loaded, setLoaded] = useState(false);
   const [error, setError] = useState(false);
+  const [activeSrc, setActiveSrc] = useState(src);
+  const imageRef = useRef<HTMLImageElement>(null);
 
   /* Signed media URLs can refresh after hydration. A result from the old URL
      must not poison the replacement, and a cached load event must never be a
      prerequisite for making valid media visible. */
   useEffect(() => {
+    setActiveSrc(src);
     setLoaded(false);
     setError(false);
   }, [src]);
 
+  // Browsers can satisfy a private cached preview before React subscribes to
+  // its load event. Promote that already-decoded image on the next frame so a
+  // cache hit never leaves a permanent neutral tile.
+  useEffect(() => {
+    const image = imageRef.current;
+    if (image?.complete && image.naturalWidth > 0) setLoaded(true);
+  }, [activeSrc]);
+
   const onLoad = useCallback(() => setLoaded(true), []);
-  const onError = useCallback(() => setError(true), []);
+  const onError = useCallback(() => {
+    if (fallbackSrc && activeSrc !== fallbackSrc) {
+      setActiveSrc(fallbackSrc);
+      setLoaded(false);
+      return;
+    }
+    setError(true);
+  }, [activeSrc, fallbackSrc]);
 
   if (error) {
     return (
@@ -52,14 +72,15 @@ export function Thumbnail({ src, alt, className = "", priority = false }: Thumbn
       )}
       {/* eslint-disable-next-line @next/next/no-img-element */}
       <img
-        src={src}
+        ref={imageRef}
+        src={activeSrc}
         alt={alt}
         loading={priority ? "eager" : "lazy"}
         decoding="async"
         fetchPriority={priority ? "high" : "low"}
         onLoad={onLoad}
         onError={onError}
-        className={`${className} opacity-100`}
+        className={`${className} transition-opacity duration-150 ease-out motion-reduce:transition-none ${loaded ? "opacity-100" : "opacity-0"}`}
       />
     </>
   );

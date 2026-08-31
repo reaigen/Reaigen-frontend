@@ -11,6 +11,7 @@ import { isApiNotFound } from "../../lib/api/error-message";
 import { writeDragItem } from "../../lib/agent-pool";
 import { getUserLanguage, t } from "../../lib/i18n";
 import { currentGalleryUploads } from "../../lib/media";
+import { mediaProxyUrl } from "../../lib/image-preview";
 import { readDraftDetailCache, writeDraftDetailCache } from "../../lib/resilient-draft-cache";
 import { DraftImageGallery } from "../../components/draft-image-gallery";
 import { DraftCacheNotice } from "../../components/draft-cache-notice";
@@ -103,7 +104,12 @@ function enumT(prefix: string, value: unknown, lang: string): string | null {
 
 function getImages(uploads: DraftUpload[], lang: string) {
   return currentGalleryUploads(uploads, "image")
-    .map((upload, index) => ({ id: upload.id, url: upload.file_url, name: `${t("draft.media.photo", lang)} ${index + 1}` }));
+    .map((upload, index) => ({
+      id: upload.id,
+      url: upload.file_url,
+      thumbnail_url: mediaProxyUrl(upload.id, 1600),
+      name: `${t("draft.media.photo", lang)} ${index + 1}`,
+    }));
 }
 
 function getVideos(uploads: DraftUpload[], lang: string) {

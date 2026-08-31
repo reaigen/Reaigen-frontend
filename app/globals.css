@@ -819,28 +819,6 @@
       margin-top: 1.75rem;
     }
 
-    .draft-detail-page .draft-action-toolbar {
-      align-items: stretch;
-      flex-direction: column;
-      overflow: visible;
-    }
-
-    .draft-detail-page .draft-action-tour {
-      min-width: 0;
-      width: 100%;
-    }
-
-    .draft-detail-page .draft-action-divider {
-      display: none;
-    }
-
-    .draft-detail-page .draft-action-items {
-      display: grid;
-      grid-template-columns: repeat(2, minmax(0, 1fr));
-      min-width: 0;
-      width: 100%;
-    }
-
     .draft-tour-assets .draft-tour-header {
       align-items: stretch;
       flex-direction: column;

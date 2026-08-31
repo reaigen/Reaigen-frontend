@@ -1,6 +1,8 @@
 import type { DraftDetailItem, DraftListingItem } from "./tour-types";
 
-const CACHE_VERSION = "v1";
+// v2 clears entries that contained expired signed image URLs. Concept cards now
+// render through stable, authenticated preview URLs keyed by upload id.
+const CACHE_VERSION = "v2";
 const MAX_AGE_MS = 12 * 60 * 60 * 1000;
 const MAX_ENTRY_BYTES = 1_500_000;
 

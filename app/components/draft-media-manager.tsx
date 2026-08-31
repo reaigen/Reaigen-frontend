@@ -19,6 +19,7 @@ import {
 } from "../lib/api/client";
 import { getSafeApiErrorMessage } from "../lib/api/error-message";
 import { formatDate, t, type LocaleKey } from "../lib/i18n";
+import { mediaProxyUrl } from "../lib/image-preview";
 import type { DraftDetailItem, DraftUpload } from "../lib/tour-types";
 import { Button } from "../lib/ui/button";
 import { cn } from "../lib/utils";
@@ -39,6 +40,7 @@ import {
 import { DraftImageEditor } from "./draft-image-editor";
 import { SidePanel } from "./side-panel";
 import { StatusPill } from "./status-pill";
+import { Thumbnail } from "./thumbnail";
 import {
   MediaVersionCard,
   MediaVersionCreationPanel,
@@ -200,7 +202,14 @@ function MediaVisual({ upload, alt, className }: { upload: DraftUpload; alt: str
       />
     );
   }
-  return <img src={upload.file_url} alt={alt} className={cn("h-full w-full object-cover", className)} />;
+  return (
+    <Thumbnail
+      src={mediaProxyUrl(upload.id, 1280)}
+      fallbackSrc={upload.file_url}
+      alt={alt}
+      className={cn("absolute inset-0 h-full w-full object-cover", className)}
+    />
+  );
 }
 
 function LoadingMark({ label }: { label: string }) {
@@ -214,19 +223,10 @@ function LoadingMark({ label }: { label: string }) {
 
 function MediaManagerSkeleton() {
   return (
-    <div className="media-manager-grid" aria-hidden="true">
-      {Array.from({ length: 3 }).map((_, index) => (
-        <div
-          key={index}
-          className="floating-panel-shape overflow-hidden border border-border/65 bg-card"
-        >
-          <div className="aspect-[16/9] animate-pulse bg-muted/60 motion-reduce:animate-none" />
-          <div className="space-y-2 px-3 py-3">
-            <div className="h-3 w-2/3 rounded-full bg-muted/70" />
-            <div className="h-3 w-1/3 rounded-full bg-muted/45" />
-          </div>
-        </div>
-      ))}
+    <div className="flex min-h-[18rem] items-start justify-center pt-10" aria-hidden="true">
+      <span className="inline-flex h-11 items-center gap-2.5 rounded-full border border-border/65 bg-card/88 px-4 text-[11px] font-semibold text-muted-foreground shadow-control backdrop-blur-xl">
+        <span className="h-3.5 w-3.5 animate-spin rounded-full border border-foreground/18 border-t-foreground/60 motion-reduce:animate-none" />
+      </span>
     </div>
   );
 }
