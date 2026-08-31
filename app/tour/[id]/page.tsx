@@ -439,9 +439,9 @@ export default function TourPage({
             <button
               onClick={() => router.push(viewer.draft_id ? `/draft/${viewer.draft_id}` : "/tours")}
               aria-label={t("common.back", lang)}
-              className="floating-icon-button pen-touch-target flex items-center justify-center border border-white/[0.16] bg-black/60 text-white/82 shadow-2xl backdrop-blur-2xl transition-colors hover:bg-black/72 hover:text-white active:scale-95 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/70"
+              className="viewer-top-control-icon pen-touch-target flex items-center justify-center rounded-full border border-white/[0.16] bg-black/60 text-white/82 shadow-2xl backdrop-blur-2xl transition-colors hover:bg-black/72 hover:text-white active:scale-95 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/70"
             >
-              <ArrowLeftIcon size={16} />
+              <ArrowLeftIcon size={18} />
             </button>
           </div>
 

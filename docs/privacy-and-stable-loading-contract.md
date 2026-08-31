@@ -42,8 +42,9 @@ requirements rather than optional presentation details.
   capture is an iPhone/iPad workflow and is not offered as a desktop action.
 - The tour back control, playback toolbar, and camera editor use one translucent
   dark material: the same border opacity, surface opacity, shadow, and blur.
-- The back control and camera toolbar share the same safe-area top baseline.
-  Opening or collapsing camera editing must not move either control.
+- The back control and camera toolbar share the same 56 px outside height,
+  safe-area top baseline, and symmetric desktop edge inset. Opening,
+  previewing, or collapsing camera editing must not move either control.
 
 ## Release verification
 

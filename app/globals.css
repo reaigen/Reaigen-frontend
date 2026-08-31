@@ -686,6 +686,18 @@
     height: var(--floating-control-sm);
   }
 
+  /* Tour-viewer controls live on opposite sides of the same top rail. Keep
+     their outside geometry identical so Back never looks lower or smaller
+     than the camera capsule when the viewer is still loading. */
+  .viewer-top-control {
+    min-height: var(--floating-header);
+  }
+
+  .viewer-top-control-icon {
+    width: var(--floating-header);
+    height: var(--floating-header);
+  }
+
   .floating-tooltip {
     min-height: 1.75rem;
     border: 1px solid hsl(var(--border) / 0.65);
