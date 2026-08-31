@@ -1,6 +1,7 @@
 "use client";
 
 import * as React from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { AppShell } from "../components/app-shell";
 import { CollectionCard } from "../components/collection-card";
@@ -19,8 +20,9 @@ import { Button } from "../lib/ui/button";
 import { WebCreateAction } from "../components/web-create-action";
 import { CollectionLoading } from "../components/collection-loading";
 import { GridLayoutToggle } from "../components/grid-layout-toggle";
+import { matchesCollectionQuery, normalizeCollectionQuery } from "../lib/collection-search";
 
-const TOURS_PAGE_SIZE = 24;
+const TOURS_PAGE_SIZE = 12;
 
 type TourState = "ready" | "processing" | "issues";
 
@@ -98,8 +100,12 @@ export default function ToursPage() {
   const [error, setError] = React.useState(false);
   const [query, setQuery] = React.useState("");
   const [searchQuery, setSearchQuery] = React.useState("");
+  const [resolvedQuery, setResolvedQuery] = React.useState("");
   const [gridCols, setGridCols] = React.useState<1 | 2>(2);
-  const clearSearch = React.useCallback(() => setQuery(""), []);
+  const clearSearch = React.useCallback(() => {
+    setQuery("");
+    setSearchQuery("");
+  }, []);
   const headerSearch = React.useMemo(() => ({
     value: query,
     onChange: setQuery,
@@ -110,10 +116,31 @@ export default function ToursPage() {
   const pageRef = React.useRef(1);
   const requestRef = React.useRef(0);
   const abortRef = React.useRef<AbortController | null>(null);
+  const sentinelRef = React.useRef<HTMLDivElement>(null);
+  const loadingMoreRef = React.useRef(false);
   // Raw pages as fetched; `items` is always the deduped view of this list,
   // so a later page carrying a better version of an already-shown draft can
   // still replace its card.
   const rawItemsRef = React.useRef<SplatListItem[]>([]);
+  const deferredQuery = React.useDeferredValue(query);
+  const normalizedQuery = React.useMemo(
+    () => normalizeCollectionQuery(deferredQuery),
+    [deferredQuery],
+  );
+  const normalizedResolvedQuery = React.useMemo(
+    () => normalizeCollectionQuery(resolvedQuery),
+    [resolvedQuery],
+  );
+  const visibleItems = React.useMemo(() => {
+    if (!normalizedQuery || normalizedQuery === normalizedResolvedQuery) return items;
+    return items.filter((item) => matchesCollectionQuery(
+      normalizedQuery,
+      item.title,
+      item.scan_type,
+      item.status,
+    ));
+  }, [items, normalizedQuery, normalizedResolvedQuery]);
+  const searchSettling = normalizedQuery !== normalizedResolvedQuery;
 
   React.useLayoutEffect(() => {
     const cached = localStorage.getItem("reaigen:gridCols");
@@ -139,6 +166,7 @@ export default function ToursPage() {
       rawItemsRef.current = data.results ?? [];
       setItems(dedupeByDraft(rawItemsRef.current));
       setHasMore(!!data.next);
+      setResolvedQuery(searchQuery);
       pageRef.current = 1;
     } catch (reason: unknown) {
       if (
@@ -152,7 +180,8 @@ export default function ToursPage() {
   }, [searchQuery]);
 
   const loadMore = React.useCallback(async () => {
-    if (loadingMore || !hasMore) return;
+    if (loadingMoreRef.current || !hasMore || loading || searchSettling) return;
+    loadingMoreRef.current = true;
     abortRef.current?.abort();
     const controller = new AbortController();
     abortRef.current = controller;
@@ -173,9 +202,10 @@ export default function ToursPage() {
     } catch {
       // Keep the already-rendered page usable; the button remains available.
     } finally {
+      loadingMoreRef.current = false;
       if (requestId === requestRef.current) setLoadingMore(false);
     }
-  }, [hasMore, loadingMore, searchQuery]);
+  }, [hasMore, loading, searchQuery, searchSettling]);
 
   React.useEffect(() => {
     if (!isLoading && !isAuthenticated) router.replace("/");
@@ -191,9 +221,27 @@ export default function ToursPage() {
   }, [isAuthenticated, load]);
 
   React.useEffect(() => {
-    const timer = window.setTimeout(() => setSearchQuery(query.trim()), 250);
+    const timer = window.setTimeout(() => {
+      const next = query.trim();
+      setSearchQuery((current) => current === next ? current : next);
+    }, 200);
     return () => window.clearTimeout(timer);
   }, [query]);
+
+  // Fetch the next bounded segment before the recipient reaches the end. The
+  // button remains as a keyboard/screen-reader fallback and as a retry target
+  // when a transient append request fails.
+  React.useEffect(() => {
+    if (!hasMore || loadingMore || searchSettling) return;
+    const element = sentinelRef.current;
+    if (!element || typeof IntersectionObserver === "undefined") return;
+    const observer = new IntersectionObserver(
+      ([entry]) => { if (entry.isIntersecting) void loadMore(); },
+      { rootMargin: "600px 0px" },
+    );
+    observer.observe(element);
+    return () => observer.disconnect();
+  }, [hasMore, loadMore, loadingMore, searchSettling]);
 
   if (isLoading || !user) return <PageLoading />;
 
@@ -228,73 +276,79 @@ export default function ToursPage() {
         </div>
 
         <div className="min-w-0">
-          {loading ? (
-          <CollectionLoading label={t("common.loading", lang)} className="min-h-48" />
-            ) : error ? (
-          <CollectionState
-            kind="error"
-            icon={<InfoIcon size={20} />}
-            title={t("tours.error", lang)}
-            action={<Button type="button" variant="outline" size="sm" onClick={() => void load()}>{t("common.tryAgain", lang)}</Button>}
-          />
-            ) : items.length === 0 ? (
-          <CollectionState
-            icon={<MainTourIcon size={20} />}
-            title={searchQuery ? t("tours.emptyFiltered", lang) : t("tours.empty", lang)}
-            description={t("tours.emptyHint", lang)}
-            action={searchQuery ? <Button type="button" variant="outline" size="sm" onClick={() => setQuery("")}>{t("dashboard.clearSearch", lang)}</Button> : undefined}
-          />
-            ) : (
-          <>
-          <div className={`grid grid-cols-1 gap-5 xl:gap-6 ${gridCols === 2 ? "md:grid-cols-2" : "mx-auto max-w-2xl"}`}>
-            {items.map((item, index) => {
-              const ready = tourState(item) === "ready";
-              const href = ready ? `/tour/${item.id}` : `/draft/${item.source_draft}`;
-              return (
-                <CollectionCard key={item.id}>
-                  <a
-                    href={href}
-                    data-testid={ready ? "tour-card-link" : "draft-card-link"}
-                    className="block focus-visible:outline-none"
-                  >
-                  <div className="relative aspect-[16/10] overflow-hidden bg-surface-subtle">
-                    {item.thumbnail_url ? (
-                      <Thumbnail src={item.thumbnail_url} alt={item.title} className="absolute inset-0 h-full w-full object-cover" priority={index < 2} />
-                    ) : (
-                      <div className="absolute inset-0 flex items-center justify-center bg-gradient-to-br from-muted/60 via-muted to-foreground/10 text-foreground/20"><MainTourIcon size={42} strokeWidth={1.35} /></div>
-                    )}
-                    <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/5 to-black/15" aria-hidden="true" />
-                    {/* Matches the p-4 sm:p-5 block at the foot of the card, so
-                        everything over the photo shares one margin. */}
-                    <StatusPill tone={statusTone(item)} dot className="absolute left-4 top-4 border-white/15 bg-black/55 text-white/90 shadow-sm backdrop-blur-md sm:left-5 sm:top-5">
-                      {statusLabel(item, lang)}
-                    </StatusPill>
-                    {ready ? (
-                      <span className="absolute right-4 top-4 inline-flex h-8 w-8 items-center justify-center rounded-full border border-white/15 bg-black/65 px-0 text-[11px] font-semibold text-white shadow-sm backdrop-blur-md transition-colors group-hover:bg-black/80 sm:right-5 sm:top-5 sm:w-auto sm:gap-1.5 sm:px-3">
-                        <PlayIcon size={14} /> <span className="hidden sm:inline">{t("tours.open", lang)}</span>
-                      </span>
-                    ) : null}
-                    <div className="absolute inset-x-0 bottom-0 p-4 sm:p-5">
-                      <h2 className="truncate text-[17px] font-semibold leading-snug tracking-[-0.02em] text-white">{item.title}</h2>
-                      <p className="mt-1 text-[12px] text-white/70">
-                        {t("tours.updated", lang)} {formatUpdated(item.updated_at, lang)}
-                      </p>
-                    </div>
-                  </div>
-                  </a>
-                </CollectionCard>
-              );
-            })}
-          </div>
-          {hasMore ? (
-            <div className="mt-8 flex justify-center">
-              <Button type="button" variant="outline" size="sm" className="h-11" disabled={loadingMore} onClick={() => void loadMore()}>
-                {loadingMore ? t("common.loading", lang) : t("dashboard.loadMore", lang)}
-              </Button>
-            </div>
-          ) : null}
-          </>
-            )}
+          {loading && visibleItems.length === 0 ? (
+            <CollectionLoading label={t("common.loading", lang)} className="min-h-48" />
+          ) : error ? (
+            <CollectionState
+              kind="error"
+              icon={<InfoIcon size={20} />}
+              title={t("tours.error", lang)}
+              action={<Button type="button" variant="outline" size="sm" onClick={() => void load()}>{t("common.tryAgain", lang)}</Button>}
+            />
+          ) : visibleItems.length === 0 ? (
+            <CollectionState
+              icon={<MainTourIcon size={20} />}
+              title={searchQuery ? t("tours.emptyFiltered", lang) : t("tours.empty", lang)}
+              description={t("tours.emptyHint", lang)}
+              action={searchQuery ? <Button type="button" variant="outline" size="sm" onClick={clearSearch}>{t("dashboard.clearSearch", lang)}</Button> : undefined}
+            />
+          ) : (
+            <>
+              <div
+                className={`grid grid-cols-1 gap-5 xl:gap-6 ${gridCols === 2 ? "md:grid-cols-2" : "mx-auto max-w-2xl"}`}
+                aria-busy={loading || loadingMore || searchSettling}
+              >
+                {visibleItems.map((item, index) => {
+                  const ready = tourState(item) === "ready";
+                  const href = ready ? `/tour/${item.id}` : `/draft/${item.source_draft}`;
+                  return (
+                    <CollectionCard key={item.id}>
+                      <Link
+                        href={href}
+                        data-testid={ready ? "tour-card-link" : "draft-card-link"}
+                        className="block focus-visible:outline-none"
+                        onPointerEnter={() => router.prefetch(href)}
+                        onFocus={() => router.prefetch(href)}
+                      >
+                        <div className="relative aspect-[16/10] overflow-hidden bg-surface-subtle">
+                          {item.thumbnail_url ? (
+                            <Thumbnail src={item.thumbnail_url} alt={item.title} className="absolute inset-0 h-full w-full object-cover" priority={index < 2} />
+                          ) : (
+                            <div className="absolute inset-0 flex items-center justify-center bg-gradient-to-br from-muted/60 via-muted to-foreground/10 text-foreground/20"><MainTourIcon size={42} strokeWidth={1.35} /></div>
+                          )}
+                          <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/5 to-black/15" aria-hidden="true" />
+                          {/* Matches the p-4 sm:p-5 block at the foot of the card, so
+                              everything over the photo shares one margin. */}
+                          <StatusPill tone={statusTone(item)} dot className="absolute left-4 top-4 border-white/15 bg-black/55 text-white/90 shadow-sm backdrop-blur-md sm:left-5 sm:top-5">
+                            {statusLabel(item, lang)}
+                          </StatusPill>
+                          {ready ? (
+                            <span className="absolute right-4 top-4 inline-flex h-8 w-8 items-center justify-center rounded-full border border-white/15 bg-black/65 px-0 text-[11px] font-semibold text-white shadow-sm backdrop-blur-md transition-colors group-hover:bg-black/80 sm:right-5 sm:top-5 sm:w-auto sm:gap-1.5 sm:px-3">
+                              <PlayIcon size={14} /> <span className="hidden sm:inline">{t("tours.open", lang)}</span>
+                            </span>
+                          ) : null}
+                          <div className="absolute inset-x-0 bottom-0 p-4 sm:p-5">
+                            <h2 className="truncate text-[17px] font-semibold leading-snug tracking-[-0.02em] text-white">{item.title}</h2>
+                            <p className="mt-1 text-[12px] text-white/70">
+                              {t("tours.updated", lang)} {formatUpdated(item.updated_at, lang)}
+                            </p>
+                          </div>
+                        </div>
+                      </Link>
+                    </CollectionCard>
+                  );
+                })}
+              </div>
+              {hasMore ? <div ref={sentinelRef} className="h-px" /> : null}
+              {hasMore ? (
+                <div className="mt-8 flex justify-center">
+                  <Button type="button" variant="outline" size="sm" className="h-11" disabled={loadingMore || searchSettling} onClick={() => void loadMore()}>
+                    {loadingMore ? t("common.loading", lang) : t("dashboard.loadMore", lang)}
+                  </Button>
+                </div>
+              ) : null}
+            </>
+          )}
         </div>
       </div>
     </AppShell>

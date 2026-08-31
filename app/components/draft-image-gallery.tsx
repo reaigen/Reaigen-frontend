@@ -37,12 +37,16 @@ function preferredScrollBehavior(): ScrollBehavior {
   return window.matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth";
 }
 
-function preloadNeighbors(images: GalleryImage[], index: number) {
+function preloadNeighbors(images: GalleryImage[], index: number, fullResolution = false) {
   if (typeof window === "undefined") return;
   [index - 1, index + 1].forEach((next) => {
-    const source = images[next]?.url;
+    const candidate = images[next];
+    const source = candidate
+      ? (fullResolution ? candidate.url : (candidate.thumbnail_url || candidate.url))
+      : null;
     if (!source) return;
     const image = new Image();
+    image.decoding = "async";
     image.src = source;
   });
 }
@@ -135,7 +139,9 @@ function GalleryLightbox({
   React.useEffect(() => onIndexChange(index), [index, onIndexChange]);
 
   React.useEffect(() => {
-    preloadNeighbors(images, index);
+    // Full-resolution neighbours are useful only after the recipient has
+    // entered the lightbox. The inline gallery warms resized previews instead.
+    preloadNeighbors(images, index, true);
   }, [images, index]);
 
   React.useEffect(() => {
@@ -291,6 +297,9 @@ function GalleryLightbox({
                 <img
                   src={image.url}
                   alt={`${alt} ${imageIndex + 1}`}
+                  loading={Math.abs(imageIndex - index) <= 1 ? "eager" : "lazy"}
+                  decoding="async"
+                  fetchPriority={imageIndex === index ? "high" : "auto"}
                   className={cn(
                     // The field behind it is white, so a light photo used to bleed
                     // straight into the background with no edge. The shadow and

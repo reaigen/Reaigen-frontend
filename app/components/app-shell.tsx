@@ -1,6 +1,7 @@
 "use client";
 
 import * as React from "react";
+import dynamic from "next/dynamic";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { Avatar, AvatarFallback, AvatarImage } from "../lib/ui/avatar";
@@ -11,11 +12,28 @@ import type { DraftDetailItem } from "../lib/tour-types";
 import { cn } from "../lib/utils";
 import { t, getUserLanguage } from "../lib/i18n";
 import { AppContentMessages } from "./content-documents";
-import { ReaiAgentCard } from "./reai-agent-card";
 import { REAI_COMPOSE_EVENT } from "../lib/reai-compose";
 import { ReaigenWordmark } from "./reaigen-wordmark";
 import { SearchField } from "./search-field";
 import { AgentIcon, ArrowLeftIcon, CloseIcon, DocumentIcon, MainHomeIcon, MainSettingsIcon, MainSignOutIcon, MainTourIcon, PlusIcon, TourIcon } from "./icons";
+
+// The agent contains its own composer, media tooling, history, and orchestration
+// client. Loading all of that on every collection page made a closed drawer one
+// of the largest pieces of startup JavaScript. Keep the shell control instant,
+// then fetch the agent implementation only after the drawer is first opened.
+const ReaiAgentCard = dynamic(
+  () => import("./reai-agent-card").then((module) => module.ReaiAgentCard),
+  {
+    ssr: false,
+    loading: () => (
+      <div
+        className="async-stable-region h-full min-h-40 bg-card"
+        role="status"
+        aria-busy="true"
+      />
+    ),
+  },
+);
 
 function NavRailItem({ href, label, icon: Icon, active }: {
   href: string;
@@ -298,6 +316,7 @@ function AppShellFrame({
   const pathname = usePathname();
   const [reaiEnabled, setReaiEnabled] = React.useState(false);
   const [reaiOpen, setReaiOpen] = React.useState(false);
+  const [reaiCardMounted, setReaiCardMounted] = React.useState(false);
   const [createOpen, setCreateOpen] = React.useState(false);
   const [mobileAccountOpen, setMobileAccountOpen] = React.useState(false);
   const [reaiViewport, setReaiViewport] = React.useState<{ height: number | null; offsetTop: number }>({ height: null, offsetTop: 0 });
@@ -343,6 +362,12 @@ function AppShellFrame({
 
   React.useEffect(() => {
     writeAgentPanelOpen(reaiOpen);
+  }, [reaiOpen]);
+
+  // Once opened, retain the mounted card while the drawer is hidden so its
+  // conversation and draft state survive a close/reopen in the same route.
+  React.useEffect(() => {
+    if (reaiOpen) setReaiCardMounted(true);
   }, [reaiOpen]);
 
   React.useEffect(() => {
@@ -1038,7 +1063,9 @@ function AppShellFrame({
               while the opposite side stays open for the full wordmark.
             */}
             <div className={cn("min-h-0 flex-1", dockedAgentViewport && "border-l border-border")}>
-              <ReaiAgentCard draftId={reaiDraftId} currentUploadId={reaiUploadId} currentTourId={reaiTourId} workspaceContext={reaiContext} lang={lang} onDraftUpdated={onReaiDraftUpdated} panel compact={compactAgentViewport} />
+              {reaiCardMounted ? (
+                <ReaiAgentCard draftId={reaiDraftId} currentUploadId={reaiUploadId} currentTourId={reaiTourId} workspaceContext={reaiContext} lang={lang} onDraftUpdated={onReaiDraftUpdated} panel compact={compactAgentViewport} />
+              ) : null}
             </div>
           </div>
         </>

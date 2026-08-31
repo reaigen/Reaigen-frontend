@@ -1,14 +1,15 @@
 "use client";
 
 import * as React from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useAuth } from "../components/hooks/use-auth";
 import { AppShell } from "../components/app-shell";
 import { CollectionCard } from "../components/collection-card";
 import { CollectionState } from "../components/collection-state";
 import { t, getUserLanguage } from "../lib/i18n";
-import { listAllSplats, listDrafts, listUnits } from "../lib/api/client";
-import type { DraftListingItem, SplatListItem } from "../lib/tour-types";
+import { getDraft, getSplatsByDraft, listDrafts, listUnits } from "../lib/api/client";
+import type { DraftListingItem } from "../lib/tour-types";
 import { Thumbnail } from "../components/thumbnail";
 import { PageLoading } from "../components/page-loading";
 import { PageHeader } from "../components/page-header";
@@ -23,6 +24,9 @@ import { resolveUnit, type UnitLookup } from "../lib/unit-catalog";
 import { WebCreateAction } from "../components/web-create-action";
 import { CollectionLoading } from "../components/collection-loading";
 import { mediaProxyUrl } from "../lib/image-preview";
+import { matchesCollectionQuery, normalizeCollectionQuery } from "../lib/collection-search";
+
+const DASHBOARD_PAGE_SIZE = 12;
 
 function compactNumber(value: string | number | null | undefined, lang?: string) {
   if (value == null || value === "") return null;
@@ -54,7 +58,12 @@ function getDraftThumbnailFallback(draft: DraftListingItem): string | null {
 
 type DashboardTourState = "ready" | "processing" | "issues";
 
-function getTourState(item: SplatListItem): DashboardTourState {
+function getTourState(item: {
+  status: string;
+  has_sog?: boolean;
+  has_splat?: boolean;
+  has_ply?: boolean;
+}): DashboardTourState {
   const status = item.status.toLowerCase();
   if (status === "failed" || status === "cancelled") return "issues";
   if (status === "completed" && (item.has_sog || item.has_splat || item.has_ply)) return "ready";
@@ -81,6 +90,7 @@ export default function DashboardPage() {
   const [unitCatalog, setUnitCatalog] = React.useState<UnitLookup[]>([]);
   const [searchInput, setSearchInput] = React.useState("");
   const [searchQuery, setSearchQuery] = React.useState("");
+  const [resolvedQuery, setResolvedQuery] = React.useState("");
   const [gridCols, setGridCols] = React.useState<1 | 2>(2);
   const clearSearch = React.useCallback(() => {
     setSearchInput("");
@@ -106,6 +116,41 @@ export default function DashboardPage() {
   const abortRef = React.useRef<AbortController | null>(null);
   const sentinelRef = React.useRef<HTMLDivElement>(null);
   const firstPageLoadingRef = React.useRef(true);
+  const loadingMoreRef = React.useRef(false);
+  const warmedDraftsRef = React.useRef(new Set<number>());
+  const checkedTourDraftsRef = React.useRef(new Set<number>());
+  const deferredSearchInput = React.useDeferredValue(searchInput);
+  const normalizedSearchInput = React.useMemo(
+    () => normalizeCollectionQuery(deferredSearchInput),
+    [deferredSearchInput],
+  );
+  const normalizedResolvedQuery = React.useMemo(
+    () => normalizeCollectionQuery(resolvedQuery),
+    [resolvedQuery],
+  );
+  const visibleDrafts = React.useMemo(() => {
+    if (!normalizedSearchInput || normalizedSearchInput === normalizedResolvedQuery) return drafts;
+    return drafts.filter((draft) => matchesCollectionQuery(
+      normalizedSearchInput,
+      draft.title,
+      draft.description,
+      draft.display_address,
+      draft.city,
+      draft.state,
+      draft.country,
+    ));
+  }, [drafts, normalizedResolvedQuery, normalizedSearchInput]);
+  const searchSettling = normalizedSearchInput !== normalizedResolvedQuery;
+  const visibleCount = searchSettling ? visibleDrafts.length : totalCount;
+  const loadedDraftIds = React.useMemo(() => drafts.map((draft) => draft.id), [drafts]);
+
+  const warmDraft = React.useCallback((draftId: number) => {
+    const href = `/draft/${draftId}`;
+    router.prefetch(href);
+    if (warmedDraftsRef.current.has(draftId)) return;
+    warmedDraftsRef.current.add(draftId);
+    void getDraft(draftId).catch(() => warmedDraftsRef.current.delete(draftId));
+  }, [router]);
 
   // Restore this user's last successful page before paint. The live request
   // still refreshes it immediately, but returning to the dashboard no longer
@@ -129,7 +174,7 @@ export default function DashboardPage() {
     const controller = new AbortController();
     abortRef.current = controller;
 
-    const data = await listDrafts(page, 20, searchQuery, controller.signal);
+    const data = await listDrafts(page, DASHBOARD_PAGE_SIZE, searchQuery, controller.signal);
     // If this request was superseded, discard results
     if (controller.signal.aborted) return;
 
@@ -142,6 +187,7 @@ export default function DashboardPage() {
     setHasMore(!!data.next);
     setTotalCount(data.count ?? 0);
     pageRef.current = page;
+    if (!append) setResolvedQuery(searchQuery);
     if (page === 1 && !searchQuery && user?.id) {
       writeDraftPageCache(user.id, {
         results,
@@ -154,33 +200,65 @@ export default function DashboardPage() {
 
   }, [searchQuery, user?.id]);
 
-  // Load tour availability once, after the first page has had a chance to
-  // paint. Tying this to `draftsLoading` used to download the entire splat
-  // inventory again after every search query.
+  // Enrich only cards that are actually loaded. The old implementation pulled
+  // every splat page for the account, which became an unbounded burst after
+  // first paint and competed with thumbnails and search on larger workspaces.
   React.useEffect(() => {
-    if (!isAuthenticated) return;
+    if (!isAuthenticated || loadedDraftIds.length === 0) return;
+    const pendingDraftIds = loadedDraftIds.filter((draftId) => !checkedTourDraftsRef.current.has(draftId));
+    if (pendingDraftIds.length === 0) return;
     let active = true;
-    const loadTourStates = () => {
-      void listAllSplats()
-        .then((splats) => {
-          if (!active) return;
-          const map: Record<number, DashboardTourState> = {};
-          for (const splat of splats) {
-            const state = getTourState(splat);
-            if (!map[splat.source_draft] || (state === "ready" && map[splat.source_draft] !== "ready")) {
-              map[splat.source_draft] = state;
+    const loadTourStates = async () => {
+      const queue = [...pendingDraftIds];
+      const updates: Record<number, DashboardTourState> = {};
+      const worker = async () => {
+        while (active) {
+          const nextDraftId = queue.shift();
+          if (nextDraftId === undefined) return;
+          checkedTourDraftsRef.current.add(nextDraftId);
+          try {
+            const payload = await getSplatsByDraft(nextDraftId);
+            for (const splat of payload.splats) {
+              const state = getTourState(splat);
+              if (!updates[nextDraftId] || (state === "ready" && updates[nextDraftId] !== "ready")) {
+                updates[nextDraftId] = state;
+              }
             }
+          } catch {
+            // Match the previous best-effort badge behavior. A later card-set
+            // change may retry; the listing itself remains fully usable.
+            checkedTourDraftsRef.current.delete(nextDraftId);
           }
-          setTourStates(map);
-        })
-        .catch(() => undefined);
+        }
+      };
+      await Promise.all(Array.from(
+        { length: Math.min(3, pendingDraftIds.length) },
+        () => worker(),
+      ));
+      if (active && Object.keys(updates).length > 0) {
+        setTourStates((current) => ({ ...current, ...updates }));
+      }
     };
-    const timer = window.setTimeout(loadTourStates, 400);
+    // Tour badges enrich the cards; they must not compete with the first page
+    // JSON and cover images. GraphJet's batch/realtime split maps cleanly here:
+    // render the bounded primary segment first, then merge secondary state
+    // during an idle window without changing card identity or order.
+    let idleId: number | null = null;
+    const timer = window.setTimeout(() => {
+      if ("requestIdleCallback" in window) {
+        idleId = window.requestIdleCallback(() => { void loadTourStates(); }, { timeout: 2_000 });
+      } else {
+        void loadTourStates();
+      }
+    }, 1_200);
     return () => {
       active = false;
       window.clearTimeout(timer);
+      if (idleId !== null && "cancelIdleCallback" in window) {
+        window.cancelIdleCallback(idleId);
+      }
     };
-  }, [isAuthenticated]);
+  }, [isAuthenticated, loadedDraftIds]);
 
   React.useEffect(() => {
     if (!isAuthenticated) return;
@@ -192,7 +270,10 @@ export default function DashboardPage() {
   }, [isAuthenticated]);
 
   React.useEffect(() => {
-    const timer = setTimeout(() => setSearchQuery(searchInput.trim()), 250);
+    const timer = setTimeout(() => {
+      const next = searchInput.trim();
+      setSearchQuery((current) => current === next ? current : next);
+    }, 200);
     return () => clearTimeout(timer);
   }, [searchInput]);
 
@@ -200,8 +281,10 @@ export default function DashboardPage() {
     if (!isAuthenticated) return;
     let active = true;
     firstPageLoadingRef.current = true;
+    loadingMoreRef.current = false;
     pageRef.current = 1;
     setHasMore(false);
+    setLoadingMore(false);
     setDraftsLoading(true);
     setDraftsError(false);
     void loadPage(1, false)
@@ -257,35 +340,42 @@ export default function DashboardPage() {
   }, [isAuthenticated, loadPage]);
 
   const handleLoadMore = React.useCallback(async () => {
-    if (firstPageLoadingRef.current || loadingMore || !hasMore) return;
+    if (firstPageLoadingRef.current || loadingMoreRef.current || !hasMore || searchSettling) return;
+    loadingMoreRef.current = true;
     setLoadingMore(true);
-    try { await loadPage(pageRef.current + 1, true); } catch {}
-    setLoadingMore(false);
-  }, [hasMore, loadPage, loadingMore]);
+    try {
+      await loadPage(pageRef.current + 1, true);
+    } catch {
+      // Keep the current segment stable; the fallback button can retry.
+    } finally {
+      loadingMoreRef.current = false;
+      setLoadingMore(false);
+    }
+  }, [hasMore, loadPage, searchSettling]);
 
   // Infinite scroll: observe sentinel div to auto-load next page
   React.useEffect(() => {
-    if (!hasMore || loadingMore) return;
+    if (!hasMore || loadingMore || searchSettling) return;
     const el = sentinelRef.current;
     if (!el) return;
     const observer = new IntersectionObserver(
       ([entry]) => { if (entry.isIntersecting) handleLoadMore(); },
-      { rootMargin: "400px" }
+      { rootMargin: "600px 0px" }
     );
     observer.observe(el);
     return () => observer.disconnect();
-  }, [hasMore, loadingMore, handleLoadMore]);
+  }, [hasMore, loadingMore, handleLoadMore, searchSettling]);
 
   // Background polling: refresh page 1 every 60s when tab is visible
   React.useEffect(() => {
     if (!isAuthenticated) return;
     const poll = () => {
       if (document.hidden) return;
-      listDrafts(1, 20, searchQuery).then((data) => {
+      listDrafts(1, DASHBOARD_PAGE_SIZE, searchQuery).then((data) => {
         const results = data.results ?? [];
-        if (results[0]?.id !== drafts[0]?.id || results.length !== Math.min(drafts.length, 20)) {
+        if (results[0]?.id !== drafts[0]?.id || results.length !== Math.min(drafts.length, DASHBOARD_PAGE_SIZE)) {
           setDrafts((prev) => {
-            const appended = prev.slice(20);
+            const appended = prev.slice(DASHBOARD_PAGE_SIZE);
             return [...results, ...appended];
           });
           setTotalCount(data.count ?? 0);
@@ -314,7 +404,7 @@ export default function DashboardPage() {
         */}
         <PageHeader
           title={t("dashboard.creationsTitle", lang)}
-          meta={`${totalCount} ${t("dashboard.items", lang)}`}
+          meta={`${visibleCount} ${t("dashboard.items", lang)}`}
           actions={(
             <>
               <span className="hidden md:inline-flex">
@@ -360,7 +450,7 @@ export default function DashboardPage() {
         )}
 
         {/* Cards */}
-        {draftsLoading && drafts.length === 0 ? (
+        {draftsLoading && visibleDrafts.length === 0 ? (
           <CollectionLoading label={t("common.loading", lang)} className="min-h-48" />
         ) : draftsError ? (
           <CollectionState
@@ -370,7 +460,7 @@ export default function DashboardPage() {
             description={t("dashboard.reconnectHint", lang)}
             action={<Button type="button" variant="outline" size="sm" onClick={() => setReloadNonce((value) => value + 1)}>{t("common.tryAgain", lang)}</Button>}
           />
-        ) : drafts.length === 0 ? (
+        ) : visibleDrafts.length === 0 ? (
           <CollectionState
             icon={<ImageIcon size={20} />}
             title={t(searchQuery ? "dashboard.noResults" : "dashboard.noSplatsTitle", lang)}
@@ -379,8 +469,11 @@ export default function DashboardPage() {
           />
         ) : (
           <>
-          <div className={`grid grid-cols-1 gap-5 xl:gap-6 ${gridCols === 2 ? "md:grid-cols-2" : "mx-auto max-w-2xl"}`}>
-            {drafts.map((draft, idx) => {
+          <div
+            className={`grid grid-cols-1 gap-5 xl:gap-6 ${gridCols === 2 ? "md:grid-cols-2" : "mx-auto max-w-2xl"}`}
+            aria-busy={draftsLoading || searchSettling}
+          >
+            {visibleDrafts.map((draft, idx) => {
               const preferredCurrency = resolveUnit(unitCatalog, draft.price_preferred_currency, "CURRENCY");
               const storedCurrency = resolveUnit(unitCatalog, draft.currency, "CURRENCY");
               const prefPrice = formatMoney(draft.price_preferred, preferredCurrency?.code, lang);
@@ -401,10 +494,12 @@ export default function DashboardPage() {
 
               return (
                 <CollectionCard key={draft.id}>
-                  <a
+                  <Link
                     href={`/draft/${draft.id}`}
                     data-testid="draft-card-link"
                     className="block focus-visible:outline-none"
+                    onPointerEnter={() => warmDraft(draft.id)}
+                    onFocus={() => warmDraft(draft.id)}
                   >
                     <div className="relative aspect-[16/10] overflow-hidden bg-surface-subtle">
                       {thumbUrl ? (
@@ -465,17 +560,28 @@ export default function DashboardPage() {
                         )}
                       </div>
                     </div>
-                  </a>
+                  </Link>
 
                 </CollectionCard>
               );
             })}
 
           </div>
-          {hasMore && <div ref={sentinelRef} className="h-px" />}
-          {loadingMore && (
-            <CollectionLoading label={t("common.loading", lang)} className="min-h-20 pt-7" />
-          )}
+          {hasMore ? <div ref={sentinelRef} className="h-px" /> : null}
+          {hasMore ? (
+            <div className="mt-8 flex justify-center">
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                className="h-11"
+                disabled={loadingMore || searchSettling}
+                onClick={() => void handleLoadMore()}
+              >
+                {loadingMore ? t("common.loading", lang) : t("dashboard.loadMore", lang)}
+              </Button>
+            </div>
+          ) : null}
           </>
         )}
       </div>

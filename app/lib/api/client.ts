@@ -217,29 +217,34 @@ async function request(path: string, options: RequestInit = {}) {
   return JSON.parse(text);
 }
 
-/** Abortable request — same as request() but respects AbortSignal. */
-async function abortableRequest(path: string, signal?: AbortSignal) {
-  const res = await fetch(path, {
-    credentials: "include",
-    headers: { "Content-Type": "application/json" },
-    signal,
-    cache: "no-store",
-  });
-  if (!res.ok) {
-    const body = await res.text();
-    if (res.status === 401) handleUnauthorized(res);
-    throw new ApiError(res.status, body);
+/**
+ * Abortable cached GET.
+ *
+ * Search and infinite-scroll callers need cancellation, but they should not
+ * give up the private in-memory cache merely because they supplied a signal.
+ * Returning to a recent query or revisiting the first page is now immediate;
+ * the identity generation still prevents a response from an old account from
+ * entering the cache after logout.
+ */
+async function abortableRequest<T>(path: string, signal?: AbortSignal): Promise<T> {
+  const cached = cache.get(path);
+  if (cached && Date.now() - cached.ts < ttlForPath(path)) {
+    return cached.data as T;
   }
-  const text = await res.text();
-  if (!text) return null;
-  return JSON.parse(text);
+
+  const requestGeneration = privateCacheGeneration;
+  const data = await fetchGetData(path, { signal });
+  if (!signal?.aborted && requestGeneration === privateCacheGeneration) {
+    cache.set(path, { data, ts: Date.now() });
+  }
+  return data as T;
 }
 
-async function requestWithTimeout(path: string, timeoutMs: number) {
+async function requestWithTimeout<T>(path: string, timeoutMs: number): Promise<T> {
   const controller = new AbortController();
   const timeout = window.setTimeout(() => controller.abort(), timeoutMs);
   try {
-    return await abortableRequest(path, controller.signal);
+    return await abortableRequest<T>(path, controller.signal);
   } finally {
     window.clearTimeout(timeout);
   }
@@ -598,7 +603,7 @@ export interface UserProfile {
 // ─── API calls ────────────────────────────────────────────────────────────
 
 export async function getProfile(): Promise<UserProfile> {
-  return requestWithTimeout("/api/reaigen/users/me/", PROFILE_REQUEST_TIMEOUT_MS);
+  return requestWithTimeout<UserProfile>("/api/reaigen/users/me/", PROFILE_REQUEST_TIMEOUT_MS);
 }
 
 export async function updateProfile(data: Partial<{
@@ -1191,7 +1196,9 @@ export async function listSplats(
 ): Promise<{ results: SplatListItem[]; count: number; next: string | null }> {
   const q = search ? `&search=${encodeURIComponent(search)}` : "";
   const path = `/api/reaigen/splats/?view=web&page=${page}&page_size=${pageSize}${q}`;
-  return signal ? abortableRequest(path, signal) : request(path);
+  return signal
+    ? abortableRequest<{ results: SplatListItem[]; count: number; next: string | null }>(path, signal)
+    : request(path);
 }
 
 export async function listDrafts(
@@ -1202,7 +1209,9 @@ export async function listDrafts(
 ): Promise<{ results: DraftListingItem[]; count: number; next: string | null }> {
   const q = search ? `&search=${encodeURIComponent(search)}` : "";
   const path = `/api/reaigen/drafts/?page=${page}&page_size=${pageSize}${q}`;
-  return signal ? abortableRequest(path, signal) : request(path);
+  return signal
+    ? abortableRequest<{ results: DraftListingItem[]; count: number; next: string | null }>(path, signal)
+    : request(path);
 }
 
 export async function getDraft(draftId: number): Promise<DraftDetailItem> {
@@ -3225,7 +3234,7 @@ export interface FloorplanRenderingData {
 }
 
 export async function getFloorplanRendering(floorplanId: number, signal?: AbortSignal): Promise<FloorplanRenderingData> {
-  return abortableRequest(`/api/reaigen/floorplans/${floorplanId}/rendering/`, signal);
+  return abortableRequest<FloorplanRenderingData>(`/api/reaigen/floorplans/${floorplanId}/rendering/`, signal);
 }
 
 // ─── Draft data (floorplan editor persistence) ────────────────────────
@@ -3337,12 +3346,12 @@ export async function listSplatsProgressive(onFirst: (splats: SplatListItem[], d
 /** Server-side search — fast, cancellable, no need to load all data first. */
 export async function searchSplats(query: string, signal?: AbortSignal): Promise<{ results: SplatListItem[]; count: number; next: string | null }> {
   const q = encodeURIComponent(query);
-  return abortableRequest(`/api/reaigen/splats/?page=1&page_size=50&search=${q}`, signal);
+  return abortableRequest<{ results: SplatListItem[]; count: number; next: string | null }>(`/api/reaigen/splats/?page=1&page_size=50&search=${q}`, signal);
 }
 
 export async function searchDrafts(query: string, signal?: AbortSignal): Promise<{ results: DraftListingItem[]; count: number; next: string | null }> {
   const q = encodeURIComponent(query);
-  return abortableRequest(`/api/reaigen/drafts/?page=1&page_size=50&search=${q}`, signal);
+  return abortableRequest<{ results: DraftListingItem[]; count: number; next: string | null }>(`/api/reaigen/drafts/?page=1&page_size=50&search=${q}`, signal);
 }
 
 export async function getSplatViewer(

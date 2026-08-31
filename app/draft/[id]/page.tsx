@@ -1,8 +1,9 @@
 "use client";
 
-import { useEffect, useRef, useState, use, type ReactNode } from "react";
+import { useEffect, useMemo, useRef, useState, use, type ReactNode } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
+import dynamic from "next/dynamic";
 import { useAuth } from "../../components/hooks/use-auth";
 import { AppShell } from "../../components/app-shell";
 import { Button } from "../../lib/ui/button";
@@ -15,24 +16,13 @@ import { mediaProxyUrl } from "../../lib/image-preview";
 import { readDraftDetailCache, writeDraftDetailCache } from "../../lib/resilient-draft-cache";
 import { DraftImageGallery } from "../../components/draft-image-gallery";
 import { DraftCacheNotice } from "../../components/draft-cache-notice";
-import FloorplanViewer from "../../components/floorplan-viewer";
-import FloorplanEditor from "../../components/floorplan-editor";
-import { VolumesEditor } from "../../components/volumes-editor";
 import type { DraftDetailItem, DraftTourAssetsPayload, DraftUpload, SplatsByDraftPayload } from "../../lib/tour-types";
 import { baseUnitForCategory, resolveUnit, unitLabel, type UnitLookup } from "../../lib/unit-catalog";
 import { currencyDisplaySymbol } from "../../lib/currency-display";
 import { PageLoading } from "../../components/page-loading";
 import { CollectionLoading } from "../../components/collection-loading";
 import { cn } from "../../lib/utils";
-import { DraftEditor } from "../../components/draft-editor";
-import { DraftVersionManager } from "../../components/draft-version-manager";
-import { DraftMediaManager, type DraftMediaManagerHandle } from "../../components/draft-media-manager";
-import { DraftTourAssetsPanel } from "../../components/draft-tour-assets-panel";
-import { DraftSharingDock } from "../../components/draft-sharing-dock";
-import { FloorplanLightbox } from "../../components/floorplan-lightbox";
-import { GlassVideoPlayer } from "../../components/glass-video-player";
 import { FormattedDescription } from "../../components/formatted-description";
-import { PropertyMapCard } from "../../components/property-map-card";
 import {
   ArrowLeftIcon,
   ArrowRightIcon,
@@ -58,6 +48,21 @@ import {
   readReaiViewerAction,
   type ReaiViewerAction,
 } from "../../lib/reai-viewer-actions";
+
+// The listing itself is the primary path. Editors, sharing, versions, maps,
+// video controls, and floorplan tooling live in separate chunks so a normal
+// card-to-detail transition does not download every authoring surface first.
+const DraftEditor = dynamic(() => import("../../components/draft-editor").then((module) => module.DraftEditor));
+const DraftMediaManager = dynamic(() => import("../../components/draft-media-manager").then((module) => module.DraftMediaManager));
+const DraftSharingDock = dynamic(() => import("../../components/draft-sharing-dock").then((module) => module.DraftSharingDock));
+const DraftTourAssetsPanel = dynamic(() => import("../../components/draft-tour-assets-panel").then((module) => module.DraftTourAssetsPanel));
+const DraftVersionManager = dynamic(() => import("../../components/draft-version-manager").then((module) => module.DraftVersionManager));
+const FloorplanEditor = dynamic(() => import("../../components/floorplan-editor"));
+const FloorplanLightbox = dynamic(() => import("../../components/floorplan-lightbox").then((module) => module.FloorplanLightbox));
+const FloorplanViewer = dynamic(() => import("../../components/floorplan-viewer"));
+const GlassVideoPlayer = dynamic(() => import("../../components/glass-video-player").then((module) => module.GlassVideoPlayer));
+const PropertyMapCard = dynamic(() => import("../../components/property-map-card").then((module) => module.PropertyMapCard));
+const VolumesEditor = dynamic(() => import("../../components/volumes-editor").then((module) => module.VolumesEditor));
 
 // ── Formatting ────────────────────────────────────────────────────────────
 
@@ -549,7 +554,6 @@ export default function DraftPreviewPage({
   );
   const [versionsOpen, setVersionsOpen] = useState(false);
   const [mediaOpen, setMediaOpen] = useState(false);
-  const mediaManagerRef = useRef<DraftMediaManagerHandle>(null);
   const [sharingOpen, setSharingOpen] = useState(sharingRequested);
   const [usingCachedDraft, setUsingCachedDraft] = useState(false);
   const [retryAttempt, setRetryAttempt] = useState(0);
@@ -609,6 +613,7 @@ export default function DraftPreviewPage({
   useEffect(() => {
     if (!isAuthenticated || isNaN(draftId)) return;
     let active = true;
+    let translationTimer: number | null = null;
     setError(null);
     const cachedDraft = user?.id ? readDraftDetailCache(user.id, draftId) : null;
     if (cachedDraft) {
@@ -621,18 +626,28 @@ export default function DraftPreviewPage({
       // request actually failed and this cached copy is all there is.
       setDraft(cachedDraft);
     }
-    Promise.all([
-      getDraft(draftId),
+
+    // Tour relationships and units enrich the detail page, but neither is a
+    // prerequisite for showing the post. Keeping them off the primary promise
+    // removes their network latency from the card-to-detail transition.
+    void Promise.all([
       getSplatsByDraft(draftId).catch(() => null),
       getDraftTourAssets(draftId).catch(() => null),
-      listUnits().catch(() => []),
-    ]).then(([d, s, fetchedTourAssets, fetchedUnits]) => {
+    ]).then(([s, fetchedTourAssets]) => {
       if (!active) return;
-      setDraft(d);
       setSplatData(s);
       setTourAssets(fetchedTourAssets);
-      setTourDataResolved(true);
-      setUnitCatalog(fetchedUnits);
+    }).finally(() => {
+      if (active) setTourDataResolved(true);
+    });
+
+    void listUnits()
+      .then((fetchedUnits) => { if (active) setUnitCatalog(fetchedUnits); })
+      .catch(() => { if (active) setUnitCatalog([]); });
+
+    void getDraft(draftId).then((d) => {
+      if (!active) return;
+      setDraft(d);
       setUsingCachedDraft(false);
       setRetryAttempt(0);
       setManualRefreshPending(false);
@@ -642,26 +657,29 @@ export default function DraftPreviewPage({
         setTranslationPending(true);
         translateDraftDescription(draftId, lang)
           .then((res) => {
+            if (!active) return;
             if (res.status === "ready" && res.translation) {
               setDraft((prev) => prev ? { ...prev, description_translated: res.translation!, translation_status: "completed" } : prev);
               setTranslationPending(false);
             } else if (res.status === "pending") {
               // Poll once after a delay
-              setTimeout(() => {
+              translationTimer = window.setTimeout(() => {
                 translateDraftDescription(draftId, lang).then((r2) => {
+                  if (!active) return;
                   if (r2.status === "ready" && r2.translation) {
                     setDraft((prev) => prev ? { ...prev, description_translated: r2.translation!, translation_status: "completed" } : prev);
                   }
                   setTranslationPending(false);
-                }).catch(() => setTranslationPending(false));
+                }).catch(() => { if (active) setTranslationPending(false); });
               }, 5000);
+            } else {
+              setTranslationPending(false);
             }
           })
-          .catch(() => setTranslationPending(false));
+          .catch(() => { if (active) setTranslationPending(false); });
       }
     }).catch((err) => {
       if (!active) return;
-      setTourDataResolved(true);
       setManualRefreshPending(false);
       if (isApiNotFound(err)) {
         setUsingCachedDraft(false);
@@ -675,7 +693,10 @@ export default function DraftPreviewPage({
       }
       setRetryAttempt((attempt) => attempt + 1);
     });
-    return () => { active = false; };
+    return () => {
+      active = false;
+      if (translationTimer !== null) window.clearTimeout(translationTimer);
+    };
   }, [isAuthenticated, draftId, lang, reloadNonce, user?.id]);
 
   useEffect(() => {
@@ -720,6 +741,19 @@ export default function DraftPreviewPage({
     return () => window.removeEventListener("reai-media-updated", refreshMedia);
   }, [draftId]);
 
+  // These collections are passed into media and detail components. Keeping
+  // their identities stable avoids re-running gallery preload/effect work when
+  // an unrelated panel opens or closes.
+  const images = useMemo(() => draft ? getImages(draft.raw_uploads, lang) : [], [draft, lang]);
+  const videos = useMemo(() => draft ? getVideos(draft.raw_uploads, lang) : [], [draft, lang]);
+  const facts = useMemo(() => draft ? buildFacts(draft, lang, unitCatalog) : [], [draft, lang, unitCatalog]);
+  const rows = useMemo(() => draft ? buildRows(draft, lang, unitCatalog) : [], [draft, lang, unitCatalog]);
+  const features = useMemo(() => draft ? getFeatureChips(draft, lang) : [], [draft, lang]);
+  const monthlyCosts = useMemo(
+    () => draft ? buildMonthlyCosts(draft, lang, unitCatalog) : [],
+    [draft, lang, unitCatalog],
+  );
+
   if (isLoading || !user) {
     return <PageLoading />;
   }
@@ -734,7 +768,7 @@ export default function DraftPreviewPage({
         headerBackLabel={t("nav.dashboard", lang)}
         headerTitleLoading
       >
-        <div className="mx-auto flex min-h-[65vh] w-full max-w-[1180px] items-center justify-center pb-28 md:pb-10">
+        <div className="mx-auto flex min-h-[65vh] w-full max-w-[1360px] items-center justify-center pb-28 md:pb-10">
           <CollectionLoading label={t("common.loading", lang)} className="min-h-0 p-0" />
         </div>
       </AppShell>
@@ -769,7 +803,7 @@ export default function DraftPreviewPage({
         headerBackHref="/dashboard"
         headerBackLabel={t("nav.dashboard", lang)}
       >
-        <div className="mx-auto w-full max-w-3xl pb-28 md:pb-10">{errorContent}</div>
+        <div className="mx-auto w-full max-w-[1360px] pb-28 md:pb-10">{errorContent}</div>
       </AppShell>
     );
   }
@@ -793,12 +827,6 @@ export default function DraftPreviewPage({
     .map((part) => typeof part === "string" ? part.trim() : "")
     .filter(Boolean)
     .join(", ");
-  const images = getImages(draft.raw_uploads, lang);
-  const videos = getVideos(draft.raw_uploads, lang);
-  const facts = buildFacts(draft, lang, unitCatalog);
-  const rows = buildRows(draft, lang, unitCatalog);
-  const features = getFeatureChips(draft, lang);
-  const monthlyCosts = buildMonthlyCosts(draft, lang, unitCatalog);
   const hasTranslation = !!(draft.description_translated && draft.translation_status === "completed");
   const rawDesc = hasTranslation ? draft.description_translated! : draft.description;
   const description = rawDesc?.trim() || null;
@@ -857,7 +885,7 @@ export default function DraftPreviewPage({
         writeDraftDetailCache(user.id, draftId, updatedDraft);
       }}
     >
-      <div className="draft-detail-page relative mx-auto w-full max-w-[1280px] pb-24 md:pb-12">
+      <div className="draft-detail-page relative mx-auto w-full max-w-[1360px] pb-24 md:pb-12">
         {/*
           Creation toolbar. Back stays the first thing on the page at every
           width — the stale-listing notice below must never displace the way
@@ -903,7 +931,7 @@ export default function DraftPreviewPage({
           {!hasMedia && (
             <button
               type="button"
-              onClick={() => mediaManagerRef.current?.requestUpload()}
+              onClick={() => setMediaOpen(true)}
               className="group w-full bg-transparent p-0 text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring md:border-t md:border-border/60 md:bg-card md:p-4"
             >
               <span className="flex min-h-40 min-w-0 items-center justify-center gap-4 rounded-[1.25rem] border border-dashed border-border/80 bg-surface-subtle/35 p-5 text-center transition-[background-color,border-color] group-hover:border-foreground/25 group-hover:bg-surface-subtle/60 sm:p-7">
@@ -1160,16 +1188,18 @@ export default function DraftPreviewPage({
           </section>
         </div>
 
-        <DraftSharingDock
-          open={sharingOpen}
-          onOpenChange={handleSharingOpenChange}
-          draftId={draftId}
-          draft={draft}
-          splatData={splatData}
-          tourAssets={tourAssets}
-          lang={lang}
-          dateFormat={user.localization?.date_format}
-        />
+        {sharingOpen ? (
+          <DraftSharingDock
+            open={sharingOpen}
+            onOpenChange={handleSharingOpenChange}
+            draftId={draftId}
+            draft={draft}
+            splatData={splatData}
+            tourAssets={tourAssets}
+            lang={lang}
+            dateFormat={user.localization?.date_format}
+          />
+        ) : null}
 
         {(hasNarrative || hasSupportingDetails) && (
           <div className={cn(
@@ -1390,28 +1420,32 @@ export default function DraftPreviewPage({
 
       </div>
 
-      <DraftEditor
-        open={editorOpen}
-        onOpenChange={(next) => {
-          setEditorOpen(next);
-          if (!next) setDescriptionEditRequested(false);
-        }}
-        draft={draft}
-        units={unitCatalog}
-        lang={lang}
-        onSaved={setDraft}
-        startWithDescription={descriptionEditRequested}
-      />
-      <FloorplanLightbox
-        open={floorplanFullscreen}
-        onClose={() => setFloorplanFullscreen(false)}
-        draftData={draft.draft_data ?? []}
-        floorplanId={draft.floorplan_id}
-        lang={lang}
-        units={unitCatalog}
-        targetAreaUnit={draft.area_preferred_unit ?? draft.area_unit}
-        agentAction={floorplanAgentAction}
-      />
+      {editorOpen ? (
+        <DraftEditor
+          open={editorOpen}
+          onOpenChange={(next) => {
+            setEditorOpen(next);
+            if (!next) setDescriptionEditRequested(false);
+          }}
+          draft={draft}
+          units={unitCatalog}
+          lang={lang}
+          onSaved={setDraft}
+          startWithDescription={descriptionEditRequested}
+        />
+      ) : null}
+      {floorplanFullscreen ? (
+        <FloorplanLightbox
+          open={floorplanFullscreen}
+          onClose={() => setFloorplanFullscreen(false)}
+          draftData={draft.draft_data ?? []}
+          floorplanId={draft.floorplan_id}
+          lang={lang}
+          units={unitCatalog}
+          targetAreaUnit={draft.area_preferred_unit ?? draft.area_unit}
+          agentAction={floorplanAgentAction}
+        />
+      ) : null}
 
       {/* Structural gate, so the editor cannot mount on a phone regardless of state. */}
       {floorplanEditorOpen && !compactViewport && (
@@ -1430,24 +1464,27 @@ export default function DraftPreviewPage({
           }
         />
       )}
-      <DraftMediaManager
-        ref={mediaManagerRef}
-        open={mediaOpen}
-        onOpenChange={setMediaOpen}
-        draft={draft}
-        lang={lang}
-        onChanged={() => refreshDraft(draftId).then(setDraft)}
-      />
-      <DraftVersionManager
-        open={versionsOpen}
-        onOpenChange={setVersionsOpen}
-        draft={draft}
-        splats={splatData}
-        units={unitCatalog}
-        lang={lang}
-        onActiveTourChanged={(activeSplatId) => setSplatData((current) => current ? { ...current, parent_splat_id: activeSplatId } : current)}
-        onDraftRestored={setDraft}
-      />
+      {mediaOpen ? (
+        <DraftMediaManager
+          open={mediaOpen}
+          onOpenChange={setMediaOpen}
+          draft={draft}
+          lang={lang}
+          onChanged={() => refreshDraft(draftId).then(setDraft)}
+        />
+      ) : null}
+      {versionsOpen ? (
+        <DraftVersionManager
+          open={versionsOpen}
+          onOpenChange={setVersionsOpen}
+          draft={draft}
+          splats={splatData}
+          units={unitCatalog}
+          lang={lang}
+          onActiveTourChanged={(activeSplatId) => setSplatData((current) => current ? { ...current, parent_splat_id: activeSplatId } : current)}
+          onDraftRestored={setDraft}
+        />
+      ) : null}
 
     </AppShell>
   );

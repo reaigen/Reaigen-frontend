@@ -41,6 +41,27 @@ requirements rather than optional presentation details.
 - Motion-reduction preferences disable loading animation while preserving the
   placeholder geometry.
 
+## Bounded collection delivery
+
+- Dashboard and tour feeds load a small, bounded first segment. Additional
+  segments append ahead of the scroll boundary and retain a visible manual
+  control for keyboard access, unsupported observers, and transient retries.
+- Only one append request may be active per feed. New searches cancel obsolete
+  requests, and responses from an older query must never overwrite the current
+  query.
+- Search provides immediate matches from the current segment while the
+  authoritative server query settles. Case, whitespace, and diacritics are
+  normalized consistently across local collection fields.
+- Cards keep stable identities and ordering when secondary state arrives.
+  Tour badges and other enrichment run after the first segment and its primary
+  images have had an opportunity to load.
+- Authenticated GET reuse remains identity-scoped. Cancellation must not
+  disable the short-lived private cache, and logout must prevent an old
+  response from entering a later user's cache.
+- Distant card images remain lazy. The first visible images receive priority;
+  full-resolution gallery neighbours are fetched only after the lightbox is
+  opened.
+
 ## Desktop creation and tour controls
 
 - Desktop Create exposes concept and virtual-tour workflows. New spatial

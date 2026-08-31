@@ -41,9 +41,9 @@ export const viewport: Viewport = {
 
 function metadataBase() {
   try {
-    return new URL(process.env.NEXT_PUBLIC_SITE_URL ?? "https://app-reaigen.publicrouter.sk");
+    return new URL(process.env.NEXT_PUBLIC_SITE_URL ?? "https://www.reaigen.io");
   } catch {
-    return new URL("https://app-reaigen.publicrouter.sk");
+    return new URL("https://www.reaigen.io");
   }
 }
 
@@ -69,10 +69,6 @@ export const metadata: Metadata = {
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html lang="en" className={brandSerif.variable}>
-      <head>
-        <link rel="dns-prefetch" href="//app-reaigen.publicrouter.sk" />
-        <link rel="preconnect" href="https://app-reaigen.publicrouter.sk" crossOrigin="anonymous" />
-      </head>
       <body>
         <AuthProvider>
           <WebVitalsReporter />

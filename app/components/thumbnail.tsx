@@ -77,7 +77,10 @@ export function Thumbnail({ src, alt, className = "", priority = false, fallback
         alt={alt}
         loading={priority ? "eager" : "lazy"}
         decoding="async"
-        fetchPriority={priority ? "high" : "low"}
+        // Lazy loading already keeps distant cards out of the request queue.
+        // Forcing every other image to `low` also penalised a card the moment
+        // it scrolled into view, leaving a neutral tile after the user arrived.
+        fetchPriority={priority ? "high" : "auto"}
         onLoad={onLoad}
         onError={onError}
         className={`${className} transition-opacity duration-150 ease-out motion-reduce:transition-none ${loaded ? "opacity-100" : "opacity-0"}`}
