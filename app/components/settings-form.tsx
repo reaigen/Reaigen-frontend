@@ -42,6 +42,8 @@ import {
   getReaiImprovementConsent,
   grantReaiImprovementConsent,
   revokeReaiImprovementConsent,
+  getPipelinePreferences,
+  updatePipelinePreferences,
   type UserProfile,
   type PersonalizedData,
   type AvailablePreferences,
@@ -59,8 +61,14 @@ import {
   type ReaiToolCode,
   type ReaiToolPermissions,
   type ReaiImprovementConsent,
+  type TrainingQuality,
+  type TrainingResolution,
 } from "../lib/api/client";
 import { getSafeApiErrorMessage } from "../lib/api/error-message";
+import {
+  TRAINING_PROFILE_DEFAULTS,
+  parseTrainingIterations,
+} from "../lib/training-quality";
 import {
   disableWebPushForUser,
   enableWebPushForUser,
@@ -1664,6 +1672,176 @@ function SettingsField({ label, children, hint }: { label: string; children: Rea
   );
 }
 
+/* ── Gaussian Training Tab ──────────────────────────────────────────── */
+
+function TrainingTab({ lang }: { lang: string }) {
+  const [quality, setQuality] = React.useState<TrainingQuality>("fast");
+  const [resolution, setResolution] = React.useState<TrainingResolution>("res2");
+  const [iterations, setIterations] = React.useState("5350");
+  const [loading, setLoading] = React.useState(true);
+  const [loaded, setLoaded] = React.useState(false);
+  const [saving, setSaving] = React.useState(false);
+  const [error, setError] = React.useState<string | null>(null);
+  const [saved, setSaved] = React.useState(false);
+  useAutoDismiss(saved, setSaved);
+
+  const loadPreferences = React.useCallback(() => {
+    setLoading(true);
+    setLoaded(false);
+    setError(null);
+    getPipelinePreferences()
+      .then((preferences) => {
+        setQuality(preferences.training_quality);
+        setResolution(preferences.default_training_resolution);
+        setIterations(String(preferences.default_training_iterations));
+        setLoaded(true);
+      })
+      .catch((err) => setError(getSafeApiErrorMessage(err, lang)))
+      .finally(() => setLoading(false));
+  }, [lang]);
+
+  React.useEffect(() => { loadPreferences(); }, [loadPreferences]);
+
+  function applyProfile(value: string) {
+    const nextQuality = value as TrainingQuality;
+    const defaults = TRAINING_PROFILE_DEFAULTS[nextQuality];
+    setQuality(nextQuality);
+    setResolution(defaults.resolution);
+    setIterations(String(defaults.iterations));
+  }
+
+  async function handleSubmit(event: React.FormEvent) {
+    event.preventDefault();
+    setError(null);
+    const parsedIterations = parseTrainingIterations(iterations);
+    if (parsedIterations === null) {
+      setError(t("settings.training.iterationsError", lang));
+      return;
+    }
+
+    try {
+      setSaving(true);
+      const preferences = await updatePipelinePreferences({
+        training_quality: quality,
+        default_training_resolution: resolution,
+        default_training_iterations: parsedIterations,
+      });
+      setQuality(preferences.training_quality);
+      setResolution(preferences.default_training_resolution);
+      setIterations(String(preferences.default_training_iterations));
+      setSaved(true);
+    } catch (err) {
+      setError(getSafeApiErrorMessage(err, lang));
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  const profileSummary = quality === "fast"
+    ? t("settings.training.fastHint", lang)
+    : quality === "balanced"
+      ? t("settings.training.balancedHint", lang)
+      : t("settings.training.qualityHint", lang);
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle>{t("settings.training.title", lang)}</CardTitle>
+        <CardDescription>{t("settings.training.subtitle", lang)}</CardDescription>
+      </CardHeader>
+      <CardContent>
+        {loading ? (
+          <p className="py-8 text-center text-sm text-muted-foreground">{t("settings.training.loading", lang)}</p>
+        ) : !loaded ? (
+          <div className="flex flex-col items-center gap-3 py-8">
+            {error && <p className="text-sm text-destructive" role="alert">{error}</p>}
+            <Button type="button" variant="outline" size="sm" onClick={loadPreferences}>
+              {t("settings.training.retry", lang)}
+            </Button>
+          </div>
+        ) : (
+          <form className="space-y-5" onSubmit={handleSubmit}>
+            <div className="rounded-2xl border border-border/60 bg-muted/20 px-4 py-3.5">
+              <p className="text-[13px] font-medium">{t("settings.training.summary", lang)}</p>
+              <p className="mt-1 text-[12px] leading-relaxed text-muted-foreground">{profileSummary}</p>
+              <div className="mt-3 flex flex-wrap gap-2 text-[11px] font-medium text-foreground/70">
+                <span className="rounded-full bg-background px-2.5 py-1 shadow-sm">
+                  {resolution === "res1"
+                    ? t("settings.training.resolutionFull", lang)
+                    : t("settings.training.resolutionHalf", lang)}
+                </span>
+                <span className="rounded-full bg-background px-2.5 py-1 shadow-sm">
+                  {Number(iterations || 0).toLocaleString()} {t("settings.training.iterationsShort", lang)}
+                </span>
+              </div>
+            </div>
+
+            <SettingsField
+              label={t("settings.training.profile", lang)}
+              hint={t("settings.training.profileHint", lang)}
+            >
+              <Select value={quality} onValueChange={applyProfile}>
+                <SelectTrigger aria-label={t("settings.training.profile", lang)}><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="fast">{t("settings.training.fast", lang)}</SelectItem>
+                  <SelectItem value="balanced">{t("settings.training.balanced", lang)}</SelectItem>
+                  <SelectItem value="quality">{t("settings.training.quality", lang)}</SelectItem>
+                </SelectContent>
+              </Select>
+            </SettingsField>
+
+            <Separator />
+
+            <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+              <SettingsField
+                label={t("settings.training.resolution", lang)}
+                hint={t("settings.training.resolutionHint", lang)}
+              >
+                <Select value={resolution} onValueChange={(value) => setResolution(value as TrainingResolution)}>
+                  <SelectTrigger aria-label={t("settings.training.resolution", lang)}><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="res2">{t("settings.training.resolutionHalf", lang)}</SelectItem>
+                    <SelectItem value="res1">{t("settings.training.resolutionFull", lang)}</SelectItem>
+                  </SelectContent>
+                </Select>
+              </SettingsField>
+              <SettingsField
+                label={t("settings.training.iterations", lang)}
+                hint={t("settings.training.iterationsHint", lang)}
+              >
+                <Input
+                  type="number"
+                  min={0}
+                  max={60000}
+                  step={50}
+                  inputMode="numeric"
+                  value={iterations}
+                  onChange={(event) => setIterations(event.target.value)}
+                  aria-label={t("settings.training.iterations", lang)}
+                />
+              </SettingsField>
+            </div>
+
+            <p className="text-[12px] leading-relaxed text-muted-foreground">
+              {t("settings.training.futureOnly", lang)}
+            </p>
+            {error && <p className="text-[12px] text-destructive" role="alert">{error}</p>}
+            {saved && <p className="text-[12px] text-success" role="status">{t("settings.training.saved", lang)}</p>}
+            <div className="flex gap-2 pt-1">
+              <Button type="submit" size="sm" loading={saving}>{t("settings.training.save", lang)}</Button>
+              {error && (
+                <Button type="button" variant="outline" size="sm" onClick={loadPreferences}>
+                  {t("settings.training.retry", lang)}
+                </Button>
+              )}
+            </div>
+          </form>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
 function LocalizationTab({ user, lang }: { user: UserProfile; lang: string }) {
   const loc = user.localization;
   const [language, setLanguage] = React.useState(loc?.language ?? "en");
@@ -2872,7 +3050,7 @@ export function SettingsForm({ user, onSaved }: { user: UserProfile; onSaved: ()
   const lang = getUserLanguage(user.localization);
   const [activeTab, setActiveTab] = React.useState("profile");
   React.useEffect(() => {
-    const sections = ["profile", "seller", "privacy", "reai", "localization", "notifications", "billing", "security"];
+    const sections = ["profile", "seller", "privacy", "reai", "training", "localization", "notifications", "billing", "security"];
     const selectSection = (section: string) => {
       if (!sections.includes(section)) return;
       setActiveTab(section);
@@ -2902,6 +3080,7 @@ export function SettingsForm({ user, onSaved }: { user: UserProfile; onSaved: ()
     { value: "seller", label: "settings.tab.seller" },
     { value: "privacy", label: "settings.tab.privacy" },
     { value: "reai", label: "settings.tab.reai" },
+    { value: "training", label: "settings.tab.training" },
     { value: "localization", label: "settings.tab.localization" },
     { value: "notifications", label: "settings.tab.notifications" },
     { value: "billing", label: "settings.tab.billing" },
@@ -2964,6 +3143,9 @@ export function SettingsForm({ user, onSaved }: { user: UserProfile; onSaved: ()
         </TabsContent>
         <TabsContent value="reai" className="mt-0">
           <ReaiTab lang={lang} />
+        </TabsContent>
+        <TabsContent value="training" className="mt-0">
+          <TrainingTab lang={lang} />
         </TabsContent>
         <TabsContent value="localization" className="mt-0">
           <LocalizationTab user={user} lang={lang} />

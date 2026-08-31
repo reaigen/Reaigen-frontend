@@ -676,6 +676,32 @@ export async function updatePersonalizedData(data: Partial<{
   });
 }
 
+export type TrainingResolution = "res1" | "res2";
+export type TrainingQuality = "fast" | "balanced" | "quality";
+
+export interface PipelinePreferences {
+  id: number;
+  default_training_resolution: TrainingResolution;
+  default_training_iterations: number;
+  training_quality: TrainingQuality;
+  updated_at: string;
+}
+
+export async function getPipelinePreferences(): Promise<PipelinePreferences> {
+  return request("/api/reaigen/pipeline-preferences/me/");
+}
+
+export async function updatePipelinePreferences(data: {
+  default_training_resolution: TrainingResolution;
+  default_training_iterations: number;
+  training_quality: TrainingQuality;
+}): Promise<PipelinePreferences> {
+  return request("/api/reaigen/pipeline-preferences/me/", {
+    method: "PATCH",
+    body: JSON.stringify(data),
+  });
+}
+
 export async function getWebPushConfig(): Promise<WebPushConfig> {
   return request(
     "/api/reaigen/notification-devices/web-push-config/",
