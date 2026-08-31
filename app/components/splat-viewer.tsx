@@ -8,7 +8,8 @@ import type {
   SpinoffSogSource,
 } from "@reaigen/spinoff";
 import { cameraFovRadians, normalizeCameraData } from "@/app/lib/camera-coordinates";
-import { clampCameraPosition } from "@/app/lib/camera-bounds";
+import { clampCameraPositionInCoordinateSpace } from "@/app/lib/camera-bounds";
+import { GaussianSortMotionController } from "@/app/lib/gaussian-sort-motion";
 import { getCache, putCache } from "@/app/lib/splat-cache";
 import { t } from "@/app/lib/i18n";
 import { ReaigenLoadingMark } from "@/app/components/reaigen-loading-mark";
@@ -2268,7 +2269,8 @@ const SplatViewer = forwardRef<SplatViewerHandle, Props>(function SplatViewer(
   const goToShot = useCallback((raw: number, instant = false) => {
     const data = tourData;
     const worldPath = pathDataRef.current;
-    if (!data || !worldPath || !cameraRef.current) return;
+    const B = babylonRef.current;
+    if (!data || !worldPath || !cameraRef.current || !B) return;
 
     const idx = Math.max(0, Math.min(data.shots.length - 1, raw));
     const shot = data.shots[idx];
@@ -2289,6 +2291,47 @@ const SplatViewer = forwardRef<SplatViewerHandle, Props>(function SplatViewer(
     freeModeRef.current = false;
     cam.detachControl();
     if (immersiveControls) setImmersiveBase(tPos, targetForward, shot.fov, targetUp);
+
+    // Authored cameras are discrete viewpoints, not keyframes for an invented
+    // flight. Apply the complete saved basis and FOV together. In particular,
+    // do not keep Spinoff in its coarse motion projection for an interpolated
+    // camera journey and then swap back to the full sorted scene at the end;
+    // that render transition is perceived as front/back camera hunting.
+    if (instant || useExactForward) {
+      setCameraFromForward(
+        cam,
+        B,
+        [tPos[0], tPos[1], tPos[2]],
+        targetForward,
+        true,
+        shot.fov,
+        targetUp,
+      );
+      const anim = animRef.current;
+      (anim as any).editorNav = false;
+      (anim as any).exactForward = true;
+      anim.active = false;
+      anim.holdActive = false;
+      anim.holdElapsed = 0;
+      anim.holdDuration = 0;
+      pathScrubRef.current = null;
+      scrollVelocityRef.current = 0;
+      progressRef.current = pathDataRef.current?.arcLens?.[shot.startIdx] ?? progressRef.current;
+      shotIdxRef.current = idx;
+      immersiveRenderBurstUntilRef.current = performance.now() + 220;
+      if (
+        cameraNavigationShouldRestorePointerControls(
+          immersiveControls,
+          spatialNavigationRef.current,
+        )
+        && canvasRef.current
+      ) {
+        freeModeRef.current = true;
+        cam.attachControl(canvasRef.current, true);
+      }
+      onShotChange?.(idx, shot);
+      return;
+    }
 
     const cur: Vec3 = [cam.position.x, cam.position.y, cam.position.z];
     const target = cam.getTarget();
@@ -2340,7 +2383,14 @@ const SplatViewer = forwardRef<SplatViewerHandle, Props>(function SplatViewer(
     progressRef.current = pathDataRef.current?.arcLens?.[shot.startIdx] ?? progressRef.current;
     shotIdxRef.current = idx;
     onShotChange?.(idx, shot);
-  }, [tourData, onShotChange, immersiveControls, setImmersiveBase, transformSpatialDirection]);
+  }, [
+    tourData,
+    onShotChange,
+    immersiveControls,
+    setCameraFromForward,
+    setImmersiveBase,
+    transformSpatialDirection,
+  ]);
 
   const goToPrev = useCallback(() => {
     const n = tourData?.shots.length ?? 0;
@@ -5466,6 +5516,7 @@ const SplatViewer = forwardRef<SplatViewerHandle, Props>(function SplatViewer(
     let layoutResizePending = false;
     let lastCanvasCssWidth = 0;
     let lastCanvasCssHeight = 0;
+    const gaussianSortMotion = new GaussianSortMotionController(120);
     setReady(false);
 
     async function init() {
@@ -5597,12 +5648,18 @@ const SplatViewer = forwardRef<SplatViewerHandle, Props>(function SplatViewer(
           if (spatialNavigationRef.current) return;
           const frame = fallbackSceneRef.current;
           if (!frame) return;
-          const held = clampCameraPosition(camera.position, {
-            footprint: frame.footprint,
-            floorY: frame.floorY,
-            ceilingY: frame.ceilingY,
-            radius: frame.radius,
-          });
+          const transform = globalSceneTransformRef.current;
+          const held = clampCameraPositionInCoordinateSpace(
+            camera.position,
+            {
+              footprint: frame.footprint,
+              floorY: frame.floorY,
+              ceilingY: frame.ceilingY,
+              radius: frame.radius,
+            },
+            (point) => inversePresentationPoint(point, transform),
+            (point) => transformCanonicalPoint(point, transform),
+          );
           if (!held.clamped) return;
           camera.position.set(held.x, held.y, held.z);
           // Kill the momentum that carried it out, or inertia spends the next
@@ -5648,9 +5705,24 @@ const SplatViewer = forwardRef<SplatViewerHandle, Props>(function SplatViewer(
         camera.keysUpward = [69];   // E
         camera.keysDownward = [81]; // Q
         cameraRef.current = camera;
+        const cameraMotionMeshes = () => [
+          gsRef.current,
+          ...compositionMeshesRef.current.map((item) => item.mesh),
+        ].filter(Boolean);
         camera.onViewMatrixChangedObservable.add(() => {
           if (!animRef.current.active) {
             immersiveRenderBurstUntilRef.current = performance.now() + 220;
+          }
+          // Babylon's worker can finish a sort for a pose that the camera left
+          // several frames ago. Freeze that coherent ordering during movement
+          // and request exactly one final-pose sort after 120 ms of stillness.
+          // Spinoff owns its own deterministic motion projection, so this lease
+          // applies only when Babylon is actually drawing the Gaussians.
+          if (!spinoffEligible) {
+            gaussianSortMotion.markMoving(
+              cameraMotionMeshes(),
+              performance.now(),
+            );
           }
         });
 
@@ -5895,7 +5967,12 @@ const SplatViewer = forwardRef<SplatViewerHandle, Props>(function SplatViewer(
             const nextMotionTimestamp = nextViewerMotionFrameTimestamp(
               lastMotionRenderAt,
               now,
-              performanceProfile,
+              // Spinoff owns its inexpensive motion projection and needs the
+              // camera pose at the display's native cadence. Capping Babylon's
+              // controller at 60 produced alternating 11/22 ms steps on 90 Hz
+              // panels, visible as camera jiggle even when the renderer had
+              // ample headroom. Babylon-drawn Gaussians retain the cap.
+              spinoffEligible ? "quality" : performanceProfile,
             );
             if (nextMotionTimestamp == null) return;
             lastMotionRenderAt = nextMotionTimestamp;
@@ -5904,6 +5981,14 @@ const SplatViewer = forwardRef<SplatViewerHandle, Props>(function SplatViewer(
             lastIdleRenderAt = now;
           }
           scene.render();
+          if (
+            !spinoffEligible
+            && gaussianSortMotion.settle(performance.now())
+          ) {
+            // Keep drawing until the final worker result has had time to reach
+            // the GPU; otherwise the idle path can sleep on the moving order.
+            immersiveRenderBurstUntilRef.current = performance.now() + 220;
+          }
         };
         renderLoopRef.current = renderLoop;
         engine.runRenderLoop(renderLoop);
@@ -6543,6 +6628,7 @@ const SplatViewer = forwardRef<SplatViewerHandle, Props>(function SplatViewer(
       compositionMeshesRef.current = [];
       fallbackSceneRef.current = null;
       renderLoopRef.current = null;
+      gaussianSortMotion.dispose();
       if (resizeRef.current) window.removeEventListener("resize", resizeRef.current);
       layoutResizeObserver?.disconnect();
       engineRef.current?.dispose();
@@ -6601,15 +6687,20 @@ const SplatViewer = forwardRef<SplatViewerHandle, Props>(function SplatViewer(
           // the option is absent), which is why the balloons were showing.
           // Footprint only: the SOG bytes and the lossless tensors are untouched.
           reconstructionFogGuard: true,
-          motionSmoothing: false,
-          // Delivery budgets track Splatfiction's runtime profiles: full
-          // native DPR on phones (2.25M cut a 2.4M-px handset short of
-          // native and reintroduced a sliver of upscaling) and the 5.5M
-          // desktop profile so a retina laptop keeps ~1:1 physical pixels.
+          // Spinoff 0.1.56 uses a stable deterministic subset while the camera
+          // changes, then restores the exact full projection after this short
+          // settle window. This is a render-work LOD, not camera interpolation:
+          // disabling it forced every pointer frame through the full sort and
+          // was the source of the low-FPS, juddering walkthrough.
+          motionSmoothing: true,
+          motionSettleMilliseconds: 100,
+          // Keep the external renderer inside the same balanced delivery
+          // budgets documented for Babylon. The previous 5.5M/2.6M override
+          // silently exceeded that contract and spent fill rate during motion.
           maxCanvasPixels: spatialNavigation
             ? compactTouch ? 3_000_000 : 8_000_000
             : performanceProfile === "balanced"
-              ? compactTouch ? 2_600_000 : 5_500_000
+              ? compactTouch ? 2_250_000 : 4_500_000
               : compactTouch ? 3_500_000 : 9_000_000,
           // Spinoff contributes no application theme or UI chrome; this is the
           // surface the Gaussians are composited onto, and it has to match the

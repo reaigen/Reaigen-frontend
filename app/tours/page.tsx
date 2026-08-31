@@ -1,7 +1,6 @@
 "use client";
 
 import * as React from "react";
-import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { AppShell } from "../components/app-shell";
 import { CollectionCard } from "../components/collection-card";
@@ -110,6 +109,7 @@ export default function ToursPage() {
   }), [clearSearch, lang, query]);
   const pageRef = React.useRef(1);
   const requestRef = React.useRef(0);
+  const abortRef = React.useRef<AbortController | null>(null);
   // Raw pages as fetched; `items` is always the deduped view of this list,
   // so a later page carrying a better version of an already-shown draft can
   // still replace its card.
@@ -126,19 +126,26 @@ export default function ToursPage() {
   }, []);
 
   const load = React.useCallback(async () => {
+    abortRef.current?.abort();
+    const controller = new AbortController();
+    abortRef.current = controller;
     const requestId = ++requestRef.current;
     setLoading(true);
     setLoadingMore(false);
     setError(false);
     try {
-      const data = await listSplats(1, TOURS_PAGE_SIZE, searchQuery);
+      const data = await listSplats(1, TOURS_PAGE_SIZE, searchQuery, controller.signal);
       if (requestId !== requestRef.current) return;
       rawItemsRef.current = data.results ?? [];
       setItems(dedupeByDraft(rawItemsRef.current));
       setHasMore(!!data.next);
       pageRef.current = 1;
-    } catch {
-      if (requestId === requestRef.current) setError(true);
+    } catch (reason: unknown) {
+      if (
+        !controller.signal.aborted
+        && !(reason instanceof DOMException && reason.name === "AbortError")
+        && requestId === requestRef.current
+      ) setError(true);
     } finally {
       if (requestId === requestRef.current) setLoading(false);
     }
@@ -146,11 +153,14 @@ export default function ToursPage() {
 
   const loadMore = React.useCallback(async () => {
     if (loadingMore || !hasMore) return;
+    abortRef.current?.abort();
+    const controller = new AbortController();
+    abortRef.current = controller;
     const requestId = requestRef.current;
     setLoadingMore(true);
     try {
       const nextPage = pageRef.current + 1;
-      const data = await listSplats(nextPage, TOURS_PAGE_SIZE, searchQuery);
+      const data = await listSplats(nextPage, TOURS_PAGE_SIZE, searchQuery, controller.signal);
       if (requestId !== requestRef.current) return;
       const seen = new Set(rawItemsRef.current.map((item) => item.id));
       rawItemsRef.current = [
@@ -174,11 +184,14 @@ export default function ToursPage() {
   React.useEffect(() => {
     if (!isAuthenticated) return;
     void load();
-    return () => { requestRef.current += 1; };
+    return () => {
+      requestRef.current += 1;
+      abortRef.current?.abort();
+    };
   }, [isAuthenticated, load]);
 
   React.useEffect(() => {
-    const timer = window.setTimeout(() => setSearchQuery(query.trim()), 150);
+    const timer = window.setTimeout(() => setSearchQuery(query.trim()), 250);
     return () => window.clearTimeout(timer);
   }, [query]);
 
@@ -239,7 +252,11 @@ export default function ToursPage() {
               const href = ready ? `/tour/${item.id}` : `/draft/${item.source_draft}`;
               return (
                 <CollectionCard key={item.id}>
-                  <Link href={href} data-testid={ready ? "tour-card-link" : "draft-card-link"} prefetch={ready} className="block focus-visible:outline-none">
+                  <a
+                    href={href}
+                    data-testid={ready ? "tour-card-link" : "draft-card-link"}
+                    className="block focus-visible:outline-none"
+                  >
                   <div className="relative aspect-[16/10] overflow-hidden bg-surface-subtle">
                     {item.thumbnail_url ? (
                       <Thumbnail src={item.thumbnail_url} alt={item.title} className="absolute inset-0 h-full w-full object-cover" priority={index < 2} />
@@ -264,7 +281,7 @@ export default function ToursPage() {
                       </p>
                     </div>
                   </div>
-                  </Link>
+                  </a>
                 </CollectionCard>
               );
             })}

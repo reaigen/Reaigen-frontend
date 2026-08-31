@@ -229,10 +229,10 @@ export default function CameraEditor({ splatId, viewerRef, activeShotIdx, initia
     setSelectedIdx(idx);
     setPreviewIdx(idx);
     if (preview) setMode("preview");
-    // Camera editing is an exact look-through operation. Preview navigation is
-    // the only place where a presentation flight belongs; otherwise Update
-    // could capture and persist a half-finished trajectory instead of the
-    // authored camera pose.
+    // A saved camera is an exact look-through operation in both modes. Flying
+    // between authored poses made the Gaussian renderer alternate between its
+    // motion preview and settled projection, which looked like the camera was
+    // hunting forward and backward even though the path itself was monotonic.
     viewerRef.current?.navigateToCamera(
       shot.position,
       shot.forward,
@@ -478,7 +478,7 @@ export default function CameraEditor({ splatId, viewerRef, activeShotIdx, initia
     viewerRef.current?.navigateToCamera(
       shots[targetIdx].position,
       shots[targetIdx].forward,
-      false,
+      savedCameraNavigationIsInstant("preview"),
       shots[targetIdx].fov,
       shots[targetIdx].up,
     );
@@ -516,7 +516,7 @@ export default function CameraEditor({ splatId, viewerRef, activeShotIdx, initia
       viewerRef.current?.navigateToCamera(
         shots[next].position,
         shots[next].forward,
-        false,
+        savedCameraNavigationIsInstant("preview"),
         shots[next].fov,
         shots[next].up,
       );

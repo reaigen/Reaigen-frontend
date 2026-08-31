@@ -23,6 +23,7 @@ export default defineConfig([
   },
   globalIgnores([
     ".next/**",
+    ".vercel/**",
     "out/**",
     "build/**",
     "next-env.d.ts",

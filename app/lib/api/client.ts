@@ -13,6 +13,7 @@ export class ApiError extends Error {
 // ─── In-memory GET cache + request deduplication ─────────────────────────
 
 const inFlight = new Map<string, Promise<unknown>>();
+const freshInFlight = new Map<string, Promise<unknown>>();
 const cache = new Map<string, { data: unknown; ts: number }>();
 let privateCacheGeneration = 0;
 
@@ -27,6 +28,7 @@ export function resetPrivateApiState() {
   privateCacheGeneration += 1;
   cache.clear();
   inFlight.clear();
+  freshInFlight.clear();
 }
 
 /** Session expired: flush all cached data and signal the app to
@@ -246,24 +248,35 @@ async function requestWithTimeout(path: string, timeoutMs: number) {
 /** Force a network GET and replace the matching in-memory cache entry. */
 async function freshRequest(path: string) {
   cache.delete(path);
-  inFlight.delete(path);
+  const existing = freshInFlight.get(path);
+  if (existing) return existing;
+
   const requestGeneration = privateCacheGeneration;
-  const res = await fetch(path, {
-    credentials: "include",
-    headers: { "Content-Type": "application/json" },
-    cache: "no-store",
-  });
-  if (!res.ok) {
-    const body = await res.text();
-    if (res.status === 401) handleUnauthorized(res);
-    throw new ApiError(res.status, body);
+  const promise = (async () => {
+    const res = await fetch(path, {
+      credentials: "include",
+      headers: { "Content-Type": "application/json" },
+      cache: "no-store",
+    });
+    if (!res.ok) {
+      const body = await res.text();
+      if (res.status === 401) handleUnauthorized(res);
+      throw new ApiError(res.status, body);
+    }
+    const text = await res.text();
+    const data = text ? JSON.parse(text) : null;
+    if (requestGeneration === privateCacheGeneration) {
+      cache.set(path, { data, ts: Date.now() });
+    }
+    return data;
+  })();
+
+  freshInFlight.set(path, promise);
+  try {
+    return await promise;
+  } finally {
+    if (freshInFlight.get(path) === promise) freshInFlight.delete(path);
   }
-  const text = await res.text();
-  const data = text ? JSON.parse(text) : null;
-  if (requestGeneration === privateCacheGeneration) {
-    cache.set(path, { data, ts: Date.now() });
-  }
-  return data;
 }
 
 // ─── Auth ─────────────────────────────────────────────────────────────────
@@ -816,7 +829,7 @@ export async function getAvailablePreferences(): Promise<AvailablePreferences> {
 }
 
 export type { UnitLookup } from "../unit-catalog";
-import type { UnitLookup } from "../unit-catalog";
+import { unitsForCategory, type UnitLookup } from "../unit-catalog";
 
 interface UnitLookupPage {
   count?: number;
@@ -832,12 +845,14 @@ interface UnitLookupPage {
 export async function listUnits(category?: string): Promise<UnitLookup[]> {
   const requestPage = async (page: number) => {
     const query = new URLSearchParams({ page: String(page), page_size: "500" });
-    if (category) query.set("category", category.trim().toUpperCase());
     return request(`/api/reaigen/lookups/units/?${query.toString()}`) as Promise<UnitLookupPage | UnitLookup[]>;
   };
 
   const first = await requestPage(1);
-  if (Array.isArray(first)) return first.filter((unit) => unit.is_active !== false);
+  if (Array.isArray(first)) {
+    const active = first.filter((unit) => unit.is_active !== false);
+    return category ? unitsForCategory(active, category) : active;
+  }
 
   const firstPage = first.results ?? [];
   const pageCount = first.next && firstPage.length > 0
@@ -850,8 +865,9 @@ export async function listUnits(category?: string): Promise<UnitLookup[]> {
     ...firstPage,
     ...remainingPages.flatMap((page) => Array.isArray(page) ? page : page.results ?? []),
   ];
-  return [...new Map(allUnits.map((unit) => [unit.id, unit])).values()]
+  const active = [...new Map(allUnits.map((unit) => [unit.id, unit])).values()]
     .filter((unit) => unit.is_active !== false);
+  return category ? unitsForCategory(active, category) : active;
 }
 
 export async function changePassword(data: {
@@ -1167,14 +1183,26 @@ export async function acceptAppContentDocument(data: {
 import type { SplatViewerPayload, SplatPackagePayload, SplatSceneResponse, SceneDeliveryResolution, SceneDeliverySummary, SceneDeliveryTargetProfile, SceneRefinementSummary, VirtualTourViewerPayload, CameraData, GlobalSceneTransform, UsdStageTransformEditResponse, TourViewerData, SplatListItem, ShareData, SharedDraftData, SplatsByDraftPayload, DraftListingItem, DraftDetailItem, DraftUpload, DraftTourAssetsPayload, DraftTourPublicationSelection } from "../tour-types";
 import type { SplatPruneMask } from "../splat-editing";
 
-export async function listSplats(page = 1, pageSize = 20, search = ""): Promise<{ results: SplatListItem[]; count: number; next: string | null }> {
+export async function listSplats(
+  page = 1,
+  pageSize = 20,
+  search = "",
+  signal?: AbortSignal,
+): Promise<{ results: SplatListItem[]; count: number; next: string | null }> {
   const q = search ? `&search=${encodeURIComponent(search)}` : "";
-  return request(`/api/reaigen/splats/?view=web&page=${page}&page_size=${pageSize}${q}`);
+  const path = `/api/reaigen/splats/?view=web&page=${page}&page_size=${pageSize}${q}`;
+  return signal ? abortableRequest(path, signal) : request(path);
 }
 
-export async function listDrafts(page = 1, pageSize = 100, search = ""): Promise<{ results: DraftListingItem[]; count: number; next: string | null }> {
+export async function listDrafts(
+  page = 1,
+  pageSize = 100,
+  search = "",
+  signal?: AbortSignal,
+): Promise<{ results: DraftListingItem[]; count: number; next: string | null }> {
   const q = search ? `&search=${encodeURIComponent(search)}` : "";
-  return request(`/api/reaigen/drafts/?page=${page}&page_size=${pageSize}${q}`);
+  const path = `/api/reaigen/drafts/?page=${page}&page_size=${pageSize}${q}`;
+  return signal ? abortableRequest(path, signal) : request(path);
 }
 
 export async function getDraft(draftId: number): Promise<DraftDetailItem> {

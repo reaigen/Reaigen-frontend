@@ -9,7 +9,6 @@ import { CollectionState } from "../components/collection-state";
 import { t, getUserLanguage } from "../lib/i18n";
 import { listAllSplats, listDrafts, listUnits } from "../lib/api/client";
 import type { DraftListingItem, SplatListItem } from "../lib/tour-types";
-import Link from "next/link";
 import { Thumbnail } from "../components/thumbnail";
 import { PageLoading } from "../components/page-loading";
 import { PageHeader } from "../components/page-header";
@@ -130,7 +129,7 @@ export default function DashboardPage() {
     const controller = new AbortController();
     abortRef.current = controller;
 
-    const data = await listDrafts(page, 20, searchQuery);
+    const data = await listDrafts(page, 20, searchQuery, controller.signal);
     // If this request was superseded, discard results
     if (controller.signal.aborted) return;
 
@@ -155,25 +154,33 @@ export default function DashboardPage() {
 
   }, [searchQuery, user?.id]);
 
-  // Load tour availability in batches. This avoids one by-draft request per card.
+  // Load tour availability once, after the first page has had a chance to
+  // paint. Tying this to `draftsLoading` used to download the entire splat
+  // inventory again after every search query.
   React.useEffect(() => {
-    if (!isAuthenticated || draftsLoading) return;
+    if (!isAuthenticated) return;
     let active = true;
-    void listAllSplats()
-      .then((splats) => {
-        if (!active) return;
-        const map: Record<number, DashboardTourState> = {};
-        for (const splat of splats) {
-          const state = getTourState(splat);
-          if (!map[splat.source_draft] || (state === "ready" && map[splat.source_draft] !== "ready")) {
-            map[splat.source_draft] = state;
+    const loadTourStates = () => {
+      void listAllSplats()
+        .then((splats) => {
+          if (!active) return;
+          const map: Record<number, DashboardTourState> = {};
+          for (const splat of splats) {
+            const state = getTourState(splat);
+            if (!map[splat.source_draft] || (state === "ready" && map[splat.source_draft] !== "ready")) {
+              map[splat.source_draft] = state;
+            }
           }
-        }
-        setTourStates(map);
-      })
-      .catch(() => undefined);
-    return () => { active = false; };
-  }, [draftsLoading, isAuthenticated]);
+          setTourStates(map);
+        })
+        .catch(() => undefined);
+    };
+    const timer = window.setTimeout(loadTourStates, 400);
+    return () => {
+      active = false;
+      window.clearTimeout(timer);
+    };
+  }, [isAuthenticated]);
 
   React.useEffect(() => {
     if (!isAuthenticated) return;
@@ -185,7 +192,7 @@ export default function DashboardPage() {
   }, [isAuthenticated]);
 
   React.useEffect(() => {
-    const timer = setTimeout(() => setSearchQuery(searchInput.trim()), 150);
+    const timer = setTimeout(() => setSearchQuery(searchInput.trim()), 250);
     return () => clearTimeout(timer);
   }, [searchInput]);
 
@@ -199,8 +206,8 @@ export default function DashboardPage() {
     setDraftsError(false);
     void loadPage(1, false)
       .then(() => { if (active) setDraftsError(false); })
-      .catch(() => {
-        if (!active) return;
+      .catch((reason: unknown) => {
+        if (!active || (reason instanceof DOMException && reason.name === "AbortError")) return;
         const cached = !searchQuery && user?.id ? readDraftPageCache(user.id) : null;
         if (cached?.results.length) {
           setDrafts(cached.results);
@@ -394,11 +401,10 @@ export default function DashboardPage() {
 
               return (
                 <CollectionCard key={draft.id}>
-                  <Link
+                  <a
                     href={`/draft/${draft.id}`}
                     data-testid="draft-card-link"
                     className="block focus-visible:outline-none"
-                    onMouseEnter={() => router.prefetch(`/draft/${draft.id}`)}
                   >
                     <div className="relative aspect-[16/10] overflow-hidden bg-surface-subtle">
                       {thumbUrl ? (
@@ -459,7 +465,7 @@ export default function DashboardPage() {
                         )}
                       </div>
                     </div>
-                  </Link>
+                  </a>
 
                 </CollectionCard>
               );

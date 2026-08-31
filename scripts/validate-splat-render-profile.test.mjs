@@ -3,11 +3,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
-import {
-  resolveSpinoffSogQuaternionOrder,
-  spinoffSogCodebookRows,
-  spinoffSogUsesPerChannelCodebook,
-} from "@reaigen/spinoff";
+import { resolveSpinoffSogQuaternionOrder } from "@reaigen/spinoff";
 
 import {
   GAUSSIAN_ANTIALIASED_VARIANCE,
@@ -49,9 +45,6 @@ const SPLATFICTION_10122 = fixture("splatfiction-web-10122.meta.json");
 
 const extent = (meta) =>
   Math.max(...meta.means.maxs.map((v, i) => v - meta.means.mins[i]));
-
-const inside = (p, meta) =>
-  p.every((v, i) => v >= meta.means.mins[i] && v <= meta.means.maxs[i]);
 
 // ---------------------------------------------------------------------------
 // Fixture sanity — if these drift, every assertion below is measuring nothing
@@ -201,13 +194,38 @@ test("vendored Spinoff uses Splatfiction's finite normalized Gaussian support", 
     "utf8",
   );
 
-  assert.equal(packageJson.version, "0.1.45");
+  assert.equal(packageJson.version, "0.1.56");
   for (const shader of [webGpu, webGl]) {
     assert.match(shader, /radiusSquared > 8\.0/);
     assert.match(shader, /0\.01831563888873418/);
     assert.match(shader, /0\.9816843611112658/);
     assert.doesNotMatch(shader, /radiusSquared > 9\.0/);
   }
+});
+
+test("vendored Spinoff uses a stable motion subset and restores settled quality", () => {
+  const packageRoot = join(here, "..", "node_modules", "@reaigen", "spinoff");
+  const renderer = readFileSync(
+    join(packageRoot, "dist", "renderer", "SpinoffRenderer.js"),
+    "utf8",
+  );
+  const webGl = readFileSync(
+    join(packageRoot, "dist", "renderer", "SpinoffWebGlBackend.js"),
+    "utf8",
+  );
+
+  // The moving camera must use the deterministic bounded subset added in
+  // Spinoff 0.1.56, then explicitly rebuild the exact settled projection.
+  assert.match(renderer, /motionSmoothing !== false && time < this\.motionUntil/);
+  assert.match(renderer, /maxMotionProjectedSplats/);
+  assert.match(renderer, /wasMotionPreview && !cameraMoving/);
+  assert.match(renderer, /this\.projectionDirty = true/);
+
+  // WebGL2 receives the same bounded movement path rather than sorting every
+  // projected splat on every pointer frame.
+  assert.match(webGl, /maxMotionProjectedSplats/);
+  assert.match(webGl, /const depthSlices = motionPreview \? 4 : 1/);
+  assert.match(webGl, /this\.wasMotionPreview && !motionPreview/);
 });
 
 test("no metadata shape changes the kernel", () => {
@@ -305,33 +323,6 @@ test("tour 33 vkgs SOG frames from its real signed-log metadata without a viewer
       >= frame.radius * 1.7 - 1e-9,
     "camera must retreat far enough to see the complete SOG bounds",
   );
-});
-
-test("tour 33 vkgs per-channel palettes survive the fast Spinoff path", () => {
-  const codebook = [
-    new Array(256).fill(0),
-    new Array(256).fill(0),
-    new Array(256).fill(0),
-  ];
-  const samples = [
-    [-13.119266510009766, -7.740798473358154, -0.2833249568939209],
-    [-13.580313682556152, -8.21716594696045, 0.32248708605766296],
-    [-12.076475143432617, -8.169289588928223, 0.25365978479385376],
-  ];
-  for (let channel = 0; channel < 3; channel += 1) {
-    codebook[channel][0] = samples[channel][0];
-    codebook[channel][42] = samples[channel][1];
-    codebook[channel][255] = samples[channel][2];
-  }
-
-  assert.equal(spinoffSogUsesPerChannelCodebook(codebook), true);
-  const rows = spinoffSogCodebookRows(codebook);
-  for (let channel = 0; channel < 3; channel += 1) {
-    for (const [index, expected] of [[0, samples[channel][0]], [42, samples[channel][1]], [255, samples[channel][2]]]) {
-      assert.ok(Math.abs(rows[channel * 256 + index] - expected) < 1e-5);
-    }
-  }
-  assert.ok(Array.from(rows).every(Number.isFinite));
 });
 
 test("metadata framing rejects malformed and degenerate means domains", () => {

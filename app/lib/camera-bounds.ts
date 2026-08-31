@@ -101,3 +101,26 @@ export function clampCameraPosition(
     clamped: nextX !== x || nextY !== y || nextZ !== z,
   };
 }
+
+/**
+ * Clamp a presentation/world-space camera against canonical reconstruction
+ * bounds. The OpenUSD root can translate, rotate, or scale the entire scene;
+ * comparing its world camera directly with canonical bounds makes the clamp
+ * fight the camera every frame and presents as shake near an invented wall.
+ */
+export function clampCameraPositionInCoordinateSpace(
+  position: Vec3Like,
+  volume: CameraBoundsVolume | null,
+  toBoundsSpace: (point: [number, number, number]) => [number, number, number],
+  fromBoundsSpace: (point: [number, number, number]) => [number, number, number],
+): { x: number; y: number; z: number; clamped: boolean } {
+  if (!volume) return { ...position, clamped: false };
+  const canonical = toBoundsSpace([position.x, position.y, position.z]);
+  const held = clampCameraPosition(
+    { x: canonical[0], y: canonical[1], z: canonical[2] },
+    volume,
+  );
+  if (!held.clamped) return { ...position, clamped: false };
+  const world = fromBoundsSpace([held.x, held.y, held.z]);
+  return { x: world[0], y: world[1], z: world[2], clamped: true };
+}

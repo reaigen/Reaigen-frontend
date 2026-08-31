@@ -1,7 +1,15 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { cameraBoundsFor, clampCameraPosition } from "./camera-bounds.ts";
+import {
+  cameraBoundsFor,
+  clampCameraPositionInCoordinateSpace,
+  clampCameraPosition,
+} from "./camera-bounds.ts";
+import {
+  inversePresentationPoint,
+  transformCanonicalPoint,
+} from "./global-scene-transform.ts";
 
 /** A ~4x3m room, floor at 0, ceiling at 2.5m. */
 const ROOM = {
@@ -9,6 +17,13 @@ const ROOM = {
   floorY: 0,
   ceilingY: 2.5,
   radius: 2.5,
+};
+
+const closeTo = (actual, expected) => {
+  assert.equal(actual.length, expected.length);
+  actual.forEach((value, index) => {
+    assert.ok(Math.abs(value - expected[index]) < 1e-9);
+  });
 };
 
 test("a camera inside the room is left exactly where it is", () => {
@@ -100,4 +115,36 @@ test("clamping is idempotent", () => {
 test("slack scales with the room, so a large space is not clamped to a small one", () => {
   const hall = { ...ROOM, radius: 12 };
   assert.ok(cameraBoundsFor(hall).maxX > cameraBoundsFor(ROOM).maxX);
+});
+
+test("a transformed scene clamps in canonical space instead of fighting its world camera", () => {
+  const transform = {
+    translation: [14, 3, -7],
+    rotationDeg: [0, 90, 0],
+    scale: 2,
+    scale3: [2, 2, 2],
+  };
+  const canonicalInside = [0.4, 1.55, -0.2];
+  const worldInside = transformCanonicalPoint(canonicalInside, transform);
+  const unchanged = clampCameraPositionInCoordinateSpace(
+    { x: worldInside[0], y: worldInside[1], z: worldInside[2] },
+    ROOM,
+    (point) => inversePresentationPoint(point, transform),
+    (point) => transformCanonicalPoint(point, transform),
+  );
+  assert.equal(unchanged.clamped, false);
+  closeTo([unchanged.x, unchanged.y, unchanged.z], worldInside);
+
+  const canonicalOutside = [0, 1.5, -40];
+  const worldOutside = transformCanonicalPoint(canonicalOutside, transform);
+  const held = clampCameraPositionInCoordinateSpace(
+    { x: worldOutside[0], y: worldOutside[1], z: worldOutside[2] },
+    ROOM,
+    (point) => inversePresentationPoint(point, transform),
+    (point) => transformCanonicalPoint(point, transform),
+  );
+  const bounds = cameraBoundsFor(ROOM);
+  const expectedWorld = transformCanonicalPoint([0, 1.5, bounds.minZ], transform);
+  assert.equal(held.clamped, true);
+  closeTo([held.x, held.y, held.z], expectedWorld);
 });

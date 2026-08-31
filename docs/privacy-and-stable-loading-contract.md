@@ -15,12 +15,14 @@ requirements rather than optional presentation details.
 - The frontend proxy sanitizes public shared-property responses as a second
   boundary. It removes exact address and coordinate fields from both the root
   response and nested property data before the response reaches browser code.
-- The map image route requires creator authentication and returns only a
-  privately cacheable, composed image. Google credentials, provider tile URLs,
-  coordinates, and geocoding responses remain server-side. When a draft has an
-  address but no saved coordinates, fallback geocoding is also performed only
-  inside this authenticated route and cached server-side to minimize repeated
-  disclosure. A public shared page must not request this route.
+- The map bootstrap route requires creator authentication and a same-origin
+  request. It returns only the website-restricted Maps JavaScript key and the
+  resolved center needed by the authenticated location card; it is never used
+  by a public shared page. The browser key must be restricted to Reaigen's
+  production referrers, the Maps JavaScript API, and an explicit usage quota.
+- The map bootstrap accepts saved coordinates only. It does not send private
+  addresses to any geocoder, and it does not switch to another map provider if
+  Google Maps is unavailable.
 - Expanded maps remain inside Reaigen. Do not provide an external Google Maps
   deep link that could expose the address through a third-party URL or browser
   history.
@@ -54,7 +56,8 @@ requirements rather than optional presentation details.
 Before committing or deploying these surfaces:
 
 1. Run lint, type checking, validation tests, and a production build.
-2. Confirm an unauthenticated request to `/api/maps/static` is rejected.
+2. Confirm an unauthenticated request to `/api/maps/client` is rejected and
+   that no alternative map-provider endpoint or client request exists.
 3. Confirm the local app responds on the fast-feedback server at port 3056.
 4. Test an authenticated property and a public shared link at desktop and phone
    widths. Verify that the public page source contains no exact location data.

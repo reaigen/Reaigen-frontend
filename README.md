@@ -28,11 +28,16 @@ Copy `.env.local.example` to `.env.local`:
 # Backend URL (Django API) — server-side only, not exposed to browser
 REAIGEN_BACKEND_URL=http://localhost:80
 
-# Google Static Maps API key — server-side only
-GOOGLE_MAPS_KEY=your_restricted_google_maps_key
+# Google Maps JavaScript API website key — stored server-side
+GOOGLE_MAPS_KEY=your_restricted_google_maps_javascript_key
 ```
 
-`GOOGLE_MAPS_KEY` is proxied by the frontend's map route and is never embedded in browser JavaScript. Restrict the key to the Google Static Maps API and configure a usage quota in Google Cloud.
+`GOOGLE_MAPS_KEY` stays out of the built JavaScript bundle and is returned only
+by an authenticated, same-origin map bootstrap request. The Maps JavaScript API
+necessarily makes a website key visible to that signed-in browser. Restrict the
+key to the Maps JavaScript API and to the production website referrers
+(`https://reaigen.io/*` and `https://www.reaigen.io/*`), attach an active billing
+account to the same Google Cloud project, and configure a usage quota.
 
 The public/private location boundary and the no-layout-shift requirements for
 async detail and tour data are documented in

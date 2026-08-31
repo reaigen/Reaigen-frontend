@@ -436,13 +436,14 @@ export default function TourPage({
       {/* Top bar */}
       <>
           <div className="absolute left-3 top-[calc(0.75rem+env(safe-area-inset-top,0px))] z-20 flex items-center gap-2 animate-fade-in sm:left-4 sm:top-[calc(1rem+env(safe-area-inset-top,0px))] xl:left-6">
-            <button
-              onClick={() => router.push(viewer.draft_id ? `/draft/${viewer.draft_id}` : "/tours")}
+            <a
+              href={viewer.draft_id ? `/draft/${viewer.draft_id}` : "/tours"}
               aria-label={t("common.back", lang)}
-              className="viewer-top-control-icon pen-touch-target flex items-center justify-center rounded-full border border-white/[0.16] bg-black/60 text-white/82 shadow-2xl backdrop-blur-2xl transition-colors hover:bg-black/72 hover:text-white active:scale-95 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/70"
+              className="viewer-top-control-icon pen-touch-target flex items-center justify-center rounded-full border border-white/[0.16] bg-black/60 !text-white shadow-2xl backdrop-blur-2xl transition-colors hover:bg-black/72 hover:!text-white active:scale-95 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/70"
+              style={{ color: "#fff" }}
             >
-              <ArrowLeftIcon size={18} />
-            </button>
+              <ArrowLeftIcon size={18} color="#fff" />
+            </a>
           </div>
 
           <CameraEditor

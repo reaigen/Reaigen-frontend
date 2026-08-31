@@ -1,10 +1,102 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
+import {
+  GoogleMapCenter,
+  GoogleMapsFailureReason,
+  GoogleMapMarker,
+  REAIGEN_GOOGLE_MAP_STYLES,
+  loadGoogleMaps,
+  subscribeGoogleMapsFailure,
+} from "../lib/google-maps-client";
 import { t } from "../lib/i18n";
 import { cn } from "../lib/utils";
 import { CloseIcon, LayoutIcon, LockIcon, MapPinIcon } from "./icons";
+
+type ClientMapConfig = {
+  apiKey: string;
+  center: GoogleMapCenter;
+};
+
+function GoogleMapCanvas({
+  apiKey,
+  center,
+  language,
+  zoom,
+  interactive,
+  onReady,
+  onError,
+}: ClientMapConfig & {
+  language: string;
+  zoom: number;
+  interactive: boolean;
+  onReady?: () => void;
+  onError?: (reason: GoogleMapsFailureReason) => void;
+}) {
+  const containerRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    let active = true;
+    let marker: GoogleMapMarker | null = null;
+    const container = containerRef.current;
+    if (!container) return;
+
+    const unsubscribe = subscribeGoogleMapsFailure((reason) => {
+      if (active) onError?.(reason);
+    });
+
+    void loadGoogleMaps(apiKey, language)
+      .then((maps) => {
+        if (!active) return;
+        const map = new maps.Map(container, {
+          center,
+          zoom,
+          styles: REAIGEN_GOOGLE_MAP_STYLES,
+          backgroundColor: "#eef3f1",
+          clickableIcons: false,
+          disableDefaultUI: !interactive,
+          fullscreenControl: false,
+          gestureHandling: interactive ? "cooperative" : "none",
+          keyboardShortcuts: interactive,
+          mapTypeId: "roadmap",
+          mapTypeControl: false,
+          rotateControl: false,
+          scaleControl: interactive,
+          streetViewControl: false,
+          zoomControl: interactive,
+        });
+        marker = new maps.Marker({ position: center, map, clickable: false });
+        onReady?.();
+      })
+      .catch((error: unknown) => {
+        if (!active) return;
+        const message = error instanceof Error ? error.message : "";
+        const reason: GoogleMapsFailureReason = (
+          message === "google-maps-auth-failed"
+          || message === "google-maps-load-failed"
+          || message === "google-maps-timeout"
+          || message === "google-maps-unavailable"
+        ) ? message : "google-maps-unavailable";
+        onError?.(reason);
+      });
+
+    return () => {
+      active = false;
+      unsubscribe();
+      marker?.setMap(null);
+      container.replaceChildren();
+    };
+  }, [apiKey, center, interactive, language, onError, onReady, zoom]);
+
+  return (
+    <div
+      ref={containerRef}
+      aria-hidden="true"
+      className={cn("absolute inset-0 h-full w-full", !interactive && "pointer-events-none")}
+    />
+  );
+}
 
 function coordinate(value: string | number | null | undefined, min: number, max: number) {
   if (value == null || value === "") return null;
@@ -38,11 +130,32 @@ export function PropertyMapCard({
         : null
   ), [lat, lng, normalizedAddress]);
   const [target, setTarget] = useState(rawTarget);
-  const [mapSource, setMapSource] = useState<string | null>(null);
+  const [mapConfig, setMapConfig] = useState<ClientMapConfig | null>(null);
   const [failed, setFailed] = useState(false);
   const [loading, setLoading] = useState(Boolean(rawTarget));
   const [retryNonce, setRetryNonce] = useState(0);
   const [expanded, setExpanded] = useState(false);
+  const [shouldLoad, setShouldLoad] = useState(false);
+  const cardRef = useRef<HTMLElement>(null);
+
+  useEffect(() => {
+    if (!target) {
+      setShouldLoad(false);
+      return;
+    }
+    const card = cardRef.current;
+    if (!card || typeof IntersectionObserver === "undefined") {
+      setShouldLoad(true);
+      return;
+    }
+    const observer = new IntersectionObserver(([entry]) => {
+      if (!entry?.isIntersecting) return;
+      setShouldLoad(true);
+      observer.disconnect();
+    }, { rootMargin: "600px 0px" });
+    observer.observe(card);
+    return () => observer.disconnect();
+  }, [target]);
 
   useEffect(() => {
     if (!expanded) return;
@@ -59,62 +172,89 @@ export function PropertyMapCard({
   }, [expanded]);
 
   useEffect(() => {
-    setTarget(rawTarget);
-    setFailed(false);
+    const updateTarget = () => {
+      setTarget(rawTarget);
+      setFailed(false);
+    };
+
+    // Saved coordinates can render immediately. Address-only drafts remain
+    // visible as cards but fail closed because this deployment intentionally
+    // enables only the Google Maps JavaScript API, not a geocoding provider.
+    if (!rawTarget || rawTarget.lat != null) {
+      updateTarget();
+      return;
+    }
+
+    const timer = window.setTimeout(updateTarget, 500);
+    return () => window.clearTimeout(timer);
   }, [rawTarget]);
 
   useEffect(() => {
-    if (!target) {
-      setMapSource(null);
-      setLoading(false);
+    if (!target || !shouldLoad) {
+      setMapConfig(null);
+      setLoading(Boolean(target));
       return;
     }
 
     const controller = new AbortController();
-    let objectUrl: string | null = null;
-    setMapSource(null);
+    setMapConfig(null);
     setFailed(false);
     setLoading(true);
-    void fetch("/api/maps/static", {
+    void fetch("/api/maps/client", {
       method: "POST",
       credentials: "same-origin",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        address: target.address,
         latitude: target.lat,
         longitude: target.lng,
-        lang: lang.slice(0, 2).toLowerCase(),
       }),
       signal: controller.signal,
     })
-      .then((response) => {
+      .then(async (response) => {
         if (!response.ok) throw new Error("map-unavailable");
-        return response.blob();
+        const payload: unknown = await response.json();
+        if (!payload || typeof payload !== "object") throw new Error("map-invalid-response");
+        const { apiKey, latitude, longitude } = payload as Record<string, unknown>;
+        if (
+          typeof apiKey !== "string"
+          || typeof latitude !== "number"
+          || typeof longitude !== "number"
+        ) {
+          throw new Error("map-invalid-response");
+        }
+        return { apiKey, center: { lat: latitude, lng: longitude } };
       })
-      .then((blob) => {
+      .then((config) => {
         if (controller.signal.aborted) return;
-        objectUrl = URL.createObjectURL(blob);
-        setMapSource(objectUrl);
-        setLoading(false);
+        setMapConfig(config);
       })
       .catch(() => {
         if (controller.signal.aborted) return;
-        setMapSource(null);
+        setMapConfig(null);
         setFailed(true);
         setLoading(false);
       });
 
-    return () => {
-      controller.abort();
-      if (objectUrl) URL.revokeObjectURL(objectUrl);
-    };
-  }, [lang, retryNonce, target]);
+    return () => controller.abort();
+  }, [lang, retryNonce, shouldLoad, target]);
+
+  const handleMapReady = useCallback(() => {
+    setLoading(false);
+  }, []);
+
+  const handleMapError = useCallback((reason: GoogleMapsFailureReason) => {
+    console.error("Google Maps JavaScript unavailable", { reason });
+    setMapConfig(null);
+    setFailed(true);
+    setLoading(false);
+  }, []);
 
   if (!target) return null;
 
   return (
     <>
       <section
+        ref={cardRef}
         aria-label={t("draft.location", lang)}
         aria-busy={loading}
         className={cn(
@@ -127,20 +267,17 @@ export function PropertyMapCard({
           aria-hidden="true"
           className="absolute inset-0 bg-[linear-gradient(rgba(17,17,17,0.035)_1px,transparent_1px),linear-gradient(90deg,rgba(17,17,17,0.035)_1px,transparent_1px)] bg-[size:2rem_2rem]"
         />
-        {!failed && mapSource ? (
-          // Google supplies its own attribution within the Static Maps image.
-          // eslint-disable-next-line @next/next/no-img-element
-          <img
-            key={mapSource}
-            src={mapSource}
-            alt={target.address || t("draft.location", lang)}
-            loading="eager"
-            decoding="async"
-            fetchPriority="high"
-            onError={() => setFailed(true)}
-            className="absolute inset-0 h-full w-full object-cover"
+        {!failed && mapConfig ? (
+          <GoogleMapCanvas
+            {...mapConfig}
+            language={lang.slice(0, 2).toLowerCase()}
+            zoom={target.lat != null ? 15 : 14}
+            interactive={false}
+            onReady={handleMapReady}
+            onError={handleMapError}
           />
-        ) : failed ? (
+        ) : null}
+        {failed ? (
           <div className="absolute inset-0 flex items-center justify-center px-6 text-center">
             <div className="max-w-[18rem]">
               <span className="mx-auto flex h-12 w-12 items-center justify-center rounded-full border border-foreground/10 bg-white/88 text-foreground/58 shadow-control backdrop-blur-xl">
@@ -156,14 +293,14 @@ export function PropertyMapCard({
               </button>
             </div>
           </div>
-        ) : (
+        ) : loading ? (
           <div className="absolute inset-0 flex items-center justify-center" role="status" aria-label={t("common.loading", lang)}>
             <span className="inline-flex min-h-11 items-center gap-2.5 rounded-full border border-foreground/8 bg-white/78 px-4 text-[11px] font-semibold text-foreground/55 shadow-control backdrop-blur-xl">
               <span className="h-3.5 w-3.5 animate-spin rounded-full border border-foreground/15 border-t-foreground/55 motion-reduce:animate-none" aria-hidden="true" />
               {t("common.loading", lang)}
             </span>
           </div>
-        )}
+        ) : null}
 
         <div className="pointer-events-none absolute inset-0 bg-gradient-to-b from-black/[0.08] via-transparent to-black/[0.24]" />
         <div className="absolute left-3 top-3 flex max-w-[calc(100%-7rem)] items-center gap-2 rounded-full border border-white/55 bg-white/82 px-3 py-2 text-[11px] font-semibold text-foreground shadow-control backdrop-blur-xl sm:left-4 sm:top-4">
@@ -180,7 +317,7 @@ export function PropertyMapCard({
           <LayoutIcon size={15} />
         </button>
         {target.address ? (
-          <p className="absolute bottom-3 left-3 right-3 line-clamp-2 rounded-[1rem] border border-white/45 bg-white/84 px-3 py-2.5 text-[11px] font-medium leading-relaxed text-foreground/75 shadow-control backdrop-blur-xl sm:bottom-4 sm:left-4 sm:right-auto sm:max-w-[min(75%,34rem)] sm:rounded-full sm:px-4 sm:py-2">
+          <p className="absolute bottom-10 left-3 right-3 line-clamp-2 rounded-[1rem] border border-white/45 bg-white/84 px-3 py-2.5 text-[11px] font-medium leading-relaxed text-foreground/75 shadow-control backdrop-blur-xl sm:left-4 sm:right-auto sm:max-w-[min(75%,34rem)] sm:rounded-full sm:px-4 sm:py-2">
             {target.address}
           </p>
         ) : null}
@@ -211,9 +348,14 @@ export function PropertyMapCard({
               </button>
             </header>
             <div className="relative min-h-0 flex-1 overflow-hidden border-y border-border/55 bg-[#e9eae7]">
-              {mapSource && !failed ? (
-                // eslint-disable-next-line @next/next/no-img-element
-                <img src={mapSource} alt={target.address || t("draft.location", lang)} className="h-full w-full object-cover" />
+              {mapConfig && !failed ? (
+                <GoogleMapCanvas
+                  {...mapConfig}
+                  language={lang.slice(0, 2).toLowerCase()}
+                  zoom={target.lat != null ? 15 : 14}
+                  interactive
+                  onError={handleMapError}
+                />
               ) : failed ? (
                 <div className="flex h-full flex-col items-center justify-center gap-3 px-6 text-center text-foreground/55">
                   <MapPinIcon size={28} />

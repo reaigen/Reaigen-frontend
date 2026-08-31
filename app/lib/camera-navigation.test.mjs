@@ -28,10 +28,10 @@ test("physical navigation keys win over the active keyboard layout", () => {
   assert.equal(cameraMovementKey({ code: "Digit1", key: "1" }), null);
 });
 
-test("camera editing recalls exact poses while previews animate", () => {
+test("every saved-camera selection recalls one exact authored pose", () => {
   assert.equal(savedCameraNavigationIsInstant("edit"), true);
   assert.equal(savedCameraNavigationIsInstant("initial"), true);
-  assert.equal(savedCameraNavigationIsInstant("preview"), false);
+  assert.equal(savedCameraNavigationIsInstant("preview"), true);
 });
 
 test("camera preview stays on the authored segment and lands exactly", () => {

@@ -1,8 +1,16 @@
 "use client";
 
-import { Component, useMemo, useState, type ReactNode } from "react";
+import { Component, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 
 import type { ReaiAgentResponse, ReaiAgentTinyUiBlock } from "../lib/api/client";
+import {
+  type GoogleMapCenter,
+  type GoogleMapMarker,
+  type GoogleMapOverlay,
+  REAIGEN_GOOGLE_MAP_STYLES,
+  loadGoogleMaps,
+  subscribeGoogleMapsFailure,
+} from "../lib/google-maps-client";
 import { Button } from "../lib/ui/button";
 import { Input } from "../lib/ui/input";
 import { cn } from "../lib/utils";
@@ -17,7 +25,7 @@ const TONE_BAR: Record<"neutral" | "success" | "warning", string> = {
 const TINY_COPY = {
   en: {
     fact: "Fact", source: "Source", trafficDelay: "traffic delay", routePreview: "Route geometry preview", geographicPreview: "Straight-line geographic preview",
-    estate: "Estate", relativeMap: "OpenStreetMap view of verified positions", approximateMap: "Approximate area view · not an exact property pin",
+    estate: "Estate", relativeMap: "Google Maps view of verified positions", approximateMap: "Approximate Google Maps area · not an exact property pin", mapUnavailable: "Google Maps unavailable",
     interactiveActions: "Interactive actions", inProgress: "In progress", outOf100: "out of 100",
     price: "Purchase price", area: "Area", rent: "Monthly rent", costs: "Annual operating costs",
     down: "Down payment", interest: "Annual interest rate", term: "Loan term (years)",
@@ -28,7 +36,7 @@ const TINY_COPY = {
   },
   sk: {
     fact: "Fakt", source: "Zdroj", trafficDelay: "zdržanie v premávke", routePreview: "Náhľad geometrie trasy", geographicPreview: "Geografický náhľad vzdušnou čiarou",
-    estate: "Nehnuteľnosť", relativeMap: "OpenStreetMap náhľad overených polôh", approximateMap: "Približný náhľad oblasti · nejde o presný bod nehnuteľnosti",
+    estate: "Nehnuteľnosť", relativeMap: "Google Maps náhľad overených polôh", approximateMap: "Približná oblasť v Google Maps · nejde o presný bod nehnuteľnosti", mapUnavailable: "Google Maps nie sú dostupné",
     interactiveActions: "Interaktívne akcie", inProgress: "Prebieha", outOf100: "zo 100",
     price: "Kúpna cena", area: "Plocha", rent: "Mesačné nájomné", costs: "Ročné prevádzkové náklady",
     down: "Vlastné zdroje", interest: "Ročná úroková sadzba", term: "Splatnosť úveru (roky)",
@@ -39,7 +47,7 @@ const TINY_COPY = {
   },
   cs: {
     fact: "Fakt", source: "Zdroj", trafficDelay: "zdržení v provozu", routePreview: "Náhled geometrie trasy", geographicPreview: "Geografický náhled vzdušnou čarou",
-    estate: "Nemovitost", relativeMap: "OpenStreetMap náhled ověřených poloh", approximateMap: "Přibližný náhled oblasti · nejde o přesný bod nemovitosti",
+    estate: "Nemovitost", relativeMap: "Google Maps náhled ověřených poloh", approximateMap: "Přibližná oblast v Google Maps · nejde o přesný bod nemovitosti", mapUnavailable: "Google Maps nejsou dostupné",
     interactiveActions: "Interaktivní akce", inProgress: "Probíhá", outOf100: "ze 100",
     price: "Kupní cena", area: "Plocha", rent: "Měsíční nájem", costs: "Roční provozní náklady",
     down: "Vlastní zdroje", interest: "Roční úroková sazba", term: "Splatnost úvěru (roky)",
@@ -50,7 +58,7 @@ const TINY_COPY = {
   },
   de: {
     fact: "Fakt", source: "Quelle", trafficDelay: "Verkehrsverzögerung", routePreview: "Vorschau der Routengeometrie", geographicPreview: "Geografische Luftlinienvorschau",
-    estate: "Immobilie", relativeMap: "OpenStreetMap-Ansicht der verifizierten Positionen", approximateMap: "Ungefähre Gebietsansicht · kein genauer Immobilienpunkt",
+    estate: "Immobilie", relativeMap: "Google-Maps-Ansicht der verifizierten Positionen", approximateMap: "Ungefährer Bereich in Google Maps · kein genauer Immobilienpunkt", mapUnavailable: "Google Maps ist nicht verfügbar",
     interactiveActions: "Interaktive Aktionen", inProgress: "Läuft", outOf100: "von 100",
     price: "Kaufpreis", area: "Fläche", rent: "Monatsmiete", costs: "Jährliche Betriebskosten",
     down: "Eigenkapital", interest: "Jährlicher Zinssatz", term: "Kreditlaufzeit (Jahre)",
@@ -186,12 +194,9 @@ type MiniMapCoordinate = readonly [number, number];
 
 const MINI_MAP_WIDTH = 300;
 const MINI_MAP_HEIGHT = 160;
-const OSM_TILE_SIZE = 256;
-const OSM_TILE_TEMPLATE = process.env.NEXT_PUBLIC_OSM_TILE_URL_TEMPLATE?.trim()
-  || "https://tile.openstreetmap.org/{z}/{x}/{y}.png";
-
+const MINI_MAP_WORLD_SIZE = 256;
 function worldCoordinate([longitude, latitude]: MiniMapCoordinate, zoom: number) {
-  const scale = OSM_TILE_SIZE * 2 ** zoom;
+  const scale = MINI_MAP_WORLD_SIZE * 2 ** zoom;
   const boundedLatitude = Math.max(-85.05112878, Math.min(85.05112878, latitude));
   const sinLatitude = Math.sin(boundedLatitude * Math.PI / 180);
   return {
@@ -200,14 +205,14 @@ function worldCoordinate([longitude, latitude]: MiniMapCoordinate, zoom: number)
   };
 }
 
-function osmTileUrl(zoom: number, x: number, y: number) {
-  return OSM_TILE_TEMPLATE
-    .replace("{z}", String(zoom))
-    .replace("{x}", String(x))
-    .replace("{y}", String(y));
+function coordinateFromWorld(x: number, y: number, zoom: number): GoogleMapCenter {
+  const scale = MINI_MAP_WORLD_SIZE * 2 ** zoom;
+  const longitude = x / scale * 360 - 180;
+  const latitudeRadians = Math.atan(Math.sinh(Math.PI - 2 * Math.PI * y / scale));
+  return { lat: latitudeRadians * 180 / Math.PI, lng: longitude };
 }
 
-function buildMiniMapLayout(rawCoordinates: MiniMapCoordinate[], maximumZoom = 16) {
+function buildGoogleMiniMapViewport(rawCoordinates: MiniMapCoordinate[], maximumZoom = 16) {
   const coordinates = rawCoordinates.filter(([longitude, latitude]) => (
     Number.isFinite(longitude)
     && Number.isFinite(latitude)
@@ -237,152 +242,187 @@ function buildMiniMapLayout(rawCoordinates: MiniMapCoordinate[], maximumZoom = 1
   const yValues = world.map(({ y }) => y);
   const centerX = (Math.min(...xValues) + Math.max(...xValues)) / 2;
   const centerY = (Math.min(...yValues) + Math.max(...yValues)) / 2;
-  const left = centerX - MINI_MAP_WIDTH / 2;
-  const top = centerY - MINI_MAP_HEIGHT / 2;
-  const tileCount = 2 ** zoom;
-  const minimumTileX = Math.floor(left / OSM_TILE_SIZE);
-  const maximumTileX = Math.floor((left + MINI_MAP_WIDTH - 1) / OSM_TILE_SIZE);
-  const minimumTileY = Math.max(0, Math.floor(top / OSM_TILE_SIZE));
-  const maximumTileY = Math.min(tileCount - 1, Math.floor((top + MINI_MAP_HEIGHT - 1) / OSM_TILE_SIZE));
-  const tiles: Array<{ key: string; url: string; left: number; top: number }> = [];
-  for (let tileY = minimumTileY; tileY <= maximumTileY; tileY += 1) {
-    for (let tileX = minimumTileX; tileX <= maximumTileX; tileX += 1) {
-      const wrappedX = ((tileX % tileCount) + tileCount) % tileCount;
-      tiles.push({
-        key: `${zoom}-${tileX}-${tileY}`,
-        url: osmTileUrl(zoom, wrappedX, tileY),
-        left: tileX * OSM_TILE_SIZE - left,
-        top: tileY * OSM_TILE_SIZE - top,
-      });
-    }
-  }
-  return {
-    tiles,
-    project: (coordinate: MiniMapCoordinate) => {
-      const point = worldCoordinate(coordinate, zoom);
-      return { x: point.x - left, y: point.y - top };
-    },
-  };
+  return { center: coordinateFromWorld(centerX, centerY, zoom), zoom };
 }
 
-function OsmMiniMap({
+type GoogleMiniMapMarker = {
+  coordinate: MiniMapCoordinate;
+  kind: "origin" | "destination" | "place";
+  label?: string;
+  index?: number;
+  approximate?: boolean;
+};
+
+function GoogleMiniMap({
   coordinates,
   path,
   straightLine = false,
   maximumZoom = 16,
   markers,
   ariaLabel,
+  lang,
 }: {
   coordinates: MiniMapCoordinate[];
   path?: MiniMapCoordinate[];
   straightLine?: boolean;
   maximumZoom?: number;
-  markers: Array<{
-    coordinate: MiniMapCoordinate;
-    kind: "origin" | "destination" | "place";
-    label?: string;
-    index?: number;
-    approximate?: boolean;
-  }>;
+  markers: GoogleMiniMapMarker[];
   ariaLabel: string;
+  lang: string;
 }) {
-  const layout = useMemo(() => buildMiniMapLayout(coordinates, maximumZoom), [coordinates, maximumZoom]);
-  const projectedPath = layout && path
-    ? path.map((coordinate) => layout.project(coordinate)).map(({ x, y }) => `${x.toFixed(2)},${y.toFixed(2)}`).join(" ")
-    : "";
+  const containerRef = useRef<HTMLDivElement>(null);
+  const [state, setState] = useState<"loading" | "ready" | "failed">("loading");
+  const definition = JSON.stringify({ coordinates, path, straightLine, maximumZoom, markers });
+
+  useEffect(() => {
+    const container = containerRef.current;
+    if (!container) return;
+    const parsed = JSON.parse(definition) as {
+      coordinates: MiniMapCoordinate[];
+      path?: MiniMapCoordinate[];
+      straightLine: boolean;
+      maximumZoom: number;
+      markers: GoogleMiniMapMarker[];
+    };
+    const viewport = buildGoogleMiniMapViewport(parsed.coordinates, parsed.maximumZoom);
+    if (!viewport) {
+      setState("failed");
+      return;
+    }
+
+    let active = true;
+    let mapMarkers: GoogleMapMarker[] = [];
+    const overlays: GoogleMapOverlay[] = [];
+    const controller = new AbortController();
+    const unsubscribe = subscribeGoogleMapsFailure(() => {
+      if (active) setState("failed");
+    });
+    setState("loading");
+
+    void fetch("/api/maps/client", {
+      method: "POST",
+      credentials: "same-origin",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        latitude: viewport.center.lat,
+        longitude: viewport.center.lng,
+      }),
+      signal: controller.signal,
+    })
+      .then(async (response) => {
+        if (!response.ok) throw new Error("map-bootstrap-unavailable");
+        const payload: unknown = await response.json();
+        const apiKey = payload && typeof payload === "object"
+          ? (payload as Record<string, unknown>).apiKey
+          : null;
+        if (typeof apiKey !== "string") throw new Error("map-bootstrap-invalid");
+        return loadGoogleMaps(apiKey, lang.slice(0, 2).toLowerCase());
+      })
+      .then((maps) => {
+        if (!active) return;
+        const map = new maps.Map(container, {
+          center: viewport.center,
+          zoom: viewport.zoom,
+          styles: REAIGEN_GOOGLE_MAP_STYLES,
+          backgroundColor: "#eef3f1",
+          clickableIcons: false,
+          disableDefaultUI: true,
+          gestureHandling: "none",
+          keyboardShortcuts: false,
+          mapTypeControl: false,
+          mapTypeId: "roadmap",
+          streetViewControl: false,
+        });
+
+        const validPath = (parsed.path ?? []).filter(([longitude, latitude]) => (
+          Number.isFinite(longitude)
+          && Number.isFinite(latitude)
+          && longitude >= -180
+          && longitude <= 180
+          && latitude >= -90
+          && latitude <= 90
+        )).map(([longitude, latitude]) => ({ lat: latitude, lng: longitude }));
+        if (validPath.length >= 2) {
+          overlays.push(new maps.Polyline({
+            path: validPath,
+            map,
+            clickable: false,
+            geodesic: parsed.straightLine,
+            strokeColor: "#6d28d9",
+            strokeOpacity: parsed.straightLine ? 0 : 0.92,
+            strokeWeight: 4,
+            icons: parsed.straightLine ? [{
+              icon: {
+                path: maps.SymbolPath.CIRCLE,
+                fillColor: "#6d28d9",
+                fillOpacity: 1,
+                scale: 2,
+                strokeOpacity: 0,
+              },
+              offset: "0",
+              repeat: "12px",
+            }] : undefined,
+          }));
+        }
+
+        mapMarkers = parsed.markers.map((marker, markerIndex) => {
+          const [longitude, latitude] = marker.coordinate;
+          if (marker.approximate) {
+            overlays.push(new maps.Circle({
+              center: { lat: latitude, lng: longitude },
+              radius: 2_000,
+              map,
+              clickable: false,
+              fillColor: "#7c3aed",
+              fillOpacity: 0.08,
+              strokeColor: "#7c3aed",
+              strokeOpacity: 0.65,
+              strokeWeight: 2,
+            }));
+          }
+          return new maps.Marker({
+            position: { lat: latitude, lng: longitude },
+            map,
+            clickable: false,
+            label: marker.kind === "place" && (marker.index ?? markerIndex) < 8
+              ? String((marker.index ?? markerIndex) + 1)
+              : undefined,
+          });
+        });
+        setState("ready");
+      })
+      .catch(() => {
+        if (active && !controller.signal.aborted) setState("failed");
+      });
+
+    return () => {
+      active = false;
+      controller.abort();
+      unsubscribe();
+      for (const marker of mapMarkers) marker.setMap(null);
+      for (const overlay of overlays) overlay.setMap(null);
+      container.replaceChildren();
+    };
+  }, [definition, lang]);
+
+  const copy = tinyCopy(lang);
   return (
     <div
       role="group"
       aria-label={ariaLabel}
       className="relative aspect-[15/8] w-full overflow-hidden rounded-xl border border-border/55 bg-foreground/[0.035]"
     >
-      {layout?.tiles.map((tile) => (
-        /* A native image preserves OSM browser caching and sends the document origin as required by the tile policy. */
-        // eslint-disable-next-line @next/next/no-img-element
-        <img
-          key={tile.key}
-          src={tile.url}
-          alt=""
-          aria-hidden="true"
-          loading="lazy"
-          decoding="async"
-          draggable={false}
-          referrerPolicy="origin"
-          onError={(event) => { event.currentTarget.hidden = true; }}
-          className="pointer-events-none absolute max-w-none select-none"
-          style={{
-            left: `${tile.left / MINI_MAP_WIDTH * 100}%`,
-            top: `${tile.top / MINI_MAP_HEIGHT * 100}%`,
-            width: `${OSM_TILE_SIZE / MINI_MAP_WIDTH * 100}%`,
-            height: `${OSM_TILE_SIZE / MINI_MAP_HEIGHT * 100}%`,
-          }}
-        />
-      ))}
-      <svg
-        viewBox={`0 0 ${MINI_MAP_WIDTH} ${MINI_MAP_HEIGHT}`}
-        aria-hidden="true"
-        className="pointer-events-none absolute inset-0 h-full w-full"
-      >
-        {projectedPath ? (
-          <>
-            <polyline points={projectedPath} fill="none" strokeWidth="7" strokeLinecap="round" strokeLinejoin="round" className="stroke-card" />
-            <polyline
-              points={projectedPath}
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="4"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              strokeDasharray={straightLine ? "7 6" : undefined}
-              className="text-violet-700"
-            />
-          </>
-        ) : null}
-        {layout ? markers.map((marker, markerIndex) => {
-          const point = layout.project(marker.coordinate);
-          if (marker.kind === "origin") {
-            return marker.approximate ? (
-              <g key={`origin-${markerIndex}`}>
-                <circle cx={point.x} cy={point.y} r="18" fill="none" strokeWidth="2" strokeDasharray="4 3" className="stroke-violet-600/70" />
-                <circle cx={point.x} cy={point.y} r="5" className="fill-violet-700 stroke-card" strokeWidth="3" />
-              </g>
-            ) : (
-              <circle key={`origin-${markerIndex}`} cx={point.x} cy={point.y} r="6" className="fill-foreground stroke-card" strokeWidth="3" />
-            );
-          }
-          if (marker.kind === "destination") {
-            return <circle key={`destination-${markerIndex}`} cx={point.x} cy={point.y} r="7" className="fill-violet-600 stroke-card" strokeWidth="3" />;
-          }
-          return (
-            <g
-              key={`place-${marker.index ?? markerIndex}`}
-              className="animate-pulse motion-reduce:animate-none"
-              style={{ animationDelay: `${Math.min((marker.index ?? markerIndex) * 120, 1200)}ms` }}
-            >
-              <circle cx={point.x} cy={point.y} r="9" className="fill-violet-500/20" />
-              <circle cx={point.x} cy={point.y} r="4" className="fill-violet-700 stroke-card" strokeWidth="2" />
-              {(marker.index ?? 99) < 8 ? (
-                <text x={point.x + 6} y={point.y - 6} className="fill-foreground text-[6.5px] font-semibold">
-                  {(marker.index ?? 0) + 1}
-                </text>
-              ) : null}
-            </g>
-          );
-        }) : null}
-        <g className="fill-foreground text-[8px] font-semibold">
-          <rect x="267" y="5" width="27" height="32" rx="6" className="fill-card/85" />
-          <text x="280.5" y="16" textAnchor="middle">N</text>
-          <path d="M280.5 20 L276.5 29 L280.5 26.5 L284.5 29 Z" className="fill-foreground" />
-        </g>
-      </svg>
-      <a
-        href="https://www.openstreetmap.org/copyright"
-        target="_blank"
-        rel="noreferrer"
-        className="absolute bottom-0.5 right-0.5 rounded bg-card/90 px-1 py-0.5 text-[7px] font-medium text-foreground underline-offset-2 hover:underline"
-      >
-        © OpenStreetMap
-      </a>
+      <div ref={containerRef} aria-hidden="true" className="absolute inset-0" />
+      {state === "loading" ? (
+        <div className="pointer-events-none absolute inset-0 flex items-center justify-center bg-card/45" role="status">
+          <span className="h-4 w-4 animate-spin rounded-full border border-foreground/15 border-t-foreground/55 motion-reduce:animate-none" />
+        </div>
+      ) : null}
+      {state === "failed" ? (
+        <div className="absolute inset-0 flex items-center justify-center gap-1.5 bg-card/90 px-4 text-center text-[10px] font-medium text-muted-foreground">
+          <MapPinIcon size={13} /> {copy.mapUnavailable}
+        </div>
+      ) : null}
     </div>
   );
 }
@@ -407,7 +447,7 @@ function TinyRoute({ block, lang }: { block: Extract<ReaiAgentTinyUiBlock, { kin
         icon={<MapPinIcon size={14} />}
       />
       <div className="p-3">
-        <OsmMiniMap
+        <GoogleMiniMap
           coordinates={routePath}
           path={routePath}
           straightLine={block.preview_kind === "straight_line"}
@@ -416,6 +456,7 @@ function TinyRoute({ block, lang }: { block: Extract<ReaiAgentTinyUiBlock, { kin
             { coordinate: routePath.at(-1)!, kind: "destination" },
           ] : []}
           ariaLabel={`Route geometry from ${block.origin_label} to ${block.destination_label}`}
+          lang={lang}
         />
         <div className="mt-2 grid grid-cols-[1fr_auto_1fr] items-center gap-2 text-[10px]">
           <span className="truncate font-medium">{block.origin_label}</span>
@@ -450,7 +491,7 @@ function TinyNearbyMap({
     <section aria-label={block.title} className="floating-panel-shape overflow-hidden border border-violet-500/25 bg-card shadow-control">
       <TinyHeader title={block.title} description={block.description} icon={<MapPinIcon size={14} />} />
       <div className="p-3">
-        <OsmMiniMap
+        <GoogleMiniMap
           coordinates={mapCoordinates}
           maximumZoom={approximate ? 10 : 16}
           markers={[
@@ -465,6 +506,7 @@ function TinyNearbyMap({
           ariaLabel={approximate
             ? `Approximate area around ${block.origin_label}`
             : `${block.places.length} nearby places around ${block.origin_label}`}
+          lang={lang}
         />
         {block.places.length ? (
           <ol className="mt-2 grid gap-1 sm:grid-cols-2">

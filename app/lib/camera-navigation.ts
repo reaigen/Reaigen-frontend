@@ -126,11 +126,19 @@ function projectedForward(rawForward: Vec3, up: Vec3, fallbackForward: Vec3): Ve
 }
 
 /**
- * Editing recalls the authored camera exactly. Only presentation preview
- * transitions are allowed to animate between saved cameras.
+ * A saved camera is an authored pose, not a travel path. Recall every saved
+ * camera as one exact position/basis/FOV update. Besides avoiding half-finished
+ * captures in the editor, this prevents delivery renderers from repeatedly
+ * swapping their moving and settled Gaussian projections during a camera
+ * selection. Generated tour paths remain free to animate separately.
  */
 export function savedCameraNavigationIsInstant(intent: SavedCameraNavigationIntent): boolean {
-  return intent !== "preview";
+  switch (intent) {
+    case "edit":
+    case "preview":
+    case "initial":
+      return true;
+  }
 }
 
 /**
