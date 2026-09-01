@@ -14,6 +14,9 @@ const gallery = read("app/components/draft-image-gallery.tsx");
 const sidePanel = read("app/components/side-panel.tsx");
 const bottomSheet = read("app/lib/ui/bottom-sheet.tsx");
 const contentDocuments = read("app/components/content-documents.tsx");
+const draftSkeleton = read("app/components/draft-detail-skeleton.tsx");
+const draftLoading = read("app/draft/[id]/loading.tsx");
+const draftPage = read("app/draft/[id]/page.tsx");
 const auditedSurfaces = [
   "app/components/app-shell.tsx",
   "app/components/draft-editor.tsx",
@@ -81,4 +84,19 @@ test("gallery controls do not invert or scale on hover", () => {
   assert.doesNotMatch(gallery, /hover:bg-foreground hover:text-background/);
   assert.doesNotMatch(gallery, /hover:scale-105/);
   assert.doesNotMatch(gallery, /floating-capsule|glass-chip|backdrop-blur/);
+});
+
+test("draft route and data loading render geometry-matched silhouettes", () => {
+  assert.match(draftLoading, /<DraftDetailSkeleton[^>]*standalone/);
+  assert.match(draftLoading, /<DraftDetailSkeleton label=\{t\("common\.loading", lang\)\}/);
+  assert.doesNotMatch(draftLoading, /CollectionLoading|PageLoading/);
+
+  assert.match(draftPage, /if \(isLoading \|\| !user\)[\s\S]{0,180}<DraftDetailSkeleton[^>]*standalone/);
+  assert.match(draftPage, /if \(!draft && !error\)[\s\S]{0,500}<DraftDetailSkeleton label=\{t\("common\.loading", lang\)\}/);
+  assert.match(draftSkeleton, /data-testid="draft-detail-skeleton"/);
+  assert.match(draftSkeleton, /draft-mobile-workspace/);
+  assert.match(draftSkeleton, /detail-hero-gallery aspect-\[4\/3\]/);
+  assert.match(draftSkeleton, /sm:grid sm:grid-cols-3/);
+  assert.match(draftSkeleton, /data-testid="draft-detail-skeleton-shell"/);
+  assert.match(globals, /\.draft-skeleton-shape \{[\s\S]*?animation: shimmer 1\.65s/);
 });

@@ -20,8 +20,7 @@ import { PropertyMapCard } from "../../components/property-map-card";
 import type { DraftDetailItem, DraftTourAssetsPayload, DraftUpload, SplatsByDraftPayload } from "../../lib/tour-types";
 import { baseUnitForCategory, resolveUnit, unitLabel, type UnitLookup } from "../../lib/unit-catalog";
 import { currencyDisplaySymbol } from "../../lib/currency-display";
-import { PageLoading } from "../../components/page-loading";
-import { CollectionLoading } from "../../components/collection-loading";
+import { DraftDetailSkeleton } from "../../components/draft-detail-skeleton";
 import { cn } from "../../lib/utils";
 import { FormattedDescription } from "../../components/formatted-description";
 import {
@@ -755,7 +754,7 @@ export default function DraftPreviewPage({
   );
 
   if (isLoading || !user) {
-    return <PageLoading />;
+    return <DraftDetailSkeleton label={t("common.loading", "en")} standalone />;
   }
 
   if (!draft && !error) {
@@ -768,9 +767,7 @@ export default function DraftPreviewPage({
         headerBackLabel={t("nav.dashboard", lang)}
         headerTitleLoading
       >
-        <div className="mx-auto flex min-h-[65vh] w-full max-w-[1360px] items-center justify-center pb-28 md:pb-10">
-          <CollectionLoading label={t("common.loading", lang)} className="min-h-0 p-0" />
-        </div>
+        <DraftDetailSkeleton label={t("common.loading", lang)} />
       </AppShell>
     );
   }

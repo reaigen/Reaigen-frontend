@@ -906,6 +906,23 @@
     animation: loadingProgressSmooth 1.35s cubic-bezier(0.45, 0, 0.55, 1) infinite;
     will-change: transform, opacity;
   }
+
+  /* Draft navigation must preserve the page's visible structure while data is
+     in flight. A cool-grey silhouette reads on both the app canvas and white
+     cards; the restrained sweep signals progress without flashing the page. */
+  .draft-skeleton-shape {
+    background-color: hsl(var(--foreground) / 0.075);
+    background-image: linear-gradient(
+      100deg,
+      transparent 20%,
+      hsl(var(--card) / 0.78) 46%,
+      transparent 72%
+    );
+    background-position: 200% 0;
+    background-size: 220% 100%;
+    animation: shimmer 1.65s ease-in-out infinite;
+    will-change: background-position;
+  }
 }
 
 @layer utilities {
@@ -1028,5 +1045,10 @@ input:-webkit-autofill:active {
     animation: none !important;
     opacity: 0.45;
     transform: none;
+  }
+
+  .draft-skeleton-shape {
+    animation: none !important;
+    background-image: none;
   }
 }
