@@ -5,7 +5,6 @@ import test from "node:test";
 
 import {
   REAIGEN_GOOGLE_MAP_STYLES,
-  REAIGEN_GOOGLE_MAPS_VERSION,
   googleMapsScriptUrl,
 } from "./google-maps-client.ts";
 
@@ -22,8 +21,7 @@ test("the Maps loader preserves path-compatible website authorization", () => {
   assert.equal(url.searchParams.get("language"), "sk");
   assert.equal(url.searchParams.get("callback"), "__reaigenGoogleMapsReady");
   assert.equal(url.searchParams.get("loading"), "async");
-  assert.equal(REAIGEN_GOOGLE_MAPS_VERSION, "3.65");
-  assert.equal(url.searchParams.get("v"), "3.65");
+  assert.equal(url.searchParams.get("v"), "weekly");
   assert.equal(url.searchParams.has("auth_referrer_policy"), false);
 });
 
@@ -56,31 +54,6 @@ test("the Parameters map keeps saved coordinates while the address is edited", (
   assert.doesNotMatch(editor, /locationStillMatchesSavedDraft/);
   assert.match(mapCard, /targetKeyRef\.current === nextKey/);
   assert.match(mapCard, /if \(targetKeyRef\.current === nextKey\) return/);
-});
-
-test("address-only drafts stay on Google and are ready for Google geocoding", () => {
-  const repositoryRoot = fileURLToPath(new URL("../../", import.meta.url));
-  const route = readFileSync(`${repositoryRoot}/app/api/maps/client/route.ts`, "utf8");
-  const mapCard = readFileSync(`${repositoryRoot}/app/components/property-map-card.tsx`, "utf8");
-  const loader = readFileSync(`${repositoryRoot}/app/lib/google-maps-client.ts`, "utf8");
-
-  assert.match(route, /hasCoordinates\s*\? \{ apiKey, latitude, longitude \}\s*:\s*\{ apiKey, address \}/);
-  assert.match(mapCard, /address: target\.address/);
-  assert.match(mapCard, /geocodeGoogleMapsAddress\(maps, address\)/);
-  assert.match(loader, /new Geocoder\(\)/);
-  assert.match(loader, /google-maps-geocode-failed/);
-});
-
-test("the visible property map is interactive and retry clears its failure latch", () => {
-  const repositoryRoot = fileURLToPath(new URL("../../", import.meta.url));
-  const mapCard = readFileSync(`${repositoryRoot}/app/components/property-map-card.tsx`, "utf8");
-  const loader = readFileSync(`${repositoryRoot}/app/lib/google-maps-client.ts`, "utf8");
-
-  assert.match(mapCard, /zoom=\{target\.lat != null \? 15 : 14\}\s*interactive/);
-  assert.match(mapCard, /resetGoogleMapsFailure\(\)/);
-  assert.match(mapCard, /window\.location\.reload\(\)/);
-  assert.match(loader, /export function resetGoogleMapsFailure/);
-  assert.match(mapCard, /addListener\?\.\("tilesloaded", markReady\)/);
 });
 
 test("the map palette keeps distinct Apple-like land, park, road, and water colours", () => {

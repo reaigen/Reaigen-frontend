@@ -1314,7 +1314,7 @@ export default function DraftPreviewPage({
                       <InfoIcon size={17} className="text-foreground/65" />
                       {t("draft.details", lang)}
                     </h2>
-                    <div className="draft-detail-grid grid grid-cols-1 gap-2.5 sm:grid-cols-2">
+                    <div className="draft-detail-grid grid grid-cols-1 gap-2.5">
                       {visibleRows.map((row, index) => (
                         <div
                           key={`${row.label}-${index}`}
@@ -1329,11 +1329,11 @@ export default function DraftPreviewPage({
                             });
                           }}
                           className={cn(
-                            "group flex min-w-0 items-center gap-3 rounded-xl border border-border/70 bg-card px-3.5 py-3.5 transition-colors",
-                            row.path && "cursor-grab hover:border-foreground/25 active:cursor-grabbing",
+                            "group flex min-w-0 items-center gap-3 rounded-[1.25rem] border border-border/65 bg-card/88 px-3.5 py-3.5 shadow-control backdrop-blur-xl transition-[border-color,box-shadow,transform]",
+                            row.path && "cursor-grab hover:-translate-y-px hover:border-foreground/20 hover:shadow-card active:cursor-grabbing",
                           )}
                         >
-                          <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg border border-border/60 bg-surface-subtle text-foreground/62">
+                          <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full border border-border/55 bg-surface-subtle/75 text-foreground/62 shadow-[inset_0_1px_0_rgba(255,255,255,0.82)]">
                             {row.icon}
                           </span>
                           <span className="min-w-0 flex-1 leading-tight">
@@ -1377,8 +1377,8 @@ export default function DraftPreviewPage({
                     </h2>
                     <div className="draft-cost-grid grid grid-cols-1 gap-2.5 sm:grid-cols-2">
                       {monthlyCosts.map((row, index) => (
-                        <div key={`${row.label}-${index}`} className="flex min-w-0 items-center gap-3 rounded-xl border border-border/70 bg-card px-3.5 py-3.5">
-                          <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg border border-border/60 bg-surface-subtle text-foreground/62">{row.icon}</span>
+                        <div key={`${row.label}-${index}`} className="flex min-w-0 items-center gap-3 rounded-[1.25rem] border border-border/65 bg-card/88 px-3.5 py-3.5 shadow-control backdrop-blur-xl">
+                          <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full border border-border/55 bg-surface-subtle/75 text-foreground/62 shadow-[inset_0_1px_0_rgba(255,255,255,0.82)]">{row.icon}</span>
                           <span className="min-w-0 flex-1 leading-tight">
                             <span className="block break-words text-[11px] font-medium text-foreground/52">{row.label}</span>
                             <span className="mt-1.5 block select-text break-words text-[14px] font-semibold text-foreground tabular-nums">{row.value}</span>

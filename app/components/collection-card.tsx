@@ -22,11 +22,7 @@ export function CollectionCard({
         "transition-transform duration-100 active:scale-[0.985] motion-reduce:active:scale-100",
         className,
       )}
-      style={{
-        contentVisibility: "auto",
-        containIntrinsicSize: "auto 420px",
-        ...style,
-      }}
+      style={style}
       {...props}
     >
       {children}

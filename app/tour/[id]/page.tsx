@@ -26,7 +26,7 @@ import dynamic from "next/dynamic";
 import CameraEditor from "../../components/camera-editor";
 import { Button } from "../../lib/ui/button";
 import { getUserLanguage, t } from "../../lib/i18n";
-import { TourWorkspaceLoading } from "../../components/tour-workspace-loading";
+import { PageLoading } from "../../components/page-loading";
 import { ArrowLeftIcon, InfoIcon, SearchIcon } from "../../components/icons";
 import { buildTextDataMap } from "../../lib/floorplan-geometry";
 import { parseRoomKitCage } from "../../lib/spatial-editor-data";
@@ -90,22 +90,28 @@ export default function TourPage({
   const { isAuthenticated, isLoading, user } = useAuth();
   const router = useRouter();
   const [spatialEditorAllowed, setSpatialEditorAllowed] = useState(false);
+  const [spatialAccessLoading, setSpatialAccessLoading] = useState(true);
 
   useEffect(() => {
     if (!isAuthenticated) {
       setSpatialEditorAllowed(false);
+      if (!isLoading) setSpatialAccessLoading(false);
       return;
     }
     let active = true;
+    setSpatialAccessLoading(true);
     void hasWebCreationAccess()
       .then((allowed) => {
         if (active) setSpatialEditorAllowed(allowed);
       })
       .catch(() => {
         if (active) setSpatialEditorAllowed(false);
+      })
+      .finally(() => {
+        if (active) setSpatialAccessLoading(false);
       });
     return () => { active = false; };
-  }, [isAuthenticated]);
+  }, [isAuthenticated, isLoading]);
   const lang = getUserLanguage(user?.localization);
 
   const [viewer, setViewer] = useState<SplatViewerPayload | null>(null);
@@ -326,8 +332,8 @@ export default function TourPage({
 
 
 
-  if (isLoading || (!viewer && !error)) {
-    return <TourWorkspaceLoading lang={lang} />;
+  if (isLoading || spatialAccessLoading || (!viewer && !error)) {
+    return <PageLoading />;
   }
 
   if (error) {
@@ -376,7 +382,7 @@ export default function TourPage({
       className={
         // w-full, not w-screen: 100vw includes the reserved scrollbar gutter,
         // which clipped right-anchored chrome under classic scrollbars.
-        "relative h-[100dvh] w-full overflow-hidden bg-[#121214]"
+        "relative h-[100dvh] w-full overflow-hidden bg-white"
       }
     >
       <h1 className="sr-only">{t("nav.tours", lang)}</h1>
@@ -391,7 +397,6 @@ export default function TourPage({
         initialPruneMask={activePruneMask}
         preferSavedCameras={preferSavedCameras}
         performanceProfile="balanced"
-        loadingTone="dark"
         onError={(msg) => {
           // Falling back to the flat render is the right recovery, but it used
           // to happen silently: a scene that failed to parse looked identical

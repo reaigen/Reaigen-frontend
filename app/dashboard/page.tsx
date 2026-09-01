@@ -22,7 +22,7 @@ import { currentGalleryUploads } from "../lib/media";
 import { readDraftPageCache, writeDraftPageCache } from "../lib/resilient-draft-cache";
 import { resolveUnit, type UnitLookup } from "../lib/unit-catalog";
 import { WebCreateAction } from "../components/web-create-action";
-import { CollectionCardSkeleton, CollectionCardSkeletons } from "../components/collection-card-skeleton";
+import { CollectionLoading } from "../components/collection-loading";
 import { mediaProxyUrl } from "../lib/image-preview";
 import { matchesCollectionQuery, normalizeCollectionQuery } from "../lib/collection-search";
 
@@ -451,11 +451,7 @@ export default function DashboardPage() {
 
         {/* Cards */}
         {draftsLoading && visibleDrafts.length === 0 ? (
-          <CollectionCardSkeletons
-            label={t("common.loading", lang)}
-            count={gridCols === 2 ? 4 : 2}
-            columns={gridCols}
-          />
+          <CollectionLoading label={t("common.loading", lang)} className="min-h-48" />
         ) : draftsError ? (
           <CollectionState
             kind="error"
@@ -475,7 +471,7 @@ export default function DashboardPage() {
           <>
           <div
             className={`grid grid-cols-1 gap-5 xl:gap-6 ${gridCols === 2 ? "md:grid-cols-2" : "mx-auto max-w-2xl"}`}
-            aria-busy={draftsLoading || loadingMore || searchSettling}
+            aria-busy={draftsLoading || searchSettling}
           >
             {visibleDrafts.map((draft, idx) => {
               const preferredCurrency = resolveUnit(unitCatalog, draft.price_preferred_currency, "CURRENCY");
@@ -570,13 +566,9 @@ export default function DashboardPage() {
               );
             })}
 
-            {loadingMore ? Array.from({ length: gridCols === 2 ? 2 : 1 }, (_, index) => (
-              <CollectionCardSkeleton key={`draft-append-skeleton-${index}`} />
-            )) : null}
-
           </div>
           {hasMore ? <div ref={sentinelRef} className="h-px" /> : null}
-          {hasMore && !loadingMore ? (
+          {hasMore ? (
             <div className="mt-8 flex justify-center">
               <Button
                 type="button"
