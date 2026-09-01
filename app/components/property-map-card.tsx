@@ -8,6 +8,7 @@ import {
   GoogleMapMarker,
   REAIGEN_GOOGLE_MAP_STYLES,
   loadGoogleMaps,
+  resetGoogleMapsFailure,
   subscribeGoogleMapsFailure,
 } from "../lib/google-maps-client";
 import { t } from "../lib/i18n";
@@ -39,6 +40,8 @@ function GoogleMapCanvas({
   useEffect(() => {
     let active = true;
     let marker: GoogleMapMarker | null = null;
+    let readinessTimer: number | null = null;
+    let readinessListener: { remove(): void } | null = null;
     const container = containerRef.current;
     if (!container) return;
 
@@ -61,13 +64,30 @@ function GoogleMapCanvas({
           keyboardShortcuts: interactive,
           mapTypeId: "roadmap",
           mapTypeControl: false,
+          renderingType: "RASTER",
           rotateControl: false,
           scaleControl: interactive,
           streetViewControl: false,
           zoomControl: interactive,
         });
         marker = new maps.Marker({ position: center, map, clickable: false });
-        onReady?.();
+
+        const markReady = () => {
+          if (!active) return;
+          if (readinessTimer != null) window.clearTimeout(readinessTimer);
+          readinessTimer = null;
+          readinessListener?.remove();
+          readinessListener = null;
+          onReady?.();
+        };
+        readinessListener = map.addListener?.("tilesloaded", markReady) ?? null;
+        if (!readinessListener) {
+          window.requestAnimationFrame(markReady);
+        } else {
+          readinessTimer = window.setTimeout(() => {
+            if (active) onError?.("google-maps-timeout");
+          }, 12_000);
+        }
       })
       .catch((error: unknown) => {
         if (!active) return;
@@ -84,6 +104,8 @@ function GoogleMapCanvas({
     return () => {
       active = false;
       unsubscribe();
+      if (readinessTimer != null) window.clearTimeout(readinessTimer);
+      readinessListener?.remove();
       marker?.setMap(null);
       container.replaceChildren();
     };
@@ -256,6 +278,14 @@ export function PropertyMapCard({
     setLoading(false);
   }, []);
 
+  const handleRetry = useCallback(() => {
+    if (resetGoogleMapsFailure()) {
+      window.location.reload();
+      return;
+    }
+    setRetryNonce((value) => value + 1);
+  }, []);
+
   if (!target) return null;
 
   return (
@@ -279,7 +309,7 @@ export function PropertyMapCard({
             {...mapConfig}
             language={lang.slice(0, 2).toLowerCase()}
             zoom={target.lat != null ? 15 : 14}
-            interactive={false}
+            interactive
             onReady={handleMapReady}
             onError={handleMapError}
           />
@@ -293,7 +323,7 @@ export function PropertyMapCard({
               <p className="mt-3 text-[13px] font-semibold text-foreground/68">{t("draft.mapPreviewUnavailable", lang)}</p>
               <button
                 type="button"
-                onClick={() => setRetryNonce((value) => value + 1)}
+                onClick={handleRetry}
                 className="media-overlay-control mt-3 inline-flex min-h-9 items-center justify-center rounded-full px-4 text-[11px] font-semibold focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
               >
                 {t("common.tryAgain", lang)}
@@ -367,7 +397,7 @@ export function PropertyMapCard({
                 <div className="flex h-full flex-col items-center justify-center gap-3 px-6 text-center text-foreground/55">
                   <MapPinIcon size={28} />
                   <p className="text-[13px] font-semibold">{t("draft.mapPreviewUnavailable", lang)}</p>
-                  <button type="button" onClick={() => setRetryNonce((value) => value + 1)} className="rounded-full border border-border bg-card px-4 py-2 text-[11px] font-semibold transition-colors hover:bg-surface-subtle">{t("common.tryAgain", lang)}</button>
+                  <button type="button" onClick={handleRetry} className="rounded-full border border-border bg-card px-4 py-2 text-[11px] font-semibold transition-colors hover:bg-surface-subtle">{t("common.tryAgain", lang)}</button>
                 </div>
               ) : (
                 <div className="flex h-full items-center justify-center text-foreground/45"><span className="h-5 w-5 animate-spin rounded-full border-2 border-foreground/15 border-t-foreground/55 motion-reduce:animate-none" /></div>

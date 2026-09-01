@@ -1314,7 +1314,7 @@ export default function DraftPreviewPage({
                       <InfoIcon size={17} className="text-foreground/65" />
                       {t("draft.details", lang)}
                     </h2>
-                    <div className="draft-detail-grid grid grid-cols-1 gap-2.5">
+                    <div className="draft-detail-grid grid grid-cols-1 gap-2.5 sm:grid-cols-2">
                       {visibleRows.map((row, index) => (
                         <div
                           key={`${row.label}-${index}`}

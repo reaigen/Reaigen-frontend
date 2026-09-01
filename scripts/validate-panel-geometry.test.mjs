@@ -17,6 +17,8 @@ const contentDocuments = read("app/components/content-documents.tsx");
 const draftSkeleton = read("app/components/draft-detail-skeleton.tsx");
 const draftLoading = read("app/draft/[id]/loading.tsx");
 const draftPage = read("app/draft/[id]/page.tsx");
+const tourPage = read("app/tour/[id]/page.tsx");
+const tourLoading = read("app/components/tour-workspace-loading.tsx");
 const auditedSurfaces = [
   "app/components/app-shell.tsx",
   "app/components/draft-editor.tsx",
@@ -35,19 +37,18 @@ const auditedSurfaces = [
   "app/shared/[token]/page.tsx",
 ].map(read).join("\n");
 
-test("value and unit editing uses two distinct controls", () => {
-  assert.match(editor, /flex min-w-0 items-stretch[^\n]*unitControl && "gap-2"/);
-  assert.match(editor, /editor-control-capsule pen-touch-target[^\n]*rounded-full border/);
-  assert.match(editor, /<\/div>\s*\{unitControl\}\s*<\/div>/);
-  assert.doesNotMatch(editor, /hasTrailingControl/);
-  assert.doesNotMatch(editor, /!rounded-none !border-0/);
-  assert.doesNotMatch(editor, /pr-\[(?:5|8)rem\]/);
+test("value and unit editing uses one capsule and one internal divider", () => {
+  assert.match(editor, /editor-control-capsule h-11 overflow-hidden rounded-full border/);
+  assert.match(editor, /!h-full !min-h-full[^\n]*rounded-none border-0/);
+  assert.match(editor, /flex shrink-0 border-l border-border\/65/);
+  assert.match(editor, /unitControl && "!h-full rounded-none border-0 !bg-transparent/);
+  assert.doesNotMatch(editor, /unitControl && "gap-2"/);
+  assert.doesNotMatch(editor, /editor-control-capsule pen-touch-target/);
 });
 
 test("the clear action stays inside the value field without another edge", () => {
   assert.match(editor, /absolute inset-y-0 right-1 flex items-center/);
   assert.match(editor, /pen-touch-target flex h-9 w-9[^\n]*rounded-full/);
-  assert.doesNotMatch(editor, /border-l border-border\/60/);
 });
 
 test("select menus can grow beyond the trigger row", () => {
@@ -84,6 +85,12 @@ test("gallery controls do not invert or scale on hover", () => {
   assert.doesNotMatch(gallery, /hover:bg-foreground hover:text-background/);
   assert.doesNotMatch(gallery, /hover:scale-105/);
   assert.doesNotMatch(gallery, /floating-capsule|glass-chip|backdrop-blur/);
+});
+
+test("tour navigation stays white while draft navigation keeps its light-surface colour", () => {
+  assert.match(tourPage, /viewer-top-control-icon[^\n]*!text-white[\s\S]{0,220}<ArrowLeftIcon size=\{18\} color="#fff"/);
+  assert.match(tourLoading, /viewer-top-control-icon[^\n]*text-white[\s\S]{0,220}<ArrowLeftIcon size=\{18\} color="#fff"/);
+  assert.match(draftPage, /floating-capsule[^\n]*text-foreground\/65[\s\S]{0,500}<ArrowLeftIcon size=\{17\} \/>/);
 });
 
 test("draft route and data loading render geometry-matched silhouettes", () => {

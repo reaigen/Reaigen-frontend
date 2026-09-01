@@ -907,6 +907,14 @@
     will-change: transform, opacity;
   }
 
+  .loading-progress-track-on-dark {
+    background: rgb(255 255 255 / 0.14);
+  }
+
+  .loading-progress-track-on-dark .loading-progress-indeterminate {
+    background: rgb(255 255 255 / 0.72);
+  }
+
   /* Draft navigation must preserve the page's visible structure while data is
      in flight. A cool-grey silhouette reads on both the app canvas and white
      cards; the restrained sweep signals progress without flashing the page. */

@@ -27,6 +27,7 @@ export function ReaigenLoadingMark({
   onRetry,
   onCancel,
   className,
+  tone = "light",
 }: {
   status?: string;
   slowStatus?: string;
@@ -35,6 +36,7 @@ export function ReaigenLoadingMark({
   onRetry?: () => void;
   onCancel?: () => void;
   className?: string;
+  tone?: "light" | "dark";
 }) {
   const [slow, setSlow] = useState(false);
 
@@ -82,12 +84,15 @@ export function ReaigenLoadingMark({
           flickering. The rail underneath already carries the "working" signal,
           so the mark can simply be present and hold still.
         */}
-        <ReaigenWordmark className="text-[clamp(32px,9vw,40px)] leading-none tracking-[-0.02em] text-foreground" />
+        <ReaigenWordmark className={cn(
+          "text-[clamp(32px,9vw,40px)] leading-none tracking-[-0.02em]",
+          tone === "dark" ? "text-white" : "text-foreground",
+        )} />
 
         {/* iOS drives this determinately from AppStartupManager.progress; the
             web has no equivalent signal, so it runs indeterminate. */}
         <div
-          className="loading-progress-track w-full"
+          className={cn("loading-progress-track w-full", tone === "dark" && "loading-progress-track-on-dark")}
           role="progressbar"
           aria-label={status || "Loading"}
         >
@@ -100,14 +105,19 @@ export function ReaigenLoadingMark({
         >
           {slow && slowStatus ? (
             <div data-testid="viewer-loading-slow">
-              <p className="text-[11px] leading-relaxed text-muted-foreground">{slowStatus}</p>
+              <p className={cn("text-[11px] leading-relaxed", tone === "dark" ? "text-white/55" : "text-muted-foreground")}>{slowStatus}</p>
               {onRetry || onCancel ? (
                 <div className="mt-3 flex items-center justify-center gap-2">
                   {onCancel && cancelLabel ? (
                     <button
                       type="button"
                       onClick={onCancel}
-                      className="min-h-9 rounded-full border border-border/70 bg-card px-3 text-[11px] font-medium text-foreground/70 hover:bg-accent hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                      className={cn(
+                        "min-h-9 rounded-full border px-3 text-[11px] font-medium focus-visible:outline-none focus-visible:ring-2",
+                        tone === "dark"
+                          ? "border-white/15 bg-black/50 text-white/75 hover:bg-black/65 hover:text-white focus-visible:ring-white/60"
+                          : "border-border/70 bg-card text-foreground/70 hover:bg-accent hover:text-foreground focus-visible:ring-ring",
+                      )}
                     >
                       {cancelLabel}
                     </button>
@@ -116,7 +126,12 @@ export function ReaigenLoadingMark({
                     <button
                       type="button"
                       onClick={onRetry}
-                      className="min-h-9 rounded-full bg-foreground px-3 text-[11px] font-medium text-background hover:bg-foreground/85 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+                      className={cn(
+                        "min-h-9 rounded-full px-3 text-[11px] font-medium focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2",
+                        tone === "dark"
+                          ? "bg-white text-black hover:bg-white/90 focus-visible:ring-white/70 focus-visible:ring-offset-black"
+                          : "bg-foreground text-background hover:bg-foreground/85 focus-visible:ring-ring",
+                      )}
                     >
                       {retryLabel}
                     </button>

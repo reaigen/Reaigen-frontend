@@ -31,6 +31,7 @@ export const REAIGEN_GOOGLE_MAP_STYLES = [
 export type GoogleMapInstance = {
   setCenter(center: GoogleMapCenter): void;
   setZoom(zoom: number): void;
+  addListener?(eventName: string, listener: () => void): { remove(): void };
 };
 
 export type GoogleMapMarker = {
@@ -94,6 +95,12 @@ let googleMapsAuthFailed = false;
 let authFailureHandlerInstalled = false;
 const authFailureListeners = new Set<(reason: GoogleMapsFailureReason) => void>();
 
+/**
+ * Keep production on a deliberate quarterly release instead of allowing the
+ * weekly channel to change the renderer underneath an active property page.
+ */
+export const REAIGEN_GOOGLE_MAPS_VERSION = "3.65";
+
 function installAuthFailureHandler() {
   if (authFailureHandlerInstalled) return;
   authFailureHandlerInstalled = true;
@@ -137,11 +144,26 @@ export function googleMapsScriptUrl(
 ) {
   const url = new URL("https://maps.googleapis.com/maps/api/js");
   url.searchParams.set("key", apiKey);
-  url.searchParams.set("v", "weekly");
+  url.searchParams.set("v", REAIGEN_GOOGLE_MAPS_VERSION);
   url.searchParams.set("loading", "async");
   url.searchParams.set("callback", callbackName);
   url.searchParams.set("language", language);
   return url.toString();
+}
+
+/**
+ * Reset a failed bootstrap. Google cannot be unloaded safely after it has
+ * initialized, so an authentication failure with an existing namespace needs
+ * one clean document reload; ordinary network failures can retry in place.
+ */
+export function resetGoogleMapsFailure() {
+  const reloadRequired = googleMapsAuthFailed && Boolean(window.google?.maps?.Map);
+  googleMapsAuthFailed = false;
+  googleMapsPromise = null;
+  if (!window.google?.maps?.Map) {
+    document.querySelector<HTMLScriptElement>("script[data-reaigen-google-maps]")?.remove();
+  }
+  return reloadRequired;
 }
 
 export function loadGoogleMaps(apiKey: string, language: string) {
@@ -186,6 +208,7 @@ export function loadGoogleMaps(apiKey: string, language: string) {
     script.src = googleMapsScriptUrl(apiKey, language, callbackName);
     script.async = true;
     script.defer = true;
+    script.referrerPolicy = "strict-origin-when-cross-origin";
     script.dataset.reaigenGoogleMaps = "true";
     script.onerror = () => {
       window.clearTimeout(timeout);

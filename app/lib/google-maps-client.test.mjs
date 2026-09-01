@@ -5,6 +5,7 @@ import test from "node:test";
 
 import {
   REAIGEN_GOOGLE_MAP_STYLES,
+  REAIGEN_GOOGLE_MAPS_VERSION,
   googleMapsScriptUrl,
 } from "./google-maps-client.ts";
 
@@ -21,7 +22,8 @@ test("the Maps loader preserves path-compatible website authorization", () => {
   assert.equal(url.searchParams.get("language"), "sk");
   assert.equal(url.searchParams.get("callback"), "__reaigenGoogleMapsReady");
   assert.equal(url.searchParams.get("loading"), "async");
-  assert.equal(url.searchParams.get("v"), "weekly");
+  assert.equal(REAIGEN_GOOGLE_MAPS_VERSION, "3.65");
+  assert.equal(url.searchParams.get("v"), REAIGEN_GOOGLE_MAPS_VERSION);
   assert.equal(url.searchParams.has("auth_referrer_policy"), false);
 });
 
@@ -54,6 +56,19 @@ test("the Parameters map keeps saved coordinates while the address is edited", (
   assert.doesNotMatch(editor, /locationStillMatchesSavedDraft/);
   assert.match(mapCard, /targetKeyRef\.current === nextKey/);
   assert.match(mapCard, /if \(targetKeyRef\.current === nextKey\) return/);
+});
+
+test("the property map renders interactively and waits for real Google tiles", () => {
+  const repositoryRoot = fileURLToPath(new URL("../../", import.meta.url));
+  const mapCard = readFileSync(`${repositoryRoot}/app/components/property-map-card.tsx`, "utf8");
+  const loader = readFileSync(`${repositoryRoot}/app/lib/google-maps-client.ts`, "utf8");
+
+  assert.match(mapCard, /renderingType: "RASTER"/);
+  assert.match(mapCard, /interactive\s+onReady=/);
+  assert.match(mapCard, /addListener\?\.\("tilesloaded", markReady\)/);
+  assert.match(mapCard, /resetGoogleMapsFailure\(\)/);
+  assert.match(loader, /script\.referrerPolicy = "strict-origin-when-cross-origin"/);
+  assert.doesNotMatch(mapCard, /Geocoder|geocodeGoogleMapsAddress/);
 });
 
 test("the map palette keeps distinct Apple-like land, park, road, and water colours", () => {

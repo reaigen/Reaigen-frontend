@@ -346,7 +346,7 @@ function UnitPicker({
       <SelectTrigger
         aria-label={label}
         className={cn(
-          "editor-control-capsule pen-touch-target !h-11 !min-h-11 shrink-0 rounded-full border px-2.5 text-[12px] font-semibold !shadow-none transition-colors hover:border-foreground/25 focus:ring-2",
+          "pen-touch-target !h-full !min-h-full shrink-0 rounded-none border-0 !bg-transparent px-3 text-[12px] font-semibold !shadow-none transition-colors hover:!bg-foreground/[0.035] focus:ring-0 focus:ring-offset-0",
           category === "CURRENCY"
             ? "!w-[4.875rem] !min-w-[4.875rem]"
             : "!w-[4.25rem] !min-w-[4.25rem]",
@@ -448,7 +448,13 @@ function DirectValueField({
 
   return (
     <Field id={id} label={label}>
-      <div className={cn("flex min-w-0 items-stretch", unitControl && "gap-2")}>
+      <div
+        className={cn(
+          "flex min-w-0 items-stretch",
+          unitControl && "editor-control-capsule h-11 overflow-hidden rounded-full border !bg-card !shadow-none focus-within:border-foreground/25 focus-within:ring-1 focus-within:ring-ring/12",
+          unitControl && invalid && "border-destructive/60 focus-within:ring-destructive/20",
+        )}
+      >
         <div className="relative min-w-0 flex-1">
           <Input
             id={id}
@@ -496,8 +502,9 @@ function DirectValueField({
             }}
             className={cn(
               fieldClass,
+              unitControl && "!h-full rounded-none border-0 !bg-transparent focus-visible:border-transparent focus-visible:ring-0",
               showStaticUnit && showClear ? "pr-[6.5rem]" : showStaticUnit ? "pr-[4.25rem]" : showClear ? "pr-11" : undefined,
-              invalid && "border-destructive/60 focus-visible:ring-destructive/20",
+              invalid && !unitControl && "border-destructive/60 focus-visible:ring-destructive/20",
               className,
             )}
           />
@@ -521,7 +528,11 @@ function DirectValueField({
             </span>
           ) : null}
         </div>
-        {unitControl}
+        {unitControl ? (
+          <div className="flex shrink-0 border-l border-border/65">
+            {unitControl}
+          </div>
+        ) : null}
       </div>
       {numeric && mathToolsOpen ? (
         <div className="mt-1.5 flex min-h-11 items-center gap-1 rounded-full border border-border/55 bg-card p-1" aria-label={t("draft.editor.expressionHint", lang)}>
