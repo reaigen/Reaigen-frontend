@@ -16,6 +16,7 @@ import { mediaProxyUrl } from "../../lib/image-preview";
 import { readDraftDetailCache, writeDraftDetailCache } from "../../lib/resilient-draft-cache";
 import { DraftImageGallery } from "../../components/draft-image-gallery";
 import { DraftCacheNotice } from "../../components/draft-cache-notice";
+import { PropertyMapCard } from "../../components/property-map-card";
 import type { DraftDetailItem, DraftTourAssetsPayload, DraftUpload, SplatsByDraftPayload } from "../../lib/tour-types";
 import { baseUnitForCategory, resolveUnit, unitLabel, type UnitLookup } from "../../lib/unit-catalog";
 import { currencyDisplaySymbol } from "../../lib/currency-display";
@@ -61,7 +62,6 @@ const FloorplanEditor = dynamic(() => import("../../components/floorplan-editor"
 const FloorplanLightbox = dynamic(() => import("../../components/floorplan-lightbox").then((module) => module.FloorplanLightbox));
 const FloorplanViewer = dynamic(() => import("../../components/floorplan-viewer"));
 const GlassVideoPlayer = dynamic(() => import("../../components/glass-video-player").then((module) => module.GlassVideoPlayer));
-const PropertyMapCard = dynamic(() => import("../../components/property-map-card").then((module) => module.PropertyMapCard));
 const VolumesEditor = dynamic(() => import("../../components/volumes-editor").then((module) => module.VolumesEditor));
 
 // ── Formatting ────────────────────────────────────────────────────────────
