@@ -117,8 +117,8 @@ export function ContentScopeSelector({
                   onClick={() => handleFieldToggle(field, !checked)}
                   className={`flex min-h-11 min-w-0 items-center justify-between gap-2 rounded-xl border px-3 text-left text-[12px] font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ${
                     checked
-                      ? "glossy-capsule border-foreground/10 text-foreground"
-                      : "border-border/70 bg-card text-foreground/65 hover:border-foreground/20 hover:text-foreground"
+                      ? "border-foreground/18 bg-foreground/[0.07] text-foreground"
+                      : "border-border/70 bg-card text-foreground/65 hover:border-foreground/20 hover:bg-foreground/[0.035] hover:text-foreground"
                   } ${isTitle ? "cursor-default opacity-65" : ""}`}
                 >
                   <span className="truncate">{t(`shareDialog.field.${field}` as LocaleKey, lang)}</span>
@@ -151,8 +151,8 @@ export function ContentScopeSelector({
               onClick={() => toggleCard(card.key)}
               className={`floating-panel-shape pen-touch-target group relative flex min-h-16 w-full items-center gap-2.5 border px-3 py-2 text-left transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 ${
                 !card.available
-                  ? "cursor-not-allowed border-border/45 bg-surface-subtle/75 text-foreground/38"
-                  : `${active ? "glossy-capsule border-foreground/20 bg-card/90 text-foreground shadow-control" : "editor-control-capsule border-border/65 bg-muted/28 text-foreground/55 hover:border-foreground/18 hover:bg-card hover:text-foreground"}`
+                  ? "cursor-not-allowed border-border/45 bg-surface-subtle text-foreground/38"
+                  : `${active ? "border-foreground/20 bg-foreground/[0.065] text-foreground" : "border-border/65 bg-card text-foreground/55 hover:border-foreground/18 hover:bg-foreground/[0.035] hover:text-foreground"}`
               }`}
             >
               <span className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-full transition-colors ${active ? "bg-foreground/[0.12] text-foreground" : "bg-secondary/80 text-foreground/45"}`}>
@@ -173,8 +173,8 @@ export function ContentScopeSelector({
                 className={cn(
                   "flex h-5 w-5 shrink-0 items-center justify-center rounded-full border transition-colors",
                   active
-                    ? "border-foreground/38 bg-card/90 text-foreground"
-                    : "border-foreground/25 bg-card/65 text-transparent",
+                    ? "border-foreground/38 bg-card text-foreground"
+                    : "border-foreground/25 bg-card text-transparent",
                 )}
               >
                 <CheckIcon size={12} />

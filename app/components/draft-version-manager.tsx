@@ -532,7 +532,7 @@ export function DraftVersionManager({
                   const date = formatDate(version.processing_completed_at ?? version.created_at ?? version.updated_at, dateFormat, lang);
                   return (
                     <article key={id} className={cn(
-                      "floating-panel-shape overflow-hidden border bg-card p-3 shadow-control",
+                      "floating-panel-shape overflow-hidden border bg-card p-3",
                       active ? "border-foreground/20 ring-1 ring-foreground/[0.04]" : "border-border/60",
                     )}>
                       <div className="flex items-stretch gap-3">
@@ -614,7 +614,7 @@ export function DraftVersionManager({
                         current ? "bg-foreground" : "bg-border",
                       )} />
                       <div className={cn(
-                        "floating-panel-shape overflow-hidden border bg-card shadow-control",
+                        "floating-panel-shape overflow-hidden border bg-card",
                         current ? "border-foreground/20" : "border-border/60",
                       )}>
                         <button
@@ -645,7 +645,7 @@ export function DraftVersionManager({
                         </button>
 
                         {expanded ? (
-                          <div className="border-t border-border/45 bg-surface-subtle/35 p-4 sm:p-5">
+                          <div className="border-t border-border/45 bg-surface-subtle p-4 sm:p-5">
                             {changes.length ? (
                               <div className="space-y-2.5">
                                 {changes.slice(0, 10).map((change) => (
@@ -801,7 +801,7 @@ function ConfirmationCard({
   return (
     <div className={cn(
       "floating-panel-shape border border-border/65 bg-card",
-      compact ? "p-3" : "p-4 shadow-card",
+      compact ? "p-3" : "p-4",
     )}>
       <p className="text-[11px] leading-relaxed text-foreground/65">{message}</p>
       <div className="mt-3 flex flex-wrap justify-end gap-2">
@@ -863,7 +863,7 @@ export function MediaVersionCreationPanel({
                 "flex min-h-24 items-start gap-3 rounded-2xl border p-3 text-left transition-[border-color,background-color] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50",
                 active
                   ? "border-foreground/35 bg-foreground/[0.055]"
-                  : "border-border/55 bg-card/45 hover:border-foreground/25 hover:bg-card/75",
+                  : "border-border/55 bg-card hover:border-foreground/25 hover:bg-foreground/[0.035]",
               )}
             >
               <span className={cn(
@@ -880,7 +880,7 @@ export function MediaVersionCreationPanel({
           );
         })}
       </div>
-      <div className="flex flex-col gap-3 border-t border-border/45 bg-card/45 px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
+      <div className="flex flex-col gap-3 border-t border-border/45 bg-card px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
         <p className="flex max-w-xl items-start gap-2 text-[9px] leading-relaxed text-muted-foreground">
           <CheckIcon size={12} className="mt-0.5 shrink-0 text-foreground/60" />
           {t("reai.mediaCreateHint", lang)}
@@ -954,8 +954,8 @@ export function MediaVersionCard({
           it said "1 of 1", which is nothing at all.
         */}
         <div className="absolute right-3 top-3 flex flex-wrap justify-end gap-1.5">
-          {selected.is_master ? <StatusPill className="glass-chip text-[9px]">{t("reai.mediaCurrent", lang)}</StatusPill> : null}
-          {selected.is_deleted ? <StatusPill tone="strong" className="border-white/15 bg-black/60 text-[9px] text-white">{t("reai.mediaHidden", lang)}</StatusPill> : null}
+          {selected.is_master ? <StatusPill className="text-[9px] shadow-control">{t("reai.mediaCurrent", lang)}</StatusPill> : null}
+          {selected.is_deleted ? <StatusPill className="text-[9px] shadow-control">{t("reai.mediaHidden", lang)}</StatusPill> : null}
         </div>
       </div>
 

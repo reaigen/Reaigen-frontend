@@ -44,6 +44,18 @@ test("the production map runtime is Google Maps JavaScript only", () => {
   assert.equal(existsSync(`${repositoryRoot}/app/api/maps/static/route.ts`), false);
 });
 
+test("the Parameters map keeps saved coordinates while the address is edited", () => {
+  const repositoryRoot = fileURLToPath(new URL("../../", import.meta.url));
+  const editor = readFileSync(`${repositoryRoot}/app/components/draft-editor.tsx`, "utf8");
+  const mapCard = readFileSync(`${repositoryRoot}/app/components/property-map-card.tsx`, "utf8");
+
+  assert.match(editor, /latitude=\{draft\.latitude\}/);
+  assert.match(editor, /longitude=\{draft\.longitude\}/);
+  assert.doesNotMatch(editor, /locationStillMatchesSavedDraft/);
+  assert.match(mapCard, /targetKeyRef\.current === nextKey/);
+  assert.match(mapCard, /if \(targetKeyRef\.current === nextKey\) return/);
+});
+
 test("the map palette keeps distinct Apple-like land, park, road, and water colours", () => {
   const styleFor = (featureType, elementType) => REAIGEN_GOOGLE_MAP_STYLES.find((style) => (
     style.featureType === featureType && style.elementType === elementType

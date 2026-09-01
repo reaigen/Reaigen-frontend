@@ -201,7 +201,7 @@ function GalleryLightbox({
       aria-label={alt}
       className="fixed inset-0 z-[9999] flex overscroll-contain bg-surface text-foreground animate-in fade-in duration-200"
     >
-      <div className="editor-glass-control pointer-events-none absolute left-1/2 top-[max(.75rem,env(safe-area-inset-top))] z-40 grid h-12 w-[min(calc(100%_-_1.5rem),36rem)] -translate-x-1/2 grid-cols-[1fr_minmax(0,auto)_1fr] items-center rounded-full border border-border/55 bg-card/78 px-1.5 shadow-control backdrop-blur-2xl sm:top-[max(1rem,env(safe-area-inset-top))]">
+      <div className="media-overlay-surface pointer-events-none absolute left-1/2 top-[max(.75rem,env(safe-area-inset-top))] z-40 grid h-12 w-[min(calc(100%_-_1.5rem),36rem)] -translate-x-1/2 grid-cols-[1fr_minmax(0,auto)_1fr] items-center rounded-full px-1.5 sm:top-[max(1rem,env(safe-area-inset-top))]">
         <div className="flex min-w-0 justify-start">
           <button
             ref={closeRef}
@@ -265,7 +265,7 @@ function GalleryLightbox({
             type="button"
             onClick={() => goTo(index - 1)}
             disabled={index === 0}
-            className="floating-capsule floating-icon-button pen-touch-target absolute left-2 top-1/2 z-30 hidden h-12 w-12 -translate-y-1/2 sm:inline-flex bg-card/95 text-foreground shadow-control hover:bg-foreground hover:text-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:invisible sm:left-7 sm:h-[3.25rem] sm:w-[3.25rem]"
+            className="media-overlay-control floating-icon-button pen-touch-target absolute left-2 top-1/2 z-30 hidden h-12 w-12 -translate-y-1/2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:invisible sm:left-7 sm:inline-flex sm:h-[3.25rem] sm:w-[3.25rem]"
             aria-label={t("draft.gallery.previous", lang)}
           >
             <ArrowLeftIcon size={20} />
@@ -274,7 +274,7 @@ function GalleryLightbox({
             type="button"
             onClick={() => goTo(index + 1)}
             disabled={index === count - 1}
-            className="floating-capsule floating-icon-button pen-touch-target absolute right-2 top-1/2 z-30 hidden h-12 w-12 -translate-y-1/2 sm:inline-flex bg-card/95 text-foreground shadow-control hover:bg-foreground hover:text-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:invisible sm:right-7 sm:h-[3.25rem] sm:w-[3.25rem]"
+            className="media-overlay-control floating-icon-button pen-touch-target absolute right-2 top-1/2 z-30 hidden h-12 w-12 -translate-y-1/2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:invisible sm:right-7 sm:inline-flex sm:h-[3.25rem] sm:w-[3.25rem]"
             aria-label={t("draft.gallery.next", lang)}
           >
             <ArrowRightIcon size={20} />
@@ -356,8 +356,8 @@ function GalleryLightbox({
                   />
                   <span
                     className={cn(
-                      "floating-capsule floating-control-sm pointer-events-none absolute bottom-2 left-2 min-w-9 bg-card/90 px-2.5 text-[11px] tabular-nums shadow-control backdrop-blur-md sm:bottom-3 sm:left-3",
-                      imageIndex === index ? "glass-chip text-foreground" : "text-foreground/75",
+                      "media-overlay-surface floating-control-sm pointer-events-none absolute bottom-2 left-2 min-w-9 px-2.5 text-[11px] tabular-nums sm:bottom-3 sm:left-3",
+                      imageIndex === index && "ring-1 ring-inset ring-black/20",
                     )}
                   >
                     {imageIndex + 1}
@@ -577,7 +577,7 @@ export function DraftImageGallery({ images, alt, fallbackUrl, lang = "en", onAct
           <button
             type="button"
             onClick={onManage}
-            className="floating-capsule floating-control-sm pen-touch-target absolute left-3 top-3 gap-2 border border-black/10 bg-white/88 px-3 text-[11px] font-semibold text-black/72 shadow-control backdrop-blur-xl transition-[background-color,color,box-shadow] hover:bg-black hover:text-white hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-black/25 sm:min-h-11 sm:px-4 sm:text-[12px] sm:font-medium"
+            className="media-overlay-control floating-control-sm pen-touch-target absolute left-3 top-3 gap-2 px-3 text-[11px] font-semibold focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-black/25 sm:min-h-11 sm:px-4 sm:text-[12px] sm:font-medium"
             aria-label={manageLabel}
           >
             <EditIcon size={15} />
@@ -590,9 +590,9 @@ export function DraftImageGallery({ images, alt, fallbackUrl, lang = "en", onAct
           data-testid="draft-gallery-icon-overview-open"
           onClick={() => openLightbox(activeIndex, true)}
           className={cn(
-            "pen-touch-target absolute right-3 top-3 inline-flex h-9 min-h-9 items-center justify-center border border-black/10 bg-white/88 text-black/72 shadow-control backdrop-blur-xl transition-[background-color,color,box-shadow] hover:bg-black hover:text-white hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-black/25 sm:h-11 sm:min-h-11",
+            "media-overlay-control pen-touch-target absolute right-3 top-3 inline-flex h-9 min-h-9 items-center justify-center focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-black/25 sm:h-11 sm:min-h-11",
             mobileOverviewLabel
-              ? "floating-capsule gap-2 rounded-full px-3.5 text-[11px] font-semibold"
+              ? "floating-control-sm gap-2 rounded-full px-3.5 text-[11px] font-semibold"
               : "floating-icon-button w-11 rounded-full",
             mosaicAvailable && "lg:hidden",
           )}
@@ -612,7 +612,7 @@ export function DraftImageGallery({ images, alt, fallbackUrl, lang = "en", onAct
           type="button"
           data-testid="draft-gallery-overview-open"
           onClick={() => openLightbox(activeIndex, true)}
-            className="floating-capsule floating-control pen-touch-target absolute bottom-3 right-3 z-10 hidden gap-2 border border-black/10 bg-white/90 px-4 text-[12px] font-medium text-black/70 shadow-sm backdrop-blur-xl transition-[background-color,color,box-shadow] hover:bg-black hover:text-white hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-black/25 lg:inline-flex"
+            className="media-overlay-control floating-control pen-touch-target absolute bottom-3 right-3 z-10 hidden gap-2 px-4 text-[12px] font-medium focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-black/25 lg:inline-flex"
             aria-label={t("draft.gallery.allPhotos", lang)}
           >
             <GridIcon size={16} />
@@ -637,7 +637,7 @@ export function DraftImageGallery({ images, alt, fallbackUrl, lang = "en", onAct
                  * fullscreen gallery open. A spent arrow now simply absorbs
                  * the click, which is what pressing a dead control should do.
                  */
-                "floating-icon-button pen-touch-target absolute left-3 top-1/2 hidden -translate-y-1/2 border border-black/10 bg-white/90 text-black/70 shadow-sm backdrop-blur-xl hover:scale-105 hover:bg-black hover:text-white hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-black/25 disabled:cursor-default disabled:opacity-30 disabled:hover:scale-100 disabled:hover:bg-white/90 disabled:hover:text-black/70 disabled:hover:shadow-sm sm:inline-flex",
+                "media-overlay-control floating-icon-button pen-touch-target absolute left-3 top-1/2 hidden -translate-y-1/2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-black/25 disabled:cursor-default disabled:opacity-30 sm:inline-flex",
                 mosaicAvailable && "lg:hidden",
               )}
               aria-label={t("draft.gallery.previous", lang)}
@@ -651,7 +651,7 @@ export function DraftImageGallery({ images, alt, fallbackUrl, lang = "en", onAct
               className={cn(
                 // Same reasoning as the previous arrow: a disabled arrow must
                 // still swallow the click rather than let it reach the image.
-                "floating-icon-button pen-touch-target absolute right-3 top-1/2 hidden -translate-y-1/2 border border-black/10 bg-white/90 text-black/70 shadow-sm backdrop-blur-xl hover:scale-105 hover:bg-black hover:text-white hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-black/25 disabled:cursor-default disabled:opacity-30 disabled:hover:scale-100 disabled:hover:bg-white/90 disabled:hover:text-black/70 disabled:hover:shadow-sm sm:inline-flex",
+                "media-overlay-control floating-icon-button pen-touch-target absolute right-3 top-1/2 hidden -translate-y-1/2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-black/25 disabled:cursor-default disabled:opacity-30 sm:inline-flex",
                 mosaicAvailable && "lg:hidden",
               )}
               aria-label={t("draft.gallery.next", lang)}
@@ -670,21 +670,21 @@ export function DraftImageGallery({ images, alt, fallbackUrl, lang = "en", onAct
               <div
                 role="status"
                 aria-label={counterLabel(activeIndex, count, lang)}
-                className="flex h-8 items-center gap-2 rounded-full border border-black/[0.06] bg-white/[0.88] px-3 shadow-[0_4px_14px_rgba(0,0,0,0.08)] backdrop-blur-xl"
+                className="media-overlay-surface flex h-8 items-center gap-2 rounded-full px-3"
               >
                 {displayImages.map((image, imageIndex) => (
                   <span
                     key={`${image.id ?? image.url}-indicator`}
                     aria-hidden="true"
                     className={cn(
-                      "block h-1.5 rounded-full transition-all duration-200",
+                      "block h-1.5 rounded-full transition-[width,background-color] duration-200",
                       imageIndex === activeIndex ? "w-4 bg-black/75" : "w-1.5 bg-black/25",
                     )}
                   />
                 ))}
               </div>
             ) : (
-              <span className="rounded-full border border-black/[0.07] bg-white/90 px-2.5 py-1 text-[11px] font-semibold tabular-nums text-black/65 shadow-sm backdrop-blur-xl">
+              <span className="media-overlay-surface rounded-full px-2.5 py-1 text-[11px] font-semibold tabular-nums">
                 {counterLabel(activeIndex, count, lang)}
               </span>
             )}

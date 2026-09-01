@@ -316,7 +316,7 @@ function normalizedSpecsNumbers(
   return normalized;
 }
 
-const fieldClass = "editor-control-capsule h-11 rounded-xl border !bg-card px-3.5 text-[16px] !shadow-none focus-visible:border-foreground/25 focus-visible:ring-1 focus-visible:ring-ring/12 focus-visible:ring-offset-0 sm:text-[14px]";
+const fieldClass = "editor-control-capsule h-11 rounded-full border !bg-card px-3.5 text-[16px] !shadow-none focus-visible:border-foreground/25 focus-visible:ring-1 focus-visible:ring-ring/12 focus-visible:ring-offset-0 sm:text-[14px]";
 
 function Field({ id, label, children }: { id: string; label: React.ReactNode; children: React.ReactNode }) {
   return <div className="space-y-1"><Label htmlFor={id} className="text-[12px] font-medium text-foreground/65">{label}</Label>{children}</div>;
@@ -346,7 +346,7 @@ function UnitPicker({
       <SelectTrigger
         aria-label={label}
         className={cn(
-          "pen-touch-target !h-full !min-h-0 shrink-0 !rounded-none !border-0 !bg-card/45 px-2.5 text-[12px] font-semibold !shadow-none hover:!bg-card/78 focus:!ring-0 focus:!ring-offset-0",
+          "editor-control-capsule pen-touch-target !h-11 !min-h-11 shrink-0 rounded-full border px-2.5 text-[12px] font-semibold !shadow-none transition-colors hover:border-foreground/25 focus:ring-2",
           category === "CURRENCY"
             ? "!w-[4.875rem] !min-w-[4.875rem]"
             : "!w-[4.25rem] !min-w-[4.25rem]",
@@ -430,7 +430,6 @@ function DirectValueField({
   const unitLabel = numeric ? numericUnitLabel(numericContext) : null;
   const showClear = Boolean(value) && !required;
   const showStaticUnit = Boolean(unitLabel) && !unitControl;
-  const hasTrailingControl = Boolean(unitControl || showStaticUnit || showClear);
   const preview = parsed && (parsed.usedMath || parsed.usedUnit)
     ? `= ${formatEditableNumber(parsed.value, integer)}${unitLabel ? ` ${unitLabel}` : ""}`
     : null;
@@ -449,93 +448,83 @@ function DirectValueField({
 
   return (
     <Field id={id} label={label}>
-      <div
-        data-invalid={invalid || undefined}
-        className={cn(
-          hasTrailingControl
-            ? "editor-control-capsule flex h-11 min-w-0 items-stretch overflow-hidden rounded-xl border transition-[border-color,box-shadow] focus-within:border-foreground/25 focus-within:ring-1 focus-within:ring-ring/12"
-            : "relative",
-          hasTrailingControl && invalid && "border-destructive/60 focus-within:ring-destructive/20",
-        )}
-      >
-        <Input
-          id={id}
-          value={value}
-          required={required}
-          /*
-           * These fields accept unit and math expressions, which is why they
-           * asked for a text keyboard — but that meant every area and price
-           * field opened a full QWERTY on a phone just to type digits. The unit
-           * is picked from the adjacent control rather than typed, so the
-           * keypad matches the value: digits for integers, a decimal pad
-           * otherwise, and text only where a minus sign is legal. Same rule the
-           * stepper field below already uses.
-           */
-          inputMode={
-            !numeric
-              ? undefined
-              : (numericMin != null && numericMin < 0)
-                ? "text"
-                : integer
-                  ? "numeric"
-                  : "decimal"
-          }
-          autoComplete={autoComplete}
-          maxLength={maxLength ?? (numeric ? 64 : undefined)}
-          placeholder={placeholder}
-          aria-invalid={invalid || undefined}
-          onFocus={(event) => {
-            if (selectOnFocus) event.currentTarget.select();
-            else if (numeric) {
-              const input = event.currentTarget;
-              window.requestAnimationFrame(() => input.setSelectionRange(input.value.length, input.value.length));
+      <div className={cn("flex min-w-0 items-stretch", unitControl && "gap-2")}>
+        <div className="relative min-w-0 flex-1">
+          <Input
+            id={id}
+            value={value}
+            required={required}
+            /*
+             * These fields accept unit and math expressions, which is why they
+             * asked for a text keyboard — but that meant every area and price
+             * field opened a full QWERTY on a phone just to type digits. The unit
+             * is picked from the adjacent control rather than typed, so the
+             * keypad matches the value: digits for integers, a decimal pad
+             * otherwise, and text only where a minus sign is legal. Same rule the
+             * stepper field below already uses.
+             */
+            inputMode={
+              !numeric
+                ? undefined
+                : (numericMin != null && numericMin < 0)
+                  ? "text"
+                  : integer
+                    ? "numeric"
+                    : "decimal"
             }
-            if (numeric) setMathToolsOpen(true);
-          }}
-          onBlur={() => {
-            commitNumericValue();
-            window.setTimeout(() => setMathToolsOpen(false), 100);
-          }}
-          onChange={(event) => {
-            const next = numeric
-              ? event.target.value.replace(/[\r\n]/g, "")
-              : event.target.value;
-            onChange(next);
-          }}
-          className={cn(
-            hasTrailingControl
-              ? "!h-full !w-0 min-w-0 flex-1 !rounded-none !border-0 !bg-transparent px-3.5 text-[16px] !shadow-none focus-visible:!ring-0 focus-visible:!ring-offset-0 sm:text-[14px]"
-              : fieldClass,
-            invalid && !hasTrailingControl && "border-destructive/60 focus-visible:ring-destructive/20",
-            className,
-          )}
-        />
-        {hasTrailingControl ? (
-          <span className="flex h-full shrink-0 items-stretch border-l border-border/60">
-            {unitControl}
-            {showStaticUnit ? (
-              <span className="pointer-events-none flex h-full w-[4.25rem] shrink-0 items-center justify-center bg-card/45 px-2.5 text-[12px] font-semibold tabular-nums text-foreground/65">
-                {unitLabel}
-              </span>
-            ) : null}
-            {showClear ? (
-              <button
-                type="button"
-                onClick={() => onChange("")}
-                className={cn(
-                  "pen-touch-target flex h-full w-11 shrink-0 items-center justify-center text-muted-foreground transition-colors hover:bg-foreground/[0.05] hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring",
-                  (unitControl || showStaticUnit) && "border-l border-border/60",
-                )}
-                aria-label={`${t("draft.editor.clearValue", lang)}: ${labelText}`}
-              >
-                <CloseIcon size={14} />
-              </button>
-            ) : null}
-          </span>
-        ) : null}
+            autoComplete={autoComplete}
+            maxLength={maxLength ?? (numeric ? 64 : undefined)}
+            placeholder={placeholder}
+            aria-invalid={invalid || undefined}
+            onFocus={(event) => {
+              if (selectOnFocus) event.currentTarget.select();
+              else if (numeric) {
+                const input = event.currentTarget;
+                window.requestAnimationFrame(() => input.setSelectionRange(input.value.length, input.value.length));
+              }
+              if (numeric) setMathToolsOpen(true);
+            }}
+            onBlur={() => {
+              commitNumericValue();
+              window.setTimeout(() => setMathToolsOpen(false), 100);
+            }}
+            onChange={(event) => {
+              const next = numeric
+                ? event.target.value.replace(/[\r\n]/g, "")
+                : event.target.value;
+              onChange(next);
+            }}
+            className={cn(
+              fieldClass,
+              showStaticUnit && showClear ? "pr-[6.5rem]" : showStaticUnit ? "pr-[4.25rem]" : showClear ? "pr-11" : undefined,
+              invalid && "border-destructive/60 focus-visible:ring-destructive/20",
+              className,
+            )}
+          />
+          {showStaticUnit || showClear ? (
+            <span className="absolute inset-y-0 right-1 flex items-center">
+              {showStaticUnit ? (
+                <span className="pointer-events-none flex h-9 w-[3.75rem] shrink-0 items-center justify-center px-2 text-[12px] font-semibold tabular-nums text-foreground/55">
+                  {unitLabel}
+                </span>
+              ) : null}
+              {showClear ? (
+                <button
+                  type="button"
+                  onClick={() => onChange("")}
+                  className="pen-touch-target flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-foreground/[0.05] hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
+                  aria-label={`${t("draft.editor.clearValue", lang)}: ${labelText}`}
+                >
+                  <CloseIcon size={14} />
+                </button>
+              ) : null}
+            </span>
+          ) : null}
+        </div>
+        {unitControl}
       </div>
       {numeric && mathToolsOpen ? (
-        <div className="mt-1.5 flex min-h-11 items-center gap-1 rounded-full border border-border/55 bg-card/78 p-1 shadow-[inset_0_1px_0_rgba(255,255,255,.95),0_7px_18px_-14px_rgba(0,0,0,.24)] backdrop-blur-xl" aria-label={t("draft.editor.expressionHint", lang)}>
+        <div className="mt-1.5 flex min-h-11 items-center gap-1 rounded-full border border-border/55 bg-card p-1" aria-label={t("draft.editor.expressionHint", lang)}>
           {["+", "−", "×", "÷"].map((operator) => (
             <button
               key={operator}
@@ -563,7 +552,7 @@ function DirectValueField({
               commitNumericValue();
               setMathToolsOpen(false);
             }}
-            className="flex h-9 items-center justify-center rounded-full border border-foreground/14 bg-foreground px-4 text-[11px] font-semibold text-background shadow-control transition-[transform,background-color] hover:scale-[1.015] hover:bg-foreground/88 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/25"
+            className="flex h-9 items-center justify-center rounded-full border border-foreground bg-foreground px-4 text-[11px] font-semibold text-background transition-colors hover:bg-foreground/90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/25"
           >
             {t("draft.editor.descriptionDone", lang)}
           </button>
@@ -577,7 +566,7 @@ function DirectValueField({
 // Web translation of the iOS 40pt GlassIconTile: cool, opaque, and restrained.
 function IconTile({ icon: Icon }: { icon: React.ComponentType<IconProps> }) {
   return (
-    <span className="glossy-capsule flex h-11 w-11 shrink-0 items-center justify-center rounded-full text-foreground/72">
+    <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-surface-subtle text-foreground/65 ring-1 ring-inset ring-border/45">
       <Icon size={19} strokeWidth={1.8} />
     </span>
   );
@@ -634,21 +623,21 @@ function NumericStepper({
     <Field id={id} label={label}>
       <div
         className={cn(
-          "editor-control-capsule flex h-11 items-center overflow-hidden rounded-xl border !shadow-none",
+          "editor-control-capsule flex h-11 items-center rounded-full border !shadow-none",
           invalid ? "border-destructive/60" : "border-border/65",
         )}
       >
         {optional && !value.trim() ? (
           <button
             type="button"
-            className="pen-touch-target flex h-full w-full min-w-0 items-center justify-between gap-2 rounded-xl pl-3.5 text-left transition-colors hover:bg-foreground/[0.035] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
+            className="pen-touch-target flex h-full w-full min-w-0 items-center justify-between gap-2 rounded-full pl-3.5 text-left transition-colors hover:bg-foreground/[0.035] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
             onClick={startValue}
             aria-label={`${t("draft.editor.addValue", lang)}: ${label}`}
           >
             <span className="min-w-0 flex-1 truncate text-[14px] text-muted-foreground">
               {t("draft.editor.noValue", lang)}
             </span>
-            <span className="mr-1 inline-flex h-9 shrink-0 items-center gap-2 rounded-full border border-white/70 bg-card/78 px-3 text-[12px] font-semibold text-foreground shadow-[inset_0_1px_0_rgba(255,255,255,.94),0_2px_7px_rgba(35,31,27,.06)]">
+            <span className="mr-1 inline-flex h-9 shrink-0 items-center gap-2 rounded-full bg-foreground/[0.06] px-3 text-[12px] font-semibold text-foreground">
               <PlusIcon size={14} />
               {t("common.add", lang)}
             </span>
@@ -733,7 +722,7 @@ function sectionIcon(key: string): React.ComponentType<IconProps> {
 // Grouped card, mirroring the iOS app's inset-grouped edit sections.
 function Section({ title, icon: Icon, children }: { title: React.ReactNode; icon?: React.ComponentType<IconProps>; children: React.ReactNode }) {
   return (
-    <section className="space-y-4 rounded-2xl border border-border/65 bg-card p-4 shadow-sm sm:p-5">
+    <section className="space-y-4 rounded-2xl border border-border/65 bg-card p-4 sm:p-5">
       <div className="flex items-center gap-3">
         {Icon ? <IconTile icon={Icon} /> : null}
         <h3 className="text-[16px] font-semibold tracking-[-0.015em] text-foreground">{title}</h3>
@@ -795,7 +784,7 @@ function AdvancedField({
               <span
                 className={cn(
                   "flex h-9 w-full min-w-0 items-center justify-center truncate rounded-full px-2 text-[11px] font-semibold transition-colors",
-                  option.active ? "glossy-capsule text-foreground" : "text-muted-foreground hover:bg-surface-subtle hover:text-foreground",
+                  option.active ? "bg-foreground/[0.08] text-foreground" : "text-muted-foreground hover:bg-surface-subtle hover:text-foreground",
                 )}
               >
                 {option.label}
@@ -825,8 +814,8 @@ function AdvancedField({
                   onChange(section, field.key, next.length > 0 ? next : undefined);
                 }}
                 className={cn(
-                  "pen-touch-target min-h-11 rounded-full border px-3.5 py-2 text-[12px] font-medium transition-colors",
-                  active ? "glossy-capsule border-foreground/10 text-foreground" : "border-border/70 bg-surface text-foreground/65 hover:border-foreground/25 hover:text-foreground",
+                  "pen-touch-target min-h-11 rounded-full border border-transparent px-3.5 py-2 text-[12px] font-medium transition-colors",
+                  active ? "bg-foreground/[0.08] text-foreground" : "bg-transparent text-foreground/65 hover:bg-foreground/[0.04] hover:text-foreground",
                 )}
                 aria-pressed={active}
               >
@@ -1270,13 +1259,6 @@ export function DraftEditor({
     .map((part) => part.trim())
     .filter(Boolean)
     .join(", ");
-  const locationStillMatchesSavedDraft = (
-    values.address.trim() === (draft.address ?? "").trim()
-    && values.city.trim() === (draft.city ?? "").trim()
-    && values.state.trim() === (draft.state ?? "").trim()
-    && values.country.trim() === (draft.country ?? "").trim()
-    && values.postalCode.trim() === (draft.postal_code ?? "").trim()
-  );
   const hasAreaUnits = unitsForCategory(units, "AREA").length > 0;
   const hasCurrencyUnits = unitsForCategory(units, "CURRENCY").length > 0;
   const currentDescriptionMetrics = descriptionMetrics(values.description);
@@ -1297,7 +1279,7 @@ export function DraftEditor({
           type="submit"
           form="draft-editor-form"
           size="xs"
-          variant={dirty && values.title.trim() && numbersValid ? "default" : "ghost"}
+          variant="default"
           className="h-11 min-w-[4.75rem] px-3 disabled:opacity-45"
           loading={saving}
           disabled={!dirty || !values.title.trim() || !numbersValid}
@@ -1378,7 +1360,7 @@ export function DraftEditor({
                     id="draft-description"
                     type="button"
                     onClick={openDescriptionEditor}
-                    className="group w-full rounded-[1.6rem] border border-border/65 bg-card/88 px-5 py-5 text-left shadow-control backdrop-blur-xl transition-[border-color,box-shadow,transform] hover:-translate-y-px hover:border-foreground/22 hover:shadow-[0_16px_36px_-28px_rgba(0,0,0,0.32)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/20 sm:px-6 sm:py-6"
+                    className="group w-full rounded-[1.6rem] border border-border/65 bg-card px-5 py-5 text-left transition-colors hover:border-foreground/22 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/20 sm:px-6 sm:py-6"
                   >
                     {values.description ? (
                       <FormattedDescription
@@ -1511,8 +1493,8 @@ export function DraftEditor({
               </div>
               <PropertyMapCard
                 address={editorMapAddress}
-                latitude={locationStillMatchesSavedDraft ? draft.latitude : null}
-                longitude={locationStillMatchesSavedDraft ? draft.longitude : null}
+                latitude={draft.latitude}
+                longitude={draft.longitude}
                 lang={lang}
                 compact
                 className="mt-4"
@@ -1535,7 +1517,7 @@ export function DraftEditor({
               const recorded = section.allFields.filter((field) => hasRecordedFieldValue(field, specs[section.key]?.[field.key])).length;
               const summary = advancedSectionSummary(section.allFields, specs[section.key], propertyType, lang);
               return (
-                <section key={section.key} className="overflow-hidden rounded-[1.75rem] border border-border/65 bg-card shadow-card">
+                <section key={section.key} className="overflow-hidden rounded-[1.75rem] border border-border/65 bg-card">
                   <button
                     type="button"
                     onClick={() => setExpandedSections((current) => {
@@ -1622,11 +1604,11 @@ export function DraftEditor({
         </div>
       ) : undefined}
       className="border-0 sm:max-w-[800px]"
-      contentClassName="flex flex-col overflow-y-auto bg-background/45 p-4 sm:p-6"
+      contentClassName="flex flex-col overflow-y-auto bg-background p-4 sm:p-6"
     >
       <div className="mx-auto flex min-h-full w-full max-w-[720px] flex-1 flex-col gap-4">
-      <div className="floating-panel flex min-h-[30rem] flex-1 flex-col overflow-hidden bg-card/92">
-        <div className="flex shrink-0 items-center gap-1 border-b border-border/45 bg-card/78 px-3 py-2 backdrop-blur-xl">
+      <div className="floating-panel flex min-h-[30rem] flex-1 flex-col overflow-hidden bg-card">
+        <div className="flex shrink-0 items-center gap-1 border-b border-border/45 bg-card px-3 py-2">
           <button type="button" onClick={() => applyDescriptionCommand("bold")} aria-label={t("draft.editor.descriptionBold", lang)} title={t("draft.editor.descriptionBold", lang)} className="flex h-10 min-w-10 items-center justify-center rounded-full px-3 text-[15px] font-bold text-foreground/70 transition-colors hover:bg-foreground/[0.055] hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/25">B</button>
           <button type="button" onClick={() => applyDescriptionCommand("italic")} aria-label={t("draft.editor.descriptionItalic", lang)} title={t("draft.editor.descriptionItalic", lang)} className="flex h-10 min-w-10 items-center justify-center rounded-full px-3 text-[15px] italic text-foreground/70 transition-colors hover:bg-foreground/[0.055] hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/25">I</button>
           <span aria-hidden="true" className="mx-1 h-5 w-px bg-border/60" />
@@ -1634,7 +1616,7 @@ export function DraftEditor({
           <span className="flex-1" />
           <span className="hidden text-[11px] font-medium text-foreground/42 sm:inline">⌘B · ⌘I · ⌘↵</span>
         </div>
-        <div className="relative min-h-[24rem] flex-1 bg-card/80">
+        <div className="relative min-h-[24rem] flex-1 bg-card">
         {!descriptionDraft ? (
           <div className="pointer-events-none absolute inset-x-5 top-5 z-10">
             <p className="text-[18px] font-medium text-foreground/35">{t("draft.editor.descriptionPlaceholder", lang)}</p>

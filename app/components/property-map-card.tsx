@@ -137,6 +137,7 @@ export function PropertyMapCard({
   const [expanded, setExpanded] = useState(false);
   const [shouldLoad, setShouldLoad] = useState(false);
   const cardRef = useRef<HTMLElement>(null);
+  const targetKeyRef = useRef(rawTarget?.key ?? null);
 
   useEffect(() => {
     if (!target) {
@@ -173,6 +174,12 @@ export function PropertyMapCard({
 
   useEffect(() => {
     const updateTarget = () => {
+      const nextKey = rawTarget?.key ?? null;
+      if (targetKeyRef.current === nextKey) return;
+      targetKeyRef.current = nextKey;
+      // The editable address is presentation text when saved coordinates are
+      // available. Keep the map target stable while the user types so the
+      // canvas does not disappear, refetch its key, and rebuild on every key.
       setTarget(rawTarget);
       setFailed(false);
     };
@@ -280,14 +287,14 @@ export function PropertyMapCard({
         {failed ? (
           <div className="absolute inset-0 flex items-center justify-center px-6 text-center">
             <div className="max-w-[18rem]">
-              <span className="mx-auto flex h-12 w-12 items-center justify-center rounded-full border border-foreground/10 bg-white/88 text-foreground/58 shadow-control backdrop-blur-xl">
+              <span className="media-overlay-surface mx-auto flex h-12 w-12 items-center justify-center rounded-full">
                 <MapPinIcon size={20} />
               </span>
               <p className="mt-3 text-[13px] font-semibold text-foreground/68">{t("draft.mapPreviewUnavailable", lang)}</p>
               <button
                 type="button"
                 onClick={() => setRetryNonce((value) => value + 1)}
-                className="mt-3 inline-flex min-h-9 items-center justify-center rounded-full border border-foreground/10 bg-white/88 px-4 text-[11px] font-semibold text-foreground/72 shadow-control transition-colors hover:bg-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                className="media-overlay-control mt-3 inline-flex min-h-9 items-center justify-center rounded-full px-4 text-[11px] font-semibold focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
               >
                 {t("common.tryAgain", lang)}
               </button>
@@ -295,7 +302,7 @@ export function PropertyMapCard({
           </div>
         ) : loading ? (
           <div className="absolute inset-0 flex items-center justify-center" role="status" aria-label={t("common.loading", lang)}>
-            <span className="inline-flex min-h-11 items-center gap-2.5 rounded-full border border-foreground/8 bg-white/78 px-4 text-[11px] font-semibold text-foreground/55 shadow-control backdrop-blur-xl">
+            <span className="media-overlay-surface inline-flex min-h-11 items-center gap-2.5 rounded-full px-4 text-[11px] font-semibold">
               <span className="h-3.5 w-3.5 animate-spin rounded-full border border-foreground/15 border-t-foreground/55 motion-reduce:animate-none" aria-hidden="true" />
               {t("common.loading", lang)}
             </span>
@@ -303,7 +310,7 @@ export function PropertyMapCard({
         ) : null}
 
         <div className="pointer-events-none absolute inset-0 bg-gradient-to-b from-black/[0.08] via-transparent to-black/[0.24]" />
-        <div className="absolute left-3 top-3 flex max-w-[calc(100%-7rem)] items-center gap-2 rounded-full border border-white/55 bg-white/82 px-3 py-2 text-[11px] font-semibold text-foreground shadow-control backdrop-blur-xl sm:left-4 sm:top-4">
+        <div className="media-overlay-surface absolute left-3 top-3 flex max-w-[calc(100%-7rem)] items-center gap-2 rounded-full px-3 py-2 text-[11px] font-semibold sm:left-4 sm:top-4">
           <LockIcon size={13} className="shrink-0" />
           <span className="truncate">{t("draft.location", lang)} · {t("draft.editor.private", lang)}</span>
         </div>
@@ -312,13 +319,13 @@ export function PropertyMapCard({
           onClick={() => setExpanded(true)}
           aria-label={t("draft.location", lang)}
           title={t("draft.location", lang)}
-          className="absolute right-3 top-3 inline-flex h-10 w-10 items-center justify-center rounded-full border border-white/55 bg-white/86 text-foreground shadow-control backdrop-blur-xl transition-[background-color,transform] hover:bg-white active:scale-[0.98] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white sm:right-4 sm:top-4"
+          className="media-overlay-control absolute right-3 top-3 inline-flex h-10 w-10 items-center justify-center rounded-full active:scale-[0.98] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white sm:right-4 sm:top-4"
         >
           <LayoutIcon size={15} />
         </button>
-        {target.address ? (
-          <p className="absolute bottom-10 left-3 right-3 line-clamp-2 rounded-[1rem] border border-white/45 bg-white/84 px-3 py-2.5 text-[11px] font-medium leading-relaxed text-foreground/75 shadow-control backdrop-blur-xl sm:left-4 sm:right-auto sm:max-w-[min(75%,34rem)] sm:rounded-full sm:px-4 sm:py-2">
-            {target.address}
+        {normalizedAddress ? (
+          <p className="media-overlay-surface absolute bottom-10 left-3 right-3 line-clamp-2 rounded-[1rem] px-3 py-2.5 text-[11px] font-medium leading-relaxed sm:left-4 sm:right-auto sm:max-w-[min(75%,34rem)] sm:rounded-full sm:px-4 sm:py-2">
+            {normalizedAddress}
           </p>
         ) : null}
       </section>
@@ -329,7 +336,7 @@ export function PropertyMapCard({
             role="dialog"
             aria-modal="true"
             aria-label={t("draft.location", lang)}
-            className="flex h-[min(90dvh,56rem)] w-full max-w-6xl flex-col overflow-hidden rounded-[2rem] border border-white/70 bg-card/95 shadow-elevated backdrop-blur-2xl"
+            className="flex h-[min(90dvh,56rem)] w-full max-w-6xl flex-col overflow-hidden rounded-[2rem] border border-border/60 bg-card shadow-elevated"
           >
             <header className="flex min-h-16 items-center justify-between gap-4 px-5 sm:px-7">
               <div className="min-w-0">
@@ -360,14 +367,14 @@ export function PropertyMapCard({
                 <div className="flex h-full flex-col items-center justify-center gap-3 px-6 text-center text-foreground/55">
                   <MapPinIcon size={28} />
                   <p className="text-[13px] font-semibold">{t("draft.mapPreviewUnavailable", lang)}</p>
-                  <button type="button" onClick={() => setRetryNonce((value) => value + 1)} className="rounded-full border border-border bg-card px-4 py-2 text-[11px] font-semibold shadow-control hover:bg-surface-subtle">{t("common.tryAgain", lang)}</button>
+                  <button type="button" onClick={() => setRetryNonce((value) => value + 1)} className="rounded-full border border-border bg-card px-4 py-2 text-[11px] font-semibold transition-colors hover:bg-surface-subtle">{t("common.tryAgain", lang)}</button>
                 </div>
               ) : (
                 <div className="flex h-full items-center justify-center text-foreground/45"><span className="h-5 w-5 animate-spin rounded-full border-2 border-foreground/15 border-t-foreground/55 motion-reduce:animate-none" /></div>
               )}
             </div>
-            {target.address ? (
-              <p className="px-5 py-4 text-[13px] font-medium text-foreground/72 sm:px-7">{target.address}</p>
+            {normalizedAddress ? (
+              <p className="px-5 py-4 text-[13px] font-medium text-foreground/72 sm:px-7">{normalizedAddress}</p>
             ) : null}
           </section>
         </div>,

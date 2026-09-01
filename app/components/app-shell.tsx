@@ -56,13 +56,13 @@ function NavRailItem({ href, label, icon: Icon, active }: {
         className={cn(
           "app-sidebar-nav-icon flex h-12 w-12 shrink-0 items-center justify-center rounded-full border border-transparent transition-colors duration-150",
           active
-            ? "border-border/55 bg-card text-foreground shadow-control"
+            ? "border-border/55 bg-surface-subtle text-foreground"
             : "text-foreground/52 group-hover/nav:bg-surface-subtle/70 group-hover/nav:text-foreground",
         )}
       >
         <Icon size={26} filled={active} strokeWidth={1.9} className="shrink-0" />
       </span>
-      <span className="app-sidebar-label pointer-events-none absolute left-[calc(100%+0.55rem)] top-1/2 z-[75] -translate-y-1/2 whitespace-nowrap rounded-full border border-border/60 bg-card/95 px-3 py-2 text-[12px] font-semibold text-foreground opacity-0 shadow-control backdrop-blur-xl transition-opacity duration-100 group-hover/nav:opacity-100 group-focus-visible/nav:opacity-100">
+      <span className="app-sidebar-label pointer-events-none absolute left-[calc(100%+0.55rem)] top-1/2 z-[75] -translate-y-1/2 whitespace-nowrap rounded-full border border-border/60 bg-card px-3 py-2 text-[12px] font-semibold text-foreground opacity-0 shadow-control transition-opacity duration-100 group-hover/nav:opacity-100 group-focus-visible/nav:opacity-100">
         {label}
       </span>
     </Link>
@@ -556,14 +556,13 @@ function AppShellFrame({
       aria-label={t("reai.openAgent", lang)}
       aria-expanded={reaiOpen}
       className={cn(
-        "group inline-flex shrink-0 items-center justify-center gap-2 rounded-full font-semibold transition-[transform,box-shadow,background-color,color] duration-200",
+        "group inline-flex shrink-0 items-center justify-center gap-2 rounded-full font-semibold transition-[box-shadow,background-color,color,border-color] duration-200",
         "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2",
         variant === "header"
-          ? "floating-capsule h-11 w-11 gap-0 p-0 text-foreground/80 shadow-control hover:bg-card hover:text-foreground"
+          ? "h-11 w-11 gap-0 border border-border/70 bg-card p-0 text-foreground/80 hover:bg-surface-subtle hover:text-foreground"
           : cn(
-            "glossy-primary-capsule fixed bottom-6 right-6 z-40 hidden h-14 w-14 gap-0 overflow-visible border border-white/20 p-0 text-white md:inline-flex",
-            "shadow-[inset_0_1px_0_rgba(255,255,255,0.18),0_0_0_1px_rgba(0,0,0,0.12),0_0_20px_5px_rgba(255,255,255,0.32),0_14px_34px_rgba(0,0,0,0.24)]",
-            "hover:-translate-y-0.5 hover:shadow-[inset_0_1px_0_rgba(255,255,255,0.22),0_0_0_1px_rgba(0,0,0,0.12),0_0_26px_7px_rgba(255,255,255,0.42),0_16px_38px_rgba(0,0,0,0.28)] active:translate-y-0",
+            "fixed bottom-6 right-6 z-40 hidden h-14 w-14 gap-0 overflow-visible border border-primary bg-primary p-0 text-primary-foreground shadow-[0_12px_30px_-12px_rgba(0,0,0,0.42)] md:inline-flex",
+            "hover:bg-primary/90",
             "min-[1728px]:bottom-8 min-[1728px]:right-8 min-[1728px]:h-16 min-[1728px]:w-16",
           ),
       )}
@@ -575,7 +574,7 @@ function AppShellFrame({
           "shrink-0 transition-colors",
           variant === "header"
             ? "text-foreground/75 group-hover:text-foreground"
-            : "h-[23px] w-[23px] text-current drop-shadow-[0_0_7px_rgba(255,255,255,0.52)] min-[1728px]:h-7 min-[1728px]:w-7",
+            : "h-[23px] w-[23px] text-current min-[1728px]:h-7 min-[1728px]:w-7",
         )}
       />
     </button>
@@ -665,12 +664,12 @@ function AppShellFrame({
                 <span className={cn(
                   "app-sidebar-nav-icon flex h-12 w-12 shrink-0 items-center justify-center rounded-full border transition-colors duration-150",
                   createOpen
-                    ? "glossy-primary-capsule border-foreground/15 text-background"
+                    ? "border-foreground bg-foreground text-background"
                     : "border-transparent text-foreground/52 group-hover/nav:bg-surface-subtle/70 group-hover/nav:text-foreground",
                 )}>
                   <PlusIcon size={26} />
                 </span>
-                <span className="app-sidebar-label pointer-events-none absolute left-[calc(100%+0.55rem)] top-1/2 z-[75] -translate-y-1/2 whitespace-nowrap rounded-full border border-border/60 bg-card/95 px-3 py-2 text-[12px] font-semibold text-foreground opacity-0 shadow-control backdrop-blur-xl transition-opacity duration-100 group-hover/nav:opacity-100 group-focus-visible/nav:opacity-100">
+                <span className="app-sidebar-label pointer-events-none absolute left-[calc(100%+0.55rem)] top-1/2 z-[75] -translate-y-1/2 whitespace-nowrap rounded-full border border-border/60 bg-card px-3 py-2 text-[12px] font-semibold text-foreground opacity-0 shadow-control transition-opacity duration-100 group-hover/nav:opacity-100 group-focus-visible/nav:opacity-100">
                   {t("webCreate.menuTitle", lang)}
                 </span>
               </button>
@@ -688,7 +687,7 @@ function AppShellFrame({
           role="dialog"
           aria-modal="false"
           aria-labelledby="app-create-title"
-          className="fixed bottom-0 left-[var(--sidebar-offset)] top-0 z-[55] hidden w-[min(28rem,calc(100vw-var(--sidebar-offset)-2rem))] flex-col border-r border-border/70 bg-card/[0.98] text-foreground shadow-[20px_0_55px_rgba(0,0,0,0.10)] backdrop-blur-2xl md:flex"
+          className="fixed bottom-0 left-[var(--sidebar-offset)] top-0 z-[55] hidden w-[min(28rem,calc(100vw-var(--sidebar-offset)-2rem))] flex-col border-r border-border/70 bg-card text-foreground shadow-[20px_0_55px_rgba(0,0,0,0.10)] md:flex"
         >
           <header className="flex h-[var(--header-total-h)] shrink-0 items-center justify-between border-b border-border/70 px-6 pt-safe">
             <h2 id="app-create-title" className="text-[26px] font-bold tracking-[-0.03em]">{t("webCreate.menuTitle", lang)}</h2>
@@ -712,7 +711,7 @@ function AppShellFrame({
                 onClick={() => setCreateOpen(false)}
                 className="group flex items-center gap-4 rounded-[1.35rem] p-3 transition-colors hover:bg-foreground/[0.045] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
               >
-                <span className="glossy-capsule flex h-16 w-16 shrink-0 items-center justify-center rounded-[1.2rem] text-foreground/72 transition-transform group-hover:scale-[1.03]">
+                <span className="flex h-16 w-16 shrink-0 items-center justify-center rounded-[1.2rem] bg-surface-subtle text-foreground/72 ring-1 ring-inset ring-border/55">
                   <Icon size={25} />
                 </span>
                 <span className="min-w-0">

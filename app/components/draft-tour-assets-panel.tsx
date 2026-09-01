@@ -873,10 +873,10 @@ export function DraftTourAssetsPanel({
       {loading && !payload ? (
         <CollectionLoading
           label={t("common.loading", lang)}
-          className="min-h-36 rounded-[1.5rem] border border-border/65 bg-card pt-10 shadow-control sm:min-h-[6.25rem] sm:pt-6"
+          className="min-h-36 rounded-[1.5rem] border border-border/65 bg-card pt-10 sm:min-h-[6.25rem] sm:pt-6"
         />
       ) : error && !payload ? (
-        <div className="flex items-center gap-3 rounded-[1.5rem] border border-border/65 bg-card p-4 shadow-control sm:px-5">
+        <div className="flex items-center gap-3 rounded-[1.5rem] border border-border/65 bg-card p-4 sm:px-5">
           <InfoIcon size={18} className="shrink-0 text-destructive" />
           <p className="min-w-0 flex-1 text-[12px] text-muted-foreground">{error}</p>
           <Button type="button" variant="outline" size="sm" onClick={() => { void load(); }}>
@@ -884,7 +884,7 @@ export function DraftTourAssetsPanel({
           </Button>
         </div>
       ) : !payload?.assets.length ? (
-        <div className="flex items-start gap-3.5 rounded-[1.5rem] border border-border/70 bg-card p-5 shadow-control sm:items-center">
+        <div className="flex items-start gap-3.5 rounded-[1.5rem] border border-border/70 bg-card p-5 sm:items-center">
           <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-surface-subtle text-foreground/52 ring-1 ring-inset ring-border/40">
             <TourIcon size={18} />
           </span>
@@ -932,7 +932,7 @@ export function DraftTourAssetsPanel({
                   of pills beside it; desktop keeps actions on their own column.
                 */
                 className={cn(
-                  "draft-tour-asset-card grid min-w-0 grid-cols-[auto_minmax(0,1fr)] items-center gap-3 rounded-[1.4rem] border border-border/65 bg-card/88 p-3.5 shadow-control backdrop-blur-xl transition-[border-color,box-shadow,transform] hover:-translate-y-px hover:border-foreground/18 hover:shadow-card sm:gap-4 sm:p-4",
+                  "draft-tour-asset-card grid min-w-0 grid-cols-[auto_minmax(0,1fr)] items-center gap-3 rounded-[1.4rem] border border-border/65 bg-card p-3.5 transition-colors hover:border-foreground/18 sm:gap-4 sm:p-4",
                   overviewAssets.length === 1 && "lg:grid-cols-[auto_minmax(0,1fr)_minmax(18rem,auto)] lg:px-5",
                 )}
               >
@@ -1056,7 +1056,7 @@ export function DraftTourAssetsPanel({
                       <Button
                         asChild
                         size="sm"
-                        variant={selection?.isPrimary && state.ready ? "default" : "secondary"}
+                        variant="default"
                         className={cn(
                           "pen-touch-target order-1 h-10 w-full rounded-full",
                           "col-span-2 md:col-span-1",
@@ -1084,13 +1084,15 @@ export function DraftTourAssetsPanel({
             );
           })}
           {remainingAssets > 0 ? (
-            <button
+            <Button
               type="button"
+              variant="outline"
+              size="sm"
               onClick={() => setOpen(true)}
-              className="floating-capsule mx-auto flex min-h-11 items-center justify-center rounded-full px-5 text-[11px] font-semibold text-foreground/62 shadow-control transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring lg:col-span-2"
+              className="mx-auto min-h-11 px-5 text-[11px] lg:col-span-2"
             >
               {text.more(remainingAssets)}
-            </button>
+            </Button>
           ) : null}
         </div>
       )}
@@ -1175,7 +1177,7 @@ export function DraftTourAssetsPanel({
               </div>
             ) : !payload?.assets.length ? (
               <div className="editor-glass-surface flex items-start gap-3.5 rounded-[1.4rem] border p-4 sm:p-5">
-                <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full border border-border/55 bg-card/86 text-foreground/48 shadow-control">
+                <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-surface-subtle text-foreground/48 ring-1 ring-inset ring-border/45">
                   <TourIcon size={18} />
                 </span>
                 <div className="min-w-0 pt-0.5">
@@ -1482,7 +1484,7 @@ export function DraftTourAssetsPanel({
           {onOpenSharing ? (
             <div className="p-4">
               <div className="flex items-start gap-3">
-                <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full border border-border/55 bg-card/82 text-foreground/62 shadow-control">
+                <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-surface-subtle text-foreground/62 ring-1 ring-inset ring-border/45">
                   <ShareIcon size={15} />
                 </span>
                 <span className="min-w-0 pt-0.5">
@@ -1496,7 +1498,7 @@ export function DraftTourAssetsPanel({
               */}
               <Button
                 variant="outline"
-                className="glossy-capsule mt-3 h-11 w-full border-border/65 bg-card/86 text-foreground shadow-control"
+                className="mt-3 h-11 w-full"
                 onClick={() => {
                   setOpen(false);
                   onOpenSharing();

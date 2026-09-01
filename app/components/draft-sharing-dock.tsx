@@ -550,7 +550,7 @@ export function DraftSharingDock({
             <span className="h-[3.75rem] animate-pulse rounded-xl bg-foreground/[0.055] motion-reduce:animate-none" />
             <span className="h-[3.75rem] animate-pulse rounded-xl bg-foreground/[0.035] motion-reduce:animate-none" />
           </div>
-          <div aria-hidden="true" className="overflow-hidden rounded-2xl border border-border/70 bg-card shadow-control">
+          <div aria-hidden="true" className="overflow-hidden rounded-2xl border border-border/70 bg-card">
             <div className="p-4 sm:p-5">
               <span className="block h-4 w-40 max-w-full animate-pulse rounded-full bg-foreground/[0.06] motion-reduce:animate-none" />
               <span className="mt-2.5 block h-3 w-56 max-w-full animate-pulse rounded-full bg-foreground/[0.04] motion-reduce:animate-none" />
@@ -651,7 +651,7 @@ export function DraftSharingDock({
       ) : null}
 
       {selectedShare ? (
-        <div className="overflow-hidden rounded-2xl border border-border/70 bg-card shadow-control">
+        <div className="overflow-hidden rounded-2xl border border-border/70 bg-card">
           <div className="flex min-w-0 items-start justify-between gap-4 p-4 sm:p-5">
             <div className="min-w-0">
               <div className="flex items-center gap-2">
@@ -733,7 +733,7 @@ export function DraftSharingDock({
             the routine actions it could be mistaken for.
           */}
           {confirmRevoke ? (
-            <div className="border-t border-border/50 bg-card/58 p-3 sm:px-4">
+            <div className="border-t border-border/50 bg-card p-3 sm:px-4">
               <p className="text-[12px] font-semibold text-destructive">{t("shares.revokeConfirm", lang)}</p>
               <p className="mt-1 text-[11px] leading-relaxed text-foreground/60">{t("shares.revokeConsequence", lang)}</p>
               <div className="mt-3 flex gap-2">
@@ -778,7 +778,7 @@ export function DraftSharingDock({
           )}
         </div>
       ) : linksLoaded && !linksError ? (
-        <div className="flex min-h-40 flex-col items-center justify-center rounded-[1.75rem] border border-dashed border-border/70 bg-card/45 px-6 py-7 text-center">
+        <div className="flex min-h-40 flex-col items-center justify-center rounded-[1.75rem] border border-dashed border-border/70 bg-card px-6 py-7 text-center">
           <p className="text-[12px] font-medium">{t("shares.noShares", lang)}</p>
           <p className="mx-auto mt-1 max-w-[22rem] text-[11px] leading-relaxed text-muted-foreground">{t("shares.noSharesHint", lang)}</p>
           <Button type="button" size="sm" className="mt-4" onClick={showCreateView}>

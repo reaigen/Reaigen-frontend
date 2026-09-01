@@ -224,7 +224,7 @@ function LoadingMark({ label }: { label: string }) {
 function MediaManagerSkeleton() {
   return (
     <div className="flex min-h-[18rem] items-start justify-center pt-10" aria-hidden="true">
-      <span className="inline-flex h-11 items-center gap-2.5 rounded-full border border-border/65 bg-card/88 px-4 text-[11px] font-semibold text-muted-foreground shadow-control backdrop-blur-xl">
+      <span className="inline-flex h-11 items-center gap-2.5 rounded-full border border-border/65 bg-card px-4 text-[11px] font-semibold text-muted-foreground">
         <span className="h-3.5 w-3.5 animate-spin rounded-full border border-foreground/18 border-t-foreground/60 motion-reduce:animate-none" />
       </span>
     </div>
@@ -1175,7 +1175,7 @@ export const DraftMediaManager = React.forwardRef<DraftMediaManagerHandle, {
       onBack={view === "gallery" ? undefined : () => switchView("gallery")}
       lang={lang}
       headerAction={view === "gallery" ? (
-        <Button type="button" variant="outline" size="sm" className="floating-control h-auto border-border/65 !bg-card/75 px-3 backdrop-blur-xl" onClick={requestUpload} disabled={busy}>
+        <Button type="button" variant="default" size="sm" className="floating-control h-auto px-3" onClick={requestUpload} disabled={busy}>
           <UploadIcon size={15} />
           <span className="hidden min-[390px]:inline">{t("draft.media.add", lang)}</span>
         </Button>
@@ -1238,7 +1238,7 @@ export const DraftMediaManager = React.forwardRef<DraftMediaManagerHandle, {
               header for the list it precedes instead.
             */
             <div
-              className="floating-capsule mb-3 flex max-w-[min(24rem,100%)] items-center gap-3 !bg-card/90 px-3.5 text-[11px] text-foreground/70"
+              className="mb-3 flex min-h-11 max-w-[min(24rem,100%)] items-center gap-3 rounded-full border border-border/65 bg-card px-3.5 text-[11px] text-foreground/70"
               role="status"
               aria-live="polite"
             >
@@ -1430,10 +1430,11 @@ export const DraftMediaManager = React.forwardRef<DraftMediaManagerHandle, {
         <div className="media-manager-command-actions shrink-0 items-center gap-1">
           <Button
             type="button"
-            variant={reorderMode ? "default" : "ghost"}
+            variant="outline"
             size="sm"
             className={cn(
               "h-11 w-11 px-0 min-[520px]:w-auto min-[520px]:px-3",
+              reorderMode && "border-foreground/25 bg-foreground/[0.08]",
               (filter !== "gallery" || visibleGroups.length <= 1) && "pointer-events-none invisible",
             )}
             onClick={() => {
@@ -1484,7 +1485,7 @@ export const DraftMediaManager = React.forwardRef<DraftMediaManagerHandle, {
           className="mb-3 flex justify-end"
           role="status"
         >
-          <div className="floating-capsule flex w-full max-w-sm items-center justify-between gap-3 border !bg-card/90 pl-3 pr-1 text-foreground shadow-control">
+          <div className="flex min-h-11 w-full max-w-sm items-center justify-between gap-3 rounded-full border border-border/65 bg-card pl-3 pr-1 text-foreground">
             <span className="text-[10px] font-medium">{t("draft.media.orderSaved", lang)}</span>
             <Button
               type="button"
@@ -1501,8 +1502,8 @@ export const DraftMediaManager = React.forwardRef<DraftMediaManagerHandle, {
       ) : null}
 
       {filter === "hidden" ? (
-        <div className="floating-panel-shape mb-4 flex items-center gap-3 border border-border/65 bg-card px-3 py-2.5 shadow-control">
-          <span className="floating-capsule floating-icon-button-sm text-foreground/60">
+        <div className="floating-panel-shape mb-4 flex items-center gap-3 border border-border/65 bg-card px-3 py-2.5">
+          <span className="floating-icon-button-sm bg-surface-subtle text-foreground/60 ring-1 ring-inset ring-border/45">
             <EyeClosedIcon size={15} />
           </span>
           <div className="min-w-0 flex-1">
@@ -1573,12 +1574,12 @@ export const DraftMediaManager = React.forwardRef<DraftMediaManagerHandle, {
       ) : null}
 
       {!reorderMode && selected ? (
-        <section className="media-manager-selection editor-glass-control mb-4 rounded-[1.25rem] border px-3.5 py-3" aria-label={selectedLabel}>
+        <section className="media-manager-selection editor-glass-control mb-4 rounded-[1.35rem] border px-3.5 py-3" aria-label={selectedLabel}>
           <div className="min-w-0 px-1 py-0.5">
             <div className="flex min-w-0 items-center gap-2">
               <p className="truncate text-[12px] font-semibold" title={selectedLabel}>{selectedLabel}</p>
               {selected.id === coverId ? (
-                <StatusPill className="glass-chip shrink-0 text-[9px]">
+                <StatusPill className="shrink-0 text-[9px]">
                   <StarIcon size={10} /> {t("draft.media.cover", lang)}
                 </StatusPill>
               ) : null}
@@ -1592,7 +1593,7 @@ export const DraftMediaManager = React.forwardRef<DraftMediaManagerHandle, {
           <div className="media-manager-selection-actions">
             {selected.kind === "image" ? (
               <>
-                <Button data-testid="draft-media-edit-photo" type="button" variant="secondary" size="sm" className="media-manager-selection-primary" onClick={() => openImageEditor(selected)} disabled={busy}>
+                <Button data-testid="draft-media-edit-photo" type="button" variant="default" size="sm" className="media-manager-selection-primary" onClick={() => openImageEditor(selected)} disabled={busy}>
                   <EditIcon size={13} /> {t("draft.media.editPhoto", lang)}
                 </Button>
                 <Button type="button" variant="ghost" size="icon-sm" onClick={() => requestVersionUpload(selected)} disabled={busy || !selected.active.logical_asset_id} aria-label={t("draft.media.uploadVersion", lang)} title={t("draft.media.uploadVersionHint", lang)}>
@@ -1630,7 +1631,7 @@ export const DraftMediaManager = React.forwardRef<DraftMediaManagerHandle, {
         </div>
       ) : groups.length === 0 && pending.length === 0 ? (
         <div className="flex min-h-[54vh] flex-col items-center justify-center px-6 text-center">
-          <span className="flex h-16 w-16 items-center justify-center rounded-full border border-border/70 bg-card text-foreground/30 shadow-control">
+          <span className="flex h-16 w-16 items-center justify-center rounded-full bg-surface-subtle text-foreground/30 ring-1 ring-inset ring-border/55">
             <ImageIcon size={25} />
           </span>
           <h3 className="mt-4 text-[16px] font-semibold tracking-[-0.02em]">{t("draft.media.emptyTitle", lang)}</h3>
@@ -1730,11 +1731,11 @@ export const DraftMediaManager = React.forwardRef<DraftMediaManagerHandle, {
                         <MediaVisual upload={group.active} alt="" />
                       </button>
                       {group.id === coverId ? (
-                        <StatusPill tone="strong" className="pointer-events-none absolute left-2 top-2 border-white/15 bg-black/65 px-2 text-[9px] text-white backdrop-blur-xl">
+                        <StatusPill className="pointer-events-none absolute left-2 top-2 px-2 text-[9px] shadow-control">
                           <StarIcon size={10} /> 1 · {t("draft.media.cover", lang)}
                         </StatusPill>
                       ) : (
-                        <StatusPill className="glass-chip pointer-events-none absolute left-2 top-2 min-w-7 justify-center px-2 text-[10px] tabular-nums">
+                        <StatusPill className="pointer-events-none absolute left-2 top-2 min-w-7 justify-center px-2 text-[10px] tabular-nums shadow-control">
                           {index + 1}
                         </StatusPill>
                       )}
@@ -1747,7 +1748,7 @@ export const DraftMediaManager = React.forwardRef<DraftMediaManagerHandle, {
                         onLostPointerCapture={(event) => finishPointerReorder(event, false)}
                         onContextMenu={(event) => event.preventDefault()}
                         disabled={busy}
-                        className="floating-capsule floating-icon-button pen-touch-target absolute right-2 top-2 touch-none select-none text-muted-foreground opacity-90 hover:scale-105 hover:text-foreground focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring active:cursor-grabbing active:scale-95 disabled:opacity-30"
+                        className="floating-capsule floating-icon-button pen-touch-target absolute right-2 top-2 touch-none select-none text-muted-foreground opacity-90 transition-colors hover:text-foreground focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring active:cursor-grabbing disabled:opacity-30"
                         aria-label={t("draft.media.dragToMove", lang)}
                         title={t("draft.media.dragToMove", lang)}
                       >
@@ -1847,19 +1848,15 @@ export const DraftMediaManager = React.forwardRef<DraftMediaManagerHandle, {
 
                       <span className="pointer-events-none absolute left-2 top-2 flex flex-wrap gap-1.5">
                         {!group.visible ? (
-                          <StatusPill tone="strong" className="border-white/15 bg-black/65 text-[9px] text-white">
+                          <StatusPill className="text-[9px] shadow-control">
                             <EyeClosedIcon size={11} /> {t("draft.media.hidden", lang)}
                           </StatusPill>
                         ) : null}
                       </span>
                       {group.visible ? (
                         <StatusPill
-                          tone={isCover ? "strong" : undefined}
                           className={cn(
-                            "pointer-events-none absolute right-2 top-2 min-w-7 justify-center px-2 text-[10px] tabular-nums",
-                            isCover
-                              ? "border-white/15 bg-black/65 text-white backdrop-blur-xl"
-                              : "glass-chip",
+                            "pointer-events-none absolute right-2 top-2 min-w-7 justify-center px-2 text-[10px] tabular-nums shadow-control",
                           )}
                         >
                           {isCover ? <StarIcon size={10} /> : null}
@@ -1886,10 +1883,10 @@ export const DraftMediaManager = React.forwardRef<DraftMediaManagerHandle, {
                   type="button"
                   onClick={requestUpload}
                   disabled={busy}
-                  className="media-manager-card floating-panel group min-w-0 overflow-hidden border-dashed bg-card/36 text-muted-foreground transition-[border-color,background-color,color,transform] hover:-translate-y-px hover:border-foreground/30 hover:bg-card/62 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50"
+                  className="media-manager-card floating-panel group min-w-0 overflow-hidden border-dashed bg-card text-muted-foreground transition-colors hover:border-foreground/30 hover:bg-surface-subtle hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50"
                 >
-                  <span className="media-manager-card-visual flex items-center justify-center bg-card/22">
-                    <span className="floating-capsule floating-icon-button"><UploadIcon size={17} /></span>
+                  <span className="media-manager-card-visual flex items-center justify-center bg-surface-subtle">
+                    <span className="floating-icon-button bg-card ring-1 ring-inset ring-border/55"><UploadIcon size={17} /></span>
                   </span>
                   <span className="media-manager-card-footer text-[11px] font-semibold">{t("draft.media.addPhotos", lang)}</span>
                 </button>

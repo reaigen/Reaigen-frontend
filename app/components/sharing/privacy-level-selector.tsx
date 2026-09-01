@@ -49,7 +49,7 @@ export function PrivacyLevelSelector({ level, pin, onLevelChange, onPinChange, l
                 onLevelChange(option.value);
                 if (option.value !== "pin") onPinChange("");
               }}
-              className={`floating-panel-shape pen-touch-target relative flex min-h-16 items-center gap-2.5 border px-3 py-2.5 text-left transition-colors hover:bg-card focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 ${active ? "glossy-capsule border-foreground/20 bg-card/90 shadow-control" : "editor-control-capsule border-border/65 bg-muted/28"}`}
+              className={`floating-panel-shape pen-touch-target relative flex min-h-16 items-center gap-2.5 border px-3 py-2.5 text-left transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 ${active ? "border-foreground/20 bg-foreground/[0.065]" : "border-border/65 bg-card hover:border-foreground/18 hover:bg-foreground/[0.035]"}`}
             >
               <span className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-full ${active ? "bg-foreground/[0.09] text-foreground" : "bg-secondary/80 text-foreground/50"}`}>
                 {option.icon}
@@ -62,7 +62,7 @@ export function PrivacyLevelSelector({ level, pin, onLevelChange, onPinChange, l
               <span
                 aria-hidden="true"
                 className={`flex h-5 w-5 shrink-0 items-center justify-center rounded-full border transition-colors ${
-                  active ? "border-foreground" : "border-foreground/25 bg-card/65"
+                  active ? "border-foreground" : "border-foreground/25 bg-card"
                 }`}
               >
                 {active ? <span className="h-2.5 w-2.5 rounded-full bg-foreground" /> : null}
@@ -81,7 +81,7 @@ export function PrivacyLevelSelector({ level, pin, onLevelChange, onPinChange, l
             placeholder={t("shareDialog.pinPlaceholder", lang)}
             value={pin}
             onChange={(e) => onPinChange(e.target.value.replace(/\D/g, "").slice(0, 10))}
-            className="editor-control-capsule h-11 rounded-xl px-4 text-[14px] tabular-nums"
+            className="editor-control-capsule h-11 rounded-full px-4 text-[14px] tabular-nums"
             autoFocus
           />
           <p className="text-[11px] text-foreground/50">{t("shared.pin.minLength", lang)}</p>

@@ -432,14 +432,8 @@
   .editor-glass-surface,
   .floating-panel {
     border-color: hsl(var(--border) / 0.72);
-    background:
-      radial-gradient(120% 90% at 6% -12%, hsl(var(--card) / 0.94) 0%, transparent 62%),
-      linear-gradient(155deg, hsl(var(--card) / 0.78), hsl(var(--background) / 0.72));
-    box-shadow:
-      inset 0 1px 0 hsl(var(--card) / 0.9),
-      0 10px 32px hsl(var(--foreground) / 0.07);
-    -webkit-backdrop-filter: blur(26px) saturate(1.18);
-    backdrop-filter: blur(26px) saturate(1.18);
+    background: hsl(var(--card));
+    box-shadow: 0 10px 32px hsl(var(--foreground) / 0.07);
   }
 
   /*
@@ -460,7 +454,42 @@
     }
   }
 
-  .editor-glass-control,
+  .editor-glass-control {
+    border-color: hsl(var(--border) / 0.68);
+    background: hsl(var(--card));
+    box-shadow: none;
+  }
+
+  /* Gallery and map controls sit on unpredictable imagery. Give every one the
+     same flat white surface; emphasis changes at most by a quiet grey hover,
+     never by flipping the control from white to black. */
+  .media-overlay-surface,
+  .media-overlay-control {
+    border: 1px solid rgb(0 0 0 / 0.1);
+    background: rgb(255 255 255);
+    color: rgb(0 0 0 / 0.72);
+    box-shadow: 0 4px 14px rgb(0 0 0 / 0.08);
+  }
+
+  .media-overlay-control {
+    transition:
+      color 150ms ease,
+      background-color 150ms ease,
+      border-color 150ms ease;
+  }
+
+  .media-overlay-control:hover {
+    border-color: rgb(0 0 0 / 0.18);
+    background: rgb(245 245 245);
+    color: rgb(0 0 0 / 0.9);
+  }
+
+  .media-overlay-control:disabled:hover {
+    border-color: rgb(0 0 0 / 0.1);
+    background: rgb(255 255 255);
+    color: rgb(0 0 0 / 0.72);
+  }
+
   .floating-toolbar {
     border-color: hsl(var(--border) / 0.68);
     background: hsl(var(--card) / 0.82);
@@ -533,7 +562,13 @@
     }
   }
 
-  .editor-control-capsule,
+  .editor-control-capsule {
+    border-color: hsl(var(--border) / 0.72);
+    background: hsl(var(--card));
+    color: hsl(var(--card-foreground));
+    box-shadow: none;
+  }
+
   .floating-capsule {
     border-color: hsl(var(--border) / 0.72);
     background:
@@ -585,9 +620,8 @@
     border-radius: 9999px;
   }
 
-  /* Segmented choices in sidebars share one material. This is deliberately
-     narrower than `floating-toolbar`: action docks keep their own hierarchy,
-     while mutually exclusive choices get one predictable glass track. */
+  /* Segmented choices use one quiet, stable material. The selected segment
+     changes emphasis without adding a second glossy edge inside the track. */
   .selection-capsule-track {
     display: flex;
     min-width: 0;
@@ -597,14 +631,8 @@
     padding: 0.3125rem;
     border: 1px solid hsl(var(--border) / 0.66);
     border-radius: 9999px;
-    background:
-      radial-gradient(120% 180% at 8% -55%, hsl(var(--card)) 0%, hsl(var(--card) / 0.68) 46%, transparent 70%),
-      linear-gradient(145deg, hsl(var(--card) / 0.72), hsl(var(--muted) / 0.62));
-    box-shadow:
-      inset 0 1px 0 hsl(var(--card) / 0.96),
-      0 7px 24px hsl(var(--foreground) / 0.075);
-    -webkit-backdrop-filter: blur(18px) saturate(1.1);
-    backdrop-filter: blur(18px) saturate(1.1);
+    background: hsl(var(--muted) / 0.72);
+    box-shadow: none;
   }
 
   .selection-capsule-item {
@@ -619,25 +647,19 @@
     font-weight: 600;
     transition:
       color 150ms ease,
-      background-color 150ms ease,
-      box-shadow 150ms ease;
+      background-color 150ms ease;
   }
 
   .selection-capsule-item:hover {
-    background: hsl(var(--card) / 0.62);
+    background: hsl(var(--card) / 0.7);
     color: hsl(var(--foreground) / 0.82);
   }
 
   .selection-capsule-item[aria-pressed="true"],
   .selection-capsule-item[data-state="active"] {
-    background:
-      radial-gradient(140% 190% at 9% -55%, hsl(var(--card)) 0%, hsl(var(--card) / 0.84) 43%, transparent 67%),
-      linear-gradient(145deg, hsl(var(--card) / 0.9), hsl(var(--muted) / 0.94));
+    background: hsl(var(--card));
     color: hsl(var(--foreground));
-    box-shadow:
-      inset 0 1px 0 hsl(var(--card)),
-      inset 0 -1px 0 hsl(var(--foreground) / 0.04),
-      0 8px 22px hsl(var(--foreground) / 0.12);
+    box-shadow: none;
   }
 
   .floating-capsule {

@@ -434,8 +434,8 @@ export function DraftImageEditor({
         "h-11 rounded-full px-3 text-[12px] font-medium transition-colors",
         "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
         showOriginal === originalView
-          ? "glossy-capsule text-foreground"
-          : "text-muted-foreground hover:text-foreground",
+          ? "bg-foreground/[0.08] text-foreground"
+          : "bg-transparent text-muted-foreground hover:bg-foreground/[0.04] hover:text-foreground",
       )}
     >
       {text}
@@ -571,11 +571,11 @@ export function DraftImageEditor({
             chrome that a phone cannot spare, and the photo's name is already
             implied by the panel you tapped to get here. */}
         {stacked ? null : (
-          <div className="flex min-h-11 shrink-0 items-center justify-between gap-3 border-b border-border/50 bg-card/60 px-3">
+          <div className="flex min-h-11 shrink-0 items-center justify-between gap-3 border-b border-border/50 bg-card px-3">
             <p className="truncate text-[11px] font-medium text-muted-foreground" title={label}>
               {label}
             </p>
-            <div className="flex shrink-0 items-center gap-0.5 rounded-full border border-border/60 bg-background/70 p-0">
+            <div className="flex shrink-0 items-center gap-0.5 rounded-full border border-border/60 bg-surface-subtle p-0">
               {compareButton(true, t("reai.mediaOriginal", lang))}
               {compareButton(false, t("draft.media.editedPreview", lang))}
             </div>

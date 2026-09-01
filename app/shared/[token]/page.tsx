@@ -484,7 +484,7 @@ export default function SharedPage({ params }: { params: Promise<{ token: string
       <SharedAccessShell lang={lang}>
           <div className="space-y-6">
             <div>
-              <div className="editor-glass-control mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-full border text-foreground/58 shadow-control">
+              <div className="editor-glass-control mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-full border text-foreground/58">
                 <svg width="20" height="20" viewBox="0 0 24 24" fill="none" className="text-muted-foreground"><rect x="3" y="11" width="18" height="11" rx="2" stroke="currentColor" strokeWidth="2" /><path d="M7 11V7a5 5 0 0110 0v4" stroke="currentColor" strokeWidth="2" strokeLinecap="round" /></svg>
               </div>
               <h1 className="text-[22px] font-semibold tracking-[-0.025em]">{t("shared.pin.title", lang)}</h1>
@@ -492,12 +492,12 @@ export default function SharedPage({ params }: { params: Promise<{ token: string
             </div>
           <form onSubmit={handlePinSubmit} className="space-y-3 text-left">
             <div className="space-y-1.5">
-              <Input type="text" inputMode="numeric" pattern="[0-9]*" placeholder={t("shared.pin.placeholder", lang)} value={pin} onChange={(e) => setPin(e.target.value.replace(/\D/g, "").slice(0, 10))} disabled={pinLoading} autoFocus autoComplete="off" className="editor-control-capsule h-12 rounded-full border bg-card/88 text-center text-[16px] tracking-[0.24em] tabular-nums shadow-control" />
+              <Input type="text" inputMode="numeric" pattern="[0-9]*" placeholder={t("shared.pin.placeholder", lang)} value={pin} onChange={(e) => setPin(e.target.value.replace(/\D/g, "").slice(0, 10))} disabled={pinLoading} autoFocus autoComplete="off" className="editor-control-capsule h-12 rounded-full border bg-card text-center text-[16px] tracking-[0.24em] tabular-nums !shadow-none" />
               <p className="text-[11px] text-foreground/50 text-center">{t("shared.pin.minLength", lang)}</p>
             </div>
             {pinError && <div role="alert" className="rounded-2xl border border-destructive/15 bg-destructive/[0.035] px-3 py-2.5"><p className="text-[11px] text-destructive text-center">{pinError}</p></div>}
             {/* Neutral CTA — at gate time we don't yet know whether the share includes a tour */}
-            <Button className="glossy-primary-capsule h-12 w-full rounded-full" loading={pinLoading} disabled={pinLoading || pin.length < 4}>{t("shared.pin.continue", lang)}</Button>
+            <Button className="h-12 w-full" loading={pinLoading} disabled={pinLoading || pin.length < 4}>{t("shared.pin.continue", lang)}</Button>
           </form>
           </div>
       </SharedAccessShell>
@@ -515,7 +515,7 @@ export default function SharedPage({ params }: { params: Promise<{ token: string
     return (
       <SharedAccessShell lang={lang}>
           <div>
-            <div className="editor-glass-control mx-auto mb-5 flex h-14 w-14 items-center justify-center rounded-full border text-foreground/46 shadow-control">
+            <div className="editor-glass-control mx-auto mb-5 flex h-14 w-14 items-center justify-center rounded-full border text-foreground/46">
               {isExpired || isUnavailable ? (
                 <svg width="20" height="20" viewBox="0 0 24 24" fill="none" className="text-foreground/30"><circle cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="1.5" /><path d="M12 6v6l4 2" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" /></svg>
               ) : isPaused ? (
@@ -531,11 +531,11 @@ export default function SharedPage({ params }: { params: Promise<{ token: string
           </div>
           {isAuthRequired || showRetry ? <div className="mt-6 flex justify-center">
           {isAuthRequired ? (
-            <Button className="glossy-primary-capsule h-11 rounded-full px-5" onClick={() => { window.location.href = `/?next=${encodeURIComponent(`/shared/${token}`)}`; }}>
+            <Button className="h-11 px-5" onClick={() => { window.location.href = `/?next=${encodeURIComponent(`/shared/${token}`)}`; }}>
               {t("shared.error.signIn", lang)}
             </Button>
           ) : null}
-          {showRetry ? <Button variant="outline" className="glossy-capsule h-11 rounded-full px-5" onClick={() => { setError(null); loadContent(); }}>{t("common.tryAgain", lang)}</Button> : null}
+          {showRetry ? <Button variant="outline" className="h-11 px-5" onClick={() => { setError(null); loadContent(); }}>{t("common.tryAgain", lang)}</Button> : null}
           </div> : null}
       </SharedAccessShell>
     );

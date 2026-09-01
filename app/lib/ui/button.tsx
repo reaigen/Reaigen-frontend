@@ -12,24 +12,24 @@ const buttonVariants = cva(
   // longer locales (sk/cs/de) before it was ever noticed in English.
   // The focus ring is a box-shadow and is painted outside the border box, so it
   // is not clipped by this.
-  "inline-flex min-w-0 items-center justify-center gap-2 overflow-hidden whitespace-nowrap rounded-full text-sm font-medium transition-all duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50 [&_svg]:pointer-events-none [&_svg]:size-4 [&_svg]:shrink-0",
+  "inline-flex min-w-0 items-center justify-center gap-2 overflow-hidden whitespace-nowrap rounded-full border border-transparent text-sm font-medium transition-[background-color,border-color,color,opacity] duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50 [&_svg]:pointer-events-none [&_svg]:size-4 [&_svg]:shrink-0",
   {
     variants: {
       variant: {
         default:
-          "glossy-primary-capsule bg-primary text-primary-foreground hover:brightness-[1.08] active:brightness-95",
+          "border-primary bg-primary text-primary-foreground shadow-none hover:bg-primary/90 active:bg-primary/90",
         secondary:
-          "glossy-capsule bg-secondary text-secondary-foreground hover:brightness-[1.015]",
+          "border-border/70 bg-secondary text-secondary-foreground shadow-none hover:border-foreground/20 hover:bg-secondary/80",
         outline:
-          "glossy-capsule border border-border bg-card hover:brightness-[1.015] hover:text-accent-foreground",
+          "border-border/75 bg-card text-foreground shadow-none hover:border-foreground/22 hover:bg-muted/55",
         ghost:
-          "hover:bg-accent hover:text-accent-foreground",
+          "bg-transparent shadow-none hover:bg-foreground/[0.055] hover:text-foreground",
         destructive:
-          "glossy-destructive-capsule bg-destructive text-destructive-foreground hover:brightness-[1.06]",
+          "border-destructive bg-destructive text-destructive-foreground shadow-none hover:bg-destructive/90",
         success:
-          "bg-success text-success-foreground hover:bg-success/90 shadow-sm",
+          "border-success bg-success text-success-foreground shadow-none hover:bg-success/90",
         link:
-          "text-primary underline-offset-4 hover:underline p-0 h-auto",
+          "h-auto border-0 p-0 text-primary underline-offset-4 hover:underline",
       },
       size: {
         xs: "h-[var(--floating-status)] px-2.5 text-xs",

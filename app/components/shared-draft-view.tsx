@@ -36,6 +36,7 @@ import {
 import type { PropertySpecSection } from "../lib/property-field-registry";
 import { cn } from "../lib/utils";
 import { localizeSharedAddress, sharedPropertyDisplayItems } from "../lib/shared-property-display";
+import { Button } from "../lib/ui/button";
 
 // ── Helpers ────────────────────────────────────────────────────────────
 
@@ -242,7 +243,7 @@ export function SharedDraftView({ draftData, lang, hasTour, tours, onOpenTour, f
 
   return (
     <div className="flex min-h-screen flex-col bg-background">
-      <header className="h-[calc(4rem+env(safe-area-inset-top))] shrink-0 border-b border-border/75 bg-card/92 pl-[max(1rem,env(safe-area-inset-left))] pr-[max(1rem,env(safe-area-inset-right))] pt-safe backdrop-blur-xl sm:px-8 sm:pt-safe">
+      <header className="h-[calc(4rem+env(safe-area-inset-top))] shrink-0 border-b border-border/75 bg-card pl-[max(1rem,env(safe-area-inset-left))] pr-[max(1rem,env(safe-area-inset-right))] pt-safe sm:px-8 sm:pt-safe">
         <div className="mx-auto flex h-full w-full max-w-[1120px] items-center">
           <ReaigenWordmark className="text-[29px] leading-none text-foreground min-[390px]:text-[31px]" />
         </div>
@@ -277,7 +278,7 @@ export function SharedDraftView({ draftData, lang, hasTour, tours, onOpenTour, f
                       onClick={() => setActiveMediaView("photos")}
                       className={cn(
                         "inline-flex h-9 items-center gap-2 rounded-full px-3.5 text-[12px] font-semibold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
-                        !showingVideo ? "glossy-capsule text-foreground" : "text-muted-foreground hover:bg-surface-subtle hover:text-foreground",
+                        !showingVideo ? "bg-foreground/[0.08] text-foreground" : "text-muted-foreground hover:bg-surface-subtle hover:text-foreground",
                       )}
                     >
                       <ImageIcon size={14} /> {t("draft.media.gallery", lang)}
@@ -290,7 +291,7 @@ export function SharedDraftView({ draftData, lang, hasTour, tours, onOpenTour, f
                       onClick={() => setActiveMediaView("video")}
                       className={cn(
                         "inline-flex h-9 items-center gap-2 rounded-full px-3.5 text-[12px] font-semibold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
-                        showingVideo ? "glossy-capsule text-foreground" : "text-muted-foreground hover:bg-surface-subtle hover:text-foreground",
+                        showingVideo ? "bg-foreground/[0.08] text-foreground" : "text-muted-foreground hover:bg-surface-subtle hover:text-foreground",
                       )}
                     >
                       <VideoIcon size={14} /> {t("draft.media.video", lang)}
@@ -319,14 +320,14 @@ export function SharedDraftView({ draftData, lang, hasTour, tours, onOpenTour, f
                           type="button"
                           onClick={() => setActiveVideoIndex(Math.max(0, videoIndex - 1))}
                           disabled={videoIndex === 0}
-                          className="floating-icon-button absolute left-3 top-1/2 -translate-y-1/2 border border-white/20 bg-black/55 text-white backdrop-blur-md hover:bg-black/75 disabled:invisible"
+                          className="media-overlay-control floating-icon-button absolute left-3 top-1/2 -translate-y-1/2 disabled:invisible"
                           aria-label={t("draft.gallery.previous", lang)}
                         ><ArrowLeftIcon size={18} /></button>
                         <button
                           type="button"
                           onClick={() => setActiveVideoIndex(Math.min(videos.length - 1, videoIndex + 1))}
                           disabled={videoIndex === videos.length - 1}
-                          className="floating-icon-button absolute right-3 top-1/2 -translate-y-1/2 border border-white/20 bg-black/55 text-white backdrop-blur-md hover:bg-black/75 disabled:invisible"
+                          className="media-overlay-control floating-icon-button absolute right-3 top-1/2 -translate-y-1/2 disabled:invisible"
                           aria-label={t("draft.gallery.next", lang)}
                         ><ArrowRightIcon size={18} /></button>
                       </>
@@ -362,7 +363,7 @@ export function SharedDraftView({ draftData, lang, hasTour, tours, onOpenTour, f
                     ) : null}
                   </div>
                   {has.price ? (
-                    <div className="glossy-capsule rounded-2xl px-4 py-3 text-foreground sm:min-w-40 sm:text-right">
+                    <div className="rounded-2xl border border-border/55 bg-surface-subtle px-4 py-3 text-foreground sm:min-w-40 sm:text-right">
                       <p className="select-text text-[24px] font-semibold leading-none tabular-nums sm:text-[28px]">{price}</p>
                       <p className="mt-2 text-[9px] font-semibold uppercase tracking-[0.14em] text-foreground/48">
                         {tourCopy.price}
@@ -383,7 +384,7 @@ export function SharedDraftView({ draftData, lang, hasTour, tours, onOpenTour, f
                       .filter(([, value]) => value != null && value !== "")
                       .map(([icon, value, label], index) => (
                         <div key={index} className="flex min-w-0 items-center gap-2.5 rounded-xl bg-surface-subtle px-3 py-2.5">
-                          <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-card text-foreground/65 shadow-control">{icon}</span>
+                          <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-card text-foreground/65 ring-1 ring-inset ring-border/45">{icon}</span>
                           <span className="min-w-0 leading-tight">
                             <span className="block select-text truncate text-[13px] font-semibold tabular-nums">{value}</span>
                             {label ? <span className="mt-1 block truncate text-[9px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">{label}</span> : null}
@@ -397,13 +398,14 @@ export function SharedDraftView({ draftData, lang, hasTour, tours, onOpenTour, f
 
             {/* Virtual tour is the primary shared-property action. */}
             {hasTour && onOpenTour && webTours.length <= 1 && (
-              <button
+              <Button
+                type="button"
                 onClick={() => onOpenTour(webTours[0]?.tour_id)}
-                className="glossy-primary-capsule flex min-h-11 w-full items-center justify-center gap-2.5 rounded-full px-5 py-2.5 text-background transition-[filter,transform] hover:brightness-[1.08] active:scale-[0.99] sm:w-auto"
+                className="min-h-11 w-full gap-2.5 px-5 py-2.5 sm:w-auto"
               >
                 <TourIcon size={18} />
                 <span className="text-[14px] font-semibold">{t("draft.viewTour", lang)}</span>
-              </button>
+              </Button>
             )}
             {hasTour && onOpenTour && webTours.length > 1 && (
               <section className="rounded-[1.5rem] border border-border/60 bg-card p-4 shadow-card sm:p-5">

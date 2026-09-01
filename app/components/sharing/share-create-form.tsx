@@ -162,7 +162,7 @@ export function ShareCreateForm({
 
         {formId ? null : (
           <div className={cn(
-            "z-20 flex gap-2 bg-card/95 p-3 backdrop-blur-xl",
+            "z-20 flex gap-2 bg-card p-3",
             layout === "workspace" && "border-t border-border/50 md:col-span-6",
             stickyActions
               ? stickyActionsAtPanelEdge

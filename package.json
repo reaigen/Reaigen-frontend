@@ -17,7 +17,7 @@
     "validate-currency-display": "node --experimental-strip-types --test scripts/validate-currency-display.test.mjs",
     "validate-collection-search": "node --experimental-strip-types --test app/lib/collection-search.test.mjs",
     "validate-proxy-path": "node --experimental-strip-types --test scripts/validate-proxy-path.test.mjs",
-    "check": "npm run lint && npm run typecheck && npm run validate-training-quality && npm run validate-proxy-path && npm run validate-auth-paths && npm run validate-camera-bounds && npm run validate-live-scan-device && npm run validate-live-scan-ui && npm run validate-splat-render-profile && npm run validate-floorplan && npm run validate-floorplan-integration && npm run validate-floorplan-collision && npm run validate-currency-display && npm run validate-collection-search && npm run validate-panel-geometry && npm run build",
+    "check": "npm run lint && npm run typecheck && npm run validate-training-quality && npm run validate-proxy-path && npm run validate-auth-paths && npm run validate-camera-bounds && npm run validate-live-scan-device && npm run validate-live-scan-ui && npm run validate-splat-render-profile && npm run validate-floorplan && npm run validate-floorplan-integration && npm run validate-floorplan-collision && npm run validate-currency-display && npm run validate-collection-search && npm run validate-google-maps && npm run validate-panel-geometry && npm run build",
     "validate-training-quality": "node --experimental-strip-types --test app/lib/training-quality.test.mjs",
     "validate-floorplan-rendering": "node --experimental-strip-types --test scripts/validate-floorplan-rendering.test.mjs",
     "validate-floorplan-presentation": "node --experimental-strip-types --test scripts/validate-floorplan-presentation.test.mjs",
@@ -27,6 +27,7 @@
     "validate-camera-bounds": "node --experimental-strip-types --test app/lib/camera-bounds.test.mjs",
     "validate-live-scan-device": "node --experimental-strip-types --test app/lib/live-scan-device.test.mjs app/lib/live-scan-preview.test.mjs app/lib/point-cloud-bounds.test.mjs",
     "validate-live-scan-ui": "node --test scripts/validate-live-scan-ui.test.mjs",
+    "validate-google-maps": "node --experimental-strip-types --test app/lib/google-maps-client.test.mjs",
     "validate-panel-geometry": "node --test scripts/validate-panel-geometry.test.mjs"
   },
   "dependencies": {

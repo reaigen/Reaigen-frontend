@@ -934,14 +934,14 @@ export default function DraftPreviewPage({
               onClick={() => setMediaOpen(true)}
               className="group w-full bg-transparent p-0 text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring md:border-t md:border-border/60 md:bg-card md:p-4"
             >
-              <span className="flex min-h-40 min-w-0 items-center justify-center gap-4 rounded-[1.25rem] border border-dashed border-border/80 bg-surface-subtle/35 p-5 text-center transition-[background-color,border-color] group-hover:border-foreground/25 group-hover:bg-surface-subtle/60 sm:p-7">
-                <span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full border border-border/70 bg-card text-foreground/55 shadow-control">
+              <span className="flex min-h-40 min-w-0 items-center justify-center gap-4 rounded-[1.25rem] border border-dashed border-border/80 bg-surface-subtle p-5 text-center transition-[background-color,border-color] group-hover:border-foreground/25 group-hover:bg-secondary sm:p-7">
+                <span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-card text-foreground/55 ring-1 ring-inset ring-border/70">
                   <ImageIcon size={21} />
                 </span>
                 <span className="min-w-0 text-left">
                   <span className="block text-[18px] font-semibold tracking-[-0.02em]">{t("draft.media.emptyTitle", lang)}</span>
                   <span className="mt-1.5 block max-w-xl text-[13px] leading-relaxed text-foreground/58">{t("draft.media.emptyBody", lang)}</span>
-                  <span className="mt-4 inline-flex min-h-10 items-center gap-2 rounded-full border border-border/70 bg-card px-4 text-[13px] font-semibold text-foreground shadow-control transition-colors group-hover:border-foreground/20">
+                  <span className="mt-4 inline-flex min-h-10 items-center gap-2 rounded-full border border-border/70 bg-card px-4 text-[13px] font-semibold text-foreground transition-colors group-hover:border-foreground/20 group-hover:bg-muted/55">
                     <PlusIcon size={15} /> {t("draft.media.addPhotos", lang)}
                   </span>
                 </span>
@@ -963,7 +963,7 @@ export default function DraftPreviewPage({
                     onClick={() => setActiveMediaView("photos")}
                     className={cn(
                       "inline-flex h-9 items-center gap-2 rounded-full px-3.5 text-[12px] font-semibold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
-                      !showingVideo ? "glossy-capsule text-foreground" : "text-muted-foreground hover:bg-surface-subtle hover:text-foreground",
+                      !showingVideo ? "bg-foreground/[0.08] text-foreground" : "text-muted-foreground hover:bg-surface-subtle hover:text-foreground",
                     )}
                   >
                     <ImageIcon size={14} />
@@ -977,7 +977,7 @@ export default function DraftPreviewPage({
                     onClick={() => setActiveMediaView("video")}
                     className={cn(
                       "inline-flex h-9 items-center gap-2 rounded-full px-3.5 text-[12px] font-semibold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
-                      showingVideo ? "glossy-capsule text-foreground" : "text-muted-foreground hover:bg-surface-subtle hover:text-foreground",
+                      showingVideo ? "bg-foreground/[0.08] text-foreground" : "text-muted-foreground hover:bg-surface-subtle hover:text-foreground",
                     )}
                   >
                     <VideoIcon size={14} />
@@ -1009,7 +1009,7 @@ export default function DraftPreviewPage({
                         type="button"
                         onClick={() => setActiveVideoIndex(Math.max(0, videoIndex - 1))}
                         disabled={videoIndex === 0}
-                        className="floating-icon-button pen-touch-target absolute left-3 top-1/2 hidden -translate-y-1/2 border border-white/20 bg-black/55 text-white shadow-control backdrop-blur-md transition-colors hover:bg-black/75 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/70 disabled:invisible sm:inline-flex"
+                        className="media-overlay-control floating-icon-button pen-touch-target absolute left-3 top-1/2 hidden -translate-y-1/2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/70 disabled:invisible sm:inline-flex"
                         aria-label={t("draft.gallery.previous", lang)}
                       >
                         <ArrowLeftIcon size={18} />
@@ -1018,12 +1018,12 @@ export default function DraftPreviewPage({
                         type="button"
                         onClick={() => setActiveVideoIndex(Math.min(videos.length - 1, videoIndex + 1))}
                         disabled={videoIndex === videos.length - 1}
-                        className="floating-icon-button pen-touch-target absolute right-3 top-1/2 hidden -translate-y-1/2 border border-white/20 bg-black/55 text-white shadow-control backdrop-blur-md transition-colors hover:bg-black/75 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/70 disabled:invisible sm:inline-flex"
+                        className="media-overlay-control floating-icon-button pen-touch-target absolute right-3 top-1/2 hidden -translate-y-1/2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/70 disabled:invisible sm:inline-flex"
                         aria-label={t("draft.gallery.next", lang)}
                       >
                         <ArrowRightIcon size={18} />
                       </button>
-                      <span className="pointer-events-none absolute right-3 top-3 rounded-full bg-black/60 px-2.5 py-1 text-[11px] font-semibold tabular-nums text-white backdrop-blur-md">
+                      <span className="media-overlay-surface pointer-events-none absolute right-3 top-3 rounded-full px-2.5 py-1 text-[11px] font-semibold tabular-nums">
                         {videoIndex + 1} / {videos.length}
                       </span>
                     </>
@@ -1036,12 +1036,12 @@ export default function DraftPreviewPage({
           {/* On a phone these actions belong to the media workspace, not in
               the identity block above it. Keeping them directly below the
               hero produces one readable sequence: listing, media, actions. */}
-          <div className="editor-glass-control mx-1 mt-3 grid grid-cols-3 gap-1 rounded-full border border-border/55 bg-card/76 p-1 shadow-control backdrop-blur-2xl md:hidden">
+          <div className="editor-glass-control mx-1 mt-3 grid grid-cols-3 gap-1 rounded-full border border-border/55 bg-card p-1 md:hidden">
             <button
               type="button"
               data-testid="draft-mobile-editor-open"
               onClick={() => { setDescriptionEditRequested(false); setEditorOpen(true); }}
-              className="glossy-capsule flex h-10 min-w-0 items-center justify-center gap-1.5 rounded-full text-[11px] font-semibold text-foreground transition-colors hover:brightness-[1.015] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/25"
+              className="flex h-10 min-w-0 items-center justify-center gap-1.5 rounded-full bg-foreground/[0.08] text-[11px] font-semibold text-foreground transition-colors hover:bg-foreground/[0.11] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/25"
             >
               <EditIcon size={14} />
               <span className="truncate">{t("shareDialog.edit", lang)}</span>
@@ -1125,11 +1125,11 @@ export default function DraftPreviewPage({
                       });
                     }}
                     className={cn(
-                      "flex w-[9.75rem] flex-none items-center gap-2.5 rounded-[1.125rem] border border-border/45 bg-card/72 px-3 py-2.5 shadow-control backdrop-blur-xl sm:w-auto sm:min-w-0 md:rounded-xl md:border-0 md:bg-surface-subtle md:shadow-none md:ring-1 md:ring-inset md:ring-border/35",
+                      "flex w-[9.75rem] flex-none items-center gap-2.5 rounded-[1.125rem] border border-border/45 bg-card px-3 py-2.5 sm:w-auto sm:min-w-0 md:rounded-xl md:border-0 md:bg-surface-subtle md:ring-1 md:ring-inset md:ring-border/35",
                       fact.path && "cursor-grab active:cursor-grabbing",
                     )}
                   >
-                    <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-card text-foreground/60 shadow-control">
+                    <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-card text-foreground/60 ring-1 ring-inset ring-border/45">
                       {fact.icon}
                     </span>
                     <span className="min-w-0 leading-tight">
@@ -1153,12 +1153,12 @@ export default function DraftPreviewPage({
                 <div
                   aria-label={t("common.loading", lang)}
                   aria-busy="true"
-                  className="draft-action-toolbar floating-toolbar glossy-capsule min-h-12 w-full p-1"
+                  className="draft-action-toolbar editor-glass-control min-h-12 w-full rounded-full border p-1"
                 >
                   <span className="h-10 w-full animate-pulse rounded-full bg-foreground/[0.045] motion-reduce:animate-none" />
                 </div>
               ) : (
-                <div className="draft-action-toolbar floating-toolbar glossy-capsule w-full overflow-x-auto scrollbar-hide">
+                <div className="draft-action-toolbar editor-glass-control flex w-full items-center gap-1 overflow-x-auto rounded-full border p-1 scrollbar-hide">
                   {hasTour && (
                     <Button asChild size="sm" className="draft-action-tour h-10 min-w-[12rem] shrink-0 px-4 shadow-none">
                       <Link href={`/tour/${primarySplatId}?tourId=${shareableTour?.id}`}>
@@ -1218,7 +1218,7 @@ export default function DraftPreviewPage({
                         <button
                           type="button"
                           onClick={() => { setDescriptionEditRequested(true); setEditorOpen(true); }}
-                          className="glossy-capsule inline-flex h-9 items-center gap-1.5 rounded-full px-3 text-[11px] font-semibold text-foreground/72 transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/25"
+                          className="inline-flex h-9 items-center gap-1.5 rounded-full border border-border/70 bg-card px-3 text-[11px] font-semibold text-foreground/72 transition-colors hover:border-foreground/20 hover:bg-muted/55 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/25"
                         >
                           <EditIcon size={13} /> {t("shareDialog.edit", lang)}
                         </button>

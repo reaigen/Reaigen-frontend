@@ -124,14 +124,14 @@ export function SidePanel({
             "data-[state=closed]:animate-[panelOut_180ms_ease-in] data-[state=open]:animate-[panelIn_220ms_var(--motion-ease-smooth)]",
             "sm:max-w-[520px]",
             headerMode === "editor"
-              ? "editor-glass-surface bg-background/82 backdrop-blur-2xl sm:inset-y-3 sm:right-3 sm:w-[calc(100%-1.5rem)] sm:overflow-hidden sm:rounded-[var(--floating-frame-radius)] sm:border sm:shadow-[0_24px_70px_-24px_rgba(0,0,0,0.32)]"
+              ? "editor-glass-surface bg-background sm:inset-y-3 sm:right-3 sm:w-[calc(100%-1.5rem)] sm:overflow-hidden sm:rounded-[var(--floating-frame-radius)] sm:border sm:shadow-[0_24px_70px_-24px_rgba(0,0,0,0.32)]"
               : "bg-background",
             className,
           )}
         >
           {headerMode === "editor" ? (
             <header className={cn(
-              "grid min-h-[4.25rem] shrink-0 items-center gap-2 border-b border-border/50 bg-card/85 px-3 pb-2 pt-[max(0.5rem,env(safe-area-inset-top))] backdrop-blur-xl sm:grid-cols-[3rem_minmax(0,1fr)_auto] sm:px-4 sm:pt-2",
+              "grid min-h-[4.25rem] shrink-0 items-center gap-2 border-b border-border/50 bg-card px-3 pb-2 pt-[max(0.5rem,env(safe-area-inset-top))] sm:grid-cols-[3rem_minmax(0,1fr)_auto] sm:px-4 sm:pt-2",
               headerAction
                 ? "grid-cols-[3rem_minmax(0,1fr)_auto]"
                 : "grid-cols-[3rem_minmax(0,1fr)_3rem]",
@@ -182,7 +182,7 @@ export function SidePanel({
           >
             {children}
           </div>
-          {footer ? <footer className="shrink-0 border-t border-border/55 bg-card/72 px-5 pb-[max(0.75rem,env(safe-area-inset-bottom))] pt-3 shadow-[0_-12px_32px_-24px_rgba(0,0,0,0.22)] backdrop-blur-2xl [&_button]:min-h-11 sm:px-6">{footer}</footer> : null}
+          {footer ? <footer className="shrink-0 border-t border-border/55 bg-card px-5 pb-[max(0.75rem,env(safe-area-inset-bottom))] pt-3 shadow-[0_-12px_32px_-24px_rgba(0,0,0,0.16)] [&_button]:min-h-11 sm:px-6">{footer}</footer> : null}
         </Dialog.Content>
       </Dialog.Portal>
     </Dialog.Root>

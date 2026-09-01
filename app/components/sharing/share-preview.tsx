@@ -111,7 +111,7 @@ export function SharePreview({ draft, scope, hasTour, hasFloorplan, thumbUrl, un
             <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/5 to-black/15" aria-hidden="true" />
             {tourIncluded && (
               <div className="absolute inset-0 flex items-center justify-center">
-                <div className="floating-icon-button flex items-center justify-center border border-white/15 bg-black/65 text-white shadow-sm backdrop-blur-md">
+                <div className="media-overlay-surface floating-icon-button flex items-center justify-center">
                   <PlayIcon size={16} />
                 </div>
               </div>
@@ -119,7 +119,7 @@ export function SharePreview({ draft, scope, hasTour, hasFloorplan, thumbUrl, un
             {tourIncluded && (
               // Matches the p-4 title block below it; this sat at 10px against
               // that 16px and read as leaning out of the frame.
-              <div className="glass-chip floating-status absolute left-4 top-4 flex items-center gap-1 text-[10px]">
+              <div className="media-overlay-surface floating-status absolute left-4 top-4 flex items-center gap-1 text-[10px]">
                 <MainTourIcon size={11} />
                 {t("sharing.scopeTour", lang)}
               </div>
@@ -133,7 +133,7 @@ export function SharePreview({ draft, scope, hasTour, hasFloorplan, thumbUrl, un
                   </div>
                 ) : <span />}
                 {showPrice ? (
-                  <p className="glass-chip floating-status shrink-0 flex items-center px-3 text-[12px] tabular-nums">
+                  <p className="media-overlay-surface floating-status shrink-0 flex items-center px-3 text-[12px] tabular-nums">
                     {price}
                     {showOrigPrice ? <span className="ml-1.5 text-[10px] font-normal text-black/50">{origPrice}</span> : null}
                   </p>
