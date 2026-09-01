@@ -81,7 +81,7 @@ export function PrivacyLevelSelector({ level, pin, onLevelChange, onPinChange, l
             placeholder={t("shareDialog.pinPlaceholder", lang)}
             value={pin}
             onChange={(e) => onPinChange(e.target.value.replace(/\D/g, "").slice(0, 10))}
-            className="editor-control-capsule h-11 rounded-full px-4 text-[14px] tabular-nums"
+            className="editor-control-capsule h-11 rounded-xl px-4 text-[14px] tabular-nums"
             autoFocus
           />
           <p className="text-[11px] text-foreground/50">{t("shared.pin.minLength", lang)}</p>

@@ -316,7 +316,7 @@ function normalizedSpecsNumbers(
   return normalized;
 }
 
-const fieldClass = "editor-control-capsule h-11 rounded-full border !bg-card px-3.5 text-[16px] !shadow-none focus-visible:border-foreground/25 focus-visible:ring-1 focus-visible:ring-ring/12 focus-visible:ring-offset-0 sm:text-[14px]";
+const fieldClass = "editor-control-capsule h-11 rounded-xl border !bg-card px-3.5 text-[16px] !shadow-none focus-visible:border-foreground/25 focus-visible:ring-1 focus-visible:ring-ring/12 focus-visible:ring-offset-0 sm:text-[14px]";
 
 function Field({ id, label, children }: { id: string; label: React.ReactNode; children: React.ReactNode }) {
   return <div className="space-y-1"><Label htmlFor={id} className="text-[12px] font-medium text-foreground/65">{label}</Label>{children}</div>;
@@ -346,7 +346,7 @@ function UnitPicker({
       <SelectTrigger
         aria-label={label}
         className={cn(
-          "pen-touch-target my-auto !h-9 !min-h-0 shrink-0 rounded-full border border-white/70 bg-card/78 px-2.5 text-[12px] font-semibold shadow-[inset_0_1px_0_rgba(255,255,255,.94),0_2px_7px_rgba(35,31,27,.06)] backdrop-blur-xl hover:bg-card focus:ring-2",
+          "pen-touch-target !h-full !min-h-0 shrink-0 !rounded-none !border-0 !bg-card/45 px-2.5 text-[12px] font-semibold !shadow-none hover:!bg-card/78 focus:!ring-0 focus:!ring-offset-0",
           category === "CURRENCY"
             ? "!w-[4.875rem] !min-w-[4.875rem]"
             : "!w-[4.25rem] !min-w-[4.25rem]",
@@ -365,7 +365,7 @@ function UnitPicker({
           <SelectItem
             key={unit.id}
             value={unit.code}
-            className="!min-h-9 rounded-full py-1.5 pl-8 pr-2.5 text-[12px]"
+            className="pl-8 pr-2.5 text-[12px]"
           >
             <span className="flex w-full items-center justify-between gap-3">
               <span className="font-medium uppercase tracking-[0.02em]">{unit.code}</span>
@@ -430,6 +430,7 @@ function DirectValueField({
   const unitLabel = numeric ? numericUnitLabel(numericContext) : null;
   const showClear = Boolean(value) && !required;
   const showStaticUnit = Boolean(unitLabel) && !unitControl;
+  const hasTrailingControl = Boolean(unitControl || showStaticUnit || showClear);
   const preview = parsed && (parsed.usedMath || parsed.usedUnit)
     ? `= ${formatEditableNumber(parsed.value, integer)}${unitLabel ? ` ${unitLabel}` : ""}`
     : null;
@@ -448,7 +449,15 @@ function DirectValueField({
 
   return (
     <Field id={id} label={label}>
-      <div className="relative">
+      <div
+        data-invalid={invalid || undefined}
+        className={cn(
+          hasTrailingControl
+            ? "editor-control-capsule flex h-11 min-w-0 items-stretch overflow-hidden rounded-xl border transition-[border-color,box-shadow] focus-within:border-foreground/25 focus-within:ring-1 focus-within:ring-ring/12"
+            : "relative",
+          hasTrailingControl && invalid && "border-destructive/60 focus-within:ring-destructive/20",
+        )}
+      >
         <Input
           id={id}
           value={value}
@@ -494,17 +503,18 @@ function DirectValueField({
             onChange(next);
           }}
           className={cn(
-            fieldClass,
-            unitControl && showClear ? "pr-[8rem]" : unitControl ? "pr-[5rem]" : showStaticUnit && showClear ? "pr-[8rem]" : showStaticUnit ? "pr-[5rem]" : showClear ? "pr-11" : undefined,
-            invalid && "border-destructive/60 focus-visible:ring-destructive/20",
+            hasTrailingControl
+              ? "!h-full !w-0 min-w-0 flex-1 !rounded-none !border-0 !bg-transparent px-3.5 text-[16px] !shadow-none focus-visible:!ring-0 focus-visible:!ring-offset-0 sm:text-[14px]"
+              : fieldClass,
+            invalid && !hasTrailingControl && "border-destructive/60 focus-visible:ring-destructive/20",
             className,
           )}
         />
-        {unitControl || showStaticUnit || showClear ? (
-          <span className="absolute inset-y-0 right-0 flex items-center">
+        {hasTrailingControl ? (
+          <span className="flex h-full shrink-0 items-stretch border-l border-border/60">
             {unitControl}
             {showStaticUnit ? (
-              <span className="pointer-events-none my-auto flex h-9 min-h-0 w-[4.25rem] shrink-0 items-center justify-center rounded-full border border-white/70 bg-card/78 px-2.5 text-[12px] font-semibold tabular-nums text-foreground/65 shadow-[inset_0_1px_0_rgba(255,255,255,.94),0_2px_7px_rgba(35,31,27,.06)] backdrop-blur-xl">
+              <span className="pointer-events-none flex h-full w-[4.25rem] shrink-0 items-center justify-center bg-card/45 px-2.5 text-[12px] font-semibold tabular-nums text-foreground/65">
                 {unitLabel}
               </span>
             ) : null}
@@ -512,7 +522,10 @@ function DirectValueField({
               <button
                 type="button"
                 onClick={() => onChange("")}
-                className="pen-touch-target mx-1 flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-foreground/[0.05] hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
+                className={cn(
+                  "pen-touch-target flex h-full w-11 shrink-0 items-center justify-center text-muted-foreground transition-colors hover:bg-foreground/[0.05] hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring",
+                  (unitControl || showStaticUnit) && "border-l border-border/60",
+                )}
                 aria-label={`${t("draft.editor.clearValue", lang)}: ${labelText}`}
               >
                 <CloseIcon size={14} />
@@ -621,14 +634,14 @@ function NumericStepper({
     <Field id={id} label={label}>
       <div
         className={cn(
-          "editor-control-capsule flex h-11 items-center rounded-full border !shadow-none",
+          "editor-control-capsule flex h-11 items-center overflow-hidden rounded-xl border !shadow-none",
           invalid ? "border-destructive/60" : "border-border/65",
         )}
       >
         {optional && !value.trim() ? (
           <button
             type="button"
-            className="pen-touch-target flex h-full w-full min-w-0 items-center justify-between gap-2 rounded-full pl-3.5 text-left transition-colors hover:bg-foreground/[0.035] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
+            className="pen-touch-target flex h-full w-full min-w-0 items-center justify-between gap-2 rounded-xl pl-3.5 text-left transition-colors hover:bg-foreground/[0.035] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
             onClick={startValue}
             aria-label={`${t("draft.editor.addValue", lang)}: ${label}`}
           >

@@ -182,7 +182,7 @@ export function SidePanel({
           >
             {children}
           </div>
-          {footer ? <footer className="shrink-0 border-t border-white/55 bg-card/72 px-5 pb-[max(0.75rem,env(safe-area-inset-bottom))] pt-3 shadow-[0_-12px_32px_-24px_rgba(0,0,0,0.22)] backdrop-blur-2xl [&_button]:min-h-11 sm:px-6">{footer}</footer> : null}
+          {footer ? <footer className="shrink-0 border-t border-border/55 bg-card/72 px-5 pb-[max(0.75rem,env(safe-area-inset-bottom))] pt-3 shadow-[0_-12px_32px_-24px_rgba(0,0,0,0.22)] backdrop-blur-2xl [&_button]:min-h-11 sm:px-6">{footer}</footer> : null}
         </Dialog.Content>
       </Dialog.Portal>
     </Dialog.Root>

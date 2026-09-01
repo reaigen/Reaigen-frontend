@@ -1573,7 +1573,7 @@ export const DraftMediaManager = React.forwardRef<DraftMediaManagerHandle, {
       ) : null}
 
       {!reorderMode && selected ? (
-        <section className="media-manager-selection editor-glass-control mb-4 rounded-[1.35rem] border px-3.5 py-3" aria-label={selectedLabel}>
+        <section className="media-manager-selection editor-glass-control mb-4 rounded-[1.25rem] border px-3.5 py-3" aria-label={selectedLabel}>
           <div className="min-w-0 px-1 py-0.5">
             <div className="flex min-w-0 items-center gap-2">
               <p className="truncate text-[12px] font-semibold" title={selectedLabel}>{selectedLabel}</p>

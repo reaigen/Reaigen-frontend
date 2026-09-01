@@ -260,7 +260,7 @@ export function ContentDocumentDialog({
   return (
     <div className="fixed inset-0 z-[10000] flex items-end bg-black/25 backdrop-blur-[2px] animate-fade-in sm:items-center sm:justify-center" role="dialog" aria-modal="true">
       <button className="absolute inset-0 cursor-default" type="button" aria-label={t("common.close", lang)} onClick={onClose} />
-      <div ref={dialogRef} tabIndex={-1} className="relative max-h-[88dvh] w-full overflow-hidden rounded-t-2xl border border-border/60 bg-background shadow-2xl outline-none animate-fade-in sm:max-w-3xl sm:rounded-2xl">
+      <div ref={dialogRef} tabIndex={-1} className="relative max-h-[88dvh] w-full overflow-hidden rounded-t-[28px] border border-border/60 bg-card shadow-elevated outline-none animate-fade-in sm:max-w-3xl sm:rounded-[var(--floating-panel-radius)]">
         <div className="flex items-start justify-between gap-4 border-b border-border/40 px-5 py-4 sm:px-6">
           <div className="min-w-0">
             <p className="text-[11px] font-medium uppercase tracking-[0.08em] text-muted-foreground">
