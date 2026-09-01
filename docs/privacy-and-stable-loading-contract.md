@@ -79,7 +79,8 @@ Before committing or deploying these surfaces:
 1. Run lint, type checking, validation tests, and a production build.
 2. Confirm an unauthenticated request to `/api/maps/client` is rejected and
    that no alternative map-provider endpoint or client request exists.
-3. Confirm the local app responds on the fast-feedback server at port 3056.
+3. Confirm the local app responds on port 3055, or on temporary fallback port
+   3057 when 3055 is already occupied.
 4. Test an authenticated property and a public shared link at desktop and phone
    widths. Verify that the public page source contains no exact location data.
 5. Do not deploy to Vercel until the user explicitly approves deployment.

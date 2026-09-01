@@ -45,6 +45,7 @@ export type GoogleMapOverlay = {
 export type GoogleMapsFailureReason =
   | "google-maps-auth-failed"
   | "google-maps-load-failed"
+  | "google-maps-stale-runtime"
   | "google-maps-timeout"
   | "google-maps-unavailable";
 
@@ -86,12 +87,17 @@ declare global {
   interface Window {
     google?: { maps?: GoogleMapsNamespace };
     __reaigenGoogleMapsReady?: () => void;
+    __reaigenGoogleMapsRuntime?: {
+      apiKey: string;
+      version: string;
+    };
     gm_authFailure?: () => void;
   }
 }
 
 let googleMapsPromise: Promise<GoogleMapsNamespace> | null = null;
 let googleMapsAuthFailed = false;
+let googleMapsStaleRuntime = false;
 let authFailureHandlerInstalled = false;
 const authFailureListeners = new Set<(reason: GoogleMapsFailureReason) => void>();
 
@@ -108,6 +114,7 @@ function installAuthFailureHandler() {
   window.gm_authFailure = () => {
     googleMapsAuthFailed = true;
     googleMapsPromise = null;
+    delete window.__reaigenGoogleMapsRuntime;
     try {
       previousHandler?.();
     } finally {
@@ -157,8 +164,10 @@ export function googleMapsScriptUrl(
  * one clean document reload; ordinary network failures can retry in place.
  */
 export function resetGoogleMapsFailure() {
-  const reloadRequired = googleMapsAuthFailed && Boolean(window.google?.maps?.Map);
+  const reloadRequired = (googleMapsAuthFailed || googleMapsStaleRuntime)
+    && Boolean(window.google?.maps?.Map);
   googleMapsAuthFailed = false;
+  googleMapsStaleRuntime = false;
   googleMapsPromise = null;
   if (!window.google?.maps?.Map) {
     document.querySelector<HTMLScriptElement>("script[data-reaigen-google-maps]")?.remove();
@@ -172,7 +181,19 @@ export function loadGoogleMaps(apiKey: string, language: string) {
     return Promise.reject(new Error("google-maps-auth-failed"));
   }
   const loadedMaps = window.google?.maps;
-  if (loadedMaps?.Map) return Promise.resolve(loadedMaps);
+  if (loadedMaps?.Map) {
+    const runtime = window.__reaigenGoogleMapsRuntime;
+    if (runtime?.apiKey === apiKey && runtime.version === REAIGEN_GOOGLE_MAPS_VERSION) {
+      return Promise.resolve(loadedMaps);
+    }
+
+    // A client-side navigation can cross a deployment boundary while keeping
+    // the previous document's Google namespace alive. Google cannot safely be
+    // unloaded in place; reject this instance so the caller can perform one
+    // clean document reload and bootstrap the current authorized key.
+    googleMapsStaleRuntime = true;
+    return Promise.reject(new Error("google-maps-stale-runtime"));
+  }
   if (googleMapsPromise) return googleMapsPromise;
 
   googleMapsPromise = new Promise<GoogleMapsNamespace>((resolve, reject) => {
@@ -202,6 +223,11 @@ export function loadGoogleMaps(apiKey: string, language: string) {
         reject(new Error("google-maps-unavailable"));
         return;
       }
+      googleMapsStaleRuntime = false;
+      window.__reaigenGoogleMapsRuntime = {
+        apiKey,
+        version: REAIGEN_GOOGLE_MAPS_VERSION,
+      };
       resolve(maps);
     };
 

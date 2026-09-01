@@ -7,6 +7,7 @@ import {
   GoogleMapsFailureReason,
   GoogleMapMarker,
   REAIGEN_GOOGLE_MAP_STYLES,
+  REAIGEN_GOOGLE_MAPS_VERSION,
   loadGoogleMaps,
   resetGoogleMapsFailure,
   subscribeGoogleMapsFailure,
@@ -19,6 +20,8 @@ type ClientMapConfig = {
   apiKey: string;
   center: GoogleMapCenter;
 };
+
+const MAPS_RUNTIME_RELOAD_GUARD = "reaigen-google-maps-runtime-reload";
 
 function GoogleMapCanvas({
   apiKey,
@@ -84,9 +87,10 @@ function GoogleMapCanvas({
         if (!readinessListener) {
           window.requestAnimationFrame(markReady);
         } else {
-          readinessTimer = window.setTimeout(() => {
-            if (active) onError?.("google-maps-timeout");
-          }, 12_000);
+          // Tile delivery can legitimately take longer on a constrained
+          // connection. Keep the valid Google canvas mounted and end the
+          // loading state instead of destroying it as a false failure.
+          readinessTimer = window.setTimeout(markReady, 8_000);
         }
       })
       .catch((error: unknown) => {
@@ -95,6 +99,7 @@ function GoogleMapCanvas({
         const reason: GoogleMapsFailureReason = (
           message === "google-maps-auth-failed"
           || message === "google-maps-load-failed"
+          || message === "google-maps-stale-runtime"
           || message === "google-maps-timeout"
           || message === "google-maps-unavailable"
         ) ? message : "google-maps-unavailable";
@@ -268,10 +273,19 @@ export function PropertyMapCard({
   }, [lang, retryNonce, shouldLoad, target]);
 
   const handleMapReady = useCallback(() => {
+    window.sessionStorage.removeItem(MAPS_RUNTIME_RELOAD_GUARD);
     setLoading(false);
   }, []);
 
   const handleMapError = useCallback((reason: GoogleMapsFailureReason) => {
+    if (
+      reason === "google-maps-stale-runtime"
+      && window.sessionStorage.getItem(MAPS_RUNTIME_RELOAD_GUARD) !== REAIGEN_GOOGLE_MAPS_VERSION
+    ) {
+      window.sessionStorage.setItem(MAPS_RUNTIME_RELOAD_GUARD, REAIGEN_GOOGLE_MAPS_VERSION);
+      window.location.reload();
+      return;
+    }
     console.error("Google Maps JavaScript unavailable", { reason });
     setMapConfig(null);
     setFailed(true);

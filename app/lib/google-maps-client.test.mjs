@@ -7,6 +7,8 @@ import {
   REAIGEN_GOOGLE_MAP_STYLES,
   REAIGEN_GOOGLE_MAPS_VERSION,
   googleMapsScriptUrl,
+  loadGoogleMaps,
+  resetGoogleMapsFailure,
 } from "./google-maps-client.ts";
 
 test("the Maps loader preserves path-compatible website authorization", () => {
@@ -58,7 +60,7 @@ test("the Parameters map keeps saved coordinates while the address is edited", (
   assert.match(mapCard, /if \(targetKeyRef\.current === nextKey\) return/);
 });
 
-test("the property map renders interactively and waits for real Google tiles", () => {
+test("the property map renders interactively without tearing down a slow Google canvas", () => {
   const repositoryRoot = fileURLToPath(new URL("../../", import.meta.url));
   const mapCard = readFileSync(`${repositoryRoot}/app/components/property-map-card.tsx`, "utf8");
   const loader = readFileSync(`${repositoryRoot}/app/lib/google-maps-client.ts`, "utf8");
@@ -66,9 +68,42 @@ test("the property map renders interactively and waits for real Google tiles", (
   assert.match(mapCard, /renderingType: "RASTER"/);
   assert.match(mapCard, /interactive\s+onReady=/);
   assert.match(mapCard, /addListener\?\.\("tilesloaded", markReady\)/);
+  assert.match(mapCard, /setTimeout\(markReady, 8_000\)/);
+  assert.doesNotMatch(mapCard, /onError\?\.\("google-maps-timeout"\)/);
   assert.match(mapCard, /resetGoogleMapsFailure\(\)/);
   assert.match(loader, /script\.referrerPolicy = "strict-origin-when-cross-origin"/);
   assert.doesNotMatch(mapCard, /Geocoder|geocodeGoogleMapsAddress/);
+});
+
+test("an open tab cannot reuse a Google namespace from an older deployment", () => {
+  const repositoryRoot = fileURLToPath(new URL("../../", import.meta.url));
+  const mapCard = readFileSync(`${repositoryRoot}/app/components/property-map-card.tsx`, "utf8");
+  const loader = readFileSync(`${repositoryRoot}/app/lib/google-maps-client.ts`, "utf8");
+
+  assert.match(loader, /__reaigenGoogleMapsRuntime/);
+  assert.match(loader, /runtime\?\.apiKey === apiKey && runtime\.version === REAIGEN_GOOGLE_MAPS_VERSION/);
+  assert.match(loader, /new Error\("google-maps-stale-runtime"\)/);
+  assert.match(mapCard, /MAPS_RUNTIME_RELOAD_GUARD/);
+  assert.match(mapCard, /reason === "google-maps-stale-runtime"/);
+  assert.match(mapCard, /window\.location\.reload\(\)/);
+});
+
+test("a stale in-document namespace requests one clean reload", async () => {
+  const previousWindow = globalThis.window;
+  globalThis.window = {
+    google: { maps: { Map: class {} } },
+  };
+
+  try {
+    await assert.rejects(
+      loadGoogleMaps("AIzaSyCurrentProductionKey123456789", "en"),
+      /google-maps-stale-runtime/,
+    );
+    assert.equal(resetGoogleMapsFailure(), true);
+  } finally {
+    if (previousWindow === undefined) delete globalThis.window;
+    else globalThis.window = previousWindow;
+  }
 });
 
 test("the map palette keeps distinct Apple-like land, park, road, and water colours", () => {
