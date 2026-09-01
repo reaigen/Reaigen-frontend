@@ -316,7 +316,7 @@ function normalizedSpecsNumbers(
   return normalized;
 }
 
-const fieldClass = "editor-control-capsule h-11 rounded-full border !bg-card px-3.5 text-[16px] !shadow-none focus-visible:border-foreground/25 focus-visible:ring-1 focus-visible:ring-ring/12 focus-visible:ring-offset-0 sm:text-[14px]";
+const fieldClass = "editor-control-capsule h-11 rounded-xl border px-3.5 text-[16px] !shadow-none focus-visible:border-foreground/35 focus-visible:bg-card focus-visible:ring-1 focus-visible:ring-ring/15 focus-visible:ring-offset-0 sm:text-[14px]";
 
 function Field({ id, label, children }: { id: string; label: React.ReactNode; children: React.ReactNode }) {
   return <div className="space-y-1"><Label htmlFor={id} className="text-[12px] font-medium text-foreground/65">{label}</Label>{children}</div>;
@@ -346,7 +346,7 @@ function UnitPicker({
       <SelectTrigger
         aria-label={label}
         className={cn(
-          "editor-control-capsule pen-touch-target !h-11 !min-h-11 shrink-0 rounded-full border px-2.5 text-[12px] font-semibold !shadow-none transition-colors hover:border-foreground/25 focus:ring-2",
+          "pen-touch-target !h-full !min-h-full shrink-0 rounded-none border-0 !bg-transparent px-3 text-[12px] font-semibold !shadow-none transition-colors hover:!bg-foreground/[0.035] focus:ring-0",
           category === "CURRENCY"
             ? "!w-[4.875rem] !min-w-[4.875rem]"
             : "!w-[4.25rem] !min-w-[4.25rem]",
@@ -359,7 +359,7 @@ function UnitPicker({
       <SelectContent
         align="end"
         sideOffset={6}
-        className="max-h-64 min-w-[10.5rem] rounded-2xl p-1.5"
+        className="max-h-64 min-w-[10.5rem] rounded-xl p-1.5"
       >
         {options.map((unit) => (
           <SelectItem
@@ -448,7 +448,12 @@ function DirectValueField({
 
   return (
     <Field id={id} label={label}>
-      <div className={cn("flex min-w-0 items-stretch", unitControl && "gap-2")}>
+      <div
+        className={cn(
+          "flex min-w-0 items-stretch",
+          unitControl && "editor-composite-control h-11 overflow-hidden rounded-xl border focus-within:border-foreground/35 focus-within:bg-card focus-within:ring-1 focus-within:ring-ring/15",
+        )}
+      >
         <div className="relative min-w-0 flex-1">
           <Input
             id={id}
@@ -496,6 +501,7 @@ function DirectValueField({
             }}
             className={cn(
               fieldClass,
+              unitControl && "!h-full rounded-none border-0 !bg-transparent focus-visible:ring-0",
               showStaticUnit && showClear ? "pr-[6.5rem]" : showStaticUnit ? "pr-[4.25rem]" : showClear ? "pr-11" : undefined,
               invalid && "border-destructive/60 focus-visible:ring-destructive/20",
               className,
@@ -521,17 +527,21 @@ function DirectValueField({
             </span>
           ) : null}
         </div>
-        {unitControl}
+        {unitControl ? (
+          <div className="flex shrink-0 border-l border-border/75">
+            {unitControl}
+          </div>
+        ) : null}
       </div>
       {numeric && mathToolsOpen ? (
-        <div className="mt-1.5 flex min-h-11 items-center gap-1 rounded-full border border-border/55 bg-card p-1" aria-label={t("draft.editor.expressionHint", lang)}>
+        <div className="mt-1.5 flex min-h-11 items-center gap-1 rounded-xl border border-border/75 bg-surface-subtle/55 p-1" aria-label={t("draft.editor.expressionHint", lang)}>
           {["+", "−", "×", "÷"].map((operator) => (
             <button
               key={operator}
               type="button"
               onMouseDown={(event) => event.preventDefault()}
               onClick={() => appendOperator(operator === "−" ? "-" : operator === "×" ? "*" : operator === "÷" ? "/" : operator)}
-              className="flex h-9 min-w-9 items-center justify-center rounded-full border border-transparent bg-transparent px-2 text-[14px] font-semibold text-foreground/68 transition-[background-color,color,border-color] hover:border-border/55 hover:bg-card/80 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/25"
+              className="flex h-9 min-w-9 items-center justify-center rounded-lg border border-transparent bg-transparent px-2 text-[14px] font-semibold text-foreground/68 transition-[background-color,color,border-color] hover:bg-card hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/25"
             >
               {operator}
             </button>
@@ -540,7 +550,7 @@ function DirectValueField({
             type="button"
             onMouseDown={(event) => event.preventDefault()}
             onClick={commitNumericValue}
-            className="flex h-9 min-w-9 items-center justify-center rounded-full border border-transparent bg-transparent px-2 text-[14px] font-bold text-foreground/72 transition-[background-color,color,border-color] hover:border-border/55 hover:bg-card/80 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/25"
+            className="flex h-9 min-w-9 items-center justify-center rounded-lg border border-transparent bg-transparent px-2 text-[14px] font-bold text-foreground/72 transition-[background-color,color,border-color] hover:bg-card hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/25"
           >
             =
           </button>
@@ -552,7 +562,7 @@ function DirectValueField({
               commitNumericValue();
               setMathToolsOpen(false);
             }}
-            className="flex h-9 items-center justify-center rounded-full border border-foreground bg-foreground px-4 text-[11px] font-semibold text-background transition-colors hover:bg-foreground/90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/25"
+            className="flex h-9 items-center justify-center rounded-lg border border-foreground bg-foreground px-4 text-[11px] font-semibold text-background transition-colors hover:bg-foreground/90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/25"
           >
             {t("draft.editor.descriptionDone", lang)}
           </button>
@@ -566,7 +576,7 @@ function DirectValueField({
 // Web translation of the iOS 40pt GlassIconTile: cool, opaque, and restrained.
 function IconTile({ icon: Icon }: { icon: React.ComponentType<IconProps> }) {
   return (
-    <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-surface-subtle text-foreground/65 ring-1 ring-inset ring-border/45">
+    <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-surface-subtle text-foreground/65 ring-1 ring-inset ring-border/55">
       <Icon size={19} strokeWidth={1.8} />
     </span>
   );
@@ -623,21 +633,21 @@ function NumericStepper({
     <Field id={id} label={label}>
       <div
         className={cn(
-          "editor-control-capsule flex h-11 items-center rounded-full border !shadow-none",
+          "editor-control-capsule flex h-11 items-center rounded-xl border !shadow-none",
           invalid ? "border-destructive/60" : "border-border/65",
         )}
       >
         {optional && !value.trim() ? (
           <button
             type="button"
-            className="pen-touch-target flex h-full w-full min-w-0 items-center justify-between gap-2 rounded-full pl-3.5 text-left transition-colors hover:bg-foreground/[0.035] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
+            className="pen-touch-target flex h-full w-full min-w-0 items-center justify-between gap-2 rounded-xl pl-3.5 text-left transition-colors hover:bg-foreground/[0.035] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
             onClick={startValue}
             aria-label={`${t("draft.editor.addValue", lang)}: ${label}`}
           >
             <span className="min-w-0 flex-1 truncate text-[14px] text-muted-foreground">
               {t("draft.editor.noValue", lang)}
             </span>
-            <span className="mr-1 inline-flex h-9 shrink-0 items-center gap-2 rounded-full bg-foreground/[0.06] px-3 text-[12px] font-semibold text-foreground">
+            <span className="mr-1 inline-flex h-9 shrink-0 items-center gap-2 rounded-lg bg-foreground/[0.06] px-3 text-[12px] font-semibold text-foreground">
               <PlusIcon size={14} />
               {t("common.add", lang)}
             </span>
@@ -655,7 +665,7 @@ function NumericStepper({
               type="button"
               onClick={() => adjust(-1)}
               disabled={numericValue <= min}
-              className="pen-touch-target m-auto flex h-9 w-9 items-center justify-center rounded-full bg-surface-subtle text-foreground/70 transition-colors hover:bg-secondary hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring disabled:text-muted-foreground disabled:opacity-45"
+              className="pen-touch-target m-auto flex h-9 w-9 items-center justify-center rounded-lg bg-card text-foreground/70 transition-colors hover:bg-secondary hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring disabled:text-muted-foreground disabled:opacity-45"
               aria-label={`${label}: −`}
             >
               <MinusIcon size={14} />
@@ -684,7 +694,7 @@ function NumericStepper({
               type="button"
               onClick={() => adjust(1)}
               disabled={numericValue >= max}
-              className="pen-touch-target m-auto flex h-9 w-9 items-center justify-center rounded-full bg-surface-subtle text-foreground/70 transition-colors hover:bg-secondary hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring disabled:text-muted-foreground disabled:opacity-45"
+              className="pen-touch-target m-auto flex h-9 w-9 items-center justify-center rounded-lg bg-card text-foreground/70 transition-colors hover:bg-secondary hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring disabled:text-muted-foreground disabled:opacity-45"
               aria-label={`${label}: +`}
             >
               <PlusIcon size={14} />
@@ -764,7 +774,7 @@ function AdvancedField({
       <Field id={id} label={label}>
         <div
           id={id}
-          className="editor-control-capsule grid h-12 grid-cols-3 rounded-full border sm:h-11"
+          className="editor-control-capsule grid h-12 grid-cols-3 rounded-xl border sm:h-11"
           role="group"
           aria-label={label}
         >
@@ -783,7 +793,7 @@ function AdvancedField({
             >
               <span
                 className={cn(
-                  "flex h-9 w-full min-w-0 items-center justify-center truncate rounded-full px-2 text-[11px] font-semibold transition-colors",
+                  "flex h-9 w-full min-w-0 items-center justify-center truncate rounded-lg px-2 text-[11px] font-semibold transition-colors",
                   option.active ? "bg-foreground/[0.08] text-foreground" : "text-muted-foreground hover:bg-surface-subtle hover:text-foreground",
                 )}
               >
@@ -802,7 +812,7 @@ function AdvancedField({
       : typeof value === "string" ? value.split(",").map((item) => item.trim()).filter(Boolean) : [];
     return (
       <Field id={id} label={label}>
-        <div id={id} className="editor-control-capsule flex flex-wrap gap-2 rounded-[1.35rem] border p-2">
+        <div id={id} className="editor-control-capsule flex flex-wrap gap-2 rounded-xl border p-2">
           {options.map((item) => {
             const active = selected.includes(item.value);
             return (
@@ -814,7 +824,7 @@ function AdvancedField({
                   onChange(section, field.key, next.length > 0 ? next : undefined);
                 }}
                 className={cn(
-                  "pen-touch-target min-h-11 rounded-full border border-transparent px-3.5 py-2 text-[12px] font-medium transition-colors",
+                  "pen-touch-target min-h-11 rounded-lg border border-transparent px-3.5 py-2 text-[12px] font-medium transition-colors",
                   active ? "bg-foreground/[0.08] text-foreground" : "bg-transparent text-foreground/65 hover:bg-foreground/[0.04] hover:text-foreground",
                 )}
                 aria-pressed={active}

@@ -17,6 +17,14 @@ const contentDocuments = read("app/components/content-documents.tsx");
 const draftSkeleton = read("app/components/draft-detail-skeleton.tsx");
 const draftLoading = read("app/draft/[id]/loading.tsx");
 const draftPage = read("app/draft/[id]/page.tsx");
+const dashboard = read("app/dashboard/page.tsx");
+const tours = read("app/tours/page.tsx");
+const collectionSkeleton = read("app/components/collection-card-skeleton.tsx");
+const tourPage = read("app/tour/[id]/page.tsx");
+const tourLoading = read("app/tour/[id]/loading.tsx");
+const tourWorkspaceLoading = read("app/components/tour-workspace-loading.tsx");
+const loadingMark = read("app/components/reaigen-loading-mark.tsx");
+const splatViewer = read("app/components/splat-viewer.tsx");
 const auditedSurfaces = [
   "app/components/app-shell.tsx",
   "app/components/draft-editor.tsx",
@@ -35,13 +43,12 @@ const auditedSurfaces = [
   "app/shared/[token]/page.tsx",
 ].map(read).join("\n");
 
-test("value and unit editing uses two distinct controls", () => {
-  assert.match(editor, /flex min-w-0 items-stretch[^\n]*unitControl && "gap-2"/);
-  assert.match(editor, /editor-control-capsule pen-touch-target[^\n]*rounded-full border/);
-  assert.match(editor, /<\/div>\s*\{unitControl\}\s*<\/div>/);
-  assert.doesNotMatch(editor, /hasTrailingControl/);
-  assert.doesNotMatch(editor, /!rounded-none !border-0/);
-  assert.doesNotMatch(editor, /pr-\[(?:5|8)rem\]/);
+test("value and unit editing shares one aligned edge", () => {
+  assert.match(editor, /unitControl && "editor-composite-control h-11 overflow-hidden rounded-xl border/);
+  assert.match(editor, /unitControl && "!h-full rounded-none border-0 !bg-transparent focus-visible:ring-0"/);
+  assert.match(editor, /flex shrink-0 border-l border-border\/75/);
+  assert.match(editor, /!h-full !min-h-full shrink-0 rounded-none border-0 !bg-transparent/);
+  assert.doesNotMatch(editor, /unitControl && "gap-2"/);
 });
 
 test("the clear action stays inside the value field without another edge", () => {
@@ -56,10 +63,39 @@ test("select menus can grow beyond the trigger row", () => {
 });
 
 test("editor surfaces use a flat material without layered gloss", () => {
-  assert.match(globals, /\.editor-control-capsule \{[\s\S]*?background: hsl\(var\(--card\)\);[\s\S]*?box-shadow: none;/);
+  assert.match(globals, /\.editor-control-capsule \{[\s\S]*?background: hsl\(var\(--surface-subtle\) \/ 0\.62\);[\s\S]*?box-shadow: none;/);
+  assert.match(globals, /\.editor-composite-control \{[\s\S]*?box-shadow: none;/);
   assert.match(globals, /\.editor-glass-control \{[\s\S]*?background: hsl\(var\(--card\)\);[\s\S]*?box-shadow: none;/);
   assert.doesNotMatch(auditedSurfaces, /glossy-(?:primary-|destructive-)?capsule|glass-chip/);
   assert.doesNotMatch(sidePanel, /bg-background\/82|bg-card\/85/);
+});
+
+test("infinite collections continue with card silhouettes instead of a loading button", () => {
+  assert.match(collectionSkeleton, /data-testid="collection-card-skeletons"/);
+  assert.match(collectionSkeleton, /aspect-\[16\/10\]/);
+  assert.match(collectionSkeleton, /draft-skeleton-shape/);
+  for (const source of [dashboard, tours]) {
+    assert.match(source, /loadingMore \? Array\.from/);
+    assert.match(source, /hasMore && !loadingMore/);
+    assert.match(source, /<CollectionCardSkeleton/);
+  }
+});
+
+test("tour loading remains one immersive workspace through scene readiness", () => {
+  assert.match(tourLoading, /<TourWorkspaceLoading/);
+  assert.match(tourWorkspaceLoading, /data-testid="tour-workspace-loading"/);
+  assert.match(tourWorkspaceLoading, /bg-\[#121214\]/);
+  assert.match(tourWorkspaceLoading, /ArrowLeftIcon size=\{18\} color="#fff"/);
+  assert.match(tourPage, /return <TourWorkspaceLoading lang=\{lang\}/);
+  assert.match(tourPage, /loadingTone="dark"/);
+  assert.doesNotMatch(tourPage, /spatialAccessLoading/);
+  assert.match(splatViewer, /tone=\{loadingTone\}/);
+  assert.match(loadingMark, /tone === "dark" \? "text-white"/);
+});
+
+test("detail facts align to the same two-column rhythm without blur", () => {
+  assert.match(draftPage, /draft-detail-grid grid grid-cols-1 gap-2\.5 sm:grid-cols-2/);
+  assert.doesNotMatch(draftPage, /draft-detail-grid grid grid-cols-1 gap-2\.5">[\s\S]{0,1600}backdrop-blur-xl/);
 });
 
 test("external dialogs share the same solid edge geometry", () => {

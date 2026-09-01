@@ -12,16 +12,16 @@ const buttonVariants = cva(
   // longer locales (sk/cs/de) before it was ever noticed in English.
   // The focus ring is a box-shadow and is painted outside the border box, so it
   // is not clipped by this.
-  "inline-flex min-w-0 items-center justify-center gap-2 overflow-hidden whitespace-nowrap rounded-full border border-transparent text-sm font-medium transition-[background-color,border-color,color,opacity] duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50 [&_svg]:pointer-events-none [&_svg]:size-4 [&_svg]:shrink-0",
+  "inline-flex min-w-0 items-center justify-center gap-2 overflow-hidden whitespace-nowrap rounded-xl border border-transparent text-sm font-medium transition-[background-color,border-color,color,opacity] duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/20 focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50 [&_svg]:pointer-events-none [&_svg]:size-4 [&_svg]:shrink-0",
   {
     variants: {
       variant: {
         default:
           "border-primary bg-primary text-primary-foreground shadow-none hover:bg-primary/90 active:bg-primary/90",
         secondary:
-          "border-border/70 bg-secondary text-secondary-foreground shadow-none hover:border-foreground/20 hover:bg-secondary/80",
+          "border-border/80 bg-surface-subtle text-secondary-foreground shadow-none hover:border-foreground/25 hover:bg-muted",
         outline:
-          "border-border/75 bg-card text-foreground shadow-none hover:border-foreground/22 hover:bg-muted/55",
+          "border-border/85 bg-card text-foreground shadow-none hover:border-foreground/28 hover:bg-surface-subtle/70",
         ghost:
           "bg-transparent shadow-none hover:bg-foreground/[0.055] hover:text-foreground",
         destructive:

@@ -1556,6 +1556,8 @@ interface Props {
   readOnly?: boolean;
   /** Stable WebGL budget/cadence; public shared tours use balanced. */
   performanceProfile?: ViewerPerformanceProfile;
+  /** Match the loader to an immersive route instead of flashing a light page. */
+  loadingTone?: "light" | "dark";
   /** outputs_updated_at from backend — used as cache version key */
   outputsVersion?: string | null;
   initialPruneMask?: SplatPruneMask | null;
@@ -1645,6 +1647,7 @@ const SplatViewer = forwardRef<SplatViewerHandle, Props>(function SplatViewer(
     preferSavedCameras,
     readOnly,
     performanceProfile = "quality",
+    loadingTone = "light",
     outputsVersion,
     initialPruneMask,
     className,
@@ -7439,7 +7442,9 @@ const SplatViewer = forwardRef<SplatViewerHandle, Props>(function SplatViewer(
       {/* Keep one loading surface mounted and cross-fade it into the first
           rendered frame. This avoids the page loader → viewer loader flash. */}
       <div
-        className={`absolute inset-0 flex flex-col items-center justify-center bg-background text-foreground transition-opacity duration-500 ease-[var(--motion-ease-smooth)] ${
+        className={`absolute inset-0 flex flex-col items-center justify-center transition-opacity duration-500 ease-[var(--motion-ease-smooth)] ${
+          loadingTone === "dark" ? "bg-[#121214] text-white" : "bg-background text-foreground"
+        } ${
           spatialNavigation ? "z-40" : "z-10"
         } ${
           visibleReady ? "pointer-events-none opacity-0" : "opacity-100"
@@ -7454,6 +7459,7 @@ const SplatViewer = forwardRef<SplatViewerHandle, Props>(function SplatViewer(
           cancelLabel={t("common.back", lang)}
           onRetry={onRetry}
           onCancel={onCancel}
+          tone={loadingTone}
         />
       </div>
     </div>

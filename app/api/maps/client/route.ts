@@ -52,7 +52,7 @@ export async function POST(request: NextRequest) {
     return new Response(null, { status: 415, headers: PRIVATE_RESPONSE_HEADERS });
   }
 
-  let payload: { latitude?: unknown; longitude?: unknown };
+  let payload: { latitude?: unknown; longitude?: unknown; address?: unknown };
   try {
     payload = await request.json();
   } catch {
@@ -66,12 +66,18 @@ export async function POST(request: NextRequest) {
 
   const latitude = finiteCoordinate(payload.latitude, -90, 90);
   const longitude = finiteCoordinate(payload.longitude, -180, 180);
-  if (latitude == null || longitude == null) {
+  const address = typeof payload.address === "string"
+    ? payload.address.replace(/\s+/g, " ").trim().slice(0, 300)
+    : "";
+  const hasCoordinates = latitude != null && longitude != null;
+  if (!hasCoordinates && address.length < 3) {
     return new Response(null, { status: 422, headers: PRIVATE_RESPONSE_HEADERS });
   }
 
   return Response.json(
-    { apiKey, latitude, longitude },
+    hasCoordinates
+      ? { apiKey, latitude, longitude }
+      : { apiKey, address },
     { headers: PRIVATE_RESPONSE_HEADERS },
   );
 }

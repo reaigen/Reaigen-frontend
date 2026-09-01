@@ -31,6 +31,7 @@ export const REAIGEN_GOOGLE_MAP_STYLES = [
 export type GoogleMapInstance = {
   setCenter(center: GoogleMapCenter): void;
   setZoom(zoom: number): void;
+  addListener?(eventName: string, listener: () => void): { remove(): void };
 };
 
 export type GoogleMapMarker = {
@@ -43,9 +44,24 @@ export type GoogleMapOverlay = {
 
 export type GoogleMapsFailureReason =
   | "google-maps-auth-failed"
+  | "google-maps-geocode-failed"
   | "google-maps-load-failed"
   | "google-maps-timeout"
   | "google-maps-unavailable";
+
+type GoogleMapsGeocoder = {
+  geocode(
+    request: { address: string },
+    callback: (
+      results: Array<{
+        geometry?: {
+          location?: { lat(): number; lng(): number };
+        };
+      }> | null,
+      status: string,
+    ) => void,
+  ): void;
+};
 
 export type GoogleMapsNamespace = {
   Map: new (element: HTMLElement, options: Record<string, unknown>) => GoogleMapInstance;
@@ -79,6 +95,7 @@ export type GoogleMapsNamespace = {
   SymbolPath: {
     CIRCLE: unknown;
   };
+  Geocoder?: new () => GoogleMapsGeocoder;
 };
 
 declare global {
@@ -93,6 +110,14 @@ let googleMapsPromise: Promise<GoogleMapsNamespace> | null = null;
 let googleMapsAuthFailed = false;
 let authFailureHandlerInstalled = false;
 const authFailureListeners = new Set<(reason: GoogleMapsFailureReason) => void>();
+const geocodeCache = new Map<string, GoogleMapCenter>();
+
+/**
+ * Production deliberately follows a frozen Maps release. The moving weekly
+ * channel changed underneath the deployed app in August 2026; a property page
+ * should only take a Maps runtime upgrade as an intentional release.
+ */
+export const REAIGEN_GOOGLE_MAPS_VERSION = "3.65";
 
 function installAuthFailureHandler() {
   if (authFailureHandlerInstalled) return;
@@ -137,11 +162,67 @@ export function googleMapsScriptUrl(
 ) {
   const url = new URL("https://maps.googleapis.com/maps/api/js");
   url.searchParams.set("key", apiKey);
-  url.searchParams.set("v", "weekly");
+  url.searchParams.set("v", REAIGEN_GOOGLE_MAPS_VERSION);
   url.searchParams.set("loading", "async");
   url.searchParams.set("callback", callbackName);
   url.searchParams.set("language", language);
   return url.toString();
+}
+
+/** Clear the local failure latch so the visible retry action performs work. */
+export function resetGoogleMapsFailure() {
+  const reloadRequired = googleMapsAuthFailed && Boolean(window.google?.maps?.Map);
+  googleMapsAuthFailed = false;
+  googleMapsPromise = null;
+  if (!window.google?.maps?.Map) {
+    document.querySelector<HTMLScriptElement>("script[data-reaigen-google-maps]")?.remove();
+  }
+  return reloadRequired;
+}
+
+/**
+ * Resolve legacy address-only drafts through Google's browser service. Drafts
+ * with stored coordinates never call it. The Google Cloud key must therefore
+ * allow the Geocoding API in addition to Maps JavaScript for those legacy
+ * records; there is intentionally no alternate map or geocoder provider.
+ */
+export function geocodeGoogleMapsAddress(
+  maps: GoogleMapsNamespace,
+  address: string,
+) {
+  const normalized = address.replace(/\s+/g, " ").trim();
+  const cacheKey = normalized.toLocaleLowerCase("en-US");
+  const cached = geocodeCache.get(cacheKey);
+  if (cached) return Promise.resolve(cached);
+  const Geocoder = maps.Geocoder;
+  if (!Geocoder || normalized.length < 3) {
+    return Promise.reject(new Error("google-maps-geocode-failed"));
+  }
+
+  return new Promise<GoogleMapCenter>((resolve, reject) => {
+    const timeout = window.setTimeout(
+      () => reject(new Error("google-maps-geocode-failed")),
+      10_000,
+    );
+    const geocoder = new Geocoder();
+    geocoder.geocode({ address: normalized }, (results, status) => {
+      window.clearTimeout(timeout);
+      const location = results?.[0]?.geometry?.location;
+      const lat = location?.lat();
+      const lng = location?.lng();
+      if (
+        status !== "OK"
+        || !Number.isFinite(lat)
+        || !Number.isFinite(lng)
+      ) {
+        reject(new Error("google-maps-geocode-failed"));
+        return;
+      }
+      const center = { lat: lat!, lng: lng! };
+      geocodeCache.set(cacheKey, center);
+      resolve(center);
+    });
+  });
 }
 
 export function loadGoogleMaps(apiKey: string, language: string) {

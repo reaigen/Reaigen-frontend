@@ -18,7 +18,7 @@ import { getUserLanguage, t } from "../lib/i18n";
 import type { SplatListItem } from "../lib/tour-types";
 import { Button } from "../lib/ui/button";
 import { WebCreateAction } from "../components/web-create-action";
-import { CollectionLoading } from "../components/collection-loading";
+import { CollectionCardSkeleton, CollectionCardSkeletons } from "../components/collection-card-skeleton";
 import { GridLayoutToggle } from "../components/grid-layout-toggle";
 import { matchesCollectionQuery, normalizeCollectionQuery } from "../lib/collection-search";
 
@@ -277,7 +277,11 @@ export default function ToursPage() {
 
         <div className="min-w-0">
           {loading && visibleItems.length === 0 ? (
-            <CollectionLoading label={t("common.loading", lang)} className="min-h-48" />
+            <CollectionCardSkeletons
+              label={t("common.loading", lang)}
+              count={gridCols === 2 ? 4 : 2}
+              columns={gridCols}
+            />
           ) : error ? (
             <CollectionState
               kind="error"
@@ -338,9 +342,12 @@ export default function ToursPage() {
                     </CollectionCard>
                   );
                 })}
+                {loadingMore ? Array.from({ length: gridCols === 2 ? 2 : 1 }, (_, index) => (
+                  <CollectionCardSkeleton key={`tour-append-skeleton-${index}`} />
+                )) : null}
               </div>
               {hasMore ? <div ref={sentinelRef} className="h-px" /> : null}
-              {hasMore ? (
+              {hasMore && !loadingMore ? (
                 <div className="mt-8 flex justify-center">
                   <Button type="button" variant="outline" size="sm" className="h-11" disabled={loadingMore || searchSettling} onClick={() => void loadMore()}>
                     {loadingMore ? t("common.loading", lang) : t("dashboard.loadMore", lang)}

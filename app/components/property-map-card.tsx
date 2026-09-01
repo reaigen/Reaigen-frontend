@@ -7,7 +7,9 @@ import {
   GoogleMapsFailureReason,
   GoogleMapMarker,
   REAIGEN_GOOGLE_MAP_STYLES,
+  geocodeGoogleMapsAddress,
   loadGoogleMaps,
+  resetGoogleMapsFailure,
   subscribeGoogleMapsFailure,
 } from "../lib/google-maps-client";
 import { t } from "../lib/i18n";
@@ -16,12 +18,14 @@ import { CloseIcon, LayoutIcon, LockIcon, MapPinIcon } from "./icons";
 
 type ClientMapConfig = {
   apiKey: string;
-  center: GoogleMapCenter;
+  center?: GoogleMapCenter;
+  address?: string;
 };
 
 function GoogleMapCanvas({
   apiKey,
   center,
+  address,
   language,
   zoom,
   interactive,
@@ -39,6 +43,8 @@ function GoogleMapCanvas({
   useEffect(() => {
     let active = true;
     let marker: GoogleMapMarker | null = null;
+    let readinessTimer: number | null = null;
+    let readinessListener: { remove(): void } | null = null;
     const container = containerRef.current;
     if (!container) return;
 
@@ -47,10 +53,14 @@ function GoogleMapCanvas({
     });
 
     void loadGoogleMaps(apiKey, language)
-      .then((maps) => {
+      .then(async (maps) => {
         if (!active) return;
+        const resolvedCenter = center
+          ?? (address ? await geocodeGoogleMapsAddress(maps, address) : null);
+        if (!active) return;
+        if (!resolvedCenter) throw new Error("google-maps-geocode-failed");
         const map = new maps.Map(container, {
-          center,
+          center: resolvedCenter,
           zoom,
           styles: REAIGEN_GOOGLE_MAP_STYLES,
           backgroundColor: "#eef3f1",
@@ -66,14 +76,33 @@ function GoogleMapCanvas({
           streetViewControl: false,
           zoomControl: interactive,
         });
-        marker = new maps.Marker({ position: center, map, clickable: false });
-        onReady?.();
+        marker = new maps.Marker({ position: resolvedCenter, map, clickable: false });
+
+        const markReady = () => {
+          if (!active) return;
+          if (readinessTimer != null) window.clearTimeout(readinessTimer);
+          readinessTimer = null;
+          readinessListener?.remove();
+          readinessListener = null;
+          onReady?.();
+        };
+        readinessListener = map.addListener?.("tilesloaded", markReady) ?? null;
+        if (!readinessListener) {
+          window.requestAnimationFrame(markReady);
+        } else {
+          // A loaded bootstrap is not a rendered map. If Google never supplies
+          // tiles, surface a retry instead of leaving an empty canvas forever.
+          readinessTimer = window.setTimeout(() => {
+            if (active) onError?.("google-maps-timeout");
+          }, 12_000);
+        }
       })
       .catch((error: unknown) => {
         if (!active) return;
         const message = error instanceof Error ? error.message : "";
         const reason: GoogleMapsFailureReason = (
           message === "google-maps-auth-failed"
+          || message === "google-maps-geocode-failed"
           || message === "google-maps-load-failed"
           || message === "google-maps-timeout"
           || message === "google-maps-unavailable"
@@ -84,10 +113,12 @@ function GoogleMapCanvas({
     return () => {
       active = false;
       unsubscribe();
+      if (readinessTimer != null) window.clearTimeout(readinessTimer);
+      readinessListener?.remove();
       marker?.setMap(null);
       container.replaceChildren();
     };
-  }, [apiKey, center, interactive, language, onError, onReady, zoom]);
+  }, [address, apiKey, center, interactive, language, onError, onReady, zoom]);
 
   return (
     <div
@@ -212,6 +243,7 @@ export function PropertyMapCard({
       credentials: "same-origin",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
+        address: target.address,
         latitude: target.lat,
         longitude: target.lng,
       }),
@@ -221,15 +253,19 @@ export function PropertyMapCard({
         if (!response.ok) throw new Error("map-unavailable");
         const payload: unknown = await response.json();
         if (!payload || typeof payload !== "object") throw new Error("map-invalid-response");
-        const { apiKey, latitude, longitude } = payload as Record<string, unknown>;
+        const { apiKey, latitude, longitude, address } = payload as Record<string, unknown>;
+        const hasCoordinates = typeof latitude === "number" && typeof longitude === "number";
+        const hasAddress = typeof address === "string" && address.length >= 3;
         if (
           typeof apiKey !== "string"
-          || typeof latitude !== "number"
-          || typeof longitude !== "number"
+          || (!hasCoordinates && !hasAddress)
         ) {
           throw new Error("map-invalid-response");
         }
-        return { apiKey, center: { lat: latitude, lng: longitude } };
+        const config: ClientMapConfig = hasCoordinates
+          ? { apiKey, center: { lat: latitude as number, lng: longitude as number } }
+          : { apiKey, address: address as string };
+        return config;
       })
       .then((config) => {
         if (controller.signal.aborted) return;
@@ -256,6 +292,14 @@ export function PropertyMapCard({
     setLoading(false);
   }, []);
 
+  const handleRetry = useCallback(() => {
+    if (resetGoogleMapsFailure()) {
+      window.location.reload();
+      return;
+    }
+    setRetryNonce((value) => value + 1);
+  }, []);
+
   if (!target) return null;
 
   return (
@@ -279,7 +323,7 @@ export function PropertyMapCard({
             {...mapConfig}
             language={lang.slice(0, 2).toLowerCase()}
             zoom={target.lat != null ? 15 : 14}
-            interactive={false}
+            interactive
             onReady={handleMapReady}
             onError={handleMapError}
           />
@@ -293,7 +337,7 @@ export function PropertyMapCard({
               <p className="mt-3 text-[13px] font-semibold text-foreground/68">{t("draft.mapPreviewUnavailable", lang)}</p>
               <button
                 type="button"
-                onClick={() => setRetryNonce((value) => value + 1)}
+                onClick={handleRetry}
                 className="media-overlay-control mt-3 inline-flex min-h-9 items-center justify-center rounded-full px-4 text-[11px] font-semibold focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
               >
                 {t("common.tryAgain", lang)}
@@ -367,7 +411,7 @@ export function PropertyMapCard({
                 <div className="flex h-full flex-col items-center justify-center gap-3 px-6 text-center text-foreground/55">
                   <MapPinIcon size={28} />
                   <p className="text-[13px] font-semibold">{t("draft.mapPreviewUnavailable", lang)}</p>
-                  <button type="button" onClick={() => setRetryNonce((value) => value + 1)} className="rounded-full border border-border bg-card px-4 py-2 text-[11px] font-semibold transition-colors hover:bg-surface-subtle">{t("common.tryAgain", lang)}</button>
+                  <button type="button" onClick={handleRetry} className="rounded-xl border border-border bg-card px-4 py-2 text-[11px] font-semibold transition-colors hover:bg-surface-subtle">{t("common.tryAgain", lang)}</button>
                 </div>
               ) : (
                 <div className="flex h-full items-center justify-center text-foreground/45"><span className="h-5 w-5 animate-spin rounded-full border-2 border-foreground/15 border-t-foreground/55 motion-reduce:animate-none" /></div>

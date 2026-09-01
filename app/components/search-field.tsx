@@ -44,8 +44,8 @@ export function SearchField({
           toolbar
             ? "h-11 border-0 bg-transparent pl-6 pr-8 text-[16px] placeholder:text-muted-foreground/80 focus-visible:placeholder:text-muted-foreground sm:text-[13px] md:h-10"
             : navbar
-              ? "h-11 rounded-full border border-transparent bg-surface-subtle/85 pl-10 pr-9 text-[14px] shadow-none transition-[border-color,background-color,box-shadow] placeholder:text-muted-foreground/75 hover:bg-surface-subtle focus-visible:border-foreground/15 focus-visible:bg-surface-subtle focus-visible:ring-2 focus-visible:ring-ring/10"
-            : "h-12 rounded-full border border-border/85 bg-card pl-11 pr-10 text-[16px] shadow-control transition-[border-color,box-shadow] placeholder:text-muted-foreground/80 hover:border-foreground/25 focus-visible:border-foreground/35 focus-visible:ring-2 focus-visible:ring-ring/12 sm:text-[14px]",
+              ? "h-11 rounded-xl border border-transparent bg-surface-subtle/85 pl-10 pr-9 text-[14px] shadow-none transition-[border-color,background-color,box-shadow] placeholder:text-muted-foreground/75 hover:bg-surface-subtle focus-visible:border-foreground/20 focus-visible:bg-card focus-visible:ring-1 focus-visible:ring-ring/12"
+            : "h-12 rounded-xl border border-border/85 bg-surface-subtle/55 pl-11 pr-10 text-[16px] shadow-none transition-[background-color,border-color,box-shadow] placeholder:text-muted-foreground/80 hover:border-foreground/25 focus-visible:border-foreground/35 focus-visible:bg-card focus-visible:ring-1 focus-visible:ring-ring/15 sm:text-[14px]",
         )}
       />
       {value ? (

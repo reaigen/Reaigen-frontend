@@ -43,13 +43,13 @@ const Switch = React.forwardRef<
       <span
         aria-hidden="true"
         className={cn(
-          "pointer-events-none absolute top-1/2 -translate-y-1/2 rounded-full bg-muted transition-colors duration-200 group-data-[state=checked]/switch:bg-primary",
+          "pointer-events-none absolute top-1/2 -translate-y-1/2 rounded-full border border-border/85 bg-muted transition-[background-color,border-color] duration-150 group-data-[state=checked]/switch:border-primary group-data-[state=checked]/switch:bg-primary",
           sizes[size].track,
         )}
       />
       <SwitchPrimitives.Thumb
         className={cn(
-          "pointer-events-none absolute top-1/2 block -translate-y-1/2 rounded-full bg-background shadow-lg ring-0 transition-transform",
+          "pointer-events-none absolute top-1/2 block -translate-y-1/2 rounded-full bg-background shadow-[0_1px_3px_rgba(17,17,17,0.2)] ring-0 transition-transform",
           sizes[size].thumb
         )}
       />
