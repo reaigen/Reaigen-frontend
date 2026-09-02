@@ -431,11 +431,11 @@ export function DraftImageEditor({
       onClick={() => setShowOriginal(originalView)}
       aria-pressed={showOriginal === originalView}
       className={cn(
-        "h-11 rounded-full px-3 text-[12px] font-medium transition-colors",
+        "h-8 rounded-full px-3 text-[12px] transition-[background-color,color,box-shadow]",
         "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
         showOriginal === originalView
-          ? "bg-foreground/[0.08] text-foreground"
-          : "bg-transparent text-muted-foreground hover:bg-foreground/[0.04] hover:text-foreground",
+          ? "bg-card font-semibold text-foreground shadow-control ring-1 ring-inset ring-border/55"
+          : "bg-transparent font-medium text-muted-foreground hover:text-foreground",
       )}
     >
       {text}
@@ -507,35 +507,55 @@ export function DraftImageEditor({
   );
 
   const cropChips = (
-    <div className="selection-capsule-track grid grid-cols-[1.25fr_repeat(4,minmax(0,1fr))]">
-      {CROP_ASPECTS.map((option) => (
-        <button
-          key={option.value}
-          type="button"
-          onClick={() => setEdit((current) => ({
-            ...current,
-            cropAspect: option.value,
-            cropX: option.value === "original" ? 0 : current.cropX,
-            cropY: option.value === "original" ? 0 : current.cropY,
-          }))}
-          disabled={busy}
-          aria-pressed={edit.cropAspect === option.value}
-          className="selection-capsule-item pen-touch-target min-w-0 px-1.5 text-[12px] leading-none focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-45"
-        >
-          {option.value === "original" ? t("draft.media.cropOriginal", lang) : option.value}
-        </button>
-      ))}
+    /* Discrete chips, active in full contrast — the shared grey track squeezed
+       "Pôvodný" against its pill edge and hover states muddied which segment
+       was actually chosen. */
+    <div className="flex flex-wrap items-center gap-1.5">
+      {CROP_ASPECTS.map((option) => {
+        const active = edit.cropAspect === option.value;
+        return (
+          <button
+            key={option.value}
+            type="button"
+            onClick={() => setEdit((current) => ({
+              ...current,
+              cropAspect: option.value,
+              cropX: option.value === "original" ? 0 : current.cropX,
+              cropY: option.value === "original" ? 0 : current.cropY,
+            }))}
+            disabled={busy}
+            aria-pressed={active}
+            className={cn(
+              "flex h-9 items-center rounded-full border px-3.5 text-[12px] font-semibold tabular-nums transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-45",
+              active
+                ? "border-foreground bg-foreground text-background"
+                : "border-border/70 bg-card text-foreground/65 hover:border-foreground/30 hover:text-foreground",
+            )}
+          >
+            {option.value === "original" ? t("draft.media.cropOriginal", lang) : option.value}
+          </button>
+        );
+      })}
     </div>
   );
 
   const cropControls = (
     <>
       {cropChips}
-      {/* Always mounted, disabled while the crop is unconstrained — mounting these
-          on demand pushed everything below them down. */}
-      <div className="mt-2">
-        <AdjustmentSlider label={t("draft.media.cropX", lang)} value={edit.cropX} min={-1} max={1} step={0.02} origin={0} displayValue={formatter.format(edit.cropX)} resetLabel={resetLabel} disabled={busy || cropLocked} onChange={(value) => setValue("cropX", value)} />
-        <AdjustmentSlider label={t("draft.media.cropY", lang)} value={edit.cropY} min={-1} max={1} step={0.02} origin={0} displayValue={formatter.format(edit.cropY)} resetLabel={resetLabel} disabled={busy || cropLocked} onChange={(value) => setValue("cropY", value)} />
+      {/* Height-animated instead of permanently visible but disabled: a pair of
+          greyed-out sliders under "Pôvodný" read as broken, not as inactive. */}
+      <div
+        inert={cropLocked ? true : undefined}
+        aria-hidden={cropLocked}
+        className={cn(
+          "grid transition-[grid-template-rows,opacity,margin-top] duration-200 ease-[var(--motion-ease-smooth)] motion-reduce:transition-none",
+          cropLocked ? "mt-0 grid-rows-[0fr] opacity-0" : "mt-2 grid-rows-[1fr] opacity-100",
+        )}
+      >
+        <div className="min-h-0 overflow-hidden">
+          <AdjustmentSlider label={t("draft.media.cropX", lang)} value={edit.cropX} min={-1} max={1} step={0.02} origin={0} displayValue={formatter.format(edit.cropX)} resetLabel={resetLabel} disabled={busy || cropLocked} onChange={(value) => setValue("cropX", value)} />
+          <AdjustmentSlider label={t("draft.media.cropY", lang)} value={edit.cropY} min={-1} max={1} step={0.02} origin={0} displayValue={formatter.format(edit.cropY)} resetLabel={resetLabel} disabled={busy || cropLocked} onChange={(value) => setValue("cropY", value)} />
+        </div>
       </div>
       <div className="mt-2.5 grid grid-cols-2 gap-2">
         <Button type="button" variant="outline" size="sm" onClick={() => rotate(-1)} disabled={busy} className="min-h-11 w-full px-2 text-[11px]">
@@ -575,7 +595,7 @@ export function DraftImageEditor({
             <p className="truncate text-[11px] font-medium text-muted-foreground" title={label}>
               {label}
             </p>
-            <div className="flex shrink-0 items-center gap-0.5 rounded-full border border-border/60 bg-surface-subtle p-0">
+            <div className="flex shrink-0 items-center gap-0.5 rounded-full border border-border/60 bg-surface-subtle p-1">
               {compareButton(true, t("reai.mediaOriginal", lang))}
               {compareButton(false, t("draft.media.editedPreview", lang))}
             </div>
@@ -584,7 +604,7 @@ export function DraftImageEditor({
 
         <div className="relative min-h-0 flex-1">
           {stacked ? (
-            <div className="floating-capsule absolute right-2 top-2 z-10 flex items-center gap-0.5 !bg-card/85 p-0 shadow-control backdrop-blur-xl">
+            <div className="floating-capsule absolute right-2 top-2 z-10 flex items-center gap-0.5 !bg-card/85 p-1 shadow-control backdrop-blur-xl">
               {compareButton(true, t("reai.mediaOriginal", lang))}
               {compareButton(false, t("draft.media.editedPreview", lang))}
             </div>
@@ -763,7 +783,7 @@ export function DraftImageEditor({
               disabled={busy || !hasChanges}
               loading={busy}
               title={hasChanges ? undefined : t("draft.media.noEdits", lang)}
-              className="w-full px-3"
+              className="w-full px-3 disabled:opacity-100 disabled:bg-foreground disabled:text-background"
             >
               {t("draft.media.saveAsVersion", lang)}
             </Button>

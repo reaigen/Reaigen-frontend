@@ -32,7 +32,6 @@ import {
   EyeClosedIcon,
   EyeOpenIcon,
   ImageIcon,
-  StarIcon,
   UploadIcon,
   VersionsIcon,
   VideoIcon,
@@ -1129,7 +1128,12 @@ export const DraftMediaManager = React.forwardRef<DraftMediaManagerHandle, {
 
   // The editor needs a wider stage than the browsing views: at 920px a portrait
   // photo binds on width and strands a band of empty canvas above and below it.
-  const panelWidthClass = view === "editor" ? "sm:max-w-[1180px]" : "sm:max-w-[920px]";
+  // The max-width is animated so leaving the editor eases the panel edge back
+  // instead of snapping between the two sizes.
+  const panelWidthClass = cn(
+    "transition-[max-width] duration-300 ease-[var(--motion-ease-smooth)] motion-reduce:transition-none",
+    view === "editor" ? "sm:max-w-[1180px]" : "sm:max-w-[920px]",
+  );
 
   return (
     <>
@@ -1183,7 +1187,7 @@ export const DraftMediaManager = React.forwardRef<DraftMediaManagerHandle, {
     >
       {view === "editor" ? (
         editingGroup ? (
-          <div className="flex min-h-0 min-w-0 flex-1 flex-col">
+          <div className="flex min-h-0 min-w-0 flex-1 animate-fade-in flex-col">
             {error ? (
               <div role="alert" className="flex shrink-0 items-start justify-between gap-3 border-b border-red-500/20 bg-red-500/[0.055] px-4 py-3 text-[11px] leading-relaxed text-red-800">
                 <span>{error}</span>
@@ -1211,7 +1215,7 @@ export const DraftMediaManager = React.forwardRef<DraftMediaManagerHandle, {
       ) : null}
 
       {view === "versions" ? (
-        <div className="relative">
+        <div className="relative animate-fade-in">
           {error ? (
             <div role="alert" className="floating-panel-shape mb-4 flex items-start justify-between gap-3 border border-red-500/20 bg-red-500/[0.055] px-4 py-3 text-[11px] leading-relaxed text-red-800">
               <span className="min-w-0">
@@ -1332,7 +1336,9 @@ export const DraftMediaManager = React.forwardRef<DraftMediaManagerHandle, {
       ) : null}
 
       <div
-        className={cn("relative min-h-full", view !== "gallery" && "hidden")}
+        // Re-adding the class when the view returns restarts the fade, so
+        // stepping back from the editor eases in rather than popping.
+        className={cn("relative min-h-full", view !== "gallery" ? "hidden" : "animate-fade-in")}
         onDragEnter={(event) => {
           if (!Array.from(event.dataTransfer.types).includes("Files")) return;
           event.preventDefault();
@@ -1579,8 +1585,8 @@ export const DraftMediaManager = React.forwardRef<DraftMediaManagerHandle, {
             <div className="flex min-w-0 items-center gap-2">
               <p className="truncate text-[12px] font-semibold" title={selectedLabel}>{selectedLabel}</p>
               {selected.id === coverId ? (
-                <StatusPill className="shrink-0 text-[9px]">
-                  <StarIcon size={10} /> {t("draft.media.cover", lang)}
+                <StatusPill className="shrink-0 px-2 text-[9px] font-bold uppercase tracking-[0.08em]">
+                  {t("draft.media.cover", lang)}
                 </StatusPill>
               ) : null}
             </div>
@@ -1606,8 +1612,8 @@ export const DraftMediaManager = React.forwardRef<DraftMediaManagerHandle, {
               <span className="tabular-nums text-foreground/45">{selected.versions.length}</span>
             </Button>
             {selected.visible && selected.kind === "image" && selected.id !== coverId ? (
-              <Button type="button" variant="ghost" size="icon-sm" onClick={() => void makeCover(selected)} disabled={busy} aria-label={t("draft.media.setCover", lang)} title={t("draft.media.setCover", lang)}>
-                <StarIcon size={14} />
+              <Button type="button" variant="ghost" size="sm" className="px-2.5" onClick={() => void makeCover(selected)} disabled={busy} title={t("draft.media.setCover", lang)}>
+                {t("draft.media.setCoverShort", lang)}
               </Button>
             ) : null}
             {selected.kind === "image" && selected.visible ? (
@@ -1731,8 +1737,8 @@ export const DraftMediaManager = React.forwardRef<DraftMediaManagerHandle, {
                         <MediaVisual upload={group.active} alt="" />
                       </button>
                       {group.id === coverId ? (
-                        <StatusPill className="pointer-events-none absolute left-2 top-2 px-2 text-[9px] shadow-control">
-                          <StarIcon size={10} /> 1 · {t("draft.media.cover", lang)}
+                        <StatusPill className="pointer-events-none absolute left-2 top-2 px-2 text-[9px] font-bold uppercase tracking-[0.08em] shadow-control">
+                          1 · {t("draft.media.cover", lang)}
                         </StatusPill>
                       ) : (
                         <StatusPill className="pointer-events-none absolute left-2 top-2 min-w-7 justify-center px-2 text-[10px] tabular-nums shadow-control">
@@ -1783,8 +1789,10 @@ export const DraftMediaManager = React.forwardRef<DraftMediaManagerHandle, {
                         {t("common.tryAgain", lang)}
                       </button>
                     ) : <LoadingMark label={t(item.state === "queued" ? "draft.media.queued" : "draft.media.uploading", lang)} />}
+                    <span className="pointer-events-none absolute left-2 top-2 max-w-[calc(100%-1rem)] truncate rounded-full bg-black/55 px-2 py-1 text-[9px] font-semibold text-white backdrop-blur-sm">
+                      {item.name}
+                    </span>
                   </div>
-                  <p className="media-manager-card-footer truncate text-[10px] font-medium text-foreground/65">{item.name}</p>
                 </article>
               )) : null}
 
@@ -1797,7 +1805,7 @@ export const DraftMediaManager = React.forwardRef<DraftMediaManagerHandle, {
                   <motion.article
                     key={group.id}
                     className={cn(
-                      "media-manager-card floating-panel min-w-0 overflow-hidden transition",
+                      "media-manager-card floating-panel group/card min-w-0 overflow-hidden transition",
                       isSelected
                         ? "border-foreground/30 shadow-card"
                         : isCover
@@ -1842,9 +1850,26 @@ export const DraftMediaManager = React.forwardRef<DraftMediaManagerHandle, {
                         className="absolute inset-0 h-full w-full text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
                         aria-pressed={isSelected}
                         aria-label={`${label}, ${index + 1}`}
+                        onDoubleClick={() => openImageEditor(group)}
                       >
                         <MediaVisual upload={group.active} alt="" className={cn(!group.visible && "opacity-55 grayscale-[20%]")} />
                       </button>
+
+                      {/* Edit belongs on the photograph, not only in the header
+                          strip above the grid — hover or focus reveals it, and
+                          double-clicking the photo does the same. */}
+                      {group.kind === "image" ? (
+                        <button
+                          type="button"
+                          onClick={() => openImageEditor(group)}
+                          disabled={busy}
+                          aria-label={t("draft.media.editPhoto", lang)}
+                          title={t("draft.media.editPhoto", lang)}
+                          className="absolute bottom-2 right-2 z-10 flex h-9 items-center gap-1.5 rounded-full bg-black/60 px-3 text-[11px] font-semibold text-white opacity-0 shadow-control backdrop-blur-md transition-[opacity,background-color] duration-150 hover:bg-black/75 focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/70 group-hover/card:opacity-100 group-focus-within/card:opacity-100"
+                        >
+                          <EditIcon size={12} /> {t("draft.media.editPhoto", lang)}
+                        </button>
+                      ) : null}
 
                       <span className="pointer-events-none absolute left-2 top-2 flex flex-wrap gap-1.5">
                         {!group.visible ? (
@@ -1859,20 +1884,23 @@ export const DraftMediaManager = React.forwardRef<DraftMediaManagerHandle, {
                             "pointer-events-none absolute right-2 top-2 min-w-7 justify-center px-2 text-[10px] tabular-nums shadow-control",
                           )}
                         >
-                          {isCover ? <StarIcon size={10} /> : null}
                           {visibleIndex + 1}
                         </StatusPill>
                       ) : null}
 
-                    </div>
-
-                    <div className="media-manager-card-footer">
-                      <div className="media-manager-card-meta flex min-w-0 flex-1 items-center justify-between gap-2">
-                        <p className="truncate text-[11px] font-semibold text-foreground/75" title={label}>{label}</p>
-                        <span className="flex shrink-0 items-center gap-1.5 text-[9px] text-muted-foreground">
-                          {group.kind === "video" ? <VideoIcon size={12} /> : group.versions.length > 1 ? <span>{group.versions.length}×</span> : null}
-                        </span>
-                      </div>
+                      {/*
+                        Video and version markers sit on the picture, beside the
+                        position badge. The white caption strip under each card
+                        only repeated the generated "Photo N" name, which made
+                        the grid read as a form instead of photographs.
+                      */}
+                      {group.kind === "video" || group.versions.length > 1 ? (
+                        <StatusPill className="pointer-events-none absolute bottom-2 left-2 gap-1 px-2 text-[10px] tabular-nums shadow-control">
+                          {group.kind === "video"
+                            ? <VideoIcon size={11} />
+                            : <>{group.versions.length}×</>}
+                        </StatusPill>
+                      ) : null}
                     </div>
                   </motion.article>
                 );
@@ -1885,10 +1913,14 @@ export const DraftMediaManager = React.forwardRef<DraftMediaManagerHandle, {
                   disabled={busy}
                   className="media-manager-card floating-panel group min-w-0 overflow-hidden border-dashed bg-card text-muted-foreground transition-colors hover:border-foreground/30 hover:bg-surface-subtle hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50"
                 >
-                  <span className="media-manager-card-visual flex items-center justify-center bg-surface-subtle">
+                  {/* Label lives inside the 16:9 visual: a footer row made this
+                      tile taller than the photo cards, and the outer grid then
+                      stretched every photo card to match, leaving a white band
+                      under each picture. */}
+                  <span className="media-manager-card-visual flex flex-col items-center justify-center gap-2.5 bg-surface-subtle">
                     <span className="floating-icon-button bg-card ring-1 ring-inset ring-border/55"><UploadIcon size={17} /></span>
+                    <span className="text-[11px] font-semibold">{t("draft.media.addPhotos", lang)}</span>
                   </span>
-                  <span className="media-manager-card-footer text-[11px] font-semibold">{t("draft.media.addPhotos", lang)}</span>
                 </button>
               ) : null}
             </div>

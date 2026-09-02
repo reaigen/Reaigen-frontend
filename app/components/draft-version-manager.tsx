@@ -208,13 +208,15 @@ function Working({ lang }: { lang: string }) {
 }
 
 function EmptyVersionState({ icon: Icon, title, hint }: { icon: typeof TourIcon; title: string; hint: string }) {
+  // Same quiet surface as the collection pages' CollectionState — a dashed
+  // border here read as a drop zone rather than an empty list.
   return (
-    <div className="floating-panel-shape border border-dashed border-border/65 bg-card px-6 py-14 text-center">
-      <span className="mx-auto flex h-11 w-11 items-center justify-center rounded-full bg-surface-subtle text-foreground/30">
+    <div className="floating-panel-shape border border-border bg-card px-6 py-14 text-center shadow-card" role="status">
+      <span className="mx-auto flex h-11 w-11 items-center justify-center rounded-xl border border-border/45 bg-surface-subtle text-foreground/35" aria-hidden="true">
         <Icon size={20} />
       </span>
-      <p className="mt-3 text-[14px] font-semibold">{title}</p>
-      <p className="mx-auto mt-1 max-w-sm text-[11px] leading-relaxed text-muted-foreground">{hint}</p>
+      <p className="mt-4 text-[14px] font-semibold tracking-[-0.01em]">{title}</p>
+      <p className="mx-auto mt-1.5 max-w-sm text-[12px] leading-relaxed text-muted-foreground">{hint}</p>
     </div>
   );
 }
@@ -1058,9 +1060,9 @@ export function MediaVersionCard({
 
 function AgentRequired({ lang }: { lang: string }) {
   return (
-    <div className="floating-panel-shape border border-dashed border-border/65 bg-card px-6 py-12 text-center">
-      <span className="mx-auto flex h-11 w-11 items-center justify-center rounded-full bg-surface-subtle text-foreground/30"><VersionsIcon size={20} /></span>
-      <p className="mx-auto mt-3 max-w-sm text-[12px] font-semibold leading-relaxed">{t("draft.versions.agentRequired", lang)}</p>
+    <div className="floating-panel-shape border border-border bg-card px-6 py-12 text-center shadow-card" role="status">
+      <span className="mx-auto flex h-11 w-11 items-center justify-center rounded-xl border border-border/45 bg-surface-subtle text-foreground/35" aria-hidden="true"><VersionsIcon size={20} /></span>
+      <p className="mx-auto mt-4 max-w-sm text-[12px] font-semibold leading-relaxed">{t("draft.versions.agentRequired", lang)}</p>
       <Link href="/settings#reai" className="mt-4 inline-flex rounded-full border border-border/70 px-3.5 py-2 text-[11px] font-semibold transition-colors hover:bg-surface-subtle focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">{t("settings.tab.reai", lang)}</Link>
     </div>
   );

@@ -52,16 +52,22 @@ import {
 // The listing itself is the primary path. Editors, sharing, versions, maps,
 // video controls, and floorplan tooling live in separate chunks so a normal
 // card-to-detail transition does not download every authoring surface first.
-const DraftEditor = dynamic(() => import("../../components/draft-editor").then((module) => module.DraftEditor));
-const DraftMediaManager = dynamic(() => import("../../components/draft-media-manager").then((module) => module.DraftMediaManager));
-const DraftSharingDock = dynamic(() => import("../../components/draft-sharing-dock").then((module) => module.DraftSharingDock));
-const DraftTourAssetsPanel = dynamic(() => import("../../components/draft-tour-assets-panel").then((module) => module.DraftTourAssetsPanel));
-const DraftVersionManager = dynamic(() => import("../../components/draft-version-manager").then((module) => module.DraftVersionManager));
-const FloorplanEditor = dynamic(() => import("../../components/floorplan-editor"));
-const FloorplanLightbox = dynamic(() => import("../../components/floorplan-lightbox").then((module) => module.FloorplanLightbox));
-const FloorplanViewer = dynamic(() => import("../../components/floorplan-viewer"));
-const GlassVideoPlayer = dynamic(() => import("../../components/glass-video-player").then((module) => module.GlassVideoPlayer));
-const VolumesEditor = dynamic(() => import("../../components/volumes-editor").then((module) => module.VolumesEditor));
+//
+// Every dynamic() needs a `loading` fallback: without one Next renders the
+// lazy component with no Suspense boundary of its own, so the first click on
+// Edit/Sharing/Versions suspended the whole route segment back to its
+// loading.tsx skeleton — a visible "full page reload" — while the chunk
+// downloaded. With the boundary the page stays put and the panel plays its
+// own slide-in once ready (chunks are also warmed on idle below).
+const DraftEditor = dynamic(() => import("../../components/draft-editor").then((module) => module.DraftEditor), { loading: () => null });
+const DraftMediaManager = dynamic(() => import("../../components/draft-media-manager").then((module) => module.DraftMediaManager), { loading: () => null });
+const DraftSharingDock = dynamic(() => import("../../components/draft-sharing-dock").then((module) => module.DraftSharingDock), { loading: () => null });
+const DraftTourAssetsPanel = dynamic(() => import("../../components/draft-tour-assets-panel").then((module) => module.DraftTourAssetsPanel), { loading: () => null });
+const DraftVersionManager = dynamic(() => import("../../components/draft-version-manager").then((module) => module.DraftVersionManager), { loading: () => null });
+const FloorplanLightbox = dynamic(() => import("../../components/floorplan-lightbox").then((module) => module.FloorplanLightbox), { loading: () => null });
+const FloorplanViewer = dynamic(() => import("../../components/floorplan-viewer"), { loading: () => null });
+const GlassVideoPlayer = dynamic(() => import("../../components/glass-video-player").then((module) => module.GlassVideoPlayer), { loading: () => null });
+const VolumesEditor = dynamic(() => import("../../components/volumes-editor").then((module) => module.VolumesEditor), { loading: () => null });
 
 // ── Formatting ────────────────────────────────────────────────────────────
 
@@ -522,6 +528,25 @@ export default function DraftPreviewPage({
     ? query.sharing.includes("1")
     : query.sharing === "1";
 
+  // Warm the panel chunks once the page is idle, so opening Edit, Sharing, or
+  // Versions mounts instantly instead of waiting on a network fetch at click
+  // time. Same module specifiers as the dynamic() imports above → same chunks.
+  useEffect(() => {
+    const warm = () => {
+      void import("../../components/draft-editor");
+      void import("../../components/draft-sharing-dock");
+      void import("../../components/draft-media-manager");
+      void import("../../components/draft-tour-assets-panel");
+      void import("../../components/draft-version-manager");
+    };
+    if (typeof window.requestIdleCallback === "function") {
+      const idle = window.requestIdleCallback(warm, { timeout: 4000 });
+      return () => window.cancelIdleCallback(idle);
+    }
+    const timer = window.setTimeout(warm, 1500);
+    return () => window.clearTimeout(timer);
+  }, []);
+
   const [draft, setDraft] = useState<DraftDetailItem | null>(null);
   const [splatData, setSplatData] = useState<SplatsByDraftPayload | null>(null);
   const [tourAssets, setTourAssets] = useState<DraftTourAssetsPayload | null>(null);
@@ -539,7 +564,6 @@ export default function DraftPreviewPage({
   const [activeVideoIndex, setActiveVideoIndex] = useState(0);
   const [editorOpen, setEditorOpen] = useState(false);
   const [descriptionEditRequested, setDescriptionEditRequested] = useState(false);
-  const [floorplanEditorOpen, setFloorplanEditorOpen] = useState(false);
   const [floorplanFullscreen, setFloorplanFullscreen] = useState(false);
   const [floorplanAgentAction, setFloorplanAgentAction] = useState<ReaiViewerAction | null>(null);
   // Drawing walls, placing doors and dragging vertices needs a pointer and a
@@ -598,7 +622,6 @@ export default function DraftPreviewPage({
   // Shrinking past the breakpoint mid-session must not strand the user inside
   // an editor whose controls they can no longer reach.
   useEffect(() => {
-    if (compactViewport) setFloorplanEditorOpen(false);
   }, [compactViewport]);
 
   const handleSharingOpenChange = (nextOpen: boolean) => {
@@ -872,7 +895,7 @@ export default function DraftPreviewPage({
       reaiDraftId={draftId}
       reaiDraftTitle={draft?.title}
       reaiUploadId={activeImageId ?? undefined}
-      reaiWorkspaceContext={floorplanFullscreen || floorplanEditorOpen ? "floorplan" : "draft"}
+      reaiWorkspaceContext={floorplanFullscreen ? "floorplan" : "draft"}
       headerBackHref="/dashboard"
       headerBackLabel={t("nav.dashboard", lang)}
       headerTitle={draft.title}
@@ -1243,13 +1266,12 @@ export default function DraftPreviewPage({
                       <FloorplanIcon size={17} className="text-foreground/65" />
                       {t("draft.floorplan", lang)}
                       {!compactViewport && (
-                        <button
-                          type="button"
-                          onClick={() => setFloorplanEditorOpen(true)}
+                        <Link
+                          href={`/draft/${draftId}/floorplan`}
                           className="ml-auto rounded-full px-2.5 py-1 text-[12.5px] font-semibold text-foreground/55 transition-colors hover:bg-foreground/[0.05] hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
                         >
                           {t("floorplan.edit", lang)}
-                        </button>
+                        </Link>
                       )}
                     </h2>
                     {/*
@@ -1445,22 +1467,6 @@ export default function DraftPreviewPage({
       ) : null}
 
       {/* Structural gate, so the editor cannot mount on a phone regardless of state. */}
-      {floorplanEditorOpen && !compactViewport && (
-        <FloorplanEditor
-          draftId={draftId}
-          draftData={draft.draft_data ?? []}
-          lang={lang}
-          onClose={() => setFloorplanEditorOpen(false)}
-          onSaved={(entries) =>
-            setDraft((current) => {
-              if (!current) return current;
-              const byId = new Map((current.draft_data ?? []).map((e) => [e.id, e]));
-              for (const entry of entries) byId.set(entry.id, entry);
-              return { ...current, draft_data: [...byId.values()] };
-            })
-          }
-        />
-      )}
       {mediaOpen ? (
         <DraftMediaManager
           open={mediaOpen}
