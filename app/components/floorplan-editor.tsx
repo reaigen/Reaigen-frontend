@@ -19,8 +19,19 @@
  */
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import type { DraftDataEntry } from "../lib/tour-types";
-import { saveDraftDataFields } from "../lib/api/client";
+import { deleteDraftDataEntry, saveDraftDataFields } from "../lib/api/client";
+import { randomUUID } from "../lib/uuid";
+import { ROOM_TYPE_CODES } from "../lib/room-names";
+import {
+  baseUnitForCategory,
+  convertUnitValue,
+  resolveUnit,
+  unitLabel,
+  unitsForCategory,
+  type UnitLookup,
+} from "../lib/unit-catalog";
 import { t } from "../lib/i18n";
 import { cn } from "../lib/utils";
 import {
@@ -36,6 +47,7 @@ import {
   roomNumbersInTextData,
   rawRoomLabel,
   floorplanRotationDegrees,
+  rotateFromSnappedFrame,
   rotateToSnappedFrame,
   resolveLabelWorldPositions,
   distancePointToSegment,
@@ -58,11 +70,12 @@ import {
 } from "../lib/floorplan-geometry";
 import {
   ArrowLeftIcon,
+  CloseIcon,
   DoorToolIcon,
+  SelectIcon,
   DrawWallIcon,
   EraseIcon,
   FrameIcon,
-  LayersToolIcon,
   MoveToolIcon,
   ResetToolIcon,
   RoomToolIcon,
@@ -76,6 +89,9 @@ import { iconForKind, type IconShape } from "../lib/floorplan-icon-shapes";
 import {
   applyFurnitureEdits,
   cloneFurnitureEdits,
+  emptyFurnitureEdits,
+  rotateFurniture,
+  rotateFurnitureAxes,
   collinearEdgeChain,
   moveFurniture,
   moveWall,
@@ -104,6 +120,99 @@ const OPENING_PLACE_PX = 42;
 const MAX_UNDO = 20;
 const VIEW = 720; // square viewBox so 90° rotations always fit
 const DEFAULT_VIEW_ZOOM = 1.12;
+/**
+ * The content group is `translate(pan) scale(zoom)` — SVG scales around the
+ * viewBox origin, not its centre, so any zoom ≠ 1 needs this compensating pan
+ * or the whole plan drifts toward the bottom-right on open and on fit-view.
+ */
+const DEFAULT_VIEW_PAN = {
+  x: (VIEW / 2) * (1 - DEFAULT_VIEW_ZOOM),
+  y: (VIEW / 2) * (1 - DEFAULT_VIEW_ZOOM),
+};
+
+const OPENING_GAP = 0.05; // clearance kept between co-hosted openings (m)
+
+/**
+ * 1D solve for openings sharing a wall. The driven opening moves or resizes
+ * toward its target; neighbours are parametric, not rigid bodies — pressed,
+ * they first SHRINK from their near edge (far edge pinned) down to the
+ * minimum opening, and only then transmit the push. Wall-end bounds are
+ * relative: a scan-placed opening flush in a corner may stay there, it just
+ * cannot get worse.
+ */
+function solveWallSlide(
+  items: Array<{ len: number; t: number }>,
+  di: number,
+  desiredT: number,
+  desiredLen: number,
+  wallLen: number,
+): { positions: number[]; lens: number[] } {
+  const inset = wallLen * 0.02;
+  const count = items.length;
+  const lo0 = items.map((item) => item.t - item.len / 2);
+  const hi0 = items.map((item) => item.t + item.len / 2);
+  const wallLo = (j: number) => Math.min(inset, lo0[j]);
+  const wallHi = (j: number) => Math.max(wallLen - inset, hi0[j]);
+
+  const attempt = (tC: number, drivenLen: number) => {
+    const lo = [...lo0];
+    const hi = [...hi0];
+    lo[di] = tC - drivenLen / 2;
+    hi[di] = tC + drivenLen / 2;
+    let overRight = Math.max(0, hi[di] - wallHi(di));
+    let cursor = hi[di];
+    for (let j = di + 1; j < count; j++) {
+      const near = Math.max(lo0[j], cursor + OPENING_GAP);
+      let far = hi0[j];
+      let len = far - near;
+      const minLen = Math.min(MIN_OPENING, hi0[j] - lo0[j]);
+      if (len < minLen) {
+        len = minLen;
+        far = near + len;
+      }
+      lo[j] = near;
+      hi[j] = far;
+      overRight = Math.max(overRight, far - wallHi(j));
+      cursor = far;
+    }
+    let overLeft = Math.max(0, wallLo(di) - lo[di]);
+    cursor = lo[di];
+    for (let j = di - 1; j >= 0; j--) {
+      const far = Math.min(hi0[j], cursor - OPENING_GAP);
+      let near = lo0[j];
+      let len = far - near;
+      const minLen = Math.min(MIN_OPENING, hi0[j] - lo0[j]);
+      if (len < minLen) {
+        len = minLen;
+        near = far - len;
+      }
+      lo[j] = near;
+      hi[j] = far;
+      overLeft = Math.max(overLeft, wallLo(j) - near);
+      cursor = near;
+    }
+    return { lo, hi, overRight, overLeft };
+  };
+
+  let len = Math.max(MIN_OPENING, Math.min(desiredLen, wallLen - 2 * inset));
+  let tC = desiredT;
+  let result = attempt(tC, len);
+  for (let iteration = 0; iteration < 3 && (result.overRight > 1e-6 || result.overLeft > 1e-6); iteration++) {
+    if (result.overRight > 1e-6 && result.overLeft > 1e-6) {
+      len = Math.max(MIN_OPENING, len - result.overRight - result.overLeft);
+      tC += (result.overLeft - result.overRight) / 2;
+    } else if (result.overRight > 1e-6) {
+      tC -= result.overRight;
+    } else {
+      tC += result.overLeft;
+    }
+    result = attempt(tC, len);
+  }
+  return {
+    positions: result.lo.map((value, j) => (value + result.hi[j]) / 2),
+    lens: result.lo.map((value, j) => result.hi[j] - value),
+  };
+}
 
 interface WallGraphState {
   vertices: V2[];
@@ -134,6 +243,10 @@ interface Props {
   onClose: () => void;
   /** Saved entries (created or updated) — merge into the page's draft state. */
   onSaved: (entries: DraftDataEntry[]) => void;
+  /** Backend unit catalog — lengths display in the user's measurement system. */
+  units?: readonly UnitLookup[];
+  /** Unit id/code selected for area display; decides metric vs imperial. */
+  targetAreaUnit?: number | string | null;
 }
 
 const cloneGraph = (g: WallGraphState): WallGraphState => ({
@@ -147,7 +260,6 @@ const cloneEdits = (e: OpeningEditsState): OpeningEditsState => ({
 
 const dist = (a: V2, b: V2) => Math.hypot(a[0] - b[0], a[1] - b[1]);
 const mid = (a: V2, b: V2): V2 => [(a[0] + b[0]) / 2, (a[1] + b[1]) / 2];
-const fmt = (v: number, d = 2) => (Number.isFinite(v) ? v.toFixed(d) : "n/a");
 const projectPointToSegment = (point: V2, a: V2, b: V2): V2 => {
   const dx = b[0] - a[0];
   const dz = b[1] - a[1];
@@ -265,7 +377,7 @@ function initialProjection(base: ReturnType<typeof buildEditorBaseline>) {
 
 // ─────────────────────────────────────────────────────────────────────────────
 
-export default function FloorplanEditor({ draftId, draftData, lang, onClose, onSaved }: Props) {
+export default function FloorplanEditor({ draftId, draftData, lang, onClose, onSaved, units, targetAreaUnit }: Props) {
   // ── immutable scan baseline ────────────────────────────────────────────────
   const [base] = useState(() => buildEditorBaseline(draftData));
 
@@ -277,13 +389,70 @@ export default function FloorplanEditor({ draftId, draftData, lang, onClose, onS
   const [rotationDeg, setRotationDeg] = useState(() => floorplanRotationDegrees(base.textData));
   const [tool, setTool] = useState<Tool | null>(null);
   const [zoom, setZoom] = useState(DEFAULT_VIEW_ZOOM);
-  const [pan, setPan] = useState<{ x: number; y: number }>({ x: 0, y: 0 });
-  const [layersOpen, setLayersOpen] = useState(false);
+  const [pan, setPan] = useState<{ x: number; y: number }>(() => ({ ...DEFAULT_VIEW_PAN }));
   const [layers, setLayers] = useState({ doors: true, windows: true, labels: true, furniture: true });
+  // Right-panel state: the inspector binds to whichever element is selected
+  // (door via editingDoor, window via selectedWindowId, wall/furniture via
+  // moveSelection, which now survives the end of a drag).
+  const [inspectorTab, setInspectorTab] = useState<"properties" | "layers">("properties");
+  const [selectedWindowId, setSelectedWindowId] = useState<string | null>(null);
+  const [selectedRoomN, setSelectedRoomN] = useState<number | null>(null);
+  // Plan-level wall presentation, persisted with the plan. Thickness mirrors
+  // IFC's material-layer TotalThickness (one number per wall standard case);
+  // style switches between poché fill and outline per ISO 7519's graded
+  // simplification levels.
+  const [wallThicknessMm, setWallThicknessMm] = useState(() => {
+    const raw = Number(base.textData["floorplan_wall_thickness_mm"]);
+    return Number.isFinite(raw) && raw >= 60 && raw <= 400 ? Math.round(raw) : Math.round(WALL_THICKNESS * 1000);
+  });
+  const [wallStyle, setWallStyle] = useState<"solid" | "outline">(
+    base.textData["floorplan_wall_style"] === "outline" ? "outline" : "solid",
+  );
+  const wallT = wallThicknessMm / 1000;
+  // ── display units: backend lookups decide symbol and system ──────────────
+  const unitCatalog = useMemo(() => units ?? [], [units]);
+  const displayAreaUnit = useMemo(
+    () => resolveUnit(unitCatalog, targetAreaUnit ?? null, "AREA"),
+    [unitCatalog, targetAreaUnit],
+  );
+  const metricLengthUnit = useMemo(() => baseUnitForCategory(unitCatalog, "DISTANCE"), [unitCatalog]);
+  const imperialSystem = String(displayAreaUnit?.system ?? "").toUpperCase().includes("IMPERIAL");
+  const displayLengthUnit = useMemo(() => {
+    if (!imperialSystem) return metricLengthUnit ?? null;
+    const candidates = unitsForCategory(unitCatalog, "DISTANCE")
+      .filter((unit) => String(unit.system ?? "").toUpperCase().includes("IMPERIAL"));
+    return candidates.find((unit) => /^(ft|foot|feet)$/i.test(unit.code)) ?? candidates[0] ?? metricLengthUnit ?? null;
+  }, [imperialSystem, unitCatalog, metricLengthUnit]);
+  const lengthToDisplay = useCallback((metres: number) => {
+    if (!metricLengthUnit || !displayLengthUnit || metricLengthUnit.id === displayLengthUnit.id) return metres;
+    return convertUnitValue(metres, metricLengthUnit, displayLengthUnit) ?? metres;
+  }, [metricLengthUnit, displayLengthUnit]);
+  const displayToMetres = useCallback((value: number) => {
+    if (!metricLengthUnit || !displayLengthUnit || metricLengthUnit.id === displayLengthUnit.id) return value;
+    return convertUnitValue(value, displayLengthUnit, metricLengthUnit) ?? value;
+  }, [metricLengthUnit, displayLengthUnit]);
+  const lengthUnitSymbol = unitLabel(displayLengthUnit) || "m";
+  const formatLength = useCallback(
+    (metres: number, decimals = 2) => `${lengthToDisplay(metres).toFixed(decimals)} ${lengthUnitSymbol}`,
+    [lengthToDisplay, lengthUnitSymbol],
+  );
+  const [roomTypes, setRoomTypes] = useState<Record<number, string>>(() => {
+    const out: Record<number, string> = {};
+    for (const key of Object.keys(base.textData)) {
+      const m = /^room_(\d+)_type$/.exec(key);
+      if (m) out[Number(m[1])] = base.textData[key].trim().toLowerCase();
+    }
+    return out;
+  });
+  // The palette's "sliding door" tile arms the door tool with a Moving config
+  // for placements until the tool changes.
+  const [slidingDoorArmed, setSlidingDoorArmed] = useState(false);
   const [doorConfigs, setDoorConfigs] = useState<Record<string, DoorConfig>>(() => parseDoorConfigs(base.textData));
   const [labels, setLabels] = useState<Record<number, string>>(() => {
     const out: Record<number, string> = {};
     for (const n of roomNumbersInTextData(base.textData)) {
+      // An explicitly empty label is a deletion tombstone, not a room.
+      if (base.textData[`room_${n}_label`] === "") continue;
       const { label } = rawRoomLabel(n, base.textData);
       out[n] = label ?? `${t("floorplan.room", lang)} ${n}`;
     }
@@ -299,7 +468,6 @@ export default function FloorplanEditor({ draftId, draftData, lang, onClose, onS
     return out;
   });
   const [editingDoor, setEditingDoor] = useState<{ id: string; screen: [number, number] } | null>(null);
-  const [editingLabel, setEditingLabel] = useState<{ n: number; value: string; screen: [number, number] } | null>(null);
   const [saveState, setSaveState] = useState<"idle" | "saving" | "error">("idle");
 
   const undoStack = useRef<Snapshot[]>([]);
@@ -307,17 +475,23 @@ export default function FloorplanEditor({ draftId, draftData, lang, onClose, onS
   const persistTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const svgRef = useRef<SVGSVGElement | null>(null);
   const gesture = useRef<{
-    kind: "pan" | "draw" | "erase" | "moveEdge" | "moveFurniture" | "label" | null;
+    kind: "pan" | "draw" | "erase" | "moveEdge" | "moveFurniture" | "moveOpening" | "label" | null;
     start: V2;
     startScreen: [number, number];
     edgeIndex?: number;
     furnitureId?: string;
+    openingId?: string;
+    openingKind?: "door" | "window";
+    baseOpening?: [V2, V2];
+    hostA?: V2;
+    hostB?: V2;
     labelN?: number;
     baseGraph?: WallGraphState;
     baseEdits?: OpeningEditsState;
     baseFurniture?: ReturnType<typeof applyFurnitureEdits>;
     baseFurnitureEdits?: FloorplanFurnitureEdits;
     baseDoors?: Array<[V2, V2]>;
+    baseMarkers?: Record<number, V2>;
     basePan?: { x: number; y: number };
     baseOffset?: V2;
     moved?: boolean;
@@ -326,6 +500,32 @@ export default function FloorplanEditor({ draftId, draftData, lang, onClose, onS
   const [drawPreview, setDrawPreview] = useState<[V2, V2] | null>(null);
   const [eraseStroke, setEraseStroke] = useState<V2[]>([]);
   const [moveSelection, setMoveSelection] = useState<MoveSelection | null>(null);
+
+  // The editor floats over the draft page, whose scrollbar would otherwise
+  // keep living at the viewport edge and twitch on every wheel gesture. Lock
+  // page scroll for the editor's lifetime; the canvas owns the wheel.
+  useEffect(() => {
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => {
+      document.body.style.overflow = previousOverflow;
+    };
+  }, []);
+
+  // Canvas square side in CSS px — the viewBox maps onto min(width, height),
+  // so this converts world metres to on-screen px for the scale ruler.
+  const canvasBoxRef = useRef<HTMLDivElement | null>(null);
+  const [canvasSide, setCanvasSide] = useState(0);
+  useEffect(() => {
+    const node = canvasBoxRef.current;
+    if (!node || typeof ResizeObserver === "undefined") return;
+    const observer = new ResizeObserver((entries) => {
+      const rect = entries[0]?.contentRect;
+      if (rect) setCanvasSide(Math.min(rect.width, rect.height));
+    });
+    observer.observe(node);
+    return () => observer.disconnect();
+  }, []);
 
   // ── projection (fixed at mount; pan/zoom layered on top) ──────────────────
   const [proj0] = useState(() => initialProjection(base));
@@ -408,17 +608,40 @@ export default function FloorplanEditor({ draftId, draftData, lang, onClose, onS
   );
 
   // ── persistence ───────────────────────────────────────────────────────────
+  /**
+   * Field-resilient persistence: every key saves independently, failures are
+   * retained and merged into the next attempt, and the status chip's retry
+   * flushes them explicitly — a failed save is a pending save, not a shrug.
+   */
+  const failedFieldsRef = useRef<Record<string, string>>({});
   const persist = useCallback(
     async (fields: Record<string, string>) => {
       setSaveState("saving");
-      try {
-        const saved = await saveDraftDataFields(draftId, fields, [...entriesRef.current.values()]);
-        for (const entry of saved) entriesRef.current.set(entry.data_key, entry);
-        onSaved(saved);
+      const pending: Record<string, string> = { ...failedFieldsRef.current, ...fields };
+      failedFieldsRef.current = {};
+      const keys = Object.keys(pending);
+      if (!keys.length) {
         setSaveState("idle");
-      } catch {
-        setSaveState("error");
+        return;
       }
+      const results = await Promise.allSettled(
+        keys.map((key) => saveDraftDataFields(draftId, { [key]: pending[key] }, [...entriesRef.current.values()])),
+      );
+      const savedEntries: DraftDataEntry[] = [];
+      let anyFailed = false;
+      results.forEach((result, index) => {
+        if (result.status === "fulfilled") {
+          for (const entry of result.value) {
+            entriesRef.current.set(entry.data_key, entry);
+            savedEntries.push(entry);
+          }
+        } else {
+          anyFailed = true;
+          failedFieldsRef.current[keys[index]] = pending[keys[index]];
+        }
+      });
+      if (savedEntries.length) onSaved(savedEntries);
+      setSaveState(anyFailed ? "error" : "idle");
     },
     [draftId, onSaved]
   );
@@ -436,6 +659,7 @@ export default function FloorplanEditor({ draftId, draftData, lang, onClose, onS
       floorplan_furniture_edits_json: JSON.stringify({
         deletedSourceObjectIDs: f.deletedSourceObjectIDs,
         objectCenterOverrides: f.objectCenterOverrides,
+        objectRotationOverrides: f.objectRotationOverrides,
       }),
     }),
     []
@@ -500,6 +724,33 @@ export default function FloorplanEditor({ draftId, draftData, lang, onClose, onS
     [srcDoors, customDoors]
   );
   const windows = useMemo(() => [...srcWindows, ...customWindows], [srcWindows, customWindows]);
+
+  /**
+   * Free span (distances along the wall from `a`) around `aroundT`, bounded by
+   * every other opening hosted on the same wall plus 5 cm clearance — the same
+   * rigid-collision discipline walls and furniture already obey, applied to
+   * openings so a door can never slide over a window.
+   */
+  const freeWallSpan = useCallback((a: V2, b: V2, aroundT: number, excludeId: string | null): [number, number] => {
+    const wallLen = Math.max(dist(a, b), 1e-4);
+    const ux = (b[0] - a[0]) / wallLen;
+    const uz = (b[1] - a[1]) / wallLen;
+    let start = wallLen * 0.02;
+    let end = wallLen - wallLen * 0.02;
+    const margin = 0.05;
+    for (const other of [...doors, ...windows]) {
+      if (excludeId && other.id === excludeId) continue;
+      const otherMid = mid(other.p1, other.p2);
+      if (distancePointToSegment(otherMid, a, b) > 0.3) continue;
+      const o1 = (other.p1[0] - a[0]) * ux + (other.p1[1] - a[1]) * uz;
+      const o2 = (other.p2[0] - a[0]) * ux + (other.p2[1] - a[1]) * uz;
+      const lo = Math.min(o1, o2) - margin;
+      const hi = Math.max(o1, o2) + margin;
+      if (hi <= aroundT) start = Math.max(start, hi);
+      else if (lo >= aroundT) end = Math.min(end, lo);
+    }
+    return [start, end];
+  }, [doors, windows]);
   const openings = srcOpenings;
   const interior = useMemo<V2>(() => {
     let sx = 0;
@@ -583,29 +834,23 @@ export default function FloorplanEditor({ draftId, draftData, lang, onClose, onS
     return baselinePresentedFurniture.flatMap((object) => {
       const collisionObject = collisionById.get(object.id);
       const baselineObject = baselineById.get(object.id);
-      return collisionObject
-        && baselineObject
-        ? [{
-            ...object,
-            center: [
-              object.center[0] + collisionObject.center[0] - baselineObject.center[0],
-              object.center[1] + collisionObject.center[1] - baselineObject.center[1],
-            ] as V2,
-          }]
-        : [];
+      if (!collisionObject || !baselineObject) return [];
+      const moved = {
+        ...object,
+        center: [
+          object.center[0] + collisionObject.center[0] - baselineObject.center[0],
+          object.center[1] + collisionObject.center[1] - baselineObject.center[1],
+        ] as V2,
+      };
+      const rotation = furnitureEdits.objectRotationOverrides[object.id.toLowerCase()];
+      return [rotation ? rotateFurnitureAxes(moved, rotation) : moved];
     });
-  }, [baselineFurniture, baselinePresentedFurniture, collisionFurniture]);
-  useEffect(() => {
-    if (tool !== "move") {
-      setMoveSelection(null);
-    }
-  }, [tool]);
+  }, [baselineFurniture, baselinePresentedFurniture, collisionFurniture, furnitureEdits]);
 
-  const roomNumbers = useMemo(() => {
-    const set = new Set(roomNumbersInTextData(base.textData));
-    for (const key of Object.keys(labels)) set.add(Number(key));
-    return [...set].sort((a, b) => a - b);
-  }, [base.textData, labels]);
+  const roomNumbers = useMemo(
+    () => Object.keys(labels).map(Number).sort((a, b) => a - b),
+    [labels],
+  );
 
   const labelPositions = useMemo(() => {
     const centresByIndex: Record<number, V2> = { ...(base.geom?.floorCentresByIndex ?? {}) };
@@ -729,7 +974,7 @@ export default function FloorplanEditor({ draftId, draftData, lang, onClose, onS
         commit(cloneGraph(graph), cloneEdits(edits), nextFurnitureEdits);
         return;
       }
-      const wallTol = WALL_THICKNESS * 0.5 + 6 / pxPerMeter;
+      const wallTol = wallT * 0.5 + 6 / pxPerMeter;
       const openTol = wallTol + 8 / pxPerMeter;
       const hitSeg = (p1: V2, p2: V2, tol: number) =>
         stroke.some((p) => distancePointToSegment(p, p1, p2) <= tol);
@@ -768,7 +1013,51 @@ export default function FloorplanEditor({ draftId, draftData, lang, onClose, onS
       g.edges = g.edges.filter((_, i) => !removedEdges.has(i));
       commit(pruneOrphans(g), e, cloneFurnitureEdits(furnitureEdits));
     },
-    [graph, edits, furniture, furnitureEdits, base.geom, pxPerMeter, pushUndo, commit]
+    [graph, edits, furniture, furnitureEdits, base.geom, pxPerMeter, wallT, pushUndo, commit]
+  );
+
+  const saveDoorConfig = useCallback(
+    (doorId: string, cfg: DoorConfig) => {
+      setDoorConfigs((prev) => ({ ...prev, [doorId]: cfg }));
+      // Find the existing door_N_camera key for this door, else allocate N.
+      let key: string | null = null;
+      let maxN = 0;
+      for (const [k, v] of Object.entries(base.textData)) {
+        const m = /^door_(\d+)_camera$/.exec(k);
+        if (!m) continue;
+        maxN = Math.max(maxN, parseInt(m[1], 10));
+        try {
+          if (String((JSON.parse(v) as { door_id?: string }).door_id ?? "").toLowerCase() === doorId) key = k;
+        } catch {
+          /* skip */
+        }
+      }
+      for (const k of entriesRef.current.keys()) {
+        const m = /^door_(\d+)_camera$/.exec(k);
+        if (m) maxN = Math.max(maxN, parseInt(m[1], 10));
+      }
+      const n = key ? parseInt(key.split("_")[1], 10) : maxN + 1;
+      const existingRaw = key ? base.textData[key] : null;
+      let merged: Record<string, unknown> = {};
+      if (existingRaw) {
+        try {
+          merged = JSON.parse(existingRaw) as Record<string, unknown>;
+        } catch {
+          merged = {};
+        }
+      }
+      merged = {
+        ...merged,
+        door_id: doorId,
+        door_number: n,
+        door_type: cfg.doorType,
+        hinge_side: cfg.hingeSide,
+        swing_direction: cfg.swingDirection,
+        is_user_configured: true,
+      };
+      void persist({ [`door_${n}_camera`]: JSON.stringify(merged) });
+    },
+    [base.textData, persist]
   );
 
   const placeOpening = useCallback(
@@ -780,20 +1069,33 @@ export default function FloorplanEditor({ draftId, draftData, lang, onClose, onS
       const b = graph.vertices[e.b];
       const wallLen = dist(a, b);
       if (wallLen < MIN_WALL_FOR_OPENING) return;
-      const len = Math.max(MIN_OPENING, Math.min(kind === "door" ? DEFAULT_DOOR : DEFAULT_WINDOW, wallLen - 0.1));
       const ux = (b[0] - a[0]) / wallLen;
       const uz = (b[1] - a[1]) / wallLen;
       const tRaw = (w[0] - a[0]) * ux + (w[1] - a[1]) * uz;
-      const inset = wallLen * 0.02 + len / 2;
-      const tC = Math.max(inset, Math.min(wallLen - inset, tRaw));
+      const [spanStart, spanEnd] = freeWallSpan(a, b, tRaw, null);
+      const len = Math.max(MIN_OPENING, Math.min(
+        kind === "door" ? DEFAULT_DOOR : DEFAULT_WINDOW,
+        wallLen - 0.1,
+        spanEnd - spanStart,
+      ));
+      const centreLo = spanStart + len / 2;
+      const centreHi = spanEnd - len / 2;
+      if (centreLo > centreHi || spanEnd - spanStart < MIN_OPENING) return;
+      const tC = Math.max(centreLo, Math.min(centreHi, tRaw));
       const p1: V2 = [a[0] + ux * (tC - len / 2), a[1] + uz * (tC - len / 2)];
       const p2: V2 = [a[0] + ux * (tC + len / 2), a[1] + uz * (tC + len / 2)];
       pushUndo();
+      const id = randomUUID().toLowerCase();
       const next = cloneEdits(edits);
-      next.customOpenings.push({ id: crypto.randomUUID().toLowerCase(), kind, p1, p2 });
+      next.customOpenings.push({ id, kind, p1, p2 });
       commit(cloneGraph(graph), next, cloneFurnitureEdits(furnitureEdits));
+      // The palette's sliding-door tile pre-arms the Moving configuration so
+      // the placed door is born sliding instead of needing a second edit.
+      if (kind === "door" && slidingDoorArmed) {
+        saveDoorConfig(id, { doorType: "Moving", hingeSide: "Moving", swingDirection: "Moving" });
+      }
     },
-    [graph, edits, furnitureEdits, nearestEdge, pushUndo, commit]
+    [graph, edits, furnitureEdits, nearestEdge, freeWallSpan, pushUndo, commit, saveDoorConfig, slidingDoorArmed]
   );
 
   const addRoom = useCallback(
@@ -802,13 +1104,324 @@ export default function FloorplanEditor({ draftId, draftData, lang, onClose, onS
       const name = `${t("floorplan.room", lang)} ${n}`;
       setLabels((prev) => ({ ...prev, [n]: name }));
       setMarkers((prev) => ({ ...prev, [n]: w }));
+      // Markers persist in the raw scan frame; the editor works in the
+      // snapped frame, so store through the inverse or the next load (and
+      // the detail preview) applies the snap rotation twice.
+      const stored = base.geom ? rotateFromSnappedFrame(w, base.geom) : w;
       void persist({
         [`room_${n}_label`]: name,
-        [`room_${n}_marker_x`]: w[0].toFixed(4),
-        [`room_${n}_marker_z`]: w[1].toFixed(4),
+        [`room_${n}_marker_x`]: stored[0].toFixed(4),
+        [`room_${n}_marker_z`]: stored[1].toFixed(4),
       });
+      // One room per activation: hand control back to the select state with
+      // the fresh room selected, ready to name and type in the inspector.
+      setTool(null);
+      setSelectedRoomN(n);
+      setEditingDoor(null);
+      setSelectedWindowId(null);
+      setMoveSelection(null);
     },
-    [roomNumbers, lang, persist]
+    [roomNumbers, lang, persist, base.geom]
+  );
+
+  /**
+   * Remove a room. Only keys that actually exist are touched (creating new
+   * blank entries is what backends reject), blanked as tombstones; if the
+   * backend refuses a blank write, the entry is deleted outright instead.
+   */
+  const deleteRoom = useCallback(async (n: number) => {
+    const omit = <T,>(record: Record<number, T>): Record<number, T> => {
+      const next = { ...record };
+      delete next[n];
+      return next;
+    };
+    setLabels(omit);
+    setMarkers(omit);
+    setLabelOffsets(omit);
+    setRoomTypes(omit);
+    setSelectedRoomN(null);
+    const keys = [
+      `room_${n}_label`,
+      `room_${n}_marker_x`,
+      `room_${n}_marker_z`,
+      `room_${n}_label_offset_x`,
+      `room_${n}_label_offset_z`,
+      `room_${n}_type`,
+    ].filter((key) => entriesRef.current.has(key));
+    if (!keys.length) return;
+    setSaveState("saving");
+    const propagated: DraftDataEntry[] = [];
+    let anyFailed = false;
+    for (const key of keys) {
+      const previous = entriesRef.current.get(key)!;
+      try {
+        const saved = await saveDraftDataFields(draftId, { [key]: "" }, [...entriesRef.current.values()]);
+        for (const entry of saved) {
+          entriesRef.current.set(entry.data_key, entry);
+          propagated.push(entry);
+        }
+      } catch {
+        try {
+          await deleteDraftDataEntry(previous.id);
+          entriesRef.current.delete(key);
+          propagated.push({ ...previous, data_value: "" });
+        } catch {
+          anyFailed = true;
+        }
+      }
+    }
+    if (propagated.length) onSaved(propagated);
+    setSaveState(anyFailed ? "error" : "idle");
+  }, [draftId, onSaved]);
+
+  // Switching tools starts a fresh interaction — a stale selection would leave
+  // the inspector editing something the canvas no longer highlights.
+  useEffect(() => {
+    if (tool !== "door") setSlidingDoorArmed(false);
+    // Switching to the select state (tool == null) keeps the current
+    // selection — the DCC convention; arming a drawing tool clears it.
+    if (tool == null) return;
+    setMoveSelection(null);
+    setSelectedWindowId(null);
+    setEditingDoor(null);
+    setSelectedRoomN(null);
+  }, [tool]);
+
+  const applyWallThickness = useCallback((mm: number) => {
+    const next = Math.round(Math.max(60, Math.min(400, mm)));
+    setWallThicknessMm(next);
+    void persist({ floorplan_wall_thickness_mm: String(next) });
+  }, [persist]);
+
+  const applyWallStyle = useCallback((style: "solid" | "outline") => {
+    setWallStyle(style);
+    void persist({ floorplan_wall_style: style });
+  }, [persist]);
+
+  const applyRoomType = useCallback((n: number, code: (typeof ROOM_TYPE_CODES)[number]) => {
+    const name = t(`rooms.${code}`, lang);
+    setRoomTypes((prev) => ({ ...prev, [n]: code }));
+    setLabels((prev) => ({ ...prev, [n]: name }));
+    void persist({
+      [`room_${n}_type`]: code.toUpperCase(),
+      [`room_${n}_label`]: name,
+    });
+  }, [lang, persist]);
+
+  /** Remove an opening: authored ones vanish, scan ones are tombstoned. */
+  const deleteOpening = useCallback(
+    (id: string) => {
+      pushUndo();
+      const e = cloneEdits(edits);
+      if (e.customOpenings.some((o) => o.id === id)) {
+        e.customOpenings = e.customOpenings.filter((o) => o.id !== id);
+      } else if (!e.deletedSourceOpeningIDs.includes(id)) {
+        e.deletedSourceOpeningIDs.push(id);
+      }
+      commit(cloneGraph(graph), e, cloneFurnitureEdits(furnitureEdits));
+      setEditingDoor(null);
+      setSelectedWindowId(null);
+    },
+    [graph, edits, furnitureEdits, pushUndo, commit]
+  );
+
+  /**
+   * Set an opening's width, scaling around its midpoint and clamped to its
+   * host wall. A scan opening becomes an authored one with the same identity
+   * first — the same conversion moveWall applies before transforming one.
+   */
+  const resizeOpening = useCallback(
+    (id: string, kind: "door" | "window", nextLen: number) => {
+      const all = [
+        ...doors.map((d) => ({ id: d.id, kind: "door" as const, p1: d.p1, p2: d.p2 })),
+        ...windows.map((win) => ({ id: win.id, kind: "window" as const, p1: win.p1, p2: win.p2 })),
+      ];
+      const current = all.find((o) => o.id === id);
+      if (!current) return;
+      const centre = mid(current.p1, current.p2);
+      const hostIndex = nearestEdge(centre, OPENING_PLACE_PX);
+      if (hostIndex == null) return;
+      const edge = graph.edges[hostIndex];
+      const a = graph.vertices[edge.a];
+      const b = graph.vertices[edge.b];
+      const wallLen = Math.max(dist(a, b), 1e-4);
+      const ux = (b[0] - a[0]) / wallLen;
+      const uz = (b[1] - a[1]) / wallLen;
+      const tOf = (p1: V2, p2: V2) => ((p1[0] + p2[0]) / 2 - a[0]) * ux + ((p1[1] + p2[1]) / 2 - a[1]) * uz;
+      const items = all
+        .filter((o) => distancePointToSegment(mid(o.p1, o.p2), a, b) <= 0.3)
+        .map((o) => ({ id: o.id, kind: o.kind, len: Math.max(dist(o.p1, o.p2), MIN_OPENING), t: tOf(o.p1, o.p2) }))
+        .sort((p, q) => p.t - q.t);
+      const di = items.findIndex((item) => item.id === id);
+      if (di < 0) return;
+      const { positions, lens } = solveWallSlide(items, di, items[di].t, Math.max(MIN_OPENING, nextLen), wallLen);
+      const anyMove = items.some((item, index) => (
+        Math.abs(positions[index] - item.t) > 1e-4 || Math.abs(lens[index] - item.len) > 1e-4
+      ));
+      if (Math.abs(lens[di] - items[di].len) < 0.005 && !anyMove) return;
+      pushUndo();
+      const e = cloneEdits(edits);
+      items.forEach((item, index) => {
+        const itemLen = lens[index];
+        if (index !== di && Math.abs(positions[index] - item.t) < 1e-4 && Math.abs(itemLen - item.len) < 1e-4) return;
+        const tC = positions[index];
+        const p1: V2 = [a[0] + ux * (tC - itemLen / 2), a[1] + uz * (tC - itemLen / 2)];
+        const p2: V2 = [a[0] + ux * (tC + itemLen / 2), a[1] + uz * (tC + itemLen / 2)];
+        const existing = e.customOpenings.findIndex((o) => o.id === item.id);
+        if (existing >= 0) {
+          e.customOpenings[existing] = { ...e.customOpenings[existing], p1, p2 };
+        } else {
+          if (!e.deletedSourceOpeningIDs.includes(item.id)) e.deletedSourceOpeningIDs.push(item.id);
+          e.customOpenings.push({ id: item.id, kind: item.kind, p1, p2 });
+        }
+      });
+      commit(cloneGraph(graph), e, cloneFurnitureEdits(furnitureEdits));
+    },
+    [doors, windows, graph, edits, furnitureEdits, nearestEdge, pushUndo, commit]
+  );
+
+  /**
+   * Rotate a furniture object by quarter turns — through the collision solve,
+   * so a rotated sofa gets pushed back inside the room instead of clipping
+   * through a wall; with no free pose nearby, the rotation is refused.
+   */
+  const rotateFurnitureObject = useCallback((id: string, deltaDeg: number) => {
+    const result = rotateFurniture(
+      collisionFurniture,
+      id,
+      graph,
+      deltaDeg,
+      doors.map((door) => [door.p1, door.p2] as [V2, V2]),
+    );
+    if (result.blocked) {
+      setMoveSelection({ kind: "furniture", id, blocked: true });
+      return;
+    }
+    pushUndo();
+    let next = cloneFurnitureEdits(furnitureEdits);
+    const key = id.toLowerCase();
+    const rotation = (((next.objectRotationOverrides[key] ?? 0) + deltaDeg) % 360 + 360) % 360;
+    if (rotation === 0) delete next.objectRotationOverrides[key];
+    else next.objectRotationOverrides[key] = rotation;
+    next = recordFurnitureCenters(next, collisionFurniture, result.objects);
+    commit(cloneGraph(graph), cloneEdits(edits), next);
+  }, [collisionFurniture, doors, graph, edits, furnitureEdits, pushUndo, commit]);
+
+  /** Remove the selected wall chain and every opening it hosts. */
+  const deleteEdgeChain = useCallback(
+    (seedIndex: number) => {
+      const chain = collinearEdgeChain(graph, seedIndex);
+      if (!chain.size) return;
+      const g = cloneGraph(graph);
+      const e = cloneEdits(edits);
+      const hostedByChain = (point: V2) => [...chain].some((index) => {
+        const edge = g.edges[index];
+        return !!edge && distancePointToSegment(point, g.vertices[edge.a], g.vertices[edge.b]) <= 0.3;
+      });
+      const deleted = new Set(e.deletedSourceOpeningIDs);
+      for (const source of [...(base.geom?.doors ?? []), ...(base.geom?.windows ?? [])]) {
+        if (!deleted.has(source.id) && hostedByChain(mid(source.p1, source.p2))) deleted.add(source.id);
+      }
+      e.customOpenings = e.customOpenings.filter((opening) => !hostedByChain(mid(opening.p1, opening.p2)));
+      e.deletedSourceOpeningIDs = [...deleted];
+      g.edges = g.edges.filter((_, index) => !chain.has(index));
+      pushUndo();
+      commit(pruneOrphans(g), e, cloneFurnitureEdits(furnitureEdits));
+      setMoveSelection(null);
+    },
+    [graph, edits, furnitureEdits, base.geom, pushUndo, commit]
+  );
+
+  /** Remove a furniture object — the erase tool's tombstone, from the panel. */
+  const deleteFurnitureObject = useCallback(
+    (id: string) => {
+      pushUndo();
+      const next = cloneFurnitureEdits(furnitureEdits);
+      const key = id.toLowerCase();
+      if (!next.deletedSourceObjectIDs.includes(key)) next.deletedSourceObjectIDs.push(key);
+      delete next.objectCenterOverrides[key];
+      commit(cloneGraph(graph), cloneEdits(edits), next);
+      setMoveSelection(null);
+    },
+    [graph, edits, furnitureEdits, pushUndo, commit]
+  );
+
+  /**
+   * The opening-drag gesture, shared by pointer-move (live preview) and
+   * pointer-up (commit): slide the door/window along its host wall to the
+   * pointer, clamped the same way placement clamps, converting a scan opening
+   * into an authored one with the same identity on first touch.
+   */
+  const openingDragEdits = useCallback(
+    (
+      g: { openingId?: string; openingKind?: "door" | "window"; baseOpening?: [V2, V2]; hostA?: V2; hostB?: V2; baseEdits?: OpeningEditsState },
+      w: V2,
+    ): OpeningEditsState | null => {
+      if (!g.openingId || !g.openingKind || !g.baseOpening || !g.hostA || !g.hostB || !g.baseEdits) return null;
+      const a = g.hostA;
+      const b = g.hostB;
+      const wallLen = Math.max(dist(a, b), 1e-4);
+      const ux = (b[0] - a[0]) / wallLen;
+      const uz = (b[1] - a[1]) / wallLen;
+      const tOf = (p1: V2, p2: V2) =>
+        ((p1[0] + p2[0]) / 2 - a[0]) * ux + ((p1[1] + p2[1]) / 2 - a[1]) * uz;
+
+      /*
+       * Neighbours are rebuilt from the gesture's base state (not the live
+       * render lists) so every drag frame is an idempotent solve from the same
+       * starting layout. Dragging pushes them along the wall — the same
+       * rigid-body rule walls apply to furniture — and the chain clamps as a
+       * whole when its last member reaches the wall end.
+       */
+      type SlideItem = { id: string; kind: "door" | "window"; len: number; t: number };
+      const items: SlideItem[] = [];
+      const deletedBase = new Set(g.baseEdits.deletedSourceOpeningIDs);
+      const shadowed = new Set(g.baseEdits.customOpenings.map((o) => o.id));
+      const pushBase = (id: string, kind: "door" | "window", p1: V2, p2: V2) => {
+        if (id === g.openingId) return;
+        if (distancePointToSegment(mid(p1, p2), a, b) > 0.3) return;
+        items.push({ id, kind, len: Math.max(dist(p1, p2), MIN_OPENING), t: tOf(p1, p2) });
+      };
+      for (const s of base.geom?.doors ?? []) {
+        if (!deletedBase.has(s.id) && !shadowed.has(s.id)) pushBase(s.id, "door", s.p1, s.p2);
+      }
+      for (const s of base.geom?.windows ?? []) {
+        if (!deletedBase.has(s.id) && !shadowed.has(s.id)) pushBase(s.id, "window", s.p1, s.p2);
+      }
+      for (const o of g.baseEdits.customOpenings) pushBase(o.id, o.kind, o.p1, o.p2);
+
+      const dragged: SlideItem = {
+        id: g.openingId,
+        kind: g.openingKind,
+        len: Math.max(dist(g.baseOpening[0], g.baseOpening[1]), MIN_OPENING),
+        t: tOf(g.baseOpening[0], g.baseOpening[1]),
+      };
+      items.push(dragged);
+      items.sort((p, q) => p.t - q.t);
+      const di = items.indexOf(dragged);
+      const tRaw = (w[0] - a[0]) * ux + (w[1] - a[1]) * uz;
+      const { positions, lens } = solveWallSlide(items, di, tRaw, dragged.len, wallLen);
+
+      const nextEdits = cloneEdits(g.baseEdits);
+      let changed = false;
+      items.forEach((item, index) => {
+        const tC = positions[index];
+        const itemLen = lens[index];
+        if (Math.abs(tC - item.t) < 1e-4 && Math.abs(itemLen - item.len) < 1e-4 && item.id !== g.openingId) return;
+        const p1: V2 = [a[0] + ux * (tC - itemLen / 2), a[1] + uz * (tC - itemLen / 2)];
+        const p2: V2 = [a[0] + ux * (tC + itemLen / 2), a[1] + uz * (tC + itemLen / 2)];
+        const existing = nextEdits.customOpenings.findIndex((o) => o.id === item.id);
+        if (existing >= 0) {
+          nextEdits.customOpenings[existing] = { ...nextEdits.customOpenings[existing], p1, p2 };
+        } else {
+          if (!nextEdits.deletedSourceOpeningIDs.includes(item.id)) nextEdits.deletedSourceOpeningIDs.push(item.id);
+          nextEdits.customOpenings.push({ id: item.id, kind: item.kind, p1, p2 });
+        }
+        changed = true;
+      });
+      return changed ? nextEdits : null;
+    },
+    [base.geom]
   );
 
   /** Reproject custom openings on edges touched by a move (length + ratio kept). */
@@ -890,14 +1503,43 @@ export default function FloorplanEditor({ draftId, draftData, lang, onClose, onS
     [base.geom]
   );
 
+  /**
+   * A moving wall pushes room label markers ahead of it — same rigid rule as
+   * furniture — so a shrinking room never leaves its badge inside the wall.
+   */
+  const pushedMarkers = useCallback((
+    baseMarkers: Record<number, V2>,
+    baseGraph: WallGraphState,
+    edgeIndex: number,
+    wallDelta: V2,
+  ): Record<number, V2> => {
+    const distanceMoved = Math.hypot(wallDelta[0], wallDelta[1]);
+    if (distanceMoved <= 1e-6) return baseMarkers;
+    const dir: V2 = [wallDelta[0] / distanceMoved, wallDelta[1] / distanceMoved];
+    const chain = collinearEdgeChain(baseGraph, edgeIndex);
+    const clearance = wallT / 2 + 0.35;
+    const next: Record<number, V2> = { ...baseMarkers };
+    for (const [key, marker] of Object.entries(baseMarkers)) {
+      let along = Number.POSITIVE_INFINITY;
+      for (const index of chain) {
+        const edge = baseGraph.edges[index];
+        if (!edge) continue;
+        const nearest = projectPointToSegment(marker, baseGraph.vertices[edge.a], baseGraph.vertices[edge.b]);
+        const rel: V2 = [marker[0] - nearest[0], marker[1] - nearest[1]];
+        along = Math.min(along, rel[0] * dir[0] + rel[1] * dir[1]);
+      }
+      if (!Number.isFinite(along)) continue;
+      if (along > -clearance && along < distanceMoved + clearance) {
+        const push = distanceMoved + clearance - along;
+        next[Number(key)] = [marker[0] + dir[0] * push, marker[1] + dir[1] * push];
+      }
+    }
+    return next;
+  }, [wallT]);
+
   // ── pointer handlers ──────────────────────────────────────────────────────
   const onPointerDown = useCallback(
     (ev: React.PointerEvent<SVGSVGElement>) => {
-      if (editingDoor || editingLabel) {
-        setEditingDoor(null);
-        setEditingLabel(null);
-        return;
-      }
       (ev.target as Element).setPointerCapture?.(ev.pointerId);
       const w = screenToWorld(ev.clientX, ev.clientY);
       const sp = screenPx(ev.clientX, ev.clientY);
@@ -918,27 +1560,118 @@ export default function FloorplanEditor({ draftId, draftData, lang, onClose, onS
         g.kind = null;
         return;
       }
+      /** Capture the state a move gesture transforms against. */
+      const beginBases = () => {
+        g.baseGraph = cloneGraph(graph);
+        g.baseEdits = cloneEdits(edits);
+        g.baseFurniture = collisionFurniture.map((object) => ({ ...object, center: [...object.center] as V2 }));
+        g.baseFurnitureEdits = cloneFurnitureEdits(furnitureEdits);
+        g.baseDoors = doors.map((door) => [[...door.p1] as V2, [...door.p2] as V2]);
+        g.baseMarkers = Object.fromEntries(
+          Object.entries(markers).map(([key, marker]) => [key, [...marker] as V2]),
+        );
+      };
+
+      /** Furniture/wall hit. The select state only selects; the move tool
+          also arms the drag — an accidental drag can no longer shift a wall. */
+      const beginMoveInteraction = (selectOnly: boolean): boolean => {
+        const furnitureHit = furniture
+          .map((object) => ({ object, depth: pointInsideFurnitureDepth(w, object) }))
+          .filter((hit) => hit.depth >= 0)
+          .sort((a, b) =>
+            Number(Boolean(b.object.parentId)) - Number(Boolean(a.object.parentId))
+            || b.depth - a.depth
+            || a.object.id.localeCompare(b.object.id)
+          )[0];
+        const edgeAtPointer = nearestEdge(w, EDGE_PICK_PX);
+        const armFurniture = () => {
+          g.kind = selectOnly ? null : "moveFurniture";
+          g.furnitureId = furnitureHit!.object.id;
+          setMoveSelection({ kind: "furniture", id: furnitureHit!.object.id, blocked: false });
+          setEditingDoor(null);
+          setSelectedWindowId(null);
+          setSelectedRoomN(null);
+          if (!selectOnly) beginBases();
+        };
+        if (furnitureHit && (furnitureHit.depth >= 0.025 || edgeAtPointer == null)) {
+          armFurniture();
+          return true;
+        }
+        if (edgeAtPointer != null) {
+          g.kind = selectOnly ? null : "moveEdge";
+          g.edgeIndex = edgeAtPointer;
+          setMoveSelection({ kind: "edge", index: edgeAtPointer, blocked: false });
+          setEditingDoor(null);
+          setSelectedWindowId(null);
+          setSelectedRoomN(null);
+          if (!selectOnly) beginBases();
+          return true;
+        }
+        if (furnitureHit) {
+          armFurniture();
+          return true;
+        }
+        return false;
+      };
+
+      /** Door/window hit → select; the move tool also arms the slide. */
+      const beginOpeningInteraction = (selectOnly: boolean): boolean => {
+        const openingTol = 22 / pxPerMeter;
+        const arm = (opening: { id: string; p1: V2; p2: V2 }, kind: "door" | "window"): boolean => {
+          const centre = mid(opening.p1, opening.p2);
+          if (dist(centre, w) > openingTol) return false;
+          if (kind === "door") {
+            const [sx, sy] = proj(...centre);
+            setEditingDoor({ id: opening.id, screen: [sx * zoom + pan.x, sy * zoom + pan.y] });
+            setSelectedWindowId(null);
+          } else {
+            setSelectedWindowId(opening.id);
+            setEditingDoor(null);
+          }
+          setSelectedRoomN(null);
+          setMoveSelection(null);
+          const hostIndex = selectOnly ? null : nearestEdge(centre, OPENING_PLACE_PX);
+          if (hostIndex == null) {
+            g.kind = null;
+            return true;
+          }
+          const hostEdge = graph.edges[hostIndex];
+          g.kind = "moveOpening";
+          g.openingId = opening.id;
+          g.openingKind = kind;
+          g.baseOpening = [[...opening.p1] as V2, [...opening.p2] as V2];
+          g.hostA = [...graph.vertices[hostEdge.a]] as V2;
+          g.hostB = [...graph.vertices[hostEdge.b]] as V2;
+          g.baseEdits = cloneEdits(edits);
+          return true;
+        };
+        for (const d of doors) if (arm(d, "door")) return true;
+        for (const win of windows) if (arm({ id: win.id, p1: win.p1, p2: win.p2 }, "window")) return true;
+        return false;
+      };
+
       if (!tool) {
-        // Label hit first, then door config target, else pan.
+        // The neutral state is a full select mode: labels, doors, windows,
+        // furniture, and walls all answer a plain click — tapping selects for
+        // the inspector, dragging repositions. Only empty canvas pans.
         const labelTol = 16 / pxPerMeter;
         for (const n of roomNumbers) {
           const pos = labelPositions[n];
           if (pos && dist(pos, w) <= labelTol) {
-            g.kind = "label";
-            g.labelN = n;
-            g.baseOffset = labelOffsets[n] ?? [0, 0];
-            return;
-          }
-        }
-        const doorTol = 22 / pxPerMeter;
-        for (const d of doors) {
-          if (dist(mid(d.p1, d.p2), w) <= doorTol) {
-            const [sx, sy] = proj(...mid(d.p1, d.p2));
-            setEditingDoor({ id: d.id, screen: [sx * zoom + pan.x, sy * zoom + pan.y] });
+            setSelectedRoomN(n);
+            setEditingDoor(null);
+            setSelectedWindowId(null);
+            setMoveSelection(null);
             g.kind = null;
             return;
           }
         }
+        if (beginOpeningInteraction(true)) return;
+        if (beginMoveInteraction(true)) return;
+        setEditingDoor(null);
+        setSelectedWindowId(null);
+        setMoveSelection(null);
+        setSelectedRoomN(null);
         g.kind = "pan";
         g.basePan = { ...pan };
         return;
@@ -955,50 +1688,23 @@ export default function FloorplanEditor({ draftId, draftData, lang, onClose, onS
           setEraseStroke([w]);
           return;
         case "move": {
-          const furnitureHit = furniture
-            .map((object) => ({ object, depth: pointInsideFurnitureDepth(w, object) }))
-            .filter((hit) => hit.depth >= 0)
-            .sort((a, b) =>
-              Number(Boolean(b.object.parentId)) - Number(Boolean(a.object.parentId))
-              || b.depth - a.depth
-              || a.object.id.localeCompare(b.object.id)
-            )[0];
-          const edgeAtPointer = nearestEdge(w, EDGE_PICK_PX);
-          if (furnitureHit && (furnitureHit.depth >= 0.025 || edgeAtPointer == null)) {
-            g.kind = "moveFurniture";
-            g.furnitureId = furnitureHit.object.id;
-            setMoveSelection({ kind: "furniture", id: furnitureHit.object.id, blocked: false });
-            g.baseGraph = cloneGraph(graph);
-            g.baseEdits = cloneEdits(edits);
-            g.baseFurniture = collisionFurniture.map((object) => ({ ...object, center: [...object.center] as V2 }));
-            g.baseFurnitureEdits = cloneFurnitureEdits(furnitureEdits);
-            g.baseDoors = doors.map((door) => [[...door.p1] as V2, [...door.p2] as V2]);
-            return;
+          const labelTol = 16 / pxPerMeter;
+          for (const n of roomNumbers) {
+            const pos = labelPositions[n];
+            if (pos && dist(pos, w) <= labelTol) {
+              g.kind = "label";
+              g.labelN = n;
+              g.baseOffset = labelOffsets[n] ?? [0, 0];
+              setSelectedRoomN(n);
+              return;
+            }
           }
-          const ei = edgeAtPointer;
-          if (ei != null) {
-            g.kind = "moveEdge";
-            g.edgeIndex = ei;
-            setMoveSelection({ kind: "edge", index: ei, blocked: false });
-            g.baseGraph = cloneGraph(graph);
-            g.baseEdits = cloneEdits(edits);
-            g.baseFurniture = collisionFurniture.map((object) => ({ ...object, center: [...object.center] as V2 }));
-            g.baseFurnitureEdits = cloneFurnitureEdits(furnitureEdits);
-            g.baseDoors = doors.map((door) => [[...door.p1] as V2, [...door.p2] as V2]);
-            return;
-          }
-          if (furnitureHit) {
-            g.kind = "moveFurniture";
-            g.furnitureId = furnitureHit.object.id;
-            setMoveSelection({ kind: "furniture", id: furnitureHit.object.id, blocked: false });
-            g.baseGraph = cloneGraph(graph);
-            g.baseEdits = cloneEdits(edits);
-            g.baseFurniture = collisionFurniture.map((object) => ({ ...object, center: [...object.center] as V2 }));
-            g.baseFurnitureEdits = cloneFurnitureEdits(furnitureEdits);
-            g.baseDoors = doors.map((door) => [[...door.p1] as V2, [...door.p2] as V2]);
-            return;
-          }
+          if (beginOpeningInteraction(false)) return;
+          if (beginMoveInteraction(false)) return;
           setMoveSelection(null);
+          setEditingDoor(null);
+          setSelectedWindowId(null);
+          setSelectedRoomN(null);
           g.kind = "pan";
           g.basePan = { ...pan };
           return;
@@ -1010,8 +1716,8 @@ export default function FloorplanEditor({ draftId, draftData, lang, onClose, onS
           return;
       }
     },
-    [tool, screenToWorld, screenPx, pan, zoom, proj, doors, roomNumbers, labelPositions, labelOffsets,
-     nearestEdge, graph, edits, collisionFurniture, furniture, furnitureEdits, pxPerMeter, editingDoor, editingLabel, snapDrawStart]
+    [tool, screenToWorld, screenPx, pan, zoom, proj, doors, windows, roomNumbers, labelPositions, labelOffsets,
+     nearestEdge, graph, edits, collisionFurniture, furniture, furnitureEdits, markers, pxPerMeter, snapDrawStart]
   );
 
   const onPointerMove = useCallback(
@@ -1024,7 +1730,7 @@ export default function FloorplanEditor({ draftId, draftData, lang, onClose, onS
       if (
         g.moved
         && !g.undoCaptured
-        && (g.kind === "moveEdge" || g.kind === "moveFurniture")
+        && (g.kind === "moveEdge" || g.kind === "moveFurniture" || g.kind === "moveOpening")
       ) {
         pushUndo();
         g.undoCaptured = true;
@@ -1066,6 +1772,7 @@ export default function FloorplanEditor({ draftId, draftData, lang, onClose, onS
             movement.objects,
           ));
           setMoveSelection({ kind: "edge", index: g.edgeIndex!, blocked: movement.blocked });
+          setMarkers(pushedMarkers(g.baseMarkers ?? {}, g.baseGraph!, g.edgeIndex!, movement.wallDelta));
           return;
         }
         case "moveFurniture": {
@@ -1084,6 +1791,12 @@ export default function FloorplanEditor({ draftId, draftData, lang, onClose, onS
           setMoveSelection({ kind: "furniture", id: g.furnitureId!, blocked: movement.blocked });
           return;
         }
+        case "moveOpening": {
+          if (!g.moved) return;
+          const next = openingDragEdits(g, w);
+          if (next) setEdits(next);
+          return;
+        }
         case "label": {
           const n = g.labelN!;
           const dx = w[0] - g.start[0];
@@ -1096,7 +1809,7 @@ export default function FloorplanEditor({ draftId, draftData, lang, onClose, onS
         }
       }
     },
-    [screenToWorld, screenPx, snapDrawEnd, reprojectOpenings, pushUndo]
+    [screenToWorld, screenPx, snapDrawEnd, reprojectOpenings, pushUndo, openingDragEdits, pushedMarkers]
   );
 
   const onPointerUp = useCallback(
@@ -1118,7 +1831,7 @@ export default function FloorplanEditor({ draftId, draftData, lang, onClose, onS
         }
         case "moveEdge": {
           if (!g.moved) {
-            setMoveSelection(null);
+            // A tap is a selection — the inspector edits it in place.
             return;
           }
           const requestedDelta = wallNormalTranslation(
@@ -1140,13 +1853,25 @@ export default function FloorplanEditor({ draftId, draftData, lang, onClose, onS
             g.baseFurniture ?? [],
             movement.objects,
           );
-          setMoveSelection(null);
+          setMoveSelection({ kind: "edge", index: g.edgeIndex!, blocked: false });
+          const nextMarkers = pushedMarkers(g.baseMarkers ?? {}, g.baseGraph!, g.edgeIndex!, movement.wallDelta);
+          setMarkers(nextMarkers);
+          const changedMarkers: Record<string, string> = {};
+          for (const [key, marker] of Object.entries(nextMarkers)) {
+            const before = g.baseMarkers?.[Number(key)];
+            if (!before || Math.hypot(marker[0] - before[0], marker[1] - before[1]) > 0.002) {
+              const stored = base.geom ? rotateFromSnappedFrame(marker, base.geom) : marker;
+              changedMarkers[`room_${key}_marker_x`] = stored[0].toFixed(4);
+              changedMarkers[`room_${key}_marker_z`] = stored[1].toFixed(4);
+            }
+          }
+          if (Object.keys(changedMarkers).length) void persist(changedMarkers);
           commit(nextGraph, nextEdits, nextFurnitureEdits);
           return;
         }
         case "moveFurniture": {
           if (!g.moved) {
-            setMoveSelection(null);
+            // A tap is a selection — the inspector edits it in place.
             return;
           }
           const movement = moveFurniture(
@@ -1161,19 +1886,25 @@ export default function FloorplanEditor({ draftId, draftData, lang, onClose, onS
             g.baseFurniture ?? [],
             movement.objects,
           );
-          setMoveSelection(null);
+          setMoveSelection({ kind: "furniture", id: g.furnitureId!, blocked: false });
           commit(cloneGraph(g.baseGraph!), cloneEdits(g.baseEdits!), nextFurnitureEdits);
+          return;
+        }
+        case "moveOpening": {
+          // A tap is a selection; a drag commits the slid position.
+          if (!g.moved) return;
+          const next = openingDragEdits(g, w);
+          if (next) commit(cloneGraph(graph), next, cloneFurnitureEdits(furnitureEdits));
           return;
         }
         case "label": {
           const n = g.labelN!;
           if (!g.moved) {
-            // Tap → rename inline (iOS DraggableRoomLabel tap).
-            const pos = labelPositions[n];
-            if (pos) {
-              const [sx, sy] = proj(pos[0], pos[1]);
-              setEditingLabel({ n, value: labels[n] ?? "", screen: [sx * zoom + pan.x, sy * zoom + pan.y] });
-            }
+            // Tap → the room's name and type edit in the inspector.
+            setSelectedRoomN(n);
+            setEditingDoor(null);
+            setSelectedWindowId(null);
+            setMoveSelection(null);
             return;
           }
           const off = labelOffsets[n] ?? [0, 0];
@@ -1192,8 +1923,8 @@ export default function FloorplanEditor({ draftId, draftData, lang, onClose, onS
       }
     },
     [screenToWorld, snapDrawEnd, commitDraw, eraseStroke, eraseAlongStroke, commit,
-     reprojectOpenings, labelPositions, labelOffsets, labels, proj, zoom, pan, persist, tool,
-     placeOpening, addRoom]
+     reprojectOpenings, labelOffsets, persist, tool,
+     placeOpening, addRoom, openingDragEdits, graph, furnitureEdits, pushedMarkers, base.geom]
   );
 
   const onPointerCancel = useCallback(() => {
@@ -1248,23 +1979,27 @@ export default function FloorplanEditor({ draftId, draftData, lang, onClose, onS
     commit(
       cloneGraph(base.baselineGraph),
       { deletedSourceOpeningIDs: [], customOpenings: [] },
-      { deletedSourceObjectIDs: [], objectCenterOverrides: {} },
+      emptyFurnitureEdits(),
     );
   }, [base.baselineGraph, pushUndo, commit]);
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
       const target = event.target as HTMLElement | null;
-      const isTyping = target?.isContentEditable || target?.tagName === "INPUT" || target?.tagName === "TEXTAREA";
+      const isTyping = target?.isContentEditable || target?.tagName === "INPUT" || target?.tagName === "TEXTAREA" || target?.tagName === "SELECT";
+      // While typing in an inspector field, every key belongs to the field —
+      // a global Escape used to tear the section down mid-edit and lose the
+      // value before it could commit.
+      if (isTyping) return;
 
       if (event.key === "Escape") {
         setMoveSelection(null);
         setEditingDoor(null);
-        setEditingLabel(null);
+        setSelectedWindowId(null);
+        setSelectedRoomN(null);
         setTool(null);
         return;
       }
-      if (isTyping) return;
 
       if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "z") {
         event.preventDefault();
@@ -1290,54 +2025,9 @@ export default function FloorplanEditor({ draftId, draftData, lang, onClose, onS
     return () => window.removeEventListener("keydown", onKeyDown);
   }, [undo]);
 
-  const saveDoorConfig = useCallback(
-    (doorId: string, cfg: DoorConfig) => {
-      setDoorConfigs((prev) => ({ ...prev, [doorId]: cfg }));
-      // Find the existing door_N_camera key for this door, else allocate N.
-      let key: string | null = null;
-      let maxN = 0;
-      for (const [k, v] of Object.entries(base.textData)) {
-        const m = /^door_(\d+)_camera$/.exec(k);
-        if (!m) continue;
-        maxN = Math.max(maxN, parseInt(m[1], 10));
-        try {
-          if (String((JSON.parse(v) as { door_id?: string }).door_id ?? "").toLowerCase() === doorId) key = k;
-        } catch {
-          /* skip */
-        }
-      }
-      for (const k of entriesRef.current.keys()) {
-        const m = /^door_(\d+)_camera$/.exec(k);
-        if (m) maxN = Math.max(maxN, parseInt(m[1], 10));
-      }
-      const n = key ? parseInt(key.split("_")[1], 10) : maxN + 1;
-      const existingRaw = key ? base.textData[key] : null;
-      let merged: Record<string, unknown> = {};
-      if (existingRaw) {
-        try {
-          merged = JSON.parse(existingRaw) as Record<string, unknown>;
-        } catch {
-          merged = {};
-        }
-      }
-      merged = {
-        ...merged,
-        door_id: doorId,
-        door_number: n,
-        door_type: cfg.doorType,
-        hinge_side: cfg.hingeSide,
-        swing_direction: cfg.swingDirection,
-        is_user_configured: true,
-      };
-      void persist({ [`door_${n}_camera`]: JSON.stringify(merged) });
-    },
-    [base.textData, persist]
-  );
-
   const renameLabel = useCallback(
     (n: number, value: string) => {
       const name = value.trim();
-      setEditingLabel(null);
       if (!name || name === labels[n]) return;
       setLabels((prev) => ({ ...prev, [n]: name }));
       void persist({ [`room_${n}_label`]: name });
@@ -1346,12 +2036,12 @@ export default function FloorplanEditor({ draftId, draftData, lang, onClose, onS
   );
 
   // ── render ────────────────────────────────────────────────────────────────
-  const wallQuads = segs.map(([a, b]) => wallQuad(a, b));
+  const wallQuads = segs.map(([a, b]) => wallQuad(a, b, wallT));
   const cutQuads = [...doors, ...windows.map((w) => ({ id: "", p1: w.p1, p2: w.p2 })), ...openings].map((o) =>
-    openingCut(o.p1, o.p2)
+    openingCut(o.p1, o.p2, wallT)
   );
   const toPts = (poly: V2[]) => poly.map((p) => proj(p[0], p[1]).join(",")).join(" ");
-  const halfT = WALL_THICKNESS / 2;
+  const halfT = wallT / 2;
   const fontPx = 13;
   const canUndo = undoStack.current.length > 0;
 
@@ -1372,7 +2062,211 @@ export default function FloorplanEditor({ draftId, draftData, lang, onClose, onS
   );
   const mapW = mapBounds ? mapBounds.maxX - mapBounds.minX : 0;
   const mapZ = mapBounds ? mapBounds.maxZ - mapBounds.minZ : 0;
-  const ratioText = mapBounds ? `${fmt(mapW)}m × ${fmt(mapZ)}m` : "n/a";
+  const ratioText = mapBounds ? `${formatLength(mapW)} × ${formatLength(mapZ)}` : "n/a";
+
+  // ── inspector bindings ────────────────────────────────────────────────────
+  const selectedDoor = editingDoor ? doors.find((d) => d.id === editingDoor.id) ?? null : null;
+  const selectedWindow = selectedWindowId ? windows.find((w) => w.id === selectedWindowId) ?? null : null;
+  const selectedEdge = moveSelection?.kind === "edge" ? graph.edges[moveSelection.index] ?? null : null;
+  const selectedObject = moveSelection?.kind === "furniture"
+    ? furniture.find((object) => object.id === moveSelection.id) ?? null
+    : null;
+  const selectedRoom = selectedRoomN != null && labels[selectedRoomN] !== undefined ? selectedRoomN : selectedRoomN != null && roomNumbers.includes(selectedRoomN) ? selectedRoomN : null;
+  const clearSelection = () => {
+    setEditingDoor(null);
+    setSelectedWindowId(null);
+    setMoveSelection(null);
+    setSelectedRoomN(null);
+  };
+
+  /**
+   * Exact-value length field — type a number, Enter/blur commits. Metric users
+   * type millimetres; imperial users type the backend's imperial length unit.
+   * Internally everything stays metres/mm.
+   */
+  const mmInput = (currentMm: number, min: number, max: number, commitMm: (mm: number) => void) => {
+    const shownValue = imperialSystem
+      ? Number(lengthToDisplay(currentMm / 1000).toFixed(2))
+      : currentMm;
+    return (
+      <span className="flex items-center gap-1.5">
+        <input
+          key={shownValue}
+          type="number"
+          inputMode={imperialSystem ? "decimal" : "numeric"}
+          step={imperialSystem ? 0.01 : 1}
+          defaultValue={shownValue}
+          onKeyDown={(event) => {
+            if (event.key === "Enter") {
+              event.preventDefault();
+              event.currentTarget.blur();
+            }
+          }}
+          onBlur={(event) => {
+            const raw = Number(event.currentTarget.value);
+            if (!Number.isFinite(raw)) return;
+            const mm = Math.round(imperialSystem ? displayToMetres(raw) * 1000 : raw);
+            if (mm >= min && mm <= max && Math.abs(mm - currentMm) > 1) commitMm(mm);
+          }}
+          className="w-[4.75rem] rounded-lg border border-border bg-white px-2 py-1 text-right text-[12px] font-semibold tabular-nums text-foreground outline-none transition-colors hover:border-foreground/35 focus:border-foreground [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
+        />
+        <span className="text-[11px] font-medium text-muted-foreground">{imperialSystem ? lengthUnitSymbol : "mm"}</span>
+      </span>
+    );
+  };
+
+  const inspectorHeading = (text: string) => (
+    <p className="text-[11px] font-bold uppercase tracking-[0.1em] text-foreground/55">{text}</p>
+  );
+  /** Names the selected element and offers one obvious way out of it. */
+  const selectionHeader = (text: string) => (
+    <div className="flex items-center justify-between gap-2">
+      {inspectorHeading(text)}
+      <button
+        type="button"
+        onClick={clearSelection}
+        aria-label={t("common.close", lang)}
+        className="flex h-7 w-7 items-center justify-center rounded-full text-foreground/45 transition-colors hover:bg-foreground/[0.06] hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+      >
+        <CloseIcon size={13} />
+      </button>
+    </div>
+  );
+  const inspectorRow = (label: string, control: React.ReactNode) => (
+    <div className="flex min-h-9 items-center justify-between gap-3">
+      <span className="text-[12px] font-medium text-muted-foreground">{label}</span>
+      {control}
+    </div>
+  );
+  /*
+   * IFC 4.3 (IfcDoorTypeOperationEnum) warns that "left/right door" wording
+   * differs between countries and recommends showing the swing pictorially —
+   * so hinge and direction toggles pair a miniature swing symbol with the word.
+   */
+  const swingGlyph = (mirrorX: boolean, flipY: boolean) => (
+    <svg viewBox="0 0 20 20" className="h-4 w-4 shrink-0" fill="none" aria-hidden="true">
+      <g transform={[mirrorX ? "translate(20 0) scale(-1 1)" : "", flipY ? "translate(0 20) scale(1 -1)" : ""].join(" ").trim() || undefined}>
+        <path d="M2 17h16" stroke="currentColor" strokeWidth={2.4} />
+        <path d="M5 17V7" stroke="currentColor" strokeWidth={1.5} strokeLinecap="round" />
+        <path d="M5 7a10 10 0 0 1 10 10" stroke="currentColor" strokeWidth={1.1} />
+      </g>
+    </svg>
+  );
+
+  const segControl = <Value extends string>(
+    options: Array<{ value: Value; label: string; glyph?: React.ReactNode }>,
+    current: string,
+    apply: (value: Value) => void,
+  ) => (
+    <div className="flex shrink-0 items-center gap-0.5 rounded-full bg-black/[0.05] p-0.5">
+      {options.map((option) => (
+        <button
+          key={option.value}
+          type="button"
+          onClick={() => apply(option.value)}
+          aria-pressed={current === option.value}
+          className={cn(
+            "flex items-center gap-1 rounded-full px-2.5 py-1 text-[12px] font-semibold transition-colors",
+            current === option.value ? "bg-card text-foreground shadow-card" : "text-foreground/50 hover:text-foreground",
+          )}
+        >
+          {option.glyph}
+          {option.label}
+        </button>
+      ))}
+    </div>
+  );
+  const widthControl = (currentMm: number, options: number[], apply: (metres: number) => void) => (
+    <div className="space-y-1.5">
+      {inspectorRow(t("floorplan.editor.width", lang), mmInput(currentMm, 300, 3000, (mm) => apply(mm / 1000)))}
+      <div className="flex flex-wrap gap-1">
+        {options.map((mm) => (
+          <button
+            key={mm}
+            type="button"
+            onClick={() => apply(mm / 1000)}
+            aria-pressed={Math.abs(mm - currentMm) <= 25}
+            className={cn(
+              "rounded-full border px-2.5 py-1 text-[11px] font-semibold tabular-nums transition-colors",
+              Math.abs(mm - currentMm) <= 25
+                ? "border-foreground bg-foreground text-background"
+                : "border-border/70 bg-card text-foreground/60 hover:border-foreground/30 hover:text-foreground",
+            )}
+          >
+            {imperialSystem ? lengthToDisplay(mm / 1000).toFixed(1) : mm}
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+  const removeButton = (onRemove: () => void) => (
+    <button
+      type="button"
+      onClick={onRemove}
+      className="w-full rounded-full border border-destructive/20 bg-destructive/[0.045] py-2 text-[12px] font-semibold text-destructive transition-colors hover:bg-destructive/[0.08] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-destructive/30"
+    >
+      {t("floorplan.editor.delete", lang)}
+    </button>
+  );
+
+  /*
+   * Palette tiles carry the same 2D symbols the plan itself draws — a swing
+   * arc, a triple-lined window, a dashed room — so a non-technical user
+   * recognises the element, not an abstract tool glyph.
+   */
+  const paletteGlyphs: Record<string, React.ReactNode> = {
+    wall: <path d="M9 40V11h30" stroke="currentColor" strokeWidth={6} fill="none" />,
+    door: (
+      <>
+        <path d="M4 39h9M35 39h9" stroke="currentColor" strokeWidth={4.5} />
+        <path d="M13 39V17" stroke="currentColor" strokeWidth={2.2} strokeLinecap="round" />
+        <path d="M13 17a22 22 0 0 1 22 22" stroke="currentColor" strokeWidth={1.5} fill="none" />
+      </>
+    ),
+    sliding: (
+      <>
+        <path d="M4 24h7M37 24h7" stroke="currentColor" strokeWidth={4.5} />
+        <path d="M11 20.5h17M20 27.5h17" stroke="currentColor" strokeWidth={3} strokeLinecap="square" />
+      </>
+    ),
+    window: (
+      <>
+        <path d="M4 24h7M37 24h7" stroke="currentColor" strokeWidth={4.5} />
+        <path d="M11 17.5v13M37 17.5v13" stroke="currentColor" strokeWidth={2} />
+        <path d="M11 19h26M11 29h26" stroke="currentColor" strokeWidth={2} />
+        <path d="M11 24h26" stroke="currentColor" strokeWidth={1.3} />
+      </>
+    ),
+    room: (
+      <>
+        <rect x={8} y={10} width={32} height={27} rx={2} stroke="currentColor" strokeWidth={2} strokeDasharray="5 4" fill="none" />
+        <circle cx={24} cy={23.5} r={4.5} stroke="currentColor" strokeWidth={1.6} fill="none" />
+        <circle cx={24} cy={23.5} r={1.4} fill="currentColor" />
+      </>
+    ),
+  };
+
+  /* One quiet bordered square per element — glyph directly on the tile, no
+     nested boxes, uniform height so partial rows still read as a tidy grid. */
+  const paletteTile = (key: keyof typeof paletteGlyphs, label: string, active: boolean, onClick: () => void) => (
+    <button
+      key={key}
+      type="button"
+      onClick={onClick}
+      aria-pressed={active}
+      className={cn(
+        "flex min-h-[4.75rem] flex-col items-center justify-start gap-0.5 rounded-xl border px-1 pt-2 text-center transition-[background-color,border-color,color] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+        active
+          ? "border-foreground bg-surface-subtle text-foreground"
+          : "border-border/60 bg-card text-foreground/75 hover:border-foreground/35 hover:text-foreground",
+      )}
+    >
+      <svg viewBox="0 0 48 48" className="h-9 w-9 shrink-0" fill="none" aria-hidden="true">
+        {paletteGlyphs[key]}
+      </svg>
+      <span className="text-[10px] font-semibold leading-[1.25]">{label}</span>
+    </button>
+  );
 
   const toolButton = (tl: Tool, label: string, Icon: (props: IconProps) => React.ReactElement) => (
     <button
@@ -1395,39 +2289,20 @@ export default function FloorplanEditor({ draftId, draftData, lang, onClose, onS
     </button>
   );
 
-  const chip = (key: keyof typeof layers, label: string) => (
-    <button
-      key={key}
-      type="button"
-      onClick={() => setLayers((prev) => ({ ...prev, [key]: !prev[key] }))}
-      className={cn(
-        "rounded-full px-2.5 py-1 text-[12px] font-medium transition-colors",
-        layers[key] ? "bg-black/[0.07] text-foreground" : "text-foreground/35"
-      )}
-    >
-      {label}
-    </button>
-  );
-
-
-  const editingDoorCfg = editingDoor ? resolveDoorConfig(doorConfigs[editingDoor.id]) : null;
-
-  return (
-    /*
-      Starts where both persistent pieces of app chrome end. Earlier the
-      editor began at viewport 0, underneath the sidebar and shared header, so
-      its own close control and title were hidden even though the canvas was
-      visible. That left users with no discoverable route back to the detail.
-
-      Offset rather than a higher z-index: the Reaigen shell stays stable, the
-      editor owns only the remaining workspace, and its labelled back action
-      is always visible. It is desktop-only (the mount is gated on
-      !compactViewport), so --sidebar-offset is always set.
-    */
+  // Desktop-only (the mount is gated on !compactViewport), so
+  // --sidebar-offset is always set.
+  return createPortal(
     <div
-      className="fixed bottom-0 z-50 flex flex-col overflow-hidden bg-background transition-[left,right,top] duration-200"
+      // Portaled to <body>: the shell wraps every page in a filled fade-in
+      // animation, which pins a permanent stacking context — inside it no
+      // z-index can ever paint above the fixed app header, and this editor's
+      // own bar (with the back-to-detail arrow) ended up hidden beneath it.
+      // From <body>, z-[55] sits above the header (z-50) and below the
+      // navigation rail (z-[60]), which stays usable on the left. Inline-size
+      // containment makes this the container the dock's label-collapsing
+      // @container rules measure against.
+      className="fixed bottom-0 top-0 z-[55] flex flex-col overflow-hidden bg-background [container-type:inline-size]"
       style={{
-        top: "var(--header-total-h, 0px)",
         left: "var(--sidebar-offset, 0px)",
         right: "var(--reai-docked-width, 0px)",
       }}
@@ -1437,10 +2312,11 @@ export default function FloorplanEditor({ draftId, draftData, lang, onClose, onS
         <button
           type="button"
           onClick={onClose}
-          className="glossy-capsule flex min-h-11 shrink-0 items-center gap-2.5 rounded-full px-4 text-[13px] font-semibold text-foreground/72 transition-[color,transform] hover:text-foreground active:scale-[0.98] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+          aria-label={t("floorplan.editor.backToDetail", lang)}
+          title={t("floorplan.editor.backToDetail", lang)}
+          className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full border border-border/60 bg-card text-foreground/70 shadow-control transition-[background-color,color,transform] duration-100 hover:bg-surface-subtle hover:text-foreground active:scale-90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
         >
           <ArrowLeftIcon size={19} strokeWidth={1.9} />
-          {t("floorplan.editor.backToDetail", lang)}
         </button>
 
         <div className="min-w-0 flex-1">
@@ -1454,10 +2330,15 @@ export default function FloorplanEditor({ draftId, draftData, lang, onClose, onS
           </div>
         </div>
 
-        <span
+        <button
+          type="button"
+          disabled={saveState !== "error"}
+          onClick={() => void persist({})}
           className={cn(
             "inline-flex min-h-9 shrink-0 items-center gap-2 rounded-full border border-border/65 bg-card/72 px-3 text-[12px] font-semibold shadow-[inset_0_1px_0_hsl(var(--card)),0_4px_14px_hsl(var(--foreground)/0.055)]",
-            saveState === "error" ? "text-destructive" : "text-foreground/58"
+            saveState === "error"
+              ? "text-destructive transition-colors hover:bg-destructive/[0.06] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-destructive/40"
+              : "text-foreground/58",
           )}
         >
           <span
@@ -1472,13 +2353,13 @@ export default function FloorplanEditor({ draftId, draftData, lang, onClose, onS
           {saveState === "saving"
             ? t("floorplan.editor.saving", lang)
             : saveState === "error"
-              ? t("floorplan.editor.saveError", lang)
+              ? `${t("floorplan.editor.saveError", lang)} · ${t("common.tryAgain", lang)}`
               : t("floorplan.editor.saved", lang)}
-        </span>
+        </button>
       </div>
 
       {/* canvas */}
-      <div className="floorplan-editor-canvas relative min-h-0 flex-1 overflow-hidden">
+      <div ref={canvasBoxRef} className="floorplan-editor-canvas relative min-h-0 flex-1 overflow-hidden">
         <svg
           ref={svgRef}
           viewBox={`0 0 ${VIEW} ${VIEW}`}
@@ -1584,15 +2465,57 @@ export default function FloorplanEditor({ draftId, draftData, lang, onClose, onS
                 );
               })}
 
-            {/* walls */}
+            {/* walls — poché fill or outline, per the plan's persisted style */}
             <g mask="url(#editor-cuts)">
               {wallQuads.map((poly, i) => (
-                <polygon key={i} points={toPts(poly)} fill={STROKE_COLOR} />
+                <polygon
+                  key={i}
+                  points={toPts(poly)}
+                  fill={wallStyle === "outline" ? "#ffffff" : STROKE_COLOR}
+                  stroke={STROKE_COLOR}
+                  strokeWidth={wallStyle === "outline" ? 1.5 : 0}
+                  vectorEffect="non-scaling-stroke"
+                />
               ))}
             </g>
 
+            {/* Overall dimension strings — simplified consumer dimensioning:
+                one string per axis, extension ticks, value in metres. */}
+            {mapBounds && (() => {
+              const off = 0.55;
+              const tick = 0.12;
+              const spanW = mapBounds.maxX - mapBounds.minX;
+              const spanH = mapBounds.maxZ - mapBounds.minZ;
+              if (spanW < 0.5 || spanH < 0.5) return null;
+              const south = mapBounds.maxZ + off;
+              const west = mapBounds.minX - off;
+              const seg = (p: V2, q: V2, key: string) => {
+                const [x1, y1] = proj(...p);
+                const [x2, y2] = proj(...q);
+                return <line key={key} x1={x1} y1={y1} x2={x2} y2={y2} stroke="rgba(17,17,17,0.45)" strokeWidth={1} vectorEffect="non-scaling-stroke" />;
+              };
+              const [sx, sy] = proj((mapBounds.minX + mapBounds.maxX) / 2, south + 0.3);
+              const [wx, wy] = proj(west - 0.3, (mapBounds.minZ + mapBounds.maxZ) / 2);
+              return (
+                <g aria-hidden="true">
+                  {seg([mapBounds.minX, south], [mapBounds.maxX, south], "dim-s")}
+                  {seg([mapBounds.minX, south - tick], [mapBounds.minX, south + tick], "dim-s1")}
+                  {seg([mapBounds.maxX, south - tick], [mapBounds.maxX, south + tick], "dim-s2")}
+                  <text x={sx} y={sy} textAnchor="middle" dominantBaseline="middle" fontSize={fontPx * 0.85} fill="rgba(17,17,17,0.66)" stroke="#fff" strokeWidth={3} paintOrder="stroke" style={{ fontVariantNumeric: "tabular-nums" }}>
+                    {formatLength(spanW)}
+                  </text>
+                  {seg([west, mapBounds.minZ], [west, mapBounds.maxZ], "dim-w")}
+                  {seg([west - tick, mapBounds.minZ], [west + tick, mapBounds.minZ], "dim-w1")}
+                  {seg([west - tick, mapBounds.maxZ], [west + tick, mapBounds.maxZ], "dim-w2")}
+                  <text x={wx} y={wy} textAnchor="middle" dominantBaseline="middle" fontSize={fontPx * 0.85} fill="rgba(17,17,17,0.66)" stroke="#fff" strokeWidth={3} paintOrder="stroke" transform={`rotate(-90 ${wx} ${wy})`} style={{ fontVariantNumeric: "tabular-nums" }}>
+                    {formatLength(spanH)}
+                  </text>
+                </g>
+              );
+            })()}
+
             {/* Selected wall chain. Movement is constrained to its normal. */}
-            {tool === "move" && [...selectedEdgeIndices].map((index) => {
+            {[...selectedEdgeIndices].map((index) => {
               const edge = graph.edges[index];
               if (!edge) return null;
               const [x1, y1] = proj(...graph.vertices[edge.a]);
@@ -1611,7 +2534,7 @@ export default function FloorplanEditor({ draftId, draftData, lang, onClose, onS
                 />
               );
             })}
-            {tool === "move" && moveSelection?.kind === "edge" && (() => {
+            {moveSelection?.kind === "edge" && (() => {
               const edge = graph.edges[moveSelection.index];
               if (!edge) return null;
               const [x, y] = proj(...mid(graph.vertices[edge.a], graph.vertices[edge.b]));
@@ -1684,6 +2607,106 @@ export default function FloorplanEditor({ draftId, draftData, lang, onClose, onS
                 );
               })}
 
+            {/* selection marks: ring on the selected opening, dashed outline
+                around the selected object — visible in every mode so the
+                inspector's subject is never ambiguous. */}
+            {(selectedDoor || selectedWindow) && (() => {
+              const opening = selectedDoor ?? selectedWindow!;
+              const centre = mid(opening.p1, opening.p2);
+              const [cx, cy] = proj(...centre);
+              const marks: React.ReactNode[] = [
+                <circle
+                  key="ring"
+                  cx={cx}
+                  cy={cy}
+                  r={12}
+                  fill="none"
+                  stroke="rgba(17,17,17,0.45)"
+                  strokeWidth={1.6}
+                  vectorEffect="non-scaling-stroke"
+                />,
+              ];
+              for (const [handleIndex, point] of [opening.p1, opening.p2].entries()) {
+                const [hx, hy] = proj(...point);
+                marks.push(
+                  <rect key={`handle-${handleIndex}`} x={hx - 3} y={hy - 3} width={6} height={6} fill="#fff" stroke="rgba(17,17,17,0.85)" strokeWidth={1.2} vectorEffect="non-scaling-stroke" />,
+                );
+              }
+              // Distance from each end of the opening to its wall's ends —
+              // the numbers an agent needs to centre a door — live-updating
+              // while the opening slides.
+              const hostIndex = nearestEdge(centre, OPENING_PLACE_PX);
+              const hostEdge = hostIndex != null ? graph.edges[hostIndex] : null;
+              if (hostEdge) {
+                const a = graph.vertices[hostEdge.a];
+                const b = graph.vertices[hostEdge.b];
+                const wallLen = Math.max(dist(a, b), 1e-4);
+                const ux = (b[0] - a[0]) / wallLen;
+                const uz = (b[1] - a[1]) / wallLen;
+                const t1 = (opening.p1[0] - a[0]) * ux + (opening.p1[1] - a[1]) * uz;
+                const t2 = (opening.p2[0] - a[0]) * ux + (opening.p2[1] - a[1]) * uz;
+                const lo = Math.max(0, Math.min(t1, t2));
+                const hi = Math.min(wallLen, Math.max(t1, t2));
+                // Measure to the nearest neighbouring opening, not through it
+                // to the wall end — the number an agent actually needs.
+                let gapStart = 0;
+                let gapEnd = wallLen;
+                for (const other of [...doors, ...windows]) {
+                  if (other.id === opening.id) continue;
+                  if (distancePointToSegment(mid(other.p1, other.p2), a, b) > 0.3) continue;
+                  const o1 = (other.p1[0] - a[0]) * ux + (other.p1[1] - a[1]) * uz;
+                  const o2 = (other.p2[0] - a[0]) * ux + (other.p2[1] - a[1]) * uz;
+                  const otherHi = Math.max(o1, o2);
+                  const otherLo = Math.min(o1, o2);
+                  if (otherHi <= lo + 1e-6) gapStart = Math.max(gapStart, otherHi);
+                  if (otherLo >= hi - 1e-6) gapEnd = Math.min(gapEnd, otherLo);
+                }
+                const at = (tPos: number): V2 => [a[0] + ux * tPos, a[1] + uz * tPos];
+                const gapMark = (from: number, to: number, towardOpening: 1 | -1, key: string) => {
+                  const span = to - from;
+                  if (span < 0.05) return null;
+                  const p = at(from);
+                  const q = at(to);
+                  const [x1, y1] = proj(...p);
+                  const [x2, y2] = proj(...q);
+                  const nx = -uz;
+                  const nz = ux;
+                  // Short corner gaps slide their label along the wall toward
+                  // the opening so it never sits on the perpendicular wall.
+                  const alongShift = span < 0.6 ? towardOpening * (0.6 - span / 2) : 0;
+                  const labelAt: V2 = [
+                    (p[0] + q[0]) / 2 + nx * 0.42 + ux * alongShift,
+                    (p[1] + q[1]) / 2 + nz * 0.42 + uz * alongShift,
+                  ];
+                  const [lx, ly] = proj(...labelAt);
+                  return (
+                    <g key={key}>
+                      <line x1={x1} y1={y1} x2={x2} y2={y2} stroke="rgba(17,17,17,0.4)" strokeWidth={1} strokeDasharray="4 3" vectorEffect="non-scaling-stroke" />
+                      <text x={lx} y={ly} textAnchor="middle" dominantBaseline="middle" fontSize={fontPx * 0.85} fill="rgba(17,17,17,0.62)" stroke="#fff" strokeWidth={3} paintOrder="stroke" style={{ fontVariantNumeric: "tabular-nums" }}>
+                        {formatLength(span)}
+                      </text>
+                    </g>
+                  );
+                };
+                marks.push(gapMark(gapStart, lo, 1, "gap-a"), gapMark(hi, gapEnd, -1, "gap-b"));
+              }
+              return marks;
+            })()}
+            {selectedObject && (() => {
+              const corners = objectCorners(selectedObject);
+              return (
+                <g>
+                  <polygon points={toPts(corners)} fill="none" stroke="rgba(17,17,17,0.8)" strokeWidth={1.8} vectorEffect="non-scaling-stroke" />
+                  {corners.map((corner, index) => {
+                    const [hx, hy] = proj(...corner);
+                    return (
+                      <rect key={index} x={hx - 3.2} y={hy - 3.2} width={6.4} height={6.4} fill="#fff" stroke="rgba(17,17,17,0.85)" strokeWidth={1.2} vectorEffect="non-scaling-stroke" />
+                    );
+                  })}
+                </g>
+              );
+            })()}
+
             {/* draw preview */}
             {drawPreview && (
               <g>
@@ -1740,51 +2763,374 @@ export default function FloorplanEditor({ draftId, draftData, lang, onClose, onS
           </g>
         </svg>
 
-        {/* door config popover */}
-        {editingDoor && editingDoorCfg && (
-          <DoorConfigPanel
-            lang={lang}
-            cfg={editingDoorCfg}
-            screen={editingDoor.screen}
-            onChange={(cfg) => saveDoorConfig(editingDoor.id, cfg)}
-            onClose={() => setEditingDoor(null)}
-          />
-        )}
-
-        {/* label rename */}
-        {editingLabel && (
-          <div
-            className="absolute z-10 -translate-x-1/2 -translate-y-full"
-            style={{ left: `${(editingLabel.screen[0] / VIEW) * 100}%`, top: `${(editingLabel.screen[1] / VIEW) * 100}%` }}
-          >
-            <input
-              autoFocus
-              value={editingLabel.value}
-              onChange={(e) => setEditingLabel({ ...editingLabel, value: e.target.value })}
-              onKeyDown={(e) => {
-                if (e.key === "Enter") renameLabel(editingLabel.n, editingLabel.value);
-                if (e.key === "Escape") setEditingLabel(null);
-              }}
-              onBlur={() => renameLabel(editingLabel.n, editingLabel.value)}
-              className="w-40 rounded-full border border-border bg-card px-3 py-1.5 text-[13px] font-medium shadow-elevated focus:outline-none"
-            />
-          </div>
-        )}
-
-        {/* A single command dock, grouped like a DCC viewport but deliberately
-            labelled and softened for a non-technical property workflow. */}
-        <div className="pointer-events-none absolute inset-x-0 bottom-0 z-20 flex flex-col items-center gap-2 px-4 pb-[calc(1rem+env(safe-area-inset-bottom,0px))]">
-          {layersOpen && (
-            <div className="editor-glass-control pointer-events-auto flex max-w-[calc(100%-1rem)] flex-wrap items-center justify-center gap-1 rounded-full border border-border/65 p-1.5 shadow-[0_10px_30px_hsl(var(--foreground)/0.09)]">
-              {chip("doors", t("floorplan.doors", lang))}
-              {chip("windows", t("floorplan.windows", lang))}
-              {chip("labels", t("floorplan.roomLabels", lang))}
-              {chip("furniture", t("floorplan.editor.furniture", lang))}
+        {/* ── scale ruler: real metres at the current zoom ───────────── */}
+        {canvasSide > 0 && (() => {
+          const metrePx = proj0.s * zoom * (canvasSide / VIEW);
+          if (!Number.isFinite(metrePx) || metrePx <= 0) return null;
+          // One ruler unit in the user's display system (1 m or 1 ft), with
+          // the label increment growing until segments are readable.
+          const unitPx = metrePx * displayToMetres(1);
+          const increment = unitPx >= 24 ? 1 : unitPx * 5 >= 32 ? 5 : 10;
+          const segmentPx = unitPx * increment;
+          if (segmentPx < 24) return null;
+          const segments = segmentPx * 3 > 340 ? 2 : 3;
+          return (
+            <div className="pointer-events-none absolute bottom-4 left-4 z-10" aria-hidden="true">
+              <div className="relative h-4" style={{ width: segments * segmentPx + 32 }}>
+                {Array.from({ length: segments + 1 }, (_, i) => (
+                  <span
+                    key={i}
+                    className={cn("absolute text-[10px] font-medium tabular-nums text-foreground/60", i > 0 && "-translate-x-1/2")}
+                    style={{ left: i * segmentPx }}
+                  >
+                    {i === segments ? `${i * increment} ${lengthUnitSymbol}` : i * increment}
+                  </span>
+                ))}
+              </div>
+              <div className="relative h-2 border-b border-l border-r border-foreground/40" style={{ width: segments * segmentPx }}>
+                {Array.from({ length: Math.max(0, segments - 1) }, (_, i) => (
+                  <span key={i} className="absolute bottom-0 h-2 w-px bg-foreground/40" style={{ left: (i + 1) * segmentPx }} />
+                ))}
+              </div>
             </div>
-          )}
+          );
+        })()}
 
-          <div className="floorplan-command-dock pointer-events-auto flex max-w-full flex-nowrap items-center justify-start gap-1 overflow-x-auto rounded-[26px] border border-border/70 p-1.5">
+        {/* ── element palette (left) ─────────────────────────────────── */}
+        <div className="pointer-events-none absolute bottom-4 left-4 top-4 z-20 hidden w-[13rem] flex-col min-[1180px]:flex">
+          <div className="floating-panel pointer-events-auto flex max-h-full flex-col gap-4 overflow-y-auto border-border/70 bg-card p-4 scrollbar-thin">
+            <p className="text-[13px] font-bold tracking-[-0.01em] text-foreground">{t("floorplan.editor.addElement", lang)}</p>
+            <div className="space-y-2">
+              {inspectorHeading(t("floorplan.walls", lang))}
+              <div className="grid grid-cols-3 gap-1.5">
+                {paletteTile("wall", t("floorplan.editor.wall", lang), tool === "draw",
+                  () => setTool((prev) => (prev === "draw" ? null : "draw")))}
+              </div>
+            </div>
+            <div className="space-y-2">
+              {inspectorHeading(t("floorplan.editor.doorsWindows", lang))}
+              <div className="grid grid-cols-3 gap-1.5">
+                {paletteTile("door", t("floorplan.editor.door", lang), tool === "door" && !slidingDoorArmed,
+                  () => { setSlidingDoorArmed(false); setTool((prev) => (prev === "door" && !slidingDoorArmed ? null : "door")); })}
+                {paletteTile("sliding", t("floorplan.editor.slidingDoor", lang), tool === "door" && slidingDoorArmed,
+                  () => {
+                    if (tool === "door" && slidingDoorArmed) { setTool(null); return; }
+                    setTool("door");
+                    // The tool-change effect clears the armed flag, so arm it
+                    // after that effect has run.
+                    requestAnimationFrame(() => setSlidingDoorArmed(true));
+                  })}
+                {paletteTile("window", t("floorplan.editor.window", lang), tool === "window",
+                  () => setTool((prev) => (prev === "window" ? null : "window")))}
+              </div>
+            </div>
+            <div className="space-y-2">
+              {inspectorHeading(t("floorplan.rooms", lang))}
+              <div className="grid grid-cols-3 gap-1.5">
+                {paletteTile("room", t("floorplan.editor.newRoom", lang), tool === "room",
+                  () => setTool((prev) => (prev === "room" ? null : "room")))}
+              </div>
+            </div>
+            {tool === "draw" || tool === "door" || tool === "window" || tool === "room" ? (
+              <p className="rounded-xl bg-surface-subtle px-3 py-2.5 text-[11px] leading-relaxed text-foreground/65" aria-live="polite">
+                {t(
+                  tool === "draw"
+                    ? "floorplan.editor.hint.draw"
+                    : tool === "room"
+                      ? "floorplan.editor.hint.room"
+                      : "floorplan.editor.hint.opening",
+                  lang,
+                )}
+              </p>
+            ) : null}
+          </div>
+        </div>
+
+        {/* ── inspector (right): properties + layers ─────────────────── */}
+        <div className="pointer-events-none absolute bottom-4 right-4 top-4 z-20 hidden w-[16.5rem] flex-col min-[1180px]:flex">
+          <div className="floating-panel pointer-events-auto flex max-h-full flex-col overflow-hidden border-border/70 bg-card">
+            <div className="flex shrink-0 gap-1 border-b border-border/55 p-2">
+              {(["properties", "layers"] as const).map((tab) => (
+                <button
+                  key={tab}
+                  type="button"
+                  aria-pressed={inspectorTab === tab}
+                  onClick={() => setInspectorTab(tab)}
+                  className={cn(
+                    "flex-1 rounded-full px-3 py-2 text-[12px] font-semibold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+                    inspectorTab === tab
+                      ? "bg-foreground text-background"
+                      : "text-foreground/55 hover:bg-foreground/[0.05] hover:text-foreground",
+                  )}
+                >
+                  {t(tab === "properties" ? "floorplan.editor.properties" : "floorplan.editor.layers", lang)}
+                </button>
+              ))}
+            </div>
+            <div className="min-h-0 flex-1 overflow-y-auto p-4 scrollbar-thin">
+              {inspectorTab === "layers" ? (
+                <div className="space-y-1">
+                  {([
+                    ["doors", t("floorplan.doors", lang)],
+                    ["windows", t("floorplan.windows", lang)],
+                    ["labels", t("floorplan.roomLabels", lang)],
+                    ["furniture", t("floorplan.editor.furniture", lang)],
+                  ] as const).map(([key, label]) => (
+                    <button
+                      key={key}
+                      type="button"
+                      role="switch"
+                      aria-checked={layers[key]}
+                      onClick={() => setLayers((prev) => ({ ...prev, [key]: !prev[key] }))}
+                      className="flex min-h-11 w-full items-center justify-between gap-3 rounded-xl px-3 py-1.5 text-[13px] font-medium transition-colors hover:bg-foreground/[0.045] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                    >
+                      <span className={layers[key] ? "text-foreground" : "text-foreground/45"}>{label}</span>
+                      <span
+                        aria-hidden="true"
+                        className={cn(
+                          "flex h-5 w-5 shrink-0 items-center justify-center rounded-full border-2 transition-colors",
+                          layers[key] ? "border-foreground" : "border-foreground/25",
+                        )}
+                      >
+                        <span
+                          className={cn(
+                            "h-2.5 w-2.5 rounded-full bg-foreground transition-[transform,opacity] duration-150",
+                            layers[key] ? "scale-100 opacity-100" : "scale-50 opacity-0",
+                          )}
+                        />
+                      </span>
+                    </button>
+                  ))}
+                </div>
+              ) : (
+                <div className="space-y-4">
+                  {/* Stena — plan-level wall parameters, always editable */}
+                  <div className="space-y-3 border-b border-border/55 pb-4">
+                    {inspectorHeading(t("floorplan.editor.wall", lang))}
+                    {inspectorRow(t("floorplan.editor.thickness", lang), mmInput(wallThicknessMm, 60, 400, applyWallThickness))}
+                    {inspectorRow(t("floorplan.editor.wallStyle", lang), (
+                      <div className="flex items-center gap-1.5">
+                        <button
+                          type="button"
+                          aria-pressed={wallStyle === "solid"}
+                          aria-label={t("floorplan.editor.wallSolid", lang)}
+                          title={t("floorplan.editor.wallSolid", lang)}
+                          onClick={() => applyWallStyle("solid")}
+                          className={cn(
+                            "flex h-7 w-7 items-center justify-center rounded-lg border transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+                            wallStyle === "solid" ? "border-foreground" : "border-border/60 hover:border-foreground/40",
+                          )}
+                        >
+                          <span className="h-4 w-4 rounded-[3px] bg-foreground" />
+                        </button>
+                        <button
+                          type="button"
+                          aria-pressed={wallStyle === "outline"}
+                          aria-label={t("floorplan.editor.wallOutline", lang)}
+                          title={t("floorplan.editor.wallOutline", lang)}
+                          onClick={() => applyWallStyle("outline")}
+                          className={cn(
+                            "flex h-7 w-7 items-center justify-center rounded-lg border transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+                            wallStyle === "outline" ? "border-foreground" : "border-border/60 hover:border-foreground/40",
+                          )}
+                        >
+                          <span className="h-4 w-4 rounded-[3px] border-[1.5px] border-foreground bg-white" />
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                  {selectedDoor ? (() => {
+                const cfg = resolveDoorConfig(doorConfigs[selectedDoor.id]);
+                const widthMm = Math.round(dist(selectedDoor.p1, selectedDoor.p2) * 1000);
+                return (
+                  <div className="space-y-4">
+                    {selectionHeader(t("floorplan.editor.door", lang))}
+                    {inspectorRow(t("floorplan.editor.doorType", lang), segControl(
+                      [
+                        { value: "Swinging", label: t("floorplan.editor.swinging", lang) },
+                        { value: "Moving", label: t("floorplan.editor.sliding", lang) },
+                      ],
+                      cfg.doorType,
+                      (value) => saveDoorConfig(
+                        selectedDoor.id,
+                        value === "Moving"
+                          ? { doorType: "Moving", hingeSide: "Moving", swingDirection: "Moving" }
+                          : { doorType: "Swinging", hingeSide: "Left", swingDirection: "In" },
+                      ),
+                    ))}
+                    {cfg.doorType === "Swinging" && (
+                      /* One visual question — "which way does it open?" — four
+                         pictogram answers, instead of hinge/swing jargon rows. */
+                      <div className="space-y-1.5">
+                        <p className="text-[12px] font-medium text-muted-foreground">{t("floorplan.editor.swing", lang)}</p>
+                        <div className="grid grid-cols-2 gap-1.5">
+                          {([
+                            { hinge: "Left", swing: "In" },
+                            { hinge: "Right", swing: "In" },
+                            { hinge: "Left", swing: "Out" },
+                            { hinge: "Right", swing: "Out" },
+                          ] as const).map(({ hinge, swing }) => {
+                            const active = cfg.hingeSide === hinge && cfg.swingDirection === swing;
+                            const label = `${t(swing === "In" ? "floorplan.editor.in" : "floorplan.editor.out", lang)} · ${t(hinge === "Left" ? "floorplan.editor.left" : "floorplan.editor.right", lang).toLowerCase()}`;
+                            return (
+                              <button
+                                key={`${hinge}-${swing}`}
+                                type="button"
+                                aria-pressed={active}
+                                onClick={() => saveDoorConfig(selectedDoor.id, { doorType: "Swinging", hingeSide: hinge, swingDirection: swing })}
+                                className={cn(
+                                  "flex items-center justify-center gap-1.5 rounded-xl border px-2 py-2 text-[11px] font-semibold transition-[background-color,border-color,color] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+                                  active
+                                    ? "border-foreground bg-surface-subtle text-foreground"
+                                    : "border-border/60 bg-card text-foreground/60 hover:border-foreground/30 hover:text-foreground",
+                                )}
+                              >
+                                {swingGlyph(hinge === "Right", swing === "Out")}
+                                {label}
+                              </button>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    )}
+                    {widthControl(widthMm, [700, 800, 900, 1000], (metres) => resizeOpening(selectedDoor.id, "door", metres))}
+                    {removeButton(() => deleteOpening(selectedDoor.id))}
+                  </div>
+                );
+              })() : selectedWindow ? (() => {
+                const widthMm = Math.round(dist(selectedWindow.p1, selectedWindow.p2) * 1000);
+                return (
+                  <div className="space-y-4">
+                    {selectionHeader(t("floorplan.editor.window", lang))}
+                    {widthControl(widthMm, [900, 1200, 1500, 1800], (metres) => resizeOpening(selectedWindow.id, "window", metres))}
+                    {removeButton(() => deleteOpening(selectedWindow.id))}
+                  </div>
+                );
+              })() : selectedRoom != null ? (
+                <div className="space-y-4">
+                  {selectionHeader(labels[selectedRoom] ?? `${t("floorplan.room", lang)} ${selectedRoom}`)}
+                  <div className="space-y-1.5">
+                    <p className="text-[12px] font-medium text-muted-foreground">{t("floorplan.editor.roomName", lang)}</p>
+                    <input
+                      key={`${selectedRoom}:${labels[selectedRoom] ?? ""}`}
+                      defaultValue={labels[selectedRoom] ?? ""}
+                      onKeyDown={(event) => {
+                        if (event.key === "Enter") {
+                          event.preventDefault();
+                          event.currentTarget.blur();
+                        }
+                      }}
+                      onBlur={(event) => renameLabel(selectedRoom, event.currentTarget.value)}
+                      className="w-full rounded-lg border border-border bg-white px-2.5 py-1.5 text-[13px] font-medium text-foreground outline-none transition-colors hover:border-foreground/35 focus:border-foreground"
+                    />
+                  </div>
+                  <div className="space-y-1.5">
+                    <p className="text-[12px] font-medium text-muted-foreground">{t("floorplan.editor.doorType", lang)}</p>
+                    <select
+                      value={ROOM_TYPE_CODES.includes(roomTypes[selectedRoom] as (typeof ROOM_TYPE_CODES)[number]) ? roomTypes[selectedRoom] : ""}
+                      onChange={(event) => {
+                        const code = event.target.value as (typeof ROOM_TYPE_CODES)[number] | "";
+                        if (code) applyRoomType(selectedRoom, code);
+                      }}
+                      className="w-full rounded-lg border border-border bg-white px-2 py-1.5 text-[13px] font-medium text-foreground outline-none transition-colors hover:border-foreground/35 focus:border-foreground"
+                    >
+                      <option value="">—</option>
+                      {ROOM_TYPE_CODES.map((code) => (
+                        <option key={code} value={code}>{t(`rooms.${code}`, lang)}</option>
+                      ))}
+                    </select>
+                  </div>
+                  {removeButton(() => deleteRoom(selectedRoom))}
+                </div>
+              ) : selectedEdge ? (() => {
+                const lengthM = dist(graph.vertices[selectedEdge.a], graph.vertices[selectedEdge.b]);
+                return (
+                  <div className="space-y-4">
+                    {selectionHeader(t("floorplan.editor.wall", lang))}
+                    {inspectorRow(t("floorplan.editor.length", lang), (
+                      <span className="text-[12px] font-semibold tabular-nums text-foreground">{formatLength(lengthM)}</span>
+                    ))}
+                    {moveSelection?.kind === "edge" ? removeButton(() => deleteEdgeChain(moveSelection.index)) : null}
+                  </div>
+                );
+              })() : selectedObject ? (
+                <div className="space-y-4">
+                  {selectionHeader(t("floorplan.editor.object", lang))}
+                  {inspectorRow(t("floorplan.editor.object", lang), (
+                    <span className="max-w-[9rem] truncate text-[12px] font-semibold text-foreground">
+                      {furnitureKind(selectedObject.category).replace(/([a-z])([A-Z])/g, "$1 $2")}
+                    </span>
+                  ))}
+                  {inspectorRow(t("floorplan.editor.rotate", lang), (
+                    <div className="flex items-center gap-1">
+                      <button
+                        type="button"
+                        onClick={() => rotateFurnitureObject(selectedObject.id, -90)}
+                        aria-label={`${t("floorplan.editor.rotate", lang)} -90°`}
+                        title="-90°"
+                        className="flex h-8 w-9 items-center justify-center rounded-full border border-border/70 text-foreground/70 transition-colors hover:border-foreground/35 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                      >
+                        <RotateIcon size={14} className="scale-x-[-1]" />
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => rotateFurnitureObject(selectedObject.id, 90)}
+                        aria-label={`${t("floorplan.editor.rotate", lang)} +90°`}
+                        title="+90°"
+                        className="flex h-8 w-9 items-center justify-center rounded-full border border-border/70 text-foreground/70 transition-colors hover:border-foreground/35 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                      >
+                        <RotateIcon size={14} />
+                      </button>
+                    </div>
+                  ))}
+                  {removeButton(() => deleteFurnitureObject(selectedObject.id))}
+                </div>
+              ) : (
+                <div className="space-y-4">
+                  <p className="text-[12px] leading-relaxed text-muted-foreground">{t("floorplan.editor.selectHint", lang)}</p>
+                  {inspectorRow(t("floorplan.editor.dimensions", lang), (
+                    <span className="text-[12px] font-semibold tabular-nums text-foreground">{ratioText}</span>
+                  ))}
+                  {inspectorRow(t("floorplan.rooms", lang), (
+                    <span className="text-[12px] font-semibold tabular-nums text-foreground">{roomNumbers.length}</span>
+                  ))}
+                </div>
+              )}
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+
+      </div>
+
+      {/* A single command dock, grouped like a DCC viewport but deliberately
+          labelled and softened for a non-technical property workflow. In flow
+          below the canvas, not floating over it: an overlay covered the bottom
+          of the drawing, which is why a freshly opened plan looked mis-centred
+          with its lower wall hidden. */}
+      <div className="relative z-20 flex shrink-0 flex-col items-center gap-2 px-4 pb-[calc(0.9rem+env(safe-area-inset-bottom,0px))] pt-2">
+          {/* Wraps rather than scrolls: a scrolling shelf silently hides its
+              last tools, and every command here must stay reachable. */}
+          <div className="floorplan-command-dock pointer-events-auto flex max-w-full flex-wrap items-center justify-center gap-1 rounded-[26px] border border-border/70 p-1.5">
             <div className="flex shrink-0 flex-nowrap items-center gap-1">
+              <button
+                type="button"
+                onClick={() => setTool(null)}
+                aria-pressed={tool == null}
+                aria-label={t("floorplan.editor.select", lang)}
+                title={t("floorplan.editor.select", lang)}
+                className={cn(
+                  "floorplan-tool-button group flex h-12 shrink-0 items-center justify-center gap-2.5 rounded-full px-4 text-[13px] font-semibold transition-[background-color,color,box-shadow,transform]",
+                  "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2",
+                  tool == null
+                    ? "bg-foreground text-background shadow-[inset_0_1px_0_hsl(var(--card)/0.2),0_7px_18px_hsl(var(--foreground)/0.15)]"
+                    : "text-foreground/62 hover:bg-foreground/[0.055] hover:text-foreground active:scale-[0.98]",
+                )}
+              >
+                <SelectIcon size={21} strokeWidth={1.9} className="shrink-0" />
+                <span className="floorplan-tool-label whitespace-nowrap">{t("floorplan.editor.select", lang)}</span>
+              </button>
               {toolButton("move", t("floorplan.editor.move", lang), MoveToolIcon)}
               {toolButton("draw", t("floorplan.editor.draw", lang), DrawWallIcon)}
               {toolButton("erase", t("floorplan.editor.erase", lang), EraseIcon)}
@@ -1803,21 +3149,20 @@ export default function FloorplanEditor({ draftId, draftData, lang, onClose, onS
             <div className="flex shrink-0 flex-nowrap items-center gap-1">
               <UtilButton onClick={undo} disabled={!canUndo} label={t("floorplan.editor.undo", lang)} icon={UndoIcon} />
               <UtilButton onClick={rotate} label={t("floorplan.editor.rotate", lang)} icon={RotateIcon} />
-              <UtilButton onClick={() => setLayersOpen((v) => !v)} label={t("floorplan.editor.layers", lang)} active={layersOpen} icon={LayersToolIcon} />
               <UtilButton onClick={resetAll} label={t("floorplan.editor.reset", lang)} icon={ResetToolIcon} />
               <UtilButton
                 onClick={() => {
                   setZoom(DEFAULT_VIEW_ZOOM);
-                  setPan({ x: 0, y: 0 });
+                  setPan({ ...DEFAULT_VIEW_PAN });
                 }}
                 label={t("floorplan.editor.fitView", lang)}
                 icon={FrameIcon}
               />
             </div>
           </div>
-        </div>
       </div>
-    </div>
+    </div>,
+    document.body,
   );
 }
 
@@ -1869,99 +3214,6 @@ function UtilButton({
   );
 }
 
-function DoorConfigPanel({
-  lang,
-  cfg,
-  screen,
-  onChange,
-  onClose,
-}: {
-  lang: string;
-  cfg: DoorConfig;
-  screen: [number, number];
-  onChange: (cfg: DoorConfig) => void;
-  onClose: () => void;
-}) {
-  const seg = (
-    options: { value: string; label: string }[],
-    current: string,
-    apply: (value: string) => void
-  ) => (
-    <div className="flex rounded-full bg-black/[0.05] p-0.5">
-      {options.map((o) => (
-        <button
-          key={o.value}
-          type="button"
-          onClick={() => apply(o.value)}
-          className={cn(
-            "rounded-full px-2.5 py-1 text-[12px] font-semibold transition-colors",
-            current === o.value ? "bg-card text-foreground shadow-card" : "text-foreground/50"
-          )}
-        >
-          {o.label}
-        </button>
-      ))}
-    </div>
-  );
-  return (
-    <div
-      className="absolute z-10 -translate-x-1/2 rounded-2xl border border-border/60 bg-card/95 p-3 shadow-elevated backdrop-blur-xl"
-      style={{ left: `${(screen[0] / VIEW) * 100}%`, top: `calc(${(screen[1] / VIEW) * 100}% + 14px)` }}
-    >
-      <div className="space-y-2">
-        <div className="flex items-center justify-between gap-4">
-          <span className="text-[12px] font-medium text-muted-foreground">{t("floorplan.editor.doorType", lang)}</span>
-          {seg(
-            [
-              { value: "Swinging", label: t("floorplan.editor.swinging", lang) },
-              { value: "Moving", label: t("floorplan.editor.sliding", lang) },
-            ],
-            cfg.doorType,
-            (v) =>
-              onChange(
-                v === "Moving"
-                  ? { doorType: "Moving", hingeSide: "Moving", swingDirection: "Moving" }
-                  : { doorType: "Swinging", hingeSide: "Left", swingDirection: "In" }
-              )
-          )}
-        </div>
-        {cfg.doorType === "Swinging" && (
-          <>
-            <div className="flex items-center justify-between gap-4">
-              <span className="text-[12px] font-medium text-muted-foreground">{t("floorplan.editor.hinge", lang)}</span>
-              {seg(
-                [
-                  { value: "Left", label: t("floorplan.editor.left", lang) },
-                  { value: "Right", label: t("floorplan.editor.right", lang) },
-                ],
-                cfg.hingeSide,
-                (v) => onChange({ ...cfg, hingeSide: v })
-              )}
-            </div>
-            <div className="flex items-center justify-between gap-4">
-              <span className="text-[12px] font-medium text-muted-foreground">{t("floorplan.editor.swing", lang)}</span>
-              {seg(
-                [
-                  { value: "In", label: t("floorplan.editor.in", lang) },
-                  { value: "Out", label: t("floorplan.editor.out", lang) },
-                ],
-                cfg.swingDirection,
-                (v) => onChange({ ...cfg, swingDirection: v })
-              )}
-            </div>
-          </>
-        )}
-        <button
-          type="button"
-          onClick={onClose}
-          className="w-full rounded-full bg-black/[0.06] py-1 text-[12px] font-semibold text-foreground/70 hover:text-foreground"
-        >
-          {t("floorplan.editor.done", lang)}
-        </button>
-      </div>
-    </div>
-  );
-}
 
 function EditorIconShape({ shape }: { shape: IconShape }) {
   const ve = { vectorEffect: "non-scaling-stroke" as const };

@@ -419,6 +419,22 @@ export function rotateToSnappedFrame(raw: V2, geom: AdjustedGeometry): V2 {
   ];
 }
 
+/**
+ * Inverse of rotateToSnappedFrame: return an edited snapped-frame point to the
+ * raw scan frame that markers are persisted in — without this, saved edits get
+ * the snap rotation applied twice on the next load and drift.
+ */
+export function rotateFromSnappedFrame(snapped: V2, geom: AdjustedGeometry): V2 {
+  const cosR = Math.cos(-geom.sceneRotation);
+  const sinR = Math.sin(-geom.sceneRotation);
+  const dx = snapped[0] - geom.rawCentroid[0];
+  const dy = snapped[1] - geom.rawCentroid[1];
+  return [
+    geom.rawCentroid[0] + dx * cosR - dy * sinR,
+    geom.rawCentroid[1] + dx * sinR + dy * cosR,
+  ];
+}
+
 // ── Furniture categories ─────────────────────────────────────────────────────
 
 /** Canonical symbol set drawn by the plan renderer. */
@@ -697,8 +713,13 @@ export function objectCorners(o: ObjectXZ): V2[] {
 
 // ── Quads / cuts / bounds ────────────────────────────────────────────────────
 
-/** 18 cm thick wall rectangle with half-thickness overhang at each end. */
-export function wallQuad(p1: V2, p2: V2): V2[] {
+/**
+ * Wall rectangle with half-thickness overhang at each end. Thickness defaults
+ * to the presentation constant; plans that persist their own
+ * (`floorplan_wall_thickness_mm`, mirroring IFC's material-layer TotalThickness)
+ * pass it explicitly.
+ */
+export function wallQuad(p1: V2, p2: V2, thickness: number = WALL_THICKNESS): V2[] {
   const dx = p2[0] - p1[0];
   const dz = p2[1] - p1[1];
   const l = Math.max(Math.hypot(dx, dz), 1e-4);
@@ -706,7 +727,7 @@ export function wallQuad(p1: V2, p2: V2): V2[] {
   const nz = dx / l;
   const dirX = dx / l;
   const dirZ = dz / l;
-  const t = WALL_THICKNESS / 2;
+  const t = thickness / 2;
   const ax = p1[0] - dirX * t;
   const az = p1[1] - dirZ * t;
   const bx = p2[0] + dirX * t;
@@ -720,13 +741,13 @@ export function wallQuad(p1: V2, p2: V2): V2[] {
 }
 
 /** Opening cut rectangle: wall thickness deep, 2 cm long-axis buffer. */
-export function openingCut(p1: V2, p2: V2): V2[] {
+export function openingCut(p1: V2, p2: V2, thickness: number = WALL_THICKNESS): V2[] {
   const dx = p2[0] - p1[0];
   const dz = p2[1] - p1[1];
   const l = Math.max(Math.hypot(dx, dz), 1e-4);
   const nx = -dz / l;
   const nz = dx / l;
-  const perp = WALL_THICKNESS / 2;
+  const perp = thickness / 2;
   const longBuf = 0.02;
   const dirX = dx / l;
   const dirZ = dz / l;
@@ -772,30 +793,22 @@ export function resolveLabelWorldPositions(
   roomNumbers: number[],
   boundsCentre: V2,
   centresByIndex: Record<number, V2>,
-  allFloorCentres: V2[],
+  _allFloorCentres: V2[],
   markers: Record<number, V2>,
   offsets: Record<number, V2>
 ): Record<number, V2> {
-  const preferMarkers = Object.keys(markers).length > allFloorCentres.length;
   const out: Record<number, V2> = {};
   for (const n of roomNumbers) {
     let base: V2;
     const marker = markers[n];
-    if (preferMarkers && marker) {
+    if (marker) {
+      // An authored marker is the single truth for this room's label — the
+      // editor, the detail preview, and the lightbox must all agree, the same
+      // way a placed piece of furniture has exactly one position. The old
+      // count-based heuristic let each surface pick differently.
       base = marker;
     } else if (centresByIndex[n]) {
       base = centresByIndex[n];
-    } else if (marker) {
-      let nearest: V2 | null = null;
-      let bestD = Infinity;
-      for (const c of allFloorCentres) {
-        const d = dist(c, marker);
-        if (d < bestD) {
-          bestD = d;
-          nearest = c;
-        }
-      }
-      base = nearest ?? marker;
     } else {
       base = boundsCentre;
     }
@@ -975,7 +988,10 @@ export function roomNumbersInTextData(map: Record<string, string>): number[] {
     const n = parseInt(tail.slice(0, underscore), 10);
     if (Number.isFinite(n)) out.add(n);
   }
-  return [...out].sort((a, b) => a - b);
+  // An explicitly empty room_N_label is a deletion tombstone — the room's
+  // other keys may survive (draft-data has no delete), but the room is gone
+  // everywhere: editor, viewer legend, and marker badges alike.
+  return [...out].filter((n) => map[`room_${n}_label`] !== "").sort((a, b) => a - b);
 }
 
 export function parseRoomAreaOverrides(map: Record<string, string>): Record<number, number> {

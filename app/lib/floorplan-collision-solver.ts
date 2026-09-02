@@ -8,6 +8,8 @@ export interface EditableWallGraph {
 export interface FloorplanFurnitureEdits {
   deletedSourceObjectIDs: string[];
   objectCenterOverrides: Record<string, V2>;
+  /** Authored quarter-turn rotations in degrees (web-authored extension). */
+  objectRotationOverrides: Record<string, number>;
 }
 
 export interface FurnitureMoveResult {
@@ -58,6 +60,7 @@ const segmentLength = (segment: Segment): number => length(sub(segment.b, segmen
 export const emptyFurnitureEdits = (): FloorplanFurnitureEdits => ({
   deletedSourceObjectIDs: [],
   objectCenterOverrides: {},
+  objectRotationOverrides: {},
 });
 
 export function cloneFurnitureEdits(edits: FloorplanFurnitureEdits): FloorplanFurnitureEdits {
@@ -66,6 +69,7 @@ export function cloneFurnitureEdits(edits: FloorplanFurnitureEdits): FloorplanFu
     objectCenterOverrides: Object.fromEntries(
       Object.entries(edits.objectCenterOverrides).map(([id, center]) => [id, [...center] as V2]),
     ),
+    objectRotationOverrides: { ...(edits.objectRotationOverrides ?? {}) },
   };
 }
 
@@ -76,6 +80,7 @@ export function parseFurnitureEdits(textData: Record<string, string>): Floorplan
     const parsed = JSON.parse(raw) as {
       deletedSourceObjectIDs?: unknown;
       objectCenterOverrides?: unknown;
+      objectRotationOverrides?: unknown;
     };
     const deletedSourceObjectIDs = Array.isArray(parsed.deletedSourceObjectIDs)
       ? [...new Set(parsed.deletedSourceObjectIDs.filter((id): id is string => typeof id === "string").map((id) => id.toLowerCase()))]
@@ -89,13 +94,29 @@ export function parseFurnitureEdits(textData: Record<string, string>): Floorplan
         if (Number.isFinite(x) && Number.isFinite(z)) objectCenterOverrides[id.toLowerCase()] = [x, z];
       }
     }
-    return { deletedSourceObjectIDs, objectCenterOverrides };
+    const objectRotationOverrides: Record<string, number> = {};
+    if (parsed.objectRotationOverrides && typeof parsed.objectRotationOverrides === "object") {
+      for (const [id, value] of Object.entries(parsed.objectRotationOverrides as Record<string, unknown>)) {
+        const deg = Number(value);
+        if (Number.isFinite(deg) && deg % 360 !== 0) objectRotationOverrides[id.toLowerCase()] = ((deg % 360) + 360) % 360;
+      }
+    }
+    return { deletedSourceObjectIDs, objectCenterOverrides, objectRotationOverrides };
   } catch {
     return emptyFurnitureEdits();
   }
 }
 
 /** Apply authored absolute centres only after the deterministic solve. */
+export function rotateFurnitureAxes<T extends { axisW: V2; axisD: V2 }>(object: T, degrees: number): T {
+  if (!degrees || degrees % 360 === 0) return object;
+  const radians = (degrees * Math.PI) / 180;
+  const cos = Math.cos(radians);
+  const sin = Math.sin(radians);
+  const rotate = (v: V2): V2 => [v[0] * cos - v[1] * sin, v[0] * sin + v[1] * cos];
+  return { ...object, axisW: rotate(object.axisW), axisD: rotate(object.axisD) };
+}
+
 export function applyFurnitureEdits(
   objects: ObjectXZ[],
   edits: FloorplanFurnitureEdits,
@@ -104,8 +125,12 @@ export function applyFurnitureEdits(
   return objects
     .filter((object) => !deleted.has(object.id.toLowerCase()))
     .map((object) => {
-      const center = edits.objectCenterOverrides[object.id.toLowerCase()];
-      return center ? { ...object, center: [...center] as V2 } : object;
+      const id = object.id.toLowerCase();
+      const center = edits.objectCenterOverrides[id];
+      let next = center ? { ...object, center: [...center] as V2 } : object;
+      const rotation = edits.objectRotationOverrides?.[id];
+      if (rotation) next = rotateFurnitureAxes(next === object ? { ...object } : next, rotation);
+      return next;
     });
 }
 
@@ -430,6 +455,62 @@ export function moveFurniture(
     delta: appliedDelta,
     blocked: slide.blocked,
   };
+}
+
+export interface FurnitureRotationResult {
+  objects: ObjectXZ[];
+  rotatedID: string | null;
+  delta: V2;
+  blocked: boolean;
+}
+
+/**
+ * Rotate a furniture object by quarter turns with the same rigid rules as
+ * moves: after the axes turn, any penetration against walls, door clearances,
+ * or other objects is resolved by translating the object out along the
+ * minimal-translation normal. If no nearby free pose exists, the rotation is
+ * refused (`blocked`) rather than left clipping through a wall.
+ */
+export function rotateFurniture(
+  objects: ObjectXZ[],
+  rotatingID: string,
+  graph: EditableWallGraph,
+  deltaDegrees: number,
+  doors: Array<[V2, V2]> = [],
+): FurnitureRotationResult {
+  const index = objects.findIndex((object) => object.id.toLowerCase() === rotatingID.toLowerCase());
+  if (index < 0 || deltaDegrees % 360 === 0) {
+    return { objects, rotatedID: index >= 0 ? objects[index].id : null, delta: [0, 0], blocked: false };
+  }
+  const family = familyIndicesFor(objects, rootIndexFor(objects, index));
+  const blockers = objects.filter((_, i) => !family.has(i));
+  blockers.push(...graph.edges.map((edge, i) => collisionBody({ a: graph.vertices[edge.a], b: graph.vertices[edge.b] }, `wall-${i}`)));
+  blockers.push(...doors.flatMap(([a, b], i) => doorCollisionBodies({ a, b }, `door-${i}`)));
+
+  let rotated = rotateFurnitureAxes({ ...objects[index] }, deltaDegrees);
+  let total: V2 = [0, 0];
+  for (let iteration = 0; iteration < 12; iteration++) {
+    let deepest: Penetration | null = null;
+    for (const blocker of blockers) {
+      const hit = penetration(rotated, blocker, COLLISION_GUARD);
+      if (hit && (!deepest || hit.depth > deepest.depth)) deepest = hit;
+    }
+    if (!deepest) {
+      // Free pose found. The whole mounted family rides along.
+      const result = [...objects];
+      for (const i of family) {
+        result[i] = i === index ? rotated : translated(objects[i], total);
+      }
+      return { objects: result, rotatedID: objects[index].id, delta: total, blocked: false };
+    }
+    // MTV normal points from the blocker toward the rotated body (same
+    // convention sweptCollision uses) — push out along it.
+    const push = mul(deepest.normal, deepest.depth + COLLISION_GUARD);
+    rotated = translated(rotated, push);
+    total = add(total, push);
+    if (length(total) > Math.max(rotated.halfW, rotated.halfD) * 2 + 1) break;
+  }
+  return { objects, rotatedID: objects[index].id, delta: [0, 0], blocked: true };
 }
 
 function distanceToSegment(point: V2, a: V2, b: V2): number {

@@ -13,7 +13,7 @@
 import { locales, type LocaleKey } from "./locales";
 import { t } from "./i18n";
 
-const ROOM_TYPE_CODES = [
+export const ROOM_TYPE_CODES = [
   "living_room",
   "dining_room",
   "kitchen",
