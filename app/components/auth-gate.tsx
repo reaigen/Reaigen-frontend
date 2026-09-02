@@ -34,7 +34,7 @@ type AuthGateProps = {
 /* ── Shared input style ───────────────────────────────────────────────── */
 
 const INPUT_CLASS =
-  "h-14 rounded-xl border-border bg-white px-4 text-[15px] text-foreground shadow-none placeholder:text-foreground/35 transition-[border-color,box-shadow] duration-150 hover:border-foreground/35 focus-visible:border-foreground focus-visible:bg-white focus-visible:ring-0 focus-visible:shadow-[0_0_0_3px_rgba(0,0,0,0.08)]";
+  "h-14 rounded-full border-border bg-white px-5 text-[15px] text-foreground shadow-none placeholder:text-foreground/35 transition-[border-color,box-shadow] duration-150 hover:border-foreground/35 focus-visible:border-foreground focus-visible:bg-white focus-visible:ring-0 focus-visible:shadow-[0_0_0_3px_rgba(0,0,0,0.08)]";
 
 const AUTH_IMAGE_URL =
   "https://images.unsplash.com/photo-1639663742190-1b3dba2eebcf?auto=format&fit=crop&fm=jpg&q=84&w=1800";
@@ -121,7 +121,10 @@ function LoginCard({
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     setError(null);
-    if (!canSubmit) return;
+    if (!canSubmit) {
+      setError(t("auth.validation.incomplete", lang));
+      return;
+    }
     try {
       setLoading(true);
       const result = await onSubmit(email.trim(), password);
@@ -138,7 +141,11 @@ function LoginCard({
 
   async function handleStepUpSubmit(e: React.FormEvent) {
     e.preventDefault();
-    if (!stepUp || stepUpCode.trim().length < 6) return;
+    if (!stepUp) return;
+    if (stepUpCode.trim().length < 6) {
+      setError(t("auth.validation.incomplete", lang));
+      return;
+    }
     setError(null);
     try {
       setLoading(true);
@@ -178,15 +185,15 @@ function LoginCard({
           />
         </div>
         {error && (
-          <p role="alert" className="rounded-xl border border-destructive/20 bg-destructive/[0.045] px-4 py-3 text-[12px] font-medium leading-relaxed text-destructive">
+          <p role="alert" className="rounded-2xl border border-destructive/20 bg-destructive/[0.045] px-4 py-3 text-[12px] font-medium leading-relaxed text-destructive">
             {error}
           </p>
         )}
         <Button
           type="submit"
-          className="h-[3.25rem] w-full rounded-full text-[14px] font-semibold shadow-none"
+          className="h-[3.25rem] w-full rounded-full text-[14px] font-semibold shadow-none disabled:opacity-100 disabled:bg-foreground disabled:text-background"
           loading={loading}
-          disabled={stepUpCode.trim().length < 6 || loading}
+          disabled={loading}
         >
           {t("auth.stepUp.submit", lang)}
         </Button>
@@ -259,16 +266,16 @@ function LoginCard({
       </div>
 
       {error && (
-        <p role="alert" className="rounded-xl border border-destructive/20 bg-destructive/[0.045] px-4 py-3 text-[12px] font-medium leading-relaxed text-destructive">
+        <p role="alert" className="rounded-2xl border border-destructive/20 bg-destructive/[0.045] px-4 py-3 text-[12px] font-medium leading-relaxed text-destructive">
           {error}
         </p>
       )}
 
       <Button
         type="submit"
-        className={`h-[3.25rem] w-full rounded-full text-[14px] font-semibold shadow-none transition-[background-color,color,transform] active:scale-[0.99] disabled:opacity-100 ${loading ? "disabled:bg-foreground disabled:text-background" : "disabled:bg-foreground/[0.07] disabled:text-foreground/35"}`}
+        className="h-[3.25rem] w-full rounded-full text-[14px] font-semibold shadow-none transition-[background-color,color,transform] active:scale-[0.99] disabled:opacity-100 disabled:bg-foreground disabled:text-background"
         loading={loading}
-        disabled={!canSubmit || loading}
+        disabled={loading}
       >
         {t("auth.login.submit", lang)}
       </Button>
@@ -311,7 +318,10 @@ function RegistrationCard({
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     setError(null);
-    if (!canSubmit) return;
+    if (!canSubmit) {
+      setError(t("auth.validation.incomplete", lang));
+      return;
+    }
     try {
       setLoading(true);
       await onSubmit({
@@ -399,16 +409,16 @@ function RegistrationCard({
       </div>
 
       {error && (
-        <p role="alert" className="rounded-xl border border-destructive/20 bg-destructive/[0.045] px-4 py-3 text-[12px] font-medium leading-relaxed text-destructive">
+        <p role="alert" className="rounded-2xl border border-destructive/20 bg-destructive/[0.045] px-4 py-3 text-[12px] font-medium leading-relaxed text-destructive">
           {error}
         </p>
       )}
 
       <Button
         type="submit"
-        className={`h-[3.25rem] w-full rounded-full text-[14px] font-semibold shadow-none transition-[background-color,color,transform] active:scale-[0.99] disabled:opacity-100 ${loading ? "disabled:bg-foreground disabled:text-background" : "disabled:bg-foreground/[0.07] disabled:text-foreground/35"}`}
+        className="h-[3.25rem] w-full rounded-full text-[14px] font-semibold shadow-none transition-[background-color,color,transform] active:scale-[0.99] disabled:opacity-100 disabled:bg-foreground disabled:text-background"
         loading={loading}
-        disabled={!canSubmit || loading}
+        disabled={loading}
       >
         {t("auth.register.submit", lang)}
       </Button>

@@ -73,7 +73,7 @@ export default function TourPage({
   searchParams,
 }: {
   params: Promise<{ id: string }>;
-  searchParams: Promise<{ tourId?: string | string[]; renderer?: string | string[] }>;
+  searchParams: Promise<{ tourId?: string | string[]; renderer?: string | string[]; from?: string | string[] }>;
 }) {
   const { id } = use(params);
   const query = use(searchParams);
@@ -87,6 +87,10 @@ export default function TourPage({
   // no longer holds. ?renderer=spark opts back for comparison.
   const rawRenderer = Array.isArray(query.renderer) ? query.renderer[0] : query.renderer;
   const useSparkRenderer = rawRenderer === "spark";
+  // The list page tags its links so leaving the viewer returns to the list the
+  // user actually came from, not the draft that produced the tour.
+  const rawFrom = Array.isArray(query.from) ? query.from[0] : query.from;
+  const cameFromTours = rawFrom === "tours";
   const { isAuthenticated, isLoading, user } = useAuth();
   const router = useRouter();
   const [spatialEditorAllowed, setSpatialEditorAllowed] = useState(false);
@@ -116,6 +120,9 @@ export default function TourPage({
   // Set once when the Spinoff engine fails on this device; remounts the
   // viewer on Spark with the same asset.
   const [engineFallback, setEngineFallback] = useState(false);
+  // The viewer's dark chrome (gradients, back pill) waits for the first
+  // rendered frame so the white loading surface stays clean.
+  const [viewerReady, setViewerReady] = useState(false);
   const [draft, setDraft] = useState<DraftDetailItem | null>(null);
   const [roomKitCage, setRoomKitCage] = useState<RoomKitCageWall[]>([]);
   const [globalSceneTransform, setGlobalSceneTransform] = useState<GlobalSceneTransform>(
@@ -391,7 +398,8 @@ export default function TourPage({
         initialPruneMask={activePruneMask}
         preferSavedCameras={preferSavedCameras}
         performanceProfile="balanced"
-        loadingTone="dark"
+        loadingTone="light"
+        onReady={() => setViewerReady(true)}
         onError={(msg) => {
           // Falling back to the flat render is the right recovery, but it used
           // to happen silently: a scene that failed to parse looked identical
@@ -411,7 +419,7 @@ export default function TourPage({
           }
         }}
         onRetry={() => setRetryCount((count) => count + 1)}
-        onCancel={() => router.push(viewer.draft_id ? `/draft/${viewer.draft_id}` : "/tours")}
+        onCancel={() => router.push(!cameFromTours && viewer.draft_id ? `/draft/${viewer.draft_id}` : "/tours")}
         onShotChange={handleShotChange}
         spatialViewMode="surface"
         roomKitCage={roomKitCage}
@@ -425,14 +433,18 @@ export default function TourPage({
         lang={lang}
       />
 
-      <div className="pointer-events-none absolute inset-x-0 top-0 z-10 h-28 bg-gradient-to-b from-black/50 to-transparent" aria-hidden="true" />
-      <div className="pointer-events-none absolute inset-x-0 bottom-0 z-10 h-36 bg-gradient-to-t from-black/55 to-transparent" aria-hidden="true" />
+      {viewerReady ? (
+        <>
+          <div className="pointer-events-none absolute inset-x-0 top-0 z-10 h-28 bg-gradient-to-b from-black/50 to-transparent" aria-hidden="true" />
+          <div className="pointer-events-none absolute inset-x-0 bottom-0 z-10 h-36 bg-gradient-to-t from-black/55 to-transparent" aria-hidden="true" />
+        </>
+      ) : null}
 
       {/* Top bar */}
       <>
-          <div className="absolute left-3 top-[calc(0.75rem+env(safe-area-inset-top,0px))] z-20 flex items-center gap-2 animate-fade-in sm:left-4 sm:top-[calc(1rem+env(safe-area-inset-top,0px))] xl:left-6">
+          <div className={`absolute left-3 top-[calc(0.75rem+env(safe-area-inset-top,0px))] z-20 flex items-center gap-2 animate-fade-in sm:left-4 sm:top-[calc(1rem+env(safe-area-inset-top,0px))] xl:left-6 ${viewerReady ? "" : "hidden"}`}>
             <a
-              href={viewer.draft_id ? `/draft/${viewer.draft_id}` : "/tours"}
+              href={!cameFromTours && viewer.draft_id ? `/draft/${viewer.draft_id}` : "/tours"}
               aria-label={t("common.back", lang)}
               className="viewer-top-control-icon pen-touch-target flex items-center justify-center rounded-full border border-white/[0.16] bg-black/60 !text-white shadow-2xl backdrop-blur-2xl transition-colors hover:bg-black/72 hover:!text-white active:scale-95 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/70"
               style={{ color: "#fff" }}
@@ -441,6 +453,9 @@ export default function TourPage({
             </a>
           </div>
 
+          {/* Stays mounted so camera state initializes, but its dark chrome
+              waits for the first rendered frame like the rest of the top bar. */}
+          <div className={viewerReady ? "contents" : "invisible"}>
           <CameraEditor
             splatId={resolvedSplatId}
             viewerRef={splatRef}
@@ -466,6 +481,7 @@ export default function TourPage({
             }}
             lang={lang}
           />
+          </div>
       </>
     </main>
   );

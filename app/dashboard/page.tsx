@@ -21,7 +21,6 @@ import { Button } from "../lib/ui/button";
 import { currentGalleryUploads } from "../lib/media";
 import { readDraftPageCache, writeDraftPageCache } from "../lib/resilient-draft-cache";
 import { resolveUnit, type UnitLookup } from "../lib/unit-catalog";
-import { WebCreateAction } from "../components/web-create-action";
 import { CollectionCardSkeleton, CollectionCardSkeletons } from "../components/collection-card-skeleton";
 import { mediaProxyUrl } from "../lib/image-preview";
 import { matchesCollectionQuery, normalizeCollectionQuery } from "../lib/collection-search";
@@ -406,14 +405,9 @@ export default function DashboardPage() {
           title={t("dashboard.creationsTitle", lang)}
           meta={`${visibleCount} ${t("dashboard.items", lang)}`}
           actions={(
-            <>
-              <span className="hidden md:inline-flex">
-                <GridLayoutToggle value={gridCols} onChange={handleGridCols} lang={lang} />
-              </span>
-              <span className="md:hidden">
-                <WebCreateAction lang={lang} />
-              </span>
-            </>
+            <span className="hidden md:inline-flex">
+              <GridLayoutToggle value={gridCols} onChange={handleGridCols} lang={lang} />
+            </span>
           )}
           className="mb-3 sm:mb-5"
         />

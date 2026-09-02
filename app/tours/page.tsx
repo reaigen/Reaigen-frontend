@@ -17,7 +17,6 @@ import { listSplats } from "../lib/api/client";
 import { getUserLanguage, t } from "../lib/i18n";
 import type { SplatListItem } from "../lib/tour-types";
 import { Button } from "../lib/ui/button";
-import { WebCreateAction } from "../components/web-create-action";
 import { CollectionCardSkeleton, CollectionCardSkeletons } from "../components/collection-card-skeleton";
 import { GridLayoutToggle } from "../components/grid-layout-toggle";
 import { matchesCollectionQuery, normalizeCollectionQuery } from "../lib/collection-search";
@@ -252,12 +251,9 @@ export default function ToursPage() {
           title={t("tours.title", lang)}
           description={t("tours.subtitle", lang)}
           actions={(
-            <>
-              <span className="hidden md:inline-flex">
-                <GridLayoutToggle value={gridCols} onChange={handleGridCols} lang={lang} />
-              </span>
-              <WebCreateAction lang={lang} labelKey="webCreate.tourAction" />
-            </>
+            <span className="hidden md:inline-flex">
+              <GridLayoutToggle value={gridCols} onChange={handleGridCols} lang={lang} />
+            </span>
           )}
           className="mb-5 sm:mb-8"
         />
@@ -304,7 +300,7 @@ export default function ToursPage() {
               >
                 {visibleItems.map((item, index) => {
                   const ready = tourState(item) === "ready";
-                  const href = ready ? `/tour/${item.id}` : `/draft/${item.source_draft}`;
+                  const href = ready ? `/tour/${item.id}?from=tours` : `/draft/${item.source_draft}`;
                   return (
                     <CollectionCard key={item.id}>
                       <Link

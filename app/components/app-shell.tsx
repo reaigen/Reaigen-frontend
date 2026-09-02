@@ -547,7 +547,14 @@ function AppShellFrame({
     }
   };
 
-  const reaiLauncher = (variant: "header" | "floating") => reaiEnabled ? (
+  // The floorplan workspace has no agent tooling prepared, so the agent is not
+  // offered there: the launcher disappears and an already-open panel closes.
+  const agentSuppressed = reaiWorkspaceContext === "floorplan";
+  React.useEffect(() => {
+    if (agentSuppressed) setReaiOpen(false);
+  }, [agentSuppressed]);
+
+  const reaiLauncher = (variant: "header" | "floating") => reaiEnabled && !agentSuppressed ? (
     <button
       type="button"
       data-testid="agent-launcher"
@@ -687,7 +694,7 @@ function AppShellFrame({
           role="dialog"
           aria-modal="false"
           aria-labelledby="app-create-title"
-          className="fixed bottom-0 left-[var(--sidebar-offset)] top-0 z-[55] hidden w-[min(28rem,calc(100vw-var(--sidebar-offset)-2rem))] flex-col border-r border-border/70 bg-card text-foreground shadow-[20px_0_55px_rgba(0,0,0,0.10)] md:flex"
+          className="fixed bottom-0 left-[var(--sidebar-offset)] top-0 z-[55] hidden w-[min(28rem,calc(100vw-var(--sidebar-offset)-2rem))] animate-[panelInLeft_220ms_var(--motion-ease-smooth)] flex-col border-r border-border/70 bg-card text-foreground shadow-[20px_0_55px_rgba(0,0,0,0.10)] motion-reduce:animate-none md:flex"
         >
           <header className="flex h-[var(--header-total-h)] shrink-0 items-center justify-between border-b border-border/70 px-6 pt-safe">
             <h2 id="app-create-title" className="text-[26px] font-bold tracking-[-0.03em]">{t("webCreate.menuTitle", lang)}</h2>
@@ -766,7 +773,7 @@ function AppShellFrame({
                   href={headerBackHref}
                   aria-label={headerBackLabel || t("common.back", lang)}
                   title={headerBackLabel || t("common.back", lang)}
-                  className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full border border-border/60 bg-card text-foreground/65 shadow-control transition-colors hover:bg-surface-subtle hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+                  className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full border border-border/60 bg-card text-foreground/65 shadow-control transition-[background-color,color,transform] duration-100 hover:bg-surface-subtle hover:text-foreground active:scale-90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
                 >
                   <ArrowLeftIcon size={18} />
                 </Link>

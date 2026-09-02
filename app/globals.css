@@ -97,6 +97,16 @@
     overflow-x: clip;
   }
 
+  /*
+   * The canvas color lives on the root element too: during live window
+   * resizes (and rubber-band overscroll) the browser paints newly exposed
+   * viewport with the root background before layout catches up, which used to
+   * flash white beside the grey app canvas.
+   */
+  html {
+    background: hsl(var(--background));
+  }
+
   body {
     background: hsl(var(--background));
     color: hsl(var(--foreground));
@@ -303,22 +313,14 @@
     gap: 0.75rem;
   }
 
+  /* Rows are implicit: photo cards are just the picture, while the upload
+     tile still adds its labelled footer row below the visual. */
   .media-manager-card {
     display: grid;
-    grid-template-rows: auto 3rem;
   }
 
   .media-manager-card-visual {
     aspect-ratio: 16 / 9;
-  }
-
-  .media-manager-card-footer {
-    display: flex;
-    min-width: 0;
-    min-height: 3rem;
-    align-items: center;
-    border-top: 1px solid hsl(var(--border) / 0.55);
-    padding: 0 0.875rem;
   }
 
   @container (min-width: 700px) {
@@ -540,7 +542,10 @@
    * tooltip and accessible label. The canvas never loses a third of its height
    * to a wrapped two-row toolbar.
    */
-  @container (max-width: 1120px) {
+  /* Collapse utility labels well before the fully-labelled dock stops
+     fitting on one row (~1480px with every label shown). Between the two
+     thresholds the dock wraps instead of hiding tools behind a scroll. */
+  @container (max-width: 1480px) {
     .floorplan-util-button {
       width: 48px;
       padding-inline: 0;
@@ -650,8 +655,10 @@
       background-color 150ms ease;
   }
 
+  /* Hover stays clearly weaker than the selected fill — at 0.7 the two were
+     near-identical, so a hovered neighbour read as a second active segment. */
   .selection-capsule-item:hover {
-    background: hsl(var(--card) / 0.7);
+    background: hsl(var(--card) / 0.45);
     color: hsl(var(--foreground) / 0.82);
   }
 
@@ -659,7 +666,9 @@
   .selection-capsule-item[data-state="active"] {
     background: hsl(var(--card));
     color: hsl(var(--foreground));
-    box-shadow: none;
+    box-shadow:
+      inset 0 0 0 1px hsl(var(--border) / 0.55),
+      0 1px 3px hsl(var(--foreground) / 0.1);
   }
 
   .floating-capsule {
@@ -979,6 +988,10 @@
 }
 @keyframes panelIn {
   from { opacity: 0; transform: translateX(24px); }
+  to { opacity: 1; transform: translateX(0); }
+}
+@keyframes panelInLeft {
+  from { opacity: 0; transform: translateX(-24px); }
   to { opacity: 1; transform: translateX(0); }
 }
 @keyframes sheetUp {

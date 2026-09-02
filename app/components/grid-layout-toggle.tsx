@@ -13,7 +13,9 @@ interface GridLayoutToggleProps {
 export function GridLayoutToggle({ value, onChange, lang = "en" }: GridLayoutToggleProps) {
   return (
     <div
-      className="floating-toolbar hidden shrink-0 border-border/65 bg-secondary/70 md:flex"
+      // Opaque, no backdrop blur: translucent fills over backdrop-filter lag
+      // behind live window resizes and flash the white root background through.
+      className="floating-toolbar hidden shrink-0 border-border/65 bg-secondary [backdrop-filter:none] [-webkit-backdrop-filter:none] md:flex"
       role="group"
       aria-label={`${t("dashboard.gridSingle", lang)} / ${t("dashboard.gridCompact", lang)}`}
     >

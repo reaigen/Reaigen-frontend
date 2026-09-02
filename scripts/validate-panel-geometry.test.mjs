@@ -89,7 +89,11 @@ test("gallery controls do not invert or scale on hover", () => {
 
 test("tour navigation stays white while draft navigation keeps its light-surface colour", () => {
   assert.match(tourPage, /viewer-top-control-icon[^\n]*!text-white[\s\S]{0,220}<ArrowLeftIcon size=\{18\} color="#fff"/);
-  assert.match(tourLoading, /viewer-top-control-icon[^\n]*text-white[\s\S]{0,220}<ArrowLeftIcon size=\{18\} color="#fff"/);
+  // Route loading is a white surface now: dark chrome only appears once the
+  // viewer has a frame, so its back control uses the app's light styling.
+  assert.match(tourLoading, /bg-background text-foreground/);
+  assert.match(tourLoading, /viewer-top-control-icon[^\n]*text-foreground[\s\S]{0,400}<ArrowLeftIcon size=\{18\} \/>/);
+  assert.doesNotMatch(tourLoading, /bg-\[#121214\]|text-white|tone="dark"/);
   assert.match(draftPage, /floating-capsule[^\n]*text-foreground\/65[\s\S]{0,500}<ArrowLeftIcon size=\{17\} \/>/);
 });
 

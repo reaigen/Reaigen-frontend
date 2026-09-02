@@ -3,9 +3,9 @@ import { ArrowLeftIcon } from "./icons";
 import { ReaigenLoadingMark } from "./reaigen-loading-mark";
 
 /**
- * Route loading is already part of the immersive workspace. Keeping the same
- * canvas and back-control geometry avoids a white interstitial before the
- * viewer owns the screen.
+ * Route loading for the tour workspace. White, matching the app's loading
+ * language everywhere else — the viewer's dark canvas only takes over once it
+ * actually has a frame to show.
  */
 export function TourWorkspaceLoading({
   backHref = "/tours",
@@ -17,19 +17,18 @@ export function TourWorkspaceLoading({
   return (
     <main
       data-testid="tour-workspace-loading"
-      className="fixed inset-0 z-50 overflow-hidden bg-[#121214] text-white"
+      className="fixed inset-0 z-50 overflow-hidden bg-background text-foreground"
       aria-busy="true"
     >
       <h1 className="sr-only">{t("nav.tours", lang)}</h1>
-      <div className="pointer-events-none absolute inset-x-0 top-0 h-28 bg-gradient-to-b from-black/45 to-transparent" aria-hidden="true" />
       <a
         href={backHref}
         aria-label={t("common.back", lang)}
-        className="viewer-top-control-icon pen-touch-target absolute left-3 top-[calc(0.75rem+env(safe-area-inset-top,0px))] z-20 flex items-center justify-center rounded-full border border-white/[0.16] bg-black/60 text-white shadow-2xl transition-colors hover:bg-black/72 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/70 sm:left-4 sm:top-[calc(1rem+env(safe-area-inset-top,0px))] xl:left-6"
+        className="viewer-top-control-icon pen-touch-target absolute left-3 top-[calc(0.75rem+env(safe-area-inset-top,0px))] z-20 flex items-center justify-center rounded-full border border-border/70 bg-white text-foreground shadow-control transition-colors hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 sm:left-4 sm:top-[calc(1rem+env(safe-area-inset-top,0px))] xl:left-6"
       >
-        <ArrowLeftIcon size={18} color="#fff" />
+        <ArrowLeftIcon size={18} />
       </a>
-      <ReaigenLoadingMark status={t("common.loading", lang)} tone="dark" />
+      <ReaigenLoadingMark status={t("common.loading", lang)} tone="light" />
     </main>
   );
 }

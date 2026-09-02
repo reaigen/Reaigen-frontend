@@ -201,7 +201,13 @@ function GalleryLightbox({
       aria-label={alt}
       className="fixed inset-0 z-[9999] flex overscroll-contain bg-surface text-foreground animate-in fade-in duration-200"
     >
-      <div className="media-overlay-surface pointer-events-none absolute left-1/2 top-[max(.75rem,env(safe-area-inset-top))] z-40 grid h-12 w-[min(calc(100%_-_1.5rem),36rem)] -translate-x-1/2 grid-cols-[1fr_minmax(0,auto)_1fr] items-center rounded-full px-1.5 sm:top-[max(1rem,env(safe-area-inset-top))]">
+      {/*
+        3.25rem tall with 4px inset: the buttons' 44px touch circles then sit
+        with an even 4px margin on every side. At h-12/px-1.5 the circle was
+        44px in a 48px pill — its hover fill grazed the top edge and visually
+        broke through the capsule's left cap.
+      */}
+      <div className="media-overlay-surface pointer-events-none absolute left-1/2 top-[max(.75rem,env(safe-area-inset-top))] z-40 grid h-[3.25rem] w-[min(calc(100%_-_1.5rem),36rem)] -translate-x-1/2 grid-cols-[1fr_minmax(0,auto)_1fr] items-center rounded-full px-1 sm:top-[max(1rem,env(safe-area-inset-top))]">
         <div className="flex min-w-0 justify-start">
           <button
             ref={closeRef}
