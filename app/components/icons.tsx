@@ -319,6 +319,15 @@ export function FrameIcon({ size = 18, width, height, ...props }: IconProps) {
   );
 }
 
+export function ShowHiddenIcon({ size = 18, width, height, ...props }: IconProps) {
+  return (
+    <svg viewBox="0 0 24 24" width={width ?? size} height={height ?? size} fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" aria-hidden={props["aria-hidden"] ?? true} {...props}>
+      <rect x="4.25" y="4.25" width="15.5" height="15.5" rx="3" strokeDasharray="3.1 3.1" />
+      <path d="M9.5 12h5M12 9.5v5" />
+    </svg>
+  );
+}
+
 export function CameraIcon({ size = 18, width, height, ...props }: IconProps) {
   return (
     <svg viewBox="0 0 24 24" width={width ?? size} height={height ?? size} fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" aria-hidden={props["aria-hidden"] ?? true} {...props}>

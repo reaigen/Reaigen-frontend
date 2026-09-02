@@ -1421,6 +1421,7 @@ const sk: LocaleStrings = {
   "floorplan.editor.layers":             "Vrstvy",
   "floorplan.editor.reset":              "Obnoviť",
   "floorplan.editor.fitView":            "Prispôsobiť",
+  "floorplan.editor.showHidden":         "Zobraziť skryté",
   "floorplan.editor.furniture":          "Nábytok",
   "floorplan.editor.furnitureDensity":   "Hustota nábytku (/m²)",
   "floorplan.editor.aspectRatio":        "Pomery strán W:H",

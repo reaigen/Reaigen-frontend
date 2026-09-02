@@ -1421,6 +1421,7 @@ const de: LocaleStrings = {
   "floorplan.editor.layers":             "Ebenen",
   "floorplan.editor.reset":              "Zurücksetzen",
   "floorplan.editor.fitView":            "Einpassen",
+  "floorplan.editor.showHidden":         "Ausgeblendete zeigen",
   "floorplan.editor.furniture":          "Möbel",
   "floorplan.editor.furnitureDensity":   "Möbeldichte (pro m²)",
   "floorplan.editor.aspectRatio":        "Seitenverhältnis W:H",

@@ -1440,6 +1440,7 @@ const en = {
   "floorplan.editor.layers":             "Layers",
   "floorplan.editor.reset":              "Reset",
   "floorplan.editor.fitView":            "Fit view",
+  "floorplan.editor.showHidden":         "Show hidden",
   "floorplan.editor.furniture":          "Furniture",
   "floorplan.editor.furnitureDensity":   "Furniture density (/m²)",
   "floorplan.editor.aspectRatio":        "Aspect W:H",

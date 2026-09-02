@@ -80,6 +80,7 @@ import {
   ResetToolIcon,
   RoomToolIcon,
   RotateIcon,
+  ShowHiddenIcon,
   UndoIcon,
   WindowToolIcon,
   type IconProps,
@@ -390,6 +391,17 @@ export default function FloorplanEditor({ draftId, draftData, lang, onClose, onS
   const [tool, setTool] = useState<Tool | null>(null);
   const [zoom, setZoom] = useState(DEFAULT_VIEW_ZOOM);
   const [pan, setPan] = useState<{ x: number; y: number }>(() => ({ ...DEFAULT_VIEW_PAN }));
+  // Synchronous view mirror. Wheel events burst faster than renders, and
+  // computing the anchored-zoom pan inside a state updater is impure — React
+  // double-invokes updaters in dev, which applied the pan shift twice and
+  // un-anchored the zoom (the drift that sent dragged labels flying). Every
+  // view change goes through applyView so this ref is never stale.
+  const viewRef = useRef({ zoom: DEFAULT_VIEW_ZOOM, pan: { ...DEFAULT_VIEW_PAN } });
+  const applyView = useCallback((nextZoom: number, nextPan: { x: number; y: number }) => {
+    viewRef.current = { zoom: nextZoom, pan: { ...nextPan } };
+    setZoom(nextZoom);
+    setPan({ ...nextPan });
+  }, []);
   const [layers, setLayers] = useState({ doors: true, windows: true, labels: true, furniture: true });
   // Right-panel state: the inspector binds to whichever element is selected
   // (door via editingDoor, window via selectedWindowId, wall/furniture via
@@ -468,6 +480,10 @@ export default function FloorplanEditor({ draftId, draftData, lang, onClose, onS
     return out;
   });
   const [editingDoor, setEditingDoor] = useState<{ id: string; screen: [number, number] } | null>(null);
+  // Session-only visibility (DCC convention: H hides the selection, Shift+H
+  // shows everything). Hidden elements stay in the plan and in every save —
+  // they just stop rendering, hit-testing and colliding until shown again.
+  const [hiddenIds, setHiddenIds] = useState<ReadonlySet<string>>(() => new Set());
   const [saveState, setSaveState] = useState<"idle" | "saving" | "error">("idle");
 
   const undoStack = useRef<Snapshot[]>([]);
@@ -494,6 +510,7 @@ export default function FloorplanEditor({ draftId, draftData, lang, onClose, onS
     baseMarkers?: Record<number, V2>;
     basePan?: { x: number; y: number };
     baseOffset?: V2;
+    button?: number;
     moved?: boolean;
     undoCaptured?: boolean;
   }>({ kind: null, start: [0, 0], startScreen: [0, 0] });
@@ -720,10 +737,15 @@ export default function FloorplanEditor({ draftId, draftData, lang, onClose, onS
     [edits, hosted]
   );
   const doors = useMemo(
-    () => [...srcDoors, ...customDoors].map((d) => ({ id: d.id, p1: d.p1, p2: d.p2 })),
-    [srcDoors, customDoors]
+    () => [...srcDoors, ...customDoors]
+      .filter((d) => !hiddenIds.has(d.id))
+      .map((d) => ({ id: d.id, p1: d.p1, p2: d.p2 })),
+    [srcDoors, customDoors, hiddenIds]
   );
-  const windows = useMemo(() => [...srcWindows, ...customWindows], [srcWindows, customWindows]);
+  const windows = useMemo(
+    () => [...srcWindows, ...customWindows].filter((w) => !hiddenIds.has(w.id)),
+    [srcWindows, customWindows, hiddenIds]
+  );
 
   /**
    * Free span (distances along the wall from `a`) around `aroundT`, bounded by
@@ -825,8 +847,8 @@ export default function FloorplanEditor({ draftId, draftData, lang, onClose, onS
     () => applyFurnitureEdits(
       applyFurnitureWallAttachment(baselineFurniture, furnitureBaselineWalls, segs),
       furnitureEdits,
-    ),
-    [baselineFurniture, furnitureBaselineWalls, furnitureEdits, segs],
+    ).filter((object) => !hiddenIds.has(object.id)),
+    [baselineFurniture, furnitureBaselineWalls, furnitureEdits, segs, hiddenIds],
   );
   const furniture = useMemo(() => {
     const collisionById = new Map(collisionFurniture.map((object) => [object.id, object]));
@@ -1540,10 +1562,15 @@ export default function FloorplanEditor({ draftId, draftData, lang, onClose, onS
   // ── pointer handlers ──────────────────────────────────────────────────────
   const onPointerDown = useCallback(
     (ev: React.PointerEvent<SVGSVGElement>) => {
+      const g = gesture.current;
+      // A second button pressed mid-gesture (click during a middle-mouse pan)
+      // must not restart or rebase the gesture in flight — the stale rebase is
+      // what made the canvas jump.
+      if (g.kind) return;
       (ev.target as Element).setPointerCapture?.(ev.pointerId);
       const w = screenToWorld(ev.clientX, ev.clientY);
       const sp = screenPx(ev.clientX, ev.clientY);
-      const g = gesture.current;
+      g.button = ev.button;
       g.start = w;
       g.startScreen = sp;
       g.moved = false;
@@ -1737,7 +1764,7 @@ export default function FloorplanEditor({ draftId, draftData, lang, onClose, onS
       }
       switch (g.kind) {
         case "pan": {
-          setPan({
+          applyView(viewRef.current.zoom, {
             x: g.basePan!.x + (sp[0] - g.startScreen[0]),
             y: g.basePan!.y + (sp[1] - g.startScreen[1]),
           });
@@ -1809,12 +1836,17 @@ export default function FloorplanEditor({ draftId, draftData, lang, onClose, onS
         }
       }
     },
-    [screenToWorld, screenPx, snapDrawEnd, reprojectOpenings, pushUndo, openingDragEdits, pushedMarkers]
+    [screenToWorld, screenPx, snapDrawEnd, reprojectOpenings, pushUndo, openingDragEdits, pushedMarkers, applyView]
   );
 
   const onPointerUp = useCallback(
     (ev: React.PointerEvent<SVGSVGElement>) => {
       const g = gesture.current;
+      // Only the button that started the gesture may end it; releasing the
+      // other one mid-hold must neither cut the gesture short nor fire a
+      // one-shot tool action at a phantom position.
+      if (g.button !== undefined && ev.button !== g.button) return;
+      g.button = undefined;
       const kind = g.kind;
       g.kind = null;
       const w = screenToWorld(ev.clientX, ev.clientY);
@@ -1940,6 +1972,7 @@ export default function FloorplanEditor({ draftId, draftData, lang, onClose, onS
       if (current.undoCaptured) undoStack.current.pop();
     }
     current.kind = null;
+    current.button = undefined;
     setMoveSelection(null);
     setDrawPreview(null);
     setEraseStroke([]);
@@ -1948,20 +1981,90 @@ export default function FloorplanEditor({ draftId, draftData, lang, onClose, onS
   const onWheel = useCallback(
     (ev: React.WheelEvent<SVGSVGElement>) => {
       const factor = Math.exp(-ev.deltaY * 0.0015);
-      setZoom((z) => {
-        const next = Math.max(0.5, Math.min(5, z * factor));
-        const sp = screenPx(ev.clientX, ev.clientY);
-        setPan((p) => ({
-          x: sp[0] - ((sp[0] - p.x) / z) * next,
-          y: sp[1] - ((sp[1] - p.y) / z) * next,
-        }));
-        return next;
-      });
+      const sp = screenPx(ev.clientX, ev.clientY);
+      const { zoom: z, pan: p } = viewRef.current;
+      const next = Math.max(0.5, Math.min(5, z * factor));
+      const nextPan = {
+        x: sp[0] - ((sp[0] - p.x) / z) * next,
+        y: sp[1] - ((sp[1] - p.y) / z) * next,
+      };
+      const g = gesture.current;
+      if (g.kind === "pan") {
+        // Zooming while middle-mouse panning: rebase the live pan gesture on
+        // the post-zoom view, otherwise the very next pointermove restores
+        // the pre-zoom pan and the canvas jumps back.
+        g.basePan = { ...nextPan };
+        g.startScreen = sp;
+      }
+      applyView(next, nextPan);
     },
-    [screenPx]
+    [screenPx, applyView]
   );
 
   // ── toolbar actions ───────────────────────────────────────────────────────
+  /**
+   * DCC framing: F frames the selection (falling back to the whole plan),
+   * the toolbar's fit button always frames the whole plan.
+   */
+  const frameView = useCallback(
+    (scope: "auto" | "all") => {
+      const pts: V2[] = [];
+      if (scope === "auto") {
+        if (moveSelection?.kind === "furniture") {
+          const object = furniture.find((o) => o.id === moveSelection.id);
+          if (object) pts.push(...objectCorners(object));
+        } else if (moveSelection?.kind === "edge") {
+          const edge = graph.edges[moveSelection.index];
+          if (edge) pts.push(graph.vertices[edge.a], graph.vertices[edge.b]);
+        } else if (selectedWindowId) {
+          const win = windows.find((w) => w.id === selectedWindowId);
+          if (win) pts.push(win.p1, win.p2);
+        } else if (editingDoor) {
+          const door = doors.find((d) => d.id === editingDoor.id);
+          if (door) pts.push(door.p1, door.p2);
+        } else if (selectedRoomN != null && labelPositions[selectedRoomN]) {
+          const [lx, lz] = labelPositions[selectedRoomN];
+          pts.push([lx - 1.2, lz - 1.2], [lx + 1.2, lz + 1.2]);
+        }
+      }
+      const framingAll = pts.length === 0;
+      if (framingAll) {
+        pts.push(...graph.vertices);
+        for (const object of furniture) pts.push(...objectCorners(object));
+      }
+      if (!pts.length) {
+        applyView(DEFAULT_VIEW_ZOOM, DEFAULT_VIEW_PAN);
+        return;
+      }
+      const screen = pts.map(([x, z]) => proj(x, z));
+      const minX = Math.min(...screen.map(([x]) => x));
+      const maxX = Math.max(...screen.map(([x]) => x));
+      const minY = Math.min(...screen.map(([, y]) => y));
+      const maxY = Math.max(...screen.map(([, y]) => y));
+      const span = Math.max(maxX - minX, maxY - minY, 24);
+      const avail = VIEW * (framingAll ? 0.82 : 0.62);
+      const nextZoom = Math.max(0.5, Math.min(5, avail / span));
+      applyView(nextZoom, {
+        x: VIEW / 2 - nextZoom * ((minX + maxX) / 2),
+        y: VIEW / 2 - nextZoom * ((minY + maxY) / 2),
+      });
+    },
+    [moveSelection, selectedWindowId, editingDoor, selectedRoomN, labelPositions,
+     graph, furniture, windows, doors, proj, applyView]
+  );
+
+  /** H hides the selected door, window or piece of furniture (session-only). */
+  const hideSelection = useCallback(() => {
+    const id = moveSelection?.kind === "furniture"
+      ? moveSelection.id
+      : selectedWindowId ?? editingDoor?.id ?? null;
+    if (!id) return;
+    setHiddenIds((prev) => new Set(prev).add(id));
+    setMoveSelection(null);
+    setSelectedWindowId(null);
+    setEditingDoor(null);
+  }, [moveSelection, selectedWindowId, editingDoor]);
+
   const undo = useCallback(() => {
     const snap = undoStack.current.pop();
     if (!snap) return;
@@ -2007,6 +2110,22 @@ export default function FloorplanEditor({ draftId, draftData, lang, onClose, onS
         return;
       }
 
+      if (event.metaKey || event.ctrlKey || event.altKey) return;
+
+      // DCC conventions: F frames selection (or all), H hides the selection,
+      // Shift+H shows everything hidden again.
+      if (event.key.toLowerCase() === "f") {
+        event.preventDefault();
+        frameView("auto");
+        return;
+      }
+      if (event.key.toLowerCase() === "h") {
+        event.preventDefault();
+        if (event.shiftKey) setHiddenIds(new Set());
+        else hideSelection();
+        return;
+      }
+
       const shortcutTools: Partial<Record<string, Tool>> = {
         v: "move",
         w: "draw",
@@ -2023,7 +2142,7 @@ export default function FloorplanEditor({ draftId, draftData, lang, onClose, onS
     };
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [undo]);
+  }, [undo, frameView, hideSelection]);
 
   const renameLabel = useCallback(
     (n: number, value: string) => {
@@ -3151,13 +3270,17 @@ export default function FloorplanEditor({ draftId, draftData, lang, onClose, onS
               <UtilButton onClick={rotate} label={t("floorplan.editor.rotate", lang)} icon={RotateIcon} />
               <UtilButton onClick={resetAll} label={t("floorplan.editor.reset", lang)} icon={ResetToolIcon} />
               <UtilButton
-                onClick={() => {
-                  setZoom(DEFAULT_VIEW_ZOOM);
-                  setPan({ ...DEFAULT_VIEW_PAN });
-                }}
+                onClick={() => frameView("all")}
                 label={t("floorplan.editor.fitView", lang)}
                 icon={FrameIcon}
               />
+              {hiddenIds.size > 0 && (
+                <UtilButton
+                  onClick={() => setHiddenIds(new Set())}
+                  label={`${t("floorplan.editor.showHidden", lang)} (${hiddenIds.size})`}
+                  icon={ShowHiddenIcon}
+                />
+              )}
             </div>
           </div>
       </div>
