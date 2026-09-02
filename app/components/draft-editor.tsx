@@ -6,7 +6,15 @@ import { Input } from "../lib/ui/input";
 import { Label } from "../lib/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "../lib/ui/select";
 import { getSafeApiErrorMessage } from "../lib/api/error-message";
-import { updateDraft, type DraftUpdatePayload } from "../lib/api/client";
+import {
+  generateDraftDescription,
+  getCreationSettings,
+  getDraftService,
+  updateDraft,
+  type DescriptionSize,
+  type DescriptionTone,
+  type DraftUpdatePayload,
+} from "../lib/api/client";
 import { t } from "../lib/i18n";
 import {
   formatEditableNumber,
@@ -48,6 +56,7 @@ import {
   EditIcon,
   MinusIcon,
   PlusIcon,
+  SparklesIcon,
   type IconProps,
 } from "./icons";
 import { SearchField } from "./search-field";
@@ -534,39 +543,72 @@ function DirectValueField({
           </div>
         ) : null}
       </div>
-      {numeric && mathToolsOpen ? (
-        <div className="mt-1.5 flex min-h-11 items-center gap-1 rounded-full border border-border/55 bg-card p-1" aria-label={t("draft.editor.expressionHint", lang)}>
-          {["+", "−", "×", "÷"].map((operator) => (
-            <button
-              key={operator}
-              type="button"
-              onMouseDown={(event) => event.preventDefault()}
-              onClick={() => appendOperator(operator === "−" ? "-" : operator === "×" ? "*" : operator === "÷" ? "/" : operator)}
-              className="flex h-9 min-w-9 items-center justify-center rounded-full border border-transparent bg-transparent px-2 text-[14px] font-semibold text-foreground/68 transition-[background-color,color,border-color] hover:border-border/55 hover:bg-card/80 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/25"
-            >
-              {operator}
-            </button>
-          ))}
-          <button
-            type="button"
-            onMouseDown={(event) => event.preventDefault()}
-            onClick={commitNumericValue}
-            className="flex h-9 min-w-9 items-center justify-center rounded-full border border-transparent bg-transparent px-2 text-[14px] font-bold text-foreground/72 transition-[background-color,color,border-color] hover:border-border/55 hover:bg-card/80 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/25"
-          >
-            =
-          </button>
-          <span className="min-w-0 flex-1" />
-          <button
-            type="button"
-            onMouseDown={(event) => event.preventDefault()}
-            onClick={() => {
-              commitNumericValue();
-              setMathToolsOpen(false);
-            }}
-            className="flex h-9 items-center justify-center rounded-full border border-foreground bg-foreground px-4 text-[11px] font-semibold text-background transition-colors hover:bg-foreground/90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/25"
-          >
-            {t("draft.editor.descriptionDone", lang)}
-          </button>
+      {numeric ? (
+        /*
+          Always mounted, height-animated. Mounting the row on focus made the
+          whole form below it jump; collapsing a grid row lets it ease open and
+          closed on the same clock as the rest of the editor's motion.
+        */
+        <div
+          inert={mathToolsOpen ? undefined : true}
+          aria-hidden={!mathToolsOpen}
+          className={cn(
+            "grid transition-[grid-template-rows,opacity,margin-top] duration-200 ease-[var(--motion-ease-smooth)] motion-reduce:transition-none",
+            mathToolsOpen ? "mt-1.5 grid-rows-[1fr] opacity-100" : "mt-0 grid-rows-[0fr] opacity-0",
+          )}
+        >
+          <div className="min-h-0 overflow-hidden">
+            <div className="flex min-h-11 items-center gap-0.5 rounded-full border border-border/55 bg-card p-1" aria-label={t("draft.editor.expressionHint", lang)}>
+              {/*
+                Drawn glyphs, not font characters: text sits on a baseline, so
+                +/×/÷ were optically off-centre in their circular hit areas. An
+                SVG stroke is centred in its viewBox by construction.
+              */}
+              {([
+                ["+", "+", "M8 3.4v9.2M3.4 8h9.2"],
+                ["−", "-", "M3.4 8h9.2"],
+                ["×", "*", "M4.4 4.4l7.2 7.2M11.6 4.4l-7.2 7.2"],
+                ["÷", "/", "M3.4 8h9.2M8 4.35v.01M8 11.65v.01"],
+              ] as const).map(([symbol, operator, path]) => (
+                <button
+                  key={operator}
+                  type="button"
+                  onMouseDown={(event) => event.preventDefault()}
+                  onClick={() => appendOperator(operator)}
+                  aria-label={symbol}
+                  className="flex h-9 w-10 items-center justify-center rounded-full text-foreground/70 transition-colors hover:bg-surface-subtle hover:text-foreground active:bg-surface-subtle focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/25"
+                >
+                  <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+                    <path d={path} stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" />
+                  </svg>
+                </button>
+              ))}
+              <span aria-hidden="true" className="mx-1 h-5 w-px shrink-0 bg-border/70" />
+              <button
+                type="button"
+                onMouseDown={(event) => event.preventDefault()}
+                onClick={commitNumericValue}
+                aria-label="="
+                className="flex h-9 w-10 items-center justify-center rounded-full text-foreground/75 transition-colors hover:bg-surface-subtle hover:text-foreground active:bg-surface-subtle focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/25"
+              >
+                <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+                  <path d="M3.6 5.9h8.8M3.6 10.1h8.8" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" />
+                </svg>
+              </button>
+              <span className="min-w-0 flex-1" />
+              <button
+                type="button"
+                onMouseDown={(event) => event.preventDefault()}
+                onClick={() => {
+                  commitNumericValue();
+                  setMathToolsOpen(false);
+                }}
+                className="flex h-9 items-center justify-center rounded-full border border-foreground bg-foreground px-4 text-[12px] font-semibold text-background transition-[background-color,transform] hover:bg-foreground/90 active:scale-[0.97] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/25"
+              >
+                {t("draft.editor.descriptionDone", lang)}
+              </button>
+            </div>
+          </div>
         </div>
       ) : null}
       {preview ? <p className="px-1 text-right text-[11px] font-medium tabular-nums text-foreground/55" aria-live="polite">{preview}</p> : null}
@@ -978,6 +1020,74 @@ function editorHtmlToDescription(root: HTMLElement) {
   return Array.from(root.childNodes).map(render).join("").replace(/\n{3,}/g, "\n\n").trim();
 }
 
+/* ── AI description generation (mirrors the iOS description editor) ──────── */
+
+const DESCRIPTION_TONES: readonly DescriptionTone[] = ["fluent", "descriptive", "luxurious", "selly", "poet"];
+const DESCRIPTION_SIZES: readonly DescriptionSize[] = ["short", "standard", "long"];
+
+/** Same alias table iOS applies before sending the payload. */
+function normalizeDescriptionTone(value: unknown): DescriptionTone {
+  const raw = typeof value === "string" ? value.toLowerCase() : "";
+  const aliased = raw === "professional" ? "descriptive" : raw === "warm" || raw === "fluttered" ? "fluent" : raw;
+  return (DESCRIPTION_TONES as readonly string[]).includes(aliased) ? aliased as DescriptionTone : "fluent";
+}
+
+function normalizeDescriptionSize(value: unknown): DescriptionSize {
+  const raw = typeof value === "string" ? value.toLowerCase() : "";
+  const aliased = raw === "normal" ? "standard" : raw;
+  return (DESCRIPTION_SIZES as readonly string[]).includes(aliased) ? aliased as DescriptionSize : "standard";
+}
+
+/**
+ * The creation-settings document has nested description preferences at
+ * different depths across backend revisions — read every plausible spot.
+ */
+function extractDescriptionDefaults(settings: Record<string, unknown>): {
+  keywords: string[];
+  tone: DescriptionTone | null;
+  size: DescriptionSize | null;
+  instructions: string;
+} {
+  const candidates: Array<Record<string, unknown>> = [settings];
+  for (const key of ["description_preferences", "description", "preferences"]) {
+    const nested = settings[key];
+    if (nested && typeof nested === "object") candidates.push(nested as Record<string, unknown>);
+  }
+  const pick = (field: string): unknown => {
+    for (const source of candidates) {
+      if (source[field] != null) return source[field];
+    }
+    return null;
+  };
+  const rawKeywords = pick("default_keywords");
+  const keywords = Array.isArray(rawKeywords)
+    ? Array.from(new Set(rawKeywords.filter((item): item is string => typeof item === "string").map((item) => item.trim()).filter(Boolean)))
+    : [];
+  const tone = pick("default_tone");
+  const size = pick("default_size");
+  const instructions = pick("default_instructions");
+  return {
+    keywords,
+    tone: tone == null ? null : normalizeDescriptionTone(tone),
+    size: size == null ? null : normalizeDescriptionSize(size),
+    instructions: typeof instructions === "string" ? instructions : "",
+  };
+}
+
+/** Fixed shimmer layout copied from the iOS overlay: widths per row, ¶ = paragraph gap. */
+const GENERATION_SKELETON_ROWS: ReadonlyArray<{ width: number; gapBefore?: boolean }> = [
+  { width: 100 }, { width: 88 }, { width: 100 },
+  { width: 62, gapBefore: true }, { width: 94 }, { width: 78 },
+  { width: 100, gapBefore: true }, { width: 72 }, { width: 55 },
+];
+
+const GENERATION_STATUS_KEYS = [
+  "draft.descAi.status.analyzing",
+  "draft.descAi.status.crafting",
+  "draft.descAi.status.details",
+  "draft.descAi.status.almost",
+] as const;
+
 export function DraftEditor({
   open,
   onOpenChange,
@@ -1011,7 +1121,32 @@ export function DraftEditor({
   const [editorFieldFocused, setEditorFieldFocused] = React.useState(false);
   const [descriptionEditorOpen, setDescriptionEditorOpen] = React.useState(false);
   const [descriptionDraft, setDescriptionDraft] = React.useState(values.description);
+  // The editable's content is React-rendered from this seed via
+  // dangerouslySetInnerHTML — a freshly mounted panel therefore always shows
+  // the text, with no ref/timing games. Typing mutates the DOM freely (the
+  // seed string stays stable, so React leaves the element alone); the seed
+  // only changes when a session starts or generation replaces the text.
+  const [editorSeedHtml, setEditorSeedHtml] = React.useState("");
   const [confirmDescriptionDiscard, setConfirmDescriptionDiscard] = React.useState(false);
+  const descriptionEditorOpenRef = React.useRef(false);
+  React.useEffect(() => {
+    descriptionEditorOpenRef.current = descriptionEditorOpen;
+  }, [descriptionEditorOpen]);
+  // AI generation controls, mirroring the iOS description editor: keyword
+  // chips, a size • tone settings drawer, and a polled generation job.
+  const [genKeywordPool, setGenKeywordPool] = React.useState<string[]>([]);
+  const [genSelectedKeywords, setGenSelectedKeywords] = React.useState<string[]>([]);
+  const [genSize, setGenSize] = React.useState<DescriptionSize>("standard");
+  const [genTone, setGenTone] = React.useState<DescriptionTone>("fluent");
+  const [genInstructions, setGenInstructions] = React.useState("");
+  const [genSettingsOpen, setGenSettingsOpen] = React.useState(false);
+  const [generating, setGenerating] = React.useState(false);
+  const [genError, setGenError] = React.useState<string | null>(null);
+  const [genStatusIndex, setGenStatusIndex] = React.useState(0);
+  const [canRestorePrevious, setCanRestorePrevious] = React.useState(false);
+  const generationRunRef = React.useRef(0);
+  const preGenerationTextRef = React.useRef<string | null>(null);
+  const genDefaultsLoadedRef = React.useRef(false);
   const editorScrollRef = React.useRef<HTMLDivElement>(null);
   const editorFormRef = React.useRef<HTMLFormElement>(null);
   const descriptionEditorRef = React.useRef<HTMLDivElement>(null);
@@ -1043,10 +1178,30 @@ export function DraftEditor({
     setError(null);
     setConfirmDiscard(false);
     setEditorFieldFocused(false);
-    setDescriptionDraft(next.description);
-    setDescriptionEditorOpen(startWithDescription);
+    // A draft refetch (translation polling, media updates) must not stomp the
+    // text being edited or slam the description panel open/closed — that pair
+    // of resets is exactly what blanked the editor mid-session.
+    if (!descriptionEditorOpenRef.current) setDescriptionDraft(next.description);
     setConfirmDescriptionDiscard(false);
   }, [draft, open, startWithDescription, units]);
+
+  // Only the editor's own open transition decides the description panel.
+  React.useEffect(() => {
+    if (!open) {
+      setDescriptionEditorOpen(false);
+      return;
+    }
+    if (startWithDescription) {
+      const description = valuesFromDraft(draft, units).description;
+      setDescriptionDraft(description);
+      setEditorSeedHtml(descriptionToEditorHtml(description));
+      setConfirmDescriptionDiscard(false);
+    }
+    setDescriptionEditorOpen(startWithDescription);
+  // The draft identity churns on background refetches; this must fire only
+  // when the editor opens or the requested start panel changes.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, startWithDescription]);
 
   const dirty = JSON.stringify(values) !== JSON.stringify(baseline)
     || JSON.stringify(specs) !== JSON.stringify(baselineSpecs)
@@ -1074,6 +1229,7 @@ export function DraftEditor({
 
   const openDescriptionEditor = () => {
     setDescriptionDraft(values.description);
+    setEditorSeedHtml(descriptionToEditorHtml(values.description));
     setConfirmDescriptionDiscard(false);
     setDescriptionEditorOpen(true);
   };
@@ -1112,12 +1268,124 @@ export function DraftEditor({
     setConfirmDescriptionDiscard(false);
   };
 
+  const placeCaretAtEnd = (editor: HTMLElement) => {
+    const range = document.createRange();
+    range.selectNodeContents(editor);
+    range.collapse(false);
+    const selection = window.getSelection();
+    selection?.removeAllRanges();
+    selection?.addRange(range);
+  };
+
   React.useLayoutEffect(() => {
-    if (!descriptionEditorOpen || !descriptionEditorRef.current) return;
-    descriptionEditorRef.current.innerHTML = descriptionToEditorHtml(descriptionDraft);
-  // Only seed the editable DOM when the dedicated editor opens. Re-seeding on
-  // every keystroke would move the caret to the start of the document.
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+    const editor = descriptionEditorRef.current;
+    if (!descriptionEditorOpen || !editor) return;
+    // React has just written the seed HTML (fresh mount or replaced seed);
+    // Radix's autofocus may already sit on the editable, so give it a caret at
+    // the end of the text instead of a dead selection.
+    if (document.activeElement === editor) placeCaretAtEnd(editor);
+  }, [descriptionEditorOpen, editorSeedHtml]);
+
+  // Pull the user's saved generation defaults (keywords, tone, size,
+  // instructions) the first time the description editor opens, like the iOS
+  // editor pre-selecting the default keyword set.
+  React.useEffect(() => {
+    if (!descriptionEditorOpen || genDefaultsLoadedRef.current) return;
+    genDefaultsLoadedRef.current = true;
+    void getCreationSettings()
+      .then((settings) => {
+        const defaults = extractDescriptionDefaults(settings ?? {});
+        if (defaults.keywords.length) {
+          setGenKeywordPool(defaults.keywords);
+          setGenSelectedKeywords(defaults.keywords);
+        }
+        if (defaults.tone) setGenTone(defaults.tone);
+        if (defaults.size) setGenSize(defaults.size);
+        if (defaults.instructions) setGenInstructions(defaults.instructions);
+      })
+      .catch(() => {
+        // Defaults are a convenience; the editor works without them.
+      });
+  }, [descriptionEditorOpen]);
+
+  // Cycle the status pill while a job runs, on the iOS cadence.
+  React.useEffect(() => {
+    if (!generating) return;
+    setGenStatusIndex(0);
+    const timer = window.setInterval(() => {
+      setGenStatusIndex((index) => Math.min(index + 1, GENERATION_STATUS_KEYS.length - 1));
+    }, 2600);
+    return () => window.clearInterval(timer);
+  }, [generating]);
+
+  const applyGeneratedDescription = (text: string) => {
+    setDescriptionDraft(text);
+    setEditorSeedHtml(descriptionToEditorHtml(text));
+    setCanRestorePrevious(Boolean(preGenerationTextRef.current?.trim()));
+  };
+
+  const restorePreviousDescription = () => {
+    const previous = preGenerationTextRef.current;
+    if (previous == null) return;
+    setDescriptionDraft(previous);
+    setEditorSeedHtml(descriptionToEditorHtml(previous));
+    setCanRestorePrevious(false);
+  };
+
+  const runDescriptionGeneration = async () => {
+    if (generating) return;
+    const run = ++generationRunRef.current;
+    setGenError(null);
+    setGenSettingsOpen(false);
+    setGenerating(true);
+    preGenerationTextRef.current = descriptionDraft;
+    try {
+      const { service_id: serviceId } = await generateDraftDescription(draft.id, {
+        keywords: genSelectedKeywords,
+        size: genSize,
+        tone: genTone,
+        ...(genInstructions.trim() ? { instructions: genInstructions.trim() } : {}),
+      });
+      // Same polling contract as iOS: every 1.5 s, up to ~6 minutes.
+      for (let attempt = 0; attempt < 240; attempt += 1) {
+        await new Promise((resolve) => window.setTimeout(resolve, 1500));
+        if (generationRunRef.current !== run) return;
+        const service = await getDraftService(serviceId);
+        if (generationRunRef.current !== run) return;
+        if (service.status === "failed" || service.status === "error") {
+          throw new Error(service.error_message || t("draft.descAi.failed", lang));
+        }
+        if (service.status === "completed") {
+          const output = (service.output_data ?? {}) as Record<string, unknown>;
+          const nested = output.result;
+          const nestedText = nested && typeof nested === "object"
+            ? (nested as Record<string, unknown>).description
+            : null;
+          const text = [nestedText, output.description].find(
+            (value): value is string => typeof value === "string" && value.trim().length > 0,
+          );
+          if (text) applyGeneratedDescription(text.trim());
+          else throw new Error(t("draft.descAi.failed", lang));
+          return;
+        }
+      }
+      throw new Error(t("draft.descAi.failed", lang));
+    } catch (error) {
+      if (generationRunRef.current === run) setGenError(getSafeApiErrorMessage(error, lang));
+    } finally {
+      if (generationRunRef.current === run) setGenerating(false);
+    }
+  };
+
+  // Closing the description panel abandons any in-flight job — the next open
+  // starts clean instead of a stale poll overwriting fresh text.
+  React.useEffect(() => {
+    if (descriptionEditorOpen) return;
+    generationRunRef.current += 1;
+    setGenerating(false);
+    setGenError(null);
+    setGenSettingsOpen(false);
+    setCanRestorePrevious(false);
   }, [descriptionEditorOpen]);
 
   const setSpecValue = React.useCallback((section: PropertySpecSection, key: string, value: unknown) => {
@@ -1620,23 +1888,28 @@ export function DraftEditor({
       <div className="mx-auto flex min-h-full w-full max-w-[720px] flex-1 flex-col gap-4">
       <div className="floating-panel flex min-h-[30rem] flex-1 flex-col overflow-hidden bg-card">
         <div className="flex shrink-0 items-center gap-1 border-b border-border/45 bg-card px-3 py-2">
-          <button type="button" onClick={() => applyDescriptionCommand("bold")} aria-label={t("draft.editor.descriptionBold", lang)} title={t("draft.editor.descriptionBold", lang)} className="flex h-10 min-w-10 items-center justify-center rounded-full px-3 text-[15px] font-bold text-foreground/70 transition-colors hover:bg-foreground/[0.055] hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/25">B</button>
-          <button type="button" onClick={() => applyDescriptionCommand("italic")} aria-label={t("draft.editor.descriptionItalic", lang)} title={t("draft.editor.descriptionItalic", lang)} className="flex h-10 min-w-10 items-center justify-center rounded-full px-3 text-[15px] italic text-foreground/70 transition-colors hover:bg-foreground/[0.055] hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/25">I</button>
+          {/* onMouseDown preventDefault keeps the text selection alive: a plain
+              click blurs the editable first and the command then formats nothing. */}
+          <button type="button" onMouseDown={(event) => event.preventDefault()} onClick={() => applyDescriptionCommand("bold")} aria-label={t("draft.editor.descriptionBold", lang)} title={t("draft.editor.descriptionBold", lang)} className="flex h-10 min-w-10 items-center justify-center rounded-full px-3 text-[15px] font-bold text-foreground/70 transition-colors hover:bg-foreground/[0.055] hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/25">B</button>
+          <button type="button" onMouseDown={(event) => event.preventDefault()} onClick={() => applyDescriptionCommand("italic")} aria-label={t("draft.editor.descriptionItalic", lang)} title={t("draft.editor.descriptionItalic", lang)} className="flex h-10 min-w-10 items-center justify-center rounded-full px-3 text-[15px] italic text-foreground/70 transition-colors hover:bg-foreground/[0.055] hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/25">I</button>
           <span aria-hidden="true" className="mx-1 h-5 w-px bg-border/60" />
-          <button type="button" onClick={() => applyDescriptionCommand("insertUnorderedList")} aria-label="List" title="List" className="flex h-10 min-w-10 items-center justify-center rounded-full px-3 text-[15px] font-semibold text-foreground/70 transition-colors hover:bg-foreground/[0.055] hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/25">• —</button>
+          <button type="button" onMouseDown={(event) => event.preventDefault()} onClick={() => applyDescriptionCommand("insertUnorderedList")} aria-label="List" title="List" className="flex h-10 min-w-10 items-center justify-center rounded-full px-3 text-[15px] font-semibold text-foreground/70 transition-colors hover:bg-foreground/[0.055] hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/25">• —</button>
           <span className="flex-1" />
           <span className="hidden text-[11px] font-medium text-foreground/42 sm:inline">⌘B · ⌘I · ⌘↵</span>
         </div>
         <div className="relative min-h-[24rem] flex-1 bg-card">
-        {!descriptionDraft ? (
-          <div className="pointer-events-none absolute inset-x-5 top-5 z-10">
+        {!descriptionDraft && !generating ? (
+          /* Insets match the editable's own padding so the placeholder sits
+             exactly where typed text starts and nothing jumps on focus. */
+          <div className="pointer-events-none absolute inset-x-5 top-6 z-10 sm:inset-x-8 sm:top-8">
             <p className="text-[18px] font-medium text-foreground/35">{t("draft.editor.descriptionPlaceholder", lang)}</p>
             <p className="mt-2 max-w-[58ch] text-[14px] leading-relaxed text-foreground/30">{t("draft.editor.descriptionHint", lang)}</p>
           </div>
         ) : null}
         <div
           ref={descriptionEditorRef}
-          contentEditable
+          contentEditable={!generating}
+          dangerouslySetInnerHTML={{ __html: editorSeedHtml }}
           suppressContentEditableWarning
           onInput={(event) => {
             setDescriptionDraft(editorHtmlToDescription(event.currentTarget));
@@ -1666,6 +1939,161 @@ export function DraftEditor({
           aria-multiline="true"
           className="absolute inset-0 h-full w-full overflow-y-auto bg-transparent px-5 py-6 text-[17px] leading-[1.72] tracking-[-0.005em] text-foreground outline-none scrollbar-thin [&_p]:mb-5 [&_p:last-child]:mb-0 [&_ul]:mb-5 [&_ul]:list-disc [&_ul]:space-y-1.5 [&_ul]:pl-6 [&_strong]:font-semibold sm:px-8 sm:py-8"
         />
+        {generating ? (
+          /* Generation theater, mirroring iOS: shimmering skeleton paragraphs
+             with the cycling status pill parked at the bottom. The overlay also
+             absorbs input so the buffer cannot be edited mid-replace. */
+          <div className="absolute inset-0 z-20 flex flex-col bg-card/92 px-5 py-6 backdrop-blur-[2px] sm:px-8 sm:py-8" role="status" aria-live="polite">
+            <div className="min-h-0 flex-1 space-y-[11px] overflow-hidden">
+              {GENERATION_SKELETON_ROWS.map((row, index) => (
+                <div
+                  key={index}
+                  className={cn(
+                    "h-[13px] animate-pulse rounded-full bg-foreground/[0.07] motion-reduce:animate-none",
+                    row.gapBefore && "!mt-[29px]",
+                  )}
+                  style={{ width: `${row.width}%`, animationDelay: `${index * 70}ms` }}
+                />
+              ))}
+            </div>
+            <div className="pointer-events-none mx-auto mt-5 flex shrink-0 items-center gap-2.5 rounded-full border border-border/60 bg-card px-4 py-2 shadow-control">
+              <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-foreground text-background">
+                <SparklesIcon size={13} className="animate-pulse motion-reduce:animate-none" />
+              </span>
+              <span key={genStatusIndex} className="animate-fade-in text-[12px] font-semibold text-foreground/80">
+                {t(GENERATION_STATUS_KEYS[genStatusIndex], lang)}
+              </span>
+            </div>
+          </div>
+        ) : null}
+        </div>
+      </div>
+
+      {/* AI writing bar — keyword chips, size · tone settings, Generate. */}
+      <div className="floating-panel shrink-0 overflow-hidden bg-card">
+        {genKeywordPool.length ? (
+          <div className="flex items-center gap-1.5 overflow-x-auto border-b border-border/45 px-3 py-2.5 scrollbar-thin" aria-label={t("draft.descAi.keywords", lang)}>
+            {genKeywordPool.map((keyword) => {
+              const active = genSelectedKeywords.includes(keyword);
+              return (
+                <button
+                  key={keyword}
+                  type="button"
+                  aria-pressed={active}
+                  disabled={generating}
+                  onClick={() => setGenSelectedKeywords((current) => (
+                    active ? current.filter((item) => item !== keyword) : [...current, keyword]
+                  ))}
+                  className={cn(
+                    "flex h-8 shrink-0 items-center rounded-full border px-3 text-[12px] font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/30 disabled:opacity-60",
+                    active
+                      ? "border-foreground bg-foreground text-background"
+                      : "border-border/70 bg-card text-foreground/65 hover:border-foreground/30 hover:text-foreground",
+                  )}
+                >
+                  {keyword}
+                </button>
+              );
+            })}
+          </div>
+        ) : null}
+
+        {genSettingsOpen ? (
+          <div className="animate-fade-in space-y-4 border-b border-border/45 px-4 py-4">
+            <div>
+              <p className="text-[11px] font-semibold uppercase tracking-[0.1em] text-foreground/55">{t("draft.descAi.length", lang)}</p>
+              <div className="selection-capsule-track mt-2 grid !min-h-0 grid-cols-3">
+                {DESCRIPTION_SIZES.map((size) => (
+                  <button
+                    key={size}
+                    type="button"
+                    aria-pressed={genSize === size}
+                    onClick={() => setGenSize(size)}
+                    className="selection-capsule-item !min-h-9 px-2 text-[12px] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/30"
+                  >
+                    {t(`draft.descAi.size.${size}`, lang)}
+                  </button>
+                ))}
+              </div>
+            </div>
+            <div>
+              <p className="text-[11px] font-semibold uppercase tracking-[0.1em] text-foreground/55">{t("draft.descAi.tone", lang)}</p>
+              <div className="mt-2 space-y-1">
+                {DESCRIPTION_TONES.map((tone) => (
+                  <button
+                    key={tone}
+                    type="button"
+                    aria-pressed={genTone === tone}
+                    onClick={() => setGenTone(tone)}
+                    className={cn(
+                      "flex w-full items-baseline justify-between gap-3 rounded-xl border px-3.5 py-2.5 text-left transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/30",
+                      genTone === tone
+                        ? "border-foreground/60 bg-surface-subtle"
+                        : "border-transparent hover:bg-foreground/[0.035]",
+                    )}
+                  >
+                    <span className="shrink-0 text-[13px] font-semibold text-foreground">{t(`draft.descAi.tone.${tone}`, lang)}</span>
+                    <span className="min-w-0 truncate text-[11px] text-muted-foreground">{t(`draft.descAi.toneHelp.${tone}`, lang)}</span>
+                  </button>
+                ))}
+              </div>
+            </div>
+            <div>
+              <Label htmlFor="description-ai-instructions" className="text-[11px] font-semibold uppercase tracking-[0.1em] text-foreground/55">
+                {t("draft.descAi.instructions", lang)}
+              </Label>
+              <textarea
+                id="description-ai-instructions"
+                value={genInstructions}
+                onChange={(event) => setGenInstructions(event.target.value)}
+                placeholder={t("draft.descAi.instructionsPlaceholder", lang)}
+                rows={2}
+                className="mt-2 w-full resize-none rounded-xl border border-border bg-white px-3.5 py-2.5 text-[13px] leading-relaxed text-foreground outline-none transition-[border-color] placeholder:text-foreground/35 hover:border-foreground/35 focus:border-foreground"
+              />
+            </div>
+          </div>
+        ) : null}
+
+        {genError && !generating ? (
+          <div role="alert" className="flex items-center justify-between gap-3 border-b border-destructive/20 bg-destructive/[0.045] px-4 py-2.5 text-[12px] font-medium text-destructive">
+            <span className="min-w-0">{genError}</span>
+            <Button type="button" variant="outline" size="xs" className="shrink-0" onClick={() => void runDescriptionGeneration()}>
+              {t("common.tryAgain", lang)}
+            </Button>
+          </div>
+        ) : null}
+
+        <div className="flex min-w-0 items-center gap-2 p-3">
+          <button
+            type="button"
+            aria-expanded={genSettingsOpen}
+            onClick={() => setGenSettingsOpen((current) => !current)}
+            title={t("draft.descAi.settings", lang)}
+            className="flex h-11 shrink-0 items-center gap-2 rounded-full border border-border/70 bg-card px-4 text-[12px] font-semibold text-foreground/75 transition-colors hover:border-foreground/30 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/30"
+          >
+            {t(`draft.descAi.size.${genSize}`, lang)} · {t(`draft.descAi.tone.${genTone}`, lang)}
+            <ChevronDownIcon size={14} className={cn("transition-transform", genSettingsOpen && "rotate-180")} />
+          </button>
+          {canRestorePrevious && !generating ? (
+            <button
+              type="button"
+              onClick={restorePreviousDescription}
+              className="h-11 min-w-0 truncate rounded-full px-3 text-[12px] font-medium text-foreground/55 transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/30"
+            >
+              {t("draft.descAi.restorePrevious", lang)}
+            </button>
+          ) : null}
+          <span className="min-w-0 flex-1" />
+          <Button
+            type="button"
+            onClick={() => void runDescriptionGeneration()}
+            loading={generating}
+            disabled={generating}
+            className="h-11 shrink-0 rounded-full px-4 text-[13px] font-semibold disabled:opacity-100 disabled:bg-foreground disabled:text-background"
+          >
+            {generating ? null : <SparklesIcon size={14} />}
+            {t("draft.descAi.generate", lang)}
+          </Button>
         </div>
       </div>
       <div className="flex shrink-0 items-center justify-end sm:hidden">

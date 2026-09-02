@@ -1,4 +1,5 @@
 import type { DraftDataEntry } from "../tour-types";
+import { randomUUID } from "../uuid";
 
 export class ApiError extends Error {
   status: number;
@@ -295,7 +296,7 @@ export function getDeviceFingerprint(): string {
   try {
     let fingerprint = window.localStorage.getItem(DEVICE_FINGERPRINT_KEY);
     if (!fingerprint) {
-      fingerprint = crypto.randomUUID();
+      fingerprint = randomUUID();
       window.localStorage.setItem(DEVICE_FINGERPRINT_KEY, fingerprint);
     }
     return fingerprint;
@@ -1212,6 +1213,14 @@ export async function listDrafts(
   return signal
     ? abortableRequest<{ results: DraftListingItem[]; count: number; next: string | null }>(path, signal)
     : request(path);
+}
+
+/**
+ * Remove one draft-data entry outright. Deletion fallback for backends that
+ * reject blank `data_value` writes.
+ */
+export async function deleteDraftDataEntry(entryId: number): Promise<void> {
+  await request(`/api/reaigen/draft-data/${entryId}/`, { method: "DELETE" });
 }
 
 export async function getDraft(draftId: number): Promise<DraftDetailItem> {
@@ -3280,6 +3289,40 @@ export async function translateDraftDescription(
     method: "POST",
     body: JSON.stringify(targetLang ? { target_lang: targetLang } : {}),
   });
+}
+
+export type DescriptionTone = "fluent" | "descriptive" | "luxurious" | "selly" | "poet";
+export type DescriptionSize = "short" | "standard" | "long";
+
+/**
+ * Queue AI description generation for a draft — the same contract the iOS
+ * description editor uses. The backend answers with a `service_id`; progress
+ * is then observed by polling `getDraftService` until the `text_description`
+ * job completes and carries the text in `output_data`.
+ */
+export async function generateDraftDescription(
+  draftId: number,
+  options: {
+    keywords?: string[];
+    size?: DescriptionSize;
+    tone?: DescriptionTone;
+    instructions?: string;
+    enable_bold?: boolean;
+  },
+): Promise<{ service_id: number; status?: string }> {
+  return request(`/api/reaigen/drafts/${draftId}/generate-description/`, {
+    method: "POST",
+    body: JSON.stringify(options),
+  });
+}
+
+/**
+ * User-level creation defaults (tone, size, keywords, instructions). Shape is
+ * treated as loose JSON: the settings document nests description preferences
+ * differently across backend revisions, so callers extract defensively.
+ */
+export async function getCreationSettings(): Promise<Record<string, unknown>> {
+  return request(`/api/reaigen/creation-settings/me/`);
 }
 
 export async function listAllDrafts(): Promise<DraftListingItem[]> {
