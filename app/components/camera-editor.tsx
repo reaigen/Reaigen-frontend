@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useCallback, useEffect, useRef, type RefObject } from "react";
+import { randomUUID } from "../lib/uuid";
 import { ArrowDownIcon, ArrowUpIcon, EyeOpenIcon, PlusIcon, TrashIcon, UpdateIcon } from "@radix-ui/react-icons";
 import { ArrowLeftIcon, ArrowRightIcon, CheckIcon, ChevronDownIcon, PlayIcon } from "./icons";
 import { AdjustmentSlider } from "@/app/lib/ui/adjustment-slider";
@@ -25,8 +26,7 @@ interface CameraShot {
 }
 
 function newCameraId() {
-  return globalThis.crypto?.randomUUID?.()
-    ?? `camera-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+  return randomUUID();
 }
 
 function cameraDisplayLabel(shot: CameraShot | undefined, index: number, lang: string) {

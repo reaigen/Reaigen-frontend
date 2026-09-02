@@ -1,6 +1,7 @@
 "use client";
 
 import { resetPrivateApiState } from "./api/client";
+import { randomUUID } from "./uuid";
 import { clearSplatCache } from "./splat-cache";
 
 export const AUTH_BOUNDARY_STORAGE_KEY = "reaigen:auth-boundary";
@@ -46,7 +47,7 @@ export function broadcastAuthBoundary(kind: "login" | "logout" | "expired") {
   try {
     window.localStorage.setItem(
       AUTH_BOUNDARY_STORAGE_KEY,
-      JSON.stringify({ kind, at: Date.now(), nonce: crypto.randomUUID() }),
+      JSON.stringify({ kind, at: Date.now(), nonce: randomUUID() }),
     );
   } catch {
     // Storage may be disabled; the current tab is still cleared directly.

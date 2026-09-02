@@ -1,6 +1,7 @@
 "use client";
 
 import * as React from "react";
+import { randomUUID } from "../../../lib/uuid";
 import dynamic from "next/dynamic";
 import { useParams, useRouter } from "next/navigation";
 import { AppShell } from "../../../components/app-shell";
@@ -581,7 +582,7 @@ export default function LiveScanWorkspacePage() {
           if (!active || !captureActiveRef.current) return;
           setCapturedFrameCount((current) => current + 1);
           persistCapturedFrame({
-            frameId: crypto.randomUUID(),
+            frameId: randomUUID(),
             blob,
             capturedAt,
           });
