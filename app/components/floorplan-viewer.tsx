@@ -739,8 +739,17 @@ function LocalPlan({
     rotatedRawPositions,
     model.roomPolygons
   );
-  const numbers = labelAssignment.numbers;
-  const positions = labelAssignment.positions;
+  // An authored marker is the room's one placement — exactly where the
+  // editor shows it. Polygon re-assignment and badge collision-nudging only
+  // apply to rooms that were never explicitly placed.
+  const hasAuthoredMarker = (n: number) => model.markers[n] !== undefined;
+  const numbers = [...labelAssignment.numbers];
+  const positions: Record<number, V2> = { ...labelAssignment.positions };
+  for (const n of requestedNumbers) {
+    if (!hasAuthoredMarker(n) || !rotatedRawPositions[n]) continue;
+    positions[n] = rotatedRawPositions[n];
+    if (!numbers.includes(n)) numbers.push(n);
+  }
   // Collision layout remains in viewBox units; the rendered badge itself is
   // an HTML overlay with a fixed CSS size so it cannot jump between drafts.
   const circleR = 12;
@@ -808,7 +817,7 @@ function LocalPlan({
     const [baseX, baseY] = proj(world[0], world[1]);
     let selected: [number, number] = [baseX, baseY];
 
-    for (const [dx, dy] of labelOffsets) {
+    for (const [dx, dy] of hasAuthoredMarker(number) ? ([] as Array<[number, number]>) : labelOffsets) {
       const candidate: [number, number] = [baseX + dx, baseY + dy];
       const bounds = {
         minX: candidate[0] - circleR - 12,
