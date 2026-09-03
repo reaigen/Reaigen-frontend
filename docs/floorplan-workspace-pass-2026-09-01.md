@@ -128,6 +128,21 @@ values (pre-`rotateFromSnappedFrame` frame, or a drift-era offset). One
 corrective drag with the move tool heals the entry; there is no reliable
 way to detect and auto-heal old garbage.
 
+## Follow-up — 3 September 2026
+
+- **F framing animates** as a 240 ms dolly (world centre lerped, zoom
+  interpolated geometrically); wheel or pointer input cancels the flight.
+  Honours `prefers-reduced-motion`.
+- **Delete/Backspace removes the selection** (door, window, furniture,
+  room) through the same actions as the inspector's remove buttons, so
+  undo and persistence behave identically. Ignored while typing in a
+  field.
+- **Navigation render cost**: the plan subtree inside the pan/zoom
+  transform group is memoised (`planContent`); a pan frame now updates a
+  single SVG attribute instead of re-rendering ~380 lines of geometry
+  JSX. Wall/cut quads are also memoised against plan changes.
+- Move tool shows the `move` cursor.
+
 ## Backlog
 
 Floorplan editor:
@@ -139,8 +154,6 @@ Floorplan editor:
   value, choose which wall moves).
 - Marketing vs. technical render styles (graded simplification per ISO 7519).
 - Room templates and trace-over-a-photo drawing mode.
-- Frame-selected smooth animation (F currently snaps; consider a short
-  eased transition).
 - Unhide UX for single elements (currently Shift+H restores everything).
 
 Cross-platform:

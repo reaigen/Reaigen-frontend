@@ -402,6 +402,42 @@ export default function FloorplanEditor({ draftId, draftData, lang, onClose, onS
     setZoom(nextZoom);
     setPan({ ...nextPan });
   }, []);
+  // Framing animates as a short dolly (world centre lerped, zoom interpolated
+  // geometrically) so F never teleports the canvas. Any direct input — wheel,
+  // pointer down — cancels the flight and hands control straight back.
+  const viewAnimRef = useRef<number | null>(null);
+  const cancelViewAnimation = useCallback(() => {
+    if (viewAnimRef.current !== null) {
+      cancelAnimationFrame(viewAnimRef.current);
+      viewAnimRef.current = null;
+    }
+  }, []);
+  const animateViewTo = useCallback(
+    (targetZoom: number, targetPan: { x: number; y: number }) => {
+      cancelViewAnimation();
+      if (window.matchMedia?.("(prefers-reduced-motion: reduce)").matches) {
+        applyView(targetZoom, targetPan);
+        return;
+      }
+      const from = { zoom: viewRef.current.zoom, pan: { ...viewRef.current.pan } };
+      const c0 = { x: (VIEW / 2 - from.pan.x) / from.zoom, y: (VIEW / 2 - from.pan.y) / from.zoom };
+      const c1 = { x: (VIEW / 2 - targetPan.x) / targetZoom, y: (VIEW / 2 - targetPan.y) / targetZoom };
+      const t0 = performance.now();
+      const duration = 240;
+      const step = (now: number) => {
+        const t = Math.min(1, (now - t0) / duration);
+        const e = 1 - Math.pow(1 - t, 3);
+        const z = from.zoom * Math.pow(targetZoom / from.zoom, e);
+        const cx = c0.x + (c1.x - c0.x) * e;
+        const cy = c0.y + (c1.y - c0.y) * e;
+        applyView(z, { x: VIEW / 2 - z * cx, y: VIEW / 2 - z * cy });
+        viewAnimRef.current = t < 1 ? requestAnimationFrame(step) : null;
+      };
+      viewAnimRef.current = requestAnimationFrame(step);
+    },
+    [applyView, cancelViewAnimation]
+  );
+  useEffect(() => cancelViewAnimation, [cancelViewAnimation]);
   const [layers, setLayers] = useState({ doors: true, windows: true, labels: true, furniture: true });
   // Right-panel state: the inspector binds to whichever element is selected
   // (door via editingDoor, window via selectedWindowId, wall/furniture via
@@ -1562,6 +1598,7 @@ export default function FloorplanEditor({ draftId, draftData, lang, onClose, onS
   // ── pointer handlers ──────────────────────────────────────────────────────
   const onPointerDown = useCallback(
     (ev: React.PointerEvent<SVGSVGElement>) => {
+      cancelViewAnimation();
       const g = gesture.current;
       // A second button pressed mid-gesture (click during a middle-mouse pan)
       // must not restart or rebase the gesture in flight — the stale rebase is
@@ -1744,7 +1781,8 @@ export default function FloorplanEditor({ draftId, draftData, lang, onClose, onS
       }
     },
     [tool, screenToWorld, screenPx, pan, zoom, proj, doors, windows, roomNumbers, labelPositions, labelOffsets,
-     nearestEdge, graph, edits, collisionFurniture, furniture, furnitureEdits, markers, pxPerMeter, snapDrawStart]
+     nearestEdge, graph, edits, collisionFurniture, furniture, furnitureEdits, markers, pxPerMeter, snapDrawStart,
+     cancelViewAnimation]
   );
 
   const onPointerMove = useCallback(
@@ -1980,6 +2018,7 @@ export default function FloorplanEditor({ draftId, draftData, lang, onClose, onS
 
   const onWheel = useCallback(
     (ev: React.WheelEvent<SVGSVGElement>) => {
+      cancelViewAnimation();
       const factor = Math.exp(-ev.deltaY * 0.0015);
       const sp = screenPx(ev.clientX, ev.clientY);
       const { zoom: z, pan: p } = viewRef.current;
@@ -1998,7 +2037,7 @@ export default function FloorplanEditor({ draftId, draftData, lang, onClose, onS
       }
       applyView(next, nextPan);
     },
-    [screenPx, applyView]
+    [screenPx, applyView, cancelViewAnimation]
   );
 
   // ── toolbar actions ───────────────────────────────────────────────────────
@@ -2033,7 +2072,7 @@ export default function FloorplanEditor({ draftId, draftData, lang, onClose, onS
         for (const object of furniture) pts.push(...objectCorners(object));
       }
       if (!pts.length) {
-        applyView(DEFAULT_VIEW_ZOOM, DEFAULT_VIEW_PAN);
+        animateViewTo(DEFAULT_VIEW_ZOOM, DEFAULT_VIEW_PAN);
         return;
       }
       const screen = pts.map(([x, z]) => proj(x, z));
@@ -2044,13 +2083,13 @@ export default function FloorplanEditor({ draftId, draftData, lang, onClose, onS
       const span = Math.max(maxX - minX, maxY - minY, 24);
       const avail = VIEW * (framingAll ? 0.82 : 0.62);
       const nextZoom = Math.max(0.5, Math.min(5, avail / span));
-      applyView(nextZoom, {
+      animateViewTo(nextZoom, {
         x: VIEW / 2 - nextZoom * ((minX + maxX) / 2),
         y: VIEW / 2 - nextZoom * ((minY + maxY) / 2),
       });
     },
     [moveSelection, selectedWindowId, editingDoor, selectedRoomN, labelPositions,
-     graph, furniture, windows, doors, proj, applyView]
+     graph, furniture, windows, doors, proj, animateViewTo]
   );
 
   /** H hides the selected door, window or piece of furniture (session-only). */
@@ -2112,6 +2151,18 @@ export default function FloorplanEditor({ draftId, draftData, lang, onClose, onS
 
       if (event.metaKey || event.ctrlKey || event.altKey) return;
 
+      // Delete/Backspace removes whatever is selected — the same actions the
+      // inspector's remove buttons run, so undo and persistence behave alike.
+      if (event.key === "Delete" || event.key === "Backspace") {
+        if (editingDoor) deleteOpening(editingDoor.id);
+        else if (selectedWindowId) deleteOpening(selectedWindowId);
+        else if (moveSelection?.kind === "furniture") deleteFurnitureObject(moveSelection.id);
+        else if (selectedRoomN != null) void deleteRoom(selectedRoomN);
+        else return;
+        event.preventDefault();
+        return;
+      }
+
       // DCC conventions: F frames selection (or all), H hides the selection,
       // Shift+H shows everything hidden again.
       if (event.key.toLowerCase() === "f") {
@@ -2142,7 +2193,8 @@ export default function FloorplanEditor({ draftId, draftData, lang, onClose, onS
     };
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [undo, frameView, hideSelection]);
+  }, [undo, frameView, hideSelection, editingDoor, selectedWindowId, moveSelection,
+      selectedRoomN, deleteOpening, deleteFurnitureObject, deleteRoom]);
 
   const renameLabel = useCallback(
     (n: number, value: string) => {
@@ -2155,11 +2207,19 @@ export default function FloorplanEditor({ draftId, draftData, lang, onClose, onS
   );
 
   // ── render ────────────────────────────────────────────────────────────────
-  const wallQuads = segs.map(([a, b]) => wallQuad(a, b, wallT));
-  const cutQuads = [...doors, ...windows.map((w) => ({ id: "", p1: w.p1, p2: w.p2 })), ...openings].map((o) =>
-    openingCut(o.p1, o.p2, wallT)
+  // Pan/zoom re-renders every frame; wall and cut geometry only changes when
+  // the plan itself does, so it must not be rebuilt per navigation frame.
+  const wallQuads = useMemo(() => segs.map(([a, b]) => wallQuad(a, b, wallT)), [segs, wallT]);
+  const cutQuads = useMemo(
+    () => [...doors, ...windows.map((w) => ({ id: "", p1: w.p1, p2: w.p2 })), ...openings].map((o) =>
+      openingCut(o.p1, o.p2, wallT)
+    ),
+    [doors, windows, openings, wallT]
   );
-  const toPts = (poly: V2[]) => poly.map((p) => proj(p[0], p[1]).join(",")).join(" ");
+  const toPts = useCallback(
+    (poly: V2[]) => poly.map((p) => proj(p[0], p[1]).join(",")).join(" "),
+    [proj]
+  );
   const halfT = wallT / 2;
   const fontPx = 13;
   const canUndo = undoStack.current.length > 0;
@@ -2410,6 +2470,395 @@ export default function FloorplanEditor({ draftId, draftData, lang, onClose, onS
 
   // Desktop-only (the mount is gated on !compactViewport), so
   // --sidebar-offset is always set.
+  // The plan itself is view-independent: pan/zoom only move the outer
+  // group's transform. Memoising the subtree turns every navigation frame
+  // into a single attribute update instead of a full SVG re-render.
+  const planContent = useMemo(() => (
+    <>
+          <defs>
+            <mask id="editor-cuts">
+              <rect x={-VIEW * 2} y={-VIEW * 2} width={VIEW * 5} height={VIEW * 5} fill="white" />
+              {cutQuads.map((poly, i) => (
+                <polygon key={i} points={toPts(poly)} fill="black" />
+              ))}
+            </mask>
+          </defs>
+
+          {/* furniture — desktop DCC selection with rigid-body drag */}
+          {layers.furniture &&
+            [...furniture]
+              .sort(
+                (a, b) =>
+                  Number(furnitureKind(a.category) === "table") -
+                  Number(furnitureKind(b.category) === "table")
+              )
+              .map((o, i) => {
+              const c = proj(o.center[0], o.center[1]);
+              const pW = proj(o.center[0] + o.axisW[0], o.center[1] + o.axisW[1]);
+              const pD = proj(o.center[0] + o.axisD[0], o.center[1] + o.axisD[1]);
+              const kind = furnitureKind(o.category);
+              const icon = iconForKind(
+                kind,
+                o.halfW,
+                o.halfD,
+                (o as typeof o & { presentationVariant?: string }).presentationVariant,
+                (o as typeof o & { counterSeams?: number[] }).counterSeams
+              );
+              const iw = icon.w / 2;
+              const idp = icon.d / 2;
+              const aspectQuarterTurn = o.halfW >= o.halfD !== iw >= idp ? 1 : 0;
+              const quarterTurns = aspectQuarterTurn + (kind === "chair" ? -1 : 0);
+              const rotatedHalfW = Math.abs(quarterTurns % 2) === 1 ? idp : iw;
+              const rotatedHalfD = Math.abs(quarterTurns % 2) === 1 ? iw : idp;
+              const uniformScale = Math.min(
+                o.halfW / rotatedHalfW,
+                o.halfD / rotatedHalfD
+              );
+              const fit = `rotate(${quarterTurns * 90}) scale(${uniformScale})`;
+              const selected = moveSelection?.kind === "furniture" && moveSelection.id === o.id;
+              return (
+                <g key={`f${i}`}>
+                  {selected && (
+                    <polygon
+                      points={toPts(objectCorners(o))}
+                      fill="rgba(17,17,17,0.035)"
+                      stroke="rgba(17,17,17,0.72)"
+                      strokeWidth={moveSelection.blocked ? 2.4 : 1.6}
+                      strokeDasharray={moveSelection.blocked ? "4 3" : undefined}
+                      vectorEffect="non-scaling-stroke"
+                    />
+                  )}
+                  <g
+                  transform={`matrix(${pW[0] - c[0]} ${pW[1] - c[1]} ${pD[0] - c[0]} ${pD[1] - c[1]} ${c[0]} ${c[1]}) ${fit}`}
+                  fill="none"
+                  stroke={STROKE_COLOR}
+                  strokeOpacity={1}
+                  strokeWidth={1.35}
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                >
+                  {kind === "table" && (
+                    <rect
+                      x={-icon.w / 2}
+                      y={-icon.d / 2}
+                      width={icon.w}
+                      height={icon.d}
+                      rx={Math.min(icon.w, icon.d) * 0.03}
+                      fill="white"
+                      stroke="white"
+                      strokeWidth={5.35}
+                      vectorEffect="non-scaling-stroke"
+                    />
+                  )}
+                  {icon.shapes.map((s, j) => (
+                    <EditorIconShape key={j} shape={s} />
+                  ))}
+                  </g>
+                </g>
+              );
+            })}
+
+          {/* walls — poché fill or outline, per the plan's persisted style */}
+          <g mask="url(#editor-cuts)">
+            {wallQuads.map((poly, i) => (
+              <polygon
+                key={i}
+                points={toPts(poly)}
+                fill={wallStyle === "outline" ? "#ffffff" : STROKE_COLOR}
+                stroke={STROKE_COLOR}
+                strokeWidth={wallStyle === "outline" ? 1.5 : 0}
+                vectorEffect="non-scaling-stroke"
+              />
+            ))}
+          </g>
+
+          {/* Overall dimension strings — simplified consumer dimensioning:
+              one string per axis, extension ticks, value in metres. */}
+          {mapBounds && (() => {
+            const off = 0.55;
+            const tick = 0.12;
+            const spanW = mapBounds.maxX - mapBounds.minX;
+            const spanH = mapBounds.maxZ - mapBounds.minZ;
+            if (spanW < 0.5 || spanH < 0.5) return null;
+            const south = mapBounds.maxZ + off;
+            const west = mapBounds.minX - off;
+            const seg = (p: V2, q: V2, key: string) => {
+              const [x1, y1] = proj(...p);
+              const [x2, y2] = proj(...q);
+              return <line key={key} x1={x1} y1={y1} x2={x2} y2={y2} stroke="rgba(17,17,17,0.45)" strokeWidth={1} vectorEffect="non-scaling-stroke" />;
+            };
+            const [sx, sy] = proj((mapBounds.minX + mapBounds.maxX) / 2, south + 0.3);
+            const [wx, wy] = proj(west - 0.3, (mapBounds.minZ + mapBounds.maxZ) / 2);
+            return (
+              <g aria-hidden="true">
+                {seg([mapBounds.minX, south], [mapBounds.maxX, south], "dim-s")}
+                {seg([mapBounds.minX, south - tick], [mapBounds.minX, south + tick], "dim-s1")}
+                {seg([mapBounds.maxX, south - tick], [mapBounds.maxX, south + tick], "dim-s2")}
+                <text x={sx} y={sy} textAnchor="middle" dominantBaseline="middle" fontSize={fontPx * 0.85} fill="rgba(17,17,17,0.66)" stroke="#fff" strokeWidth={3} paintOrder="stroke" style={{ fontVariantNumeric: "tabular-nums" }}>
+                  {formatLength(spanW)}
+                </text>
+                {seg([west, mapBounds.minZ], [west, mapBounds.maxZ], "dim-w")}
+                {seg([west - tick, mapBounds.minZ], [west + tick, mapBounds.minZ], "dim-w1")}
+                {seg([west - tick, mapBounds.maxZ], [west + tick, mapBounds.maxZ], "dim-w2")}
+                <text x={wx} y={wy} textAnchor="middle" dominantBaseline="middle" fontSize={fontPx * 0.85} fill="rgba(17,17,17,0.66)" stroke="#fff" strokeWidth={3} paintOrder="stroke" transform={`rotate(-90 ${wx} ${wy})`} style={{ fontVariantNumeric: "tabular-nums" }}>
+                  {formatLength(spanH)}
+                </text>
+              </g>
+            );
+          })()}
+
+          {/* Selected wall chain. Movement is constrained to its normal. */}
+          {[...selectedEdgeIndices].map((index) => {
+            const edge = graph.edges[index];
+            if (!edge) return null;
+            const [x1, y1] = proj(...graph.vertices[edge.a]);
+            const [x2, y2] = proj(...graph.vertices[edge.b]);
+            return (
+              <line
+                key={`selected-edge-${index}`}
+                x1={x1}
+                y1={y1}
+                x2={x2}
+                y2={y2}
+                stroke="rgba(17,17,17,0.28)"
+                strokeWidth={9}
+                strokeLinecap="round"
+                vectorEffect="non-scaling-stroke"
+              />
+            );
+          })}
+          {moveSelection?.kind === "edge" && (() => {
+            const edge = graph.edges[moveSelection.index];
+            if (!edge) return null;
+            const [x, y] = proj(...mid(graph.vertices[edge.a], graph.vertices[edge.b]));
+            return (
+              <circle
+                cx={x}
+                cy={y}
+                r={7}
+                fill="rgba(255,255,255,0.96)"
+                stroke="rgba(17,17,17,0.72)"
+                strokeWidth={moveSelection.blocked ? 2.4 : 1.4}
+                vectorEffect="non-scaling-stroke"
+              />
+            );
+          })()}
+
+          {/* windows */}
+          {layers.windows &&
+            windows.map((w, i) => {
+              const dx = w.p2[0] - w.p1[0];
+              const dz = w.p2[1] - w.p1[1];
+              const len = Math.max(Math.hypot(dx, dz), 1e-4);
+              const nx = -dz / len;
+              const nz = dx / len;
+              const line = (off: number, sw: number, key: string) => {
+                const [x1, y1] = proj(w.p1[0] + nx * off, w.p1[1] + nz * off);
+                const [x2, y2] = proj(w.p2[0] + nx * off, w.p2[1] + nz * off);
+                return <line key={key} x1={x1} y1={y1} x2={x2} y2={y2} stroke={STROKE_COLOR} strokeWidth={sw} strokeLinecap="square" />;
+              };
+              const jamb = (p: V2, key: string) => {
+                const [x1, y1] = proj(p[0] + nx * halfT, p[1] + nz * halfT);
+                const [x2, y2] = proj(p[0] - nx * halfT, p[1] - nz * halfT);
+                return <line key={key} x1={x1} y1={y1} x2={x2} y2={y2} stroke={STROKE_COLOR} strokeWidth={1.35} strokeLinecap="square" />;
+              };
+              return (
+                <g key={`w${i}`}>
+                  {line(-halfT, 1.35, "a")}
+                  {line(halfT, 1.35, "b")}
+                  {line(0, 1.35, "c")}
+                  {jamb(w.p1, "j1")}
+                  {jamb(w.p2, "j2")}
+                </g>
+              );
+            })}
+
+          {/* doors */}
+          {layers.doors &&
+            doors.map((d, i) => {
+              const dx = d.p2[0] - d.p1[0];
+              const dz = d.p2[1] - d.p1[1];
+              const len = Math.max(Math.hypot(dx, dz), 1e-4);
+              const nx = -dz / len;
+              const nz = dx / len;
+              const cfg = resolveDoorConfig(doorConfigs[d.id]);
+              const jamb = (p: V2, key: string) => {
+                const [x1, y1] = proj(p[0] + nx * halfT, p[1] + nz * halfT);
+                const [x2, y2] = proj(p[0] - nx * halfT, p[1] - nz * halfT);
+                return <line key={key} x1={x1} y1={y1} x2={x2} y2={y2} stroke={STROKE_COLOR} strokeWidth={1.35} />;
+              };
+              return (
+                <g key={`d${i}`}>
+                  {jamb(d.p1, "j1")}
+                  {jamb(d.p2, "j2")}
+                  {cfg.doorType === "Moving" ? (
+                    <EditorSlidingDoor door={d} proj={proj} />
+                  ) : (
+                    <EditorDoorSwing door={d} cfg={cfg} interior={interior} proj={proj} />
+                  )}
+                </g>
+              );
+            })}
+
+          {/* selection marks: ring on the selected opening, dashed outline
+              around the selected object — visible in every mode so the
+              inspector's subject is never ambiguous. */}
+          {(selectedDoor || selectedWindow) && (() => {
+            const opening = selectedDoor ?? selectedWindow!;
+            const centre = mid(opening.p1, opening.p2);
+            const [cx, cy] = proj(...centre);
+            const marks: React.ReactNode[] = [
+              <circle
+                key="ring"
+                cx={cx}
+                cy={cy}
+                r={12}
+                fill="none"
+                stroke="rgba(17,17,17,0.45)"
+                strokeWidth={1.6}
+                vectorEffect="non-scaling-stroke"
+              />,
+            ];
+            for (const [handleIndex, point] of [opening.p1, opening.p2].entries()) {
+              const [hx, hy] = proj(...point);
+              marks.push(
+                <rect key={`handle-${handleIndex}`} x={hx - 3} y={hy - 3} width={6} height={6} fill="#fff" stroke="rgba(17,17,17,0.85)" strokeWidth={1.2} vectorEffect="non-scaling-stroke" />,
+              );
+            }
+            // Distance from each end of the opening to its wall's ends —
+            // the numbers an agent needs to centre a door — live-updating
+            // while the opening slides.
+            const hostIndex = nearestEdge(centre, OPENING_PLACE_PX);
+            const hostEdge = hostIndex != null ? graph.edges[hostIndex] : null;
+            if (hostEdge) {
+              const a = graph.vertices[hostEdge.a];
+              const b = graph.vertices[hostEdge.b];
+              const wallLen = Math.max(dist(a, b), 1e-4);
+              const ux = (b[0] - a[0]) / wallLen;
+              const uz = (b[1] - a[1]) / wallLen;
+              const t1 = (opening.p1[0] - a[0]) * ux + (opening.p1[1] - a[1]) * uz;
+              const t2 = (opening.p2[0] - a[0]) * ux + (opening.p2[1] - a[1]) * uz;
+              const lo = Math.max(0, Math.min(t1, t2));
+              const hi = Math.min(wallLen, Math.max(t1, t2));
+              // Measure to the nearest neighbouring opening, not through it
+              // to the wall end — the number an agent actually needs.
+              let gapStart = 0;
+              let gapEnd = wallLen;
+              for (const other of [...doors, ...windows]) {
+                if (other.id === opening.id) continue;
+                if (distancePointToSegment(mid(other.p1, other.p2), a, b) > 0.3) continue;
+                const o1 = (other.p1[0] - a[0]) * ux + (other.p1[1] - a[1]) * uz;
+                const o2 = (other.p2[0] - a[0]) * ux + (other.p2[1] - a[1]) * uz;
+                const otherHi = Math.max(o1, o2);
+                const otherLo = Math.min(o1, o2);
+                if (otherHi <= lo + 1e-6) gapStart = Math.max(gapStart, otherHi);
+                if (otherLo >= hi - 1e-6) gapEnd = Math.min(gapEnd, otherLo);
+              }
+              const at = (tPos: number): V2 => [a[0] + ux * tPos, a[1] + uz * tPos];
+              const gapMark = (from: number, to: number, towardOpening: 1 | -1, key: string) => {
+                const span = to - from;
+                if (span < 0.05) return null;
+                const p = at(from);
+                const q = at(to);
+                const [x1, y1] = proj(...p);
+                const [x2, y2] = proj(...q);
+                const nx = -uz;
+                const nz = ux;
+                // Short corner gaps slide their label along the wall toward
+                // the opening so it never sits on the perpendicular wall.
+                const alongShift = span < 0.6 ? towardOpening * (0.6 - span / 2) : 0;
+                const labelAt: V2 = [
+                  (p[0] + q[0]) / 2 + nx * 0.42 + ux * alongShift,
+                  (p[1] + q[1]) / 2 + nz * 0.42 + uz * alongShift,
+                ];
+                const [lx, ly] = proj(...labelAt);
+                return (
+                  <g key={key}>
+                    <line x1={x1} y1={y1} x2={x2} y2={y2} stroke="rgba(17,17,17,0.4)" strokeWidth={1} strokeDasharray="4 3" vectorEffect="non-scaling-stroke" />
+                    <text x={lx} y={ly} textAnchor="middle" dominantBaseline="middle" fontSize={fontPx * 0.85} fill="rgba(17,17,17,0.62)" stroke="#fff" strokeWidth={3} paintOrder="stroke" style={{ fontVariantNumeric: "tabular-nums" }}>
+                      {formatLength(span)}
+                    </text>
+                  </g>
+                );
+              };
+              marks.push(gapMark(gapStart, lo, 1, "gap-a"), gapMark(hi, gapEnd, -1, "gap-b"));
+            }
+            return marks;
+          })()}
+          {selectedObject && (() => {
+            const corners = objectCorners(selectedObject);
+            return (
+              <g>
+                <polygon points={toPts(corners)} fill="none" stroke="rgba(17,17,17,0.8)" strokeWidth={1.8} vectorEffect="non-scaling-stroke" />
+                {corners.map((corner, index) => {
+                  const [hx, hy] = proj(...corner);
+                  return (
+                    <rect key={index} x={hx - 3.2} y={hy - 3.2} width={6.4} height={6.4} fill="#fff" stroke="rgba(17,17,17,0.85)" strokeWidth={1.2} vectorEffect="non-scaling-stroke" />
+                  );
+                })}
+              </g>
+            );
+          })()}
+
+          {/* draw preview */}
+          {drawPreview && (
+            <g>
+              <line
+                x1={proj(...drawPreview[0])[0]}
+                y1={proj(...drawPreview[0])[1]}
+                x2={proj(...drawPreview[1])[0]}
+                y2={proj(...drawPreview[1])[1]}
+                stroke="hsl(var(--foreground))"
+                strokeWidth={2.2}
+              />
+              <circle cx={proj(...drawPreview[0])[0]} cy={proj(...drawPreview[0])[1]} r={4.5} fill="hsl(var(--foreground))" />
+              <circle cx={proj(...drawPreview[1])[0]} cy={proj(...drawPreview[1])[1]} r={4.5} fill="hsl(var(--foreground))" />
+            </g>
+          )}
+
+          {/* erase preview */}
+          {eraseStroke.length > 1 && (
+            <polyline
+              points={eraseStroke.map((p) => proj(p[0], p[1]).join(",")).join(" ")}
+              fill="none"
+              stroke="hsl(var(--foreground))"
+              strokeOpacity={0.46}
+              strokeWidth={6}
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            />
+          )}
+
+          {/* labels */}
+          {layers.labels &&
+            roomNumbers.map((n) => {
+              const pos = labelPositions[n];
+              if (!pos) return null;
+              const [sx, sy] = proj(pos[0], pos[1]);
+              return (
+                <g key={`rl${n}`} className="cursor-grab">
+                  <circle cx={sx} cy={sy} r={(fontPx + 9) / 2} fill="rgba(255,255,255,0.92)" stroke="rgba(0,0,0,0.25)" strokeWidth={0.7} />
+                  <text
+                    x={sx}
+                    y={sy}
+                    textAnchor="middle"
+                    dominantBaseline="central"
+                    fill="#4b5563"
+                    fontSize={fontPx}
+                    fontWeight={700}
+                    fontFamily="system-ui, -apple-system, sans-serif"
+                  >
+                    {n}
+                  </text>
+                </g>
+              );
+            })}
+    </>
+  ), [cutQuads, doorConfigs, doors, drawPreview, eraseStroke, formatLength, furniture,
+      graph, halfT, interior, labelPositions, layers, mapBounds, moveSelection,
+      nearestEdge, proj, roomNumbers, selectedDoor, selectedEdgeIndices, selectedObject,
+      selectedWindow, toPts, wallQuads, wallStyle, windows]);
+
   return createPortal(
     <div
       // Portaled to <body>: the shell wraps every page in a filled fade-in
@@ -2487,7 +2936,7 @@ export default function FloorplanEditor({ draftId, draftData, lang, onClose, onS
             tool === "draw" || tool === "door" || tool === "window" || tool === "room"
               ? "cursor-crosshair"
               : tool === "move"
-                ? "cursor-default"
+                ? "cursor-move"
                 : tool === "erase"
                   ? "cursor-cell"
                   : "cursor-grab active:cursor-grabbing",
@@ -2501,384 +2950,7 @@ export default function FloorplanEditor({ draftId, draftData, lang, onClose, onS
           xmlns="http://www.w3.org/2000/svg"
         >
           <g transform={`translate(${pan.x} ${pan.y}) scale(${zoom})`}>
-            <defs>
-              <mask id="editor-cuts">
-                <rect x={-VIEW * 2} y={-VIEW * 2} width={VIEW * 5} height={VIEW * 5} fill="white" />
-                {cutQuads.map((poly, i) => (
-                  <polygon key={i} points={toPts(poly)} fill="black" />
-                ))}
-              </mask>
-            </defs>
-
-            {/* furniture — desktop DCC selection with rigid-body drag */}
-            {layers.furniture &&
-              [...furniture]
-                .sort(
-                  (a, b) =>
-                    Number(furnitureKind(a.category) === "table") -
-                    Number(furnitureKind(b.category) === "table")
-                )
-                .map((o, i) => {
-                const c = proj(o.center[0], o.center[1]);
-                const pW = proj(o.center[0] + o.axisW[0], o.center[1] + o.axisW[1]);
-                const pD = proj(o.center[0] + o.axisD[0], o.center[1] + o.axisD[1]);
-                const kind = furnitureKind(o.category);
-                const icon = iconForKind(
-                  kind,
-                  o.halfW,
-                  o.halfD,
-                  (o as typeof o & { presentationVariant?: string }).presentationVariant,
-                  (o as typeof o & { counterSeams?: number[] }).counterSeams
-                );
-                const iw = icon.w / 2;
-                const idp = icon.d / 2;
-                const aspectQuarterTurn = o.halfW >= o.halfD !== iw >= idp ? 1 : 0;
-                const quarterTurns = aspectQuarterTurn + (kind === "chair" ? -1 : 0);
-                const rotatedHalfW = Math.abs(quarterTurns % 2) === 1 ? idp : iw;
-                const rotatedHalfD = Math.abs(quarterTurns % 2) === 1 ? iw : idp;
-                const uniformScale = Math.min(
-                  o.halfW / rotatedHalfW,
-                  o.halfD / rotatedHalfD
-                );
-                const fit = `rotate(${quarterTurns * 90}) scale(${uniformScale})`;
-                const selected = moveSelection?.kind === "furniture" && moveSelection.id === o.id;
-                return (
-                  <g key={`f${i}`}>
-                    {selected && (
-                      <polygon
-                        points={toPts(objectCorners(o))}
-                        fill="rgba(17,17,17,0.035)"
-                        stroke="rgba(17,17,17,0.72)"
-                        strokeWidth={moveSelection.blocked ? 2.4 : 1.6}
-                        strokeDasharray={moveSelection.blocked ? "4 3" : undefined}
-                        vectorEffect="non-scaling-stroke"
-                      />
-                    )}
-                    <g
-                    transform={`matrix(${pW[0] - c[0]} ${pW[1] - c[1]} ${pD[0] - c[0]} ${pD[1] - c[1]} ${c[0]} ${c[1]}) ${fit}`}
-                    fill="none"
-                    stroke={STROKE_COLOR}
-                    strokeOpacity={1}
-                    strokeWidth={1.35}
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                  >
-                    {kind === "table" && (
-                      <rect
-                        x={-icon.w / 2}
-                        y={-icon.d / 2}
-                        width={icon.w}
-                        height={icon.d}
-                        rx={Math.min(icon.w, icon.d) * 0.03}
-                        fill="white"
-                        stroke="white"
-                        strokeWidth={5.35}
-                        vectorEffect="non-scaling-stroke"
-                      />
-                    )}
-                    {icon.shapes.map((s, j) => (
-                      <EditorIconShape key={j} shape={s} />
-                    ))}
-                    </g>
-                  </g>
-                );
-              })}
-
-            {/* walls — poché fill or outline, per the plan's persisted style */}
-            <g mask="url(#editor-cuts)">
-              {wallQuads.map((poly, i) => (
-                <polygon
-                  key={i}
-                  points={toPts(poly)}
-                  fill={wallStyle === "outline" ? "#ffffff" : STROKE_COLOR}
-                  stroke={STROKE_COLOR}
-                  strokeWidth={wallStyle === "outline" ? 1.5 : 0}
-                  vectorEffect="non-scaling-stroke"
-                />
-              ))}
-            </g>
-
-            {/* Overall dimension strings — simplified consumer dimensioning:
-                one string per axis, extension ticks, value in metres. */}
-            {mapBounds && (() => {
-              const off = 0.55;
-              const tick = 0.12;
-              const spanW = mapBounds.maxX - mapBounds.minX;
-              const spanH = mapBounds.maxZ - mapBounds.minZ;
-              if (spanW < 0.5 || spanH < 0.5) return null;
-              const south = mapBounds.maxZ + off;
-              const west = mapBounds.minX - off;
-              const seg = (p: V2, q: V2, key: string) => {
-                const [x1, y1] = proj(...p);
-                const [x2, y2] = proj(...q);
-                return <line key={key} x1={x1} y1={y1} x2={x2} y2={y2} stroke="rgba(17,17,17,0.45)" strokeWidth={1} vectorEffect="non-scaling-stroke" />;
-              };
-              const [sx, sy] = proj((mapBounds.minX + mapBounds.maxX) / 2, south + 0.3);
-              const [wx, wy] = proj(west - 0.3, (mapBounds.minZ + mapBounds.maxZ) / 2);
-              return (
-                <g aria-hidden="true">
-                  {seg([mapBounds.minX, south], [mapBounds.maxX, south], "dim-s")}
-                  {seg([mapBounds.minX, south - tick], [mapBounds.minX, south + tick], "dim-s1")}
-                  {seg([mapBounds.maxX, south - tick], [mapBounds.maxX, south + tick], "dim-s2")}
-                  <text x={sx} y={sy} textAnchor="middle" dominantBaseline="middle" fontSize={fontPx * 0.85} fill="rgba(17,17,17,0.66)" stroke="#fff" strokeWidth={3} paintOrder="stroke" style={{ fontVariantNumeric: "tabular-nums" }}>
-                    {formatLength(spanW)}
-                  </text>
-                  {seg([west, mapBounds.minZ], [west, mapBounds.maxZ], "dim-w")}
-                  {seg([west - tick, mapBounds.minZ], [west + tick, mapBounds.minZ], "dim-w1")}
-                  {seg([west - tick, mapBounds.maxZ], [west + tick, mapBounds.maxZ], "dim-w2")}
-                  <text x={wx} y={wy} textAnchor="middle" dominantBaseline="middle" fontSize={fontPx * 0.85} fill="rgba(17,17,17,0.66)" stroke="#fff" strokeWidth={3} paintOrder="stroke" transform={`rotate(-90 ${wx} ${wy})`} style={{ fontVariantNumeric: "tabular-nums" }}>
-                    {formatLength(spanH)}
-                  </text>
-                </g>
-              );
-            })()}
-
-            {/* Selected wall chain. Movement is constrained to its normal. */}
-            {[...selectedEdgeIndices].map((index) => {
-              const edge = graph.edges[index];
-              if (!edge) return null;
-              const [x1, y1] = proj(...graph.vertices[edge.a]);
-              const [x2, y2] = proj(...graph.vertices[edge.b]);
-              return (
-                <line
-                  key={`selected-edge-${index}`}
-                  x1={x1}
-                  y1={y1}
-                  x2={x2}
-                  y2={y2}
-                  stroke="rgba(17,17,17,0.28)"
-                  strokeWidth={9}
-                  strokeLinecap="round"
-                  vectorEffect="non-scaling-stroke"
-                />
-              );
-            })}
-            {moveSelection?.kind === "edge" && (() => {
-              const edge = graph.edges[moveSelection.index];
-              if (!edge) return null;
-              const [x, y] = proj(...mid(graph.vertices[edge.a], graph.vertices[edge.b]));
-              return (
-                <circle
-                  cx={x}
-                  cy={y}
-                  r={7}
-                  fill="rgba(255,255,255,0.96)"
-                  stroke="rgba(17,17,17,0.72)"
-                  strokeWidth={moveSelection.blocked ? 2.4 : 1.4}
-                  vectorEffect="non-scaling-stroke"
-                />
-              );
-            })()}
-
-            {/* windows */}
-            {layers.windows &&
-              windows.map((w, i) => {
-                const dx = w.p2[0] - w.p1[0];
-                const dz = w.p2[1] - w.p1[1];
-                const len = Math.max(Math.hypot(dx, dz), 1e-4);
-                const nx = -dz / len;
-                const nz = dx / len;
-                const line = (off: number, sw: number, key: string) => {
-                  const [x1, y1] = proj(w.p1[0] + nx * off, w.p1[1] + nz * off);
-                  const [x2, y2] = proj(w.p2[0] + nx * off, w.p2[1] + nz * off);
-                  return <line key={key} x1={x1} y1={y1} x2={x2} y2={y2} stroke={STROKE_COLOR} strokeWidth={sw} strokeLinecap="square" />;
-                };
-                const jamb = (p: V2, key: string) => {
-                  const [x1, y1] = proj(p[0] + nx * halfT, p[1] + nz * halfT);
-                  const [x2, y2] = proj(p[0] - nx * halfT, p[1] - nz * halfT);
-                  return <line key={key} x1={x1} y1={y1} x2={x2} y2={y2} stroke={STROKE_COLOR} strokeWidth={1.35} strokeLinecap="square" />;
-                };
-                return (
-                  <g key={`w${i}`}>
-                    {line(-halfT, 1.35, "a")}
-                    {line(halfT, 1.35, "b")}
-                    {line(0, 1.35, "c")}
-                    {jamb(w.p1, "j1")}
-                    {jamb(w.p2, "j2")}
-                  </g>
-                );
-              })}
-
-            {/* doors */}
-            {layers.doors &&
-              doors.map((d, i) => {
-                const dx = d.p2[0] - d.p1[0];
-                const dz = d.p2[1] - d.p1[1];
-                const len = Math.max(Math.hypot(dx, dz), 1e-4);
-                const nx = -dz / len;
-                const nz = dx / len;
-                const cfg = resolveDoorConfig(doorConfigs[d.id]);
-                const jamb = (p: V2, key: string) => {
-                  const [x1, y1] = proj(p[0] + nx * halfT, p[1] + nz * halfT);
-                  const [x2, y2] = proj(p[0] - nx * halfT, p[1] - nz * halfT);
-                  return <line key={key} x1={x1} y1={y1} x2={x2} y2={y2} stroke={STROKE_COLOR} strokeWidth={1.35} />;
-                };
-                return (
-                  <g key={`d${i}`}>
-                    {jamb(d.p1, "j1")}
-                    {jamb(d.p2, "j2")}
-                    {cfg.doorType === "Moving" ? (
-                      <EditorSlidingDoor door={d} proj={proj} />
-                    ) : (
-                      <EditorDoorSwing door={d} cfg={cfg} interior={interior} proj={proj} />
-                    )}
-                  </g>
-                );
-              })}
-
-            {/* selection marks: ring on the selected opening, dashed outline
-                around the selected object — visible in every mode so the
-                inspector's subject is never ambiguous. */}
-            {(selectedDoor || selectedWindow) && (() => {
-              const opening = selectedDoor ?? selectedWindow!;
-              const centre = mid(opening.p1, opening.p2);
-              const [cx, cy] = proj(...centre);
-              const marks: React.ReactNode[] = [
-                <circle
-                  key="ring"
-                  cx={cx}
-                  cy={cy}
-                  r={12}
-                  fill="none"
-                  stroke="rgba(17,17,17,0.45)"
-                  strokeWidth={1.6}
-                  vectorEffect="non-scaling-stroke"
-                />,
-              ];
-              for (const [handleIndex, point] of [opening.p1, opening.p2].entries()) {
-                const [hx, hy] = proj(...point);
-                marks.push(
-                  <rect key={`handle-${handleIndex}`} x={hx - 3} y={hy - 3} width={6} height={6} fill="#fff" stroke="rgba(17,17,17,0.85)" strokeWidth={1.2} vectorEffect="non-scaling-stroke" />,
-                );
-              }
-              // Distance from each end of the opening to its wall's ends —
-              // the numbers an agent needs to centre a door — live-updating
-              // while the opening slides.
-              const hostIndex = nearestEdge(centre, OPENING_PLACE_PX);
-              const hostEdge = hostIndex != null ? graph.edges[hostIndex] : null;
-              if (hostEdge) {
-                const a = graph.vertices[hostEdge.a];
-                const b = graph.vertices[hostEdge.b];
-                const wallLen = Math.max(dist(a, b), 1e-4);
-                const ux = (b[0] - a[0]) / wallLen;
-                const uz = (b[1] - a[1]) / wallLen;
-                const t1 = (opening.p1[0] - a[0]) * ux + (opening.p1[1] - a[1]) * uz;
-                const t2 = (opening.p2[0] - a[0]) * ux + (opening.p2[1] - a[1]) * uz;
-                const lo = Math.max(0, Math.min(t1, t2));
-                const hi = Math.min(wallLen, Math.max(t1, t2));
-                // Measure to the nearest neighbouring opening, not through it
-                // to the wall end — the number an agent actually needs.
-                let gapStart = 0;
-                let gapEnd = wallLen;
-                for (const other of [...doors, ...windows]) {
-                  if (other.id === opening.id) continue;
-                  if (distancePointToSegment(mid(other.p1, other.p2), a, b) > 0.3) continue;
-                  const o1 = (other.p1[0] - a[0]) * ux + (other.p1[1] - a[1]) * uz;
-                  const o2 = (other.p2[0] - a[0]) * ux + (other.p2[1] - a[1]) * uz;
-                  const otherHi = Math.max(o1, o2);
-                  const otherLo = Math.min(o1, o2);
-                  if (otherHi <= lo + 1e-6) gapStart = Math.max(gapStart, otherHi);
-                  if (otherLo >= hi - 1e-6) gapEnd = Math.min(gapEnd, otherLo);
-                }
-                const at = (tPos: number): V2 => [a[0] + ux * tPos, a[1] + uz * tPos];
-                const gapMark = (from: number, to: number, towardOpening: 1 | -1, key: string) => {
-                  const span = to - from;
-                  if (span < 0.05) return null;
-                  const p = at(from);
-                  const q = at(to);
-                  const [x1, y1] = proj(...p);
-                  const [x2, y2] = proj(...q);
-                  const nx = -uz;
-                  const nz = ux;
-                  // Short corner gaps slide their label along the wall toward
-                  // the opening so it never sits on the perpendicular wall.
-                  const alongShift = span < 0.6 ? towardOpening * (0.6 - span / 2) : 0;
-                  const labelAt: V2 = [
-                    (p[0] + q[0]) / 2 + nx * 0.42 + ux * alongShift,
-                    (p[1] + q[1]) / 2 + nz * 0.42 + uz * alongShift,
-                  ];
-                  const [lx, ly] = proj(...labelAt);
-                  return (
-                    <g key={key}>
-                      <line x1={x1} y1={y1} x2={x2} y2={y2} stroke="rgba(17,17,17,0.4)" strokeWidth={1} strokeDasharray="4 3" vectorEffect="non-scaling-stroke" />
-                      <text x={lx} y={ly} textAnchor="middle" dominantBaseline="middle" fontSize={fontPx * 0.85} fill="rgba(17,17,17,0.62)" stroke="#fff" strokeWidth={3} paintOrder="stroke" style={{ fontVariantNumeric: "tabular-nums" }}>
-                        {formatLength(span)}
-                      </text>
-                    </g>
-                  );
-                };
-                marks.push(gapMark(gapStart, lo, 1, "gap-a"), gapMark(hi, gapEnd, -1, "gap-b"));
-              }
-              return marks;
-            })()}
-            {selectedObject && (() => {
-              const corners = objectCorners(selectedObject);
-              return (
-                <g>
-                  <polygon points={toPts(corners)} fill="none" stroke="rgba(17,17,17,0.8)" strokeWidth={1.8} vectorEffect="non-scaling-stroke" />
-                  {corners.map((corner, index) => {
-                    const [hx, hy] = proj(...corner);
-                    return (
-                      <rect key={index} x={hx - 3.2} y={hy - 3.2} width={6.4} height={6.4} fill="#fff" stroke="rgba(17,17,17,0.85)" strokeWidth={1.2} vectorEffect="non-scaling-stroke" />
-                    );
-                  })}
-                </g>
-              );
-            })()}
-
-            {/* draw preview */}
-            {drawPreview && (
-              <g>
-                <line
-                  x1={proj(...drawPreview[0])[0]}
-                  y1={proj(...drawPreview[0])[1]}
-                  x2={proj(...drawPreview[1])[0]}
-                  y2={proj(...drawPreview[1])[1]}
-                  stroke="hsl(var(--foreground))"
-                  strokeWidth={2.2}
-                />
-                <circle cx={proj(...drawPreview[0])[0]} cy={proj(...drawPreview[0])[1]} r={4.5} fill="hsl(var(--foreground))" />
-                <circle cx={proj(...drawPreview[1])[0]} cy={proj(...drawPreview[1])[1]} r={4.5} fill="hsl(var(--foreground))" />
-              </g>
-            )}
-
-            {/* erase preview */}
-            {eraseStroke.length > 1 && (
-              <polyline
-                points={eraseStroke.map((p) => proj(p[0], p[1]).join(",")).join(" ")}
-                fill="none"
-                stroke="hsl(var(--foreground))"
-                strokeOpacity={0.46}
-                strokeWidth={6}
-                strokeLinecap="round"
-                strokeLinejoin="round"
-              />
-            )}
-
-            {/* labels */}
-            {layers.labels &&
-              roomNumbers.map((n) => {
-                const pos = labelPositions[n];
-                if (!pos) return null;
-                const [sx, sy] = proj(pos[0], pos[1]);
-                return (
-                  <g key={`rl${n}`} className="cursor-grab">
-                    <circle cx={sx} cy={sy} r={(fontPx + 9) / 2} fill="rgba(255,255,255,0.92)" stroke="rgba(0,0,0,0.25)" strokeWidth={0.7} />
-                    <text
-                      x={sx}
-                      y={sy}
-                      textAnchor="middle"
-                      dominantBaseline="central"
-                      fill="#4b5563"
-                      fontSize={fontPx}
-                      fontWeight={700}
-                      fontFamily="system-ui, -apple-system, sans-serif"
-                    >
-                      {n}
-                    </text>
-                  </g>
-                );
-              })}
+            {planContent}
           </g>
         </svg>
 
