@@ -230,13 +230,23 @@ function translated(object: ObjectXZ, delta: V2): ObjectXZ {
   return { ...object, center: add(object.center, delta) };
 }
 
-function parentIndexFor(objects: ObjectXZ[], index: number): number | null {
-  const category = String(objects[index]?.category ?? "").toLowerCase().replace(/[\s_-]+/g, "");
-  if (!["stove", "cooktop", "oven", "sink", "dishwasher"].includes(category)) return null;
+/**
+ * Family membership follows parentId for every category — a chair tucked
+ * under its table is the table's family, so it rides along and never blocks
+ * its own parent. The stove/sink category gate below applies only to the
+ * mounted child-slide behaviour, not to who counts as family.
+ */
+function familyParentIndexFor(objects: ObjectXZ[], index: number): number | null {
   const parentId = objects[index]?.parentId?.toLowerCase();
   if (!parentId) return null;
   const parentIndex = objects.findIndex((object) => object.id.toLowerCase() === parentId);
   return parentIndex >= 0 && parentIndex !== index ? parentIndex : null;
+}
+
+function parentIndexFor(objects: ObjectXZ[], index: number): number | null {
+  const category = String(objects[index]?.category ?? "").toLowerCase().replace(/[\s_-]+/g, "");
+  if (!["stove", "cooktop", "oven", "sink", "dishwasher"].includes(category)) return null;
+  return familyParentIndexFor(objects, index);
 }
 
 function rootIndexFor(objects: ObjectXZ[], index: number): number {
@@ -244,11 +254,29 @@ function rootIndexFor(objects: ObjectXZ[], index: number): number {
   const visited = new Set<number>();
   while (!visited.has(current)) {
     visited.add(current);
-    const parent = parentIndexFor(objects, current);
+    const parent = familyParentIndexFor(objects, current);
     if (parent == null) return current;
     current = parent;
   }
   return index;
+}
+
+/** The object itself plus every object whose parent chain leads to it. */
+function descendantIndicesFor(objects: ObjectXZ[], index: number): Set<number> {
+  const set = new Set([index]);
+  let grew = true;
+  while (grew) {
+    grew = false;
+    objects.forEach((_, i) => {
+      if (set.has(i)) return;
+      const parent = familyParentIndexFor(objects, i);
+      if (parent != null && set.has(parent)) {
+        set.add(i);
+        grew = true;
+      }
+    });
+  }
+  return set;
 }
 
 function familyIndicesFor(objects: ObjectXZ[], rootIndex: number): Set<number> {
@@ -441,14 +469,19 @@ export function moveFurniture(
     };
   }
 
-  const movingFamily = familyIndicesFor(objects, movingIndex);
+  // The whole root family is transparent to the moving body (a chair never
+  // blocks its own table), but only the grabbed object and its descendants
+  // actually translate — pulling a chair away from the table moves the chair
+  // alone, dragging the table brings its chairs.
+  const movingFamily = familyIndicesFor(objects, rootIndexFor(objects, movingIndex));
+  const movedSet = descendantIndicesFor(objects, movingIndex);
   const blockers = objects.filter((_, index) => !movingFamily.has(index));
   blockers.push(...graph.edges.map((edge, index) => collisionBody({ a: graph.vertices[edge.a], b: graph.vertices[edge.b] }, `wall-${index}`)));
   blockers.push(...doors.flatMap(([a, b], index) => doorCollisionBodies({ a, b }, `door-${index}`)));
   const slide = slideBody(moving, blockers, requestedDelta);
   const result = [...objects];
   const appliedDelta = sub(slide.body.center, moving.center);
-  for (const index of movingFamily) result[index] = translated(objects[index], appliedDelta);
+  for (const index of movedSet) result[index] = translated(objects[index], appliedDelta);
   return {
     objects: result,
     movedID: moving.id,

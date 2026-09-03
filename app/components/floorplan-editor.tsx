@@ -135,14 +135,16 @@ const OPENING_GAP = 0.05; // clearance kept between co-hosted openings (m)
 
 /**
  * 1D solve for openings sharing a wall. The driven opening moves or resizes
- * toward its target; neighbours are parametric, not rigid bodies — pressed,
- * they first SHRINK from their near edge (far edge pinned) down to the
- * minimum opening, and only then transmit the push. Wall-end bounds are
- * relative: a scan-placed opening flush in a corner may stay there, it just
- * cannot get worse.
+ * toward its target; neighbours are parametric, not rigid bodies. A pressed
+ * WINDOW first SHRINKS from its near edge (far edge pinned) down to the
+ * minimum opening, and only then transmits the push. A pressed DOOR keeps its
+ * physical width — it translates rigidly and lets wall-end overflow clamp the
+ * drag instead of collapsing to a sliver. Wall-end bounds are relative: a
+ * scan-placed opening flush in a corner may stay there, it just cannot get
+ * worse.
  */
 function solveWallSlide(
-  items: Array<{ len: number; t: number }>,
+  items: Array<{ len: number; t: number; kind?: "door" | "window" }>,
   di: number,
   desiredT: number,
   desiredLen: number,
@@ -152,6 +154,7 @@ function solveWallSlide(
   const count = items.length;
   const lo0 = items.map((item) => item.t - item.len / 2);
   const hi0 = items.map((item) => item.t + item.len / 2);
+  const rigid = items.map((item) => item.kind === "door");
   const wallLo = (j: number) => Math.min(inset, lo0[j]);
   const wallHi = (j: number) => Math.max(wallLen - inset, hi0[j]);
 
@@ -166,7 +169,7 @@ function solveWallSlide(
       const near = Math.max(lo0[j], cursor + OPENING_GAP);
       let far = hi0[j];
       let len = far - near;
-      const minLen = Math.min(MIN_OPENING, hi0[j] - lo0[j]);
+      const minLen = rigid[j] ? hi0[j] - lo0[j] : Math.min(MIN_OPENING, hi0[j] - lo0[j]);
       if (len < minLen) {
         len = minLen;
         far = near + len;
@@ -182,7 +185,7 @@ function solveWallSlide(
       const far = Math.min(hi0[j], cursor - OPENING_GAP);
       let near = lo0[j];
       let len = far - near;
-      const minLen = Math.min(MIN_OPENING, hi0[j] - lo0[j]);
+      const minLen = rigid[j] ? hi0[j] - lo0[j] : Math.min(MIN_OPENING, hi0[j] - lo0[j]);
       if (len < minLen) {
         len = minLen;
         near = far - len;
@@ -200,7 +203,8 @@ function solveWallSlide(
   let result = attempt(tC, len);
   for (let iteration = 0; iteration < 3 && (result.overRight > 1e-6 || result.overLeft > 1e-6); iteration++) {
     if (result.overRight > 1e-6 && result.overLeft > 1e-6) {
-      len = Math.max(MIN_OPENING, len - result.overRight - result.overLeft);
+      // A driven door keeps its physical width even when both ends overflow.
+      if (!rigid[di]) len = Math.max(MIN_OPENING, len - result.overRight - result.overLeft);
       tC += (result.overLeft - result.overRight) / 2;
     } else if (result.overRight > 1e-6) {
       tC -= result.overRight;

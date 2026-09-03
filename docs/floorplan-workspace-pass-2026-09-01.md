@@ -143,6 +143,25 @@ way to detect and auto-heal old garbage.
   JSX. Wall/cut quads are also memoised against plan changes.
 - Move tool shows the `move` cursor.
 
+## Follow-up 2 — interaction physics fixes (3 September 2026)
+
+- **Chaired tables move freely.** Family membership now follows `parentId`
+  for every category — a chair tucked under its table rides along instead
+  of acting as a blocker overlapping its own parent, which had deflected
+  every table drag sideways ("move vertically → snapped to horizontal").
+  Dragging the chair alone pulls it away without moving the table; the
+  stove/sink category gate now governs only the mounted child-slide.
+  Regression-tested against the real draft-11949 captured fixture.
+- **Doors keep their width when pushed.** `solveWallSlide` is kind-aware: a
+  pressed window still shrinks first (its approved behaviour), but a
+  pressed door translates rigidly at full width and wall-end overflow
+  clamps the drag — no more doors collapsing into 0.2 m slivers between
+  windows. A driven door also never shrinks when both wall ends overflow.
+- Verified in-browser across five fixtures (16/16): door-into-window
+  pushes, pre-overlapped openings escaping and resolving, tee-junction
+  clamping, flush-corner windows pushing doors, and chained pushes
+  shrinking windows while doors keep width.
+
 ## Backlog
 
 Floorplan editor:

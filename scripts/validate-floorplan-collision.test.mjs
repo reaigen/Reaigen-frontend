@@ -90,22 +90,36 @@ test("moving a cabinet carries its mounted fixture as one hierarchy", () => {
   assert.deepEqual(result.objects[1].center, [0.65, 0.2]);
 });
 
-test("RoomPlan table relationships do not turn chairs into mounted fixtures", () => {
+test("RoomPlan table relationships group chairs as family, not mounted fixtures", () => {
   const table = { ...object("table", [0, 0], 0.8, 0.55), category: "table" };
   const chair = {
     ...object("chair", [1.2, 0], 0.25, 0.25),
     parentId: "table",
   };
-  const result = moveFurniture(
+  // Dragging the table brings its chair along instead of colliding with it —
+  // a tucked-in chair must never block its own table.
+  const tableMove = moveFurniture(
     [table, chair],
     "table",
     { vertices: [], edges: [] },
     [0.35, 0],
   );
+  const near = (a, b) => assert.ok(Math.hypot(a[0] - b[0], a[1] - b[1]) < 1e-6, `${a} !~ ${b}`);
+  assert.equal(tableMove.blocked, false);
+  near(tableMove.objects[0].center, [0.35, 0]);
+  near(tableMove.objects[1].center, [1.55, 0]);
 
-  assert.equal(result.blocked, true);
-  assert.ok(result.objects[0].center[0] > 0.1 && result.objects[0].center[0] < 0.2);
-  assert.deepEqual(result.objects[1].center, [1.2, 0]);
+  // Dragging the chair pulls it away freely — no mounted-fixture slide rail,
+  // and the table stays put.
+  const chairMove = moveFurniture(
+    [table, chair],
+    "chair",
+    { vertices: [], edges: [] },
+    [0.4, 0.4],
+  );
+  assert.equal(chairMove.blocked, false);
+  near(chairMove.objects[1].center, [1.6, 0.4]);
+  near(chairMove.objects[0].center, [0, 0]);
 });
 
 test("furniture respects the saved-door swing reserve", () => {
@@ -275,4 +289,45 @@ test("closest baseline treats welded scan walls as baseline, not a user drag", (
   const welded = [[[0, 0], [2, 0]]];
   const edited = [[[0, 0], [2, 0]]];
   assert.equal(closestFurnitureWallBaseline(raw, welded, edited), welded);
+});
+
+// ── family semantics: parentId groups every category, not just fixtures ──────
+// Real regression from draft 11949: a chair parented to its table sat tucked
+// against the tabletop; because family membership was gated to counter
+// fixtures, the chair acted as a blocker overlapping its own table and every
+// table drag deflected sideways ("move vertically → snapped to horizontal").
+
+import { readFileSync } from "node:fs";
+import { fileURLToPath } from "node:url";
+import { dirname, join } from "node:path";
+
+const capturedInput = JSON.parse(readFileSync(
+  join(dirname(fileURLToPath(import.meta.url)), "..", "fixtures", "floorplan", "draft-11949-captured-input.json"),
+  "utf8",
+));
+const capturedGraph = (() => {
+  const vertices = [];
+  const edges = [];
+  for (const [a, b] of capturedInput.walls) edges.push({ a: vertices.push(a) - 1, b: vertices.push(b) - 1 });
+  return { vertices, edges };
+})();
+const capturedDoors = capturedInput.doors.map((d) => (Array.isArray(d) ? d : [d.p1, d.p2]));
+const chairedTable = capturedInput.objects.find((o) => o.id.startsWith("b3973504"));
+const tuckedChair = capturedInput.objects.find((o) => o.id.startsWith("4a65b776"));
+
+test("captured chaired table moves vertically; its chair rides along", () => {
+  const result = moveFurniture(capturedInput.objects, chairedTable.id, capturedGraph, [0, -0.3], capturedDoors);
+  assert.equal(result.blocked, false);
+  assert.ok(Math.abs(result.delta[1] + 0.3) < 1e-6, `vertical applied ${result.delta[1]}`);
+  assert.ok(Math.abs(result.delta[0]) < 1e-6, `no sideways deflection ${result.delta[0]}`);
+  const movedChair = result.objects.find((o) => o.id === tuckedChair.id);
+  assert.ok(Math.abs(movedChair.center[1] - tuckedChair.center[1] + 0.3) < 1e-6, "chair follows the table");
+});
+
+test("captured chair drags away from its table without moving it", () => {
+  const result = moveFurniture(capturedInput.objects, tuckedChair.id, capturedGraph, [0.5, 0], capturedDoors);
+  assert.equal(result.blocked, false);
+  assert.ok(Math.abs(result.delta[0] - 0.5) < 1e-6, `chair applied ${result.delta[0]}`);
+  const table = result.objects.find((o) => o.id === chairedTable.id);
+  assert.deepEqual(table.center, chairedTable.center);
 });
