@@ -1189,7 +1189,7 @@ export const DraftMediaManager = React.forwardRef<DraftMediaManagerHandle, {
         editingGroup ? (
           <div className="flex min-h-0 min-w-0 flex-1 animate-fade-in flex-col">
             {error ? (
-              <div role="alert" className="flex shrink-0 items-start justify-between gap-3 border-b border-red-500/20 bg-red-500/[0.055] px-4 py-3 text-[11px] leading-relaxed text-red-800">
+              <div role="alert" className="flex shrink-0 items-start justify-between gap-3 border-b border-destructive/20 bg-destructive/[0.045] px-4 py-3 text-[11px] leading-relaxed text-destructive">
                 <span>{error}</span>
                 <Button type="button" variant="ghost" size="xs" onClick={() => setError(null)} className="shrink-0 text-red-900 hover:bg-red-500/10 hover:text-red-900">
                   {t("common.dismiss", lang)}
@@ -1205,7 +1205,7 @@ export const DraftMediaManager = React.forwardRef<DraftMediaManagerHandle, {
             />
           </div>
         ) : (
-          <div className="floating-panel-shape m-5 flex-1 border border-dashed border-border/70 bg-card px-6 py-14 text-center">
+          <div className="floating-panel-shape m-5 flex-1 border border-dashed border-border/65 bg-card px-6 py-14 text-center">
             <ImageIcon size={23} className="mx-auto text-foreground/25" />
             <Button type="button" variant="outline" size="sm" className="mt-4" onClick={() => switchView("gallery")}>
               {t("common.back", lang)}
@@ -1217,13 +1217,13 @@ export const DraftMediaManager = React.forwardRef<DraftMediaManagerHandle, {
       {view === "versions" ? (
         <div className="relative animate-fade-in">
           {error ? (
-            <div role="alert" className="floating-panel-shape mb-4 flex items-start justify-between gap-3 border border-red-500/20 bg-red-500/[0.055] px-4 py-3 text-[11px] leading-relaxed text-red-800">
+            <div role="alert" className="floating-panel-shape mb-4 flex items-start justify-between gap-3 border border-destructive/20 bg-destructive/[0.045] px-4 py-3 text-[11px] leading-relaxed text-destructive">
               <span className="min-w-0">
                 <span>{error}</span>
                 {/* Second line, smaller and quieter: worth relaying to support,
                     never worth reading before the sentence above it. */}
                 {errorDetail ? (
-                  <span className="mt-1 block break-words text-[10px] leading-relaxed text-red-900/55">
+                  <span className="mt-1 block break-words text-[10px] leading-relaxed text-destructive/70">
                     {errorDetail}
                   </span>
                 ) : null}
@@ -1263,14 +1263,14 @@ export const DraftMediaManager = React.forwardRef<DraftMediaManagerHandle, {
               <VersionManagerSkeleton />
             </div>
           ) : versionActionsAvailable === false ? (
-            <div className="floating-panel-shape border border-dashed border-border/70 bg-card px-6 py-14 text-center">
+            <div className="floating-panel-shape border border-dashed border-border/65 bg-card px-6 py-14 text-center">
               <VersionsIcon size={23} className="mx-auto text-foreground/25" />
               <Button type="button" variant="outline" size="sm" className="mt-4" onClick={() => void loadMedia(false)}>
                 {t("common.tryAgain", lang)}
               </Button>
             </div>
           ) : orderedVersionGroups.length === 0 ? (
-            <div className="floating-panel-shape border border-dashed border-border/70 bg-card px-6 py-14 text-center">
+            <div className="floating-panel-shape border border-dashed border-border/65 bg-card px-6 py-14 text-center">
               <ImageIcon size={23} className="mx-auto text-foreground/25" />
               <p className="mt-3 text-[13px] font-semibold">{t("draft.versions.noMediaVersions", lang)}</p>
               <p className="mx-auto mt-1 max-w-sm text-[11px] leading-relaxed text-muted-foreground">{t("reai.mediaVersionsEmpty", lang)}</p>
@@ -1382,7 +1382,7 @@ export const DraftMediaManager = React.forwardRef<DraftMediaManagerHandle, {
         </div>
       ) : null}
       {error ? (
-        <div role="alert" className="floating-panel-shape mb-4 flex items-start justify-between gap-3 border border-red-500/20 bg-red-500/[0.055] px-4 py-3 text-[11px] leading-relaxed text-red-800">
+        <div role="alert" className="floating-panel-shape mb-4 flex items-start justify-between gap-3 border border-destructive/20 bg-destructive/[0.045] px-4 py-3 text-[11px] leading-relaxed text-destructive">
           <span>{error}</span>
           {loading ? null : (
             <Button type="button" variant="ghost" size="xs" onClick={errorCanRetryLoad ? retryLoad : () => setError(null)} className="shrink-0 text-red-900 hover:bg-red-500/10 hover:text-red-900">
@@ -1392,7 +1392,7 @@ export const DraftMediaManager = React.forwardRef<DraftMediaManagerHandle, {
         </div>
       ) : null}
       {notice ? (
-        <div role="status" aria-live="polite" className="floating-panel-shape mb-4 flex items-center justify-between gap-3 border border-emerald-600/15 bg-emerald-500/[0.055] px-4 py-3 text-[11px] text-foreground/75">
+        <div role="status" aria-live="polite" className="floating-panel-shape mb-4 flex items-center justify-between gap-3 border border-success/15 bg-success/[0.055] px-4 py-3 text-[11px] text-foreground/75">
           <span className="inline-flex min-w-0 items-center gap-2">
             <CheckIcon size={14} className="shrink-0 text-emerald-700" />
             <span>{notice}</span>
@@ -1462,7 +1462,7 @@ export const DraftMediaManager = React.forwardRef<DraftMediaManagerHandle, {
           </Button>
           <Button
             type="button"
-            variant="ghost"
+            variant="outline"
             size="sm"
             className="h-11 w-11 px-0 min-[620px]:w-auto min-[620px]:px-3"
             onClick={() => switchView("versions")}
@@ -1580,17 +1580,17 @@ export const DraftMediaManager = React.forwardRef<DraftMediaManagerHandle, {
       ) : null}
 
       {!reorderMode && selected ? (
-        <section className="media-manager-selection editor-glass-control mb-4 rounded-[1.35rem] border px-3.5 py-3" aria-label={selectedLabel}>
+        <section className="media-manager-selection editor-glass-control mb-4 rounded-2xl border px-3.5 py-3" aria-label={selectedLabel}>
           <div className="min-w-0 px-1 py-0.5">
             <div className="flex min-w-0 items-center gap-2">
               <p className="truncate text-[12px] font-semibold" title={selectedLabel}>{selectedLabel}</p>
               {selected.id === coverId ? (
-                <StatusPill className="shrink-0 px-2 text-[9px] font-bold uppercase tracking-[0.08em]">
+                <StatusPill className="shrink-0 px-2 text-[10px] font-bold uppercase tracking-[0.08em]">
                   {t("draft.media.cover", lang)}
                 </StatusPill>
               ) : null}
             </div>
-            <p className="mt-0.5 flex flex-wrap gap-x-2 text-[9px] text-muted-foreground">
+            <p className="mt-0.5 flex flex-wrap gap-x-2 text-[10px] text-muted-foreground">
               <span>{selected.kind === "video" ? t("draft.media.video", lang) : t("draft.media.photo", lang)}</span>
               {selected.active.file_size ? <span>{formatBytes(selected.active.file_size, lang)}</span> : null}
               {selected.active.uploaded_at ? <span>{formatDate(selected.active.uploaded_at, undefined, lang)}</span> : null}
@@ -1659,7 +1659,7 @@ export const DraftMediaManager = React.forwardRef<DraftMediaManagerHandle, {
                 >
                   <div className="relative aspect-[16/9] w-full shrink-0 overflow-hidden bg-surface-subtle sm:h-24 sm:w-40 sm:aspect-auto">
                     <MediaVisual upload={group.active} alt={label} className="opacity-80" />
-                    <StatusPill tone="strong" className="absolute left-2 top-2 border-white/15 bg-black/60 text-[9px] text-white backdrop-blur-xl">
+                    <StatusPill tone="strong" className="absolute left-2 top-2 border-white/15 bg-black/60 text-[10px] text-white backdrop-blur-xl">
                       <EyeClosedIcon size={11} /> {t("draft.media.hidden", lang)}
                     </StatusPill>
                   </div>
@@ -1737,7 +1737,7 @@ export const DraftMediaManager = React.forwardRef<DraftMediaManagerHandle, {
                         <MediaVisual upload={group.active} alt="" />
                       </button>
                       {group.id === coverId ? (
-                        <StatusPill className="pointer-events-none absolute left-2 top-2 px-2 text-[9px] font-bold uppercase tracking-[0.08em] shadow-control">
+                        <StatusPill className="pointer-events-none absolute left-2 top-2 px-2 text-[10px] font-bold uppercase tracking-[0.08em] shadow-control">
                           1 · {t("draft.media.cover", lang)}
                         </StatusPill>
                       ) : (
@@ -1873,8 +1873,13 @@ export const DraftMediaManager = React.forwardRef<DraftMediaManagerHandle, {
 
                       <span className="pointer-events-none absolute left-2 top-2 flex flex-wrap gap-1.5">
                         {!group.visible ? (
-                          <StatusPill className="text-[9px] shadow-control">
+                          <StatusPill className="text-[10px] shadow-control">
                             <EyeClosedIcon size={11} /> {t("draft.media.hidden", lang)}
+                          </StatusPill>
+                        ) : null}
+                        {isCover && group.visible ? (
+                          <StatusPill className="px-2 text-[10px] font-bold uppercase tracking-[0.08em] shadow-control">
+                            {t("draft.media.cover", lang)}
                           </StatusPill>
                         ) : null}
                       </span>
@@ -1911,7 +1916,7 @@ export const DraftMediaManager = React.forwardRef<DraftMediaManagerHandle, {
                   type="button"
                   onClick={requestUpload}
                   disabled={busy}
-                  className="media-manager-card floating-panel group min-w-0 overflow-hidden border-dashed bg-card text-muted-foreground transition-colors hover:border-foreground/30 hover:bg-surface-subtle hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50"
+                  className="media-manager-card floating-panel group min-w-0 overflow-hidden border-dashed bg-card text-muted-foreground transition-colors hover:border-foreground/20 hover:bg-surface-subtle hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50"
                 >
                   {/* Label lives inside the 16:9 visual: a footer row made this
                       tile taller than the photo cards, and the outer grid then

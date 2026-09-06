@@ -6814,7 +6814,24 @@ const SplatViewer = forwardRef<SplatViewerHandle, Props>(function SplatViewer(
         cameraObserver = scene.onBeforeRenderObservable.add(syncCamera);
         spinoffCameraSyncRef.current = syncCamera;
         syncCamera();
-        renderer.renderOnce();
+        // First paint. A draw issued synchronously after scene upload can
+        // reach the WebGL2 backend before its programs finish linking and
+        // throw INVALID_OPERATION on some drivers — that must not take the
+        // whole viewer down. Retry across a few frames; the renderer's own
+        // loop takes over once the backend settles.
+        const firstPaint = (attempt: number) => {
+          if (disposed || abortController.signal.aborted) return;
+          try {
+            renderer.renderOnce();
+          } catch (renderError) {
+            if (attempt < 6) {
+              requestAnimationFrame(() => firstPaint(attempt + 1));
+              return;
+            }
+            console.warn("Spinoff first paint kept failing; leaving it to the render loop.", renderError);
+          }
+        };
+        firstPaint(0);
         canvas.dataset.spinoffStatus = "ready";
         canvas.dataset.spinoffBackend = renderer.stats.backend;
         canvas.dataset.spinoffSplats = String(renderer.stats.sceneSplats);

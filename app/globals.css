@@ -331,14 +331,17 @@
 
     .media-manager-selection-actions {
       flex-wrap: nowrap;
+      justify-content: flex-end;
       border-top: 0;
       border-left: 1px solid hsl(var(--border) / 0.4);
       padding-top: 0;
       padding-left: 0.75rem;
     }
 
+    /* Content-sized: stretched flex-1 turned the edit button into the widest
+       element on the surface and dwarfed the global "Add" action. */
     .media-manager-selection-primary {
-      flex: 1 1 auto;
+      flex: 0 1 auto;
     }
 
     .media-manager-grid {
