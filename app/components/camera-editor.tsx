@@ -229,10 +229,9 @@ export default function CameraEditor({ splatId, viewerRef, activeShotIdx, initia
     setSelectedIdx(idx);
     setPreviewIdx(idx);
     if (preview) setMode("preview");
-    // A saved camera is an exact look-through operation in both modes. Flying
-    // between authored poses made the Gaussian renderer alternate between its
-    // motion preview and settled projection, which looked like the camera was
-    // hunting forward and backward even though the path itself was monotonic.
+    // Editing recalls the exact authored pose instantly; preview flies between
+    // angles (savedCameraNavigationIsInstant decides), finishing on the exact
+    // authored basis and FOV.
     viewerRef.current?.navigateToCamera(
       shot.position,
       shot.forward,

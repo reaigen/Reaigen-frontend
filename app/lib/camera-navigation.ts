@@ -126,18 +126,21 @@ function projectedForward(rawForward: Vec3, up: Vec3, fallbackForward: Vec3): Ve
 }
 
 /**
- * A saved camera is an authored pose, not a travel path. Recall every saved
- * camera as one exact position/basis/FOV update. Besides avoiding half-finished
- * captures in the editor, this prevents delivery renderers from repeatedly
- * swapping their moving and settled Gaussian projections during a camera
- * selection. Generated tour paths remain free to animate separately.
+ * Editing and the initial placement recall a saved camera as one exact
+ * position/basis/FOV update — an author selecting a pose must land on it, not
+ * watch a flight, and the first pose must simply be there. Switching angles in
+ * PREVIEW flies: that is the tour experience this product shipped with. The
+ * flight ends on the exact authored basis, and with the WebGPU backend
+ * restored (Spinoff 0.1.61) the journey renders at full quality — the old
+ * moving/settled projection swap that forced everything instant is gone.
  */
 export function savedCameraNavigationIsInstant(intent: SavedCameraNavigationIntent): boolean {
   switch (intent) {
     case "edit":
-    case "preview":
     case "initial":
       return true;
+    case "preview":
+      return false;
   }
 }
 
