@@ -2291,7 +2291,7 @@ export default function FloorplanEditor({ draftId, draftData, lang, onClose, onS
             const mm = Math.round(imperialSystem ? displayToMetres(raw) * 1000 : raw);
             if (mm >= min && mm <= max && Math.abs(mm - currentMm) > 1) commitMm(mm);
           }}
-          className="w-[4.75rem] rounded-lg border border-border bg-white px-2 py-1 text-right text-[12px] font-semibold tabular-nums text-foreground outline-none transition-colors hover:border-foreground/35 focus:border-foreground [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
+          className="w-[4.75rem] rounded-lg border border-border bg-card px-2 py-1 text-right text-[12px] font-semibold tabular-nums text-foreground outline-none transition-colors hover:border-foreground/35 focus:border-foreground [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
         />
         <span className="text-[11px] font-medium text-muted-foreground">{imperialSystem ? lengthUnitSymbol : "mm"}</span>
       </span>
@@ -2309,7 +2309,7 @@ export default function FloorplanEditor({ draftId, draftData, lang, onClose, onS
         type="button"
         onClick={clearSelection}
         aria-label={t("common.close", lang)}
-        className="flex h-7 w-7 items-center justify-center rounded-full text-foreground/45 transition-colors hover:bg-foreground/[0.06] hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+        className="flex h-7 w-7 items-center justify-center rounded-full text-foreground/45 transition-colors hover:bg-foreground/[0.05] hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
       >
         <CloseIcon size={13} />
       </button>
@@ -2341,7 +2341,7 @@ export default function FloorplanEditor({ draftId, draftData, lang, onClose, onS
     current: string,
     apply: (value: Value) => void,
   ) => (
-    <div className="flex shrink-0 items-center gap-0.5 rounded-full bg-black/[0.05] p-0.5">
+    <div className="flex shrink-0 items-center gap-0.5 rounded-full bg-surface-subtle p-0.5">
       {options.map((option) => (
         <button
           key={option.value}
@@ -2373,7 +2373,7 @@ export default function FloorplanEditor({ draftId, draftData, lang, onClose, onS
               "rounded-full border px-2.5 py-1 text-[11px] font-semibold tabular-nums transition-colors",
               Math.abs(mm - currentMm) <= 25
                 ? "border-foreground bg-foreground text-background"
-                : "border-border/70 bg-card text-foreground/60 hover:border-foreground/30 hover:text-foreground",
+                : "border-border/65 bg-card text-foreground/60 hover:border-foreground/20 hover:text-foreground",
             )}
           >
             {imperialSystem ? lengthToDisplay(mm / 1000).toFixed(1) : mm}
@@ -2441,13 +2441,13 @@ export default function FloorplanEditor({ draftId, draftData, lang, onClose, onS
         "flex min-h-[4.75rem] flex-col items-center justify-start gap-0.5 rounded-xl border px-1 pt-2 text-center transition-[background-color,border-color,color] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
         active
           ? "border-foreground bg-surface-subtle text-foreground"
-          : "border-border/60 bg-card text-foreground/75 hover:border-foreground/35 hover:text-foreground",
+          : "border-border/65 bg-card text-foreground/75 hover:border-foreground/20 hover:text-foreground",
       )}
     >
       <svg viewBox="0 0 48 48" className="h-9 w-9 shrink-0" fill="none" aria-hidden="true">
         {paletteGlyphs[key]}
       </svg>
-      <span className="text-[10px] font-semibold leading-[1.25]">{label}</span>
+      <span className="text-[11px] font-semibold leading-[1.25]">{label}</span>
     </button>
   );
 
@@ -2464,7 +2464,7 @@ export default function FloorplanEditor({ draftId, draftData, lang, onClose, onS
         "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2",
         tool === tl
           ? "bg-foreground text-background shadow-[inset_0_1px_0_hsl(var(--card)/0.2),0_7px_18px_hsl(var(--foreground)/0.15)]"
-          : "text-foreground/62 hover:bg-foreground/[0.055] hover:text-foreground active:scale-[0.98]",
+          : "text-foreground/62 hover:bg-foreground/[0.05] hover:text-foreground active:scale-[0.98]",
       )}
     >
       <Icon size={21} strokeWidth={1.9} className="shrink-0" />
@@ -2880,7 +2880,7 @@ export default function FloorplanEditor({ draftId, draftData, lang, onClose, onS
       }}
     >
       {/* top bar */}
-      <div className="editor-glass-control relative z-30 flex min-h-[70px] shrink-0 items-center gap-4 border-b border-border/60 px-5 py-2.5">
+      <div className="editor-glass-control relative z-30 flex min-h-[70px] shrink-0 items-center gap-4 border-b border-border/65 px-5 py-2.5">
         <button
           type="button"
           onClick={onClose}
@@ -2895,7 +2895,7 @@ export default function FloorplanEditor({ draftId, draftData, lang, onClose, onS
           <div className="truncate text-[15px] font-semibold tracking-[-0.01em] text-foreground">
             {t("floorplan.editor.title", lang)}
           </div>
-          <div className="mt-0.5 flex min-w-0 items-center gap-2 text-[11.5px] font-medium text-muted-foreground">
+          <div className="mt-0.5 flex min-w-0 items-center gap-2 text-[12px] font-medium tabular-nums text-muted-foreground">
             <span className="truncate">{ratioText}</span>
             <span aria-hidden="true" className="h-1 w-1 shrink-0 rounded-full bg-foreground/25" />
             <span className="whitespace-nowrap">{t("floorplan.rooms", lang)}: {roomNumbers.length}</span>
@@ -2907,10 +2907,10 @@ export default function FloorplanEditor({ draftId, draftData, lang, onClose, onS
           disabled={saveState !== "error"}
           onClick={() => void persist({})}
           className={cn(
-            "inline-flex min-h-9 shrink-0 items-center gap-2 rounded-full border border-border/65 bg-card/72 px-3 text-[12px] font-semibold shadow-[inset_0_1px_0_hsl(var(--card)),0_4px_14px_hsl(var(--foreground)/0.055)]",
+            "inline-flex min-h-9 shrink-0 items-center gap-2 rounded-full border border-border/55 bg-card/88 px-3 text-[12px] font-semibold shadow-[inset_0_1px_0_hsl(var(--card)),0_4px_14px_hsl(var(--foreground)/0.055)]",
             saveState === "error"
               ? "text-destructive transition-colors hover:bg-destructive/[0.06] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-destructive/40"
-              : "text-foreground/58",
+              : "text-foreground/60",
           )}
         >
           <span
@@ -2993,8 +2993,8 @@ export default function FloorplanEditor({ draftId, draftData, lang, onClose, onS
 
         {/* ── element palette (left) ─────────────────────────────────── */}
         <div className="pointer-events-none absolute bottom-4 left-4 top-4 z-20 hidden w-[13rem] flex-col min-[1180px]:flex">
-          <div className="floating-panel pointer-events-auto flex max-h-full flex-col gap-4 overflow-y-auto border-border/70 bg-card p-4 scrollbar-thin">
-            <p className="text-[13px] font-bold tracking-[-0.01em] text-foreground">{t("floorplan.editor.addElement", lang)}</p>
+          <div className="floating-panel pointer-events-auto flex max-h-full flex-col gap-4 overflow-y-auto border-border/65 bg-card p-4 scrollbar-thin">
+            <p className="text-[16px] font-semibold tracking-[-0.015em] text-foreground">{t("floorplan.editor.addElement", lang)}</p>
             <div className="space-y-2">
               {inspectorHeading(t("floorplan.walls", lang))}
               <div className="grid grid-cols-3 gap-1.5">
@@ -3043,7 +3043,7 @@ export default function FloorplanEditor({ draftId, draftData, lang, onClose, onS
 
         {/* ── inspector (right): properties + layers ─────────────────── */}
         <div className="pointer-events-none absolute bottom-4 right-4 top-4 z-20 hidden w-[16.5rem] flex-col min-[1180px]:flex">
-          <div className="floating-panel pointer-events-auto flex max-h-full flex-col overflow-hidden border-border/70 bg-card">
+          <div className="floating-panel pointer-events-auto flex max-h-full flex-col overflow-hidden border-border/65 bg-card">
             <div className="flex shrink-0 gap-1 border-b border-border/55 p-2">
               {(["properties", "layers"] as const).map((tab) => (
                 <button
@@ -3077,7 +3077,7 @@ export default function FloorplanEditor({ draftId, draftData, lang, onClose, onS
                       role="switch"
                       aria-checked={layers[key]}
                       onClick={() => setLayers((prev) => ({ ...prev, [key]: !prev[key] }))}
-                      className="flex min-h-11 w-full items-center justify-between gap-3 rounded-xl px-3 py-1.5 text-[13px] font-medium transition-colors hover:bg-foreground/[0.045] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                      className="flex min-h-11 w-full items-center justify-between gap-3 rounded-xl px-3 py-1.5 text-[13px] font-medium transition-colors hover:bg-foreground/[0.05] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                     >
                       <span className={layers[key] ? "text-foreground" : "text-foreground/45"}>{label}</span>
                       <span
@@ -3113,7 +3113,7 @@ export default function FloorplanEditor({ draftId, draftData, lang, onClose, onS
                           onClick={() => applyWallStyle("solid")}
                           className={cn(
                             "flex h-7 w-7 items-center justify-center rounded-lg border transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
-                            wallStyle === "solid" ? "border-foreground" : "border-border/60 hover:border-foreground/40",
+                            wallStyle === "solid" ? "border-foreground" : "border-border/65 hover:border-foreground/20",
                           )}
                         >
                           <span className="h-4 w-4 rounded-[3px] bg-foreground" />
@@ -3126,10 +3126,10 @@ export default function FloorplanEditor({ draftId, draftData, lang, onClose, onS
                           onClick={() => applyWallStyle("outline")}
                           className={cn(
                             "flex h-7 w-7 items-center justify-center rounded-lg border transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
-                            wallStyle === "outline" ? "border-foreground" : "border-border/60 hover:border-foreground/40",
+                            wallStyle === "outline" ? "border-foreground" : "border-border/65 hover:border-foreground/20",
                           )}
                         >
-                          <span className="h-4 w-4 rounded-[3px] border-[1.5px] border-foreground bg-white" />
+                          <span className="h-4 w-4 rounded-[3px] border-[1.5px] border-foreground bg-card" />
                         </button>
                       </div>
                     ))}
@@ -3177,7 +3177,7 @@ export default function FloorplanEditor({ draftId, draftData, lang, onClose, onS
                                   "flex items-center justify-center gap-1.5 rounded-xl border px-2 py-2 text-[11px] font-semibold transition-[background-color,border-color,color] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
                                   active
                                     ? "border-foreground bg-surface-subtle text-foreground"
-                                    : "border-border/60 bg-card text-foreground/60 hover:border-foreground/30 hover:text-foreground",
+                                    : "border-border/65 bg-card text-foreground/60 hover:border-foreground/20 hover:text-foreground",
                                 )}
                               >
                                 {swingGlyph(hinge === "Right", swing === "Out")}
@@ -3216,7 +3216,7 @@ export default function FloorplanEditor({ draftId, draftData, lang, onClose, onS
                         }
                       }}
                       onBlur={(event) => renameLabel(selectedRoom, event.currentTarget.value)}
-                      className="w-full rounded-lg border border-border bg-white px-2.5 py-1.5 text-[13px] font-medium text-foreground outline-none transition-colors hover:border-foreground/35 focus:border-foreground"
+                      className="w-full rounded-lg border border-border bg-card px-2.5 py-1.5 text-[13px] font-medium text-foreground outline-none transition-colors hover:border-foreground/35 focus:border-foreground"
                     />
                   </div>
                   <div className="space-y-1.5">
@@ -3227,7 +3227,7 @@ export default function FloorplanEditor({ draftId, draftData, lang, onClose, onS
                         const code = event.target.value as (typeof ROOM_TYPE_CODES)[number] | "";
                         if (code) applyRoomType(selectedRoom, code);
                       }}
-                      className="w-full rounded-lg border border-border bg-white px-2 py-1.5 text-[13px] font-medium text-foreground outline-none transition-colors hover:border-foreground/35 focus:border-foreground"
+                      className="w-full rounded-lg border border-border bg-card px-2 py-1.5 text-[13px] font-medium text-foreground outline-none transition-colors hover:border-foreground/35 focus:border-foreground"
                     >
                       <option value="">—</option>
                       {ROOM_TYPE_CODES.map((code) => (
@@ -3263,7 +3263,7 @@ export default function FloorplanEditor({ draftId, draftData, lang, onClose, onS
                         onClick={() => rotateFurnitureObject(selectedObject.id, -90)}
                         aria-label={`${t("floorplan.editor.rotate", lang)} -90°`}
                         title="-90°"
-                        className="flex h-8 w-9 items-center justify-center rounded-full border border-border/70 text-foreground/70 transition-colors hover:border-foreground/35 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                        className="flex h-8 w-9 items-center justify-center rounded-full border border-border/65 text-foreground/70 transition-colors hover:border-foreground/35 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                       >
                         <RotateIcon size={14} className="scale-x-[-1]" />
                       </button>
@@ -3272,7 +3272,7 @@ export default function FloorplanEditor({ draftId, draftData, lang, onClose, onS
                         onClick={() => rotateFurnitureObject(selectedObject.id, 90)}
                         aria-label={`${t("floorplan.editor.rotate", lang)} +90°`}
                         title="+90°"
-                        className="flex h-8 w-9 items-center justify-center rounded-full border border-border/70 text-foreground/70 transition-colors hover:border-foreground/35 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                        className="flex h-8 w-9 items-center justify-center rounded-full border border-border/65 text-foreground/70 transition-colors hover:border-foreground/35 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                       >
                         <RotateIcon size={14} />
                       </button>
@@ -3307,7 +3307,7 @@ export default function FloorplanEditor({ draftId, draftData, lang, onClose, onS
       <div className="relative z-20 flex shrink-0 flex-col items-center gap-2 px-4 pb-[calc(0.9rem+env(safe-area-inset-bottom,0px))] pt-2">
           {/* Wraps rather than scrolls: a scrolling shelf silently hides its
               last tools, and every command here must stay reachable. */}
-          <div className="floorplan-command-dock pointer-events-auto flex max-w-full flex-wrap items-center justify-center gap-1 rounded-[26px] border border-border/70 p-1.5">
+          <div className="floorplan-command-dock pointer-events-auto flex max-w-full flex-wrap items-center justify-center gap-1 rounded-3xl border border-border/65 p-1.5">
             <div className="flex shrink-0 flex-nowrap items-center gap-1">
               <button
                 type="button"
@@ -3320,7 +3320,7 @@ export default function FloorplanEditor({ draftId, draftData, lang, onClose, onS
                   "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2",
                   tool == null
                     ? "bg-foreground text-background shadow-[inset_0_1px_0_hsl(var(--card)/0.2),0_7px_18px_hsl(var(--foreground)/0.15)]"
-                    : "text-foreground/62 hover:bg-foreground/[0.055] hover:text-foreground active:scale-[0.98]",
+                    : "text-foreground/62 hover:bg-foreground/[0.05] hover:text-foreground active:scale-[0.98]",
                 )}
               >
                 <SelectIcon size={21} strokeWidth={1.9} className="shrink-0" />

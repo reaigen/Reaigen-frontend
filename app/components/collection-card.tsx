@@ -10,14 +10,14 @@ export function CollectionCard({
   return (
     <article
       className={cn(
-        "group relative overflow-hidden rounded-[1.5rem] border border-border/75 bg-card shadow-card focus-within:border-foreground/30 focus-within:shadow-[0_12px_30px_-20px_rgba(39,34,28,0.28)] sm:rounded-2xl",
+        "group relative overflow-hidden rounded-[1.5rem] border border-border/65 bg-card shadow-card focus-within:border-foreground/30 focus-within:shadow-[0_14px_34px_-20px_rgba(39,34,28,0.3)]",
         /*
          * Hover is pointer-only. On a touchscreen the lift latches after a tap
          * and stays raised until you touch something else, so a scrolled list
          * left a trail of stuck cards.
          */
         "[@media(hover:hover)]:transition-[transform,box-shadow,border-color] [@media(hover:hover)]:duration-300",
-        "[@media(hover:hover)]:hover:-translate-y-0.5 [@media(hover:hover)]:hover:border-foreground/20 [@media(hover:hover)]:hover:shadow-[0_14px_34px_-20px_rgba(39,34,28,0.32)]",
+        "[@media(hover:hover)]:hover:-translate-y-0.5 [@media(hover:hover)]:hover:border-foreground/20 [@media(hover:hover)]:hover:shadow-[0_14px_34px_-20px_rgba(39,34,28,0.3)]",
         // Touch gets the feedback it can actually use: an immediate press.
         "transition-transform duration-100 active:scale-[0.985] motion-reduce:active:scale-100",
         className,

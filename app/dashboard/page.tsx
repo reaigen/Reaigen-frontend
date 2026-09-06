@@ -394,7 +394,7 @@ export default function DashboardPage() {
 
   return (
     <AppShell user={user} onLogout={logout} headerSearch={headerSearch}>
-      <div className="mx-auto w-full max-w-[1360px]">
+      <div className="mx-auto w-full max-w-[1360px] pb-10">
         {/*
           The count goes to `meta`, not `actions`. In the action row it was not
           just competing with the create button for weight, it was holding that
@@ -412,7 +412,7 @@ export default function DashboardPage() {
           className="mb-3 sm:mb-5"
         />
         {/* Search bar */}
-        <div className="mb-3 flex items-center gap-2 border-b border-border/75 pb-2 sm:mb-4 md:hidden">
+        <div className="mb-3 flex items-center gap-2 border-b border-border/65 pb-2 sm:mb-4 md:hidden">
           <SearchField
             value={searchInput}
             onChange={setSearchInput}
@@ -435,7 +435,7 @@ export default function DashboardPage() {
           */
           <div
             role="status"
-            className="floating-panel mb-4 flex items-start gap-3 border-border/70 bg-card/95 px-3.5 py-3 text-[12px] text-foreground/65 sm:items-center"
+            className="floating-panel mb-4 flex items-start gap-3 border-border/65 bg-card px-3.5 py-3 text-[12px] text-foreground/65 sm:items-center"
           >
             <InfoIcon size={16} className="mt-0.5 shrink-0 text-foreground/45 sm:mt-0" />
             <p className="min-w-0 flex-1 leading-relaxed">{t("dashboard.cachedNotice", lang)}</p>
@@ -522,7 +522,7 @@ export default function DashboardPage() {
                         // (p-4 sm:p-5). Anything laid over the photo shares one
                         // margin on all four sides, or the pill starts left of
                         // the title it sits above and the card reads crooked.
-                        className="absolute left-4 top-4 border-white/15 bg-black/60 text-white/90 shadow-sm sm:left-5 sm:top-5"
+                        className="absolute left-4 top-4 border-white/15 bg-black/60 text-white/90 shadow-sm backdrop-blur-md sm:left-5 sm:top-5"
                       >
                         {tourStatusLabel
                           ?? (draft.is_complete
@@ -531,7 +531,7 @@ export default function DashboardPage() {
                       </StatusPill>
                       <div className="absolute inset-x-0 bottom-0 flex items-end justify-between gap-4 p-4 sm:p-5">
                         <div className="min-w-0 flex-1">
-                          <h2 className="truncate text-[17px] font-semibold leading-snug tracking-[-0.02em] text-white">{draft.title || t("dashboard.untitled", lang)}</h2>
+                          <h2 className="truncate text-[16px] font-semibold leading-snug tracking-[-0.02em] text-white">{draft.title || t("dashboard.untitled", lang)}</h2>
                           {address && (
                             <p className="mt-1 truncate text-[12px] text-white/70">{address}</p>
                           )}
@@ -549,10 +549,10 @@ export default function DashboardPage() {
                             because this pill repeats once per card on the
                             scroll path.
                           */
-                          <div className="floating-status shrink-0 flex flex-col justify-center bg-white px-3.5 text-right text-black shadow-[0_2px_10px_rgba(0,0,0,0.18)] ring-1 ring-black/[0.06]">
+                          <div className="floating-status shrink-0 flex flex-col justify-center bg-white px-3.5 text-right text-foreground shadow-[0_2px_10px_rgba(0,0,0,0.18)] ring-1 ring-black/[0.06]">
                             <span className="block text-[14px] font-semibold leading-tight tabular-nums">{price}</span>
                             {showOrigPrice && (
-                              <span className="block text-[11px] leading-tight text-black/55 tabular-nums">{origPrice}</span>
+                              <span className="block text-[11px] leading-tight text-foreground/55 tabular-nums">{origPrice}</span>
                             )}
                           </div>
                         )}

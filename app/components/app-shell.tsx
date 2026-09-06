@@ -950,7 +950,7 @@ function AppShellFrame({
             <div
               onClick={() => setReaiOpen(false)}
               aria-hidden="true"
-              className="fixed inset-0 z-[95] bg-black/25 backdrop-blur-[1px]"
+              className="fixed inset-0 z-[74] bg-black/25 backdrop-blur-[1px]"
             />
           )}
           <div
@@ -981,7 +981,7 @@ function AppShellFrame({
                   : "min(460px, calc(100vw - 4rem))",
             }}
             className={cn(
-              "agent-canvas fixed inset-y-0 right-0 z-[100] flex w-full flex-col bg-background transition-[transform,visibility] duration-200",
+              "agent-canvas fixed inset-y-0 right-0 z-[75] flex w-full flex-col bg-background transition-[transform,visibility] duration-200",
               dockedAgentViewport
                 ? "shadow-none"
                 : "border-l border-border shadow-[-18px_0_48px_-30px_rgba(0,0,0,0.28)]",

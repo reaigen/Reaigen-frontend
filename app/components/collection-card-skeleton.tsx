@@ -5,7 +5,7 @@ export function CollectionCardSkeleton({ className }: { className?: string }) {
     <article
       aria-hidden="true"
       className={cn(
-        "relative aspect-[16/10] overflow-hidden rounded-[1.5rem] border border-border/70 bg-card sm:rounded-2xl",
+        "relative aspect-[16/10] overflow-hidden rounded-[1.5rem] border border-border/65 bg-card",
         className,
       )}
     >

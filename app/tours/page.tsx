@@ -258,7 +258,7 @@ export default function ToursPage() {
           className="mb-5 sm:mb-8"
         />
 
-        <div className="mb-5 flex min-w-0 items-center gap-2 border-b border-border/75 pb-2 sm:mb-6 md:hidden">
+        <div className="mb-5 flex min-w-0 items-center gap-2 border-b border-border/65 pb-2 sm:mb-6 md:hidden">
           <SearchField
             value={query}
             onChange={setQuery}
@@ -319,16 +319,16 @@ export default function ToursPage() {
                           <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/5 to-black/15" aria-hidden="true" />
                           {/* Matches the p-4 sm:p-5 block at the foot of the card, so
                               everything over the photo shares one margin. */}
-                          <StatusPill tone={statusTone(item)} dot className="absolute left-4 top-4 border-white/15 bg-black/55 text-white/90 shadow-sm backdrop-blur-md sm:left-5 sm:top-5">
+                          <StatusPill tone={statusTone(item)} dot className="absolute left-4 top-4 border-white/15 bg-black/60 text-white/90 shadow-sm backdrop-blur-md sm:left-5 sm:top-5">
                             {statusLabel(item, lang)}
                           </StatusPill>
                           {ready ? (
-                            <span className="absolute right-4 top-4 inline-flex h-8 w-8 items-center justify-center rounded-full border border-white/15 bg-black/65 px-0 text-[11px] font-semibold text-white shadow-sm backdrop-blur-md transition-colors group-hover:bg-black/80 sm:right-5 sm:top-5 sm:w-auto sm:gap-1.5 sm:px-3">
+                            <span className="absolute right-4 top-4 inline-flex h-8 w-8 items-center justify-center rounded-full border border-white/15 bg-black/60 px-0 text-[11px] font-semibold text-white shadow-sm backdrop-blur-md transition-colors group-hover:bg-black/80 sm:right-5 sm:top-5 sm:w-auto sm:gap-1.5 sm:px-3">
                               <PlayIcon size={14} /> <span className="hidden sm:inline">{t("tours.open", lang)}</span>
                             </span>
                           ) : null}
                           <div className="absolute inset-x-0 bottom-0 p-4 sm:p-5">
-                            <h2 className="truncate text-[17px] font-semibold leading-snug tracking-[-0.02em] text-white">{item.title}</h2>
+                            <h2 className="truncate text-[16px] font-semibold leading-snug tracking-[-0.02em] text-white">{item.title}</h2>
                             <p className="mt-1 text-[12px] text-white/70">
                               {t("tours.updated", lang)} {formatUpdated(item.updated_at, lang)}
                             </p>
