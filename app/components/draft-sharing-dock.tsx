@@ -554,14 +554,14 @@ export function DraftSharingDock({
               <span className="block h-4 w-40 max-w-full animate-pulse rounded-full bg-foreground/[0.06] motion-reduce:animate-none" />
               <span className="mt-2.5 block h-3 w-56 max-w-full animate-pulse rounded-full bg-foreground/[0.04] motion-reduce:animate-none" />
             </div>
-            <div className="border-t border-border/50 bg-surface-subtle p-3 sm:px-4">
+            <div className="border-t border-border/45 bg-surface-subtle p-3 sm:px-4">
               <span className="block h-3 w-2/3 animate-pulse rounded-full bg-foreground/[0.05] motion-reduce:animate-none" />
               <div className="mt-3 flex gap-2">
                 <span className="h-11 flex-1 animate-pulse rounded-full bg-foreground/[0.06] motion-reduce:animate-none sm:max-w-[10rem]" />
                 <span className="h-11 flex-1 animate-pulse rounded-full bg-foreground/[0.04] motion-reduce:animate-none sm:max-w-[8rem]" />
               </div>
             </div>
-            <div className="grid grid-cols-3 gap-2 border-t border-border/50 p-4 sm:p-5">
+            <div className="grid grid-cols-3 gap-2 border-t border-border/45 p-4 sm:p-5">
               <span className="h-16 animate-pulse rounded-lg bg-foreground/[0.04] motion-reduce:animate-none" />
               <span className="h-16 animate-pulse rounded-lg bg-foreground/[0.04] motion-reduce:animate-none" />
               <span className="h-16 animate-pulse rounded-lg bg-foreground/[0.04] motion-reduce:animate-none" />
@@ -670,7 +670,7 @@ export function DraftSharingDock({
             a full-height primary rather than one of five equal-weight chips.
           */}
           {(selectedShare.status === "active" || selectedShare.status === "paused") ? (
-            <div className="border-t border-border/50 bg-surface-subtle p-3 sm:px-4">
+            <div className="border-t border-border/45 bg-surface-subtle p-3 sm:px-4">
               {/*
                 The URL is a second copy target. It is the thing being handed
                 over, so pressing it is the obvious gesture — and on a phone it
@@ -707,7 +707,7 @@ export function DraftSharingDock({
             </div>
           ) : null}
 
-          <div className="grid gap-4 border-t border-border/50 p-4 sm:p-5 md:grid-cols-[minmax(0,1fr)_auto] md:items-center">
+          <div className="grid gap-4 border-t border-border/45 p-4 sm:p-5 md:grid-cols-[minmax(0,1fr)_auto] md:items-center">
             <AnalyticsGrid items={analyticsItems} />
             <div className="flex flex-wrap items-center gap-2 text-[11px] text-foreground/50 md:max-w-[15rem] md:justify-end">
               {selectedExpiry ? (
@@ -723,7 +723,7 @@ export function DraftSharingDock({
           </div>
 
           {actionError ? (
-            <p role="alert" className="border-t border-border/50 px-4 py-2.5 text-[11px] font-medium text-destructive">{t("common.requestFailed", lang)}</p>
+            <p role="alert" className="border-t border-border/45 px-4 py-2.5 text-[11px] font-medium text-destructive">{t("common.requestFailed", lang)}</p>
           ) : null}
 
           {/*
@@ -732,7 +732,7 @@ export function DraftSharingDock({
             the routine actions it could be mistaken for.
           */}
           {confirmRevoke ? (
-            <div className="border-t border-border/50 bg-card p-3 sm:px-4">
+            <div className="border-t border-border/45 bg-card p-3 sm:px-4">
               <p className="text-[12px] font-semibold text-destructive">{t("shares.revokeConfirm", lang)}</p>
               <p className="mt-1 text-[11px] leading-relaxed text-foreground/60">{t("shares.revokeConsequence", lang)}</p>
               <div className="mt-3 flex gap-2">
@@ -753,7 +753,7 @@ export function DraftSharingDock({
               </div>
             </div>
           ) : (
-            <div className="flex flex-wrap items-center gap-2 border-t border-border/50 p-3 sm:px-4">
+            <div className="flex flex-wrap items-center gap-2 border-t border-border/45 p-3 sm:px-4">
               {(selectedShare.status === "active" || selectedShare.status === "paused") ? (
                 <Button type="button" variant="outline" size="sm" onClick={editSelectedShare}>{t("shares.editSettings", lang)}</Button>
               ) : null}

@@ -42,7 +42,7 @@ export function BottomSheet({
     <Dialog.Root open={open} onOpenChange={onOpenChange}>
       <Dialog.Portal>
         {/* Above the mobile header (z-50) and content messages (z-70), below the confirm dialog (z-10000). */}
-        <Dialog.Overlay className="fixed inset-0 z-[95] bg-black/35 backdrop-blur-[2px] data-[state=closed]:animate-[fadeOut_140ms_ease-in] data-[state=open]:animate-[fadeIn_200ms_var(--motion-ease-smooth)] motion-reduce:animate-none" />
+        <Dialog.Overlay className="fixed inset-0 z-[95] bg-black/25 backdrop-blur-[2px] data-[state=closed]:animate-[fadeOut_140ms_ease-in] data-[state=open]:animate-[fadeIn_200ms_var(--motion-ease-smooth)] motion-reduce:animate-none" />
         <Dialog.Content
           {...contentProps}
           className={cn(
@@ -60,7 +60,7 @@ export function BottomSheet({
           {hideTitle ? (
             <Dialog.Title className="sr-only">{title}</Dialog.Title>
           ) : (
-            <Dialog.Title className="text-[17px] font-semibold leading-tight tracking-[-0.02em] text-foreground">
+            <Dialog.Title className="text-[16px] font-semibold leading-tight tracking-[-0.015em] text-foreground">
               {title}
             </Dialog.Title>
           )}

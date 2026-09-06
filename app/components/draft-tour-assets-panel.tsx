@@ -1146,7 +1146,7 @@ export function DraftTourAssetsPanel({
           ) : null}
 
           <div>
-            <h3 className="mb-3 text-[12px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">
+            <h3 className="mb-3 text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">
               {text.captured}
             </h3>
             <p className="mb-4 max-w-xl text-[11px] leading-relaxed text-muted-foreground">
@@ -1179,8 +1179,8 @@ export function DraftTourAssetsPanel({
                 ))}
               </div>
             ) : !payload?.assets.length ? (
-              <div className="editor-glass-surface flex items-start gap-3.5 rounded-[1.4rem] border p-4 sm:p-5">
-                <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-surface-subtle text-foreground/48 ring-1 ring-inset ring-border/45">
+              <div className="editor-glass-surface border-border/65 flex items-start gap-3.5 rounded-[1.5rem] border p-4 sm:p-5">
+                <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-surface-subtle text-foreground/55 ring-1 ring-inset ring-border/45">
                   <TourIcon size={18} />
                 </span>
                 <div className="min-w-0 pt-0.5">
@@ -1292,7 +1292,7 @@ export function DraftTourAssetsPanel({
                           </div>
 
                           {state.ready ? (
-                            <div className="mt-4 space-y-3 border-t border-border/55 pt-4">
+                            <div className="mt-4 space-y-3 border-t border-border/45 pt-4">
                               <div className="grid gap-3 sm:grid-cols-2 sm:gap-4">
                                 <label className="flex min-h-11 items-center gap-3">
                                   <span className="min-w-0 flex-1">
@@ -1395,7 +1395,7 @@ export function DraftTourAssetsPanel({
                           )}
 
                           {asset.lifecycle?.can_remove ? (
-                            <div className="mt-3 border-t border-border/55 pt-3">
+                            <div className="mt-3 border-t border-border/45 pt-3">
                               {/*
                                 The confirm tray itself stays neutral. Tinting
                                 it red as well as the heading, the border and
@@ -1483,7 +1483,7 @@ export function DraftTourAssetsPanel({
             tour reads "Published" and there is nowhere to get a URL or set a
             PIN. It only routes; it never creates a share by itself.
           */}
-          {!loading && payload ? <div className="editor-glass-surface overflow-hidden rounded-[1.4rem] border border-border/60">
+          {!loading && payload ? <div className="editor-glass-surface border-border/65 overflow-hidden rounded-[1.5rem] border border-border/60">
           {onOpenSharing ? (
             <div className="p-4">
               <div className="flex items-start gap-3">
@@ -1513,7 +1513,7 @@ export function DraftTourAssetsPanel({
             </div>
           ) : null}
 
-          <label className={cn("flex items-center gap-3 p-4", onOpenSharing && "border-t border-border/55")}>
+          <label className={cn("flex items-center gap-3 p-4", onOpenSharing && "border-t border-border/45")}>
             <span className="min-w-0 flex-1">
               <span className="block text-[12px] font-semibold">{text.shareTitle}</span>
               <span className="mt-0.5 block text-[10px] leading-relaxed text-muted-foreground">{text.shareHint}</span>

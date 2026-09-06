@@ -243,7 +243,7 @@ export function SharedDraftView({ draftData, lang, hasTour, tours, onOpenTour, f
 
   return (
     <div className="flex min-h-screen flex-col bg-background">
-      <header className="h-[calc(4rem+env(safe-area-inset-top))] shrink-0 border-b border-border/75 bg-card pl-[max(1rem,env(safe-area-inset-left))] pr-[max(1rem,env(safe-area-inset-right))] pt-safe sm:px-8 sm:pt-safe">
+      <header className="h-[calc(4rem+env(safe-area-inset-top))] shrink-0 border-b border-border/65 bg-card/88 backdrop-blur-xl pl-[max(1rem,env(safe-area-inset-left))] pr-[max(1rem,env(safe-area-inset-right))] pt-safe sm:px-8 sm:pt-safe">
         <div className="mx-auto flex h-full w-full max-w-[1120px] items-center">
           <ReaigenWordmark className="text-[29px] leading-none text-foreground min-[390px]:text-[31px]" />
         </div>
@@ -365,7 +365,7 @@ export function SharedDraftView({ draftData, lang, hasTour, tours, onOpenTour, f
                   {has.price ? (
                     <div className="rounded-2xl border border-border/55 bg-surface-subtle px-4 py-3 text-foreground sm:min-w-40 sm:text-right">
                       <p className="select-text text-[24px] font-semibold leading-none tabular-nums sm:text-[28px]">{price}</p>
-                      <p className="mt-2 text-[9px] font-semibold uppercase tracking-[0.14em] text-foreground/48">
+                      <p className="mt-2 text-[10px] font-semibold uppercase tracking-[0.14em] text-foreground/50">
                         {tourCopy.price}
                       </p>
                     </div>
@@ -387,7 +387,7 @@ export function SharedDraftView({ draftData, lang, hasTour, tours, onOpenTour, f
                           <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-card text-foreground/65 ring-1 ring-inset ring-border/45">{icon}</span>
                           <span className="min-w-0 leading-tight">
                             <span className="block select-text truncate text-[13px] font-semibold tabular-nums">{value}</span>
-                            {label ? <span className="mt-1 block truncate text-[9px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">{label}</span> : null}
+                            {label ? <span className="mt-1 block truncate text-[10px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">{label}</span> : null}
                           </span>
                         </div>
                       ))}
@@ -408,7 +408,7 @@ export function SharedDraftView({ draftData, lang, hasTour, tours, onOpenTour, f
               </Button>
             )}
             {hasTour && onOpenTour && webTours.length > 1 && (
-              <section className="rounded-[1.5rem] border border-border/60 bg-card p-4 shadow-card sm:p-5">
+              <section className="rounded-[1.5rem] border border-border/65 bg-card p-4 shadow-card sm:p-5">
                 <div className="mb-4">
                   <h2 className="text-[16px] font-semibold tracking-[-0.015em]">{tourCopy.title}</h2>
                   <p className="mt-1 text-[12px] leading-relaxed text-muted-foreground">{tourCopy.subtitle}</p>
@@ -433,7 +433,7 @@ export function SharedDraftView({ draftData, lang, hasTour, tours, onOpenTour, f
                         key={tour.tour_id}
                         type="button"
                         onClick={() => onOpenTour(tour.tour_id)}
-                        className="flex w-full items-center gap-3 rounded-2xl border border-border/55 bg-background px-3.5 py-3 text-left transition-colors hover:bg-foreground/[0.025]"
+                        className="flex w-full items-center gap-3 rounded-2xl border border-border/65 bg-background px-3.5 py-3 text-left transition-colors hover:border-foreground/20"
                       >
                         <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-foreground/[0.055] text-foreground/65">
                           <TourIcon size={17} />
@@ -442,7 +442,7 @@ export function SharedDraftView({ draftData, lang, hasTour, tours, onOpenTour, f
                           <span className="flex flex-wrap items-center gap-2">
                             <span className="truncate text-[13px] font-semibold">{tour.name}</span>
                             {tour.is_primary ? (
-                              <span className="rounded-full bg-emerald-500/10 px-2 py-0.5 text-[9px] font-semibold text-emerald-700">
+                              <span className="rounded-full bg-success/10 px-2 py-0.5 text-[10px] font-semibold text-success">
                                 {tourCopy.primary}
                               </span>
                             ) : null}
@@ -461,7 +461,7 @@ export function SharedDraftView({ draftData, lang, hasTour, tours, onOpenTour, f
 
             {/* Description */}
             {has.description && (
-              <section className="rounded-[1.35rem] border border-border/60 bg-card p-4 shadow-sm sm:p-5">
+              <section className="rounded-[1.5rem] border border-border/65 bg-card p-4 shadow-card sm:p-5">
                 <div className="mb-3 flex items-center gap-2.5">
                   <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-surface-subtle text-foreground/60"><DocumentIcon size={16} /></span>
                   <h2 className="text-[16px] font-semibold tracking-[-0.015em]">{t("draft.description", lang)}</h2>
@@ -474,7 +474,7 @@ export function SharedDraftView({ draftData, lang, hasTour, tours, onOpenTour, f
             )}
 
             {has.features ? (
-              <section className="rounded-[1.35rem] border border-border/60 bg-card p-4 shadow-sm sm:p-5">
+              <section className="rounded-[1.5rem] border border-border/65 bg-card p-4 shadow-card sm:p-5">
                 <div className="mb-3 flex items-center gap-2.5">
                   <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-surface-subtle text-foreground/60"><TechnicalIcon size={16} /></span>
                   <h2 className="text-[16px] font-semibold tracking-[-0.015em]">{t("draft.details", lang)}</h2>
@@ -498,7 +498,7 @@ export function SharedDraftView({ draftData, lang, hasTour, tours, onOpenTour, f
             {/* Floorplan — same vector renderer as the app when the share
                 includes the floorplan block; legacy composite as fallback */}
             {(draftData.floorplan || floorplanUrl) && (
-              <section className="rounded-[1.35rem] border border-border/60 bg-card p-4 shadow-sm sm:p-5">
+              <section className="rounded-[1.5rem] border border-border/65 bg-card p-4 shadow-card sm:p-5">
                 <div className="mb-3 flex items-center gap-2.5">
                   <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-surface-subtle text-foreground/60"><FloorplanIcon size={16} /></span>
                   <h2 className="text-[16px] font-semibold tracking-[-0.015em]">{t("draft.floorplan", lang)}</h2>

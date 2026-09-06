@@ -28,7 +28,7 @@ export function HomeAuthScreen() {
   }
 
   return (
-    <div className="min-h-[100dvh] w-full bg-white animate-fade-in">
+    <div className="min-h-[100dvh] w-full bg-card animate-fade-in">
       <AuthGate
         open
         onClose={() => {}}

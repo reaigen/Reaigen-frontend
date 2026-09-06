@@ -95,7 +95,7 @@ function Card({ className, ...props }: React.HTMLAttributes<HTMLElement>) {
   return (
     <section
       data-settings-card
-      className={cn("rounded-[20px] border border-border/65 bg-card p-4 shadow-card sm:rounded-[22px] sm:p-5", className)}
+      className={cn("rounded-2xl border border-border/65 bg-card p-4 shadow-card sm:p-5", className)}
       {...props}
     />
   );
@@ -106,7 +106,7 @@ function CardHeader({ className, ...props }: React.HTMLAttributes<HTMLDivElement
 }
 
 function CardTitle({ className, ...props }: React.HTMLAttributes<HTMLHeadingElement>) {
-  return <h2 className={cn("text-[17px] font-semibold leading-tight tracking-[-0.02em]", className)} {...props} />;
+  return <h2 className={cn("text-[16px] font-semibold leading-tight tracking-[-0.015em]", className)} {...props} />;
 }
 
 function CardDescription({ className, ...props }: React.HTMLAttributes<HTMLParagraphElement>) {
@@ -127,7 +127,7 @@ function DataRow({ label, value }: { label: string; value: React.ReactNode }) {
   // One line, label left and value right — the way a native settings list
   // reads — instead of stacking into a tall label-over-value ladder on phones.
   return (
-    <div className="flex min-h-11 items-baseline justify-between gap-6 border-b border-border/60 py-3 last:border-b-0">
+    <div className="flex min-h-11 items-baseline justify-between gap-6 border-b border-border/65 py-3 last:border-b-0">
       <dt className="shrink-0 text-[12px] text-muted-foreground">{label}</dt>
       <dd className="min-w-0 text-right text-[13px] font-medium text-foreground/85">{value}</dd>
     </div>
@@ -342,7 +342,7 @@ function ProfileTab({ user, onSaved, lang }: { user: UserProfile; onSaved: () =>
             <div className="flex min-h-11 items-center justify-between gap-4 rounded-2xl bg-muted/30 px-4 py-2.5">
               <span className="min-w-0 truncate text-sm font-medium">{user.email}</span>
               {user.email_verified ? (
-                <span className="shrink-0 rounded-full bg-success/10 px-2.5 py-0.5 text-[11px] font-semibold text-emerald-800">
+                <span className="shrink-0 rounded-full bg-success/10 px-2.5 py-0.5 text-[11px] font-semibold text-success">
                   {t("settings.profile.emailVerified", lang)}
                 </span>
               ) : (
@@ -824,7 +824,7 @@ function ReaiTab({ lang }: { lang: string }) {
             <p className="text-[13px] text-muted-foreground">{t("reai.working", lang)}</p>
           ) : consent ? (
             <div className="space-y-4">
-              <div className="flex flex-col gap-3 rounded-lg border border-border/60 px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
+              <div className="flex flex-col gap-3 rounded-lg border border-border/65 px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
                 <div>
                   <p className="text-[13px] font-medium">{t("settings.reai.access", lang)}</p>
                   <p className="mt-1 text-[12px] text-muted-foreground">
@@ -833,7 +833,7 @@ function ReaiTab({ lang }: { lang: string }) {
                 </div>
                 <span className={cn(
                   "w-fit rounded-full px-2.5 py-0.5 text-[11px] font-medium",
-                  consent.consented ? "bg-success/10 text-emerald-800" : "bg-foreground/10 text-foreground/60",
+                  consent.consented ? "bg-success/10 text-success" : "bg-foreground/10 text-foreground/60",
                 )}>
                   {consent.consented ? t("common.allowed", lang) : t("common.notAllowed", lang)}
                 </span>
@@ -892,7 +892,7 @@ function ReaiTab({ lang }: { lang: string }) {
           </CardHeader>
           <CardContent>
             <div className="space-y-3">
-              <div className="flex items-start justify-between gap-4 rounded-lg border border-border/60 px-4 py-3">
+              <div className="flex items-start justify-between gap-4 rounded-lg border border-border/65 px-4 py-3">
                 <div className="min-w-0">
                   <p className="text-[13px] font-medium">{t("settings.reai.allTools", lang)}</p>
                   <p className="mt-1 text-[12px] leading-relaxed text-muted-foreground">{t("settings.reai.allToolsHelp", lang)}</p>
@@ -905,7 +905,7 @@ function ReaiTab({ lang }: { lang: string }) {
                 />
               </div>
 
-              <div className="divide-y divide-border/60 rounded-lg border border-border/60 px-4">
+              <div className="divide-y divide-border/60 rounded-lg border border-border/65 px-4">
                   {toolPermissions.available_tools.map((code) => {
                     // A tool the plan excludes can never be switched on: the
                     // backend keeps the preference but still reports it off,
@@ -956,7 +956,7 @@ function ReaiTab({ lang }: { lang: string }) {
         </CardHeader>
         <CardContent>
           {improvementConsent && (
-            <div className="flex items-start justify-between gap-4 rounded-lg border border-border/60 px-4 py-3">
+            <div className="flex items-start justify-between gap-4 rounded-lg border border-border/65 px-4 py-3">
               <div className="min-w-0">
                 <p className="text-[13px] font-medium">{t("settings.reai.improvementPermission", lang)}</p>
                 <p className="mt-1 text-[12px] leading-relaxed text-muted-foreground">
@@ -1132,7 +1132,7 @@ function PrivacyTab({ user, onSaved, lang }: { user: UserProfile; onSaved: () =>
             id="privacy-status-summary"
             role="status"
             aria-live="polite"
-            className="rounded-lg border border-border/60 bg-muted/25 px-4 py-3"
+            className="rounded-lg border border-border/65 bg-muted/25 px-4 py-3"
           >
             <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
               <div className="min-w-0">
@@ -1176,7 +1176,7 @@ function PrivacyTab({ user, onSaved, lang }: { user: UserProfile; onSaved: () =>
             />
           </fieldset>
           {hasPublicContactDetails && (
-            <div className="rounded-lg border border-border/60 bg-muted/25 px-3 py-2" role="note">
+            <div className="rounded-lg border border-border/65 bg-muted/25 px-3 py-2" role="note">
               <p className="text-[12px] text-muted-foreground">{t("settings.privacy.publicContactWarning", lang)}</p>
             </div>
           )}
@@ -1195,7 +1195,7 @@ function PrivacyTab({ user, onSaved, lang }: { user: UserProfile; onSaved: () =>
           <CardDescription>{t("settings.privacy.agentSubtitle", lang)}</CardDescription>
         </CardHeader>
         <CardContent>
-          <dl className="space-y-3 rounded-lg border border-border/60 px-4 py-3">
+          <dl className="space-y-3 rounded-lg border border-border/65 px-4 py-3">
             <DataRow
               label={t("settings.privacy.agentAccess", lang)}
               value={agentPrivacy?.consent.consented ? t("common.allowed", lang) : t("common.notAllowed", lang)}
@@ -1216,7 +1216,7 @@ function PrivacyTab({ user, onSaved, lang }: { user: UserProfile; onSaved: () =>
           </p>
           {agentPrivacy?.tools ? (
             <div className="mt-4 space-y-3">
-              <div className="flex items-start justify-between gap-4 rounded-lg border border-border/60 px-3 py-2.5">
+              <div className="flex items-start justify-between gap-4 rounded-lg border border-border/65 px-3 py-2.5">
                 <div>
                   <p className="text-[12px] font-medium">{t("settings.reai.allTools", lang)}</p>
                   <p className="mt-0.5 text-[11px] text-muted-foreground">{t("settings.reai.allToolsHelp", lang)}</p>
@@ -1228,7 +1228,7 @@ function PrivacyTab({ user, onSaved, lang }: { user: UserProfile; onSaved: () =>
                   aria-label={t("settings.reai.allTools", lang)}
                 />
               </div>
-              <div className="divide-y divide-border/60 rounded-lg border border-border/60 px-3">
+              <div className="divide-y divide-border/60 rounded-lg border border-border/65 px-3">
                   {agentPrivacy.tools.available_tools.map((code) => {
                     const entitled = agentPrivacy.tools?.tool_status[code]?.entitled ?? false;
                     const dataBoundary = agentPrivacy.tools?.tool_catalog[code]?.data_boundary;
@@ -1253,7 +1253,7 @@ function PrivacyTab({ user, onSaved, lang }: { user: UserProfile; onSaved: () =>
                     );
                   })}
               </div>
-              <div className="flex items-start justify-between gap-4 rounded-lg border border-border/60 px-3 py-2.5">
+              <div className="flex items-start justify-between gap-4 rounded-lg border border-border/65 px-3 py-2.5">
                 <div>
                   <p className="text-[12px] font-medium">{t("settings.reai.improvementPermission", lang)}</p>
                   <p className="mt-0.5 text-[11px] text-muted-foreground">{t("reai.improvementConsent", lang)}</p>
@@ -1285,7 +1285,7 @@ function PrivacyTab({ user, onSaved, lang }: { user: UserProfile; onSaved: () =>
           </CardDescription>
         </CardHeader>
         <CardContent>
-          <dl className="rounded-lg border border-border/60 px-4">
+          <dl className="rounded-lg border border-border/65 px-4">
             <DataRow
               label={t("settings.privacy.legal.dataProcessing", lang)}
               value={gdpr?.data_processing_consent ? t("common.allowed", lang) : t("common.notAllowed", lang)}
@@ -1307,7 +1307,7 @@ function PrivacyTab({ user, onSaved, lang }: { user: UserProfile; onSaved: () =>
               value={licenseStatus}
             />
           </dl>
-          <div className="mt-3 rounded-lg border border-border/60 px-4">
+          <div className="mt-3 rounded-lg border border-border/65 px-4">
             <ToggleRow
               label={t("settings.privacy.legal.marketingConsent", lang)}
               hint={t("settings.privacy.legal.marketingConsentHint", lang)}
@@ -1761,7 +1761,7 @@ function TrainingTab({ lang }: { lang: string }) {
           </div>
         ) : (
           <form className="space-y-5" onSubmit={handleSubmit}>
-            <div className="rounded-2xl border border-border/60 bg-muted/20 px-4 py-3.5">
+            <div className="rounded-2xl border border-border/65 bg-muted/20 px-4 py-3.5">
               <p className="text-[13px] font-medium">{t("settings.training.summary", lang)}</p>
               <p className="mt-1 text-[12px] leading-relaxed text-muted-foreground">{profileSummary}</p>
               <div className="mt-3 flex flex-wrap gap-2 text-[11px] font-medium text-foreground/70">
@@ -1931,7 +1931,7 @@ function LocalizationTab({ user, lang }: { user: UserProfile; lang: string }) {
           </div>
         ) : (
         <form className="space-y-4" onSubmit={handleSubmit}>
-          <div className="rounded-lg border border-border/60 bg-muted/20 px-4 py-3">
+          <div className="rounded-lg border border-border/65 bg-muted/20 px-4 py-3">
             <p className="text-[13px] font-medium">{t("settings.localization.preview", lang)}</p>
             <div className="mt-2 grid grid-cols-1 gap-x-4 gap-y-1 text-[12px] sm:grid-cols-2">
               <p className="text-muted-foreground">{t("settings.localization.previewDate", lang)} <span className="font-medium text-foreground">{formattedDateSample}</span></p>
@@ -2151,7 +2151,7 @@ function BillingTab({ user, onSaved, lang }: { user: UserProfile; onSaved: () =>
           <CardDescription>{t("settings.billing.subtitle", lang)}</CardDescription>
         </CardHeader>
         <CardContent>
-          <dl className="rounded-lg border border-border/60 px-4">
+          <dl className="rounded-lg border border-border/65 px-4">
             <DataRow
               label={t("settings.billing.plan", lang)}
               value={
@@ -2183,7 +2183,7 @@ function BillingTab({ user, onSaved, lang }: { user: UserProfile; onSaved: () =>
           <CardTitle>{t("settings.billing.usageTitle", lang)}</CardTitle>
         </CardHeader>
         <CardContent>
-          <div className="space-y-4 rounded-lg border border-border/60 p-4">
+          <div className="space-y-4 rounded-lg border border-border/65 p-4">
             <UsageBar current={currentPosts} max={maxPosts} label={t("settings.billing.posts", lang)} />
           </div>
         </CardContent>
@@ -2197,7 +2197,7 @@ function BillingTab({ user, onSaved, lang }: { user: UserProfile; onSaved: () =>
             <CardDescription>{t("settings.billing.creditsSubtitle", lang)}</CardDescription>
           </CardHeader>
           <CardContent>
-            <dl className="rounded-lg border border-border/60 px-4">
+            <dl className="rounded-lg border border-border/65 px-4">
               <DataRow
                 label={t("settings.billing.creditsTotal", lang)}
                 value={
@@ -2522,7 +2522,7 @@ function DevicesSection({ lang }: { lang: string }) {
           {rows.map((session) => (
             <li
               key={session.id}
-              className="rounded-2xl border border-border/60 bg-background/60 p-4"
+              className="rounded-2xl border border-border/65 bg-background/60 p-4"
             >
               <div className="flex items-center justify-between gap-3">
                 <div className="flex min-w-0 items-start gap-3">
@@ -2537,7 +2537,7 @@ function DevicesSection({ lang }: { lang: string }) {
                     <p className="flex flex-wrap items-center gap-x-2 gap-y-1 text-[13px] font-medium">
                       <span className="truncate">{session.device_label}</span>
                       {session.current && (
-                        <span className="whitespace-nowrap rounded-full bg-success/10 px-2.5 py-0.5 text-[11px] font-semibold text-emerald-800">
+                        <span className="whitespace-nowrap rounded-full bg-success/10 px-2.5 py-0.5 text-[11px] font-semibold text-success">
                           {t("settings.security.devicesThisDevice", lang)}
                         </span>
                       )}
@@ -2567,7 +2567,7 @@ function DevicesSection({ lang }: { lang: string }) {
             </li>
           ))}
           {rows.length === 0 && (
-            <li className="rounded-2xl border border-border/60 bg-background/60 p-4 text-[13px] text-muted-foreground">
+            <li className="rounded-2xl border border-border/65 bg-background/60 p-4 text-[13px] text-muted-foreground">
               {t("settings.security.devicesEmpty", lang)}
             </li>
           )}
@@ -2800,7 +2800,7 @@ function TwoFactorSection({ lang }: { lang: string }) {
           <div className="flex items-center justify-between">
             <span className={cn("rounded-full px-2.5 py-0.5 text-[11px] font-semibold",
               status?.enabled
-                ? "bg-success/10 text-emerald-800"
+                ? "bg-success/10 text-success"
                 : "bg-muted text-muted-foreground"
             )}>
               {status?.enabled ? t("settings.security.twoFaEnabled", lang) : t("settings.security.twoFaDisabled", lang)}
@@ -3001,7 +3001,7 @@ function PhoneSection({ user, onSaved, lang }: { user: UserProfile; onSaved: () 
                 <span className="min-w-0 truncate text-sm font-medium tabular-nums">{phoneDisplay.display}</span>
               </div>
               {verified ? (
-                <span className="shrink-0 rounded-full bg-success/10 px-2.5 py-0.5 text-[11px] font-semibold text-emerald-800">
+                <span className="shrink-0 rounded-full bg-success/10 px-2.5 py-0.5 text-[11px] font-semibold text-success">
                   {t("settings.security.phoneVerified", lang)}
                 </span>
               ) : otpSent ? (
@@ -3016,7 +3016,7 @@ function PhoneSection({ user, onSaved, lang }: { user: UserProfile; onSaved: () 
             </div>
 
             {otpSent && (
-              <div className="space-y-2 rounded-2xl border border-border/60 bg-muted/20 p-4">
+              <div className="space-y-2 rounded-2xl border border-border/65 bg-muted/20 p-4">
                 <Label htmlFor="phone-otp-code">{t("settings.security.phoneOtpSent", lang)}</Label>
                 <div className="flex items-center gap-2">
                   <Input
@@ -3094,9 +3094,9 @@ export function SettingsForm({ user, onSaved }: { user: UserProfile; onSaved: ()
         setActiveTab(value);
         window.history.replaceState(null, "", `#${value}`);
       }}
-      className="settings-surface w-full lg:grid lg:grid-cols-[210px_minmax(0,1fr)] lg:items-stretch lg:overflow-hidden lg:rounded-[26px] lg:border lg:border-border/65 lg:bg-card lg:shadow-card"
+      className="settings-surface w-full lg:grid lg:grid-cols-[210px_minmax(0,1fr)] lg:items-stretch lg:overflow-hidden lg:rounded-3xl lg:border lg:border-border/65 lg:bg-card lg:shadow-card"
     >
-      <div className="mb-5 lg:mb-0 lg:h-full lg:border-r lg:border-border/60 lg:bg-card lg:p-3">
+      <div className="mb-5 lg:mb-0 lg:h-full lg:border-r lg:border-border/65 lg:bg-card lg:p-3">
         <div className="lg:hidden">
           <Select
             value={activeTab}

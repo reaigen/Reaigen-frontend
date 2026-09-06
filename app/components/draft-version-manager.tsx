@@ -212,7 +212,7 @@ function EmptyVersionState({ icon: Icon, title, hint }: { icon: typeof TourIcon;
   // border here read as a drop zone rather than an empty list.
   return (
     <div className="floating-panel-shape border border-border bg-card px-6 py-14 text-center shadow-card" role="status">
-      <span className="mx-auto flex h-11 w-11 items-center justify-center rounded-xl border border-border/45 bg-surface-subtle text-foreground/35" aria-hidden="true">
+      <span className="mx-auto flex h-11 w-11 items-center justify-center rounded-xl border border-border/45 bg-surface-subtle text-foreground/55" aria-hidden="true">
         <Icon size={20} />
       </span>
       <p className="mt-4 text-[14px] font-semibold tracking-[-0.01em]">{title}</p>
@@ -538,7 +538,7 @@ export function DraftVersionManager({
                       active ? "border-foreground/20 ring-1 ring-foreground/[0.04]" : "border-border/65",
                     )}>
                       <div className="flex items-stretch gap-3">
-                        <div className="relative h-24 w-[7.5rem] shrink-0 overflow-hidden rounded-[1rem] bg-surface-subtle sm:w-36 sm:rounded-xl">
+                        <div className="relative h-24 w-[7.5rem] shrink-0 overflow-hidden rounded-[1rem] bg-surface-subtle sm:w-36 ">
                           {version.thumbnail_url ? (
                             <img src={version.thumbnail_url} alt="" loading="lazy" className="h-full w-full object-cover" />
                           ) : (
@@ -622,7 +622,7 @@ export function DraftVersionManager({
                         <button
                           type="button"
                           onClick={() => setExpandedRevision(expanded ? null : revision.id)}
-                          className="w-full p-4 text-left transition-colors hover:bg-foreground/[0.02] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring sm:p-5"
+                          className="w-full p-4 text-left transition-colors hover:bg-foreground/[0.03] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring sm:p-5"
                           aria-expanded={expanded}
                         >
                           <span className="flex items-start justify-between gap-3">
@@ -655,12 +655,12 @@ export function DraftVersionManager({
                                     <p className="text-[11px] font-semibold text-foreground/70">{revisionFieldLabel(change.key, lang)}</p>
                                     <div className="mt-2 grid grid-cols-[minmax(0,1fr)_1rem_minmax(0,1fr)] items-start gap-2">
                                       <div className="min-w-0">
-                                        <p className="text-[9px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">{t("reai.historyBefore", lang)}</p>
+                                        <p className="text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">{t("reai.historyBefore", lang)}</p>
                                         <p className="mt-1 line-clamp-3 break-words text-[11px] leading-relaxed text-foreground/60">{revisionValue(change.key, change.before, revision, lang, units)}</p>
                                       </div>
                                       <ArrowRightIcon size={13} className="mt-5 text-foreground/25" />
                                       <div className="min-w-0">
-                                        <p className="text-[9px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">{t("reai.historyAfter", lang)}</p>
+                                        <p className="text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">{t("reai.historyAfter", lang)}</p>
                                         <p className="mt-1 line-clamp-3 break-words text-[11px] font-medium leading-relaxed text-foreground/80">{revisionValue(change.key, change.after, revision, lang, units)}</p>
                                       </div>
                                     </div>
@@ -865,7 +865,7 @@ export function MediaVersionCreationPanel({
                 "flex min-h-24 items-start gap-3 rounded-2xl border p-3 text-left transition-[border-color,background-color] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50",
                 active
                   ? "border-foreground/35 bg-foreground/[0.055]"
-                  : "border-border/55 bg-card hover:border-foreground/25 hover:bg-foreground/[0.035]",
+                  : "border-border/55 bg-card hover:border-foreground/20 hover:bg-foreground/[0.035]",
               )}
             >
               <span className={cn(
@@ -1061,7 +1061,7 @@ export function MediaVersionCard({
 function AgentRequired({ lang }: { lang: string }) {
   return (
     <div className="floating-panel-shape border border-border bg-card px-6 py-12 text-center shadow-card" role="status">
-      <span className="mx-auto flex h-11 w-11 items-center justify-center rounded-xl border border-border/45 bg-surface-subtle text-foreground/35" aria-hidden="true"><VersionsIcon size={20} /></span>
+      <span className="mx-auto flex h-11 w-11 items-center justify-center rounded-xl border border-border/45 bg-surface-subtle text-foreground/55" aria-hidden="true"><VersionsIcon size={20} /></span>
       <p className="mx-auto mt-4 max-w-sm text-[12px] font-semibold leading-relaxed">{t("draft.versions.agentRequired", lang)}</p>
       <Link href="/settings#reai" className="mt-4 inline-flex rounded-full border border-border/65 px-3.5 py-2 text-[11px] font-semibold transition-colors hover:bg-surface-subtle focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">{t("settings.tab.reai", lang)}</Link>
     </div>

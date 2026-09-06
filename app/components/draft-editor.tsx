@@ -729,7 +729,7 @@ function NumericStepper({
                   const snapped = min + (Math.round((clamped - min) / step) * step);
                   onChange(formatEditableNumber(snapped));
                 }}
-                className="h-full w-full min-w-0 flex-1 border-0 bg-transparent px-1 text-center text-[16px] font-semibold tabular-nums text-foreground outline-none"
+                className="h-full w-full min-w-0 flex-1 border-0 bg-transparent px-1 text-center text-[16px] font-semibold tabular-nums sm:text-[14px] text-foreground outline-none"
               />
               {unitLabel ? <span className="shrink-0 pr-1 text-[10px] font-semibold text-foreground/50">{unitLabel}</span> : null}
             </div>
@@ -1666,7 +1666,7 @@ export function DraftEditor({
                     id="draft-description"
                     type="button"
                     onClick={openDescriptionEditor}
-                    className="group w-full rounded-[1.6rem] border border-border/65 bg-card px-5 py-5 text-left transition-colors hover:border-foreground/22 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/20 sm:px-6 sm:py-6"
+                    className="group w-full rounded-[1.5rem] border border-border/65 bg-card px-5 py-5 text-left transition-colors hover:border-foreground/22 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/20 sm:px-6 sm:py-6"
                   >
                     {values.description ? (
                       <FormattedDescription
@@ -1823,7 +1823,7 @@ export function DraftEditor({
               const recorded = section.allFields.filter((field) => hasRecordedFieldValue(field, specs[section.key]?.[field.key])).length;
               const summary = advancedSectionSummary(section.allFields, specs[section.key], propertyType, lang);
               return (
-                <section key={section.key} className="overflow-hidden rounded-[1.75rem] border border-border/65 bg-card">
+                <section key={section.key} className="overflow-hidden rounded-[1.5rem] border border-border/65 bg-card">
                   <button
                     type="button"
                     onClick={() => setExpandedSections((current) => {
@@ -1832,7 +1832,7 @@ export function DraftEditor({
                       else next.add(section.key);
                       return next;
                     })}
-                    className="flex w-full items-center justify-between gap-3 px-4 py-3.5 text-left transition-colors hover:bg-foreground/[0.025] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring sm:px-5 sm:py-4"
+                    className="flex w-full items-center justify-between gap-3 px-4 py-3.5 text-left transition-colors hover:bg-foreground/[0.03] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring sm:px-5 sm:py-4"
                     aria-expanded={expanded}
                   >
                     <span className="flex min-w-0 items-center gap-3">
@@ -1872,7 +1872,7 @@ export function DraftEditor({
                 </section>
               );
             }) : (
-              <p className="rounded-[1.75rem] border border-dashed border-border/60 px-4 py-10 text-center text-[12px] text-muted-foreground">{t("draft.editor.emptyAdvanced", lang)}</p>
+              <p className="rounded-[1.5rem] border border-dashed border-border/65 px-4 py-10 text-center text-[12px] text-muted-foreground">{t("draft.editor.emptyAdvanced", lang)}</p>
             )}
           </div>
         )}
@@ -1921,9 +1921,9 @@ export function DraftEditor({
           <button type="button" onMouseDown={(event) => event.preventDefault()} onClick={() => applyDescriptionCommand("italic")} aria-label={t("draft.editor.descriptionItalic", lang)} title={t("draft.editor.descriptionItalic", lang)} className="flex h-10 min-w-10 items-center justify-center rounded-full px-3 text-[15px] italic text-foreground/70 transition-colors hover:bg-foreground/[0.055] hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/25">I</button>
           <span aria-hidden="true" className="mx-1 h-5 w-px bg-border/60" />
           <button type="button" onMouseDown={(event) => event.preventDefault()} onClick={() => applyDescriptionCommand("insertUnorderedList")} aria-label={t("draft.editor.descriptionBullets", lang)} title={t("draft.editor.descriptionBullets", lang)} className="flex h-10 min-w-10 items-center justify-center rounded-full px-3 text-[15px] font-semibold text-foreground/70 transition-colors hover:bg-foreground/[0.055] hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/25">• —</button>
-          <button type="button" onMouseDown={(event) => event.preventDefault()} onClick={() => applyDescriptionCommand("insertOrderedList")} aria-label={t("draft.editor.descriptionNumbered", lang)} title={t("draft.editor.descriptionNumbered", lang)} className="flex h-10 min-w-10 items-center justify-center rounded-full px-3 text-[13.5px] font-semibold tabular-nums text-foreground/70 transition-colors hover:bg-foreground/[0.055] hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/25">1.</button>
+          <button type="button" onMouseDown={(event) => event.preventDefault()} onClick={() => applyDescriptionCommand("insertOrderedList")} aria-label={t("draft.editor.descriptionNumbered", lang)} title={t("draft.editor.descriptionNumbered", lang)} className="flex h-10 min-w-10 items-center justify-center rounded-full px-3 text-[15px] font-semibold tabular-nums text-foreground/70 transition-colors hover:bg-foreground/[0.055] hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/25">1.</button>
           <span aria-hidden="true" className="mx-1 h-5 w-px bg-border/60" />
-          <button type="button" onMouseDown={(event) => event.preventDefault()} onClick={() => applyDescriptionCommand("removeFormat")} aria-label={t("draft.editor.descriptionClear", lang)} title={t("draft.editor.descriptionClear", lang)} className="flex h-10 min-w-10 items-center justify-center rounded-full px-3 text-[13.5px] font-semibold text-foreground/70 transition-colors hover:bg-foreground/[0.055] hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/25"><span className="line-through decoration-[1.5px]">Aa</span></button>
+          <button type="button" onMouseDown={(event) => event.preventDefault()} onClick={() => applyDescriptionCommand("removeFormat")} aria-label={t("draft.editor.descriptionClear", lang)} title={t("draft.editor.descriptionClear", lang)} className="flex h-10 min-w-10 items-center justify-center rounded-full px-3 text-[15px] font-semibold text-foreground/70 transition-colors hover:bg-foreground/[0.055] hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/25"><span className="line-through decoration-[1.5px]">Aa</span></button>
           <span className="flex-1" />
           <span className="hidden text-[11px] font-medium text-foreground/42 sm:inline">⌘B · ⌘I · ⌘↵</span>
         </div>
@@ -2045,7 +2045,7 @@ export function DraftEditor({
         {genSettingsOpen ? (
           <div className="animate-fade-in space-y-4 border-b border-border/45 px-4 py-4">
             <div>
-              <p className="text-[11px] font-semibold uppercase tracking-[0.1em] text-foreground/55">{t("draft.descAi.length", lang)}</p>
+              <p className="text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">{t("draft.descAi.length", lang)}</p>
               <div className="selection-capsule-track mt-2 grid !min-h-0 grid-cols-3">
                 {DESCRIPTION_SIZES.map((size) => (
                   <button
@@ -2061,7 +2061,7 @@ export function DraftEditor({
               </div>
             </div>
             <div>
-              <p className="text-[11px] font-semibold uppercase tracking-[0.1em] text-foreground/55">{t("draft.descAi.tone", lang)}</p>
+              <p className="text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">{t("draft.descAi.tone", lang)}</p>
               <div className="mt-2 space-y-1">
                 {DESCRIPTION_TONES.map((tone) => (
                   <button
@@ -2083,7 +2083,7 @@ export function DraftEditor({
               </div>
             </div>
             <div>
-              <Label htmlFor="description-ai-instructions" className="text-[11px] font-semibold uppercase tracking-[0.1em] text-foreground/55">
+              <Label htmlFor="description-ai-instructions" className="text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">
                 {t("draft.descAi.instructions", lang)}
               </Label>
               <textarea
@@ -2092,7 +2092,7 @@ export function DraftEditor({
                 onChange={(event) => setGenInstructions(event.target.value)}
                 placeholder={t("draft.descAi.instructionsPlaceholder", lang)}
                 rows={2}
-                className="mt-2 w-full resize-none rounded-xl border border-border bg-white px-3.5 py-2.5 text-[13px] leading-relaxed text-foreground outline-none transition-[border-color] placeholder:text-foreground/35 hover:border-foreground/35 focus:border-foreground"
+                className="mt-2 w-full resize-none rounded-xl border border-border/65 bg-card px-3.5 py-2.5 text-[13px] leading-relaxed text-foreground outline-none transition-[border-color] placeholder:text-foreground/35 hover:border-foreground/35 focus:border-foreground"
               />
             </div>
           </div>

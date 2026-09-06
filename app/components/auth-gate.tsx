@@ -34,7 +34,7 @@ type AuthGateProps = {
 /* ── Shared input style ───────────────────────────────────────────────── */
 
 const INPUT_CLASS =
-  "h-14 rounded-full border-border bg-white px-5 text-[15px] text-foreground shadow-none placeholder:text-foreground/35 transition-[border-color,box-shadow] duration-150 hover:border-foreground/35 focus-visible:border-foreground focus-visible:bg-white focus-visible:ring-0 focus-visible:shadow-[0_0_0_3px_rgba(0,0,0,0.08)]";
+  "h-14 rounded-full border-border bg-card px-5 text-[15px] text-foreground shadow-none placeholder:text-foreground/35 transition-[border-color,box-shadow] duration-150 hover:border-foreground/35 focus-visible:border-foreground focus-visible:bg-card focus-visible:ring-0 focus-visible:shadow-[0_0_0_3px_rgba(0,0,0,0.08)]";
 
 const AUTH_IMAGE_URL =
   "https://images.unsplash.com/photo-1639663742190-1b3dba2eebcf?auto=format&fit=crop&fm=jpg&q=84&w=1800";
@@ -281,7 +281,7 @@ function LoginCard({
       </Button>
 
       <div className="pt-0.5">
-        <button type="button" onClick={onSwitchToRegister} className="h-[3.25rem] w-full rounded-full border border-border bg-white px-5 text-[14px] font-semibold text-foreground transition-[background-color,border-color,transform] hover:border-foreground/35 hover:bg-foreground/[0.025] active:scale-[0.99] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2">
+        <button type="button" onClick={onSwitchToRegister} className="h-[3.25rem] w-full rounded-full border border-border bg-card px-5 text-[14px] font-semibold text-foreground transition-[background-color,border-color,transform] hover:border-foreground/35 hover:bg-foreground/[0.025] active:scale-[0.99] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2">
           {t("auth.login.switchToRegister", lang)}
         </button>
       </div>
@@ -424,7 +424,7 @@ function RegistrationCard({
       </Button>
 
       <div className="pt-0.5">
-        <button type="button" onClick={onSwitchToLogin} className="h-[3.25rem] w-full rounded-full border border-border bg-white px-5 text-[14px] font-semibold text-foreground transition-[background-color,border-color,transform] hover:border-foreground/35 hover:bg-foreground/[0.025] active:scale-[0.99] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2">
+        <button type="button" onClick={onSwitchToLogin} className="h-[3.25rem] w-full rounded-full border border-border bg-card px-5 text-[14px] font-semibold text-foreground transition-[background-color,border-color,transform] hover:border-foreground/35 hover:bg-foreground/[0.025] active:scale-[0.99] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2">
           {t("auth.register.switchToLogin", lang)}
         </button>
       </div>
@@ -441,10 +441,10 @@ export function AuthGate({ open, onLogin, onRegister }: AuthGateProps) {
   if (!open) return null;
 
   return (
-    <div className="grid min-h-[100dvh] w-full bg-white lg:grid-cols-[minmax(0,1.12fr)_minmax(28rem,0.88fr)]">
+    <div className="grid min-h-[100dvh] w-full bg-card lg:grid-cols-[minmax(0,1.12fr)_minmax(28rem,0.88fr)]">
       <BrandPanel lang={lang} />
 
-      <section className="flex min-h-[100dvh] items-center justify-center bg-white px-5 pb-[max(2.5rem,env(safe-area-inset-bottom))] pt-[max(2.5rem,env(safe-area-inset-top))] sm:px-10 lg:px-12 lg:py-12 xl:px-20">
+      <section className="flex min-h-[100dvh] items-center justify-center bg-card px-5 pb-[max(2.5rem,env(safe-area-inset-bottom))] pt-[max(2.5rem,env(safe-area-inset-top))] sm:px-10 lg:px-12 lg:py-12 xl:px-20">
         <div className="w-full max-w-[27rem]">
           <div className="mb-12 flex items-center lg:hidden">
             <ReaigenLogo className="text-[26px]" />
