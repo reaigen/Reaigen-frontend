@@ -550,7 +550,7 @@ export function DraftSharingDock({
             <span className="h-[3.75rem] animate-pulse rounded-xl bg-foreground/[0.055] motion-reduce:animate-none" />
             <span className="h-[3.75rem] animate-pulse rounded-xl bg-foreground/[0.035] motion-reduce:animate-none" />
           </div>
-          <div aria-hidden="true" className="overflow-hidden rounded-2xl border border-border/70 bg-card">
+          <div aria-hidden="true" className="overflow-hidden rounded-2xl border border-border/65 bg-card">
             <div className="p-4 sm:p-5">
               <span className="block h-4 w-40 max-w-full animate-pulse rounded-full bg-foreground/[0.06] motion-reduce:animate-none" />
               <span className="mt-2.5 block h-3 w-56 max-w-full animate-pulse rounded-full bg-foreground/[0.04] motion-reduce:animate-none" />
@@ -579,7 +579,7 @@ export function DraftSharingDock({
       ) : null}
 
       {linksError && !shares.length ? (
-        <div className="flex items-center justify-between gap-4 rounded-xl border border-border/70 bg-card px-4 py-3">
+        <div className="flex items-center justify-between gap-4 rounded-xl border border-border/65 bg-card px-4 py-3">
           <p className="text-[12px] text-muted-foreground">{t("shares.loadFailed", lang)}</p>
           <Button type="button" variant="outline" size="xs" onClick={() => void loadLinks(true)}>
             {t("common.tryAgain", lang)}
@@ -642,7 +642,7 @@ export function DraftSharingDock({
       ) : null}
 
       {feedback?.kind === "copyFailed" ? (
-        <div role="alert" className="rounded-xl border border-border/70 bg-card p-3">
+        <div role="alert" className="rounded-xl border border-border/65 bg-card p-3">
           <p className="text-[11px] font-medium text-foreground/70">{t("sharing.copyManualHint", lang)}</p>
           <p className="mt-2 select-all break-all rounded-lg bg-surface-subtle px-2.5 py-2 text-[12px] leading-relaxed text-foreground/75">
             {feedback.url}
@@ -651,7 +651,7 @@ export function DraftSharingDock({
       ) : null}
 
       {selectedShare ? (
-        <div className="overflow-hidden rounded-2xl border border-border/70 bg-card">
+        <div className="overflow-hidden rounded-2xl border border-border/65 bg-card">
           <div className="flex min-w-0 items-start justify-between gap-4 p-4 sm:p-5">
             <div className="min-w-0">
               <div className="flex items-center gap-2">
@@ -778,7 +778,7 @@ export function DraftSharingDock({
           )}
         </div>
       ) : linksLoaded && !linksError ? (
-        <div className="flex min-h-40 flex-col items-center justify-center rounded-[1.75rem] border border-dashed border-border/70 bg-card px-6 py-7 text-center">
+        <div className="flex min-h-40 flex-col items-center justify-center rounded-[1.75rem] border border-dashed border-border/65 bg-card px-6 py-7 text-center">
           <p className="text-[12px] font-medium">{t("shares.noShares", lang)}</p>
           <p className="mx-auto mt-1 max-w-[22rem] text-[11px] leading-relaxed text-muted-foreground">{t("shares.noSharesHint", lang)}</p>
           <Button type="button" size="sm" className="mt-4" onClick={showCreateView}>

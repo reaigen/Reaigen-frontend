@@ -812,7 +812,7 @@ export function DraftTourAssetsPanel({
 
   return (
     <section className="draft-tour-assets mt-7 sm:mt-9">
-      <header className="draft-tour-header mb-3.5 flex items-center gap-3 px-1 sm:justify-between">
+      <header className="draft-tour-header mb-3.5 flex items-center gap-3 sm:justify-between">
         <div className="flex min-w-0 flex-1 items-center gap-2.5">
           <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-[0.7rem] border border-border/55 bg-card text-foreground/62 shadow-control">
             <TourIcon size={16} />

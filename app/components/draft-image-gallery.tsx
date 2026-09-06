@@ -473,7 +473,7 @@ export function DraftImageGallery({ images, alt, fallbackUrl, lang = "en", onAct
 
   if (count === 0) {
     return (
-      <div className="detail-hero-gallery relative aspect-[4/3] w-full overflow-hidden bg-white ring-1 ring-inset ring-black/[0.045] sm:aspect-[16/10] md:aspect-video md:rounded-xl">
+      <div className="detail-hero-gallery relative aspect-[4/3] w-full overflow-hidden bg-white ring-1 ring-inset ring-border/45 sm:aspect-[16/10] md:aspect-video md:rounded-2xl">
         <div className="flex h-full w-full items-center justify-center">
           <svg width="48" height="48" viewBox="0 0 24 24" fill="none" className="text-black/10" aria-hidden="true">
             <rect x="3" y="3" width="18" height="18" rx="2" stroke="currentColor" strokeWidth="1.5" />
@@ -493,7 +493,7 @@ export function DraftImageGallery({ images, alt, fallbackUrl, lang = "en", onAct
         aria-label={alt}
         onKeyDown={handleKeyboardNavigation}
         className={cn(
-          "detail-hero-gallery group relative aspect-[4/3] w-full overflow-hidden bg-white ring-1 ring-inset ring-black/[0.045] sm:aspect-[16/10] md:aspect-video md:rounded-xl",
+          "detail-hero-gallery group relative aspect-[4/3] w-full overflow-hidden bg-white ring-1 ring-inset ring-border/45 sm:aspect-[16/10] md:aspect-video md:rounded-2xl",
           count === 1 && "detail-hero-gallery-single",
         )}
       >

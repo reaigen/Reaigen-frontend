@@ -341,7 +341,7 @@ export function SharedDraftView({ draftData, lang, hasTour, tours, onOpenTour, f
               <section
                 aria-label={t("shared.propertyInfo", lang)}
                 className={cn(
-                  "relative z-10 rounded-[1.65rem] border border-border/65 bg-card p-4 shadow-card sm:p-6",
+                  "relative z-10 rounded-[1.5rem] border border-border/65 bg-card p-4 shadow-card sm:p-6",
                   has.photos && "mx-2 -mt-16 sm:mx-5 sm:-mt-20",
                 )}
               >

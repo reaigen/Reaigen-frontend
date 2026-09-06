@@ -42,7 +42,7 @@ function DraftDetailSkeletonContent({
         the same ordering, radii and breakpoints avoids a second layout jump
         when the real title, facts and gallery replace these silhouettes.
       */}
-      <div className="draft-mobile-workspace flex flex-col overflow-hidden border-0 bg-transparent shadow-none md:rounded-[1.65rem] md:border md:border-border/65 md:bg-card md:shadow-card">
+      <div className="draft-mobile-workspace flex flex-col overflow-hidden border-0 bg-transparent shadow-none md:rounded-[1.5rem] md:border md:border-border/65 md:bg-card md:shadow-control">
         <section aria-hidden="true" className="order-first min-w-0 bg-transparent px-1 pb-5 pt-1 md:bg-card md:p-6">
           <div className="flex flex-wrap items-center gap-2">
             <SkeletonShape className="h-7 w-20 rounded-full" />

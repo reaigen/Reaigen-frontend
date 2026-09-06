@@ -979,7 +979,7 @@ export default function DraftPreviewPage({
         )}
 
         {/* Media and property summary — one continuous workspace at every width. */}
-        <div className="draft-mobile-workspace flex flex-col overflow-visible border-0 bg-transparent shadow-none md:overflow-hidden md:rounded-[1.65rem] md:border md:border-border/65 md:bg-card md:shadow-card">
+        <div className="draft-mobile-workspace flex flex-col overflow-visible border-0 bg-transparent shadow-none md:overflow-hidden md:rounded-[1.5rem] md:border md:border-border/65 md:bg-card md:shadow-control">
           {/*
             A listing with no photos rendered no hero at all, so the page opened
             on status pills floating in whitespace and never said the obvious
@@ -1002,7 +1002,7 @@ export default function DraftPreviewPage({
                 <span className="min-w-0 text-left">
                   <span className="block text-[18px] font-semibold tracking-[-0.02em]">{t("draft.media.emptyTitle", lang)}</span>
                   <span className="mt-1.5 block max-w-xl text-[13px] leading-relaxed text-foreground/58">{t("draft.media.emptyBody", lang)}</span>
-                  <span className="mt-4 inline-flex min-h-10 items-center gap-2 rounded-full border border-border/70 bg-card px-4 text-[13px] font-semibold text-foreground transition-colors group-hover:border-foreground/20 group-hover:bg-muted/55">
+                  <span className="mt-4 inline-flex min-h-10 items-center gap-2 rounded-full border border-border/65 bg-card px-4 text-[13px] font-semibold text-foreground transition-colors group-hover:border-foreground/20 group-hover:bg-muted/55">
                     <PlusIcon size={15} /> {t("draft.media.addPhotos", lang)}
                   </span>
                 </span>
@@ -1169,7 +1169,7 @@ export default function DraftPreviewPage({
             )}
 
             {facts.length > 0 && (
-              <div className="draft-facts-grid mt-4 flex gap-2.5 overflow-x-auto pb-1 scrollbar-hide sm:grid sm:grid-cols-3 sm:overflow-visible sm:pb-0 md:mt-5 md:border-t md:border-border/70 md:pt-5">
+              <div className="draft-facts-grid mt-4 flex gap-2.5 overflow-x-auto pb-1 scrollbar-hide sm:grid sm:grid-cols-3 sm:overflow-visible sm:pb-0 md:mt-5 md:border-t md:border-border/65 md:pt-5">
                 {facts.map((fact) => (
                   <div
                     key={fact.label}
@@ -1206,7 +1206,7 @@ export default function DraftPreviewPage({
                 visual centre. The tour remains the dark primary segment; the
                 authoring tools divide the remaining width evenly instead of
                 forming a second, unrelated capsule on the opposite edge. */}
-            <div className="mt-5 hidden border-t border-border/70 pt-5 md:block">
+            <div className="mt-5 hidden border-t border-border/65 pt-5 md:block">
               {/* No fixed height: h-12 gave the 40px buttons a 38px inner box
                   (p-1 wins over the class padding), so the active pill clipped
                   against the capsule instead of floating centred in it. */}
@@ -1284,7 +1284,7 @@ export default function DraftPreviewPage({
                         <button
                           type="button"
                           onClick={() => { setDescriptionEditRequested(true); setEditorOpen(true); }}
-                          className="inline-flex h-9 items-center gap-1.5 rounded-full border border-border/70 bg-card px-3 text-[11px] font-semibold text-foreground/72 transition-colors hover:border-foreground/20 hover:bg-muted/55 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/25"
+                          className="inline-flex h-9 items-center gap-1.5 rounded-full border border-border/65 bg-card px-3 text-[11px] font-semibold text-foreground/72 transition-colors hover:border-foreground/20 hover:bg-muted/55 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/25"
                         >
                           <EditIcon size={13} /> {t("shareDialog.edit", lang)}
                         </button>
@@ -1314,7 +1314,7 @@ export default function DraftPreviewPage({
                       {!compactViewport && (
                         <Link
                           href={`/draft/${draftId}/floorplan`}
-                          className="ml-auto rounded-full px-2.5 py-1 text-[12.5px] font-semibold text-foreground/55 transition-colors hover:bg-foreground/[0.05] hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+                          className="ml-auto inline-flex h-9 items-center gap-1.5 rounded-full border border-border/65 bg-card px-3 text-[11px] font-semibold text-foreground/72 transition-colors hover:border-foreground/20 hover:bg-muted/55 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/25"
                         >
                           {t("floorplan.edit", lang)}
                         </Link>
@@ -1367,7 +1367,7 @@ export default function DraftPreviewPage({
                       draftId={draft.id}
                       floorplanId={draft.floorplan_id}
                       lang={lang}
-                      className="mt-6 border-t border-border/70 pt-6"
+                      className="mt-6 border-t border-border/65 pt-6"
                     />
                   </section>
                 )}

@@ -535,7 +535,7 @@ export function DraftVersionManager({
                   return (
                     <article key={id} className={cn(
                       "floating-panel-shape overflow-hidden border bg-card p-3",
-                      active ? "border-foreground/20 ring-1 ring-foreground/[0.04]" : "border-border/60",
+                      active ? "border-foreground/20 ring-1 ring-foreground/[0.04]" : "border-border/65",
                     )}>
                       <div className="flex items-stretch gap-3">
                         <div className="relative h-24 w-[7.5rem] shrink-0 overflow-hidden rounded-[1rem] bg-surface-subtle sm:w-36 sm:rounded-xl">
@@ -617,7 +617,7 @@ export function DraftVersionManager({
                       )} />
                       <div className={cn(
                         "floating-panel-shape overflow-hidden border bg-card",
-                        current ? "border-foreground/20" : "border-border/60",
+                        current ? "border-foreground/20" : "border-border/65",
                       )}>
                         <button
                           type="button"
@@ -1063,7 +1063,7 @@ function AgentRequired({ lang }: { lang: string }) {
     <div className="floating-panel-shape border border-border bg-card px-6 py-12 text-center shadow-card" role="status">
       <span className="mx-auto flex h-11 w-11 items-center justify-center rounded-xl border border-border/45 bg-surface-subtle text-foreground/35" aria-hidden="true"><VersionsIcon size={20} /></span>
       <p className="mx-auto mt-4 max-w-sm text-[12px] font-semibold leading-relaxed">{t("draft.versions.agentRequired", lang)}</p>
-      <Link href="/settings#reai" className="mt-4 inline-flex rounded-full border border-border/70 px-3.5 py-2 text-[11px] font-semibold transition-colors hover:bg-surface-subtle focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">{t("settings.tab.reai", lang)}</Link>
+      <Link href="/settings#reai" className="mt-4 inline-flex rounded-full border border-border/65 px-3.5 py-2 text-[11px] font-semibold transition-colors hover:bg-surface-subtle focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">{t("settings.tab.reai", lang)}</Link>
     </div>
   );
 }
