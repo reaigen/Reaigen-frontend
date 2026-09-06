@@ -20,7 +20,7 @@ export function DraftCacheNotice({
     <div
       role="status"
       className={cn(
-        "mb-5 rounded-[1.5rem] border border-border/65 bg-card/88 p-4 shadow-control backdrop-blur-xl sm:flex sm:items-center sm:gap-4",
+        "detail-card-lg mb-5 p-4 sm:flex sm:items-center sm:gap-4",
         className,
       )}
     >

@@ -488,7 +488,7 @@ function ExpandableDescription({ text, lang }: { text: string; lang: string }) {
   }, [text]);
 
   return (
-    <div className="rounded-[1.25rem] border border-border/65 bg-card/88 px-4 py-4 shadow-control backdrop-blur-xl sm:px-6 sm:py-5">
+    <div className="detail-card px-4 py-4 sm:px-6 sm:py-5">
       <div
         ref={textRef}
         className={cn(
@@ -1190,7 +1190,7 @@ export default function DraftPreviewPage({
                       fact.path && "cursor-grab active:cursor-grabbing",
                     )}
                   >
-                    <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-[0.7rem] border border-border/55 bg-card text-foreground/62 shadow-control">
+                    <span className="detail-icon-chip">
                       {fact.icon}
                     </span>
                     <span className="min-w-0 leading-tight">
@@ -1277,14 +1277,14 @@ export default function DraftPreviewPage({
               >
                 {(description || translationPending) && (
                   <section style={{ animationDelay: "0ms" }} className={cn("draft-section-enter", descriptionSpans && "lg:col-span-2")}>
-                    <h2 className="mb-3.5 flex flex-wrap items-center gap-2.5 text-[16px] font-semibold tracking-[-0.015em]">
-                      <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-[0.7rem] border border-border/55 bg-card text-foreground/62 shadow-control"><DocumentIcon size={16} /></span>
+                    <h2 className="detail-section-title flex-wrap">
+                      <span className="detail-icon-chip"><DocumentIcon size={16} /></span>
                       {t("draft.description", lang)}
                       <span className="ml-auto flex items-center gap-1.5">
                         <button
                           type="button"
                           onClick={() => { setDescriptionEditRequested(true); setEditorOpen(true); }}
-                          className="inline-flex h-9 items-center gap-1.5 rounded-full border border-border/65 bg-card px-3 text-[11px] font-semibold text-foreground/72 transition-colors hover:border-foreground/20 hover:bg-muted/55 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/25"
+                          className="detail-action-chip focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/25"
                         >
                           <EditIcon size={13} /> {t("shareDialog.edit", lang)}
                         </button>
@@ -1308,13 +1308,13 @@ export default function DraftPreviewPage({
 
                 {hasFloorplan && (
                   <section style={{ animationDelay: "45ms" }} className="draft-section-enter lg:col-span-2">
-                    <h2 className="mb-3.5 flex items-center gap-2.5 text-[16px] font-semibold tracking-[-0.015em]">
-                      <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-[0.7rem] border border-border/55 bg-card text-foreground/62 shadow-control"><FloorplanIcon size={16} /></span>
+                    <h2 className="detail-section-title">
+                      <span className="detail-icon-chip"><FloorplanIcon size={16} /></span>
                       {t("draft.floorplan", lang)}
                       {!compactViewport && (
                         <Link
                           href={`/draft/${draftId}/floorplan`}
-                          className="ml-auto inline-flex h-9 items-center gap-1.5 rounded-full border border-border/65 bg-card px-3 text-[11px] font-semibold text-foreground/72 transition-colors hover:border-foreground/20 hover:bg-muted/55 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/25"
+                          className="detail-action-chip ml-auto focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/25"
                         >
                           {t("floorplan.edit", lang)}
                         </Link>
@@ -1340,7 +1340,7 @@ export default function DraftPreviewPage({
                       keeps the full column and stays flush with its siblings.
                       Fullscreen is still where the plan gets to be large.
                     */}
-                    <div className="relative w-full overflow-hidden rounded-[1.5rem] border border-border/65 bg-card/88 shadow-control backdrop-blur-xl">
+                    <div className="detail-card-lg relative w-full overflow-hidden">
                       <FloorplanViewer
                         draftData={draft.draft_data ?? []}
                         floorplanId={draft.floorplan_id}
@@ -1383,8 +1383,8 @@ export default function DraftPreviewPage({
               >
                 {rows.length > 0 && (
                   <section style={{ animationDelay: "90ms" }} className={cn("draft-section-enter", "draft-details-section", supportingSpans("rows") && "lg:col-span-2")}>
-                    <h2 className="mb-3.5 flex items-center gap-2.5 text-[16px] font-semibold tracking-[-0.015em]">
-                      <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-[0.7rem] border border-border/55 bg-card text-foreground/62 shadow-control"><InfoIcon size={16} /></span>
+                    <h2 className="detail-section-title">
+                      <span className="detail-icon-chip"><InfoIcon size={16} /></span>
                       {t("draft.details", lang)}
                     </h2>
                     <div className={cn("draft-detail-grid grid grid-cols-1 gap-2.5", visibleRows.length > 1 && "sm:grid-cols-2")}>
@@ -1402,7 +1402,7 @@ export default function DraftPreviewPage({
                             });
                           }}
                           className={cn(
-                            "group flex min-w-0 items-center gap-3 rounded-[1.25rem] border border-border/65 bg-card/88 px-3.5 py-3.5 shadow-control backdrop-blur-xl transition-[border-color,box-shadow,transform]",
+                            "detail-card group flex min-w-0 items-center gap-3 px-3.5 py-3.5 transition-[border-color,box-shadow,transform]",
                             row.path && "cursor-grab hover:-translate-y-px hover:border-foreground/20 hover:shadow-card active:cursor-grabbing",
                           )}
                         >
@@ -1428,11 +1428,11 @@ export default function DraftPreviewPage({
 
                 {features.length > 0 && (
                   <section style={{ animationDelay: "135ms" }} className={cn("draft-section-enter", supportingSpans("features") && "lg:col-span-2")}>
-                    <h2 className="mb-3.5 flex items-center gap-2.5 text-[16px] font-semibold tracking-[-0.015em]">
-                      <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-[0.7rem] border border-border/55 bg-card text-foreground/62 shadow-control"><StarIcon size={16} /></span>
+                    <h2 className="detail-section-title">
+                      <span className="detail-icon-chip"><StarIcon size={16} /></span>
                       {t("draft.features", lang)}
                     </h2>
-                    <div className="flex flex-wrap gap-2 rounded-[1.25rem] border border-border/65 bg-card/88 p-4 shadow-control backdrop-blur-xl">
+                    <div className="detail-card flex flex-wrap gap-2 p-4">
                       {features.map((feature) => (
                         <span key={feature} className="inline-flex min-h-9 items-center rounded-full border border-border/65 bg-surface-subtle px-3.5 py-1 text-[12px] font-medium text-foreground/80">
                           {feature}
@@ -1444,13 +1444,13 @@ export default function DraftPreviewPage({
 
                 {monthlyCosts.length > 0 && (
                   <section style={{ animationDelay: "180ms" }} className={cn("draft-section-enter", supportingSpans("costs") && "lg:col-span-2")}>
-                    <h2 className="mb-3.5 flex items-center gap-2.5 text-[16px] font-semibold tracking-[-0.015em]">
-                      <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-[0.7rem] border border-border/55 bg-card text-foreground/62 shadow-control"><PriceIcon size={16} /></span>
+                    <h2 className="detail-section-title">
+                      <span className="detail-icon-chip"><PriceIcon size={16} /></span>
                       {t("draft.monthlyCosts", lang)}
                     </h2>
                     <div className={cn("draft-cost-grid grid grid-cols-1 gap-2.5", monthlyCosts.length > 1 && "sm:grid-cols-2")}>
                       {monthlyCosts.map((row, index) => (
-                        <div key={`${row.label}-${index}`} className="flex min-w-0 items-center gap-3 rounded-[1.25rem] border border-border/65 bg-card/88 px-3.5 py-3.5 shadow-control backdrop-blur-xl">
+                        <div key={`${row.label}-${index}`} className="detail-card flex min-w-0 items-center gap-3 px-3.5 py-3.5">
                           <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full border border-border/55 bg-surface-subtle/75 text-foreground/62 shadow-[inset_0_1px_0_rgba(255,255,255,0.82)]">{row.icon}</span>
                           <span className="min-w-0 flex-1 leading-tight">
                             <span className="block break-words text-[11px] font-medium text-foreground/52">{row.label}</span>
