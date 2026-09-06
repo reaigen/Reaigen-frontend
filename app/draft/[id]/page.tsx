@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState, use, type ReactNode } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, use, type ReactNode } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import dynamic from "next/dynamic";
@@ -16,6 +16,7 @@ import { mediaProxyUrl } from "../../lib/image-preview";
 import { readDraftDetailCache, writeDraftDetailCache } from "../../lib/resilient-draft-cache";
 import { DraftImageGallery } from "../../components/draft-image-gallery";
 import { DraftCacheNotice } from "../../components/draft-cache-notice";
+import { GridLayoutToggle } from "../../components/grid-layout-toggle";
 import { PropertyMapCard } from "../../components/property-map-card";
 import type { DraftDetailItem, DraftTourAssetsPayload, DraftUpload, SplatsByDraftPayload } from "../../lib/tour-types";
 import { baseUnitForCategory, resolveUnit, unitLabel, type UnitLookup } from "../../lib/unit-catalog";
@@ -565,6 +566,17 @@ export default function DraftPreviewPage({
   const [editorOpen, setEditorOpen] = useState(false);
   const [descriptionEditRequested, setDescriptionEditRequested] = useState(false);
   const [floorplanFullscreen, setFloorplanFullscreen] = useState(false);
+  // Detail viewing modes, mirroring the list page's grid toggle: a focused
+  // single-column reading width with generous whitespace, or the wide
+  // two-column workspace. Persisted separately from the list preference.
+  const [detailLayout, setDetailLayout] = useState<1 | 2>(2);
+  useLayoutEffect(() => {
+    if (localStorage.getItem("reaigen:detailLayout") === "1") setDetailLayout(1);
+  }, []);
+  const handleDetailLayout = useCallback((cols: 1 | 2) => {
+    setDetailLayout(cols);
+    localStorage.setItem("reaigen:detailLayout", String(cols));
+  }, []);
   const [floorplanAgentAction, setFloorplanAgentAction] = useState<ReaiViewerAction | null>(null);
   // Drawing walls, placing doors and dragging vertices needs a pointer and a
   // canvas with room beside its inspector panels; on a phone the plan is pushed
@@ -914,7 +926,10 @@ export default function DraftPreviewPage({
         writeDraftDetailCache(user.id, draftId, updatedDraft);
       }}
     >
-      <div className="draft-detail-page relative mx-auto w-full max-w-[1360px] pb-24 md:pb-12">
+      <div className={cn(
+        "draft-detail-page relative mx-auto w-full pb-24 transition-[max-width] duration-300 md:pb-12",
+        detailLayout === 1 ? "max-w-[920px]" : "max-w-[1360px]",
+      )}>
         {/*
           Creation toolbar. Back stays the first thing on the page at every
           width — the stale-listing notice below must never displace the way
@@ -945,6 +960,11 @@ export default function DraftPreviewPage({
             onRefresh={refreshListing}
           />
         )}
+
+        {/* Viewing mode: focused single column vs the wide two-column workspace. */}
+        <div className="mb-3 hidden items-center justify-end md:flex">
+          <GridLayoutToggle value={detailLayout} onChange={handleDetailLayout} lang={lang} />
+        </div>
 
         {/* Media and property summary — one continuous workspace at every width. */}
         <div className="draft-mobile-workspace flex flex-col overflow-visible border-0 bg-transparent shadow-none md:overflow-hidden md:rounded-[1.65rem] md:border md:border-border/65 md:bg-card md:shadow-card">
@@ -1234,7 +1254,7 @@ export default function DraftPreviewPage({
           <div className={cn(
             "draft-support-grid",
             "mt-6 grid gap-6 md:mt-8 md:gap-7 lg:mt-10",
-            detailCardCount > 1 && !sparseNarrativeDetails && "lg:grid-cols-2 lg:items-start",
+            detailLayout === 2 && detailCardCount > 1 && !sparseNarrativeDetails && "lg:grid-cols-2 lg:items-start",
           )}>
             {hasNarrative && (
               <div

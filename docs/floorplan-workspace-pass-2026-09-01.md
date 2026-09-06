@@ -183,6 +183,20 @@ way to detect and auto-heal old garbage.
   move beside the plan into the flank the aspect-ratio cap left empty,
   instead of stacking under a mostly-white card.
 
+## Follow-up 4 — detail viewing modes (6 September 2026)
+
+- The draft detail page gets the list page's two-mode toggle
+  (`GridLayoutToggle`, persisted as `reaigen:detailLayout`): **focused** —
+  a 920px centred single column with generous whitespace; **wide** — the
+  existing 1360px two-column workspace. Ends the tug-of-war between
+  too-wide cards and shrunken cards beside dead space: the user picks the
+  reading they want.
+- Both modes re-centre automatically when the agent panel docks — the
+  shell pads the canvas by `--reai-docked-width` with a transition, and
+  the wrapper animates `max-width` in step.
+- Legend rail (Follow-up 2) and card-span parity (Follow-up 3) apply only
+  in wide mode; focused mode stacks every card full-width.
+
 ## Backlog
 
 Floorplan editor:
