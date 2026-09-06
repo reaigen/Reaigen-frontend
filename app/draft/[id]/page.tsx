@@ -170,7 +170,9 @@ function currencyIcon(
   return (
     <span
       aria-hidden="true"
-      className="inline-flex min-w-4 items-center justify-center text-[18px] font-medium leading-none tracking-[-0.04em] text-foreground/58"
+      // No letter-spacing on a lone glyph: negative tracking trims the box on
+      // one side and visibly pushes the symbol off the chip's centre.
+      className="inline-flex min-w-4 items-center justify-center text-[18px] font-medium leading-none text-foreground/58"
     >
       {symbol}
     </span>
