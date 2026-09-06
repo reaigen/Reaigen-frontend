@@ -469,6 +469,7 @@ export function DraftSharingDock({
       description={linksLoaded
         ? `${shares.length} · ${t("shares.title", lang)}`
         : (draft.title || t("dashboard.untitled", lang))}
+      headerMode="editor"
       closeIcon="close"
       className="sm:max-w-[640px]"
       initialFocusRef={headingRef}

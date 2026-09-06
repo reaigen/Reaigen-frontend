@@ -2295,12 +2295,14 @@ const SplatViewer = forwardRef<SplatViewerHandle, Props>(function SplatViewer(
     cam.detachControl();
     if (immersiveControls) setImmersiveBase(tPos, targetForward, shot.fov, targetUp);
 
-    // Authored cameras are discrete viewpoints, not keyframes for an invented
-    // flight. Apply the complete saved basis and FOV together. In particular,
-    // do not keep Spinoff in its coarse motion projection for an interpolated
-    // camera journey and then swap back to the full sorted scene at the end;
-    // that render transition is perceived as front/back camera hunting.
-    if (instant || useExactForward) {
+    // Switching angles FLIES the camera — the animated branch below finishes
+    // on the exact authored basis and FOV, so authored viewpoints stay exact.
+    // The hard cut is only for explicit instant placement (initial pose).
+    // This used to force a cut for every saved-camera tour because Spinoff
+    // 0.1.56's WebGL2 fallback drew a coarse motion subset during the flight;
+    // with the WebGPU backend restored (0.1.61) the flight renders at full
+    // quality again, which is the tour behaviour this product shipped with.
+    if (instant) {
       setCameraFromForward(
         cam,
         B,

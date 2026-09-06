@@ -441,7 +441,7 @@ export default function SharedPage({ params }: { params: Promise<{ token: string
     setActiveRoomId(room.id);
     if (tourMeta?.rooms) {
       const featured = tourMeta.rooms.find((r) => r.id === room.id);
-      if (featured && featured.featuredShotIdx >= 0) splatRef.current?.goToShot(featured.featuredShotIdx);
+      if (featured && featured.featuredShotIdx >= 0) splatRef.current?.goToShot(featured.featuredShotIdx, true);
     }
   }, [tourMeta]);
 
