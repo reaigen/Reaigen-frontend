@@ -8,24 +8,16 @@ interface GridLayoutToggleProps {
   value: 1 | 2;
   onChange: (value: 1 | 2) => void;
   lang?: string;
-  /** Override the list-grid glyphs/labels when the two modes mean something
-      else (e.g. the detail page's focused column vs wide workspace). */
-  singleIcon?: React.ReactNode;
-  doubleIcon?: React.ReactNode;
-  singleLabel?: string;
-  doubleLabel?: string;
 }
 
-export function GridLayoutToggle({ value, onChange, lang = "en", singleIcon, doubleIcon, singleLabel, doubleLabel }: GridLayoutToggleProps) {
-  const labelSingle = singleLabel ?? t("dashboard.gridSingle", lang);
-  const labelDouble = doubleLabel ?? t("dashboard.gridCompact", lang);
+export function GridLayoutToggle({ value, onChange, lang = "en" }: GridLayoutToggleProps) {
   return (
     <div
       // Opaque, no backdrop blur: translucent fills over backdrop-filter lag
       // behind live window resizes and flash the white root background through.
       className="floating-toolbar hidden shrink-0 border-border/65 bg-secondary [backdrop-filter:none] [-webkit-backdrop-filter:none] md:flex"
       role="group"
-      aria-label={`${labelSingle} / ${labelDouble}`}
+      aria-label={`${t("dashboard.gridSingle", lang)} / ${t("dashboard.gridCompact", lang)}`}
     >
       <button
         type="button"
@@ -37,11 +29,11 @@ export function GridLayoutToggle({ value, onChange, lang = "en", singleIcon, dou
             ? "bg-card text-foreground shadow-control"
             : "text-foreground/65 hover:text-foreground/85",
         )}
-        aria-label={labelSingle}
+        aria-label={t("dashboard.gridSingle", lang)}
         aria-pressed={value === 1}
-        title={labelSingle}
+        title={t("dashboard.gridSingle", lang)}
       >
-        {singleIcon ?? <ViewHorizontalIcon width={16} height={16} aria-hidden="true" />}
+        <ViewHorizontalIcon width={16} height={16} aria-hidden="true" />
       </button>
       <button
         type="button"
@@ -53,11 +45,11 @@ export function GridLayoutToggle({ value, onChange, lang = "en", singleIcon, dou
             ? "bg-card text-foreground shadow-control"
             : "text-foreground/65 hover:text-foreground/85",
         )}
-        aria-label={labelDouble}
+        aria-label={t("dashboard.gridCompact", lang)}
         aria-pressed={value === 2}
-        title={labelDouble}
+        title={t("dashboard.gridCompact", lang)}
       >
-        {doubleIcon ?? <ViewGridIcon width={16} height={16} aria-hidden="true" />}
+        <ViewGridIcon width={16} height={16} aria-hidden="true" />
       </button>
     </div>
   );

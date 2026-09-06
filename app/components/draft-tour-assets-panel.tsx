@@ -812,8 +812,11 @@ export function DraftTourAssetsPanel({
 
   return (
     <section className="draft-tour-assets mt-7 sm:mt-9">
-      <header className="draft-tour-header mb-3 flex items-center gap-3 px-1 sm:justify-between">
-        <div className="flex min-w-0 flex-1 items-center gap-3">
+      <header className="draft-tour-header mb-3.5 flex items-center gap-3 px-1 sm:justify-between">
+        <div className="flex min-w-0 flex-1 items-center gap-2.5">
+          <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-[0.7rem] border border-border/55 bg-card text-foreground/62 shadow-control">
+            <TourIcon size={16} />
+          </span>
           <div className="min-w-0">
             <h2 className="text-[16px] font-semibold tracking-[-0.015em]">{text.title}</h2>
             <p className="mt-1 truncate text-[12px] text-muted-foreground">
@@ -884,7 +887,7 @@ export function DraftTourAssetsPanel({
           </Button>
         </div>
       ) : !payload?.assets.length ? (
-        <div className="flex items-start gap-3.5 rounded-[1.5rem] border border-border/70 bg-card p-5 sm:items-center">
+        <div className="flex items-start gap-3.5 rounded-[1.5rem] border border-border/65 bg-card p-5 sm:items-center">
           <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-surface-subtle text-foreground/52 ring-1 ring-inset ring-border/40">
             <TourIcon size={18} />
           </span>
@@ -932,7 +935,7 @@ export function DraftTourAssetsPanel({
                   of pills beside it; desktop keeps actions on their own column.
                 */
                 className={cn(
-                  "draft-tour-asset-card grid min-w-0 grid-cols-[auto_minmax(0,1fr)] items-center gap-3 rounded-[1.4rem] border border-border/65 bg-card p-3.5 transition-colors hover:border-foreground/18 sm:gap-4 sm:p-4",
+                  "draft-tour-asset-card grid min-w-0 grid-cols-[auto_minmax(0,1fr)] items-center gap-3 rounded-[1.5rem] border border-border/65 bg-card/88 p-3.5 shadow-control backdrop-blur-xl transition-colors hover:border-foreground/20 sm:gap-4 sm:p-4",
                   overviewAssets.length === 1 && "lg:grid-cols-[auto_minmax(0,1fr)_minmax(18rem,auto)] lg:px-5",
                 )}
               >

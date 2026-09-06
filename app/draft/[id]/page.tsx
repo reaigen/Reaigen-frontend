@@ -16,7 +16,6 @@ import { mediaProxyUrl } from "../../lib/image-preview";
 import { readDraftDetailCache, writeDraftDetailCache } from "../../lib/resilient-draft-cache";
 import { DraftImageGallery } from "../../components/draft-image-gallery";
 import { DraftCacheNotice } from "../../components/draft-cache-notice";
-import { GridLayoutToggle } from "../../components/grid-layout-toggle";
 import { PropertyMapCard } from "../../components/property-map-card";
 import type { DraftDetailItem, DraftTourAssetsPayload, DraftUpload, SplatsByDraftPayload } from "../../lib/tour-types";
 import { baseUnitForCategory, resolveUnit, unitLabel, type UnitLookup } from "../../lib/unit-catalog";
@@ -924,15 +923,18 @@ export default function DraftPreviewPage({
       headerTitle={draft.title}
       headerMeta={address || undefined}
       headerAction={
-        <GridLayoutToggle
-          value={detailLayout}
-          onChange={handleDetailLayout}
-          lang={lang}
-          singleIcon={<FocusColumnIcon size={16} />}
-          doubleIcon={<WideColumnsIcon size={16} />}
-          singleLabel={t("draft.layout.focused", lang)}
-          doubleLabel={t("draft.layout.wide", lang)}
-        />
+        /* One quiet circular button in the header's own language (same as the
+           back button) — the icon previews the mode a click switches to. */
+        <button
+          type="button"
+          onClick={() => handleDetailLayout(detailLayout === 1 ? 2 : 1)}
+          aria-pressed={detailLayout === 1}
+          aria-label={t(detailLayout === 1 ? "draft.layout.wide" : "draft.layout.focused", lang)}
+          title={t(detailLayout === 1 ? "draft.layout.wide" : "draft.layout.focused", lang)}
+          className="flex h-10 w-10 items-center justify-center rounded-full border border-border/60 bg-card text-foreground/65 shadow-control transition-[background-color,color,transform] duration-100 hover:bg-surface-subtle hover:text-foreground active:scale-90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+        >
+          {detailLayout === 1 ? <WideColumnsIcon size={16} /> : <FocusColumnIcon size={16} />}
+        </button>
       }
       onReaiDraftUpdated={(updatedDraft) => {
         setDraft(updatedDraft);
