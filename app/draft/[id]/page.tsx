@@ -1237,7 +1237,12 @@ export default function DraftPreviewPage({
             detailCardCount > 1 && !sparseNarrativeDetails && "lg:grid-cols-2 lg:items-start",
           )}>
             {hasNarrative && (
-              <div className="draft-support-contents min-w-0 space-y-7 lg:contents">
+              <div
+                // space-y margins still apply under display:contents, which
+                // pushed the second card in each wrapper 28px below its grid
+                // row partner — the grid gap alone spaces the lg layout.
+                className="draft-support-contents min-w-0 space-y-7 lg:contents lg:space-y-0"
+              >
                 {(description || translationPending) && (
                   <section className={cn(descriptionSpans && "lg:col-span-2")}>
                     <h2 className="mb-3 flex flex-wrap items-center gap-2 text-[16px] font-semibold tracking-[-0.015em]">
@@ -1338,7 +1343,12 @@ export default function DraftPreviewPage({
             )}
 
             {hasSupportingDetails && (
-              <div className="draft-support-contents min-w-0 space-y-7 lg:contents">
+              <div
+                // space-y margins still apply under display:contents, which
+                // pushed the second card in each wrapper 28px below its grid
+                // row partner — the grid gap alone spaces the lg layout.
+                className="draft-support-contents min-w-0 space-y-7 lg:contents lg:space-y-0"
+              >
                 {rows.length > 0 && (
                   <section className={cn("draft-details-section", supportingSpans("rows") && "lg:col-span-2")}>
                     <h2 className="mb-3 flex items-center gap-2 text-[16px] font-semibold tracking-[-0.015em]">

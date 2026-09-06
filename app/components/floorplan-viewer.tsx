@@ -373,26 +373,32 @@ export default function FloorplanViewer({
   }
 
   const hasSidebar = legendEntries.length > 0 || totalArea > 0;
+  // On wide screens the plan's aspect ratio leaves empty flanks, so a rich
+  // legend moves into that space as a right rail. A one-room legend would
+  // just trade one dead area for another — few rows stay compactly below.
+  const railOnWide = legendEntries.length >= 4;
   return (
     <div className={cn(
       "overflow-hidden",
       presentation === "card" && "rounded-xl border border-border/40 bg-surface shadow-card",
-      // On wide screens the plan's aspect ratio leaves empty flanks; the
-      // legend moves into that space as a right rail instead of stacking
-      // below a mostly-white card.
-      hasSidebar && "lg:flex lg:items-stretch",
+      hasSidebar && railOnWide && "lg:flex lg:items-stretch",
     )}>
-      <div className="min-w-0 lg:flex-1">{plan}</div>
+      <div className={cn("min-w-0", railOnWide && "lg:flex-1")}>{plan}</div>
       {hasSidebar && (
-        <div className="lg:flex lg:w-72 lg:shrink-0 lg:flex-col lg:border-l lg:border-border/40">
+        <div className={cn(railOnWide && "lg:flex lg:w-72 lg:shrink-0 lg:flex-col lg:border-l lg:border-border/40")}>
           {legendEntries.length > 0 && (
             <div className={cn(
-              "px-4 py-2.5 lg:flex-1 lg:overflow-y-auto lg:py-4",
+              "px-4 py-2.5",
+              railOnWide && "lg:flex-1 lg:overflow-y-auto lg:py-4",
               presentation === "card"
-                ? "border-t border-border/40 lg:border-t-0"
-                : "bg-black/[0.025] shadow-[0_-14px_32px_-32px_rgba(0,0,0,0.45)] backdrop-blur-xl sm:px-6 lg:bg-transparent lg:shadow-none",
+                ? cn("border-t border-border/40", railOnWide && "lg:border-t-0")
+                : cn("bg-black/[0.025] shadow-[0_-14px_32px_-32px_rgba(0,0,0,0.45)] backdrop-blur-xl sm:px-6", railOnWide && "lg:bg-transparent lg:shadow-none"),
             )}>
-              <div className={`grid gap-x-6 gap-y-1.5 lg:grid-cols-1 lg:gap-y-2.5 ${legendEntries.length > 4 ? "grid-cols-2 max-sm:grid-cols-1" : "grid-cols-1"}`}>
+              <div className={cn(
+                "grid gap-x-6 gap-y-1.5",
+                legendEntries.length > 4 ? "grid-cols-2 max-sm:grid-cols-1" : "grid-cols-1",
+                railOnWide && "lg:grid-cols-1 lg:gap-y-2.5",
+              )}>
                 {legendEntries.map((e) => (
                   <div key={e.n} className="flex items-center gap-2 min-w-0">
                     <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-black/[0.06] text-[12px] font-semibold text-foreground">
@@ -411,10 +417,11 @@ export default function FloorplanViewer({
           )}
           {totalArea > 0 && (
             <div className={cn(
-              "flex items-center justify-between px-4 py-3 lg:mt-auto lg:border-t lg:border-border/40",
+              "flex items-center justify-between px-4 py-3",
+              railOnWide && "lg:mt-auto lg:border-t lg:border-border/40",
               presentation === "card"
                 ? "border-t border-border/40"
-                : "bg-black/[0.035] shadow-[inset_0_1px_0_rgba(0,0,0,0.045)] sm:px-6 lg:bg-transparent lg:shadow-none",
+                : cn("bg-black/[0.035] shadow-[inset_0_1px_0_rgba(0,0,0,0.045)] sm:px-6", railOnWide && "lg:bg-transparent lg:shadow-none"),
             )}>
               <span className="text-[13px] font-semibold text-foreground">{t("floorplan.total", lang)}</span>
               <span className="text-[13px] font-semibold text-foreground tabular-nums">{formatArea(totalArea)}</span>
