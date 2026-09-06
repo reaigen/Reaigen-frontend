@@ -1387,7 +1387,7 @@ export default function DraftPreviewPage({
                       <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-[0.7rem] border border-border/55 bg-card text-foreground/62 shadow-control"><InfoIcon size={16} /></span>
                       {t("draft.details", lang)}
                     </h2>
-                    <div className="draft-detail-grid grid grid-cols-1 gap-2.5 sm:grid-cols-2">
+                    <div className={cn("draft-detail-grid grid grid-cols-1 gap-2.5", visibleRows.length > 1 && "sm:grid-cols-2")}>
                       {visibleRows.map((row, index) => (
                         <div
                           key={`${row.label}-${index}`}
@@ -1448,7 +1448,7 @@ export default function DraftPreviewPage({
                       <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-[0.7rem] border border-border/55 bg-card text-foreground/62 shadow-control"><PriceIcon size={16} /></span>
                       {t("draft.monthlyCosts", lang)}
                     </h2>
-                    <div className="draft-cost-grid grid grid-cols-1 gap-2.5 sm:grid-cols-2">
+                    <div className={cn("draft-cost-grid grid grid-cols-1 gap-2.5", monthlyCosts.length > 1 && "sm:grid-cols-2")}>
                       {monthlyCosts.map((row, index) => (
                         <div key={`${row.label}-${index}`} className="flex min-w-0 items-center gap-3 rounded-[1.25rem] border border-border/65 bg-card/88 px-3.5 py-3.5 shadow-control backdrop-blur-xl">
                           <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full border border-border/55 bg-surface-subtle/75 text-foreground/62 shadow-[inset_0_1px_0_rgba(255,255,255,0.82)]">{row.icon}</span>

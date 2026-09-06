@@ -120,11 +120,13 @@ export function SidePanel({
             initialFocusRef.current.focus({ preventScroll: true });
           }}
           className={cn(
-            "fixed inset-y-0 right-0 z-[90] flex w-full flex-col border-l border-border/60 shadow-[-24px_0_80px_-32px_rgba(0,0,0,0.28)] outline-none",
+            // right offset honours the docked agent panel (0px when closed),
+            // so a side panel opens beside the agent instead of underneath it.
+            "fixed inset-y-0 right-[var(--reai-docked-width,0px)] z-[90] flex w-full flex-col border-l border-border/60 shadow-[-24px_0_80px_-32px_rgba(0,0,0,0.28)] outline-none",
             "data-[state=closed]:animate-[panelOut_180ms_ease-in] data-[state=open]:animate-[panelIn_220ms_var(--motion-ease-smooth)]",
             "sm:max-w-[520px]",
             headerMode === "editor"
-              ? "editor-glass-surface bg-background sm:inset-y-3 sm:right-3 sm:w-[calc(100%-1.5rem)] sm:overflow-hidden sm:rounded-[var(--floating-frame-radius)] sm:border sm:shadow-[0_24px_70px_-24px_rgba(0,0,0,0.32)]"
+              ? "editor-glass-surface bg-background sm:inset-y-3 sm:right-[calc(var(--reai-docked-width,0px)+0.75rem)] sm:w-[calc(100%-1.5rem)] sm:overflow-hidden sm:rounded-[var(--floating-frame-radius)] sm:border sm:shadow-[0_24px_70px_-24px_rgba(0,0,0,0.32)]"
               : "bg-background",
             className,
           )}

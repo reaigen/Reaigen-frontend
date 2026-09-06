@@ -329,6 +329,19 @@ function AppShellFrame({
   const [reaiViewport, setReaiViewport] = React.useState<{ height: number | null; offsetTop: number }>({ height: null, offsetTop: 0 });
   const [compactAgentViewport, setCompactAgentViewport] = React.useState(false);
   const [dockedAgentViewport, setDockedAgentViewport] = React.useState(false);
+  // Radix dialogs portal to <body>, outside the app canvas that carries
+  // --reai-docked-width — without this mirror a side panel opened next to the
+  // docked agent slid underneath it instead of beside it.
+  React.useEffect(() => {
+    const root = document.documentElement;
+    root.style.setProperty(
+      "--reai-docked-width",
+      !immersive && reaiOpen && dockedAgentViewport ? "var(--reai-panel-width)" : "0px",
+    );
+    return () => {
+      root.style.removeProperty("--reai-docked-width");
+    };
+  }, [immersive, reaiOpen, dockedAgentViewport]);
   const [reaiPanelWidth, setReaiPanelWidth] = React.useState<number | null>(null);
   const [reaiResizing, setReaiResizing] = React.useState(false);
   const reaiPanelRef = React.useRef<HTMLDivElement>(null);
@@ -635,6 +648,8 @@ function AppShellFrame({
           flow; a full-screen editor is positioned, so it needs the number
           itself to know where the page now ends.
         */
+        // Mirrored onto :root below so body-portaled surfaces (side panels,
+        // fullscreen editors) can respect the docked agent too.
         "--reai-docked-width": !immersive && reaiOpen && dockedAgentViewport ? "var(--reai-panel-width)" : "0px",
         "--sidebar-offset": immersive ? "0px" : undefined,
         ...(reaiPanelWidth ? { "--reai-panel-width": `${reaiPanelWidth}px` } : {}),
