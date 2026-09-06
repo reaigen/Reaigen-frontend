@@ -994,6 +994,9 @@ function descriptionToEditorHtml(value: string) {
     if (lines.every((line) => /^\s*[-*+]\s+/.test(line))) {
       return `<ul>${lines.map((line) => `<li>${inline(line.replace(/^\s*[-*+]\s+/, ""))}</li>`).join("")}</ul>`;
     }
+    if (lines.every((line) => /^\s*\d+[.)]\s+/.test(line))) {
+      return `<ol>${lines.map((line) => `<li>${inline(line.replace(/^\s*\d+[.)]\s+/, ""))}</li>`).join("")}</ol>`;
+    }
     return `<p>${lines.map(inline).join("<br>")}</p>`;
   }).join("");
 }
@@ -1002,6 +1005,16 @@ function editorHtmlToDescription(root: HTMLElement) {
   const render = (node: Node): string => {
     if (node.nodeType === Node.TEXT_NODE) return node.textContent?.replace(/\u00a0/g, " ") ?? "";
     if (!(node instanceof HTMLElement)) return "";
+    if (node.tagName === "UL" || node.tagName === "OL") {
+      const ordered = node.tagName === "OL";
+      const items = Array.from(node.children)
+        .filter((child) => child.tagName === "LI")
+        .map((li, index) => {
+          const content = Array.from(li.childNodes).map(render).join("").trim();
+          return ordered ? `${index + 1}. ${content}` : `- ${content}`;
+        });
+      return `${items.join("\n")}\n\n`;
+    }
     const children = Array.from(node.childNodes).map(render).join("");
     switch (node.tagName) {
       case "BR": return "\n";
@@ -1010,8 +1023,6 @@ function editorHtmlToDescription(root: HTMLElement) {
       case "EM":
       case "I": return `*${children}*`;
       case "LI": return `- ${children.trim()}\n`;
-      case "UL":
-      case "OL": return `${children.trimEnd()}\n\n`;
       case "P":
       case "DIV": return `${children.trimEnd()}\n\n`;
       default: return children;
@@ -1127,6 +1138,12 @@ export function DraftEditor({
   // seed string stays stable, so React leaves the element alone); the seed
   // only changes when a session starts or generation replaces the text.
   const [editorSeedHtml, setEditorSeedHtml] = React.useState("");
+  // React 19 re-applies dangerouslySetInnerHTML whenever the prop OBJECT
+  // identity changes, even with an identical __html string — an inline
+  // `{{ __html: seed }}` therefore wiped every execCommand edit on the next
+  // render (the formatting toolbar "did nothing"). One memoised object per
+  // seed string keeps React's hands off the editable between seed changes.
+  const editorSeedHtmlProp = React.useMemo(() => ({ __html: editorSeedHtml }), [editorSeedHtml]);
   const [confirmDescriptionDiscard, setConfirmDescriptionDiscard] = React.useState(false);
   const descriptionEditorOpenRef = React.useRef(false);
   React.useEffect(() => {
@@ -1136,6 +1153,16 @@ export function DraftEditor({
   // chips, a size • tone settings drawer, and a polled generation job.
   const [genKeywordPool, setGenKeywordPool] = React.useState<string[]>([]);
   const [genSelectedKeywords, setGenSelectedKeywords] = React.useState<string[]>([]);
+  const [genKeywordInput, setGenKeywordInput] = React.useState("");
+  const addCustomKeyword = React.useCallback(() => {
+    setGenKeywordInput((raw) => {
+      const keyword = raw.trim().replace(/,+$/, "").trim();
+      if (!keyword) return "";
+      setGenKeywordPool((pool) => (pool.some((item) => item.toLowerCase() === keyword.toLowerCase()) ? pool : [...pool, keyword]));
+      setGenSelectedKeywords((selected) => (selected.some((item) => item.toLowerCase() === keyword.toLowerCase()) ? selected : [...selected, keyword]));
+      return "";
+    });
+  }, []);
   const [genSize, setGenSize] = React.useState<DescriptionSize>("standard");
   const [genTone, setGenTone] = React.useState<DescriptionTone>("fluent");
   const [genInstructions, setGenInstructions] = React.useState("");
@@ -1259,7 +1286,7 @@ export function DraftEditor({
     setDescriptionEditorOpen(false);
   };
 
-  const applyDescriptionCommand = (command: "bold" | "italic" | "insertUnorderedList") => {
+  const applyDescriptionCommand = (command: "bold" | "italic" | "insertUnorderedList" | "insertOrderedList" | "removeFormat") => {
     const editor = descriptionEditorRef.current;
     if (!editor) return;
     editor.focus();
@@ -1893,7 +1920,10 @@ export function DraftEditor({
           <button type="button" onMouseDown={(event) => event.preventDefault()} onClick={() => applyDescriptionCommand("bold")} aria-label={t("draft.editor.descriptionBold", lang)} title={t("draft.editor.descriptionBold", lang)} className="flex h-10 min-w-10 items-center justify-center rounded-full px-3 text-[15px] font-bold text-foreground/70 transition-colors hover:bg-foreground/[0.055] hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/25">B</button>
           <button type="button" onMouseDown={(event) => event.preventDefault()} onClick={() => applyDescriptionCommand("italic")} aria-label={t("draft.editor.descriptionItalic", lang)} title={t("draft.editor.descriptionItalic", lang)} className="flex h-10 min-w-10 items-center justify-center rounded-full px-3 text-[15px] italic text-foreground/70 transition-colors hover:bg-foreground/[0.055] hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/25">I</button>
           <span aria-hidden="true" className="mx-1 h-5 w-px bg-border/60" />
-          <button type="button" onMouseDown={(event) => event.preventDefault()} onClick={() => applyDescriptionCommand("insertUnorderedList")} aria-label="List" title="List" className="flex h-10 min-w-10 items-center justify-center rounded-full px-3 text-[15px] font-semibold text-foreground/70 transition-colors hover:bg-foreground/[0.055] hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/25">• —</button>
+          <button type="button" onMouseDown={(event) => event.preventDefault()} onClick={() => applyDescriptionCommand("insertUnorderedList")} aria-label={t("draft.editor.descriptionBullets", lang)} title={t("draft.editor.descriptionBullets", lang)} className="flex h-10 min-w-10 items-center justify-center rounded-full px-3 text-[15px] font-semibold text-foreground/70 transition-colors hover:bg-foreground/[0.055] hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/25">• —</button>
+          <button type="button" onMouseDown={(event) => event.preventDefault()} onClick={() => applyDescriptionCommand("insertOrderedList")} aria-label={t("draft.editor.descriptionNumbered", lang)} title={t("draft.editor.descriptionNumbered", lang)} className="flex h-10 min-w-10 items-center justify-center rounded-full px-3 text-[13.5px] font-semibold tabular-nums text-foreground/70 transition-colors hover:bg-foreground/[0.055] hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/25">1.</button>
+          <span aria-hidden="true" className="mx-1 h-5 w-px bg-border/60" />
+          <button type="button" onMouseDown={(event) => event.preventDefault()} onClick={() => applyDescriptionCommand("removeFormat")} aria-label={t("draft.editor.descriptionClear", lang)} title={t("draft.editor.descriptionClear", lang)} className="flex h-10 min-w-10 items-center justify-center rounded-full px-3 text-[13.5px] font-semibold text-foreground/70 transition-colors hover:bg-foreground/[0.055] hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/25"><span className="line-through decoration-[1.5px]">Aa</span></button>
           <span className="flex-1" />
           <span className="hidden text-[11px] font-medium text-foreground/42 sm:inline">⌘B · ⌘I · ⌘↵</span>
         </div>
@@ -1909,7 +1939,7 @@ export function DraftEditor({
         <div
           ref={descriptionEditorRef}
           contentEditable={!generating}
-          dangerouslySetInnerHTML={{ __html: editorSeedHtml }}
+          dangerouslySetInnerHTML={editorSeedHtmlProp}
           suppressContentEditableWarning
           onInput={(event) => {
             setDescriptionDraft(editorHtmlToDescription(event.currentTarget));
@@ -1937,7 +1967,7 @@ export function DraftEditor({
           aria-label={t("shareDialog.field.description", lang)}
           role="textbox"
           aria-multiline="true"
-          className="absolute inset-0 h-full w-full overflow-y-auto bg-transparent px-5 py-6 text-[17px] leading-[1.72] tracking-[-0.005em] text-foreground outline-none scrollbar-thin [&_p]:mb-5 [&_p:last-child]:mb-0 [&_ul]:mb-5 [&_ul]:list-disc [&_ul]:space-y-1.5 [&_ul]:pl-6 [&_strong]:font-semibold sm:px-8 sm:py-8"
+          className="absolute inset-0 h-full w-full overflow-y-auto bg-transparent px-5 py-6 text-[17px] leading-[1.72] tracking-[-0.005em] text-foreground outline-none scrollbar-thin [&_p]:mb-5 [&_p:last-child]:mb-0 [&_ul]:mb-5 [&_ul]:list-disc [&_ul]:space-y-1.5 [&_ul]:pl-6 [&_ol]:mb-5 [&_ol]:list-decimal [&_ol]:space-y-1.5 [&_ol]:pl-6 [&_strong]:font-semibold sm:px-8 sm:py-8"
         />
         {generating ? (
           /* Generation theater, mirroring iOS: shimmering skeleton paragraphs
@@ -1969,34 +1999,48 @@ export function DraftEditor({
         </div>
       </div>
 
-      {/* AI writing bar — keyword chips, size · tone settings, Generate. */}
+      {/* AI writing bar — keyword chips + custom keyword input, size · tone
+          settings, Generate. */}
       <div className="floating-panel shrink-0 overflow-hidden bg-card">
-        {genKeywordPool.length ? (
-          <div className="flex items-center gap-1.5 overflow-x-auto border-b border-border/45 px-3 py-2.5 scrollbar-thin" aria-label={t("draft.descAi.keywords", lang)}>
-            {genKeywordPool.map((keyword) => {
-              const active = genSelectedKeywords.includes(keyword);
-              return (
-                <button
-                  key={keyword}
-                  type="button"
-                  aria-pressed={active}
-                  disabled={generating}
-                  onClick={() => setGenSelectedKeywords((current) => (
-                    active ? current.filter((item) => item !== keyword) : [...current, keyword]
-                  ))}
-                  className={cn(
-                    "flex h-8 shrink-0 items-center rounded-full border px-3 text-[12px] font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/30 disabled:opacity-60",
-                    active
-                      ? "border-foreground bg-foreground text-background"
-                      : "border-border/70 bg-card text-foreground/65 hover:border-foreground/30 hover:text-foreground",
-                  )}
-                >
-                  {keyword}
-                </button>
-              );
-            })}
-          </div>
-        ) : null}
+        <div className="flex items-center gap-1.5 overflow-x-auto border-b border-border/45 px-3 py-2.5 scrollbar-thin" aria-label={t("draft.descAi.keywords", lang)}>
+          {genKeywordPool.map((keyword) => {
+            const active = genSelectedKeywords.includes(keyword);
+            return (
+              <button
+                key={keyword}
+                type="button"
+                aria-pressed={active}
+                disabled={generating}
+                onClick={() => setGenSelectedKeywords((current) => (
+                  active ? current.filter((item) => item !== keyword) : [...current, keyword]
+                ))}
+                className={cn(
+                  "flex h-8 shrink-0 items-center rounded-full border px-3 text-[12px] font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/30 disabled:opacity-60",
+                  active
+                    ? "border-foreground bg-foreground text-background"
+                    : "border-border/70 bg-card text-foreground/65 hover:border-foreground/30 hover:text-foreground",
+                )}
+              >
+                {keyword}
+              </button>
+            );
+          })}
+          <input
+            type="text"
+            value={genKeywordInput}
+            disabled={generating}
+            onChange={(event) => setGenKeywordInput(event.target.value)}
+            onKeyDown={(event) => {
+              if (event.key !== "Enter" && event.key !== ",") return;
+              event.preventDefault();
+              addCustomKeyword();
+            }}
+            onBlur={addCustomKeyword}
+            placeholder={t("draft.descAi.addKeyword", lang)}
+            aria-label={t("draft.descAi.addKeyword", lang)}
+            className="h-8 w-40 shrink-0 rounded-full border border-dashed border-border/80 bg-transparent px-3 text-[12px] font-medium text-foreground outline-none transition-[border-color] placeholder:text-foreground/40 hover:border-foreground/35 focus:border-foreground disabled:opacity-60"
+          />
+        </div>
 
         {genSettingsOpen ? (
           <div className="animate-fade-in space-y-4 border-b border-border/45 px-4 py-4">

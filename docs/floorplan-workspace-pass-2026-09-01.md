@@ -162,6 +162,27 @@ way to detect and auto-heal old garbage.
   clamping, flush-corner windows pushing doors, and chained pushes
   shrinking windows while doors keep width.
 
+## Follow-up 3 — detail layout and description editor (6 September 2026)
+
+- **Formatting toolbar actually formats.** React 19 re-applies
+  `dangerouslySetInnerHTML` whenever the prop *object* identity changes,
+  even with an identical `__html` string — the inline `{{ __html: seed }}`
+  therefore reverted every `execCommand` edit on the next render, which is
+  why bold/italic/lists "did nothing". The seed object is now memoised per
+  seed string.
+- **More text tools**: numbered list and clear-formatting join B/I/bullets,
+  with full markdown round-trip (`1.` lines ↔ `<ol>`), localized labels,
+  and `ol` typography in the editable.
+- **Custom keywords for AI writing**: a dashed add-keyword field lives in
+  the chips row — type + Enter appends and selects the keyword; the row no
+  longer disappears when the backend pool is empty.
+- **No half-width cards against dead space**: on the detail page's
+  two-column grid, the floorplan always spans the row, so the description
+  (and any supporting card left without a row partner) now spans too.
+- **Floorplan card legend rail**: on wide screens the room legend and total
+  move beside the plan into the flank the aspect-ratio cap left empty,
+  instead of stacking under a mostly-white card.
+
 ## Backlog
 
 Floorplan editor:

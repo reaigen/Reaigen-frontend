@@ -885,6 +885,15 @@ export default function DraftPreviewPage({
     && features.length === 0
     && monthlyCosts.length === 0
     && !hasFloorplan;
+  // Cards flow in pairs on the lg two-column grid, but the floorplan always
+  // spans the full row. Any card left without a row partner spans too —
+  // nothing sits half-width next to dead space.
+  const supportingCount = Number(rows.length > 0) + Number(features.length > 0) + Number(monthlyCosts.length > 0);
+  const descriptionSpans = nonFloorCardCount === 1 || hasFloorplan;
+  const flowCount = (hasFloorplan ? 0 : Number(Boolean(description || translationPending))) + supportingCount;
+  const lastSupportingKey = monthlyCosts.length > 0 ? "costs" : features.length > 0 ? "features" : rows.length > 0 ? "rows" : null;
+  const supportingSpans = (key: string) =>
+    nonFloorCardCount === 1 || (flowCount % 2 === 1 && lastSupportingKey === key);
 
 
   return (
@@ -1230,7 +1239,7 @@ export default function DraftPreviewPage({
             {hasNarrative && (
               <div className="draft-support-contents min-w-0 space-y-7 lg:contents">
                 {(description || translationPending) && (
-                  <section className={cn(nonFloorCardCount === 1 && "lg:col-span-2")}>
+                  <section className={cn(descriptionSpans && "lg:col-span-2")}>
                     <h2 className="mb-3 flex flex-wrap items-center gap-2 text-[16px] font-semibold tracking-[-0.015em]">
                       <DocumentIcon size={17} className="text-foreground/65" />
                       {t("draft.description", lang)}
@@ -1331,7 +1340,7 @@ export default function DraftPreviewPage({
             {hasSupportingDetails && (
               <div className="draft-support-contents min-w-0 space-y-7 lg:contents">
                 {rows.length > 0 && (
-                  <section className={cn("draft-details-section", nonFloorCardCount === 1 && "lg:col-span-2")}>
+                  <section className={cn("draft-details-section", supportingSpans("rows") && "lg:col-span-2")}>
                     <h2 className="mb-3 flex items-center gap-2 text-[16px] font-semibold tracking-[-0.015em]">
                       <InfoIcon size={17} className="text-foreground/65" />
                       {t("draft.details", lang)}
@@ -1376,7 +1385,7 @@ export default function DraftPreviewPage({
                 )}
 
                 {features.length > 0 && (
-                  <section className={cn(nonFloorCardCount === 1 && "lg:col-span-2")}>
+                  <section className={cn(supportingSpans("features") && "lg:col-span-2")}>
                     <h2 className="mb-3 flex items-center gap-2 text-[16px] font-semibold tracking-[-0.015em]">
                       <StarIcon size={17} className="text-foreground/65" />
                       {t("draft.features", lang)}
@@ -1392,7 +1401,7 @@ export default function DraftPreviewPage({
                 )}
 
                 {monthlyCosts.length > 0 && (
-                  <section className={cn(nonFloorCardCount === 1 && "lg:col-span-2")}>
+                  <section className={cn(supportingSpans("costs") && "lg:col-span-2")}>
                     <h2 className="mb-3 flex items-center gap-2 text-[16px] font-semibold tracking-[-0.015em]">
                       <PriceIcon size={17} className="text-foreground/65" />
                       {t("draft.monthlyCosts", lang)}
