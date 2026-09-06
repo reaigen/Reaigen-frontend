@@ -819,7 +819,7 @@ export function DraftTourAssetsPanel({
           </span>
           <div className="min-w-0">
             <h2 className="text-[16px] font-semibold tracking-[-0.015em]">{text.title}</h2>
-            <p className="mt-1 truncate text-[12px] text-muted-foreground">
+            <p className="mt-1 truncate text-[12px] text-muted-foreground tabular-nums">
               {text.summary(
                 visibleAssets.length,
                 readyAssets.length,
@@ -876,10 +876,10 @@ export function DraftTourAssetsPanel({
       {loading && !payload ? (
         <CollectionLoading
           label={t("common.loading", lang)}
-          className="min-h-36 rounded-[1.5rem] border border-border/65 bg-card pt-10 sm:min-h-[6.25rem] sm:pt-6"
+          className="min-h-36 rounded-[1.5rem] border border-border/65 bg-card/88 pt-10 shadow-control backdrop-blur-xl sm:min-h-[6.25rem] sm:pt-6"
         />
       ) : error && !payload ? (
-        <div className="flex items-center gap-3 rounded-[1.5rem] border border-border/65 bg-card p-4 sm:px-5">
+        <div className="flex items-center gap-3 rounded-[1.5rem] border border-border/65 bg-card/88 p-4 shadow-control backdrop-blur-xl sm:px-5">
           <InfoIcon size={18} className="shrink-0 text-destructive" />
           <p className="min-w-0 flex-1 text-[12px] text-muted-foreground">{error}</p>
           <Button type="button" variant="outline" size="sm" onClick={() => { void load(); }}>
@@ -887,7 +887,7 @@ export function DraftTourAssetsPanel({
           </Button>
         </div>
       ) : !payload?.assets.length ? (
-        <div className="flex items-start gap-3.5 rounded-[1.5rem] border border-border/65 bg-card p-5 sm:items-center">
+        <div className="flex items-start gap-3.5 rounded-[1.5rem] border border-border/65 bg-card/88 p-5 shadow-control backdrop-blur-xl sm:items-center">
           <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-surface-subtle text-foreground/52 ring-1 ring-inset ring-border/40">
             <TourIcon size={18} />
           </span>
@@ -935,7 +935,7 @@ export function DraftTourAssetsPanel({
                   of pills beside it; desktop keeps actions on their own column.
                 */
                 className={cn(
-                  "draft-tour-asset-card grid min-w-0 grid-cols-[auto_minmax(0,1fr)] items-center gap-3 rounded-[1.5rem] border border-border/65 bg-card/88 p-3.5 shadow-control backdrop-blur-xl transition-colors hover:border-foreground/20 sm:gap-4 sm:p-4",
+                  "draft-tour-asset-card grid min-w-0 grid-cols-[auto_minmax(0,1fr)] items-center gap-3 rounded-[1.25rem] border border-border/65 bg-card/88 p-3.5 shadow-control backdrop-blur-xl transition-colors hover:border-foreground/20 sm:gap-4 sm:p-4",
                   overviewAssets.length === 1 && "lg:grid-cols-[auto_minmax(0,1fr)_minmax(18rem,auto)] lg:px-5",
                 )}
               >

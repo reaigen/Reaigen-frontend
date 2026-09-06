@@ -488,7 +488,7 @@ function ExpandableDescription({ text, lang }: { text: string; lang: string }) {
   }, [text]);
 
   return (
-    <div className="rounded-[1.25rem] border border-border/65 bg-card/88 px-4 py-4 shadow-control backdrop-blur-xl sm:rounded-2xl sm:px-6 sm:py-5 sm:shadow-card">
+    <div className="rounded-[1.25rem] border border-border/65 bg-card/88 px-4 py-4 shadow-control backdrop-blur-xl sm:px-6 sm:py-5">
       <div
         ref={textRef}
         className={cn(
@@ -995,7 +995,7 @@ export default function DraftPreviewPage({
               onClick={() => setMediaOpen(true)}
               className="group w-full bg-transparent p-0 text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring md:border-t md:border-border/60 md:bg-card md:p-4"
             >
-              <span className="flex min-h-40 min-w-0 items-center justify-center gap-4 rounded-[1.25rem] border border-dashed border-border/80 bg-surface-subtle p-5 text-center transition-[background-color,border-color] group-hover:border-foreground/25 group-hover:bg-secondary sm:p-7">
+              <span className="flex min-h-40 min-w-0 items-center justify-center gap-4 rounded-[1.25rem] border border-dashed border-border/80 bg-surface-subtle p-5 text-center transition-[background-color,border-color] group-hover:border-foreground/20 group-hover:bg-secondary sm:p-7">
                 <span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-card text-foreground/55 ring-1 ring-inset ring-border/70">
                   <ImageIcon size={21} />
                 </span>
@@ -1049,7 +1049,7 @@ export default function DraftPreviewPage({
               ) : null}
 
               {!showingVideo && images.length > 0 ? (
-                <div className="detail-hero-frame overflow-hidden rounded-[1.5rem] ring-0 md:rounded-2xl md:ring-1 md:ring-border/70">
+                <div className="detail-hero-frame overflow-hidden rounded-[1.5rem] ring-0 md:rounded-2xl md:ring-1 md:ring-border/65">
                   <DraftImageGallery
                     images={images}
                     alt={draft.title}
@@ -1062,7 +1062,7 @@ export default function DraftPreviewPage({
               ) : null}
 
               {showingVideo && activeVideo ? (
-                <div className="relative aspect-[4/3] w-full overflow-hidden rounded-[1.5rem] bg-black ring-1 ring-black/[0.08] sm:aspect-video md:rounded-2xl md:ring-border/70">
+                <div className="relative aspect-[4/3] w-full overflow-hidden rounded-[1.5rem] bg-black ring-1 ring-black/[0.08] sm:aspect-video md:rounded-2xl md:ring-border/65">
                   <GlassVideoPlayer key={activeVideo.id} src={activeVideo.url} ariaLabel={activeVideo.name} />
                   {videos.length > 1 ? (
                     <>
@@ -1186,11 +1186,11 @@ export default function DraftPreviewPage({
                       });
                     }}
                     className={cn(
-                      "flex w-[9.75rem] flex-none items-center gap-2.5 rounded-[1.125rem] border border-border/45 bg-card px-3 py-2.5 sm:w-auto sm:min-w-0 md:rounded-xl md:border-0 md:bg-surface-subtle md:ring-1 md:ring-inset md:ring-border/35",
+                      "flex w-[9.75rem] flex-none items-center gap-2.5 rounded-[1.25rem] border border-border/45 bg-card px-3 py-2.5 sm:w-auto sm:min-w-0 md:border-0 md:bg-surface-subtle md:ring-1 md:ring-inset md:ring-border/35",
                       fact.path && "cursor-grab active:cursor-grabbing",
                     )}
                   >
-                    <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-card text-foreground/60 ring-1 ring-inset ring-border/45">
+                    <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-[0.7rem] border border-border/55 bg-card text-foreground/62 shadow-control">
                       {fact.icon}
                     </span>
                     <span className="min-w-0 leading-tight">
@@ -1340,7 +1340,7 @@ export default function DraftPreviewPage({
                       keeps the full column and stays flush with its siblings.
                       Fullscreen is still where the plan gets to be large.
                     */}
-                    <div className="relative w-full overflow-hidden rounded-[1.5rem] border border-border/65 bg-card shadow-control sm:rounded-2xl">
+                    <div className="relative w-full overflow-hidden rounded-[1.5rem] border border-border/65 bg-card/88 shadow-control backdrop-blur-xl">
                       <FloorplanViewer
                         draftData={draft.draft_data ?? []}
                         floorplanId={draft.floorplan_id}
@@ -1353,7 +1353,7 @@ export default function DraftPreviewPage({
                         type="button"
                         onClick={() => setFloorplanFullscreen(true)}
                         aria-label={t("draft.gallery.fullscreen", lang)}
-                        className="absolute inset-0 z-10 cursor-zoom-in rounded-[1.5rem] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset sm:rounded-2xl"
+                        className="absolute inset-0 z-10 cursor-zoom-in rounded-[1.5rem] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset"
                       />
                     </div>
 
@@ -1432,7 +1432,7 @@ export default function DraftPreviewPage({
                       <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-[0.7rem] border border-border/55 bg-card text-foreground/62 shadow-control"><StarIcon size={16} /></span>
                       {t("draft.features", lang)}
                     </h2>
-                    <div className="flex flex-wrap gap-2 rounded-[1.25rem] border border-border/65 bg-card/88 p-4 shadow-control backdrop-blur-xl sm:rounded-2xl">
+                    <div className="flex flex-wrap gap-2 rounded-[1.25rem] border border-border/65 bg-card/88 p-4 shadow-control backdrop-blur-xl">
                       {features.map((feature) => (
                         <span key={feature} className="inline-flex min-h-9 items-center rounded-full border border-border/65 bg-surface-subtle px-3.5 py-1 text-[12px] font-medium text-foreground/80">
                           {feature}
