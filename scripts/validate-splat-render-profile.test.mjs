@@ -194,7 +194,7 @@ test("vendored Spinoff uses Splatfiction's finite normalized Gaussian support", 
     "utf8",
   );
 
-  assert.equal(packageJson.version, "0.1.56");
+  assert.equal(packageJson.version, "0.1.61");
   for (const shader of [webGpu, webGl]) {
     assert.match(shader, /radiusSquared > 8\.0/);
     assert.match(shader, /0\.01831563888873418/);
