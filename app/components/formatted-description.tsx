@@ -19,7 +19,7 @@ function inlineMarkup(text: string, keyPrefix: string): React.ReactNode[] {
 export function FormattedDescription({ text, className }: { text: string; className?: string }) {
   const blocks = text.trim().split(/\n\s*\n/u).filter(Boolean);
   return (
-    <div className={cn("space-y-[1.15em]", className)}>
+    <div className={cn("space-y-[1.15em] [text-wrap:pretty]", className)}>
       {blocks.map((block, blockIndex) => {
         const lines = block.split("\n");
         const list = lines.length > 0 && lines.every((line) => /^\s*[-*+]\s+/.test(line));

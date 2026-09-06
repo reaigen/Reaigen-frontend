@@ -14,7 +14,7 @@
  * /floorplans/<id>/rendering/, then the composite image as a last resort.
  */
 
-import { useEffect, useId, useMemo, useState } from "react";
+import { memo, useEffect, useId, useMemo, useState } from "react";
 import type { DraftDataEntry, SharedFloorplanPayload } from "../lib/tour-types";
 import {
   getFloorplanRendering,
@@ -232,7 +232,7 @@ interface LegendEntry {
 
 // ─────────────────────────────────────────────────────────────────────────────
 
-export default function FloorplanViewer({
+function FloorplanViewer({
   draftData,
   floorplanId,
   lang,
@@ -432,6 +432,11 @@ export default function FloorplanViewer({
     </div>
   );
 }
+
+// Gallery navigation and other unrelated detail-page state re-rendered the
+// whole viewer — and with it the label pipeline — on every keystroke. The
+// props are stable references, so memo makes those re-renders free.
+export default memo(FloorplanViewer);
 
 // ── Local vector plan (iOS LocalFloorplanCanvasView port) ────────────────────
 

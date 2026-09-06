@@ -1274,9 +1274,9 @@ export default function DraftPreviewPage({
                 className="draft-support-contents min-w-0 space-y-7 lg:contents lg:space-y-0"
               >
                 {(description || translationPending) && (
-                  <section className={cn(descriptionSpans && "lg:col-span-2")}>
-                    <h2 className="mb-3 flex flex-wrap items-center gap-2 text-[16px] font-semibold tracking-[-0.015em]">
-                      <DocumentIcon size={17} className="text-foreground/65" />
+                  <section style={{ animationDelay: "0ms" }} className={cn("draft-section-enter", descriptionSpans && "lg:col-span-2")}>
+                    <h2 className="mb-3.5 flex flex-wrap items-center gap-2.5 text-[16px] font-semibold tracking-[-0.015em]">
+                      <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-[0.7rem] border border-border/55 bg-card text-foreground/62 shadow-control"><DocumentIcon size={16} /></span>
                       {t("draft.description", lang)}
                       <span className="ml-auto flex items-center gap-1.5">
                         <button
@@ -1305,9 +1305,9 @@ export default function DraftPreviewPage({
                 )}
 
                 {hasFloorplan && (
-                  <section className="lg:col-span-2">
-                    <h2 className="mb-3 flex items-center gap-2 text-[16px] font-semibold tracking-[-0.015em]">
-                      <FloorplanIcon size={17} className="text-foreground/65" />
+                  <section style={{ animationDelay: "45ms" }} className="draft-section-enter lg:col-span-2">
+                    <h2 className="mb-3.5 flex items-center gap-2.5 text-[16px] font-semibold tracking-[-0.015em]">
+                      <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-[0.7rem] border border-border/55 bg-card text-foreground/62 shadow-control"><FloorplanIcon size={16} /></span>
                       {t("draft.floorplan", lang)}
                       {!compactViewport && (
                         <Link
@@ -1338,7 +1338,7 @@ export default function DraftPreviewPage({
                       keeps the full column and stays flush with its siblings.
                       Fullscreen is still where the plan gets to be large.
                     */}
-                    <div className="relative w-full overflow-hidden rounded-[1.5rem] sm:rounded-2xl">
+                    <div className="relative w-full overflow-hidden rounded-[1.5rem] border border-border/65 bg-card shadow-control sm:rounded-2xl">
                       <FloorplanViewer
                         draftData={draft.draft_data ?? []}
                         floorplanId={draft.floorplan_id}
@@ -1380,9 +1380,9 @@ export default function DraftPreviewPage({
                 className="draft-support-contents min-w-0 space-y-7 lg:contents lg:space-y-0"
               >
                 {rows.length > 0 && (
-                  <section className={cn("draft-details-section", supportingSpans("rows") && "lg:col-span-2")}>
-                    <h2 className="mb-3 flex items-center gap-2 text-[16px] font-semibold tracking-[-0.015em]">
-                      <InfoIcon size={17} className="text-foreground/65" />
+                  <section style={{ animationDelay: "90ms" }} className={cn("draft-section-enter", "draft-details-section", supportingSpans("rows") && "lg:col-span-2")}>
+                    <h2 className="mb-3.5 flex items-center gap-2.5 text-[16px] font-semibold tracking-[-0.015em]">
+                      <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-[0.7rem] border border-border/55 bg-card text-foreground/62 shadow-control"><InfoIcon size={16} /></span>
                       {t("draft.details", lang)}
                     </h2>
                     <div className="draft-detail-grid grid grid-cols-1 gap-2.5 sm:grid-cols-2">
@@ -1425,12 +1425,12 @@ export default function DraftPreviewPage({
                 )}
 
                 {features.length > 0 && (
-                  <section className={cn(supportingSpans("features") && "lg:col-span-2")}>
-                    <h2 className="mb-3 flex items-center gap-2 text-[16px] font-semibold tracking-[-0.015em]">
-                      <StarIcon size={17} className="text-foreground/65" />
+                  <section style={{ animationDelay: "135ms" }} className={cn("draft-section-enter", supportingSpans("features") && "lg:col-span-2")}>
+                    <h2 className="mb-3.5 flex items-center gap-2.5 text-[16px] font-semibold tracking-[-0.015em]">
+                      <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-[0.7rem] border border-border/55 bg-card text-foreground/62 shadow-control"><StarIcon size={16} /></span>
                       {t("draft.features", lang)}
                     </h2>
-                    <div className="flex flex-wrap gap-2 rounded-[1.5rem] border border-border/70 bg-card p-4 shadow-card sm:rounded-2xl">
+                    <div className="flex flex-wrap gap-2 rounded-[1.25rem] border border-border/65 bg-card/88 p-4 shadow-control backdrop-blur-xl sm:rounded-2xl">
                       {features.map((feature) => (
                         <span key={feature} className="inline-flex min-h-9 items-center rounded-full border border-border/65 bg-surface-subtle px-3.5 py-1 text-[12px] font-medium text-foreground/80">
                           {feature}
@@ -1441,9 +1441,9 @@ export default function DraftPreviewPage({
                 )}
 
                 {monthlyCosts.length > 0 && (
-                  <section className={cn(supportingSpans("costs") && "lg:col-span-2")}>
-                    <h2 className="mb-3 flex items-center gap-2 text-[16px] font-semibold tracking-[-0.015em]">
-                      <PriceIcon size={17} className="text-foreground/65" />
+                  <section style={{ animationDelay: "180ms" }} className={cn("draft-section-enter", supportingSpans("costs") && "lg:col-span-2")}>
+                    <h2 className="mb-3.5 flex items-center gap-2.5 text-[16px] font-semibold tracking-[-0.015em]">
+                      <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-[0.7rem] border border-border/55 bg-card text-foreground/62 shadow-control"><PriceIcon size={16} /></span>
                       {t("draft.monthlyCosts", lang)}
                     </h2>
                     <div className="draft-cost-grid grid grid-cols-1 gap-2.5 sm:grid-cols-2">

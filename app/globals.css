@@ -1055,6 +1055,24 @@ input:-webkit-autofill:active {
   transition: background-color 5000s ease-in-out 0s;
 }
 
+/* Detail sections cascade in with a soft rise. Fill-mode backwards keeps a
+   section invisible until its stagger delay, then the animation clears
+   completely — no lingering transform, no pinned stacking context. */
+.draft-section-enter {
+  animation: draftSectionIn 460ms var(--motion-ease-smooth) backwards;
+}
+
+@keyframes draftSectionIn {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after {
     animation-duration: 0.01ms !important;
