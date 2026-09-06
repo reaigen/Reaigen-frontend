@@ -6673,6 +6673,12 @@ const SplatViewer = forwardRef<SplatViewerHandle, Props>(function SplatViewer(
           modelRotationRadians: currentTransform.rotationRadians,
           modelTranslation: currentTransform.translation,
           renderMode: "deterministic",
+          // Spinoff 0.1.48 drew the full scene during camera motion; 0.1.56+
+          // introduced a 600k moving-camera budget (6% of the desktop scene),
+          // which made every flight and drag visibly drop splats. A huge cap
+          // restores the 0.1.48 behaviour exactly: the backend clamps motion
+          // frames to min(settled, this), i.e. the full settled selection.
+          maxMotionProjectedSplats: 10_000_000,
           // Splatfiction's actual settled-viewport recipe (app/page.tsx +
           // lib/viewport-quality.ts), which overrides the engine defaults:
           // a crisp 0.075px² dilation floor, and compensation OFF — their
