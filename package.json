@@ -28,7 +28,8 @@
     "validate-live-scan-device": "node --experimental-strip-types --test app/lib/live-scan-device.test.mjs app/lib/live-scan-preview.test.mjs app/lib/point-cloud-bounds.test.mjs",
     "validate-live-scan-ui": "node --test scripts/validate-live-scan-ui.test.mjs",
     "validate-google-maps": "node --experimental-strip-types --test app/lib/google-maps-client.test.mjs",
-    "validate-panel-geometry": "node --test scripts/validate-panel-geometry.test.mjs"
+    "validate-panel-geometry": "node --test scripts/validate-panel-geometry.test.mjs",
+    "smoke-ui": "node scripts/smoke-ui.mjs"
   },
   "dependencies": {
     "@babylonjs/core": "^9.10.1",
