@@ -319,6 +319,24 @@ export function FrameIcon({ size = 18, width, height, ...props }: IconProps) {
   );
 }
 
+export function FocusColumnIcon({ size = 18, width, height, ...props }: IconProps) {
+  return (
+    <svg viewBox="0 0 24 24" width={width ?? size} height={height ?? size} fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" aria-hidden={props["aria-hidden"] ?? true} {...props}>
+      <rect x="8" y="4.5" width="8" height="15" rx="1.75" />
+      <path d="M4.25 8.5v7M19.75 8.5v7" />
+    </svg>
+  );
+}
+
+export function WideColumnsIcon({ size = 18, width, height, ...props }: IconProps) {
+  return (
+    <svg viewBox="0 0 24 24" width={width ?? size} height={height ?? size} fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" aria-hidden={props["aria-hidden"] ?? true} {...props}>
+      <rect x="3.75" y="4.5" width="7.5" height="15" rx="1.75" />
+      <rect x="13.75" y="4.5" width="6.5" height="15" rx="1.75" />
+    </svg>
+  );
+}
+
 export function ShowHiddenIcon({ size = 18, width, height, ...props }: IconProps) {
   return (
     <svg viewBox="0 0 24 24" width={width ?? size} height={height ?? size} fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" aria-hidden={props["aria-hidden"] ?? true} {...props}>

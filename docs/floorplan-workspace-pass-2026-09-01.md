@@ -196,6 +196,15 @@ way to detect and auto-heal old garbage.
   the wrapper animates `max-width` in step.
 - Legend rail (Follow-up 2) and card-span parity (Follow-up 3) apply only
   in wide mode; focused mode stacks every card full-width.
+- The toggle lives in the fixed shell header (new `headerAction` slot,
+  threaded through the persistent-shell bridge), left of the account —
+  no orphan toolbar row on the page. Purpose-drawn glyphs
+  (`FocusColumnIcon` centred column with margins, `WideColumnsIcon` two
+  panels) and detail-specific labels replace the list-grid icons via new
+  optional `GridLayoutToggle` props. The width transition matches the
+  shell's 200 ms docked-panel padding transition so mode switches and
+  panel docking read as one motion. `FormattedDescription` renders
+  numbered lists, closing the loop with the editor's new tool.
 
 ## Backlog
 

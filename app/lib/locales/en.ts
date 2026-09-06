@@ -1155,6 +1155,8 @@ const en = {
   "draft.refreshListing":                "Refresh listing",
   "draft.description":                   "Description",
   "draft.showMore":                      "Show more",
+  "draft.layout.focused":                "Focused view",
+  "draft.layout.wide":                   "Wide view",
   "draft.showLess":                      "Show less",
   "draft.descriptionOriginal":           "Original",
   "draft.specs":                         "Details",

@@ -160,12 +160,14 @@ export type AppShellProps = {
   /** Reserve the title line while route data is loading. */
   headerTitleLoading?: boolean;
   headerMeta?: string;
+  /** Route-owned control cluster in the desktop top bar, left of the account. */
+  headerAction?: React.ReactNode;
   children: React.ReactNode;
 };
 
 type AppShellOverrides = Pick<
   AppShellProps,
-  "immersive" | "hideMobileNav" | "reaiDraftId" | "reaiDraftTitle" | "reaiUploadId" | "reaiWorkspaceContext" | "reaiTourId" | "onReaiDraftUpdated" | "headerSearch" | "headerBackHref" | "headerBackLabel" | "headerTitle" | "headerTitleLoading" | "headerMeta"
+  "immersive" | "hideMobileNav" | "reaiDraftId" | "reaiDraftTitle" | "reaiUploadId" | "reaiWorkspaceContext" | "reaiTourId" | "onReaiDraftUpdated" | "headerSearch" | "headerBackHref" | "headerBackLabel" | "headerTitle" | "headerTitleLoading" | "headerMeta" | "headerAction"
 >;
 
 type PersistentShellBridge = {
@@ -189,6 +191,7 @@ function NestedAppShell({
   headerTitle,
   headerTitleLoading,
   headerMeta,
+  headerAction,
   children,
 }: AppShellProps) {
   const bridge = React.useContext(PersistentShellContext);
@@ -218,6 +221,7 @@ function NestedAppShell({
       headerTitle,
       headerTitleLoading,
       headerMeta,
+      headerAction,
     });
   }, [
     bridge,
@@ -229,6 +233,7 @@ function NestedAppShell({
     headerTitle,
     headerTitleLoading,
     headerMeta,
+    headerAction,
     immersive,
     registeredDraftUpdate,
     reaiDraftId,
@@ -287,6 +292,7 @@ export function PersistentAppShell({
         headerTitle={overrides.headerTitle}
         headerTitleLoading={overrides.headerTitleLoading}
         headerMeta={overrides.headerMeta}
+        headerAction={overrides.headerAction}
       >
         {children}
       </AppShellFrame>
@@ -311,6 +317,7 @@ function AppShellFrame({
   headerTitle,
   headerTitleLoading,
   headerMeta,
+  headerAction,
   children,
 }: AppShellProps) {
   const pathname = usePathname();
@@ -799,6 +806,7 @@ function AppShellFrame({
             ) : <span aria-hidden="true" />}
           </div>
           <div className="ml-auto flex items-center gap-2">
+            {headerAction ? <span className="hidden items-center md:inline-flex">{headerAction}</span> : null}
             <span className="inline-flex md:hidden">{reaiLauncher("header")}</span>
             <button
               type="button"

@@ -1141,6 +1141,8 @@ const sk: LocaleStrings = {
   "draft.refreshListing":                "Obnoviť ponuku",
   "draft.description":                   "Popis",
   "draft.showMore":                      "Zobraziť viac",
+  "draft.layout.focused":                "Sústredené zobrazenie",
+  "draft.layout.wide":                   "Široké zobrazenie",
   "draft.showLess":                      "Zobraziť menej",
   "draft.descriptionOriginal":           "Originál",
   "draft.specs":                         "Podrobnosti",

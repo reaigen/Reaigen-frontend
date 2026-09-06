@@ -1141,6 +1141,8 @@ const de: LocaleStrings = {
   "draft.refreshListing":                "Angebot aktualisieren",
   "draft.description":                   "Beschreibung",
   "draft.showMore":                      "Mehr anzeigen",
+  "draft.layout.focused":                "Fokussierte Ansicht",
+  "draft.layout.wide":                   "Breite Ansicht",
   "draft.showLess":                      "Weniger anzeigen",
   "draft.descriptionOriginal":           "Original",
   "draft.specs":                         "Details",

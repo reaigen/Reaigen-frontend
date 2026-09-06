@@ -32,6 +32,16 @@ export function FormattedDescription({ text, className }: { text: string; classN
             </ul>
           );
         }
+        const ordered = lines.length > 0 && lines.every((line) => /^\s*\d+[.)]\s+/.test(line));
+        if (ordered) {
+          return (
+            <ol key={`block-${blockIndex}`} className="list-decimal space-y-1.5 pl-5 marker:text-foreground/35">
+              {lines.map((line, lineIndex) => (
+                <li key={`line-${lineIndex}`}>{inlineMarkup(line.replace(/^\s*\d+[.)]\s+/, ""), `b${blockIndex}-l${lineIndex}`)}</li>
+              ))}
+            </ol>
+          );
+        }
         return (
           <p key={`block-${blockIndex}`}>
             {lines.map((line, lineIndex) => (

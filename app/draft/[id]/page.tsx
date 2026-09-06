@@ -35,12 +35,14 @@ import {
   MapPinIcon,
   PlusIcon,
   PriceIcon,
+  FocusColumnIcon,
   SearchIcon,
   ShareIcon,
   StarIcon,
   TourIcon,
   VideoIcon,
   VersionsIcon,
+  WideColumnsIcon,
 } from "../../components/icons";
 import { StatusPill } from "../../components/status-pill";
 import { selectShareableTour } from "../../lib/tour-sharing";
@@ -921,13 +923,26 @@ export default function DraftPreviewPage({
       headerBackLabel={t("nav.dashboard", lang)}
       headerTitle={draft.title}
       headerMeta={address || undefined}
+      headerAction={
+        <GridLayoutToggle
+          value={detailLayout}
+          onChange={handleDetailLayout}
+          lang={lang}
+          singleIcon={<FocusColumnIcon size={16} />}
+          doubleIcon={<WideColumnsIcon size={16} />}
+          singleLabel={t("draft.layout.focused", lang)}
+          doubleLabel={t("draft.layout.wide", lang)}
+        />
+      }
       onReaiDraftUpdated={(updatedDraft) => {
         setDraft(updatedDraft);
         writeDraftDetailCache(user.id, draftId, updatedDraft);
       }}
     >
       <div className={cn(
-        "draft-detail-page relative mx-auto w-full pb-24 transition-[max-width] duration-300 md:pb-12",
+        // duration-200 matches the shell's docked-panel padding transition,
+        // so a mode switch and a panel dock read as one seamless motion.
+        "draft-detail-page relative mx-auto w-full pb-24 transition-[max-width] duration-200 md:pb-12",
         detailLayout === 1 ? "max-w-[920px]" : "max-w-[1360px]",
       )}>
         {/*
@@ -960,11 +975,6 @@ export default function DraftPreviewPage({
             onRefresh={refreshListing}
           />
         )}
-
-        {/* Viewing mode: focused single column vs the wide two-column workspace. */}
-        <div className="mb-3 hidden items-center justify-end md:flex">
-          <GridLayoutToggle value={detailLayout} onChange={handleDetailLayout} lang={lang} />
-        </div>
 
         {/* Media and property summary — one continuous workspace at every width. */}
         <div className="draft-mobile-workspace flex flex-col overflow-visible border-0 bg-transparent shadow-none md:overflow-hidden md:rounded-[1.65rem] md:border md:border-border/65 md:bg-card md:shadow-card">
