@@ -6698,20 +6698,18 @@ const SplatViewer = forwardRef<SplatViewerHandle, Props>(function SplatViewer(
           // the option is absent), which is why the balloons were showing.
           // Footprint only: the SOG bytes and the lossless tensors are untouched.
           reconstructionFogGuard: true,
-          // Spinoff 0.1.56 uses a stable deterministic subset while the camera
-          // changes, then restores the exact full projection after this short
-          // settle window. This is a render-work LOD, not camera interpolation:
-          // disabling it forced every pointer frame through the full sort and
-          // was the source of the low-FPS, juddering walkthrough.
-          motionSmoothing: true,
-          motionSettleMilliseconds: 100,
-          // Keep the external renderer inside the same balanced delivery
-          // budgets documented for Babylon. The previous 5.5M/2.6M override
-          // silently exceeded that contract and spent fill rate during motion.
+          // The moving camera renders the SAME full projection as the settled
+          // one — motionSmoothing is the renderer's motion-LOD master switch
+          // and `false` disables the degraded moving-camera pass entirely.
+          // This is the pre-0.1.56 delivery behaviour the product shipped
+          // with; the Aug 31 flip to `true` made every drag and flight drop
+          // to a 600k subset and visibly "reload" on arrival. The WebGPU
+          // depth-bucket backend carries the full-projection cost fine.
+          motionSmoothing: false,
           maxCanvasPixels: spatialNavigation
             ? compactTouch ? 3_000_000 : 8_000_000
             : performanceProfile === "balanced"
-              ? compactTouch ? 2_250_000 : 4_500_000
+              ? compactTouch ? 2_600_000 : 5_500_000
               : compactTouch ? 3_500_000 : 9_000_000,
           // Spinoff contributes no application theme or UI chrome; this is the
           // surface the Gaussians are composited onto, and it has to match the
@@ -6852,6 +6850,24 @@ const SplatViewer = forwardRef<SplatViewerHandle, Props>(function SplatViewer(
           canvas.dataset.spinoffFrame = String(renderer.stats.frame);
         });
         canvas.dataset.spinoffGaussianEngines = "1";
+        // Development-only diagnostics badge: every screenshot of a broken
+        // tour then carries the facts (backend, drawn/total splats, motion
+        // state) instead of forcing another guessing round.
+        if (process.env.NODE_ENV !== "production" && canvas.parentElement) {
+          const badge = document.createElement("div");
+          badge.dataset.spinoffDebugBadge = "1";
+          badge.style.cssText = "position:absolute;left:8px;bottom:8px;z-index:40;pointer-events:none;font:600 11px/1.4 ui-monospace,monospace;color:#fff;background:rgba(0,0,0,0.62);padding:4px 8px;border-radius:8px;";
+          canvas.parentElement.appendChild(badge);
+          const badgeTimer = window.setInterval(() => {
+            if (!badge.isConnected) { window.clearInterval(badgeTimer); return; }
+            const stats = renderer.stats;
+            badge.textContent = `${stats.backend} · ${stats.projectedSplats.toLocaleString()}/${stats.sceneSplats.toLocaleString()} · ${stats.motionPreview ? "MOTION" : "settled"}`;
+          }, 250);
+          abortController.signal.addEventListener("abort", () => {
+            window.clearInterval(badgeTimer);
+            badge.remove();
+          });
+        }
         setSpinoffStatus("ready");
         setStatus("");
         onReady?.();
