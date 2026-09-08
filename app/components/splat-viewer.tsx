@@ -6722,7 +6722,11 @@ const SplatViewer = forwardRef<SplatViewerHandle, Props>(function SplatViewer(
         canvas.dataset.spinoffStatus = "initializing";
         await renderer.initialize();
         if (disposed) return;
-        renderer.start();
+        // Deliberately NOT renderer.start(): its internal rAF loop runs out
+        // of phase with Babylon's, so the Gaussians drew last frame's camera
+        // pose — a one-frame lag that read as jiggle during every drag and
+        // flight. The splats draw from Babylon's own loop below instead,
+        // camera sync and draw in the same frame.
         canvas.dataset.spinoffStatus = "loading";
         const loadedScene = await renderer.loadSog(source, {
           signal: abortController.signal,
@@ -6817,7 +6821,18 @@ const SplatViewer = forwardRef<SplatViewerHandle, Props>(function SplatViewer(
         }
 
         const syncCamera = () => synchronizeSpinoffCamera(camera, babylonCamera);
-        cameraObserver = scene.onBeforeRenderObservable.add(syncCamera);
+        // One loop: sync the Spinoff camera and draw the Gaussians inside the
+        // same Babylon frame. The ref stays pure sync — drag observers and
+        // cover shots push the pose and issue their own draws.
+        cameraObserver = scene.onBeforeRenderObservable.add(() => {
+          syncCamera();
+          try {
+            renderer.renderOnce();
+          } catch {
+            // A draw refused mid device-recovery must not take down Babylon's
+            // render loop; the next frame retries naturally.
+          }
+        });
         spinoffCameraSyncRef.current = syncCamera;
         syncCamera();
         // First paint. A draw issued synchronously after scene upload can
@@ -6850,10 +6865,14 @@ const SplatViewer = forwardRef<SplatViewerHandle, Props>(function SplatViewer(
           canvas.dataset.spinoffFrame = String(renderer.stats.frame);
         });
         canvas.dataset.spinoffGaussianEngines = "1";
-        // Development-only diagnostics badge: every screenshot of a broken
-        // tour then carries the facts (backend, drawn/total splats, motion
-        // state) instead of forcing another guessing round.
-        if (process.env.NODE_ENV !== "production" && canvas.parentElement) {
+        // Opt-in diagnostics badge (?splatDebug=1, development only): a
+        // screenshot then carries the facts — backend, drawn/total splats,
+        // motion state. Never rendered by default.
+        if (
+          process.env.NODE_ENV !== "production"
+          && canvas.parentElement
+          && new URLSearchParams(window.location.search).get("splatDebug") === "1"
+        ) {
           const badge = document.createElement("div");
           badge.dataset.spinoffDebugBadge = "1";
           badge.style.cssText = "position:absolute;left:8px;bottom:8px;z-index:40;pointer-events:none;font:600 11px/1.4 ui-monospace,monospace;color:#fff;background:rgba(0,0,0,0.62);padding:4px 8px;border-radius:8px;";
