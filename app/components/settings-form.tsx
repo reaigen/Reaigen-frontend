@@ -18,6 +18,8 @@ import {
   updateSellerProfile,
   updateLocalization,
   updatePersonalizedData,
+  getBilling,
+  getUserCapabilities,
   updateBilling,
   changePassword,
   getAvailablePreferences,
@@ -61,6 +63,9 @@ import {
   type ReaiToolCode,
   type ReaiToolPermissions,
   type ReaiImprovementConsent,
+  type AccountQuotaUsage,
+  type BillingAccount,
+  type UserCapabilities,
   type TrainingQuality,
   type TrainingResolution,
 } from "../lib/api/client";
@@ -81,6 +86,7 @@ import { t, getUserLanguage, formatDate as fmtDate } from "../lib/i18n";
 import type { LocaleKey } from "../lib/locales";
 import { cn } from "../lib/utils";
 import { ManagedLegalDocuments } from "./content-documents";
+import { resolveQuotaPresentation } from "../lib/account-usage";
 
 function useAutoDismiss(value: boolean, setter: (v: boolean) => void, ms = 3000) {
   React.useEffect(() => {
@@ -2031,24 +2037,109 @@ function LocalizationTab({ user, lang }: { user: UserProfile; lang: string }) {
 
 /* ── Billing Tab ─────────────────────────────────────────────────────── */
 
-function UsageBar({ current, max, label, unit }: { current: number; max: number; label: string; unit?: string }) {
-  // 0 = not applicable and -1 = unlimited; neither draws a fill.
-  const unlimited = max <= 0;
-  const pct = unlimited ? 0 : Math.min((current / max) * 100, 100);
-  const color = pct >= 100 ? "bg-destructive" : pct >= 75 ? "bg-foreground/60" : "bg-success";
+function AccessPill({
+  allowed,
+  lang,
+  mode = "access",
+}: {
+  allowed: boolean | null;
+  lang: string;
+  mode?: "access" | "inclusion";
+}) {
+  const label = allowed == null
+    ? t("settings.billing.checking", lang)
+    : allowed
+      ? t(mode === "access" ? "settings.billing.available" : "settings.billing.included", lang)
+      : t(mode === "access" ? "settings.billing.blocked" : "settings.billing.notIncluded", lang);
   return (
-    <div className="space-y-1.5">
+    <span
+      className={cn(
+        "inline-flex shrink-0 items-center gap-1.5 rounded-full px-2.5 py-1 text-[11px] font-semibold",
+        allowed == null && "bg-muted text-muted-foreground",
+        allowed === true && "bg-success/10 text-success",
+        allowed === false && "bg-foreground/[0.07] text-foreground/65",
+      )}
+    >
+      <span
+        aria-hidden="true"
+        className={cn(
+          "size-1.5 rounded-full",
+          allowed == null && "bg-muted-foreground/45",
+          allowed === true && "bg-success",
+          allowed === false && "bg-foreground/35",
+        )}
+      />
+      {label}
+    </span>
+  );
+}
+
+function UsageBar({
+  quota,
+  productAllowed,
+  label,
+  lang,
+}: {
+  quota: AccountQuotaUsage | null;
+  productAllowed: boolean | null;
+  label: string;
+  lang: string;
+}) {
+  const presentation = resolveQuotaPresentation(quota, productAllowed);
+  const color = presentation.percent >= 100
+    ? "bg-destructive"
+    : presentation.percent >= 75
+      ? "bg-foreground/60"
+      : "bg-success";
+  const value = presentation.kind === "limited"
+    ? `${presentation.used} / ${presentation.limit}`
+    : presentation.kind === "unlimited"
+      ? t("settings.billing.unlimited", lang)
+      : presentation.kind === "blocked"
+        ? t("settings.billing.blocked", lang)
+        : presentation.kind === "unavailable"
+          ? t("settings.billing.notIncluded", lang)
+          : "—";
+
+  return (
+    <div className="space-y-1.5" data-quota-state={presentation.kind}>
       <div className="flex items-baseline justify-between text-[12px]">
         <span className="font-medium">{label}</span>
-        <span className="text-muted-foreground">
-          {current}{unit ? ` ${unit}` : ""} / {unlimited ? "∞" : `${max}${unit ? ` ${unit}` : ""}`}
-        </span>
+        <span className="text-muted-foreground">{value}</span>
       </div>
       <div className="h-2 w-full overflow-hidden rounded-full bg-muted">
-        <div className={cn("h-full rounded-full transition-all", color)} style={{ width: unlimited ? "0%" : `${pct}%` }} />
+        <div
+          className={cn("h-full rounded-full transition-all", color)}
+          style={{ width: `${presentation.percent}%` }}
+        />
       </div>
     </div>
   );
+}
+
+function numericLimit(capabilities: UserCapabilities | null, key: string): number | null {
+  const value = capabilities?.limits[key];
+  return typeof value === "number" && Number.isFinite(value) ? value : null;
+}
+
+function formatPlanLimit(value: number | null, lang: string): string {
+  if (value == null) return "—";
+  if (value === -1) return t("settings.billing.unlimited", lang);
+  if (value <= 0) return t("settings.billing.notIncluded", lang);
+  return String(value);
+}
+
+function fallbackQuota(used: number | null | undefined, limit: number | null): AccountQuotaUsage | null {
+  if (typeof used !== "number" || limit == null) return null;
+  return {
+    used,
+    limit,
+    remaining: limit === -1 ? null : Math.max(0, limit - used),
+    unlimited: limit === -1,
+    can_create: limit === -1 || (limit > 0 && used < limit),
+    period: "current",
+    period_start: null,
+  };
 }
 
 const tierBadgeColors: Record<string, string> = {
@@ -2069,9 +2160,11 @@ function tierBadgeKey(code: string, lang: string): string {
 }
 
 function BillingTab({ user, onSaved, lang }: { user: UserProfile; onSaved: () => void; lang: string }) {
-  const ba = user.billing_account;
-  const tier = ba?.subscription_tier_detail;
-  const tierCode = tier?.code?.toUpperCase() ?? "FREE";
+  const [liveBilling, setLiveBilling] = React.useState<BillingAccount | null>(user.billing_account);
+  const [capabilities, setCapabilities] = React.useState<UserCapabilities | null>(null);
+  const [accountRefreshing, setAccountRefreshing] = React.useState(true);
+  const [accountRefreshError, setAccountRefreshError] = React.useState(false);
+  const ba = liveBilling ?? user.billing_account;
 
   // Billing address form
   const [billingName, setBillingName] = React.useState(ba?.billing_name ?? "");
@@ -2081,12 +2174,43 @@ function BillingTab({ user, onSaved, lang }: { user: UserProfile; onSaved: () =>
   const [billingPostal, setBillingPostal] = React.useState(ba?.billing_postal_code ?? "");
   const [billingCountry, setBillingCountry] = React.useState(ba?.billing_country ?? "");
   const [vat, setVat] = React.useState(ba?.vat_number ?? "");
+  const [billingDirty, setBillingDirty] = React.useState(false);
   const [loading, setLoading] = React.useState(false);
   const [error, setError] = React.useState<string | null>(null);
   const [success, setSuccess] = React.useState(false);
   useAutoDismiss(success, setSuccess);
 
+  const refreshAccountState = React.useCallback(async () => {
+    setAccountRefreshing(true);
+    const [billingResult, capabilitiesResult] = await Promise.allSettled([getBilling(), getUserCapabilities()]);
+    if (billingResult.status === "fulfilled") {
+      setLiveBilling(billingResult.value);
+    }
+    if (capabilitiesResult.status === "fulfilled") {
+      setCapabilities(capabilitiesResult.value);
+    }
+    setAccountRefreshError(
+      billingResult.status === "rejected" || capabilitiesResult.status === "rejected",
+    );
+    setAccountRefreshing(false);
+  }, []);
+
   React.useEffect(() => {
+    void refreshAccountState();
+    const refreshOnFocus = () => void refreshAccountState();
+    const refreshWhenVisible = () => {
+      if (document.visibilityState === "visible") void refreshAccountState();
+    };
+    window.addEventListener("focus", refreshOnFocus);
+    document.addEventListener("visibilitychange", refreshWhenVisible);
+    return () => {
+      window.removeEventListener("focus", refreshOnFocus);
+      document.removeEventListener("visibilitychange", refreshWhenVisible);
+    };
+  }, [refreshAccountState]);
+
+  React.useEffect(() => {
+    if (billingDirty) return;
     setBillingName(ba?.billing_name ?? "");
     setBillingEmail(ba?.billing_email ?? "");
     setBillingAddress(ba?.billing_address ?? "");
@@ -2094,7 +2218,7 @@ function BillingTab({ user, onSaved, lang }: { user: UserProfile; onSaved: () =>
     setBillingPostal(ba?.billing_postal_code ?? "");
     setBillingCountry(ba?.billing_country ?? "");
     setVat(ba?.vat_number ?? "");
-  }, [ba]);
+  }, [ba, billingDirty]);
 
   const hasAddressData = !!(billingName || billingEmail || billingAddress || billingCity || billingPostal || billingCountry || vat);
 
@@ -2104,7 +2228,7 @@ function BillingTab({ user, onSaved, lang }: { user: UserProfile; onSaved: () =>
     setSuccess(false);
     try {
       setLoading(true);
-      await updateBilling({
+      const updated = await updateBilling({
         billing_name: billingName.trim(),
         billing_email: billingEmail.trim(),
         billing_address: billingAddress.trim(),
@@ -2113,6 +2237,8 @@ function BillingTab({ user, onSaved, lang }: { user: UserProfile; onSaved: () =>
         billing_country: billingCountry.trim(),
         vat_number: vat.trim(),
       });
+      setLiveBilling(updated);
+      setBillingDirty(false);
       setSuccess(true);
       onSaved();
     } catch (err) {
@@ -2128,9 +2254,30 @@ function BillingTab({ user, onSaved, lang }: { user: UserProfile; onSaved: () =>
       ? t("settings.billing.cycleYearly", lang)
       : t("settings.billing.cycleNa", lang);
 
-  const maxPosts = tier?.max_posts ?? 0;
-  const currentPosts = ba?.current_posts_count ?? 0;
-  const credits = ba?.compute_credits ?? null;
+  const usage = capabilities?.usage ?? null;
+  const tier = ba?.subscription_tier_detail;
+  const tierCode = (capabilities?.tier.code ?? tier?.code ?? "FREE").toUpperCase();
+  const tierName = capabilities?.tier.name ?? tier?.name ?? "—";
+  const reaigenAllowed = usage?.products.reaigen?.allowed
+    ?? (capabilities ? Boolean(capabilities.apps.reaigen) : null);
+  const reailistAllowed = usage?.products.reailist?.allowed
+    ?? (capabilities ? Boolean(capabilities.apps.reailist) : null);
+  const draftsQuota = usage?.drafts ?? null;
+  const postsQuota = usage?.posts
+    ?? fallbackQuota(ba?.current_posts_count, numericLimit(capabilities, "max_posts"));
+  const descriptionsQuota = usage?.ai_descriptions ?? null;
+  const credits = usage?.credits ?? ba?.compute_credits ?? null;
+  const creditCosts = usage?.credit_costs ?? {};
+  const planFunctions: Array<{ key: string; label: LocaleKey }> = [
+    { key: "basic_upload", label: "settings.billing.functionBasicUpload" },
+    { key: "image_upload", label: "settings.billing.functionImageUpload" },
+    { key: "ai_processing", label: "settings.billing.functionAiProcessing" },
+    { key: "3d_processing", label: "settings.billing.function3dProcessing" },
+    { key: "agent_access", label: "settings.billing.functionAgent" },
+    { key: "web_scene_authoring", label: "settings.billing.functionWebCreation" },
+  ];
+  const uploadsPerDraft = numericLimit(capabilities, "max_uploads_per_draft");
+  const processingJobs = numericLimit(capabilities, "max_processing_jobs");
   const trialActive = ba?.subscription_status === "trial" && !!ba?.trial_ends_at;
   const trialDaysLeft = trialActive
     ? Math.max(
@@ -2145,18 +2292,34 @@ function BillingTab({ user, onSaved, lang }: { user: UserProfile; onSaved: () =>
   return (
     <div className="space-y-6">
       {/* Plan Info */}
-      <Card>
-        <CardHeader>
-          <CardTitle>{t("settings.billing.title", lang)}</CardTitle>
-          <CardDescription>{t("settings.billing.subtitle", lang)}</CardDescription>
+      <Card data-testid="account-plan">
+        <CardHeader className="flex flex-row items-start justify-between gap-4">
+          <div>
+            <CardTitle>{t("settings.billing.title", lang)}</CardTitle>
+            <CardDescription>{t("settings.billing.subtitle", lang)}</CardDescription>
+          </div>
+          <Button
+            type="button"
+            variant="outline"
+            size="xs"
+            loading={accountRefreshing}
+            onClick={() => void refreshAccountState()}
+          >
+            {t("settings.billing.refresh", lang)}
+          </Button>
         </CardHeader>
         <CardContent>
+          {accountRefreshError && (
+            <p className="mb-3 text-[12px] text-destructive">
+              {t("settings.billing.refreshError", lang)}
+            </p>
+          )}
           <dl className="rounded-lg border border-border/65 px-4">
             <DataRow
               label={t("settings.billing.plan", lang)}
               value={
                 <span className="flex items-center gap-2">
-                  {tier?.name ?? "—"}
+                  {tierName}
                   <span className={cn("rounded-full px-2.5 py-0.5 text-[11px] font-semibold", tierBadgeColors[tierCode] ?? tierBadgeColors.FREE)}>
                     {tierBadgeKey(tierCode, lang)}
                   </span>
@@ -2176,52 +2339,193 @@ function BillingTab({ user, onSaved, lang }: { user: UserProfile; onSaved: () =>
         </CardContent>
       </Card>
 
-      {/* Usage — storage is intentionally absent: it is counted internally
-          but is not a tier limit. */}
-      <Card>
+      {/* Product access and quotas come from one server snapshot. */}
+      <Card data-testid="product-access">
         <CardHeader>
-          <CardTitle>{t("settings.billing.usageTitle", lang)}</CardTitle>
+          <CardTitle>{t("settings.billing.productsTitle", lang)}</CardTitle>
+          <CardDescription>{t("settings.billing.productsSubtitle", lang)}</CardDescription>
         </CardHeader>
         <CardContent>
-          <div className="space-y-4 rounded-lg border border-border/65 p-4">
-            <UsageBar current={currentPosts} max={maxPosts} label={t("settings.billing.posts", lang)} />
+          <div className="grid gap-3 lg:grid-cols-2">
+            <article
+              data-testid="reaigen-access"
+              className="rounded-2xl border border-border/65 bg-muted/20 p-4"
+            >
+              <div className="flex items-start justify-between gap-4">
+                <div className="flex min-w-0 items-start gap-3">
+                  <span className="flex size-9 shrink-0 items-center justify-center rounded-full bg-foreground text-[12px] font-semibold text-background">
+                    1
+                  </span>
+                  <div className="min-w-0">
+                    <h3 className="text-[14px] font-semibold">Reaigen</h3>
+                    <p className="mt-1 text-[12px] leading-relaxed text-muted-foreground">
+                      {t("settings.billing.reaigenDescription", lang)}
+                    </p>
+                  </div>
+                </div>
+                <AccessPill allowed={reaigenAllowed} lang={lang} />
+              </div>
+              <div className="mt-5 space-y-4">
+                <UsageBar
+                  quota={draftsQuota}
+                  productAllowed={reaigenAllowed}
+                  label={t("settings.billing.draftsThisMonth", lang)}
+                  lang={lang}
+                />
+                <UsageBar
+                  quota={descriptionsQuota}
+                  productAllowed={reaigenAllowed}
+                  label={t("settings.billing.aiDescriptionsThisMonth", lang)}
+                  lang={lang}
+                />
+                <div className="flex items-center justify-between border-t border-border/65 pt-3 text-[12px]">
+                  <span className="text-muted-foreground">
+                    {t("settings.billing.visibleDrafts", lang)}
+                  </span>
+                  <span className="font-semibold">
+                    {draftsQuota?.visible_total ?? "—"}
+                  </span>
+                </div>
+              </div>
+            </article>
+
+            <article
+              data-testid="reailist-access"
+              className="rounded-2xl border border-border/65 bg-muted/20 p-4"
+            >
+              <div className="flex items-start justify-between gap-4">
+                <div className="flex min-w-0 items-start gap-3">
+                  <span className="flex size-9 shrink-0 items-center justify-center rounded-full border border-border bg-card text-[12px] font-semibold text-foreground/65">
+                    2
+                  </span>
+                  <div className="min-w-0">
+                    <h3 className="text-[14px] font-semibold">Reailist</h3>
+                    <p className="mt-1 text-[12px] leading-relaxed text-muted-foreground">
+                      {t("settings.billing.reailistDescription", lang)}
+                    </p>
+                  </div>
+                </div>
+                <AccessPill allowed={reailistAllowed} lang={lang} />
+              </div>
+              <div className="mt-5 space-y-4">
+                <UsageBar
+                  quota={postsQuota}
+                  productAllowed={reailistAllowed}
+                  label={t("settings.billing.posts", lang)}
+                  lang={lang}
+                />
+                {reailistAllowed === false && (
+                  <p className="rounded-xl bg-foreground/[0.045] px-3 py-2.5 text-[12px] leading-relaxed text-muted-foreground">
+                    {t("settings.billing.reailistBlockedDetail", lang)}
+                  </p>
+                )}
+              </div>
+            </article>
           </div>
         </CardContent>
       </Card>
 
-      {/* Compute credits */}
-      {credits && (
-        <Card>
-          <CardHeader>
-            <CardTitle>{t("settings.billing.creditsTitle", lang)}</CardTitle>
-            <CardDescription>{t("settings.billing.creditsSubtitle", lang)}</CardDescription>
-          </CardHeader>
-          <CardContent>
-            <dl className="rounded-lg border border-border/65 px-4">
-              <DataRow
-                label={t("settings.billing.creditsTotal", lang)}
-                value={
-                  credits.unlimited
+      <Card data-testid="plan-functions">
+        <CardHeader>
+          <CardTitle>{t("settings.billing.functionsTitle", lang)}</CardTitle>
+          <CardDescription>{t("settings.billing.functionsSubtitle", lang)}</CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-3">
+          <div className="grid overflow-hidden rounded-2xl border border-border/65 sm:grid-cols-2">
+            {planFunctions.map((item) => {
+              const enabled = capabilities == null || reaigenAllowed == null
+                ? null
+                : reaigenAllowed && Boolean(capabilities.features[item.key]);
+              return (
+                <div
+                  key={item.key}
+                  className="flex min-h-12 items-center justify-between gap-3 border-b border-border/65 px-4 py-3 last:border-b-0 sm:[&:nth-last-child(-n+2)]:border-b-0 sm:[&:nth-child(odd)]:border-r"
+                >
+                  <span className="text-[13px] font-medium">{t(item.label, lang)}</span>
+                  <AccessPill allowed={enabled} lang={lang} mode="inclusion" />
+                </div>
+              );
+            })}
+          </div>
+          <dl className="grid rounded-2xl border border-border/65 px-4 sm:grid-cols-2 sm:gap-x-8">
+            <DataRow
+              label={t("settings.billing.uploadsPerDraft", lang)}
+              value={formatPlanLimit(uploadsPerDraft, lang)}
+            />
+            <DataRow
+              label={t("settings.billing.processingJobs", lang)}
+              value={formatPlanLimit(processingJobs, lang)}
+            />
+          </dl>
+        </CardContent>
+      </Card>
+
+      {/* Compute credits stay visible while refreshing; an absent payload is
+          unknown, never silently equivalent to zero. */}
+      <Card data-testid="compute-credits">
+        <CardHeader>
+          <CardTitle>{t("settings.billing.creditsTitle", lang)}</CardTitle>
+          <CardDescription>{t("settings.billing.creditsSubtitle", lang)}</CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-3">
+          <div className="grid gap-3 md:grid-cols-[0.8fr_1.2fr]">
+            <div className="flex min-h-32 flex-col justify-between rounded-2xl bg-foreground p-4 text-background">
+              <span className="text-[12px] font-medium text-background/65">
+                {t("settings.billing.creditsTotal", lang)}
+              </span>
+              <p className="mt-6 flex items-baseline gap-2">
+                <span className="text-3xl font-light tracking-tight">
+                  {credits?.unlimited
                     ? t("settings.billing.creditsUnlimited", lang)
-                    : String(credits.total)
-                }
+                    : credits?.total ?? "—"}
+                </span>
+                {credits && !credits.unlimited && (
+                  <span className="text-[12px] text-background/60">
+                    {t("settings.billing.creditUnit", lang)}
+                  </span>
+                )}
+              </p>
+            </div>
+            <dl className="rounded-2xl border border-border/65 px-4">
+              <DataRow
+                label={t("settings.billing.creditsIncluded", lang)}
+                value={credits
+                  ? credits.unlimited
+                    ? t("settings.billing.creditsUnlimited", lang)
+                    : `${credits.included} / ${credits.monthly_allowance}`
+                  : "—"}
               />
-              {!credits.unlimited && (
-                <>
-                  <DataRow
-                    label={t("settings.billing.creditsIncluded", lang)}
-                    value={`${credits.included} / ${credits.monthly_allowance}`}
-                  />
-                  <DataRow
-                    label={t("settings.billing.creditsPurchased", lang)}
-                    value={String(credits.purchased)}
-                  />
-                </>
-              )}
+              <DataRow
+                label={t("settings.billing.creditsPurchased", lang)}
+                value={credits
+                  ? credits.unlimited
+                    ? "—"
+                    : String(credits.purchased)
+                  : "—"}
+              />
             </dl>
-          </CardContent>
-        </Card>
-      )}
+          </div>
+          <div className="rounded-2xl border border-border/65 p-4">
+            <p className="mb-3 text-[12px] font-semibold">
+              {t("settings.billing.creditCosts", lang)}
+            </p>
+            <div className="grid gap-2 sm:grid-cols-2">
+              <div className="flex items-center justify-between rounded-xl bg-muted/35 px-3 py-2.5 text-[12px]">
+                <span className="text-muted-foreground">{t("settings.billing.creditMapping", lang)}</span>
+                <span className="font-semibold">
+                  {creditCosts.mapping ?? "—"} {creditCosts.mapping != null ? t("settings.billing.creditUnit", lang) : ""}
+                </span>
+              </div>
+              <div className="flex items-center justify-between rounded-xl bg-muted/35 px-3 py-2.5 text-[12px]">
+                <span className="text-muted-foreground">{t("settings.billing.creditSplatTraining", lang)}</span>
+                <span className="font-semibold">
+                  {creditCosts.splat_training ?? "—"} {creditCosts.splat_training != null ? t("settings.billing.creditUnit", lang) : ""}
+                </span>
+              </div>
+            </div>
+          </div>
+        </CardContent>
+      </Card>
 
       {/* Billing Address */}
       <Card>
@@ -2235,33 +2539,33 @@ function BillingTab({ user, onSaved, lang }: { user: UserProfile; onSaved: () =>
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div className="space-y-1.5">
                   <Label>{t("settings.billing.name", lang)}</Label>
-                  <Input value={billingName} onChange={(e) => setBillingName(e.target.value)} />
+                  <Input value={billingName} onChange={(e) => { setBillingName(e.target.value); setBillingDirty(true); }} />
                 </div>
                 <div className="space-y-1.5">
                   <Label>{t("settings.billing.email", lang)}</Label>
-                  <Input value={billingEmail} onChange={(e) => setBillingEmail(e.target.value)} type="email" />
+                  <Input value={billingEmail} onChange={(e) => { setBillingEmail(e.target.value); setBillingDirty(true); }} type="email" />
                 </div>
               </div>
               <div className="space-y-1.5">
                 <Label>{t("settings.billing.address", lang)}</Label>
-                <Input value={billingAddress} onChange={(e) => setBillingAddress(e.target.value)} />
+                <Input value={billingAddress} onChange={(e) => { setBillingAddress(e.target.value); setBillingDirty(true); }} />
               </div>
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
                 <div className="space-y-1.5">
                   <Label>{t("settings.billing.city", lang)}</Label>
-                  <Input value={billingCity} onChange={(e) => setBillingCity(e.target.value)} />
+                  <Input value={billingCity} onChange={(e) => { setBillingCity(e.target.value); setBillingDirty(true); }} />
                 </div>
                 <div className="space-y-1.5">
                   <Label>{t("settings.billing.postalCode", lang)}</Label>
-                  <Input value={billingPostal} onChange={(e) => setBillingPostal(e.target.value)} />
+                  <Input value={billingPostal} onChange={(e) => { setBillingPostal(e.target.value); setBillingDirty(true); }} />
                 </div>
                 <div className="space-y-1.5">
                   <Label>{t("settings.billing.country", lang)}</Label>
-                  <Input value={billingCountry} onChange={(e) => setBillingCountry(e.target.value)} maxLength={2} placeholder="SK" />
+                  <Input value={billingCountry} onChange={(e) => { setBillingCountry(e.target.value); setBillingDirty(true); }} maxLength={2} placeholder="SK" />
                 </div>
                 <div className="space-y-1.5">
                   <Label>{t("settings.billing.vat", lang)}</Label>
-                  <Input value={vat} onChange={(e) => setVat(e.target.value)} />
+                  <Input value={vat} onChange={(e) => { setVat(e.target.value); setBillingDirty(true); }} />
                 </div>
               </div>
               {error && <p className="text-[12px] text-destructive">{error}</p>}
