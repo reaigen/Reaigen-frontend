@@ -29,7 +29,7 @@ import { getReaiImprovementConsent } from "../lib/api/client";
 import { getApiErrorJson, getSafeApiErrorMessage } from "../lib/api/error-message";
 import { t } from "../lib/i18n";
 import type { LocaleKey } from "../lib/locales";
-import { formatPhoneDisplay } from "../lib/phone";
+import { formatPhoneDisplay, isValidInternationalPhone } from "../lib/phone";
 import { cn } from "../lib/utils";
 import {
   computeAccountSetupStatus,
@@ -42,6 +42,7 @@ import { AgentIcon, CheckIcon, DeviceMobileIcon, EditIcon, PriceIcon } from "./i
 import { PageHeader } from "./page-header";
 import { StatusPill } from "./status-pill";
 import { useAccountSetup } from "./hooks/use-account-setup";
+import { InternationalPhoneInput } from "./international-phone-input";
 
 /**
  * Guided account setup — the four things a new creator still owes after the
@@ -264,6 +265,7 @@ function SellerStep({ user, lang, onSaved, onAdvance, onBack }: StepProps) {
   // taken number must not sink the whole step: the other fields still save,
   // the phone field carries the explanation, and the user can change it.
   const [phoneError, setPhoneError] = React.useState<string | null>(null);
+  const [phoneTouched, setPhoneTouched] = React.useState(false);
 
   // Phone verification. The OTP is sent to the number on the saved profile,
   // so a freshly typed number is saved first and verified second.
@@ -275,7 +277,9 @@ function SellerStep({ user, lang, onSaved, onAdvance, onBack }: StepProps) {
   const [otpBusy, setOtpBusy] = React.useState(false);
   const phoneDisplay = formatPhoneDisplay(savedPhone);
 
-  const canSubmit = phone.trim().length > 0 && bio.trim().length > 0 && city.trim().length > 0 && country.trim().length > 0;
+  const phoneValid = isValidInternationalPhone(phone);
+  const phoneInvalid = phone.trim().length > 0 && !phoneValid;
+  const canSubmit = phoneValid && bio.trim().length > 0 && city.trim().length > 0 && country.trim().length > 0;
 
   const PHONE_TAKEN = Symbol("phone-taken");
 
@@ -331,6 +335,8 @@ function SellerStep({ user, lang, onSaved, onAdvance, onBack }: StepProps) {
   }
 
   async function handleRequestOtp() {
+    setPhoneTouched(true);
+    if (!phoneValid) return;
     setError(null);
     setOtpBusy(true);
     try {
@@ -365,29 +371,31 @@ function SellerStep({ user, lang, onSaved, onAdvance, onBack }: StepProps) {
       <div className="space-y-1.5">
         <Label htmlFor="setup-phone">{t("settings.seller.phone", lang)}</Label>
         <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
-          <Input
+          <InternationalPhoneInput
             id="setup-phone"
             value={phone}
-            onChange={(e) => { setPhone(e.target.value); if (phoneError) setPhoneError(null); }}
-            placeholder="+421 900 123 456"
-            inputMode="tel"
-            autoComplete="tel"
-            aria-invalid={phoneError ? true : undefined}
-            aria-describedby={phoneError ? "setup-phone-error" : undefined}
-            className={cn("sm:max-w-[18rem]", phoneError && "border-destructive/60 focus-visible:border-destructive focus-visible:ring-destructive/20")}
+            onChange={(nextPhone) => { setPhone(nextPhone); if (phoneError) setPhoneError(null); }}
+            onBlur={() => setPhoneTouched(true)}
+            lang={lang}
+            preferredCountry={country || p?.country}
+            error={Boolean(phoneError) || (phoneTouched && phoneInvalid)}
+            aria-describedby={(phoneError || (phoneTouched && phoneInvalid)) ? "setup-phone-error" : "setup-phone-hint"}
+            className="sm:max-w-[22rem]"
           />
           {phoneVerified && phoneMatchesSaved ? (
             <StatusPill tone="success" dot className="self-start sm:self-auto">{t("setup.seller.phoneVerified", lang)}</StatusPill>
           ) : phone.trim().length > 0 && !otpSent ? (
-            <Button type="button" variant="outline" className="shrink-0" loading={otpBusy} onClick={handleRequestOtp} data-testid="setup-verify-phone">
+            <Button type="button" variant="outline" className="shrink-0" loading={otpBusy} disabled={!phoneValid} onClick={handleRequestOtp} data-testid="setup-verify-phone">
               {t("setup.seller.verifyPhone", lang)}
             </Button>
           ) : null}
         </div>
         {phoneError ? (
           <p id="setup-phone-error" role="alert" className="text-[12px] leading-relaxed text-destructive" data-testid="setup-phone-error">{phoneError}</p>
+        ) : phoneTouched && phoneInvalid ? (
+          <p id="setup-phone-error" role="alert" className="text-[12px] leading-relaxed text-destructive">{t("phone.invalid", lang)}</p>
         ) : (
-          <p className="text-[12px] text-muted-foreground">{t("setup.seller.phoneHint", lang)}</p>
+          <p id="setup-phone-hint" className="text-[12px] text-muted-foreground">{t("setup.seller.phoneHint", lang)}</p>
         )}
         {otpSent ? (
           <div className="space-y-2 rounded-2xl border border-border/65 bg-muted/20 p-4">

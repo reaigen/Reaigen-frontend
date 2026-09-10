@@ -17,7 +17,7 @@
     "validate-currency-display": "node --experimental-strip-types --test scripts/validate-currency-display.test.mjs",
     "validate-collection-search": "node --experimental-strip-types --test app/lib/collection-search.test.mjs",
     "validate-proxy-path": "node --experimental-strip-types --test scripts/validate-proxy-path.test.mjs",
-    "check": "npm run lint && npm run typecheck && npm run validate-training-quality && npm run validate-proxy-path && npm run validate-auth-paths && npm run validate-api-retry-policy && npm run validate-camera-bounds && npm run validate-live-scan-device && npm run validate-live-scan-ui && npm run validate-splat-render-profile && npm run validate-floorplan && npm run validate-floorplan-integration && npm run validate-floorplan-collision && npm run validate-currency-display && npm run validate-collection-search && npm run validate-google-maps && npm run validate-panel-geometry && npm run validate-account-setup && npm run validate-account-entitlements && npm run validate-web-authoring-access && npm run build",
+    "check": "npm run lint && npm run typecheck && npm run validate-training-quality && npm run validate-proxy-path && npm run validate-auth-paths && npm run validate-api-retry-policy && npm run validate-camera-bounds && npm run validate-live-scan-device && npm run validate-live-scan-ui && npm run validate-splat-render-profile && npm run validate-floorplan && npm run validate-floorplan-integration && npm run validate-floorplan-collision && npm run validate-currency-display && npm run validate-collection-search && npm run validate-google-maps && npm run validate-panel-geometry && npm run validate-account-setup && npm run validate-account-entitlements && npm run validate-web-authoring-access && npm run validate-phone-input && npm run build",
     "validate-training-quality": "node --experimental-strip-types --test app/lib/training-quality.test.mjs",
     "validate-floorplan-rendering": "node --experimental-strip-types --test scripts/validate-floorplan-rendering.test.mjs",
     "validate-floorplan-presentation": "node --experimental-strip-types --test scripts/validate-floorplan-presentation.test.mjs",
@@ -33,7 +33,8 @@
     "smoke-ui": "node scripts/smoke-ui.mjs",
     "validate-account-setup": "node --experimental-strip-types --test scripts/validate-account-setup.test.mjs",
     "validate-web-authoring-access": "node --test scripts/validate-web-authoring-access.test.mjs",
-    "validate-account-entitlements": "node --experimental-strip-types --test app/lib/account-usage.test.mjs scripts/validate-account-entitlements.test.mjs"
+    "validate-account-entitlements": "node --experimental-strip-types --test app/lib/account-usage.test.mjs scripts/validate-account-entitlements.test.mjs",
+    "validate-phone-input": "node --experimental-strip-types --test app/lib/phone.test.mjs scripts/validate-phone-input-ui.test.mjs"
   },
   "dependencies": {
     "@babylonjs/core": "^9.10.1",
@@ -55,6 +56,7 @@
     "clsx": "^2.1.1",
     "fflate": "^0.8.3",
     "framer-motion": "^12.35.0",
+    "libphonenumber-js": "1.13.13",
     "next": "16.2.12",
     "react": "^19.2.4",
     "react-dom": "^19.2.4",
