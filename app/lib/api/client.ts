@@ -1,6 +1,7 @@
 import type { DraftDataEntry } from "../tour-types";
 import { randomUUID } from "../uuid";
 import { isSessionEndReason, rememberSessionEndReason, SESSION_END_REASON_HEADER } from "../session-end";
+import { isRetryableGetHttpStatus } from "./retry-policy";
 
 export class ApiError extends Error {
   status: number;
@@ -109,8 +110,10 @@ const PROFILE_REQUEST_TIMEOUT_MS = 8_000;
 const GET_RETRY_DELAYS_MS = [350, 900] as const;
 
 function isTransientGetError(error: unknown): boolean {
-  // 52x are Cloudflare edge failures — as transient as a 502/504.
-  if (error instanceof ApiError) return [408, 425, 429, 502, 503, 504, 520, 521, 522, 523, 524].includes(error.status);
+  // 52x are Cloudflare edge failures — as transient as a 502/504. A 429 is
+  // intentionally terminal: immediately retrying an explicit rate limit can
+  // extend the user's throttle window and turn one rejection into a loop.
+  if (error instanceof ApiError) return isRetryableGetHttpStatus(error.status);
   return error instanceof TypeError;
 }
 

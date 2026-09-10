@@ -23,6 +23,7 @@ import {
   disableWebPushForUser,
   restoreWebPushForUser,
 } from "../../lib/web-push";
+import { isRetryableGetHttpStatus } from "../../lib/api/retry-policy";
 
 const SILENT_REFRESH_INTERVAL_MS = 45 * 60 * 1000;
 
@@ -193,7 +194,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           broadcastAuthBoundary("login");
           return;
         }
-      } catch (e) { lastErr = e; }
+      } catch (e) {
+        lastErr = e;
+        // A rate limit, auth rejection, or validation response is terminal.
+        // Repeating it here would bypass the API client's bounded retry policy
+        // and could turn one 429 into an account-specific lockout loop.
+        if (e instanceof ApiError && !isRetryableGetHttpStatus(e.status)) break;
+      }
     }
     const detail = lastErr instanceof ApiError
       ? `status=${lastErr.status} body=${lastErr.body?.slice(0, 120)}`
