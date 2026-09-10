@@ -12,6 +12,7 @@ import type { DraftDetailItem } from "../lib/tour-types";
 import { cn } from "../lib/utils";
 import { t, getUserLanguage } from "../lib/i18n";
 import { AppContentMessages } from "./content-documents";
+import { useWebAuthoringAccess } from "./hooks/use-web-authoring-access";
 import { REAI_COMPOSE_EVENT } from "../lib/reai-compose";
 import { ReaigenWordmark } from "./reaigen-wordmark";
 import { SearchField } from "./search-field";
@@ -325,6 +326,10 @@ function AppShellFrame({
   const [reaiOpen, setReaiOpen] = React.useState(false);
   const [reaiCardMounted, setReaiCardMounted] = React.useState(false);
   const [createOpen, setCreateOpen] = React.useState(false);
+  // The server owns this decision. Start closed and render no authoring entry
+  // until the permission endpoint explicitly approves this account, so a free
+  // or otherwise unapproved user never sees a control that will answer 403.
+  const { allowed: webAuthoringAllowed } = useWebAuthoringAccess(true);
   const [mobileAccountOpen, setMobileAccountOpen] = React.useState(false);
   const [reaiViewport, setReaiViewport] = React.useState<{ height: number | null; offsetTop: number }>({ height: null, offsetTop: 0 });
   const [compactAgentViewport, setCompactAgentViewport] = React.useState(false);
@@ -540,6 +545,12 @@ function AppShellFrame({
   }, [pathname]);
 
   React.useEffect(() => {
+    // Also remove an already-open panel if an entitlement is revoked while the
+    // persistent shell is mounted.
+    if (!webAuthoringAllowed) setCreateOpen(false);
+  }, [webAuthoringAllowed]);
+
+  React.useEffect(() => {
     if (!createOpen) return;
     const closeOnEscape = (event: KeyboardEvent) => {
       if (event.key === "Escape") setCreateOpen(false);
@@ -675,33 +686,36 @@ function AppShellFrame({
                 const active = pathname === item.href || pathname.startsWith(item.href + "/") || (item.href === "/dashboard" && pathname.startsWith("/draft/"));
                 return <NavRailItem key={item.href} href={item.href} label={item.label} icon={item.icon} active={active} />;
               })}
-              <button
-                type="button"
-                aria-expanded={createOpen}
-                aria-controls="app-create-panel"
-                onClick={(event) => {
-                  setCreateOpen((open) => !open);
-                  setReaiOpen(false);
-                  event.currentTarget.blur();
-                }}
-                className={cn(
-                  "group/nav relative flex min-h-14 w-full items-center justify-center rounded-full p-1 text-[12px] font-medium leading-none",
-                  "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2",
-                  createOpen ? "font-semibold text-foreground" : "text-foreground/58 hover:text-foreground",
-                )}
-              >
-                <span className={cn(
-                  "app-sidebar-nav-icon flex h-12 w-12 shrink-0 items-center justify-center rounded-full border transition-colors duration-150",
-                  createOpen
-                    ? "border-foreground bg-foreground text-background"
-                    : "border-transparent text-foreground/52 group-hover/nav:bg-surface-subtle/70 group-hover/nav:text-foreground",
-                )}>
-                  <PlusIcon size={26} />
-                </span>
-                <span className="app-sidebar-label pointer-events-none absolute left-[calc(100%+0.55rem)] top-1/2 z-[75] -translate-y-1/2 whitespace-nowrap rounded-full border border-border/60 bg-card px-3 py-2 text-[12px] font-semibold text-foreground opacity-0 shadow-control transition-opacity duration-100 group-hover/nav:opacity-100 group-focus-visible/nav:opacity-100">
-                  {t("webCreate.menuTitle", lang)}
-                </span>
-              </button>
+              {webAuthoringAllowed ? (
+                <button
+                  type="button"
+                  data-testid="web-create-menu-trigger"
+                  aria-expanded={createOpen}
+                  aria-controls="app-create-panel"
+                  onClick={(event) => {
+                    setCreateOpen((open) => !open);
+                    setReaiOpen(false);
+                    event.currentTarget.blur();
+                  }}
+                  className={cn(
+                    "group/nav relative flex min-h-14 w-full items-center justify-center rounded-full p-1 text-[12px] font-medium leading-none",
+                    "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2",
+                    createOpen ? "font-semibold text-foreground" : "text-foreground/58 hover:text-foreground",
+                  )}
+                >
+                  <span className={cn(
+                    "app-sidebar-nav-icon flex h-12 w-12 shrink-0 items-center justify-center rounded-full border transition-colors duration-150",
+                    createOpen
+                      ? "border-foreground bg-foreground text-background"
+                      : "border-transparent text-foreground/52 group-hover/nav:bg-surface-subtle/70 group-hover/nav:text-foreground",
+                  )}>
+                    <PlusIcon size={26} />
+                  </span>
+                  <span className="app-sidebar-label pointer-events-none absolute left-[calc(100%+0.55rem)] top-1/2 z-[75] -translate-y-1/2 whitespace-nowrap rounded-full border border-border/60 bg-card px-3 py-2 text-[12px] font-semibold text-foreground opacity-0 shadow-control transition-opacity duration-100 group-hover/nav:opacity-100 group-focus-visible/nav:opacity-100">
+                    {t("webCreate.menuTitle", lang)}
+                  </span>
+                </button>
+              ) : null}
             </nav>
             <div className="mt-3 shrink-0 pt-3">
               <NavRailItem href="/settings" label={t("nav.settings", lang)} icon={MainSettingsIcon} active={settingsActive} />
@@ -710,7 +724,7 @@ function AppShellFrame({
         </aside>
       ) : null}
 
-      {!immersive && createOpen ? (
+      {!immersive && webAuthoringAllowed && createOpen ? (
         <section
           id="app-create-panel"
           role="dialog"

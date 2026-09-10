@@ -23,12 +23,19 @@ const check = (name, ok, detail = "") => {
   else fail++;
 };
 
-async function openPage(path, { consent = false } = {}) {
+async function openPage(path, { consent = false, webCreationAllowed = false } = {}) {
   const page = await browser.newPage({ viewport: { width: 1720, height: 1000 } });
   const pageErrors = [];
   page.on("pageerror", (error) => pageErrors.push(String(error.message).slice(0, 160)));
   await page.route("**/api/reaigen/**", (route) =>
     route.fulfill({ status: 200, contentType: "application/json", body: "[]" }),
+  );
+  await page.route("**/api/reaigen/web-creation/access/", (route) =>
+    route.fulfill({
+      status: webCreationAllowed ? 200 : 403,
+      contentType: "application/json",
+      body: JSON.stringify(webCreationAllowed ? { allowed: true } : { detail: "Not enabled." }),
+    }),
   );
   if (consent) {
     await page.route("**/reai-agent/consent/**", (route) =>
@@ -102,7 +109,22 @@ async function openPage(path, { consent = false } = {}) {
   });
   check("shell: panel at the right edge over the agent", geo.rightGap < 20 && geo.overlapsAgent, JSON.stringify(geo));
   check("shell: scrim covers the agent", geo.agentUnderOverlay);
+  check(
+    "shell: unapproved users have no web-create control",
+    await page.locator('[data-testid="web-create-menu-trigger"]').count() === 0,
+  );
   check("shell: no page errors", pageErrors.length === 0, pageErrors[0] ?? "");
+  await page.close();
+}
+
+// ── 2b. shell authoring entry follows the backend entitlement ──────────────
+{
+  const { page, pageErrors } = await openPage("/dev-fixtures/shell", { webCreationAllowed: true });
+  await page.waitForSelector('[data-testid="web-create-menu-trigger"]', { timeout: 60000 });
+  await page.click('[data-testid="web-create-menu-trigger"]');
+  const panelVisible = await page.locator("#app-create-panel").isVisible();
+  check("shell: approved users can open the web-create panel", panelVisible);
+  check("shell authoring: no page errors", pageErrors.length === 0, pageErrors[0] ?? "");
   await page.close();
 }
 

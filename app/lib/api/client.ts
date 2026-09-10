@@ -1258,7 +1258,10 @@ export async function listDrafts(
   signal?: AbortSignal,
 ): Promise<{ results: DraftListingItem[]; count: number; next: string | null }> {
   const q = search ? `&search=${encodeURIComponent(search)}` : "";
-  const path = `/api/reaigen/drafts/?page=${page}&page_size=${pageSize}${q}`;
+  // A published/transferred draft is still part of the owner's workspace.
+  // Request the complete history explicitly so web and iOS cannot drift if a
+  // backend default changes during a rolling deployment.
+  const path = `/api/reaigen/drafts/?page=${page}&page_size=${pageSize}&include_transferred=true${q}`;
   return signal
     ? abortableRequest<{ results: DraftListingItem[]; count: number; next: string | null }>(path, signal)
     : request(path);
