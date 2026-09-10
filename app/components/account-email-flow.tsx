@@ -29,7 +29,7 @@ const COPY = {
     verifiedBody: "Your Reaigen account is active and ready to use.",
     verifyFailed: "This verification link is invalid or has expired.",
     verifyMissing: "The verification link is incomplete.",
-    openWorkspace: "Open workspace",
+    openWorkspace: "Sign in to continue",
     signIn: "Back to sign in",
     forgotTitle: "Reset your password",
     forgotBody: "Choose how you want to reset your password.",
@@ -74,7 +74,7 @@ const COPY = {
     verifiedBody: "Váš účet Reaigen je aktívny a pripravený na používanie.",
     verifyFailed: "Tento overovací odkaz je neplatný alebo vypršal.",
     verifyMissing: "Overovací odkaz nie je úplný.",
-    openWorkspace: "Otvoriť pracovný priestor",
+    openWorkspace: "Prihlásiť sa a pokračovať",
     signIn: "Späť na prihlásenie",
     forgotTitle: "Obnovte svoje heslo",
     forgotBody: "Vyberte si spôsob obnovenia hesla.",
@@ -119,7 +119,7 @@ const COPY = {
     verifiedBody: "Váš účet Reaigen je aktivní a připravený k použití.",
     verifyFailed: "Tento ověřovací odkaz je neplatný nebo vypršel.",
     verifyMissing: "Ověřovací odkaz není úplný.",
-    openWorkspace: "Otevřít pracovní prostor",
+    openWorkspace: "Přihlásit se a pokračovat",
     signIn: "Zpět na přihlášení",
     forgotTitle: "Obnovte své heslo",
     forgotBody: "Vyberte způsob obnovení hesla.",
@@ -164,7 +164,7 @@ const COPY = {
     verifiedBody: "Ihr Reaigen-Konto ist aktiv und einsatzbereit.",
     verifyFailed: "Dieser Bestätigungslink ist ungültig oder abgelaufen.",
     verifyMissing: "Der Bestätigungslink ist unvollständig.",
-    openWorkspace: "Arbeitsbereich öffnen",
+    openWorkspace: "Anmelden und fortfahren",
     signIn: "Zurück zur Anmeldung",
     forgotTitle: "Passwort zurücksetzen",
     forgotBody: "Wählen Sie, wie Sie Ihr Passwort zurücksetzen möchten.",
@@ -250,8 +250,8 @@ function FlowShell({
           <h1 className="text-[clamp(2.35rem,6vw,3.55rem)] font-semibold leading-[0.98] tracking-[-0.055em] text-foreground">{title}</h1>
           <p className="mt-3 text-[15px] leading-relaxed text-muted-foreground">{subtitle}</p>
           <div className="mt-8">{children}</div>
-          <a href="mailto:support@reaigen.com" className="mt-9 inline-block text-[12px] font-medium text-muted-foreground underline underline-offset-4">
-            support@reaigen.com
+          <a href="mailto:support@reaigen.io" className="mt-9 inline-block text-[12px] font-medium text-muted-foreground underline underline-offset-4">
+            support@reaigen.io
           </a>
         </div>
       </section>
@@ -312,7 +312,9 @@ export function VerifyEmailFlow({ token, language }: { token: string; language?:
         </div>
       )}
       {state === "success" && (
-        <Button className="h-[3.25rem] w-full rounded-full text-[14px] font-semibold shadow-none" onClick={() => router.replace("/dashboard")}>
+        // Verification creates no session: the way forward is the sign-in
+        // form, which announces the verified address.
+        <Button className="h-[3.25rem] w-full rounded-full text-[14px] font-semibold shadow-none" onClick={() => router.replace("/?verified=1")}>
           {copy.openWorkspace}
         </Button>
       )}

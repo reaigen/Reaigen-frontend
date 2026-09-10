@@ -3,7 +3,7 @@ import { DM_Serif_Display } from "next/font/google";
 import "./globals.css";
 
 /**
- * The brand serif, matched to the marketing site (reaigen.com), which sets the
+ * The brand serif, matched to the marketing site (reaigen.io), which sets the
  * wordmark in DM Serif Display 400. The app previously fell back to
  * `ui-serif, Georgia`, so the mark rendered as New York on Apple platforms and
  * as Georgia everywhere else — two different logos depending on the device.

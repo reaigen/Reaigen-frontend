@@ -134,6 +134,7 @@ npm run dev
 | `/tour/[id]` | Yes | Full tour viewer + camera editor |
 | `/shares` | Yes | Global controlled-link inventory, analytics, and creation picker |
 | `/settings` | Yes | Profile, localization, security |
+| `/setup` | Yes | Guided account setup (profile → seller → billing → Agent permissions); opened once after sign-in while the account has gaps, then reachable from the dashboard reminder |
 | `/shared/[token]` | No | Public shared tour viewer (PIN-gated) |
 
 ---

@@ -5,9 +5,11 @@ import { Button } from "../lib/ui/button";
 import { Checkbox } from "../lib/ui/checkbox";
 import { Input } from "../lib/ui/input";
 import { Label } from "../lib/ui/label";
-import { requestPasswordReset, type StepUpChallenge } from "../lib/api/client";
+import { requestPasswordReset, resendVerification, type StepUpChallenge } from "../lib/api/client";
+import type { SessionEndReason } from "../lib/session-end";
 import { getSafeApiErrorMessage } from "../lib/api/error-message";
 import { getBrowserLanguage, t } from "../lib/i18n";
+import type { LocaleKey } from "../lib/locales";
 import { RegistrationLegalText } from "./content-documents";
 import { useAuth } from "./hooks/use-auth";
 
@@ -29,6 +31,22 @@ type AuthGateProps = {
   onClose: () => void;
   onLogin: (email: string, password: string) => Promise<void | StepUpChallenge>;
   onRegister: (data: RegisterData) => Promise<void>;
+  /** Why the previous session ended, when the proxy could say. */
+  sessionEnd?: SessionEndReason | null;
+  /** The profile load failed without a sign-out verdict; offer a retry. */
+  serviceUnavailable?: boolean;
+  onRetry?: () => void;
+  /** Sign-up succeeded and the account waits for its email link. */
+  pendingVerificationEmail?: string | null;
+  onPendingVerificationDismiss?: () => void;
+  /** The email link was just opened; the account can sign in now. */
+  verifiedNotice?: boolean;
+};
+
+const SESSION_END_COPY: Record<SessionEndReason, LocaleKey> = {
+  email_verification: "auth.session.emailVerification",
+  account_disabled: "auth.session.accountDisabled",
+  expired: "auth.session.expired",
 };
 
 /* ── Shared input style ───────────────────────────────────────────────── */
@@ -96,17 +114,124 @@ function BrandPanel({ lang }: { lang: string }) {
 
 /* ── Login Form ───────────────────────────────────────────────────────── */
 
+function SessionEndNotice({ lang, reason, email }: { lang: string; reason: SessionEndReason; email: string }) {
+  const [resent, setResent] = React.useState(false);
+  const [busy, setBusy] = React.useState(false);
+  const [error, setError] = React.useState<string | null>(null);
+  const emailIsValid = /\S+@\S+\.\S+/.test(email.trim());
+
+  async function resend() {
+    if (!emailIsValid || busy) return;
+    setBusy(true);
+    setError(null);
+    try {
+      await resendVerification(email.trim());
+      setResent(true);
+    } catch (err) {
+      setError(getSafeApiErrorMessage(err, lang));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <div role="status" className="rounded-2xl border border-border bg-surface-subtle px-4 py-3.5" data-testid="session-end-notice" data-reason={reason}>
+      <p className="text-[13px] font-semibold text-foreground">{t("auth.session.endedTitle", lang)}</p>
+      <p className="mt-1 text-[12px] leading-relaxed text-foreground/65">{t(SESSION_END_COPY[reason], lang)}</p>
+      {reason === "email_verification" ? (
+        <button
+          type="button"
+          onClick={resend}
+          disabled={!emailIsValid || busy || resent}
+          className="mt-2 text-[12px] font-semibold text-foreground underline underline-offset-4 disabled:opacity-50"
+        >
+          {resent ? t("auth.session.resent", lang) : t("auth.session.resend", lang)}
+        </button>
+      ) : null}
+      {error ? <p className="mt-1 text-[12px] text-destructive">{error}</p> : null}
+    </div>
+  );
+}
+
+function VerificationPendingCard({ lang, email, onBack }: { lang: string; email: string; onBack: () => void }) {
+  const [resent, setResent] = React.useState(false);
+  const [busy, setBusy] = React.useState(false);
+  const [error, setError] = React.useState<string | null>(null);
+
+  async function resend() {
+    if (busy || resent) return;
+    setBusy(true);
+    setError(null);
+    try {
+      await resendVerification(email);
+      setResent(true);
+    } catch (err) {
+      setError(getSafeApiErrorMessage(err, lang));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <div className="space-y-5" data-testid="verification-pending">
+      <div className="rounded-2xl border border-border bg-surface-subtle px-5 py-4">
+        <p className="break-all text-[15px] font-semibold text-foreground" data-testid="verification-pending-email">{email}</p>
+        <p className="mt-2 text-[13px] leading-relaxed text-foreground/65">{t("auth.register.pendingHint", lang)}</p>
+      </div>
+      {error ? (
+        <p role="alert" className="rounded-2xl border border-destructive/20 bg-destructive/[0.045] px-4 py-3 text-[12px] font-medium leading-relaxed text-destructive">{error}</p>
+      ) : null}
+      <Button
+        type="button"
+        variant="outline"
+        className="h-[3.25rem] w-full rounded-full text-[14px] font-semibold shadow-none"
+        loading={busy}
+        disabled={resent}
+        onClick={resend}
+        data-testid="verification-pending-resend"
+      >
+        {resent ? t("auth.register.pendingResent", lang) : t("auth.register.pendingResend", lang)}
+      </Button>
+      <button
+        type="button"
+        onClick={onBack}
+        className="h-11 w-full rounded-full text-[13px] font-medium text-foreground/55 transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+      >
+        {t("auth.register.pendingBack", lang)}
+      </button>
+    </div>
+  );
+}
+
 function LoginCard({
   lang,
   onSubmit,
   onSwitchToRegister,
+  sessionEnd = null,
+  verifiedNotice = false,
 }: {
   lang: string;
   onSubmit: (email: string, password: string) => Promise<void | StepUpChallenge>;
   onSwitchToRegister: () => void;
+  sessionEnd?: SessionEndReason | null;
+  verifiedNotice?: boolean;
 }) {
   const { completeStepUp } = useAuth();
   const [email, setEmail] = React.useState("");
+  // The backend refuses sign-in for an unverified address with a message
+  // that names verification; a resend action belongs right under it.
+  const [resendState, setResendState] = React.useState<"idle" | "busy" | "sent">("idle");
+  async function resendFromError() {
+    if (resendState !== "idle") return;
+    setResendState("busy");
+    try {
+      await resendVerification(email.trim());
+      setResendState("sent");
+    } catch (err) {
+      setError(getSafeApiErrorMessage(err, lang));
+      setResendState("idle");
+    }
+  }
   const [password, setPassword] = React.useState("");
   const [showPassword, setShowPassword] = React.useState(false);
   const [loading, setLoading] = React.useState(false);
@@ -210,6 +335,13 @@ function LoginCard({
 
   return (
     <form className="space-y-5" onSubmit={handleSubmit} noValidate>
+      {sessionEnd ? <SessionEndNotice lang={lang} reason={sessionEnd} email={email} /> : null}
+      {verifiedNotice && !sessionEnd ? (
+        <div role="status" className="rounded-2xl border border-success/25 bg-success/[0.06] px-4 py-3.5" data-testid="verified-notice">
+          <p className="text-[13px] font-semibold text-success">{t("auth.verified.title", lang)}</p>
+          <p className="mt-1 text-[12px] leading-relaxed text-foreground/65">{t("auth.verified.body", lang)}</p>
+        </div>
+      ) : null}
       <div className="space-y-1.5">
         <Label htmlFor="login-email" className="text-[13px] font-medium text-foreground">
           {t("auth.login.emailLabel", lang)}
@@ -266,9 +398,20 @@ function LoginCard({
       </div>
 
       {error && (
-        <p role="alert" className="rounded-2xl border border-destructive/20 bg-destructive/[0.045] px-4 py-3 text-[12px] font-medium leading-relaxed text-destructive">
-          {error}
-        </p>
+        <div role="alert" className="rounded-2xl border border-destructive/20 bg-destructive/[0.045] px-4 py-3 text-[12px] font-medium leading-relaxed text-destructive">
+          <p>{error}</p>
+          {/verif/i.test(error) && emailIsValid ? (
+            <button
+              type="button"
+              onClick={resendFromError}
+              disabled={resendState !== "idle"}
+              className="mt-1.5 font-semibold text-foreground underline underline-offset-4 disabled:opacity-60"
+              data-testid="login-resend-verification"
+            >
+              {resendState === "sent" ? t("auth.session.resent", lang) : t("auth.login.resendVerification", lang)}
+            </button>
+          ) : null}
+        </div>
       )}
 
       <Button
@@ -434,11 +577,34 @@ function RegistrationCard({
 
 /* ── Auth Gate ─────────────────────────────────────────────────────────── */
 
-export function AuthGate({ open, onLogin, onRegister }: AuthGateProps) {
+export function AuthGate({
+  open,
+  onLogin,
+  onRegister,
+  sessionEnd = null,
+  serviceUnavailable = false,
+  onRetry,
+  pendingVerificationEmail = null,
+  onPendingVerificationDismiss,
+  verifiedNotice = false,
+}: AuthGateProps) {
   const [mode, setMode] = React.useState<"login" | "register">("login");
+  // The service panel is dismissable: the form underneath still works once
+  // the backend answers, and a stuck panel would be its own way of locking
+  // people out.
+  const [showForm, setShowForm] = React.useState(false);
   const lang = useBrowserLang();
 
   if (!open) return null;
+
+  const unavailable = serviceUnavailable && !showForm;
+  const pending = pendingVerificationEmail !== null;
+  const title = pending
+    ? t("auth.register.pendingTitle", lang)
+    : mode === "login" ? t("auth.login.title", lang) : t("auth.register.title", lang);
+  const subtitle = pending
+    ? `${t("auth.register.pendingBody", lang)} ${pendingVerificationEmail}`
+    : mode === "login" ? t("auth.login.subtitle", lang) : t("auth.register.subtitle", lang);
 
   return (
     <div className="grid min-h-[100dvh] w-full bg-card lg:grid-cols-[minmax(0,1.12fr)_minmax(28rem,0.88fr)]">
@@ -455,16 +621,43 @@ export function AuthGate({ open, onLogin, onRegister }: AuthGateProps) {
               {t("auth.brand.workspace", lang)}
             </p>
             <h1 className="text-[clamp(2.25rem,5vw,3.5rem)] font-semibold leading-[0.98] tracking-[-0.055em] text-foreground">
-              {mode === "login" ? t("auth.login.title", lang) : t("auth.register.title", lang)}
+              {title}
             </h1>
             <p className="mt-3 text-[15px] leading-relaxed text-muted-foreground">
-              {mode === "login" ? t("auth.login.subtitle", lang) : t("auth.register.subtitle", lang)}
+              {subtitle}
             </p>
           </div>
 
-          <div key={mode} className="animate-fade-in">
+          {unavailable ? (
+            <div className="space-y-4 rounded-2xl border border-border bg-surface-subtle px-5 py-5" role="alert" data-testid="service-unavailable">
+              <div>
+                <p className="text-[15px] font-semibold text-foreground">{t("auth.unavailable.title", lang)}</p>
+                <p className="mt-1.5 text-[13px] leading-relaxed text-foreground/65">{t("auth.unavailable.body", lang)}</p>
+              </div>
+              <div className="flex flex-col gap-2 sm:flex-row">
+                <Button type="button" className="h-12 rounded-full px-6 text-[14px] font-semibold shadow-none" onClick={onRetry}>
+                  {t("auth.unavailable.retry", lang)}
+                </Button>
+                <button type="button" onClick={() => setShowForm(true)} className="h-12 rounded-full px-5 text-[13px] font-medium text-foreground/55 transition-colors hover:text-foreground">
+                  {t("auth.login.submit", lang)}
+                </button>
+              </div>
+            </div>
+          ) : null}
+
+          {pending && !unavailable ? (
+            <div key="pending" className="animate-fade-in">
+              <VerificationPendingCard
+                lang={lang}
+                email={pendingVerificationEmail}
+                onBack={() => { onPendingVerificationDismiss?.(); setMode("login"); }}
+              />
+            </div>
+          ) : null}
+
+          <div key={mode} className={unavailable || pending ? "hidden" : "animate-fade-in"}>
             {mode === "login" ? (
-              <LoginCard lang={lang} onSubmit={onLogin} onSwitchToRegister={() => setMode("register")} />
+              <LoginCard lang={lang} onSubmit={onLogin} onSwitchToRegister={() => setMode("register")} sessionEnd={sessionEnd} verifiedNotice={verifiedNotice} />
             ) : (
               <RegistrationCard lang={lang} onSubmit={onRegister} onSwitchToLogin={() => setMode("login")} />
             )}

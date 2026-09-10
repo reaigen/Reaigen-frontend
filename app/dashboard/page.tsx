@@ -24,6 +24,9 @@ import { resolveUnit, type UnitLookup } from "../lib/unit-catalog";
 import { CollectionCardSkeleton, CollectionCardSkeletons } from "../components/collection-card-skeleton";
 import { mediaProxyUrl } from "../lib/image-preview";
 import { matchesCollectionQuery, normalizeCollectionQuery } from "../lib/collection-search";
+import { useAccountSetup } from "../components/hooks/use-account-setup";
+import { hasSynchronousSetupGaps, shouldPromptAccountSetup } from "../lib/account-setup";
+import { ACCOUNT_SETUP_PROMPTED_KEY, AccountSetupReminder } from "../components/account-setup-flow";
 
 const DASHBOARD_PAGE_SIZE = 12;
 
@@ -73,6 +76,33 @@ export default function DashboardPage() {
   const { isAuthenticated, isLoading, user, logout } = useAuth();
   const router = useRouter();
   const lang = getUserLanguage(user?.localization);
+
+  // Sign-in lands here. While the account still has setup gaps, the guided
+  // flow opens once per browser session; afterwards the reminder card in the
+  // list carries the leftovers, so nobody is bounced there twice.
+  const accountSetup = useAccountSetup(user);
+  const [setupPromptPending, setSetupPromptPending] = React.useState(true);
+  React.useEffect(() => {
+    if (!user) return;
+    let prompted = false;
+    try { prompted = window.sessionStorage.getItem(ACCOUNT_SETUP_PROMPTED_KEY) === "1"; } catch {}
+    const flags = user.personalized_data;
+    if (prompted || flags?.onboarding_completed || flags?.onboarding_skipped) {
+      setSetupPromptPending(false);
+      return;
+    }
+    if (accountSetup.loading || !accountSetup.status) return;
+    if (shouldPromptAccountSetup(accountSetup.status)) {
+      try { window.sessionStorage.setItem(ACCOUNT_SETUP_PROMPTED_KEY, "1"); } catch {}
+      router.replace("/setup");
+      return;
+    }
+    setSetupPromptPending(false);
+  }, [user, accountSetup.loading, accountSetup.status, router]);
+  // Shown on the first frame when the profile alone proves a gap; a gap only
+  // the Agent consent request can reveal waits for that answer instead of
+  // pushing the list down after the fact.
+  const reminderStatus = accountSetup.loading && user && !hasSynchronousSetupGaps(user) ? null : accountSetup.status;
 
   const [drafts, setDrafts] = React.useState<DraftListingItem[]>([]);
   const [draftsLoading, setDraftsLoading] = React.useState(true);
@@ -388,7 +418,7 @@ export default function DashboardPage() {
     return () => { clearInterval(id); document.removeEventListener("visibilitychange", onVisible); };
   }, [isAuthenticated, searchQuery, drafts]);
 
-  if (isLoading || !user) {
+  if (isLoading || !user || setupPromptPending) {
     return <PageLoading />;
   }
 
@@ -424,6 +454,8 @@ export default function DashboardPage() {
           />
           <GridLayoutToggle value={gridCols} onChange={handleGridCols} lang={lang} />
         </div>
+
+        <AccountSetupReminder user={user} lang={lang} status={reminderStatus} />
 
         {usingCachedDrafts && (
           /*

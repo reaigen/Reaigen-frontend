@@ -1,3 +1,4 @@
+import { SESSION_END_REASON_HEADER, type SessionEndReason } from "../session-end";
 import { NextResponse } from "next/server";
 
 export const ACCESS_COOKIE_NAME = "reaigen_access";
@@ -83,9 +84,14 @@ export function clearAuthCookies(response: NextResponse) {
 export const SESSION_STATUS_HEADER = "X-Reaigen-Session";
 export const SESSION_EXPIRED = "expired";
 
-/** Clear the session and mark the response as the reason it ended. */
-export function expireSession(response: NextResponse) {
+/**
+ * Clear the session and mark the response as the reason it ended. The
+ * optional reason is the backend's refusal, mapped for the sign-in screen:
+ * a bounce with no explanation reads as the app throwing people out.
+ */
+export function expireSession(response: NextResponse, reason?: SessionEndReason) {
   clearAuthCookies(response);
   response.headers.set(SESSION_STATUS_HEADER, SESSION_EXPIRED);
+  if (reason) response.headers.set(SESSION_END_REASON_HEADER, reason);
   return response;
 }

@@ -1,4 +1,5 @@
 import { fetchBackend } from "./backend-fetch";
+import { sessionEndReasonFromDetail, type SessionEndReason } from "../session-end";
 
 /**
  * Silent token refresh, shared by every proxy that carries the session.
@@ -27,12 +28,23 @@ export interface RefreshedTokens {
   refresh: string | null;
 }
 
-const inFlight = new Map<string, Promise<RefreshedTokens | null>>();
+/**
+ * Three outcomes, because two of them used to be one: a refusal (the token is
+ * revoked, or the account may no longer authenticate) is a verdict the client
+ * acts on by signing out; a transport failure (backend restarting, timeout)
+ * is not, and must not end a session that is perfectly valid.
+ */
+export type RefreshOutcome =
+  | { ok: true; tokens: RefreshedTokens }
+  | { ok: false; refused: true; reason: SessionEndReason }
+  | { ok: false; refused: false };
+
+const inFlight = new Map<string, Promise<RefreshOutcome>>();
 
 async function requestRefresh(
   refreshToken: string,
   backendCandidates: string[],
-): Promise<RefreshedTokens | null> {
+): Promise<RefreshOutcome> {
   for (const baseUrl of backendCandidates) {
     try {
       const res = await fetchBackend(`${baseUrl}/api/v1/core/auth/refresh/`, {
@@ -41,24 +53,34 @@ async function requestRefresh(
         body: JSON.stringify({ refresh: refreshToken }),
         cache: "no-store",
       }, 5_000);
-      // A 401 here is a verdict, not a transport problem: the token is revoked
-      // or expired, and asking a different candidate origin cannot change that.
-      if (res.status === 401 || res.status === 403) return null;
+      // A 401/403 here is a verdict, not a transport problem: the token is
+      // revoked or the account is refused, and asking a different candidate
+      // origin cannot change that. The detail says which, for the sign-in
+      // screen ("Email verification required…", "User account is disabled.").
+      if (res.status === 401 || res.status === 403) {
+        let detail: unknown;
+        try {
+          detail = ((await res.json()) as { detail?: unknown }).detail;
+        } catch {
+          detail = undefined;
+        }
+        return { ok: false, refused: true, reason: res.status === 403 ? sessionEndReasonFromDetail(detail) : "expired" };
+      }
       if (!res.ok) continue;
       const data = (await res.json()) as { access?: string; refresh?: string };
       if (!data.access) continue;
-      return { access: data.access, refresh: data.refresh ?? null };
+      return { ok: true, tokens: { access: data.access, refresh: data.refresh ?? null } };
     } catch {
       continue;
     }
   }
-  return null;
+  return { ok: false, refused: false };
 }
 
 export function refreshSession(
   refreshToken: string,
   backendCandidates: string[],
-): Promise<RefreshedTokens | null> {
+): Promise<RefreshOutcome> {
   const pending = inFlight.get(refreshToken);
   if (pending) return pending;
 

@@ -1,5 +1,6 @@
 import type { DraftDataEntry } from "../tour-types";
 import { randomUUID } from "../uuid";
+import { isSessionEndReason, rememberSessionEndReason, SESSION_END_REASON_HEADER } from "../session-end";
 
 export class ApiError extends Error {
   status: number;
@@ -36,7 +37,10 @@ export function resetPrivateApiState() {
  * re-authenticate. A single global event lets AuthProvider force a clean
  * logout + redirect to login, instead of leaving the user stranded on a
  * dead authenticated session (which is unsafe — stale data, failing actions). */
-function notifyUnauthorized() {
+function notifyUnauthorized(res?: Response) {
+  // The proxy says why renewal was refused; the sign-in screen repeats it.
+  const reason = res?.headers.get(SESSION_END_REASON_HEADER);
+  if (isSessionEndReason(reason)) rememberSessionEndReason(reason);
   resetPrivateApiState();
   if (typeof window !== "undefined") {
     window.dispatchEvent(new Event("reai:unauthorized"));
@@ -76,7 +80,7 @@ function confirmSessionEnded(): Promise<void> {
         headers: { "Content-Type": "application/json" },
         cache: "no-store",
       });
-      if (res.status === 401) notifyUnauthorized();
+      if (res.status === 401) notifyUnauthorized(res);
     } catch {
       // Offline or unreachable is not a verdict on the session.
     } finally {
@@ -92,7 +96,7 @@ function confirmSessionEnded(): Promise<void> {
  */
 function handleUnauthorized(res: Response) {
   if (res.headers.get(SESSION_STATUS_HEADER) === SESSION_EXPIRED) {
-    notifyUnauthorized();
+    notifyUnauthorized(res);
     return;
   }
   void confirmSessionEnded();
@@ -158,15 +162,25 @@ function invalidateCache(path: string) {
   for (const key of cache.keys()) {
     if (key.startsWith(prefix)) cache.delete(key);
   }
-  // The profile response embeds personalized_data. A preference PATCH must
-  // invalidate both views or a cross-platform setting can appear to revert
-  // for up to five minutes even though the backend saved it correctly.
-  if (path.startsWith("/api/reaigen/personalized-data/")) {
+  // The profile response embeds personalized_data, the seller profile, the
+  // billing account and the phone-verified flag. A write to any of those must
+  // invalidate the profile view too, or the account can appear to revert for
+  // up to five minutes even though the backend saved it correctly — the
+  // guided account setup reads its progress from exactly that view.
+  if (EMBEDDED_IN_PROFILE_PREFIXES.some((prefix) => path.startsWith(prefix))) {
     for (const key of cache.keys()) {
       if (key.startsWith("/api/reaigen/users/")) cache.delete(key);
     }
   }
 }
+
+const EMBEDDED_IN_PROFILE_PREFIXES = [
+  "/api/reaigen/personalized-data/",
+  "/api/reaigen/profiles/",
+  "/api/reaigen/billing/",
+  "/api/auth/link/phone/",
+  "/api/auth/verify-email",
+];
 
 async function request(path: string, options: RequestInit = {}) {
   const isGet = !options.method || options.method === "GET";
@@ -498,6 +512,7 @@ export interface PersonalizedData {
   preferences: Record<string, unknown>;
   onboarding_completed: boolean;
   onboarding_step: number;
+  onboarding_skipped: boolean;
 }
 
 export interface NotificationDevice {
@@ -667,6 +682,37 @@ export async function updateSellerProfile(data: Partial<{
   });
 }
 
+/**
+ * The backend's verdict on what this account may do. `creator_posting` is the
+ * readiness contract the guided account setup mirrors; `apps.reaigen` is the
+ * access every draft and Agent endpoint is gated on.
+ */
+export interface CreatorPostingState {
+  can_publish: boolean;
+  has_reaigen_access: boolean;
+  email_verified: boolean;
+  phone_present: boolean;
+  phone_verified: boolean;
+  seller_profile_complete: boolean;
+  seller_profile_missing_fields: string[];
+  missing_requirements: string[];
+}
+
+export interface UserCapabilities {
+  role: string;
+  is_developer: boolean;
+  tier: { code: string | null; name: string | null };
+  limits: Record<string, number | boolean>;
+  features: Record<string, boolean>;
+  apps: Record<string, boolean>;
+  creator_posting: CreatorPostingState;
+}
+
+export async function getUserCapabilities(): Promise<UserCapabilities> {
+  const payload = await request("/api/reaigen/users/permissions/") as { capabilities: UserCapabilities };
+  return payload.capabilities;
+}
+
 export async function getPersonalizedData(): Promise<PersonalizedData> {
   return request("/api/reaigen/personalized-data/me/");
 }
@@ -688,6 +734,9 @@ export async function updatePersonalizedData(data: Partial<{
   notification_quiet_hours_end: string | null;
   notification_timezone: string;
   preferences: Record<string, unknown>;
+  onboarding_completed: boolean;
+  onboarding_step: number;
+  onboarding_skipped: boolean;
 }>): Promise<PersonalizedData> {
   return request("/api/reaigen/personalized-data/me/", {
     method: "PATCH",

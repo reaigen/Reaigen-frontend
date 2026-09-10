@@ -272,8 +272,9 @@ async function proxy(
       let res = await fetchBackend(target, { ...init, cache: "no-store" }, timeoutMs);
 
       if (res.status === 401 && refreshToken) {
-        const refreshed = await refreshSession(refreshToken, backendCandidates());
-        if (refreshed) {
+        const outcome = await refreshSession(refreshToken, backendCandidates());
+        if (outcome.ok) {
+          const refreshed = outcome.tokens;
           accessToken = refreshed.access;
           headers["Authorization"] = `Bearer ${refreshed.access}`;
           res = await fetchBackend(target, { ...init, headers, cache: "no-store" }, timeoutMs);
@@ -297,13 +298,17 @@ async function proxy(
           // silent refresh fails and the session is dropped.
           setAuthCookies(response, refreshed, refreshToken);
           return response;
-        } else {
-          // Renewal was tried and refused: this is the verdict the client acts on.
+        } else if (outcome.refused) {
+          // Renewal was tried and refused: this is the verdict the client acts
+          // on, and the reason travels with it.
           return expireSession(NextResponse.json(
-            { error: "Session expired" },
+            { error: "Session expired", reason: outcome.reason },
             { status: 401, headers: noStoreHeaders("application/json") },
-          ));
+          ), outcome.reason);
         }
+        // Renewal could not be attempted (backend unreachable mid-request):
+        // pass the 401 through without a verdict. The client's identity probe
+        // retries the renewal once the backend answers again.
       }
 
       const rawData = await res.text();

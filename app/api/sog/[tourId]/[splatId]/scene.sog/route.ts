@@ -115,7 +115,8 @@ async function streamSog(
   let rotated: RefreshedTokens | null = null;
   let upstream = await requestBackend(accessToken);
   if ((!upstream || upstream.status === 401) && refreshToken) {
-    rotated = await refreshSession(refreshToken, backendCandidates());
+    const outcome = await refreshSession(refreshToken, backendCandidates());
+    rotated = outcome.ok ? outcome.tokens : null;
     if (rotated) {
       accessToken = rotated.access;
       upstream = await requestBackend(accessToken);

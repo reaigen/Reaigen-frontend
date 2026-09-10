@@ -158,7 +158,8 @@ export async function GET(req: NextRequest) {
 
   let metaResponse = await readMetadata();
   if ((!metaResponse || metaResponse.status === 401) && refreshToken) {
-    rotated = await refreshSession(refreshToken, backendCandidates());
+    const outcome = await refreshSession(refreshToken, backendCandidates());
+    rotated = outcome.ok ? outcome.tokens : null;
     if (rotated) {
       bearer = rotated.access;
       metaResponse = await readMetadata();

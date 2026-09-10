@@ -47,9 +47,16 @@ export type AuthState = {
     accept_terms: boolean;
     preferred_language: string;
     preferred_timezone: string;
-  }) => Promise<void>;
+  }) => Promise<{ verificationRequired: boolean }>;
   logout: () => Promise<void>;
   refreshProfile: () => Promise<UserProfile | null>;
+  /**
+   * The initial profile load failed for a reason that is not "signed out"
+   * (backend unreachable, gateway error, timeout). The session cookies are
+   * intact; the sign-in screen offers a retry instead of a password form.
+   */
+  serviceUnavailable: boolean;
+  retryBoot: () => Promise<void>;
 };
 
 const AuthContext = React.createContext<AuthState | null>(null);
@@ -58,6 +65,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const router = useRouter();
   const [user, setUser] = React.useState<UserProfile | null>(null);
   const [isLoading, setIsLoading] = React.useState(true);
+  const [serviceUnavailable, setServiceUnavailable] = React.useState(false);
   const userRef = React.useRef<UserProfile | null>(null);
   const logoutInFlightRef = React.useRef<Promise<void> | null>(null);
 
@@ -77,12 +85,18 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     try {
       const profile = await getProfile();
       setUser(profile);
+      setServiceUnavailable(false);
       return profile;
     } catch (err) {
       if (err instanceof ApiError && err.status === 401) {
         setUser(null);
         return null;
       }
+      // Anything else at boot — a 502 from a restarting backend, a timeout —
+      // says nothing about the session. Without this the app showed the
+      // sign-in form as if the user had been signed out, and signing in
+      // failed too, which read as being thrown out of the app.
+      if (userRef.current === null) setServiceUnavailable(true);
       return userRef.current;
     }
   }, []);
@@ -90,6 +104,15 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   // Initial load
   React.useEffect(() => {
     refreshProfile().finally(() => setIsLoading(false));
+  }, [refreshProfile]);
+
+  const retryBoot = React.useCallback(async () => {
+    setIsLoading(true);
+    try {
+      await refreshProfile();
+    } finally {
+      setIsLoading(false);
+    }
   }, [refreshProfile]);
 
   // Global session-expiry handler. The event fires only once the API client has
@@ -211,10 +234,16 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       preferred_language: string;
       preferred_timezone: string;
     }) => {
-      await apiRegister(data);
+      const result = await apiRegister(data) as { email_verification_required?: boolean } | null;
       resetPrivateApiState();
+      // New accounts stay inactive until the emailed link is opened, and the
+      // backend issues no tokens for them: there is no session to adopt yet,
+      // and asking for one only produced a 401 that left the sign-up form on
+      // a loading splash with no way forward.
+      if (result?.email_verification_required) return { verificationRequired: true };
       await refreshProfile();
       broadcastAuthBoundary("login");
+      return { verificationRequired: false };
     },
     [refreshProfile],
   );
@@ -253,7 +282,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     register,
     logout,
     refreshProfile,
-  }), [user, isLoading, login, completeStepUp, register, logout, refreshProfile]);
+    serviceUnavailable,
+    retryBoot,
+  }), [user, isLoading, login, completeStepUp, register, logout, refreshProfile, serviceUnavailable, retryBoot]);
 
   return React.createElement(AuthContext.Provider, { value }, children);
 }

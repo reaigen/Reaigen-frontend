@@ -1,3 +1,4 @@
+import type { SessionEndReason } from "../../../lib/session-end";
 import { NextRequest, NextResponse } from "next/server";
 import {
   ACCESS_COOKIE_NAME,
@@ -136,11 +137,15 @@ async function proxy(
       // Same silent renewal the reaigen proxy performs. Without it an expired
       // access token on, say, the settings page reads as a dead session.
       let rotated: { access: string; refresh: string | null } | null = null;
+      let refusedReason: SessionEndReason | null = null;
       if (res.status === 401 && sessionPath && refreshToken) {
-        rotated = await refreshSession(refreshToken, backendCandidates());
-        if (rotated) {
+        const outcome = await refreshSession(refreshToken, backendCandidates());
+        if (outcome.ok) {
+          rotated = outcome.tokens;
           headers["Authorization"] = `Bearer ${rotated.access}`;
           res = await fetchBackend(target, { ...init, headers, cache: "no-store" }, 5_000);
+        } else if (outcome.refused) {
+          refusedReason = outcome.reason;
         }
       }
 
@@ -153,8 +158,8 @@ async function proxy(
       if (rotated) setAuthCookies(response, rotated, refreshToken);
       // Renewal was attempted for this session and refused. Anything else that
       // happens to be a 401 is the endpoint's business, not the session's.
-      if (res.status === 401 && sessionPath && refreshToken && !rotated) {
-        expireSession(response);
+      if (res.status === 401 && sessionPath && refreshToken && !rotated && refusedReason) {
+        expireSession(response, refusedReason);
       }
 
       if (res.ok && contentType.includes("application/json")) {
