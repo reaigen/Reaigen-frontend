@@ -1919,6 +1919,14 @@ const en = {
   "auth.verified.title":                  "Email verified",
   "auth.verified.body":                   "Sign in to finish setting up your account.",
   "auth.login.resendVerification":        "Resend verification email",
+
+  // ── Account setup: design pass ──────────────────────────────────────
+  "setup.optional":                       "Optional",
+  "setup.stepEyebrow":                    "Step",
+  "setup.reminder.remaining":             "Still to do",
+
+  // ── Account setup: phone conflict ───────────────────────────────────
+  "setup.seller.phoneTaken":              "This number is already linked to another Reaigen account. Use a different number, or contact support if it's yours.",
 } as const;
 
 export default en;

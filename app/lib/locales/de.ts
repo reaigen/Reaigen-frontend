@@ -1897,6 +1897,14 @@ const de: LocaleStrings = {
   "auth.verified.title":                  "E-Mail bestätigt",
   "auth.verified.body":                   "Melden Sie sich an, um die Kontoeinrichtung abzuschließen.",
   "auth.login.resendVerification":        "Bestätigungs-E-Mail erneut senden",
+
+  // ── Account setup: design pass ──────────────────────────────────────
+  "setup.optional":                       "Optional",
+  "setup.stepEyebrow":                    "Schritt",
+  "setup.reminder.remaining":             "Noch offen",
+
+  // ── Account setup: phone conflict ───────────────────────────────────
+  "setup.seller.phoneTaken":              "Diese Nummer ist bereits mit einem anderen Reaigen-Konto verknüpft. Verwenden Sie eine andere Nummer oder kontaktieren Sie den Support, falls sie Ihnen gehört.",
 };
 
 export default de;

@@ -453,9 +453,12 @@ function RegistrationCard({
   const [loading, setLoading] = React.useState(false);
   const [error, setError] = React.useState<string | null>(null);
   const emailIsValid = /\S+@\S+\.\S+/.test(email.trim());
-  const passwordIsValid = password.trim().length >= 8;
+  const passwordIsValid = password.length >= 8;
   const passwordsMatch = password === confirmPassword && confirmPassword.length > 0;
-  const username = `${firstName.trim().toLowerCase()}_${lastName.trim().toLowerCase()}`.replace(/\s+/g, "");
+  // Email is the stable cross-platform account identifier. Name-derived
+  // usernames collided whenever two people shared the same name, while iOS
+  // already uses the normalized email for this backend-required field.
+  const username = email.trim().toLowerCase();
   const canSubmit = firstName.trim().length > 0 && lastName.trim().length > 0 && emailIsValid && passwordIsValid && passwordsMatch && agreeToTerms;
 
   async function handleSubmit(e: React.FormEvent) {

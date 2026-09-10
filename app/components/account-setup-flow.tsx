@@ -26,7 +26,7 @@ import {
   type UserProfile,
 } from "../lib/api/client";
 import { getReaiImprovementConsent } from "../lib/api/client";
-import { getSafeApiErrorMessage } from "../lib/api/error-message";
+import { getApiErrorJson, getSafeApiErrorMessage } from "../lib/api/error-message";
 import { t } from "../lib/i18n";
 import type { LocaleKey } from "../lib/locales";
 import { formatPhoneDisplay } from "../lib/phone";
@@ -39,6 +39,8 @@ import {
   type SetupStepKey,
 } from "../lib/account-setup";
 import { AgentIcon, CheckIcon, DeviceMobileIcon, EditIcon, PriceIcon } from "./icons";
+import { PageHeader } from "./page-header";
+import { StatusPill } from "./status-pill";
 import { useAccountSetup } from "./hooks/use-account-setup";
 
 /**
@@ -46,8 +48,14 @@ import { useAccountSetup } from "./hooks/use-account-setup";
  * sign-up form: profile, seller details, billing details, and the Agent
  * permissions. Each step saves through the same endpoints Settings uses, so
  * nothing here is a second source of truth; Settings stays the place to edit
- * later. The rail on the left is the status, the card on the right is one
- * step's form.
+ * later.
+ *
+ * Composition follows Settings: one white application surface with a quiet
+ * step rail on the left and the current step's form on the right (design
+ * language: management pages cap reading width, a stable vertical section
+ * rail on desktop). Phones get a four-cell step strip instead of a clipped
+ * horizontal list. Steps are soft-rectangle rows, actions are capsules,
+ * fields keep their rounded-rectangle geometry.
  */
 
 const STEPS: Array<{ key: SetupStepKey; label: LocaleKey; hint: LocaleKey; icon: React.ComponentType<{ size?: number; className?: string }> }> = [
@@ -87,14 +95,45 @@ export const ACCOUNT_SETUP_PROMPTED_KEY = "reaigen:account-setup-prompted";
 
 type StepView = SetupStepKey | "done";
 
-function Field({ id, label, required, children }: { id: string; label: string; required?: boolean; children: React.ReactNode }) {
+/**
+ * Most fields in a setup step are required, so the exception is what gets
+ * labelled: an "Optional" tag on the right of the label row, never an
+ * asterisk (the label language is 11–13px medium text, not punctuation).
+ */
+function Field({ id, label, optional, lang, children }: { id: string; label: string; optional?: boolean; lang: string; children: React.ReactNode }) {
   return (
     <div className="space-y-1.5">
-      <Label htmlFor={id} className="flex items-center gap-1.5">
-        {label}
-        {required ? <span aria-hidden="true" className="text-[11px] font-medium text-foreground/40">*</span> : null}
-      </Label>
+      <div className="flex items-baseline justify-between gap-3">
+        <Label htmlFor={id}>{label}</Label>
+        {optional ? <span className="text-[11px] font-medium text-foreground/45">{t("setup.optional", lang)}</span> : null}
+      </div>
       {children}
+    </div>
+  );
+}
+
+/** Section heading inside a step: a hairline above, a quiet label, no card. */
+function Group({ title, children }: { title: string; children: React.ReactNode }) {
+  return (
+    <div className="space-y-4 border-t border-border/60 pt-5">
+      <p className="text-[13px] font-semibold text-foreground/80">{title}</p>
+      {children}
+    </div>
+  );
+}
+
+/** One row of the permissions list: text on the left, a control on the right. */
+function ControlRow({ title, hint, control, children }: { title: string; hint?: string; control?: React.ReactNode; children?: React.ReactNode }) {
+  return (
+    <div className="py-4 first:pt-0 last:pb-0">
+      <div className="flex items-start justify-between gap-4">
+        <div className="min-w-0">
+          <p className="text-[13px] font-semibold">{title}</p>
+          {hint ? <p className="mt-1 text-[12px] leading-relaxed text-muted-foreground">{hint}</p> : null}
+        </div>
+        {control ? <div className="shrink-0">{control}</div> : null}
+      </div>
+      {children ? <div className="mt-3">{children}</div> : null}
     </div>
   );
 }
@@ -115,15 +154,15 @@ function StepFooter({
   disabled?: boolean;
 }) {
   return (
-    <div className="flex flex-col-reverse gap-2 border-t border-border/60 pt-5 sm:flex-row sm:items-center sm:justify-between">
+    <div className="mt-2 flex flex-col-reverse gap-2 border-t border-border/60 pt-5 sm:flex-row sm:items-center sm:justify-between">
       <div>
         {canBack ? (
-          <Button type="button" variant="ghost" size="sm" onClick={onBack} disabled={saving}>
+          <Button type="button" variant="ghost" className="w-full sm:w-auto" onClick={onBack} disabled={saving}>
             {t("setup.back", lang)}
           </Button>
         ) : null}
       </div>
-      <Button type="submit" size="sm" loading={saving} disabled={disabled} data-testid="setup-continue">
+      <Button type="submit" className="w-full sm:w-auto" loading={saving} disabled={disabled} data-testid="setup-continue">
         {continueLabel ?? t("setup.continue", lang)}
       </Button>
     </div>
@@ -173,14 +212,14 @@ function ProfileStep({ user, lang, onSaved, onAdvance }: StepProps) {
   return (
     <form className="space-y-5" onSubmit={handleSubmit} noValidate data-testid="setup-step-profile">
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-        <Field id="setup-first-name" label={t("settings.profile.firstName", lang)} required>
+        <Field id="setup-first-name" label={t("settings.profile.firstName", lang)} lang={lang}>
           <Input id="setup-first-name" value={firstName} onChange={(e) => setFirstName(e.target.value)} autoComplete="given-name" />
         </Field>
-        <Field id="setup-last-name" label={t("settings.profile.lastName", lang)} required>
+        <Field id="setup-last-name" label={t("settings.profile.lastName", lang)} lang={lang}>
           <Input id="setup-last-name" value={lastName} onChange={(e) => setLastName(e.target.value)} autoComplete="family-name" />
         </Field>
       </div>
-      <Field id="setup-username" label={t("settings.profile.username", lang)} required>
+      <Field id="setup-username" label={t("settings.profile.username", lang)} lang={lang}>
         <Input id="setup-username" value={username} onChange={(e) => setUsername(e.target.value)} autoComplete="username" />
       </Field>
       <div className="space-y-1.5">
@@ -188,7 +227,7 @@ function ProfileStep({ user, lang, onSaved, onAdvance }: StepProps) {
         <div className="flex min-h-11 flex-wrap items-center justify-between gap-3 rounded-xl border border-border/55 bg-surface-subtle px-3.5 py-2">
           <span className="min-w-0 truncate text-[14px] text-foreground/85">{user.email}</span>
           {user.email_verified ? (
-            <span className="shrink-0 rounded-full bg-success/10 px-2.5 py-0.5 text-[11px] font-semibold text-success">{t("settings.profile.emailVerified", lang)}</span>
+            <StatusPill tone="success" dot>{t("settings.profile.emailVerified", lang)}</StatusPill>
           ) : (
             <button type="button" onClick={handleResend} className="shrink-0 rounded-full px-2.5 py-0.5 text-[11px] font-semibold text-foreground/65 underline underline-offset-4 hover:text-foreground">
               {resent ? t("setup.blocker.resent", lang) : t("setup.blocker.resend", lang)}
@@ -221,6 +260,10 @@ function SellerStep({ user, lang, onSaved, onAdvance, onBack }: StepProps) {
   const [agency, setAgency] = React.useState(p?.agency_name ?? "");
   const [saving, setSaving] = React.useState(false);
   const [error, setError] = React.useState<string | null>(null);
+  // Phone uniqueness is a backend policy switch. If it is enabled later, a
+  // taken number must not sink the whole step: the other fields still save,
+  // the phone field carries the explanation, and the user can change it.
+  const [phoneError, setPhoneError] = React.useState<string | null>(null);
 
   // Phone verification. The OTP is sent to the number on the saved profile,
   // so a freshly typed number is saved first and verified second.
@@ -234,9 +277,17 @@ function SellerStep({ user, lang, onSaved, onAdvance, onBack }: StepProps) {
 
   const canSubmit = phone.trim().length > 0 && bio.trim().length > 0 && city.trim().length > 0 && country.trim().length > 0;
 
+  const PHONE_TAKEN = Symbol("phone-taken");
+
+  function isPhoneConflict(err: unknown): boolean {
+    const payload = getApiErrorJson(err);
+    if (payload && "phone" in payload) return true;
+    const text = (payload ? JSON.stringify(payload) : err instanceof Error ? err.message : "").toLowerCase();
+    return text.includes("phone") && (text.includes("exist") || text.includes("taken") || text.includes("already"));
+  }
+
   async function save() {
-    await updateSellerProfile({
-      phone: phone.trim(),
+    const fields = {
       company: company.trim(),
       job_title: jobTitle.trim(),
       website: website.trim(),
@@ -249,7 +300,18 @@ function SellerStep({ user, lang, onSaved, onAdvance, onBack }: StepProps) {
       is_real_estate_professional: isRePro,
       license_number: isRePro ? license.trim() : "",
       agency_name: isRePro ? agency.trim() : "",
-    });
+    };
+    try {
+      await updateSellerProfile({ phone: phone.trim(), ...fields });
+      setPhoneError(null);
+    } catch (err) {
+      if (!isPhoneConflict(err)) throw err;
+      // Keep everything else; only the number is refused.
+      await updateSellerProfile(fields);
+      setPhoneError(t("setup.seller.phoneTaken", lang));
+      await onSaved();
+      throw PHONE_TAKEN;
+    }
     await onSaved();
   }
 
@@ -262,7 +324,7 @@ function SellerStep({ user, lang, onSaved, onAdvance, onBack }: StepProps) {
       await save();
       onAdvance();
     } catch (err) {
-      setError(getSafeApiErrorMessage(err, lang));
+      if (err !== PHONE_TAKEN) setError(getSafeApiErrorMessage(err, lang));
     } finally {
       setSaving(false);
     }
@@ -276,7 +338,7 @@ function SellerStep({ user, lang, onSaved, onAdvance, onBack }: StepProps) {
       await requestPhoneLinkOtp(phone.trim());
       setOtpSent(true);
     } catch (err) {
-      setError(getSafeApiErrorMessage(err, lang));
+      if (err !== PHONE_TAKEN) setError(getSafeApiErrorMessage(err, lang));
     } finally {
       setOtpBusy(false);
     }
@@ -301,23 +363,32 @@ function SellerStep({ user, lang, onSaved, onAdvance, onBack }: StepProps) {
   return (
     <form className="space-y-5" onSubmit={handleSubmit} noValidate data-testid="setup-step-seller">
       <div className="space-y-1.5">
-        <Label htmlFor="setup-phone" className="flex items-center gap-1.5">
-          {t("settings.seller.phone", lang)}
-          <span aria-hidden="true" className="text-[11px] font-medium text-foreground/40">*</span>
-        </Label>
+        <Label htmlFor="setup-phone">{t("settings.seller.phone", lang)}</Label>
         <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
-          <Input id="setup-phone" value={phone} onChange={(e) => setPhone(e.target.value)} placeholder="+421 900 123 456" inputMode="tel" autoComplete="tel" className="sm:max-w-[18rem]" />
+          <Input
+            id="setup-phone"
+            value={phone}
+            onChange={(e) => { setPhone(e.target.value); if (phoneError) setPhoneError(null); }}
+            placeholder="+421 900 123 456"
+            inputMode="tel"
+            autoComplete="tel"
+            aria-invalid={phoneError ? true : undefined}
+            aria-describedby={phoneError ? "setup-phone-error" : undefined}
+            className={cn("sm:max-w-[18rem]", phoneError && "border-destructive/60 focus-visible:border-destructive focus-visible:ring-destructive/20")}
+          />
           {phoneVerified && phoneMatchesSaved ? (
-            <span className="inline-flex h-9 shrink-0 items-center gap-1.5 rounded-full bg-success/10 px-3 text-[11px] font-semibold text-success">
-              <CheckIcon size={12} /> {t("setup.seller.phoneVerified", lang)}
-            </span>
+            <StatusPill tone="success" dot className="self-start sm:self-auto">{t("setup.seller.phoneVerified", lang)}</StatusPill>
           ) : phone.trim().length > 0 && !otpSent ? (
-            <Button type="button" variant="outline" size="sm" className="shrink-0" loading={otpBusy} onClick={handleRequestOtp} data-testid="setup-verify-phone">
+            <Button type="button" variant="outline" className="shrink-0" loading={otpBusy} onClick={handleRequestOtp} data-testid="setup-verify-phone">
               {t("setup.seller.verifyPhone", lang)}
             </Button>
           ) : null}
         </div>
-        <p className="text-[12px] text-muted-foreground">{t("setup.seller.phoneHint", lang)}</p>
+        {phoneError ? (
+          <p id="setup-phone-error" role="alert" className="text-[12px] leading-relaxed text-destructive" data-testid="setup-phone-error">{phoneError}</p>
+        ) : (
+          <p className="text-[12px] text-muted-foreground">{t("setup.seller.phoneHint", lang)}</p>
+        )}
         {otpSent ? (
           <div className="space-y-2 rounded-2xl border border-border/65 bg-muted/20 p-4">
             <Label htmlFor="setup-phone-code">{t("setup.seller.codeSent", lang)} {phoneDisplay.display || phone.trim()}</Label>
@@ -332,7 +403,7 @@ function SellerStep({ user, lang, onSaved, onAdvance, onBack }: StepProps) {
                 autoComplete="one-time-code"
                 className="w-full max-w-[10.5rem] font-mono tracking-[0.2em]"
               />
-              <Button type="button" size="sm" className="shrink-0" loading={otpBusy} disabled={code.length < 4} onClick={handleVerify}>
+              <Button type="button" className="shrink-0" loading={otpBusy} disabled={code.length < 4} onClick={handleVerify}>
                 {t("setup.seller.confirmCode", lang)}
               </Button>
             </div>
@@ -341,52 +412,51 @@ function SellerStep({ user, lang, onSaved, onAdvance, onBack }: StepProps) {
       </div>
 
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-        <Field id="setup-company" label={t("settings.seller.company", lang)}>
+        <Field id="setup-company" label={t("settings.seller.company", lang)} optional lang={lang}>
           <Input id="setup-company" value={company} onChange={(e) => setCompany(e.target.value)} autoComplete="organization" />
         </Field>
-        <Field id="setup-job-title" label={t("settings.seller.jobTitle", lang)}>
+        <Field id="setup-job-title" label={t("settings.seller.jobTitle", lang)} optional lang={lang}>
           <Input id="setup-job-title" value={jobTitle} onChange={(e) => setJobTitle(e.target.value)} autoComplete="organization-title" />
         </Field>
       </div>
-      <Field id="setup-bio" label={t("settings.seller.bio", lang)} required>
+      <Field id="setup-bio" label={t("settings.seller.bio", lang)} lang={lang}>
         <Textarea id="setup-bio" value={bio} onChange={(e) => setBio(e.target.value)} rows={3} placeholder={t("setup.seller.bioPlaceholder", lang)} />
       </Field>
-      <Field id="setup-website" label={t("settings.seller.website", lang)}>
+      <Field id="setup-website" label={t("settings.seller.website", lang)} optional lang={lang}>
         <Input id="setup-website" value={website} onChange={(e) => setWebsite(e.target.value)} placeholder="https://www.example.com" inputMode="url" autoComplete="url" />
       </Field>
 
-      <div className="space-y-4 border-t border-border/60 pt-5">
-        <p className="text-[13px] font-semibold text-foreground/80">{t("settings.seller.sectionAddress", lang)}</p>
-        <Field id="setup-address" label={t("settings.seller.address", lang)}>
+      <Group title={t("settings.seller.sectionAddress", lang)}>
+        <Field id="setup-address" label={t("settings.seller.address", lang)} optional lang={lang}>
           <Input id="setup-address" value={address} onChange={(e) => setAddress(e.target.value)} autoComplete="street-address" />
         </Field>
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
-          <Field id="setup-city" label={t("settings.seller.city", lang)} required>
+          <Field id="setup-city" label={t("settings.seller.city", lang)} lang={lang}>
             <Input id="setup-city" value={city} onChange={(e) => setCity(e.target.value)} autoComplete="address-level2" />
           </Field>
-          <Field id="setup-state" label={t("settings.seller.state", lang)}>
+          <Field id="setup-state" label={t("settings.seller.state", lang)} optional lang={lang}>
             <Input id="setup-state" value={state} onChange={(e) => setState(e.target.value)} autoComplete="address-level1" />
           </Field>
-          <Field id="setup-postal" label={t("settings.seller.postalCode", lang)}>
+          <Field id="setup-postal" label={t("settings.seller.postalCode", lang)} optional lang={lang}>
             <Input id="setup-postal" value={postalCode} onChange={(e) => setPostalCode(e.target.value)} autoComplete="postal-code" />
           </Field>
-          <Field id="setup-country" label={t("settings.seller.country", lang)} required>
+          <Field id="setup-country" label={t("settings.seller.country", lang)} lang={lang}>
             <Input id="setup-country" value={country} onChange={(e) => setCountry(e.target.value.toUpperCase())} maxLength={2} placeholder="SK" autoComplete="country" />
           </Field>
         </div>
-      </div>
+      </Group>
 
-      <div className="space-y-4 border-t border-border/60 pt-5">
+      <div className="border-t border-border/60 pt-5">
         <div className="flex items-start justify-between gap-4">
-          <p className="text-sm font-medium">{t("settings.seller.reAgent", lang)}</p>
+          <p className="text-[13px] font-semibold text-foreground/80">{t("settings.seller.reAgent", lang)}</p>
           <Switch aria-label={t("settings.seller.reAgent", lang)} checked={isRePro} onCheckedChange={setIsRePro} />
         </div>
         {isRePro ? (
-          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-            <Field id="setup-license" label={t("settings.seller.license", lang)}>
+          <div className="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2">
+            <Field id="setup-license" label={t("settings.seller.license", lang)} optional lang={lang}>
               <Input id="setup-license" value={license} onChange={(e) => setLicense(e.target.value)} />
             </Field>
-            <Field id="setup-agency" label={t("settings.seller.agency", lang)}>
+            <Field id="setup-agency" label={t("settings.seller.agency", lang)} optional lang={lang}>
               <Input id="setup-agency" value={agency} onChange={(e) => setAgency(e.target.value)} />
             </Field>
           </div>
@@ -455,27 +525,27 @@ function BillingStep({ user, lang, onSaved, onAdvance, onBack }: StepProps) {
   return (
     <form className="space-y-5" onSubmit={handleSubmit} noValidate data-testid="setup-step-billing">
       {tier ? (
-        <div className="flex items-center justify-between gap-4 rounded-xl border border-border/55 bg-surface-subtle px-3.5 py-2.5 text-[13px]">
+        <div className="flex min-h-11 items-center justify-between gap-4 rounded-xl border border-border/55 bg-surface-subtle px-3.5 py-2 text-[13px]">
           <span className="text-muted-foreground">{t("settings.billing.plan", lang)}</span>
-          <span className="font-medium">{tier.name}{ba?.subscription_status ? ` · ${ba.subscription_status}` : ""}</span>
+          <span className="flex items-center gap-2 font-medium">
+            {tier.name}
+            {ba?.subscription_status ? <StatusPill tone="neutral">{ba.subscription_status}</StatusPill> : null}
+          </span>
         </div>
       ) : null}
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-        <Field id="setup-billing-name" label={t("settings.billing.name", lang)} required>
+        <Field id="setup-billing-name" label={t("settings.billing.name", lang)} lang={lang}>
           <Input id="setup-billing-name" value={billingName} onChange={(e) => setBillingName(e.target.value)} autoComplete="name" />
         </Field>
-        <Field id="setup-billing-email" label={t("settings.billing.email", lang)} required>
+        <Field id="setup-billing-email" label={t("settings.billing.email", lang)} lang={lang}>
           <Input id="setup-billing-email" value={billingEmail} onChange={(e) => setBillingEmail(e.target.value)} type="email" autoComplete="email" />
         </Field>
       </div>
       <div className="space-y-1.5">
-        <div className="flex items-center justify-between gap-3">
-          <Label htmlFor="setup-billing-address" className="flex items-center gap-1.5">
-            {t("settings.billing.address", lang)}
-            <span aria-hidden="true" className="text-[11px] font-medium text-foreground/40">*</span>
-          </Label>
+        <div className="flex items-baseline justify-between gap-3">
+          <Label htmlFor="setup-billing-address">{t("settings.billing.address", lang)}</Label>
           {sellerAddressAvailable ? (
-            <button type="button" onClick={useSellerAddress} className="text-[12px] font-medium text-foreground/60 underline underline-offset-4 hover:text-foreground" data-testid="setup-billing-copy-address">
+            <button type="button" onClick={useSellerAddress} className="text-[12px] font-medium text-foreground/60 underline underline-offset-4 transition-colors hover:text-foreground" data-testid="setup-billing-copy-address">
               {t("setup.billing.sameAsSeller", lang)}
             </button>
           ) : null}
@@ -483,16 +553,16 @@ function BillingStep({ user, lang, onSaved, onAdvance, onBack }: StepProps) {
         <Input id="setup-billing-address" value={billingAddress} onChange={(e) => setBillingAddress(e.target.value)} autoComplete="street-address" />
       </div>
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
-        <Field id="setup-billing-city" label={t("settings.billing.city", lang)} required>
+        <Field id="setup-billing-city" label={t("settings.billing.city", lang)} lang={lang}>
           <Input id="setup-billing-city" value={billingCity} onChange={(e) => setBillingCity(e.target.value)} autoComplete="address-level2" />
         </Field>
-        <Field id="setup-billing-postal" label={t("settings.billing.postalCode", lang)} required>
+        <Field id="setup-billing-postal" label={t("settings.billing.postalCode", lang)} lang={lang}>
           <Input id="setup-billing-postal" value={billingPostal} onChange={(e) => setBillingPostal(e.target.value)} autoComplete="postal-code" />
         </Field>
-        <Field id="setup-billing-country" label={t("settings.billing.country", lang)} required>
+        <Field id="setup-billing-country" label={t("settings.billing.country", lang)} lang={lang}>
           <Input id="setup-billing-country" value={billingCountry} onChange={(e) => setBillingCountry(e.target.value.toUpperCase())} maxLength={2} placeholder="SK" autoComplete="country" />
         </Field>
-        <Field id="setup-billing-vat" label={t("settings.billing.vat", lang)}>
+        <Field id="setup-billing-vat" label={t("settings.billing.vat", lang)} optional lang={lang}>
           <Input id="setup-billing-vat" value={vat} onChange={(e) => setVat(e.target.value)} />
         </Field>
       </div>
@@ -587,80 +657,75 @@ function PermissionsStep({
 
   return (
     <form className="space-y-5" onSubmit={handleSubmit} noValidate data-testid="setup-step-permissions">
-      <section className="space-y-3 rounded-2xl border border-border/60 p-4">
-        <div className="flex items-start justify-between gap-4">
-          <div className="min-w-0">
-            <p className="text-[13px] font-semibold">{t("settings.reai.access", lang)}</p>
-            <p className="mt-1 text-[12px] leading-relaxed text-muted-foreground">
-              {consented ? t("settings.reai.accessEnabled", lang) : t("settings.reai.accessDisabled", lang)}
-            </p>
-          </div>
-          <span className={cn("shrink-0 rounded-full px-2.5 py-0.5 text-[11px] font-semibold", consented ? "bg-success/10 text-success" : "bg-foreground/[0.07] text-foreground/70")}>
-            {consented ? t("common.allowed", lang) : t("common.notAllowed", lang)}
-          </span>
-        </div>
-        {blocked ? (
-          <p className="rounded-lg bg-muted/25 p-3 text-[12px] leading-relaxed text-foreground/70">{t("setup.blocker.reaigen_access", lang)}</p>
-        ) : consent === null ? (
-          <p className="text-[12px] text-muted-foreground">{t("common.loading", lang)}</p>
-        ) : consented ? null : (
-          <div className="space-y-3">
-            <div className="rounded-lg bg-muted/25 p-4 text-[12px] leading-relaxed text-foreground/70">
-              <p>{t("reai.consentData", lang)}</p>
-              <p className="mt-1.5">{t("reai.consentNoData", lang)}</p>
-              <p className="mt-1.5">{t("reai.consentStorage", lang)}</p>
-              <p className="mt-1.5">{t("reai.consentMedia", lang)}</p>
+      <div className="divide-y divide-border/60">
+        <ControlRow
+          title={t("settings.reai.access", lang)}
+          hint={consented ? t("settings.reai.accessEnabled", lang) : t("settings.reai.accessDisabled", lang)}
+          control={
+            <StatusPill tone={consented ? "success" : "neutral"} dot>
+              {consented ? t("common.allowed", lang) : t("common.notAllowed", lang)}
+            </StatusPill>
+          }
+        >
+          {blocked ? (
+            <p className="rounded-xl bg-muted/25 p-4 text-[12px] leading-relaxed text-foreground/70">{t("setup.blocker.reaigen_access", lang)}</p>
+          ) : consent === null ? (
+            <p className="text-[12px] text-muted-foreground">{t("common.loading", lang)}</p>
+          ) : consented ? null : (
+            <div className="space-y-3">
+              <div className="rounded-xl bg-muted/25 p-4 text-[12px] leading-relaxed text-foreground/70">
+                <p>{t("reai.consentData", lang)}</p>
+                <p className="mt-1.5">{t("reai.consentNoData", lang)}</p>
+                <p className="mt-1.5">{t("reai.consentStorage", lang)}</p>
+                <p className="mt-1.5">{t("reai.consentMedia", lang)}</p>
+              </div>
+              <label className="flex cursor-pointer items-start gap-2.5 text-[12px] leading-relaxed text-foreground/75">
+                <Checkbox checked={acknowledged} onCheckedChange={(checked) => setAcknowledged(checked === true)} className="mt-0.5" data-testid="setup-consent-ack" />
+                <span>{t("reai.consentLabel", lang)} · v{consentKnown ? consent.policy_version : ""}</span>
+              </label>
+              <Button type="button" loading={busy === "consent"} disabled={!acknowledged} onClick={enableAgent} data-testid="setup-enable-agent">
+                {t("reai.enable", lang)}
+              </Button>
             </div>
-            <label className="flex cursor-pointer items-start gap-2.5 text-[12px] leading-relaxed text-foreground/75">
-              <Checkbox checked={acknowledged} onCheckedChange={(checked) => setAcknowledged(checked === true)} className="mt-0.5" data-testid="setup-consent-ack" />
-              <span>{t("reai.consentLabel", lang)} · v{consentKnown ? consent.policy_version : ""}</span>
-            </label>
-            <Button type="button" size="sm" loading={busy === "consent"} disabled={!acknowledged} onClick={enableAgent} data-testid="setup-enable-agent">
-              {t("reai.enable", lang)}
-            </Button>
-          </div>
-        )}
-      </section>
+          )}
+        </ControlRow>
 
-      {consented ? (
-        <section className="space-y-3 rounded-2xl border border-border/60 p-4">
-          <div className="flex items-start justify-between gap-4">
-            <div className="min-w-0">
-              <p className="text-[13px] font-semibold">{t("settings.reai.allTools", lang)}</p>
-              <p className="mt-1 text-[12px] leading-relaxed text-muted-foreground">{t("settings.reai.allToolsHelp", lang)}</p>
-            </div>
-            <Switch
-              aria-label={t("settings.reai.allTools", lang)}
-              checked={Boolean(toolPermissions?.allow_all_tools)}
-              disabled={!toolPermissions || busy === "tools"}
-              onCheckedChange={setAllTools}
-              data-testid="setup-all-tools"
-            />
-          </div>
-          {toolPermissions && !anyTool ? (
-            <p className="text-[12px] text-foreground/65">{t("setup.permissions.noTools", lang)}</p>
-          ) : null}
-          <p className="text-[12px] leading-relaxed text-muted-foreground">{t("settings.reai.toolsConfirmation", lang)}</p>
-        </section>
-      ) : null}
+        {consented ? (
+          <ControlRow
+            title={t("settings.reai.allTools", lang)}
+            hint={t("settings.reai.allToolsHelp", lang)}
+            control={
+              <Switch
+                aria-label={t("settings.reai.allTools", lang)}
+                checked={Boolean(toolPermissions?.allow_all_tools)}
+                disabled={!toolPermissions || busy === "tools"}
+                onCheckedChange={setAllTools}
+                data-testid="setup-all-tools"
+              />
+            }
+          >
+            {toolPermissions && !anyTool ? (
+              <p className="text-[12px] text-foreground/65">{t("setup.permissions.noTools", lang)}</p>
+            ) : (
+              <p className="text-[12px] leading-relaxed text-muted-foreground">{t("settings.reai.toolsConfirmation", lang)}</p>
+            )}
+          </ControlRow>
+        ) : null}
 
-      {consented && improvement ? (
-        <section className="flex items-start justify-between gap-4 rounded-2xl border border-border/60 p-4">
-          <div className="min-w-0">
-            <p className="text-[13px] font-semibold">{t("settings.reai.improvementPermission", lang)}</p>
-            <p className="mt-1 text-[12px] leading-relaxed text-muted-foreground">{t("settings.reai.improvementSubtitle", lang)}</p>
-          </div>
-          <Switch aria-label={t("settings.reai.improvementPermission", lang)} checked={improvement.consented} disabled={busy === "improvement"} onCheckedChange={toggleImprovement} />
-        </section>
-      ) : null}
+        {consented && improvement ? (
+          <ControlRow
+            title={t("settings.reai.improvementPermission", lang)}
+            hint={t("settings.reai.improvementSubtitle", lang)}
+            control={<Switch aria-label={t("settings.reai.improvementPermission", lang)} checked={improvement.consented} disabled={busy === "improvement"} onCheckedChange={toggleImprovement} />}
+          />
+        ) : null}
 
-      <section className="flex items-start justify-between gap-4 rounded-2xl border border-border/60 p-4">
-        <div className="min-w-0">
-          <p className="text-[13px] font-semibold">{t("settings.privacy.legal.marketingConsent", lang)}</p>
-          <p className="mt-1 text-[12px] leading-relaxed text-muted-foreground">{t("settings.privacy.legal.marketingConsentHint", lang)}</p>
-        </div>
-        <Switch aria-label={t("settings.privacy.legal.marketingConsent", lang)} checked={marketing} disabled={busy === "marketing"} onCheckedChange={toggleMarketing} />
-      </section>
+        <ControlRow
+          title={t("settings.privacy.legal.marketingConsent", lang)}
+          hint={t("settings.privacy.legal.marketingConsentHint", lang)}
+          control={<Switch aria-label={t("settings.privacy.legal.marketingConsent", lang)} checked={marketing} disabled={busy === "marketing"} onCheckedChange={toggleMarketing} />}
+        />
+      </div>
 
       {error ? <p role="alert" className="text-[12px] text-destructive">{error}</p> : null}
       <StepFooter lang={lang} canBack onBack={onBack} saving={busy === "finish"} continueLabel={t("setup.finish", lang)} disabled={!ready && !blocked} />
@@ -732,16 +797,45 @@ export function AccountSetupFlow({
   }
 
   const blocked = Boolean(status?.blockers.includes("reaigen_access") || status?.blockers.includes("account_disabled"));
+  const completedCount = status?.completedCount ?? 0;
+  const progressText = `${completedCount} / ${STEPS.length} ${t("setup.stepsDone", lang)}`;
+
+  const stepState = (key: SetupStepKey) => {
+    const state = status?.steps.find((item) => item.key === key);
+    return { complete: Boolean(state?.complete), missing: state?.missing ?? [] };
+  };
+
+  // The rail indicator: check when done, the step number otherwise. Current
+  // step is the one dark circle on the page; done steps use the semantic
+  // green as a small status mark, never as a fill.
+  const Indicator = ({ stepKey, index, size = "md" }: { stepKey: SetupStepKey; index: number; size?: "sm" | "md" }) => {
+    const { complete } = stepState(stepKey);
+    const current = view === stepKey;
+    return (
+      <span
+        aria-hidden="true"
+        className={cn(
+          "flex shrink-0 items-center justify-center rounded-full text-[11px] font-semibold tabular-nums transition-colors duration-200",
+          size === "md" ? "h-7 w-7" : "h-6 w-6",
+          complete ? "bg-success/12 text-success" : current ? "bg-foreground text-background" : "bg-muted text-foreground/55",
+        )}
+      >
+        {complete ? <CheckIcon size={size === "md" ? 13 : 12} /> : index + 1}
+      </span>
+    );
+  };
 
   return (
     <div className="mx-auto w-full max-w-[1120px] pb-12" data-testid="account-setup">
-      <header className="mb-5 sm:mb-6">
-        <h1 className="text-[26px] font-semibold leading-[1.08] tracking-[-0.03em] sm:text-[32px]">{t("setup.title", lang)}</h1>
-        <p className="mt-2 max-w-[60ch] text-[14px] leading-relaxed text-muted-foreground">{t("setup.subtitle", lang)}</p>
-      </header>
+      <PageHeader
+        title={t("setup.title", lang)}
+        meta={<span data-testid="setup-progress">{progressText}</span>}
+        description={t("setup.subtitle", lang)}
+        className="mb-4 sm:mb-5"
+      />
 
       {status && status.blockers.length > 0 ? (
-        <div role="alert" className="mb-5 space-y-2 rounded-2xl border border-destructive/20 bg-destructive/[0.045] px-4 py-3.5" data-testid="setup-blockers">
+        <div role="alert" className="mb-4 space-y-2 rounded-2xl border border-destructive/20 bg-destructive/[0.045] px-4 py-3.5 sm:mb-5" data-testid="setup-blockers">
           <p className="text-[13px] font-semibold text-destructive">{t("setup.blocker.title", lang)}</p>
           <ul className="space-y-1.5 text-[12px] leading-relaxed text-foreground/75">
             {status.blockers.map((blocker) => (
@@ -759,16 +853,43 @@ export function AccountSetupFlow({
         </div>
       ) : null}
 
-      <div className="lg:grid lg:grid-cols-[264px_minmax(0,1fr)] lg:items-start lg:gap-6">
-        <nav aria-label={t("setup.headerTitle", lang)} className="mb-4 lg:mb-0">
-          <ol className="flex gap-2 overflow-x-auto pb-1 scrollbar-hide lg:flex-col lg:gap-1.5 lg:overflow-visible lg:pb-0" data-testid="setup-rail">
+      {/* Phones: one four-cell strip, every cell a touch target. */}
+      <nav aria-label={t("setup.headerTitle", lang)} className="mb-4 lg:hidden">
+        <ol className="grid grid-cols-4 gap-1 rounded-2xl border border-border/65 bg-card p-1 shadow-card">
+          {STEPS.map((step, index) => {
+            const current = view === step.key;
+            return (
+              <li key={step.key} className="min-w-0">
+                <button
+                  type="button"
+                  onClick={() => goTo(step.key)}
+                  aria-current={current ? "step" : undefined}
+                  data-testid={`setup-strip-${step.key}`}
+                  className={cn(
+                    "flex min-h-11 w-full flex-col items-center justify-center gap-1 rounded-xl px-1 py-1.5 transition-colors duration-200",
+                    current ? "bg-muted/70" : "hover:bg-foreground/[0.035]",
+                  )}
+                >
+                  <Indicator stepKey={step.key} index={index} size="sm" />
+                  <span className={cn("w-full truncate text-center text-[11px] font-medium", current ? "text-foreground" : "text-foreground/60")}>
+                    {t(step.label, lang)}
+                  </span>
+                </button>
+              </li>
+            );
+          })}
+        </ol>
+      </nav>
+
+      <div className="settings-surface w-full lg:grid lg:grid-cols-[264px_minmax(0,1fr)] lg:items-stretch lg:overflow-hidden lg:rounded-3xl lg:border lg:border-border/65 lg:bg-card lg:shadow-card">
+        {/* Desktop: the stable vertical rail Settings uses, one row per step. */}
+        <nav aria-label={t("setup.headerTitle", lang)} className="hidden lg:flex lg:flex-col lg:border-r lg:border-border/65 lg:p-3">
+          <ol className="flex flex-col gap-1" data-testid="setup-rail">
             {STEPS.map((step, index) => {
-              const state = status?.steps.find((item) => item.key === step.key);
-              const complete = Boolean(state?.complete);
+              const { complete, missing } = stepState(step.key);
               const current = view === step.key;
-              const Icon = step.icon;
               return (
-                <li key={step.key} className="shrink-0 lg:shrink">
+                <li key={step.key}>
                   <button
                     type="button"
                     onClick={() => goTo(step.key)}
@@ -776,26 +897,18 @@ export function AccountSetupFlow({
                     data-testid={`setup-rail-${step.key}`}
                     data-complete={complete ? "true" : "false"}
                     className={cn(
-                      "flex w-full items-center gap-3 rounded-full border px-3 py-2 text-left transition-colors lg:rounded-2xl lg:px-3.5 lg:py-3",
-                      current ? "border-foreground/15 bg-card shadow-control" : "border-transparent hover:bg-foreground/[0.035]",
+                      "flex w-full items-start gap-3 rounded-2xl border px-3 py-2.5 text-left transition-[background-color,border-color] duration-200",
+                      current ? "border-foreground/15 bg-muted/70" : "border-transparent hover:bg-foreground/[0.035]",
                     )}
                   >
-                    <span className={cn(
-                      "flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-[12px] font-semibold",
-                      complete ? "bg-success/12 text-success" : current ? "bg-foreground text-background" : "bg-foreground/[0.06] text-foreground/60",
-                    )}>
-                      {complete ? <CheckIcon size={14} /> : index + 1}
-                    </span>
-                    <span className="min-w-0">
-                      <span className="flex items-center gap-1.5 text-[13px] font-semibold text-foreground">
-                        <Icon size={14} className="hidden text-foreground/45 lg:block" />
-                        <span className="truncate">{t(step.label, lang)}</span>
-                      </span>
-                      <span className="hidden text-[11px] text-muted-foreground lg:block">
+                    <Indicator stepKey={step.key} index={index} />
+                    <span className="min-w-0 pt-0.5">
+                      <span className={cn("block truncate text-[13px] font-semibold", current ? "text-foreground" : "text-foreground/80")}>{t(step.label, lang)}</span>
+                      <span className="mt-0.5 line-clamp-2 text-[11px] leading-snug text-muted-foreground">
                         {complete
                           ? t("setup.status.done", lang)
-                          : state && state.missing.length > 0
-                            ? state.missing.map((key) => t(MISSING_LABELS[key], lang)).join(" · ")
+                          : missing.length > 0
+                            ? missing.map((key) => t(MISSING_LABELS[key], lang)).join(" · ")
                             : t(step.hint, lang)}
                       </span>
                     </span>
@@ -804,39 +917,38 @@ export function AccountSetupFlow({
               );
             })}
           </ol>
-          {status ? (
-            <p className="mt-3 hidden text-[12px] text-muted-foreground lg:block" data-testid="setup-progress">
-              {status.completedCount} / {STEPS.length} {t("setup.stepsDone", lang)}
-            </p>
-          ) : null}
         </nav>
 
-        <section className="detail-card-lg p-5 sm:p-6" data-testid="setup-panel">
+        <section
+          data-settings-card
+          className="rounded-2xl border border-border/65 bg-card p-4 shadow-card sm:p-5 lg:p-6"
+          data-testid="setup-panel"
+        >
           {view === "done" ? (
-            <div className="flex flex-col items-center py-6 text-center" data-testid="setup-done">
+            <div className="flex flex-col items-center py-8 text-center" data-testid="setup-done">
               <span className="flex h-14 w-14 items-center justify-center rounded-full bg-success/12 text-success"><CheckIcon size={26} /></span>
               <h2 className="mt-5 text-[22px] font-semibold tracking-[-0.02em]">{t("setup.done.title", lang)}</h2>
               <p className="mt-2 max-w-[46ch] text-[14px] leading-relaxed text-muted-foreground">
                 {status?.complete ? t("setup.done.subtitle", lang) : t("setup.done.subtitleIncomplete", lang)}
               </p>
-              <div className="mt-6 flex flex-col gap-2 sm:flex-row">
-                <Button asChild size="sm"><Link href="/dashboard">{t("setup.openDashboard", lang)}</Link></Button>
-                <Button asChild variant="outline" size="sm"><Link href="/settings">{t("setup.editInSettings", lang)}</Link></Button>
+              <div className="mt-6 flex w-full flex-col gap-2 sm:w-auto sm:flex-row">
+                <Button asChild className="w-full sm:w-auto"><Link href="/dashboard">{t("setup.openDashboard", lang)}</Link></Button>
+                <Button asChild variant="outline" className="w-full sm:w-auto"><Link href="/settings">{t("setup.editInSettings", lang)}</Link></Button>
               </div>
             </div>
           ) : (
             <>
-              <div className="mb-5 flex items-start justify-between gap-4">
+              <div className="mb-5 flex items-start justify-between gap-4 border-b border-border/60 pb-5">
                 <div className="min-w-0">
-                  <p className="text-[11px] font-semibold uppercase tracking-[0.08em] text-foreground/45">
-                    {stepIndex + 1} / {STEPS.length}
+                  <p className="text-[11px] font-semibold uppercase tracking-[0.08em] text-foreground/45 tabular-nums">
+                    {t("setup.stepEyebrow", lang)} {stepIndex + 1} / {STEPS.length}
                   </p>
-                  <h2 className="mt-1 text-[19px] font-semibold tracking-[-0.02em]">{t(STEPS[stepIndex].label, lang)}</h2>
-                  <p className="mt-1 text-[13px] text-muted-foreground">{t(STEPS[stepIndex].hint, lang)}</p>
+                  <h2 className="mt-1 text-[18px] font-semibold tracking-[-0.02em]">{t(STEPS[stepIndex].label, lang)}</h2>
+                  <p className="mt-1 text-[13px] leading-relaxed text-muted-foreground">{t(STEPS[stepIndex].hint, lang)}</p>
                 </div>
-                <button type="button" onClick={skip} disabled={skipping} className="shrink-0 rounded-full px-3 py-1.5 text-[12px] font-medium text-foreground/55 transition-colors hover:bg-foreground/[0.04] hover:text-foreground disabled:opacity-50" data-testid="setup-skip">
+                <Button type="button" variant="ghost" size="sm" onClick={skip} disabled={skipping} className="shrink-0 text-foreground/60 max-lg:h-11" data-testid="setup-skip">
                   {t("setup.skip", lang)}
-                </button>
+                </Button>
               </div>
               {view === "profile" ? <ProfileStep key="profile" user={user} lang={lang} onSaved={onSaved} onAdvance={advance} onBack={back} /> : null}
               {view === "seller" ? <SellerStep key="seller" user={user} lang={lang} onSaved={onSaved} onAdvance={advance} onBack={back} /> : null}

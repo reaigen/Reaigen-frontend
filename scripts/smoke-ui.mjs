@@ -230,6 +230,7 @@ async function openPage(path, { consent = false } = {}) {
   await page.route("**/api/reaigen/profiles/me/", (route) => {
     if (route.request().method() === "PATCH") {
       const body = readBody(route);
+      if (body.phone === "+421000000000") return json(route, { phone: ["user profile with this phone already exists."] }, 400);
       const phoneChanged = body.phone !== undefined && body.phone !== account.profile?.phone;
       if (phoneChanged) account.phone_verified = false;
       account.profile = { phone_verified: phoneChanged ? false : Boolean(account.profile?.phone_verified), ...(account.profile ?? {}), ...body, ...(phoneChanged ? { phone_verified: false } : {}) };
@@ -269,8 +270,18 @@ async function openPage(path, { consent = false } = {}) {
   const opensOn = await page.evaluate(() => !!document.querySelector('[data-testid="setup-step-seller"]'));
   check("account setup: opens on the first gap (seller)", opensOn);
 
-  await page.fill("#setup-phone", "+421900123456");
+  // A number another account owns: the backend refuses it, the step keeps
+  // everything else and explains at the field instead of failing outright.
+  await page.fill("#setup-phone", "+421000000000");
   await page.fill("#setup-bio", "Broker in Bratislava.");
+  await page.fill("#setup-city", "Bratislava");
+  await page.fill("#setup-country", "sk");
+  await page.click('[data-testid="setup-continue"]');
+  await page.waitForSelector('[data-testid="setup-phone-error"]', { timeout: 20000 });
+  await shot(page, "setup-phone-taken");
+  const stayed = await page.evaluate(() => !!document.querySelector('[data-testid="setup-step-seller"]') && document.querySelector("#setup-phone")?.getAttribute("aria-invalid") === "true");
+  check("account setup: a taken phone stays on the step with a field error", stayed && account.profile?.bio === "Broker in Bratislava." && !account.profile?.phone, JSON.stringify(account.profile));
+  await page.fill("#setup-phone", "+421900123456");
   await page.fill("#setup-city", "Bratislava");
   await page.fill("#setup-address", "Hlavná 1");
   await page.fill("#setup-postal", "81101");

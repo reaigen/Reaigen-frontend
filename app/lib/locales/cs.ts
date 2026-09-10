@@ -1897,6 +1897,14 @@ const cs: LocaleStrings = {
   "auth.verified.title":                  "E-mail ověřen",
   "auth.verified.body":                   "Přihlaste se a dokončete nastavení účtu.",
   "auth.login.resendVerification":        "Poslat ověřovací e-mail znovu",
+
+  // ── Account setup: design pass ──────────────────────────────────────
+  "setup.optional":                       "Nepovinné",
+  "setup.stepEyebrow":                    "Krok",
+  "setup.reminder.remaining":             "Zbývá",
+
+  // ── Account setup: phone conflict ───────────────────────────────────
+  "setup.seller.phoneTaken":              "Toto číslo je už propojeno s jiným účtem Reaigen. Použijte jiné číslo, nebo kontaktujte podporu, pokud je vaše.",
 };
 
 export default cs;
