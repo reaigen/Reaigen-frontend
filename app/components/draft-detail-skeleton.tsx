@@ -1,3 +1,6 @@
+"use client";
+
+import { DETAIL_LAYOUT_PRE_HYDRATION_HTML, useDetailLayout } from "../lib/detail-layout";
 import { cn } from "../lib/utils";
 
 function SkeletonShape({ className }: { className: string }) {
@@ -16,17 +19,26 @@ function DraftDetailSkeletonContent({
   label: string;
   className?: string;
 }) {
+  // The saved viewing mode decides the silhouette's width and column count,
+  // exactly as it decides the loaded listing's — one general skeleton left a
+  // focused-mode reader watching 1360px of shapes snap down to 920px.
+  const detailLayout = useDetailLayout();
   return (
     <div
       data-testid="draft-detail-skeleton"
+      data-detail-layout={detailLayout}
+      // Server HTML always says wide; the inline script below corrects the
+      // attribute before paint, so the hydration pass expectedly disagrees.
+      suppressHydrationWarning
       className={cn(
-        "draft-detail-page relative mx-auto w-full max-w-[1360px] pb-24 md:pb-12",
+        "draft-detail-page relative mx-auto w-full max-w-[1360px] pb-24 transition-[max-width] duration-200 md:pb-12",
         className,
       )}
       role="status"
       aria-busy="true"
       aria-label={label}
     >
+      <script dangerouslySetInnerHTML={DETAIL_LAYOUT_PRE_HYDRATION_HTML} />
       <span className="sr-only">{label}</span>
 
       {/* The mobile detail route owns its back action below the global header. */}
@@ -56,7 +68,7 @@ function DraftDetailSkeletonContent({
           </div>
           <SkeletonShape className="mt-4 h-7 w-36 rounded-lg sm:h-8 sm:w-44" />
 
-          <div className="mt-5 flex gap-2.5 overflow-hidden border-border/70 pb-1 sm:grid sm:grid-cols-3 md:border-t md:pb-0 md:pt-5">
+          <div className="draft-facts-grid mt-4 flex gap-2.5 overflow-hidden pb-1 sm:grid sm:grid-cols-3 sm:pb-0 md:mt-5 md:border-t md:border-border/65 md:pt-5">
             {[0, 1, 2].map((index) => (
               <div
                 key={index}
@@ -98,8 +110,13 @@ function DraftDetailSkeletonContent({
         </div>
       </div>
 
-      {/* Reserve the first supporting-detail row instead of ending at a blank fold. */}
-      <div aria-hidden="true" className="mt-6 grid gap-6 md:mt-8 md:gap-7 lg:mt-10 lg:grid-cols-2">
+      {/*
+        Reserve the first supporting-detail row instead of ending at a blank
+        fold. Same grid class as the listing: the focused mode and the
+        workspace container query (a docked Agent) both stack the cards by
+        that name, so the silhouette follows without a second rule.
+      */}
+      <div aria-hidden="true" className="draft-support-grid mt-6 grid gap-6 md:mt-8 md:gap-7 lg:mt-10 lg:grid-cols-2 lg:items-start">
         <section>
           <div className="mb-3 flex items-center gap-2">
             <SkeletonShape className="h-5 w-5 rounded-md" />

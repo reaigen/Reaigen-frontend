@@ -1,6 +1,7 @@
 "use client";
 
 import { AppShell } from "../../components/app-shell";
+import { DetailLayoutToggle } from "../../components/detail-layout-toggle";
 import { DraftDetailSkeleton } from "../../components/draft-detail-skeleton";
 import { useAuth } from "../../components/hooks/use-auth";
 import { getUserLanguage, t } from "../../lib/i18n";
@@ -21,6 +22,7 @@ export default function DraftDetailLoading() {
       headerBackHref="/dashboard"
       headerBackLabel={t("nav.dashboard", lang)}
       headerTitleLoading
+      headerAction={<DetailLayoutToggle lang={lang} />}
     >
       <DraftDetailSkeleton label={t("common.loading", lang)} />
     </AppShell>

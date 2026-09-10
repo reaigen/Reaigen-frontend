@@ -833,6 +833,28 @@
     box-shadow: 0 2px 7px rgba(0,0,0,.28);
   }
 
+  /* Detail viewing mode, stamped on the page root and on its loading
+     silhouette by the same store (app/lib/detail-layout.ts). One rule, so
+     the skeleton can never disagree with the listing it stands in for: the
+     focused mode is a single reading column at 920px, the wide mode keeps
+     the components' own 1360px / two-column classes. The attribute is also
+     what the pre-hydration script sets on a cold load, before any class
+     from React could. */
+  .draft-detail-page[data-detail-layout="1"] {
+    max-width: 920px;
+  }
+
+  .draft-detail-page[data-detail-layout="1"] .draft-support-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  /* A card spanning two columns (lg:col-span-2) would open an implicit second
+     track in that single column: with no template the next cards paired up
+     beside it, with the 1fr template one collapsed into a 0px track. */
+  .draft-detail-page[data-detail-layout="1"] .draft-support-grid section {
+    grid-column: auto;
+  }
+
   /* The Agent is a real dock, so the useful width is the workspace container,
      not the browser viewport. These rules prevent desktop breakpoints from
      forcing two- and three-column layouts into the narrow remaining pane. */

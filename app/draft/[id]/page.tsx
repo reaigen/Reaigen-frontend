@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, use, type ReactNode } from "react";
+import { useEffect, useMemo, useRef, useState, use, type ReactNode } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import dynamic from "next/dynamic";
@@ -21,6 +21,8 @@ import type { DraftDetailItem, DraftTourAssetsPayload, DraftUpload, SplatsByDraf
 import { baseUnitForCategory, resolveUnit, unitLabel, type UnitLookup } from "../../lib/unit-catalog";
 import { currencyDisplaySymbol } from "../../lib/currency-display";
 import { DraftDetailSkeleton } from "../../components/draft-detail-skeleton";
+import { DetailLayoutToggle } from "../../components/detail-layout-toggle";
+import { useDetailLayout } from "../../lib/detail-layout";
 import { cn } from "../../lib/utils";
 import { FormattedDescription } from "../../components/formatted-description";
 import {
@@ -34,14 +36,12 @@ import {
   MapPinIcon,
   PlusIcon,
   PriceIcon,
-  FocusColumnIcon,
   SearchIcon,
   ShareIcon,
   StarIcon,
   TourIcon,
   VideoIcon,
   VersionsIcon,
-  WideColumnsIcon,
 } from "../../components/icons";
 import { StatusPill } from "../../components/status-pill";
 import { selectShareableTour } from "../../lib/tour-sharing";
@@ -569,17 +569,9 @@ export default function DraftPreviewPage({
   const [editorOpen, setEditorOpen] = useState(false);
   const [descriptionEditRequested, setDescriptionEditRequested] = useState(false);
   const [floorplanFullscreen, setFloorplanFullscreen] = useState(false);
-  // Detail viewing modes, mirroring the list page's grid toggle: a focused
-  // single-column reading width with generous whitespace, or the wide
-  // two-column workspace. Persisted separately from the list preference.
-  const [detailLayout, setDetailLayout] = useState<1 | 2>(2);
-  useLayoutEffect(() => {
-    if (localStorage.getItem("reaigen:detailLayout") === "1") setDetailLayout(1);
-  }, []);
-  const handleDetailLayout = useCallback((cols: 1 | 2) => {
-    setDetailLayout(cols);
-    localStorage.setItem("reaigen:detailLayout", String(cols));
-  }, []);
+  // Detail viewing mode (focused / wide), shared with the loading silhouette
+  // so the skeleton opens at the width and column count this page settles into.
+  const detailLayout = useDetailLayout();
   const [floorplanAgentAction, setFloorplanAgentAction] = useState<ReaiViewerAction | null>(null);
   // Drawing walls, placing doors and dragging vertices needs a pointer and a
   // canvas with room beside its inspector panels; on a phone the plan is pushed
@@ -804,6 +796,7 @@ export default function DraftPreviewPage({
         headerBackHref="/dashboard"
         headerBackLabel={t("nav.dashboard", lang)}
         headerTitleLoading
+        headerAction={<DetailLayoutToggle lang={lang} />}
       >
         <DraftDetailSkeleton label={t("common.loading", lang)} />
       </AppShell>
@@ -924,31 +917,18 @@ export default function DraftPreviewPage({
       headerBackLabel={t("nav.dashboard", lang)}
       headerTitle={draft.title}
       headerMeta={address || undefined}
-      headerAction={
-        /* One quiet circular button in the header's own language (same as the
-           back button) — the icon previews the mode a click switches to. */
-        <button
-          type="button"
-          onClick={() => handleDetailLayout(detailLayout === 1 ? 2 : 1)}
-          aria-pressed={detailLayout === 1}
-          aria-label={t(detailLayout === 1 ? "draft.layout.wide" : "draft.layout.focused", lang)}
-          title={t(detailLayout === 1 ? "draft.layout.wide" : "draft.layout.focused", lang)}
-          className="flex h-10 w-10 items-center justify-center rounded-full border border-border/60 bg-card text-foreground/65 shadow-control transition-[background-color,color,transform] duration-100 hover:bg-surface-subtle hover:text-foreground active:scale-90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
-        >
-          {detailLayout === 1 ? <WideColumnsIcon size={16} /> : <FocusColumnIcon size={16} />}
-        </button>
-      }
+      headerAction={<DetailLayoutToggle lang={lang} />}
       onReaiDraftUpdated={(updatedDraft) => {
         setDraft(updatedDraft);
         writeDraftDetailCache(user.id, draftId, updatedDraft);
       }}
     >
-      <div className={cn(
+      <div
+        data-detail-layout={detailLayout}
         // duration-200 matches the shell's docked-panel padding transition,
         // so a mode switch and a panel dock read as one seamless motion.
-        "draft-detail-page relative mx-auto w-full pb-24 transition-[max-width] duration-200 md:pb-12",
-        detailLayout === 1 ? "max-w-[920px]" : "max-w-[1360px]",
-      )}>
+        className="draft-detail-page relative mx-auto w-full max-w-[1360px] pb-24 transition-[max-width] duration-200 md:pb-12"
+      >
         {/*
           Creation toolbar. Back stays the first thing on the page at every
           width — the stale-listing notice below must never displace the way
@@ -1268,7 +1248,8 @@ export default function DraftPreviewPage({
           <div className={cn(
             "draft-support-grid",
             "mt-6 grid gap-6 md:mt-8 md:gap-7 lg:mt-10",
-            detailLayout === 2 && detailCardCount > 1 && !sparseNarrativeDetails && "lg:grid-cols-2 lg:items-start",
+            // The focused mode stacks these by the attribute rule on the root.
+            detailCardCount > 1 && !sparseNarrativeDetails && "lg:grid-cols-2 lg:items-start",
           )}>
             {hasNarrative && (
               <div

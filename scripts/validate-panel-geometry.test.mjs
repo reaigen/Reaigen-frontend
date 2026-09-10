@@ -19,6 +19,9 @@ const draftLoading = read("app/draft/[id]/loading.tsx");
 const draftPage = read("app/draft/[id]/page.tsx");
 const tourPage = read("app/tour/[id]/page.tsx");
 const tourLoading = read("app/components/tour-workspace-loading.tsx");
+const detailLayoutStore = read("app/lib/detail-layout.ts");
+const detailLayoutToggle = read("app/components/detail-layout-toggle.tsx");
+const draftSkeletonFixture = read("app/dev-fixtures/draft-skeleton/page.tsx");
 const auditedSurfaces = [
   "app/components/app-shell.tsx",
   "app/components/draft-editor.tsx",
@@ -110,4 +113,37 @@ test("draft route and data loading render geometry-matched silhouettes", () => {
   assert.match(draftSkeleton, /sm:grid sm:grid-cols-3/);
   assert.match(draftSkeleton, /data-testid="draft-detail-skeleton-shell"/);
   assert.match(globals, /\.draft-skeleton-shape \{[\s\S]*?animation: shimmer 1\.65s/);
+});
+
+test("draft silhouette follows the saved viewing mode and the workspace width", () => {
+  // One store feeds the page, both loading states and the silhouette, so the
+  // skeleton opens at the width and column count the listing settles into.
+  assert.match(detailLayoutStore, /useSyncExternalStore/);
+  assert.match(detailLayoutStore, /"reaigen:detailLayout"/);
+  assert.match(draftPage, /const detailLayout = useDetailLayout\(\)/);
+  assert.doesNotMatch(draftPage, /localStorage\.(getItem|setItem)\("reaigen:detailLayout"/);
+  assert.match(draftSkeleton, /const detailLayout = useDetailLayout\(\)/);
+  // The mode is an attribute on the root and one CSS rule, never a class
+  // choice a second component could get wrong.
+  assert.match(draftPage, /data-detail-layout=\{detailLayout\}/);
+  assert.match(draftSkeleton, /data-detail-layout=\{detailLayout\}/);
+  assert.doesNotMatch(draftPage + draftSkeleton, /max-w-\[920px\]/);
+  assert.match(globals, /\.draft-detail-page\[data-detail-layout="1"\] \{\s*max-width: 920px;/);
+  assert.match(globals, /\.draft-detail-page\[data-detail-layout="1"\] \.draft-support-grid \{\s*grid-template-columns: minmax\(0, 1fr\);/);
+  assert.match(globals, /\.draft-detail-page\[data-detail-layout="1"\] \.draft-support-grid section \{\s*grid-column: auto;/);
+  // Server HTML cannot know the saved mode: the silhouette stamps it before
+  // paint, so a cold load never opens wide and slides down.
+  assert.match(detailLayoutStore, /DETAIL_LAYOUT_PRE_HYDRATION_HTML/);
+  assert.match(detailLayoutStore, /document\.currentScript\.parentElement\.setAttribute\("data-detail-layout","1"\)/);
+  assert.match(draftSkeleton, /suppressHydrationWarning[\s\S]{0,400}<script dangerouslySetInnerHTML=\{DETAIL_LAYOUT_PRE_HYDRATION_HTML\} \/>/);
+  // The workspace container query collapses the listing beside a docked Agent
+  // by these class names; the silhouette must carry them too.
+  assert.match(draftSkeleton, /draft-support-grid[^"]*lg:grid-cols-2/);
+  assert.match(draftSkeleton, /draft-facts-grid/);
+  assert.match(draftSkeletonFixture, /app-workspace/);
+  // The mode toggle is live while loading, so neither loading state pops it in.
+  assert.match(detailLayoutToggle, /data-testid="detail-layout-toggle"/);
+  assert.match(draftLoading, /headerTitleLoading\s+headerAction=\{<DetailLayoutToggle lang=\{lang\} \/>\}/);
+  assert.match(draftPage, /headerTitleLoading\s+headerAction=\{<DetailLayoutToggle lang=\{lang\} \/>\}/);
+  assert.match(draftPage, /headerAction=\{<DetailLayoutToggle lang=\{lang\} \/>\}\s+onReaiDraftUpdated/);
 });
