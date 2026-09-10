@@ -556,6 +556,28 @@ export interface ComputeCredits {
   period_start: string | null;
 }
 
+export interface AccountQuotaUsage {
+  used: number;
+  limit: number;
+  remaining: number | null;
+  unlimited: boolean;
+  can_create: boolean;
+  period: string;
+  period_start: string | null;
+  visible_total?: number;
+}
+
+export interface AccountUsageSnapshot {
+  generated_at: string;
+  entitlement_active: boolean;
+  products: Record<string, { allowed: boolean }>;
+  drafts: AccountQuotaUsage;
+  posts: AccountQuotaUsage;
+  ai_descriptions: AccountQuotaUsage;
+  credits: ComputeCredits;
+  credit_costs: Record<string, number>;
+}
+
 export interface BillingAccount {
   id: number;
   subscription_tier_detail: {
@@ -693,6 +715,7 @@ export async function updateSellerProfile(data: Partial<{
 export interface CreatorPostingState {
   can_publish: boolean;
   has_reaigen_access: boolean;
+  has_reailist_access?: boolean;
   email_verified: boolean;
   phone_present: boolean;
   phone_verified: boolean;
@@ -709,10 +732,11 @@ export interface UserCapabilities {
   features: Record<string, boolean>;
   apps: Record<string, boolean>;
   creator_posting: CreatorPostingState;
+  usage?: AccountUsageSnapshot;
 }
 
 export async function getUserCapabilities(): Promise<UserCapabilities> {
-  const payload = await request("/api/reaigen/users/permissions/") as { capabilities: UserCapabilities };
+  const payload = await freshRequest("/api/reaigen/users/permissions/") as { capabilities: UserCapabilities };
   return payload.capabilities;
 }
 
@@ -827,7 +851,7 @@ export async function markAllNotificationsRead(): Promise<{
 }
 
 export async function getBilling(): Promise<BillingAccount> {
-  return request("/api/reaigen/billing/me/");
+  return freshRequest("/api/reaigen/billing/me/") as Promise<BillingAccount>;
 }
 
 export async function updateBilling(data: Partial<{
