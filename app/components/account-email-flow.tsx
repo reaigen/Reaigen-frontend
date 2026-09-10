@@ -14,7 +14,9 @@ import {
   validatePasswordReset,
   verifyEmail,
 } from "../lib/api/client";
-import { getBrowserLanguage } from "../lib/i18n";
+import { getBrowserLanguage, t } from "../lib/i18n";
+import { isValidInternationalPhone } from "../lib/phone";
+import { InternationalPhoneInput } from "./international-phone-input";
 
 const INPUT_CLASS =
   "h-14 rounded-xl border-border bg-white px-4 text-[15px] text-foreground shadow-none placeholder:text-foreground/35 hover:border-foreground/35 focus-visible:border-foreground focus-visible:ring-0 focus-visible:shadow-[0_0_0_3px_rgba(0,0,0,0.08)]";
@@ -37,7 +39,7 @@ const COPY = {
     smsMethod: "SMS",
     email: "Email address",
     phone: "Verified phone number",
-    phoneHint: "Use the international format, for example +421 901 234 567.",
+    phoneHint: "Choose the calling code, then enter the number. You can also paste an international number.",
     sendReset: "Send reset link",
     sendCode: "Send code",
     resetSent: "Check your inbox",
@@ -82,7 +84,7 @@ const COPY = {
     smsMethod: "SMS",
     email: "E-mailová adresa",
     phone: "Overené telefónne číslo",
-    phoneHint: "Použite medzinárodný formát, napríklad +421 901 234 567.",
+    phoneHint: "Vyberte predvoľbu a zadajte číslo. Môžete vložiť aj celé medzinárodné číslo.",
     sendReset: "Poslať odkaz",
     sendCode: "Poslať kód",
     resetSent: "Skontrolujte si e-mail",
@@ -127,7 +129,7 @@ const COPY = {
     smsMethod: "SMS",
     email: "E-mailová adresa",
     phone: "Ověřené telefonní číslo",
-    phoneHint: "Použijte mezinárodní formát, například +421 901 234 567.",
+    phoneHint: "Vyberte předvolbu a zadejte číslo. Můžete vložit i celé mezinárodní číslo.",
     sendReset: "Poslat odkaz",
     sendCode: "Poslat kód",
     resetSent: "Zkontrolujte si e-mail",
@@ -172,7 +174,7 @@ const COPY = {
     smsMethod: "SMS",
     email: "E-Mail-Adresse",
     phone: "Bestätigte Telefonnummer",
-    phoneHint: "Verwenden Sie das internationale Format, zum Beispiel +421 901 234 567.",
+    phoneHint: "Wählen Sie die Vorwahl und geben Sie die Nummer ein. Eine internationale Nummer kann auch eingefügt werden.",
     sendReset: "Link senden",
     sendCode: "Code senden",
     resetSent: "Posteingang prüfen",
@@ -209,7 +211,7 @@ function normalizeLanguage(value?: string): Language | undefined {
   return language && language in COPY ? language : undefined;
 }
 
-function useCopy(initialLanguage?: string) {
+function useResolvedLanguage(initialLanguage?: string) {
   const [language, setLanguage] = React.useState<Language>(
     normalizeLanguage(initialLanguage) ?? "en",
   );
@@ -218,7 +220,11 @@ function useCopy(initialLanguage?: string) {
       setLanguage(getBrowserLanguage() as Language);
     }
   }, [initialLanguage]);
-  return COPY[language] ?? COPY.en;
+  return language;
+}
+
+function useCopy(initialLanguage?: string) {
+  return COPY[useResolvedLanguage(initialLanguage)] ?? COPY.en;
 }
 
 function FlowShell({
@@ -323,7 +329,8 @@ export function VerifyEmailFlow({ token, language }: { token: string; language?:
 }
 
 export function ForgotPasswordFlow({ language }: { language?: string }) {
-  const copy = useCopy(language);
+  const resolvedLanguage = useResolvedLanguage(language);
+  const copy = COPY[resolvedLanguage] ?? COPY.en;
   const [method, setMethod] = React.useState<"email" | "sms">("email");
   const [email, setEmail] = React.useState("");
   const [phone, setPhone] = React.useState("");
@@ -334,12 +341,17 @@ export function ForgotPasswordFlow({ language }: { language?: string }) {
   const [stage, setStage] = React.useState<"request" | "email-sent" | "code" | "complete">("request");
   const [failed, setFailed] = React.useState(false);
   const [samePassword, setSamePassword] = React.useState(false);
+  const [phoneTouched, setPhoneTouched] = React.useState(false);
   const mismatch = confirm.length > 0 && password !== confirm;
+  const phoneValid = isValidInternationalPhone(phone);
 
   async function requestRecovery(event: React.FormEvent) {
     event.preventDefault();
     if (method === "email" && !/\S+@\S+\.\S+/.test(email.trim())) return;
-    if (method === "sms" && !phone.trim().startsWith("+")) return;
+    if (method === "sms" && !phoneValid) {
+      setPhoneTouched(true);
+      return;
+    }
     setLoading(true);
     setFailed(false);
     setSamePassword(false);
@@ -432,6 +444,7 @@ export function ForgotPasswordFlow({ language }: { language?: string }) {
                 onClick={() => {
                   setMethod(option);
                   setFailed(false);
+                  setPhoneTouched(false);
                 }}
                 className={`h-10 rounded-full text-[13px] font-semibold transition-colors ${method === option ? "bg-white text-foreground shadow-sm" : "text-muted-foreground"}`}
               >
@@ -445,14 +458,27 @@ export function ForgotPasswordFlow({ language }: { language?: string }) {
               <Input type="email" value={email} onChange={(event) => setEmail(event.target.value)} autoComplete="email" className={INPUT_CLASS} />
             </label>
           ) : (
-            <label className="block space-y-1.5 text-[13px] font-medium">
-              <span>{copy.phone}</span>
-              <Input type="tel" value={phone} onChange={(event) => setPhone(event.target.value)} autoComplete="tel" placeholder="+421 901 234 567" className={INPUT_CLASS} />
-              <span className="block text-[11px] font-normal leading-relaxed text-muted-foreground">{copy.phoneHint}</span>
-            </label>
+            <div className="space-y-1.5 text-[13px] font-medium">
+              <label htmlFor="recovery-phone" className="block">{copy.phone}</label>
+              <InternationalPhoneInput
+                id="recovery-phone"
+                value={phone}
+                onChange={setPhone}
+                onBlur={() => setPhoneTouched(true)}
+                lang={resolvedLanguage}
+                error={phoneTouched && Boolean(phone) && !phoneValid}
+                aria-describedby={phoneTouched && phone && !phoneValid ? "recovery-phone-error recovery-phone-hint" : "recovery-phone-hint"}
+                className="h-14 rounded-xl border-border bg-white shadow-none hover:border-foreground/35 focus-within:border-foreground focus-within:ring-0 focus-within:shadow-[0_0_0_3px_rgba(0,0,0,0.08)]"
+                inputClassName="text-[15px] text-foreground placeholder:text-foreground/35"
+              />
+              {phoneTouched && phone && !phoneValid ? (
+                <p id="recovery-phone-error" role="alert" className="text-[11px] font-normal leading-relaxed text-destructive">{t("phone.invalid", resolvedLanguage)}</p>
+              ) : null}
+              <p id="recovery-phone-hint" className="text-[11px] font-normal leading-relaxed text-muted-foreground">{copy.phoneHint}</p>
+            </div>
           )}
           {failed && <ErrorNotice>{copy.resetFailed}</ErrorNotice>}
-          <Button type="submit" loading={loading} disabled={loading || (method === "email" ? !/\S+@\S+\.\S+/.test(email.trim()) : !phone.trim().startsWith("+"))} className="h-[3.25rem] w-full rounded-full text-[14px] font-semibold shadow-none">
+          <Button type="submit" loading={loading} disabled={loading || (method === "email" ? !/\S+@\S+\.\S+/.test(email.trim()) : !phoneValid)} className="h-[3.25rem] w-full rounded-full text-[14px] font-semibold shadow-none">
             {method === "email" ? copy.sendReset : copy.sendCode}
           </Button>
         </form>

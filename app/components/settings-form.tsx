@@ -81,12 +81,13 @@ import {
   type WebPushState,
 } from "../lib/web-push";
 import { DeviceDesktopIcon, DeviceMobileIcon, ImageIcon, LinkIcon } from "./icons";
-import { formatPhoneDisplay } from "../lib/phone";
+import { formatPhoneDisplay, isValidInternationalPhone } from "../lib/phone";
 import { t, getUserLanguage, formatDate as fmtDate } from "../lib/i18n";
 import type { LocaleKey } from "../lib/locales";
 import { cn } from "../lib/utils";
 import { ManagedLegalDocuments } from "./content-documents";
 import { resolveQuotaPresentation } from "../lib/account-usage";
+import { InternationalPhoneInput } from "./international-phone-input";
 
 function useAutoDismiss(value: boolean, setter: (v: boolean) => void, ms = 3000) {
   React.useEffect(() => {
@@ -409,6 +410,8 @@ function SellerTab({ user, onSaved, lang }: { user: UserProfile; onSaved: () => 
   const [loading, setLoading] = React.useState(false);
   const [error, setError] = React.useState<string | null>(null);
   const [success, setSuccess] = React.useState(false);
+  const [phoneTouched, setPhoneTouched] = React.useState(false);
+  const [secondaryPhoneTouched, setSecondaryPhoneTouched] = React.useState(false);
   const [coverUploading, setCoverUploading] = React.useState(false);
   const coverInputRef = React.useRef<HTMLInputElement>(null);
   useAutoDismiss(success, setSuccess);
@@ -472,6 +475,10 @@ function SellerTab({ user, onSaved, lang }: { user: UserProfile; onSaved: () => 
     e.preventDefault();
     setError(null);
     setSuccess(false);
+    setPhoneTouched(true);
+    setSecondaryPhoneTouched(true);
+    if ((phone.trim() && !isValidInternationalPhone(phone))
+      || (secondaryPhone.trim() && !isValidInternationalPhone(secondaryPhone))) return;
     try {
       setLoading(true);
       await Promise.all([
@@ -567,7 +574,19 @@ function SellerTab({ user, onSaved, lang }: { user: UserProfile; onSaved: () => 
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div className="space-y-1.5">
               <Label htmlFor="seller-phone">{t("settings.seller.phone", lang)}</Label>
-              <Input id="seller-phone" value={phone} onChange={(e) => setPhone(e.target.value)} placeholder="+421 900 123 456" />
+              <InternationalPhoneInput
+                id="seller-phone"
+                value={phone}
+                onChange={setPhone}
+                onBlur={() => setPhoneTouched(true)}
+                lang={lang}
+                preferredCountry={country || p?.country}
+                error={phoneTouched && Boolean(phone.trim()) && !isValidInternationalPhone(phone)}
+                aria-describedby={phoneTouched && phone.trim() && !isValidInternationalPhone(phone) ? "seller-phone-error" : undefined}
+              />
+              {phoneTouched && phone.trim() && !isValidInternationalPhone(phone) ? (
+                <p id="seller-phone-error" role="alert" className="text-[12px] text-destructive">{t("phone.invalid", lang)}</p>
+              ) : null}
             </div>
             <div className="space-y-1.5">
               <Label htmlFor="seller-company">{t("settings.seller.company", lang)}</Label>
@@ -582,7 +601,19 @@ function SellerTab({ user, onSaved, lang }: { user: UserProfile; onSaved: () => 
             </div>
             <div className="space-y-1.5">
               <Label htmlFor="seller-secondary-phone">{t("settings.seller.secondaryPhone", lang)}</Label>
-              <Input id="seller-secondary-phone" value={secondaryPhone} onChange={(e) => setSecondaryPhone(e.target.value)} placeholder="+421 900 123 456" />
+              <InternationalPhoneInput
+                id="seller-secondary-phone"
+                value={secondaryPhone}
+                onChange={setSecondaryPhone}
+                onBlur={() => setSecondaryPhoneTouched(true)}
+                lang={lang}
+                preferredCountry={country || p?.country}
+                error={secondaryPhoneTouched && Boolean(secondaryPhone.trim()) && !isValidInternationalPhone(secondaryPhone)}
+                aria-describedby={secondaryPhoneTouched && secondaryPhone.trim() && !isValidInternationalPhone(secondaryPhone) ? "seller-secondary-phone-error" : undefined}
+              />
+              {secondaryPhoneTouched && secondaryPhone.trim() && !isValidInternationalPhone(secondaryPhone) ? (
+                <p id="seller-secondary-phone-error" role="alert" className="text-[12px] text-destructive">{t("phone.invalid", lang)}</p>
+              ) : null}
             </div>
           </div>
 
