@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { Button } from "../lib/ui/button";
 import { Checkbox } from "../lib/ui/checkbox";
+import { FormField, focusFirstInvalidField, type FormControlState } from "../lib/ui/form-field";
 import { Input } from "../lib/ui/input";
 import { Label } from "../lib/ui/label";
 import { Switch } from "../lib/ui/switch";
@@ -27,9 +28,10 @@ import {
 } from "../lib/api/client";
 import { getReaiImprovementConsent } from "../lib/api/client";
 import { getApiErrorJson, getSafeApiErrorMessage } from "../lib/api/error-message";
+import { countFormIssues, isEmailAddress, normalizeWebAddress } from "../lib/form-validation";
 import { t } from "../lib/i18n";
 import type { LocaleKey } from "../lib/locales";
-import { formatPhoneDisplay, isValidInternationalPhone } from "../lib/phone";
+import { formatPhoneDisplay, isPhoneCountry, isValidInternationalPhone } from "../lib/phone";
 import { cn } from "../lib/utils";
 import {
   computeAccountSetupStatus,
@@ -39,6 +41,7 @@ import {
   type SetupStepKey,
 } from "../lib/account-setup";
 import { AgentIcon, CheckIcon, DeviceMobileIcon, EditIcon, PriceIcon } from "./icons";
+import { CountrySelect } from "./country-select";
 import { PageHeader } from "./page-header";
 import { StatusPill } from "./status-pill";
 import { useAccountSetup } from "./hooks/use-account-setup";
@@ -51,7 +54,7 @@ import { InternationalPhoneInput } from "./international-phone-input";
  * nothing here is a second source of truth; Settings stays the place to edit
  * later.
  *
- * Composition follows Settings: one white application surface with a quiet
+ * Composition follows Settings: one semantic application surface with a quiet
  * step rail on the left and the current step's form on the right (design
  * language: management pages cap reading width, a stable vertical section
  * rail on desktop). Phones get a four-cell step strip instead of a clipped
@@ -101,16 +104,57 @@ type StepView = SetupStepKey | "done";
  * labelled: an "Optional" tag on the right of the label row, never an
  * asterisk (the label language is 11–13px medium text, not punctuation).
  */
-function Field({ id, label, optional, lang, children }: { id: string; label: string; optional?: boolean; lang: string; children: React.ReactNode }) {
+function Field({
+  id,
+  label,
+  optional,
+  lang,
+  hint,
+  error,
+  action,
+  children,
+}: {
+  id: string;
+  label: string;
+  optional?: boolean;
+  lang: string;
+  hint?: string;
+  error?: string | null;
+  action?: React.ReactNode;
+  children: (control: FormControlState) => React.ReactNode;
+}) {
   return (
-    <div className="space-y-1.5">
-      <div className="flex items-baseline justify-between gap-3">
-        <Label htmlFor={id}>{label}</Label>
-        {optional ? <span className="text-[11px] font-medium text-foreground/45">{t("setup.optional", lang)}</span> : null}
-      </div>
+    <FormField
+      id={id}
+      label={label}
+      optionalLabel={optional ? t("setup.optional", lang) : undefined}
+      hint={hint}
+      error={error}
+      action={action}
+    >
       {children}
-    </div>
+    </FormField>
   );
+}
+
+function useTouchedFields<Key extends string>() {
+  const [touched, setTouched] = React.useState<Set<Key>>(() => new Set());
+  const touch = React.useCallback((key: Key) => {
+    setTouched((current) => current.has(key) ? current : new Set(current).add(key));
+  }, []);
+  const touchAll = React.useCallback((keys: readonly Key[]) => {
+    setTouched(new Set(keys));
+  }, []);
+  return { touched, touch, touchAll };
+}
+
+function requiredError(value: string, touched: boolean, lang: string): string | null {
+  return touched && !value.trim() ? t("form.required", lang) : null;
+}
+
+function issueStatus(issueCount: number, lang: string): string {
+  if (issueCount === 0) return t("setup.form.ready", lang);
+  return `${issueCount} ${t(issueCount === 1 ? "setup.form.issue" : "setup.form.issues", lang)}`;
 }
 
 /** Section heading inside a step: a hairline above, a quiet label, no card. */
@@ -146,6 +190,8 @@ function StepFooter({
   saving,
   continueLabel,
   disabled,
+  validationStatus,
+  ready,
 }: {
   lang: string;
   canBack: boolean;
@@ -153,14 +199,25 @@ function StepFooter({
   saving: boolean;
   continueLabel?: string;
   disabled?: boolean;
+  validationStatus?: string;
+  ready?: boolean;
 }) {
   return (
     <div className="mt-2 flex flex-col-reverse gap-2 border-t border-border/60 pt-5 sm:flex-row sm:items-center sm:justify-between">
-      <div>
+      <div className="flex min-h-9 min-w-0 flex-1 items-center justify-between gap-3 sm:min-h-11 sm:justify-start">
         {canBack ? (
-          <Button type="button" variant="ghost" className="w-full sm:w-auto" onClick={onBack} disabled={saving}>
+          <Button type="button" variant="ghost" className="shrink-0" onClick={onBack} disabled={saving}>
             {t("setup.back", lang)}
           </Button>
+        ) : null}
+        {validationStatus ? (
+          <p
+            aria-live="polite"
+            className={cn("min-w-0 text-[12px]", ready ? "text-success" : "text-muted-foreground")}
+            data-testid="setup-validation-status"
+          >
+            {validationStatus}
+          </p>
         ) : null}
       </div>
       <Button type="submit" className="w-full sm:w-auto" loading={saving} disabled={disabled} data-testid="setup-continue">
@@ -179,11 +236,25 @@ function ProfileStep({ user, lang, onSaved, onAdvance }: StepProps) {
   const [saving, setSaving] = React.useState(false);
   const [error, setError] = React.useState<string | null>(null);
   const [resent, setResent] = React.useState(false);
-  const canSubmit = firstName.trim().length > 0 && lastName.trim().length > 0 && username.trim().length > 0;
+  const { touched, touch, touchAll } = useTouchedFields<"firstName" | "lastName" | "username">();
+  const firstNameMissing = !firstName.trim();
+  const lastNameMissing = !lastName.trim();
+  const usernameMissing = !username.trim();
+  const issueCount = countFormIssues([firstNameMissing, lastNameMissing, usernameMissing]);
+  const canSubmit = issueCount === 0;
 
   async function handleSubmit(event: React.FormEvent) {
     event.preventDefault();
-    if (!canSubmit || saving) return;
+    if (saving) return;
+    if (!canSubmit) {
+      touchAll(["firstName", "lastName", "username"]);
+      focusFirstInvalidField([
+        firstNameMissing && "setup-first-name",
+        lastNameMissing && "setup-last-name",
+        usernameMissing && "setup-username",
+      ]);
+      return;
+    }
     setError(null);
     setSaving(true);
     try {
@@ -213,15 +284,15 @@ function ProfileStep({ user, lang, onSaved, onAdvance }: StepProps) {
   return (
     <form className="space-y-5" onSubmit={handleSubmit} noValidate data-testid="setup-step-profile">
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-        <Field id="setup-first-name" label={t("settings.profile.firstName", lang)} lang={lang}>
-          <Input id="setup-first-name" value={firstName} onChange={(e) => setFirstName(e.target.value)} autoComplete="given-name" />
+        <Field id="setup-first-name" label={t("settings.profile.firstName", lang)} lang={lang} error={requiredError(firstName, touched.has("firstName"), lang)}>
+          {(control) => <Input {...control} value={firstName} onChange={(e) => setFirstName(e.target.value)} onBlur={() => touch("firstName")} autoComplete="given-name" />}
         </Field>
-        <Field id="setup-last-name" label={t("settings.profile.lastName", lang)} lang={lang}>
-          <Input id="setup-last-name" value={lastName} onChange={(e) => setLastName(e.target.value)} autoComplete="family-name" />
+        <Field id="setup-last-name" label={t("settings.profile.lastName", lang)} lang={lang} error={requiredError(lastName, touched.has("lastName"), lang)}>
+          {(control) => <Input {...control} value={lastName} onChange={(e) => setLastName(e.target.value)} onBlur={() => touch("lastName")} autoComplete="family-name" />}
         </Field>
       </div>
-      <Field id="setup-username" label={t("settings.profile.username", lang)} lang={lang}>
-        <Input id="setup-username" value={username} onChange={(e) => setUsername(e.target.value)} autoComplete="username" />
+      <Field id="setup-username" label={t("settings.profile.username", lang)} lang={lang} error={requiredError(username, touched.has("username"), lang)}>
+        {(control) => <Input {...control} value={username} onChange={(e) => setUsername(e.target.value)} onBlur={() => touch("username")} autoComplete="username" />}
       </Field>
       <div className="space-y-1.5">
         <Label>{t("settings.profile.email", lang)}</Label>
@@ -237,7 +308,14 @@ function ProfileStep({ user, lang, onSaved, onAdvance }: StepProps) {
         </div>
       </div>
       {error ? <p role="alert" className="text-[12px] text-destructive">{error}</p> : null}
-      <StepFooter lang={lang} canBack={false} onBack={() => {}} saving={saving} disabled={!canSubmit} />
+      <StepFooter
+        lang={lang}
+        canBack={false}
+        onBack={() => {}}
+        saving={saving}
+        validationStatus={issueStatus(issueCount, lang)}
+        ready={canSubmit}
+      />
     </form>
   );
 }
@@ -266,6 +344,7 @@ function SellerStep({ user, lang, onSaved, onAdvance, onBack }: StepProps) {
   // the phone field carries the explanation, and the user can change it.
   const [phoneError, setPhoneError] = React.useState<string | null>(null);
   const [phoneTouched, setPhoneTouched] = React.useState(false);
+  const { touched, touch, touchAll } = useTouchedFields<"bio" | "website" | "city" | "country">();
 
   // Phone verification. The OTP is sent to the number on the saved profile,
   // so a freshly typed number is saved first and verified second.
@@ -278,8 +357,19 @@ function SellerStep({ user, lang, onSaved, onAdvance, onBack }: StepProps) {
   const phoneDisplay = formatPhoneDisplay(savedPhone);
 
   const phoneValid = isValidInternationalPhone(phone);
-  const phoneInvalid = phone.trim().length > 0 && !phoneValid;
-  const canSubmit = phoneValid && bio.trim().length > 0 && city.trim().length > 0 && country.trim().length > 0;
+  const bioMissing = !bio.trim();
+  const cityMissing = !city.trim();
+  const countryInvalid = !isPhoneCountry(country);
+  const normalizedWebsite = normalizeWebAddress(website);
+  const websiteInvalid = normalizedWebsite === null;
+  const issueCount = countFormIssues([
+    !phoneValid,
+    bioMissing,
+    cityMissing,
+    countryInvalid,
+    websiteInvalid,
+  ]);
+  const canSubmit = issueCount === 0;
 
   const PHONE_TAKEN = Symbol("phone-taken");
 
@@ -294,7 +384,7 @@ function SellerStep({ user, lang, onSaved, onAdvance, onBack }: StepProps) {
     const fields = {
       company: company.trim(),
       job_title: jobTitle.trim(),
-      website: website.trim(),
+      website: normalizedWebsite ?? website.trim(),
       bio: bio.trim(),
       address: address.trim(),
       city: city.trim(),
@@ -319,9 +409,33 @@ function SellerStep({ user, lang, onSaved, onAdvance, onBack }: StepProps) {
     await onSaved();
   }
 
+  async function savePhoneForOtp() {
+    try {
+      await updateSellerProfile({ phone: phone.trim() });
+      setPhoneError(null);
+      await onSaved();
+    } catch (err) {
+      if (!isPhoneConflict(err)) throw err;
+      setPhoneError(t("setup.seller.phoneTaken", lang));
+      throw PHONE_TAKEN;
+    }
+  }
+
   async function handleSubmit(event: React.FormEvent) {
     event.preventDefault();
-    if (!canSubmit || saving) return;
+    if (saving) return;
+    if (!canSubmit) {
+      setPhoneTouched(true);
+      touchAll(["bio", "website", "city", "country"]);
+      focusFirstInvalidField([
+        !phoneValid && "setup-phone",
+        bioMissing && "setup-bio",
+        websiteInvalid && "setup-website",
+        cityMissing && "setup-city",
+        countryInvalid && "setup-country",
+      ]);
+      return;
+    }
     setError(null);
     setSaving(true);
     try {
@@ -340,7 +454,7 @@ function SellerStep({ user, lang, onSaved, onAdvance, onBack }: StepProps) {
     setError(null);
     setOtpBusy(true);
     try {
-      if (!phoneMatchesSaved) await save();
+      if (!phoneMatchesSaved) await savePhoneForOtp();
       await requestPhoneLinkOtp(phone.trim());
       setOtpSent(true);
     } catch (err) {
@@ -368,35 +482,37 @@ function SellerStep({ user, lang, onSaved, onAdvance, onBack }: StepProps) {
 
   return (
     <form className="space-y-5" onSubmit={handleSubmit} noValidate data-testid="setup-step-seller">
-      <div className="space-y-1.5">
-        <Label htmlFor="setup-phone">{t("settings.seller.phone", lang)}</Label>
-        <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
-          <InternationalPhoneInput
-            id="setup-phone"
-            value={phone}
-            onChange={(nextPhone) => { setPhone(nextPhone); if (phoneError) setPhoneError(null); }}
-            onBlur={() => setPhoneTouched(true)}
-            lang={lang}
-            preferredCountry={country || p?.country}
-            error={Boolean(phoneError) || (phoneTouched && phoneInvalid)}
-            aria-describedby={(phoneError || (phoneTouched && phoneInvalid)) ? "setup-phone-error" : "setup-phone-hint"}
-            className="sm:max-w-[22rem]"
-          />
-          {phoneVerified && phoneMatchesSaved ? (
-            <StatusPill tone="success" dot className="self-start sm:self-auto">{t("setup.seller.phoneVerified", lang)}</StatusPill>
-          ) : phone.trim().length > 0 && !otpSent ? (
-            <Button type="button" variant="outline" className="shrink-0" loading={otpBusy} disabled={!phoneValid} onClick={handleRequestOtp} data-testid="setup-verify-phone">
-              {t("setup.seller.verifyPhone", lang)}
-            </Button>
-          ) : null}
-        </div>
-        {phoneError ? (
-          <p id="setup-phone-error" role="alert" className="text-[12px] leading-relaxed text-destructive" data-testid="setup-phone-error">{phoneError}</p>
-        ) : phoneTouched && phoneInvalid ? (
-          <p id="setup-phone-error" role="alert" className="text-[12px] leading-relaxed text-destructive">{t("phone.invalid", lang)}</p>
-        ) : (
-          <p id="setup-phone-hint" className="text-[12px] text-muted-foreground">{t("setup.seller.phoneHint", lang)}</p>
-        )}
+      <div className="space-y-3">
+        <Field
+          id="setup-phone"
+          label={t("settings.seller.phone", lang)}
+          lang={lang}
+          hint={t("setup.seller.phoneHint", lang)}
+          error={phoneError ?? (phoneTouched && !phoneValid ? t("phone.invalid", lang) : null)}
+        >
+          {(control) => (
+            <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+              <InternationalPhoneInput
+                id={control.id}
+                value={phone}
+                onChange={(nextPhone) => { setPhone(nextPhone); if (phoneError) setPhoneError(null); }}
+                onBlur={() => setPhoneTouched(true)}
+                lang={lang}
+                preferredCountry={country || p?.country}
+                error={control.error}
+                aria-describedby={control["aria-describedby"]}
+                className="sm:max-w-[22rem]"
+              />
+              {phoneVerified && phoneMatchesSaved ? (
+                <StatusPill tone="success" dot className="self-start sm:self-auto">{t("setup.seller.phoneVerified", lang)}</StatusPill>
+              ) : phone.trim().length > 0 && !otpSent ? (
+                <Button type="button" variant="outline" className="shrink-0" loading={otpBusy} disabled={!phoneValid} onClick={handleRequestOtp} data-testid="setup-verify-phone">
+                  {t("setup.seller.verifyPhone", lang)}
+                </Button>
+              ) : null}
+            </div>
+          )}
+        </Field>
         {otpSent ? (
           <div className="space-y-2 rounded-2xl border border-border/65 bg-muted/20 p-4">
             <Label htmlFor="setup-phone-code">{t("setup.seller.codeSent", lang)} {phoneDisplay.display || phone.trim()}</Label>
@@ -421,35 +537,63 @@ function SellerStep({ user, lang, onSaved, onAdvance, onBack }: StepProps) {
 
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
         <Field id="setup-company" label={t("settings.seller.company", lang)} optional lang={lang}>
-          <Input id="setup-company" value={company} onChange={(e) => setCompany(e.target.value)} autoComplete="organization" />
+          {(control) => <Input {...control} value={company} onChange={(e) => setCompany(e.target.value)} autoComplete="organization" />}
         </Field>
         <Field id="setup-job-title" label={t("settings.seller.jobTitle", lang)} optional lang={lang}>
-          <Input id="setup-job-title" value={jobTitle} onChange={(e) => setJobTitle(e.target.value)} autoComplete="organization-title" />
+          {(control) => <Input {...control} value={jobTitle} onChange={(e) => setJobTitle(e.target.value)} autoComplete="organization-title" />}
         </Field>
       </div>
-      <Field id="setup-bio" label={t("settings.seller.bio", lang)} lang={lang}>
-        <Textarea id="setup-bio" value={bio} onChange={(e) => setBio(e.target.value)} rows={3} placeholder={t("setup.seller.bioPlaceholder", lang)} />
+      <Field id="setup-bio" label={t("settings.seller.bio", lang)} lang={lang} error={requiredError(bio, touched.has("bio"), lang)}>
+        {(control) => <Textarea {...control} value={bio} onChange={(e) => setBio(e.target.value)} onBlur={() => touch("bio")} rows={3} placeholder={t("setup.seller.bioPlaceholder", lang)} />}
       </Field>
-      <Field id="setup-website" label={t("settings.seller.website", lang)} optional lang={lang}>
-        <Input id="setup-website" value={website} onChange={(e) => setWebsite(e.target.value)} placeholder="https://www.example.com" inputMode="url" autoComplete="url" />
+      <Field
+        id="setup-website"
+        label={t("settings.seller.website", lang)}
+        optional
+        lang={lang}
+        hint={t("form.websiteHint", lang)}
+        error={touched.has("website") && websiteInvalid ? t("form.invalidWebsite", lang) : null}
+      >
+        {(control) => (
+          <Input
+            {...control}
+            value={website}
+            onChange={(e) => setWebsite(e.target.value)}
+            onBlur={() => {
+              touch("website");
+              if (normalizedWebsite !== null) setWebsite(normalizedWebsite);
+            }}
+            inputMode="url"
+            autoComplete="url"
+          />
+        )}
       </Field>
 
       <Group title={t("settings.seller.sectionAddress", lang)}>
         <Field id="setup-address" label={t("settings.seller.address", lang)} optional lang={lang}>
-          <Input id="setup-address" value={address} onChange={(e) => setAddress(e.target.value)} autoComplete="street-address" />
+          {(control) => <Input {...control} value={address} onChange={(e) => setAddress(e.target.value)} autoComplete="street-address" />}
         </Field>
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
-          <Field id="setup-city" label={t("settings.seller.city", lang)} lang={lang}>
-            <Input id="setup-city" value={city} onChange={(e) => setCity(e.target.value)} autoComplete="address-level2" />
+          <Field id="setup-city" label={t("settings.seller.city", lang)} lang={lang} error={requiredError(city, touched.has("city"), lang)}>
+            {(control) => <Input {...control} value={city} onChange={(e) => setCity(e.target.value)} onBlur={() => touch("city")} autoComplete="address-level2" />}
           </Field>
           <Field id="setup-state" label={t("settings.seller.state", lang)} optional lang={lang}>
-            <Input id="setup-state" value={state} onChange={(e) => setState(e.target.value)} autoComplete="address-level1" />
+            {(control) => <Input {...control} value={state} onChange={(e) => setState(e.target.value)} autoComplete="address-level1" />}
           </Field>
           <Field id="setup-postal" label={t("settings.seller.postalCode", lang)} optional lang={lang}>
-            <Input id="setup-postal" value={postalCode} onChange={(e) => setPostalCode(e.target.value)} autoComplete="postal-code" />
+            {(control) => <Input {...control} value={postalCode} onChange={(e) => setPostalCode(e.target.value)} autoComplete="postal-code" />}
           </Field>
-          <Field id="setup-country" label={t("settings.seller.country", lang)} lang={lang}>
-            <Input id="setup-country" value={country} onChange={(e) => setCountry(e.target.value.toUpperCase())} maxLength={2} placeholder="SK" autoComplete="country" />
+          <Field id="setup-country" label={t("settings.seller.country", lang)} lang={lang} error={touched.has("country") && countryInvalid ? t("form.required", lang) : null}>
+            {(control) => (
+              <CountrySelect
+                id={control.id}
+                value={country}
+                onChange={(nextCountry) => { setCountry(nextCountry); touch("country"); }}
+                lang={lang}
+                error={control.error}
+                aria-describedby={control["aria-describedby"]}
+              />
+            )}
           </Field>
         </div>
       </Group>
@@ -462,17 +606,24 @@ function SellerStep({ user, lang, onSaved, onAdvance, onBack }: StepProps) {
         {isRePro ? (
           <div className="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2">
             <Field id="setup-license" label={t("settings.seller.license", lang)} optional lang={lang}>
-              <Input id="setup-license" value={license} onChange={(e) => setLicense(e.target.value)} />
+              {(control) => <Input {...control} value={license} onChange={(e) => setLicense(e.target.value)} />}
             </Field>
             <Field id="setup-agency" label={t("settings.seller.agency", lang)} optional lang={lang}>
-              <Input id="setup-agency" value={agency} onChange={(e) => setAgency(e.target.value)} />
+              {(control) => <Input {...control} value={agency} onChange={(e) => setAgency(e.target.value)} />}
             </Field>
           </div>
         ) : null}
       </div>
 
       {error ? <p role="alert" className="text-[12px] text-destructive">{error}</p> : null}
-      <StepFooter lang={lang} canBack onBack={onBack} saving={saving} disabled={!canSubmit} />
+      <StepFooter
+        lang={lang}
+        canBack
+        onBack={onBack}
+        saving={saving}
+        validationStatus={issueStatus(issueCount, lang)}
+        ready={canSubmit}
+      />
     </form>
   );
 }
@@ -492,21 +643,48 @@ function BillingStep({ user, lang, onSaved, onAdvance, onBack }: StepProps) {
   const [vat, setVat] = React.useState(ba?.vat_number ?? "");
   const [saving, setSaving] = React.useState(false);
   const [error, setError] = React.useState<string | null>(null);
+  const { touched, touch, touchAll } = useTouchedFields<"name" | "email" | "address" | "city" | "postal" | "country">();
 
   const sellerAddressAvailable = Boolean(p && (p.address || p.city || p.postal_code || p.country));
-  const canSubmit = [billingName, billingEmail, billingAddress, billingCity, billingPostal, billingCountry].every((value) => value.trim().length > 0);
+  const nameMissing = !billingName.trim();
+  const emailInvalid = !billingEmail.trim() || !isEmailAddress(billingEmail);
+  const addressMissing = !billingAddress.trim();
+  const cityMissing = !billingCity.trim();
+  const postalMissing = !billingPostal.trim();
+  const countryInvalid = !isPhoneCountry(billingCountry);
+  const issueCount = countFormIssues([
+    nameMissing,
+    emailInvalid,
+    addressMissing,
+    cityMissing,
+    postalMissing,
+    countryInvalid,
+  ]);
+  const canSubmit = issueCount === 0;
 
   function useSellerAddress() {
     if (!p) return;
     setBillingAddress(p.address ?? "");
     setBillingCity(p.city ?? "");
     setBillingPostal(p.postal_code ?? "");
-    setBillingCountry(p.country ?? "");
+    setBillingCountry((p.country ?? "").toUpperCase());
   }
 
   async function handleSubmit(event: React.FormEvent) {
     event.preventDefault();
-    if (!canSubmit || saving) return;
+    if (saving) return;
+    if (!canSubmit) {
+      touchAll(["name", "email", "address", "city", "postal", "country"]);
+      focusFirstInvalidField([
+        nameMissing && "setup-billing-name",
+        emailInvalid && "setup-billing-email",
+        addressMissing && "setup-billing-address",
+        cityMissing && "setup-billing-city",
+        postalMissing && "setup-billing-postal",
+        countryInvalid && "setup-billing-country",
+      ]);
+      return;
+    }
     setError(null);
     setSaving(true);
     try {
@@ -542,40 +720,69 @@ function BillingStep({ user, lang, onSaved, onAdvance, onBack }: StepProps) {
         </div>
       ) : null}
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-        <Field id="setup-billing-name" label={t("settings.billing.name", lang)} lang={lang}>
-          <Input id="setup-billing-name" value={billingName} onChange={(e) => setBillingName(e.target.value)} autoComplete="name" />
+        <Field id="setup-billing-name" label={t("settings.billing.name", lang)} lang={lang} error={requiredError(billingName, touched.has("name"), lang)}>
+          {(control) => <Input {...control} value={billingName} onChange={(e) => setBillingName(e.target.value)} onBlur={() => touch("name")} autoComplete="name" />}
         </Field>
-        <Field id="setup-billing-email" label={t("settings.billing.email", lang)} lang={lang}>
-          <Input id="setup-billing-email" value={billingEmail} onChange={(e) => setBillingEmail(e.target.value)} type="email" autoComplete="email" />
+        <Field
+          id="setup-billing-email"
+          label={t("settings.billing.email", lang)}
+          lang={lang}
+          error={touched.has("email")
+            ? !billingEmail.trim()
+              ? t("form.required", lang)
+              : !isEmailAddress(billingEmail)
+                ? t("form.invalidEmail", lang)
+                : null
+            : null}
+        >
+          {(control) => <Input {...control} value={billingEmail} onChange={(e) => setBillingEmail(e.target.value)} onBlur={() => touch("email")} type="email" autoComplete="email" />}
         </Field>
       </div>
-      <div className="space-y-1.5">
-        <div className="flex items-baseline justify-between gap-3">
-          <Label htmlFor="setup-billing-address">{t("settings.billing.address", lang)}</Label>
-          {sellerAddressAvailable ? (
-            <button type="button" onClick={useSellerAddress} className="text-[12px] font-medium text-foreground/60 underline underline-offset-4 transition-colors hover:text-foreground" data-testid="setup-billing-copy-address">
-              {t("setup.billing.sameAsSeller", lang)}
-            </button>
-          ) : null}
-        </div>
-        <Input id="setup-billing-address" value={billingAddress} onChange={(e) => setBillingAddress(e.target.value)} autoComplete="street-address" />
-      </div>
+      <Field
+        id="setup-billing-address"
+        label={t("settings.billing.address", lang)}
+        lang={lang}
+        error={requiredError(billingAddress, touched.has("address"), lang)}
+        action={sellerAddressAvailable ? (
+          <button type="button" onClick={useSellerAddress} className="text-[12px] font-medium text-foreground/60 underline underline-offset-4 transition-colors hover:text-foreground" data-testid="setup-billing-copy-address">
+            {t("setup.billing.sameAsSeller", lang)}
+          </button>
+        ) : undefined}
+      >
+        {(control) => <Input {...control} value={billingAddress} onChange={(e) => setBillingAddress(e.target.value)} onBlur={() => touch("address")} autoComplete="street-address" />}
+      </Field>
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
-        <Field id="setup-billing-city" label={t("settings.billing.city", lang)} lang={lang}>
-          <Input id="setup-billing-city" value={billingCity} onChange={(e) => setBillingCity(e.target.value)} autoComplete="address-level2" />
+        <Field id="setup-billing-city" label={t("settings.billing.city", lang)} lang={lang} error={requiredError(billingCity, touched.has("city"), lang)}>
+          {(control) => <Input {...control} value={billingCity} onChange={(e) => setBillingCity(e.target.value)} onBlur={() => touch("city")} autoComplete="address-level2" />}
         </Field>
-        <Field id="setup-billing-postal" label={t("settings.billing.postalCode", lang)} lang={lang}>
-          <Input id="setup-billing-postal" value={billingPostal} onChange={(e) => setBillingPostal(e.target.value)} autoComplete="postal-code" />
+        <Field id="setup-billing-postal" label={t("settings.billing.postalCode", lang)} lang={lang} error={requiredError(billingPostal, touched.has("postal"), lang)}>
+          {(control) => <Input {...control} value={billingPostal} onChange={(e) => setBillingPostal(e.target.value)} onBlur={() => touch("postal")} autoComplete="postal-code" />}
         </Field>
-        <Field id="setup-billing-country" label={t("settings.billing.country", lang)} lang={lang}>
-          <Input id="setup-billing-country" value={billingCountry} onChange={(e) => setBillingCountry(e.target.value.toUpperCase())} maxLength={2} placeholder="SK" autoComplete="country" />
+        <Field id="setup-billing-country" label={t("settings.billing.country", lang)} lang={lang} error={touched.has("country") && countryInvalid ? t("form.required", lang) : null}>
+          {(control) => (
+            <CountrySelect
+              id={control.id}
+              value={billingCountry}
+              onChange={(nextCountry) => { setBillingCountry(nextCountry); touch("country"); }}
+              lang={lang}
+              error={control.error}
+              aria-describedby={control["aria-describedby"]}
+            />
+          )}
         </Field>
         <Field id="setup-billing-vat" label={t("settings.billing.vat", lang)} optional lang={lang}>
-          <Input id="setup-billing-vat" value={vat} onChange={(e) => setVat(e.target.value)} />
+          {(control) => <Input {...control} value={vat} onChange={(e) => setVat(e.target.value)} />}
         </Field>
       </div>
       {error ? <p role="alert" className="text-[12px] text-destructive">{error}</p> : null}
-      <StepFooter lang={lang} canBack onBack={onBack} saving={saving} disabled={!canSubmit} />
+      <StepFooter
+        lang={lang}
+        canBack
+        onBack={onBack}
+        saving={saving}
+        validationStatus={issueStatus(issueCount, lang)}
+        ready={canSubmit}
+      />
     </form>
   );
 }
@@ -647,8 +854,14 @@ function PermissionsStep({
   });
 
   const toggleMarketing = (enabled: boolean) => run("marketing", async () => {
+    const previous = marketing;
     setMarketing(enabled);
-    await updateAccountConsent({ marketing_consent: enabled });
+    try {
+      await updateAccountConsent({ marketing_consent: enabled });
+    } catch (err) {
+      setMarketing(previous);
+      throw err;
+    }
   });
 
   const anyTool = Boolean(toolPermissions && (toolPermissions.allow_all_tools || Object.values(toolPermissions.tools).some(Boolean)));
@@ -691,7 +904,7 @@ function PermissionsStep({
                 <Checkbox checked={acknowledged} onCheckedChange={(checked) => setAcknowledged(checked === true)} className="mt-0.5" data-testid="setup-consent-ack" />
                 <span>{t("reai.consentLabel", lang)} · v{consentKnown ? consent.policy_version : ""}</span>
               </label>
-              <Button type="button" loading={busy === "consent"} disabled={!acknowledged} onClick={enableAgent} data-testid="setup-enable-agent">
+              <Button type="button" loading={busy === "consent"} disabled={!acknowledged || busy !== null} onClick={enableAgent} data-testid="setup-enable-agent">
                 {t("reai.enable", lang)}
               </Button>
             </div>
@@ -706,7 +919,7 @@ function PermissionsStep({
               <Switch
                 aria-label={t("settings.reai.allTools", lang)}
                 checked={Boolean(toolPermissions?.allow_all_tools)}
-                disabled={!toolPermissions || busy === "tools"}
+                disabled={!toolPermissions || busy !== null}
                 onCheckedChange={setAllTools}
                 data-testid="setup-all-tools"
               />
@@ -724,19 +937,19 @@ function PermissionsStep({
           <ControlRow
             title={t("settings.reai.improvementPermission", lang)}
             hint={t("settings.reai.improvementSubtitle", lang)}
-            control={<Switch aria-label={t("settings.reai.improvementPermission", lang)} checked={improvement.consented} disabled={busy === "improvement"} onCheckedChange={toggleImprovement} />}
+            control={<Switch aria-label={t("settings.reai.improvementPermission", lang)} checked={improvement.consented} disabled={busy !== null} onCheckedChange={toggleImprovement} />}
           />
         ) : null}
 
         <ControlRow
           title={t("settings.privacy.legal.marketingConsent", lang)}
           hint={t("settings.privacy.legal.marketingConsentHint", lang)}
-          control={<Switch aria-label={t("settings.privacy.legal.marketingConsent", lang)} checked={marketing} disabled={busy === "marketing"} onCheckedChange={toggleMarketing} />}
+          control={<Switch aria-label={t("settings.privacy.legal.marketingConsent", lang)} checked={marketing} disabled={busy !== null} onCheckedChange={toggleMarketing} />}
         />
       </div>
 
       {error ? <p role="alert" className="text-[12px] text-destructive">{error}</p> : null}
-      <StepFooter lang={lang} canBack onBack={onBack} saving={busy === "finish"} continueLabel={t("setup.finish", lang)} disabled={!ready && !blocked} />
+      <StepFooter lang={lang} canBack onBack={onBack} saving={busy === "finish"} continueLabel={t("setup.finish", lang)} disabled={busy !== null || (!ready && !blocked)} />
     </form>
   );
 }

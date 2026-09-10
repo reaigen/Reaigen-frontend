@@ -19,7 +19,7 @@ import { isValidInternationalPhone } from "../lib/phone";
 import { InternationalPhoneInput } from "./international-phone-input";
 
 const INPUT_CLASS =
-  "h-14 rounded-xl border-border bg-white px-4 text-[15px] text-foreground shadow-none placeholder:text-foreground/35 hover:border-foreground/35 focus-visible:border-foreground focus-visible:ring-0 focus-visible:shadow-[0_0_0_3px_rgba(0,0,0,0.08)]";
+  "h-14 rounded-xl border-border bg-card px-4 text-[15px] text-foreground shadow-none placeholder:text-foreground/35 hover:border-foreground/35 focus-visible:border-foreground focus-visible:ring-0 focus-visible:shadow-[0_0_0_3px_rgba(0,0,0,0.08)]";
 
 const COPY = {
   en: {
@@ -238,7 +238,7 @@ function FlowShell({
 }) {
   const copy = useCopy();
   return (
-    <main className="grid min-h-[100dvh] bg-white lg:grid-cols-[minmax(0,1.05fr)_minmax(28rem,0.95fr)]">
+    <main className="grid min-h-[100dvh] bg-card lg:grid-cols-[minmax(0,1.05fr)_minmax(28rem,0.95fr)]">
       <aside className="relative hidden overflow-hidden bg-[#11110f] lg:block">
         <div className="absolute inset-0 bg-[radial-gradient(circle_at_34%_28%,rgba(255,255,255,0.14),transparent_32%),linear-gradient(145deg,#242421_0%,#0f0f0e_58%,#000_100%)]" />
         <div className="absolute left-12 top-11 font-serif text-[25px] font-medium tracking-[0.005em] text-white">Reaigen</div>
@@ -312,7 +312,7 @@ export function VerifyEmailFlow({ token, language }: { token: string; language?:
       {state === "error" && (
         <div className="space-y-5">
           <ErrorNotice>{token ? copy.verifyFailed : copy.verifyMissing}</ErrorNotice>
-          <Link href="/" className="inline-flex h-[3.25rem] w-full items-center justify-center rounded-full border border-border bg-white px-5 text-[14px] font-semibold text-foreground">
+          <Link href="/" className="inline-flex h-[3.25rem] w-full items-center justify-center rounded-full border border-border bg-card px-5 text-[14px] font-semibold text-foreground">
             {copy.signIn}
           </Link>
         </div>
@@ -446,7 +446,7 @@ export function ForgotPasswordFlow({ language }: { language?: string }) {
                   setFailed(false);
                   setPhoneTouched(false);
                 }}
-                className={`h-10 rounded-full text-[13px] font-semibold transition-colors ${method === option ? "bg-white text-foreground shadow-sm" : "text-muted-foreground"}`}
+                className={`h-10 rounded-full text-[13px] font-semibold transition-colors ${method === option ? "bg-card text-foreground shadow-sm" : "text-muted-foreground"}`}
               >
                 {option === "email" ? copy.emailMethod : copy.smsMethod}
               </button>
@@ -468,7 +468,7 @@ export function ForgotPasswordFlow({ language }: { language?: string }) {
                 lang={resolvedLanguage}
                 error={phoneTouched && Boolean(phone) && !phoneValid}
                 aria-describedby={phoneTouched && phone && !phoneValid ? "recovery-phone-error recovery-phone-hint" : "recovery-phone-hint"}
-                className="h-14 rounded-xl border-border bg-white shadow-none hover:border-foreground/35 focus-within:border-foreground focus-within:ring-0 focus-within:shadow-[0_0_0_3px_rgba(0,0,0,0.08)]"
+                className="h-14 rounded-xl border-border bg-card shadow-none hover:border-foreground/35 focus-within:border-foreground focus-within:ring-0 focus-within:shadow-[0_0_0_3px_rgba(0,0,0,0.08)]"
                 inputClassName="text-[15px] text-foreground placeholder:text-foreground/35"
               />
               {phoneTouched && phone && !phoneValid ? (
