@@ -132,7 +132,7 @@ export function CountryPickerSheet({
                   aria-hidden="true"
                   className={cn(
                     "flex h-5 w-5 shrink-0 items-center justify-center rounded-full transition-colors",
-                    active ? "bg-foreground text-background" : "text-transparent",
+                    active ? "bg-primary text-primary-foreground" : "text-transparent",
                   )}
                 >
                   <CheckIcon size={12} className="block" />

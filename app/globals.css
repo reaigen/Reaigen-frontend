@@ -47,6 +47,10 @@
     --success:                142 64% 31%;
     --success-foreground:     0 0% 99%;
 
+    /* Restrained ochre for attention states; never utility-palette amber. */
+    --warning:                38 62% 36%;
+    --warning-foreground:     0 0% 99%;
+
     --border:                 220 8% 84%;
     --input:                  220 8% 82%;
     --ring:                   0 0% 9%;

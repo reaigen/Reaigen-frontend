@@ -6,7 +6,7 @@ async function source(relativePath) {
   return readFile(new URL(relativePath, import.meta.url), "utf8");
 }
 
-const [setup, settings, auth, recovery, field, countrySelect, countryPicker, phoneInput, input, textarea, select] = await Promise.all([
+const [setup, settings, auth, recovery, field, countrySelect, countryPicker, phoneInput, input, textarea, select, statusPill, globals, tailwind, icons] = await Promise.all([
   source("../app/components/account-setup-flow.tsx"),
   source("../app/components/settings-form.tsx"),
   source("../app/components/auth-gate.tsx"),
@@ -18,6 +18,10 @@ const [setup, settings, auth, recovery, field, countrySelect, countryPicker, pho
   source("../app/lib/ui/input.tsx"),
   source("../app/lib/ui/textarea.tsx"),
   source("../app/lib/ui/select.tsx"),
+  source("../app/components/status-pill.tsx"),
+  source("../app/globals.css"),
+  source("../tailwind.config.ts"),
+  source("../app/components/icons.tsx"),
 ]);
 
 test("registration, setup, and Settings share one accessible account-field contract", () => {
@@ -84,4 +88,26 @@ test("the setup wizard keeps indicators, labels, and headings on one visual syst
   assert.match(setup, /<CurrentStepIcon[\s\S]*?var\(--font-brand\)/);
   assert.match(field, /items-center justify-between/);
   assert.match(field, /text-\[13px\] leading-5 text-foreground\/85/);
+  assert.match(setup, /const StepIcon = STEPS\[index\]\.icon/);
+  assert.match(setup, /<StepIcon size=/);
+  assert.match(setup, /<ArrowLeftIcon[\s\S]*?<ArrowRightIcon/);
+  assert.match(icons, /export const ProfileIcon/);
+});
+
+test("account setup is permanently discoverable in Settings with live backend state", () => {
+  assert.match(settings, /function AccountSetupEntry/);
+  assert.match(settings, /useAccountSetup\(user\)/);
+  assert.match(settings, /href="\/setup"/);
+  assert.match(settings, /data-testid="settings-account-setup"/);
+});
+
+test("account elements use the Reaigen semantic palette instead of utility colors", () => {
+  const accountSurfaces = `${setup}\n${settings}\n${statusPill}\n${countrySelect}\n${countryPicker}\n${phoneInput}`;
+  assert.doesNotMatch(accountSurfaces, /(?:bg|text|border|ring)-(?:emerald|amber|red|green|yellow|blue|indigo|violet|purple|orange)-/);
+  assert.doesNotMatch(settings, /#[0-9a-f]{3,8}\b|rgba?\(/i);
+  assert.match(globals, /--warning:\s+38 62% 36%/);
+  assert.match(tailwind, /warning: \{ DEFAULT: "hsl\(var\(--warning\)\)"/);
+  assert.match(statusPill, /success: "bg-success"/);
+  assert.match(statusPill, /warning: "bg-warning"/);
+  assert.match(statusPill, /danger: "bg-destructive"/);
 });

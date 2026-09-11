@@ -1,12 +1,12 @@
 "use client";
 
 import * as React from "react";
-import { ChevronDownIcon } from "@radix-ui/react-icons";
 import type { CountryCode } from "libphonenumber-js/min";
 import { t } from "../lib/i18n";
 import { getPhoneCountries, isPhoneCountry } from "../lib/phone";
 import { cn } from "../lib/utils";
 import { CountryPickerSheet } from "./country-picker-sheet";
+import { ChevronDownIcon } from "./icons";
 
 /** Searchable country field that stores an ISO alpha-2 value. */
 export function CountrySelect({
@@ -66,6 +66,7 @@ export function CountrySelect({
         )}
         <ChevronDownIcon
           aria-hidden="true"
+          size={16}
           className={cn(
             "h-4 w-4 shrink-0 text-foreground/55 transition-transform duration-200",
             open && "rotate-180",

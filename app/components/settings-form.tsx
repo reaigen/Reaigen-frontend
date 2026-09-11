@@ -1,6 +1,7 @@
 "use client";
 
 import * as React from "react";
+import Link from "next/link";
 import { Button } from "../lib/ui/button";
 import { FormField, focusFirstInvalidField } from "../lib/ui/form-field";
 import { Input } from "../lib/ui/input";
@@ -82,7 +83,15 @@ import {
   getWebPushStateForUser,
   type WebPushState,
 } from "../lib/web-push";
-import { DeviceDesktopIcon, DeviceMobileIcon, ImageIcon, LinkIcon } from "./icons";
+import {
+  CheckIcon,
+  ChevronRightIcon,
+  DeviceDesktopIcon,
+  DeviceMobileIcon,
+  ImageIcon,
+  LinkIcon,
+  ProfileIcon,
+} from "./icons";
 import { formatPhoneDisplay, isValidInternationalPhone } from "../lib/phone";
 import { t, getUserLanguage, formatDate as fmtDate } from "../lib/i18n";
 import type { LocaleKey } from "../lib/locales";
@@ -91,6 +100,7 @@ import { ManagedLegalDocuments } from "./content-documents";
 import { resolveQuotaPresentation } from "../lib/account-usage";
 import { CountrySelect } from "./country-select";
 import { InternationalPhoneInput } from "./international-phone-input";
+import { useAccountSetup } from "./hooks/use-account-setup";
 
 function useAutoDismiss(value: boolean, setter: (v: boolean) => void, ms = 3000) {
   React.useEffect(() => {
@@ -125,6 +135,42 @@ function CardDescription({ className, ...props }: React.HTMLAttributes<HTMLParag
 
 function CardContent({ className, ...props }: React.HTMLAttributes<HTMLDivElement>) {
   return <div className={cn("w-full", className)} {...props} />;
+}
+
+/** Permanent Settings doorway into the single guided setup flow. */
+function AccountSetupEntry({ user, lang }: { user: UserProfile; lang: string }) {
+  const { status, loading } = useAccountSetup(user);
+  const complete = Boolean(status?.complete);
+  const progress = status
+    ? `${status.completedCount} / ${status.steps.length} ${t("setup.stepsDone", lang)}`
+    : t("common.loading", lang);
+
+  return (
+    <Link
+      href="/setup"
+      data-testid="settings-account-setup"
+      data-complete={complete ? "true" : "false"}
+      aria-busy={loading || undefined}
+      className="group flex min-h-[4.25rem] w-full items-center gap-3 rounded-2xl border border-border/65 bg-surface-subtle/60 px-3 py-2.5 text-left transition-[background-color,border-color,box-shadow] hover:border-foreground/15 hover:bg-surface-subtle focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+    >
+      <span
+        aria-hidden="true"
+        className={cn(
+          "flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border",
+          complete
+            ? "border-success/20 bg-success/10 text-success"
+            : "border-border/70 bg-card text-foreground/65",
+        )}
+      >
+        {complete ? <CheckIcon size={15} className="block" /> : <ProfileIcon size={16} className="block" />}
+      </span>
+      <span className="min-w-0 flex-1">
+        <span className="block truncate text-[13px] font-semibold text-foreground/85">{t("setup.headerTitle", lang)}</span>
+        <span className={cn("mt-0.5 block truncate text-[11px]", complete ? "text-success" : "text-muted-foreground")}>{progress}</span>
+      </span>
+      <ChevronRightIcon aria-hidden="true" size={15} className="shrink-0 text-foreground/35 transition-transform group-hover:translate-x-0.5 group-hover:text-foreground/60" />
+    </Link>
+  );
 }
 
 function formatAccountDate(value: string | null | undefined, lang: string, dateFormat?: string | null) {
@@ -3477,7 +3523,7 @@ export function SettingsForm({ user, onSaved }: { user: UserProfile; onSaved: ()
   // Desktop settings navigation is a stable vertical list. Compact layouts
   // use the selector below instead of hiding destinations in a chip carousel.
   const triggerClassName =
-    "h-11 w-full justify-start rounded-full border border-transparent bg-transparent px-4 py-0 text-left text-[13px] font-medium text-foreground/58 shadow-none transition-all hover:bg-foreground/[0.035] hover:text-foreground/80 data-[state=active]:border-foreground/15 data-[state=active]:bg-muted/70 data-[state=active]:text-foreground data-[state=active]:shadow-[inset_0_1px_0_rgba(255,255,255,0.9),0_5px_14px_rgba(32,29,25,0.09)] data-[state=active]:backdrop-blur-xl";
+    "h-11 w-full justify-start rounded-full border border-transparent bg-transparent px-4 py-0 text-left text-[13px] font-medium text-foreground/58 shadow-none transition-all hover:bg-foreground/[0.035] hover:text-foreground/80 data-[state=active]:border-foreground/15 data-[state=active]:bg-muted/70 data-[state=active]:text-foreground data-[state=active]:shadow-card data-[state=active]:backdrop-blur-xl";
   const settingsTabs = [
     { value: "profile", label: "settings.tab.profile" },
     { value: "seller", label: "settings.tab.seller" },
@@ -3500,7 +3546,9 @@ export function SettingsForm({ user, onSaved }: { user: UserProfile; onSaved: ()
       className="settings-surface w-full lg:grid lg:grid-cols-[210px_minmax(0,1fr)] lg:items-stretch lg:overflow-hidden lg:rounded-3xl lg:border lg:border-border/65 lg:bg-card lg:shadow-card"
     >
       <div className="mb-5 lg:mb-0 lg:h-full lg:border-r lg:border-border/65 lg:bg-card lg:p-3">
-        <div className="lg:hidden">
+        <AccountSetupEntry user={user} lang={lang} />
+        <div aria-hidden="true" className="my-3 hidden h-px bg-border/60 lg:block" />
+        <div className="mt-2 lg:hidden">
           <Select
             value={activeTab}
             onValueChange={(value) => {
