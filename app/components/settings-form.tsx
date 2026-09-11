@@ -84,12 +84,18 @@ import {
   type WebPushState,
 } from "../lib/web-push";
 import {
+  AgentIcon,
   CheckIcon,
   ChevronRightIcon,
   DeviceDesktopIcon,
   DeviceMobileIcon,
+  DocumentIcon,
+  EyeOpenIcon,
   ImageIcon,
   LinkIcon,
+  LockIcon,
+  MapPinIcon,
+  PriceIcon,
   ProfileIcon,
 } from "./icons";
 import { formatPhoneDisplay, isValidInternationalPhone } from "../lib/phone";
@@ -137,13 +143,28 @@ function CardContent({ className, ...props }: React.HTMLAttributes<HTMLDivElemen
   return <div className={cn("w-full", className)} {...props} />;
 }
 
-/** Permanent Settings doorway into the single guided setup flow. */
+const SETTINGS_SETUP_STEPS = [
+  { key: "profile", label: "setup.step.profile", hint: "setup.step.profileHint", icon: ProfileIcon },
+  { key: "seller", label: "setup.step.seller", hint: "setup.step.sellerHint", icon: DeviceMobileIcon },
+  { key: "billing", label: "setup.step.billing", hint: "setup.step.billingHint", icon: PriceIcon },
+  { key: "permissions", label: "setup.step.permissions", hint: "setup.step.permissionsHint", icon: AgentIcon },
+] as const;
+
+/**
+ * Permanent Settings doorway into the single guided setup flow.
+ *
+ * This is deliberately a full-width overview instead of a quiet sidebar row:
+ * setup is part of Settings, its four backend-owned states are visible at a
+ * glance, and the entry remains equally discoverable on phones and desktop.
+ */
 function AccountSetupEntry({ user, lang }: { user: UserProfile; lang: string }) {
   const { status, loading } = useAccountSetup(user);
-  const complete = Boolean(status?.complete);
-  const progress = status
+  const complete = !loading && Boolean(status?.complete);
+  const completedCount = loading ? 0 : status?.completedCount ?? 0;
+  const progress = !loading && status
     ? `${status.completedCount} / ${status.steps.length} ${t("setup.stepsDone", lang)}`
     : t("common.loading", lang);
+  const progressPercent = Math.round((completedCount / SETTINGS_SETUP_STEPS.length) * 100);
 
   return (
     <Link
@@ -151,24 +172,110 @@ function AccountSetupEntry({ user, lang }: { user: UserProfile; lang: string }) 
       data-testid="settings-account-setup"
       data-complete={complete ? "true" : "false"}
       aria-busy={loading || undefined}
-      className="group flex min-h-[4.25rem] w-full items-center gap-3 rounded-2xl border border-border/65 bg-surface-subtle/60 px-3 py-2.5 text-left transition-[background-color,border-color,box-shadow] hover:border-foreground/15 hover:bg-surface-subtle focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+      className={cn(
+        "group relative mb-5 block w-full overflow-hidden rounded-[28px] border bg-card p-4 text-left shadow-card transition-[border-color,box-shadow,transform] duration-200 hover:-translate-y-0.5 hover:shadow-lg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 sm:p-5",
+        complete ? "border-success/25" : "border-foreground/[0.13]",
+      )}
     >
       <span
         aria-hidden="true"
-        className={cn(
-          "flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border",
-          complete
-            ? "border-success/20 bg-success/10 text-success"
-            : "border-border/70 bg-card text-foreground/65",
-        )}
-      >
-        {complete ? <CheckIcon size={15} className="block" /> : <ProfileIcon size={16} className="block" />}
+        className={cn("absolute inset-y-0 left-0 w-1", complete ? "bg-success" : "bg-primary")}
+      />
+
+      <span className="flex items-start gap-3.5 sm:gap-4">
+        <span
+          aria-hidden="true"
+          className={cn(
+            "flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl border shadow-control sm:h-14 sm:w-14",
+            complete
+              ? "border-success/20 bg-success/10 text-success"
+              : "border-primary bg-primary text-primary-foreground",
+          )}
+        >
+          {complete ? <CheckIcon size={22} className="block" /> : <ProfileIcon size={22} className="block" />}
+        </span>
+
+        <span className="min-w-0 flex-1">
+          <span className="block text-[10px] font-semibold uppercase tracking-[0.11em] text-muted-foreground sm:text-[11px]">
+            {t("setup.headerTitle", lang)}
+          </span>
+          <span
+            className="mt-0.5 block text-[20px] font-normal leading-tight tracking-[-0.02em] text-foreground sm:text-[23px]"
+            style={{ fontFamily: "var(--font-brand), ui-serif, Georgia, serif" }}
+          >
+            {complete ? t("setup.status.done", lang) : t("setup.reminder.title", lang)}
+          </span>
+          <span className="mt-1 hidden max-w-[68ch] text-[12px] leading-relaxed text-muted-foreground sm:block sm:text-[13px]">
+            {t("setup.subtitle", lang)}
+          </span>
+        </span>
+
+        <span className="hidden shrink-0 items-center gap-2 self-center rounded-full bg-primary px-4 py-2 text-[12px] font-semibold text-primary-foreground shadow-control sm:inline-flex">
+          {complete ? t("setup.headerTitle", lang) : t("setup.reminder.action", lang)}
+          <ChevronRightIcon aria-hidden="true" size={15} className="transition-transform group-hover:translate-x-0.5" />
+        </span>
       </span>
-      <span className="min-w-0 flex-1">
-        <span className="block truncate text-[13px] font-semibold text-foreground/85">{t("setup.headerTitle", lang)}</span>
-        <span className={cn("mt-0.5 block truncate text-[11px]", complete ? "text-success" : "text-muted-foreground")}>{progress}</span>
+
+      <span className="mt-4 grid grid-cols-2 gap-2 sm:grid-cols-4" data-testid="settings-setup-steps">
+        {SETTINGS_SETUP_STEPS.map((step) => {
+          const stepStatus = status?.steps.find((item) => item.key === step.key);
+          const stepComplete = !loading && Boolean(stepStatus?.complete);
+          const isNext = !loading && status?.nextStep === step.key;
+          const StepIcon = step.icon;
+          return (
+            <span
+              key={step.key}
+              data-testid={`settings-setup-step-${step.key}`}
+              data-state={stepComplete ? "complete" : isNext ? "next" : "pending"}
+              className={cn(
+                "flex min-h-[4.25rem] items-center gap-2.5 rounded-2xl border px-3 py-2.5 transition-colors",
+                stepComplete
+                  ? "border-success/20 bg-success/[0.055]"
+                  : isNext
+                    ? "border-primary/20 bg-primary/[0.045]"
+                    : "border-border/60 bg-surface-subtle/45",
+              )}
+            >
+              <span
+                aria-hidden="true"
+                className={cn(
+                  "flex h-8 w-8 shrink-0 items-center justify-center rounded-xl border",
+                  stepComplete
+                    ? "border-success/20 bg-success/10 text-success"
+                    : isNext
+                      ? "border-primary bg-primary text-primary-foreground"
+                      : "border-border/70 bg-card text-foreground/55",
+                )}
+              >
+                {stepComplete ? <CheckIcon size={15} className="block" /> : <StepIcon size={16} className="block" />}
+              </span>
+              <span className="min-w-0">
+                <span className="block truncate text-[12px] font-semibold text-foreground/85">{t(step.label, lang)}</span>
+                <span className={cn("mt-0.5 block truncate text-[10.5px]", stepComplete ? "text-success" : "text-muted-foreground")}>
+                  {stepComplete ? t("setup.status.done", lang) : t(step.hint, lang)}
+                </span>
+              </span>
+            </span>
+          );
+        })}
       </span>
-      <ChevronRightIcon aria-hidden="true" size={15} className="shrink-0 text-foreground/35 transition-transform group-hover:translate-x-0.5 group-hover:text-foreground/60" />
+
+      <span className="mt-3 flex items-center gap-3">
+        <span className="h-1.5 min-w-0 flex-1 overflow-hidden rounded-full bg-muted" aria-hidden="true">
+          <span
+            className={cn("block h-full rounded-full transition-[width] duration-500", complete ? "bg-success" : "bg-primary")}
+            style={{ width: `${progressPercent}%` }}
+          />
+        </span>
+        <span className={cn("shrink-0 text-[11px] font-semibold tabular-nums", complete ? "text-success" : "text-foreground/65")}>
+          {progress}
+        </span>
+      </span>
+
+      <span className="mt-3 flex w-full items-center justify-center gap-2 rounded-full bg-primary px-4 py-2.5 text-[12px] font-semibold text-primary-foreground shadow-control sm:hidden">
+        {complete ? t("setup.headerTitle", lang) : t("setup.reminder.action", lang)}
+        <ChevronRightIcon aria-hidden="true" size={15} className="transition-transform group-hover:translate-x-0.5" />
+      </span>
     </Link>
   );
 }
@@ -3523,94 +3630,107 @@ export function SettingsForm({ user, onSaved }: { user: UserProfile; onSaved: ()
   // Desktop settings navigation is a stable vertical list. Compact layouts
   // use the selector below instead of hiding destinations in a chip carousel.
   const triggerClassName =
-    "h-11 w-full justify-start rounded-full border border-transparent bg-transparent px-4 py-0 text-left text-[13px] font-medium text-foreground/58 shadow-none transition-all hover:bg-foreground/[0.035] hover:text-foreground/80 data-[state=active]:border-foreground/15 data-[state=active]:bg-muted/70 data-[state=active]:text-foreground data-[state=active]:shadow-card data-[state=active]:backdrop-blur-xl";
+    "group h-11 w-full justify-start gap-2.5 rounded-full border border-transparent bg-transparent px-2.5 py-0 text-left text-[13px] font-medium text-foreground/58 shadow-none transition-all hover:bg-foreground/[0.035] hover:text-foreground/80 data-[state=active]:border-foreground/15 data-[state=active]:bg-muted/70 data-[state=active]:text-foreground data-[state=active]:shadow-card data-[state=active]:backdrop-blur-xl";
   const settingsTabs = [
-    { value: "profile", label: "settings.tab.profile" },
-    { value: "seller", label: "settings.tab.seller" },
-    { value: "privacy", label: "settings.tab.privacy" },
-    { value: "reai", label: "settings.tab.reai" },
-    { value: "training", label: "settings.tab.training" },
-    { value: "localization", label: "settings.tab.localization" },
-    { value: "notifications", label: "settings.tab.notifications" },
-    { value: "billing", label: "settings.tab.billing" },
-    { value: "security", label: "settings.tab.security" },
+    { value: "profile", label: "settings.tab.profile", icon: ProfileIcon },
+    { value: "seller", label: "settings.tab.seller", icon: DocumentIcon },
+    { value: "privacy", label: "settings.tab.privacy", icon: EyeOpenIcon },
+    { value: "reai", label: "settings.tab.reai", icon: AgentIcon },
+    { value: "training", label: "settings.tab.training", icon: ImageIcon },
+    { value: "localization", label: "settings.tab.localization", icon: MapPinIcon },
+    { value: "notifications", label: "settings.tab.notifications", icon: DeviceMobileIcon },
+    { value: "billing", label: "settings.tab.billing", icon: PriceIcon },
+    { value: "security", label: "settings.tab.security", icon: LockIcon },
   ] as const;
 
   return (
-    <Tabs
-      value={activeTab}
-      onValueChange={(value) => {
-        setActiveTab(value);
-        window.history.replaceState(null, "", `#${value}`);
-      }}
-      className="settings-surface w-full lg:grid lg:grid-cols-[210px_minmax(0,1fr)] lg:items-stretch lg:overflow-hidden lg:rounded-3xl lg:border lg:border-border/65 lg:bg-card lg:shadow-card"
-    >
-      <div className="mb-5 lg:mb-0 lg:h-full lg:border-r lg:border-border/65 lg:bg-card lg:p-3">
-        <AccountSetupEntry user={user} lang={lang} />
-        <div aria-hidden="true" className="my-3 hidden h-px bg-border/60 lg:block" />
-        <div className="mt-2 lg:hidden">
-          <Select
-            value={activeTab}
-            onValueChange={(value) => {
-              setActiveTab(value);
-              window.history.replaceState(null, "", `#${value}`);
-            }}
-          >
-            <SelectTrigger
-              aria-label={t("settings.title", lang)}
-              className="h-12 rounded-2xl border-border/65 bg-card px-4 font-medium shadow-card"
+    <div className="w-full">
+      <AccountSetupEntry user={user} lang={lang} />
+      <Tabs
+        value={activeTab}
+        onValueChange={(value) => {
+          setActiveTab(value);
+          window.history.replaceState(null, "", `#${value}`);
+        }}
+        className="settings-surface w-full lg:grid lg:grid-cols-[210px_minmax(0,1fr)] lg:items-stretch lg:overflow-hidden lg:rounded-3xl lg:border lg:border-border/65 lg:bg-card lg:shadow-card"
+      >
+        <div className="mb-5 lg:mb-0 lg:h-full lg:border-r lg:border-border/65 lg:bg-card lg:p-3">
+          <div className="mt-2 lg:hidden">
+            <Select
+              value={activeTab}
+              onValueChange={(value) => {
+                setActiveTab(value);
+                window.history.replaceState(null, "", `#${value}`);
+              }}
             >
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              {settingsTabs.map((tab) => (
-                <SelectItem key={tab.value} value={tab.value}>
-                  {t(tab.label, lang)}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </div>
+              <SelectTrigger
+                aria-label={t("settings.title", lang)}
+                className="h-12 rounded-2xl border-border/65 bg-card px-4 font-medium shadow-card"
+              >
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {settingsTabs.map((tab) => {
+                  const TabIcon = tab.icon;
+                  return (
+                    <SelectItem key={tab.value} value={tab.value}>
+                      <span className="inline-flex items-center gap-2.5">
+                        <TabIcon size={15} className="shrink-0 text-foreground/55" />
+                        <span>{t(tab.label, lang)}</span>
+                      </span>
+                    </SelectItem>
+                  );
+                })}
+              </SelectContent>
+            </Select>
+          </div>
 
-        <TabsList
-          className="hidden min-h-0 w-full flex-col items-stretch justify-start gap-1 rounded-none border-0 bg-transparent p-0 text-muted-foreground shadow-none lg:flex lg:h-auto"
-        >
-          {settingsTabs.map((tab) => (
-            <TabsTrigger key={tab.value} value={tab.value} className={triggerClassName}>
-              <span className="min-w-0 truncate">{t(tab.label, lang)}</span>
-            </TabsTrigger>
-          ))}
-        </TabsList>
-      </div>
-      <div className="min-w-0 max-lg:[&_button]:min-h-11 lg:p-3">
-        <TabsContent value="profile" className="mt-0">
-          <ProfileTab user={user} onSaved={onSaved} lang={lang} />
-        </TabsContent>
-        <TabsContent value="seller" className="mt-0">
-          <SellerTab user={user} onSaved={onSaved} lang={lang} />
-        </TabsContent>
-        <TabsContent value="privacy" className="mt-0">
-          <PrivacyTab user={user} onSaved={onSaved} lang={lang} />
-        </TabsContent>
-        <TabsContent value="reai" className="mt-0">
-          <ReaiTab lang={lang} />
-        </TabsContent>
-        <TabsContent value="training" className="mt-0">
-          <TrainingTab lang={lang} />
-        </TabsContent>
-        <TabsContent value="localization" className="mt-0">
-          <LocalizationTab user={user} lang={lang} />
-        </TabsContent>
-        <TabsContent value="notifications" className="mt-0">
-          <NotificationsTab user={user} onSaved={onSaved} lang={lang} />
-        </TabsContent>
-        <TabsContent value="billing" className="mt-0">
-          <BillingTab user={user} onSaved={onSaved} lang={lang} />
-        </TabsContent>
-        <TabsContent value="security" className="mt-0">
-          <SecurityTab user={user} onSaved={onSaved} lang={lang} />
-        </TabsContent>
-      </div>
-    </Tabs>
+          <TabsList
+            className="hidden min-h-0 w-full flex-col items-stretch justify-start gap-1 rounded-none border-0 bg-transparent p-0 text-muted-foreground shadow-none lg:flex lg:h-auto"
+          >
+            {settingsTabs.map((tab) => {
+              const TabIcon = tab.icon;
+              return (
+                <TabsTrigger key={tab.value} value={tab.value} className={triggerClassName}>
+                  <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-foreground/[0.045] text-foreground/60 transition-colors group-data-[state=active]:bg-primary group-data-[state=active]:text-primary-foreground">
+                    <TabIcon size={14} className="block" />
+                  </span>
+                  <span className="min-w-0 truncate">{t(tab.label, lang)}</span>
+                </TabsTrigger>
+              );
+            })}
+          </TabsList>
+        </div>
+        <div className="min-w-0 max-lg:[&_button]:min-h-11 lg:p-3">
+          <TabsContent value="profile" className="mt-0">
+            <ProfileTab user={user} onSaved={onSaved} lang={lang} />
+          </TabsContent>
+          <TabsContent value="seller" className="mt-0">
+            <SellerTab user={user} onSaved={onSaved} lang={lang} />
+          </TabsContent>
+          <TabsContent value="privacy" className="mt-0">
+            <PrivacyTab user={user} onSaved={onSaved} lang={lang} />
+          </TabsContent>
+          <TabsContent value="reai" className="mt-0">
+            <ReaiTab lang={lang} />
+          </TabsContent>
+          <TabsContent value="training" className="mt-0">
+            <TrainingTab lang={lang} />
+          </TabsContent>
+          <TabsContent value="localization" className="mt-0">
+            <LocalizationTab user={user} lang={lang} />
+          </TabsContent>
+          <TabsContent value="notifications" className="mt-0">
+            <NotificationsTab user={user} onSaved={onSaved} lang={lang} />
+          </TabsContent>
+          <TabsContent value="billing" className="mt-0">
+            <BillingTab user={user} onSaved={onSaved} lang={lang} />
+          </TabsContent>
+          <TabsContent value="security" className="mt-0">
+            <SecurityTab user={user} onSaved={onSaved} lang={lang} />
+          </TabsContent>
+        </div>
+      </Tabs>
+    </div>
   );
 }

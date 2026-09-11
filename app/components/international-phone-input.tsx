@@ -109,14 +109,15 @@ export function InternationalPhoneInput({
         >
           <span aria-hidden="true" className="text-[18px] leading-none">{selected.flag}</span>
           <span className="text-[13px] font-semibold tabular-nums">+{selected.callingCode}</span>
-          <ChevronDownIcon
+          <span
             aria-hidden="true"
-            size={16}
             className={cn(
-              "ml-auto h-4 w-4 shrink-0 text-foreground/55 transition-transform duration-200",
+              "ml-auto flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-foreground/[0.07] text-foreground/75 transition-transform duration-200",
               pickerOpen && "rotate-180",
             )}
-          />
+          >
+            <ChevronDownIcon size={15} className="block" />
+          </span>
         </button>
         <input
           id={id}
