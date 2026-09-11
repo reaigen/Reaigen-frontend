@@ -35,6 +35,7 @@ import { formatPhoneDisplay, isPhoneCountry, isValidInternationalPhone } from ".
 import { cn } from "../lib/utils";
 import {
   computeAccountSetupStatus,
+  isAccountReady,
   type AccountSetupStatus,
   type SetupBlockerKey,
   type SetupMissingKey,
@@ -1033,8 +1034,9 @@ export function AccountSetupFlow({
   }
 
   const blocked = Boolean(status?.blockers.includes("reaigen_access") || status?.blockers.includes("account_disabled"));
+  const hasBlockers = Boolean(status?.blockers.length);
+  const ready = isAccountReady(status);
   const completedCount = status?.completedCount ?? 0;
-  const completionPercent = Math.round((completedCount / STEPS.length) * 100);
 
   const stepState = (key: SetupStepKey) => {
     const state = status?.steps.find((item) => item.key === key);
@@ -1055,7 +1057,7 @@ export function AccountSetupFlow({
           "relative z-10 inline-flex shrink-0 items-center justify-center rounded-full border text-[11px] font-semibold leading-none tabular-nums shadow-control transition-[background-color,border-color,color,box-shadow] duration-200",
           size === "md" ? "h-10 w-10" : "h-9 w-9",
           current
-            ? "border-primary bg-primary text-primary-foreground ring-4 ring-primary/[0.07]"
+            ? "border-primary bg-primary text-primary-foreground ring-[3px] ring-primary/[0.07]"
             : complete
               ? "border-success/20 bg-success/10 text-success"
               : "border-border/75 bg-card text-foreground/55",
@@ -1089,9 +1091,9 @@ export function AccountSetupFlow({
             data-testid="setup-progress"
             className={cn(
               "mt-0.5 inline-flex h-9 shrink-0 items-center rounded-full border px-3.5 text-[11px] font-semibold tabular-nums shadow-control sm:mt-1 sm:text-[12px]",
-              status?.complete
+              ready
                 ? "border-success/20 bg-success/10 text-success"
-                : "border-primary bg-primary text-primary-foreground",
+                : "border-foreground/15 bg-card text-foreground/70",
             )}
           >
             {completedCount} / {STEPS.length}<span className="hidden sm:inline">&nbsp;{t("setup.stepsDone", lang)}</span>
@@ -1100,7 +1102,7 @@ export function AccountSetupFlow({
         <p className="mt-2.5 max-w-[68ch] text-[13px] leading-relaxed text-muted-foreground sm:text-[14px]">
           {t("setup.subtitle", lang)}
         </p>
-        <div aria-hidden="true" className="mt-4 grid grid-cols-4 gap-1.5 sm:mt-5">
+        <div aria-hidden="true" className="mt-5 hidden grid-cols-4 gap-1.5 lg:grid">
           {STEPS.map((step) => {
             const complete = stepState(step.key).complete;
             const current = view === step.key;
@@ -1157,7 +1159,7 @@ export function AccountSetupFlow({
                   <span
                     aria-hidden="true"
                     className={cn(
-                      "absolute left-1/2 top-[18px] h-px w-full",
+                      "absolute left-1/2 top-[22px] h-px w-full",
                       complete ? "bg-success/25" : "bg-border/80",
                     )}
                   />
@@ -1222,15 +1224,6 @@ export function AccountSetupFlow({
               );
             })}
           </ol>
-          <div className="mt-auto px-3 pb-2 pt-6">
-            <div className="mb-2 flex items-center justify-between text-[11px] font-medium tabular-nums text-muted-foreground">
-              <span>{t("setup.stepsDone", lang)}</span>
-              <span>{completedCount} / {STEPS.length}</span>
-            </div>
-            <div aria-hidden="true" className="h-1 overflow-hidden rounded-full bg-muted">
-              <span className="block h-full rounded-full bg-primary transition-[width] duration-500" style={{ width: `${completionPercent}%` }} />
-            </div>
-          </div>
         </nav>
 
         <section
@@ -1240,10 +1233,17 @@ export function AccountSetupFlow({
         >
           {view === "done" ? (
             <div className="flex flex-col items-center py-8 text-center" data-testid="setup-done">
-              <span className="flex h-14 w-14 items-center justify-center rounded-full border border-success/20 bg-success/10 text-success"><CheckIcon size={26} /></span>
-              <h2 className="mt-5 text-[26px] font-normal leading-tight tracking-[-0.02em]" style={{ fontFamily: "var(--font-brand), ui-serif, Georgia, serif" }}>{t("setup.done.title", lang)}</h2>
+              <span className={cn(
+                "flex h-14 w-14 items-center justify-center rounded-full border",
+                ready
+                  ? "border-success/20 bg-success/10 text-success"
+                  : "border-border/70 bg-surface-subtle/70 text-foreground/70",
+              )}><CheckIcon size={26} /></span>
+              <h2 className="mt-5 text-[26px] font-normal leading-tight tracking-[-0.02em]" style={{ fontFamily: "var(--font-brand), ui-serif, Georgia, serif" }}>{t(ready ? "setup.done.title" : "setup.done.incompleteTitle", lang)}</h2>
               <p className="mt-2 max-w-[46ch] text-[14px] leading-relaxed text-muted-foreground">
-                {status?.complete ? t("setup.done.subtitle", lang) : t("setup.done.subtitleIncomplete", lang)}
+                {ready
+                  ? t("setup.done.subtitle", lang)
+                  : t(hasBlockers ? "setup.done.blockedSubtitle" : "setup.done.subtitleIncomplete", lang)}
               </p>
               <div className="mt-6 flex w-full flex-col gap-2 sm:w-auto sm:flex-row">
                 <Button asChild className="w-full sm:w-auto"><Link href="/dashboard">{t("setup.openDashboard", lang)}</Link></Button>
@@ -1252,7 +1252,7 @@ export function AccountSetupFlow({
             </div>
           ) : (
             <>
-              <div className="mb-6 flex flex-col gap-3 border-b border-border/60 pb-5 sm:flex-row sm:items-start sm:justify-between sm:gap-4 sm:pb-6">
+              <div className="mb-6 flex items-start justify-between gap-3 border-b border-border/60 pb-5 sm:gap-4 sm:pb-6">
                 <div className="flex min-w-0 items-center gap-4">
                   <span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl border border-primary bg-primary text-primary-foreground shadow-control sm:h-14 sm:w-14">
                     <CurrentStepIcon size={22} className="block" />
@@ -1265,7 +1265,7 @@ export function AccountSetupFlow({
                     <p className="mt-0.5 line-clamp-2 text-[12px] leading-relaxed text-muted-foreground sm:text-[13px]">{t(STEPS[stepIndex].hint, lang)}</p>
                   </div>
                 </div>
-                <Button type="button" variant="ghost" size="sm" onClick={skip} disabled={skipping} className="h-9 shrink-0 self-end px-3 text-[12px] text-foreground/60 sm:self-auto" data-testid="setup-skip">
+                <Button type="button" variant="ghost" size="sm" onClick={skip} disabled={skipping} className="h-9 shrink-0 px-2.5 text-[11px] text-foreground/55 sm:px-3 sm:text-[12px]" data-testid="setup-skip">
                   {t("setup.skip", lang)}
                 </Button>
               </div>

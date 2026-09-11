@@ -4,6 +4,7 @@ import test from "node:test";
 import {
   computeAccountSetupStatus,
   hasSynchronousSetupGaps,
+  isAccountReady,
   shouldPromptAccountSetup,
 } from "../app/lib/account-setup.ts";
 import { sessionEndReasonFromDetail } from "../app/lib/session-end.ts";
@@ -51,6 +52,7 @@ const allTools = { allow_all_tools: true, tools: {} };
 test("a fully set-up account has no gaps and never re-prompts", () => {
   const status = computeAccountSetupStatus({ user: user(), consent: consented, toolPermissions: allTools });
   assert.equal(status.complete, true);
+  assert.equal(isAccountReady(status), true);
   assert.equal(status.nextStep, null);
   assert.equal(status.completedCount, 4);
   assert.deepEqual(status.blockers, []);
@@ -117,6 +119,14 @@ test("the backend's refusals surface as blockers, not as form gaps", () => {
     capabilities: { creator_posting: { phone_verified: true, has_reaigen_access: false, missing_requirements: ["account_disabled"] } },
   });
   assert.deepEqual(disabled.blockers, ["account_disabled"]);
+  const accessBlockedAfterSetup = computeAccountSetupStatus({
+    user: user(),
+    consent: consented,
+    toolPermissions: allTools,
+    capabilities: { creator_posting: { phone_verified: true, has_reaigen_access: false, missing_requirements: [] } },
+  });
+  assert.equal(accessBlockedAfterSetup.complete, true);
+  assert.equal(isAccountReady(accessBlockedAfterSetup), false);
 });
 
 test("a refused session renewal maps to a reason the sign-in screen can explain", () => {

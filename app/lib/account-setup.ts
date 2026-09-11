@@ -68,6 +68,14 @@ export interface AccountSetupInput {
   capabilities?: UserCapabilities | null;
 }
 
+/**
+ * Completing the four editable sections does not override a backend refusal.
+ * Keep this distinction explicit anywhere the UI says an account is ready.
+ */
+export function isAccountReady(status: AccountSetupStatus | null | undefined): boolean {
+  return Boolean(status?.complete && status.blockers.length === 0);
+}
+
 const STEP_ORDER: SetupStepKey[] = ["profile", "seller", "billing", "permissions"];
 
 function filled(value: string | null | undefined): boolean {
