@@ -92,11 +92,13 @@ import {
   DocumentIcon,
   EyeOpenIcon,
   ImageIcon,
+  InfoIcon,
   LinkIcon,
   LockIcon,
   MapPinIcon,
   PriceIcon,
   ProfileIcon,
+  SettingsIcon,
 } from "./icons";
 import { formatPhoneDisplay, isValidInternationalPhone } from "../lib/phone";
 import { t, getUserLanguage, formatDate as fmtDate } from "../lib/i18n";
@@ -107,6 +109,7 @@ import { resolveQuotaPresentation } from "../lib/account-usage";
 import { CountrySelect } from "./country-select";
 import { InternationalPhoneInput } from "./international-phone-input";
 import { useAccountSetup } from "./hooks/use-account-setup";
+import { isAccountReady } from "../lib/account-setup";
 
 function useAutoDismiss(value: boolean, setter: (v: boolean) => void, ms = 3000) {
   React.useEffect(() => {
@@ -144,10 +147,10 @@ function CardContent({ className, ...props }: React.HTMLAttributes<HTMLDivElemen
 }
 
 const SETTINGS_SETUP_STEPS = [
-  { key: "profile", label: "setup.step.profile", hint: "setup.step.profileHint", icon: ProfileIcon },
-  { key: "seller", label: "setup.step.seller", hint: "setup.step.sellerHint", icon: DeviceMobileIcon },
-  { key: "billing", label: "setup.step.billing", hint: "setup.step.billingHint", icon: PriceIcon },
-  { key: "permissions", label: "setup.step.permissions", hint: "setup.step.permissionsHint", icon: AgentIcon },
+  { key: "profile", label: "setup.step.profile", icon: ProfileIcon },
+  { key: "seller", label: "setup.step.seller", icon: DeviceMobileIcon },
+  { key: "billing", label: "setup.step.billing", icon: PriceIcon },
+  { key: "permissions", label: "setup.step.permissions", icon: AgentIcon },
 ] as const;
 
 /**
@@ -159,8 +162,12 @@ const SETTINGS_SETUP_STEPS = [
  */
 function AccountSetupEntry({ user, lang }: { user: UserProfile; lang: string }) {
   const { status, loading } = useAccountSetup(user);
-  const complete = !loading && Boolean(status?.complete);
-  const completedCount = loading ? 0 : status?.completedCount ?? 0;
+  const ready = !loading && isAccountReady(status);
+  const blocked = !loading && Boolean(status?.blockers.length);
+  // Profile, seller, and billing state is already authoritative on the user
+  // payload. Keep that useful progress visible while only the permission
+  // verdict is loading, instead of flashing an artificial 0 / 4 state.
+  const completedCount = status?.completedCount ?? 0;
   const progress = !loading && status
     ? `${status.completedCount} / ${status.steps.length} ${t("setup.stepsDone", lang)}`
     : t("common.loading", lang);
@@ -170,16 +177,17 @@ function AccountSetupEntry({ user, lang }: { user: UserProfile; lang: string }) 
     <Link
       href="/setup"
       data-testid="settings-account-setup"
-      data-complete={complete ? "true" : "false"}
+      data-complete={ready ? "true" : "false"}
+      data-blocked={blocked ? "true" : "false"}
       aria-busy={loading || undefined}
       className={cn(
-        "group relative mb-5 block w-full overflow-hidden rounded-[28px] border bg-card p-4 text-left shadow-card transition-[border-color,box-shadow,transform] duration-200 hover:-translate-y-0.5 hover:shadow-lg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 sm:p-5",
-        complete ? "border-success/25" : "border-foreground/[0.13]",
+        "group relative mb-5 block w-full overflow-hidden rounded-[28px] border bg-card p-4 text-left shadow-card transition-[border-color,background-color] duration-200 hover:border-foreground/25 hover:bg-surface-subtle/20 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 sm:p-5",
+        ready ? "border-success/25" : blocked ? "border-destructive/25" : "border-foreground/[0.13]",
       )}
     >
       <span
         aria-hidden="true"
-        className={cn("absolute inset-y-0 left-0 w-1", complete ? "bg-success" : "bg-primary")}
+        className={cn("absolute inset-y-4 left-0 w-[3px] rounded-r-full", ready ? "bg-success" : blocked ? "bg-destructive" : "bg-primary")}
       />
 
       <span className="flex items-start gap-3.5 sm:gap-4">
@@ -187,12 +195,18 @@ function AccountSetupEntry({ user, lang }: { user: UserProfile; lang: string }) 
           aria-hidden="true"
           className={cn(
             "flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl border shadow-control sm:h-14 sm:w-14",
-            complete
+            ready
               ? "border-success/20 bg-success/10 text-success"
-              : "border-primary bg-primary text-primary-foreground",
+              : blocked
+                ? "border-destructive/20 bg-destructive/[0.065] text-destructive"
+                : "border-border/70 bg-surface-subtle/70 text-foreground/70",
           )}
         >
-          {complete ? <CheckIcon size={22} className="block" /> : <ProfileIcon size={22} className="block" />}
+          {ready
+            ? <CheckIcon size={22} className="block" />
+            : blocked
+              ? <InfoIcon size={22} className="block" />
+              : <SettingsIcon size={22} className="block" />}
         </span>
 
         <span className="min-w-0 flex-1">
@@ -203,23 +217,30 @@ function AccountSetupEntry({ user, lang }: { user: UserProfile; lang: string }) 
             className="mt-0.5 block text-[20px] font-normal leading-tight tracking-[-0.02em] text-foreground sm:text-[23px]"
             style={{ fontFamily: "var(--font-brand), ui-serif, Georgia, serif" }}
           >
-            {complete ? t("setup.status.done", lang) : t("setup.reminder.title", lang)}
+            {blocked
+              ? t("setup.blocker.title", lang)
+              : ready
+                ? t("setup.done.title", lang)
+                : t("setup.reminder.title", lang)}
           </span>
           <span className="mt-1 hidden max-w-[68ch] text-[12px] leading-relaxed text-muted-foreground sm:block sm:text-[13px]">
-            {t("setup.subtitle", lang)}
+            {t(blocked ? "setup.done.blockedSubtitle" : "setup.subtitle", lang)}
           </span>
         </span>
 
         <span className="hidden shrink-0 items-center gap-2 self-center rounded-full bg-primary px-4 py-2 text-[12px] font-semibold text-primary-foreground shadow-control sm:inline-flex">
-          {complete ? t("setup.headerTitle", lang) : t("setup.reminder.action", lang)}
+          {ready || blocked ? t("setup.settings.review", lang) : t("setup.reminder.action", lang)}
           <ChevronRightIcon aria-hidden="true" size={15} className="transition-transform group-hover:translate-x-0.5" />
+        </span>
+        <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-primary text-primary-foreground shadow-control sm:hidden" aria-hidden="true">
+          <ChevronRightIcon size={16} className="transition-transform group-hover:translate-x-0.5" />
         </span>
       </span>
 
       <span className="mt-4 grid grid-cols-2 gap-2 sm:grid-cols-4" data-testid="settings-setup-steps">
         {SETTINGS_SETUP_STEPS.map((step) => {
           const stepStatus = status?.steps.find((item) => item.key === step.key);
-          const stepComplete = !loading && Boolean(stepStatus?.complete);
+          const stepComplete = Boolean(stepStatus?.complete);
           const isNext = !loading && status?.nextStep === step.key;
           const StepIcon = step.icon;
           return (
@@ -228,7 +249,7 @@ function AccountSetupEntry({ user, lang }: { user: UserProfile; lang: string }) 
               data-testid={`settings-setup-step-${step.key}`}
               data-state={stepComplete ? "complete" : isNext ? "next" : "pending"}
               className={cn(
-                "flex min-h-[4.25rem] items-center gap-2.5 rounded-2xl border px-3 py-2.5 transition-colors",
+                "flex min-h-[3.75rem] items-center gap-2.5 rounded-2xl border px-3 py-2.5 transition-colors",
                 stepComplete
                   ? "border-success/20 bg-success/[0.055]"
                   : isNext
@@ -251,8 +272,12 @@ function AccountSetupEntry({ user, lang }: { user: UserProfile; lang: string }) 
               </span>
               <span className="min-w-0">
                 <span className="block truncate text-[12px] font-semibold text-foreground/85">{t(step.label, lang)}</span>
-                <span className={cn("mt-0.5 block truncate text-[10.5px]", stepComplete ? "text-success" : "text-muted-foreground")}>
-                  {stepComplete ? t("setup.status.done", lang) : t(step.hint, lang)}
+                <span className={cn("mt-0.5 block truncate text-[10.5px] font-medium", stepComplete ? "text-success" : isNext ? "text-foreground/70" : "text-muted-foreground")}>
+                  {stepComplete
+                    ? t("setup.status.done", lang)
+                    : isNext
+                      ? t("setup.status.next", lang)
+                      : t("setup.status.pending", lang)}
                 </span>
               </span>
             </span>
@@ -263,18 +288,13 @@ function AccountSetupEntry({ user, lang }: { user: UserProfile; lang: string }) 
       <span className="mt-3 flex items-center gap-3">
         <span className="h-1.5 min-w-0 flex-1 overflow-hidden rounded-full bg-muted" aria-hidden="true">
           <span
-            className={cn("block h-full rounded-full transition-[width] duration-500", complete ? "bg-success" : "bg-primary")}
+            className={cn("block h-full rounded-full transition-[width] duration-500", ready ? "bg-success" : blocked ? "bg-destructive" : "bg-primary")}
             style={{ width: `${progressPercent}%` }}
           />
         </span>
-        <span className={cn("shrink-0 text-[11px] font-semibold tabular-nums", complete ? "text-success" : "text-foreground/65")}>
+        <span className={cn("shrink-0 text-[11px] font-semibold tabular-nums", ready ? "text-success" : blocked ? "text-destructive" : "text-foreground/65")}>
           {progress}
         </span>
-      </span>
-
-      <span className="mt-3 flex w-full items-center justify-center gap-2 rounded-full bg-primary px-4 py-2.5 text-[12px] font-semibold text-primary-foreground shadow-control sm:hidden">
-        {complete ? t("setup.headerTitle", lang) : t("setup.reminder.action", lang)}
-        <ChevronRightIcon aria-hidden="true" size={15} className="transition-transform group-hover:translate-x-0.5" />
       </span>
     </Link>
   );
