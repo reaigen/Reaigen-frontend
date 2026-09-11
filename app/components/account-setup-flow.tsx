@@ -1052,18 +1052,18 @@ export function AccountSetupFlow({
       <span
         aria-hidden="true"
         className={cn(
-          "relative z-10 inline-flex shrink-0 items-center justify-center rounded-full border text-[11px] font-semibold leading-none tabular-nums transition-[background-color,border-color,color] duration-200",
-          size === "md" ? "h-8 w-8" : "h-7 w-7",
+          "relative z-10 inline-flex shrink-0 items-center justify-center rounded-full border text-[11px] font-semibold leading-none tabular-nums shadow-control transition-[background-color,border-color,color,box-shadow] duration-200",
+          size === "md" ? "h-10 w-10" : "h-9 w-9",
           current
-            ? "border-primary bg-primary text-primary-foreground"
+            ? "border-primary bg-primary text-primary-foreground ring-4 ring-primary/[0.07]"
             : complete
               ? "border-success/20 bg-success/10 text-success"
               : "border-border/75 bg-card text-foreground/55",
         )}
       >
         {complete && !current
-          ? <CheckIcon size={size === "md" ? 14 : 13} className="block" />
-          : <StepIcon size={size === "md" ? 15 : 14} className="block" />}
+          ? <CheckIcon size={size === "md" ? 18 : 16} className="block" />
+          : <StepIcon size={size === "md" ? 18 : 16} className="block" />}
       </span>
     );
   };
@@ -1087,7 +1087,12 @@ export function AccountSetupFlow({
           </div>
           <span
             data-testid="setup-progress"
-            className="mt-0.5 inline-flex h-8 shrink-0 items-center rounded-full border border-border/70 bg-card px-3 text-[11px] font-semibold tabular-nums text-foreground/65 shadow-control sm:mt-1 sm:text-[12px]"
+            className={cn(
+              "mt-0.5 inline-flex h-9 shrink-0 items-center rounded-full border px-3.5 text-[11px] font-semibold tabular-nums shadow-control sm:mt-1 sm:text-[12px]",
+              status?.complete
+                ? "border-success/20 bg-success/10 text-success"
+                : "border-primary bg-primary text-primary-foreground",
+            )}
           >
             {completedCount} / {STEPS.length}<span className="hidden sm:inline">&nbsp;{t("setup.stepsDone", lang)}</span>
           </span>
@@ -1095,11 +1100,24 @@ export function AccountSetupFlow({
         <p className="mt-2.5 max-w-[68ch] text-[13px] leading-relaxed text-muted-foreground sm:text-[14px]">
           {t("setup.subtitle", lang)}
         </p>
-        <div aria-hidden="true" className="mt-4 h-1 overflow-hidden rounded-full bg-muted sm:mt-5">
-          <span
-            className="block h-full rounded-full bg-primary transition-[width] duration-500"
-            style={{ width: `${completionPercent}%` }}
-          />
+        <div aria-hidden="true" className="mt-4 grid grid-cols-4 gap-1.5 sm:mt-5">
+          {STEPS.map((step) => {
+            const complete = stepState(step.key).complete;
+            const current = view === step.key;
+            return (
+              <span
+                key={step.key}
+                className={cn(
+                  "h-1.5 rounded-full transition-colors duration-300",
+                  complete
+                    ? "bg-success"
+                    : current
+                      ? "bg-primary"
+                      : "bg-muted",
+                )}
+              />
+            );
+          })}
         </div>
       </header>
 
@@ -1129,7 +1147,7 @@ export function AccountSetupFlow({
 
       {/* Phones: connected centres, equal columns, and full-width touch targets. */}
       <nav aria-label={t("setup.headerTitle", lang)} className="mb-4 lg:hidden">
-        <ol className="grid grid-cols-4 rounded-[22px] border border-border/65 bg-card px-2 py-3 shadow-card">
+        <ol className="grid grid-cols-4 rounded-[24px] border border-border/65 bg-card p-2.5 shadow-card">
           {STEPS.map((step, index) => {
             const { complete } = stepState(step.key);
             const current = view === step.key;
@@ -1139,7 +1157,7 @@ export function AccountSetupFlow({
                   <span
                     aria-hidden="true"
                     className={cn(
-                      "absolute left-1/2 top-[13px] h-px w-full",
+                      "absolute left-1/2 top-[18px] h-px w-full",
                       complete ? "bg-success/25" : "bg-border/80",
                     )}
                   />
@@ -1150,7 +1168,10 @@ export function AccountSetupFlow({
                   aria-current={current ? "step" : undefined}
                   data-testid={`setup-strip-${step.key}`}
                   data-complete={complete ? "true" : "false"}
-                  className="relative flex min-h-[3.25rem] w-full flex-col items-center justify-start gap-1.5 rounded-xl px-1 text-center focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+                  className={cn(
+                    "relative flex min-h-[4rem] w-full flex-col items-center justify-start gap-2 rounded-2xl px-1 py-1 text-center transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2",
+                    current && "bg-primary/[0.045]",
+                  )}
                 >
                   <Indicator stepKey={step.key} index={index} size="sm" />
                   <span className="relative z-10 grid h-8 w-full place-items-center overflow-hidden text-center">
@@ -1182,7 +1203,7 @@ export function AccountSetupFlow({
                     data-complete={complete ? "true" : "false"}
                     className={cn(
                       "flex min-h-[4.25rem] w-full items-center gap-3 rounded-2xl border px-3 py-2.5 text-left transition-[background-color,border-color] duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1",
-                      current ? "border-foreground/[0.12] bg-card shadow-card" : "border-transparent hover:bg-foreground/[0.035]",
+                      current ? "border-primary/20 bg-primary/[0.045] shadow-card" : "border-transparent hover:bg-foreground/[0.035]",
                     )}
                   >
                     <Indicator stepKey={step.key} index={index} />
@@ -1214,7 +1235,7 @@ export function AccountSetupFlow({
 
         <section
           data-settings-card
-          className="rounded-3xl border border-border/65 bg-card p-5 shadow-card sm:p-6 lg:p-8"
+          className="rounded-3xl border border-border/65 bg-card p-5 shadow-card sm:p-6 lg:rounded-none lg:border-0 lg:p-8 lg:shadow-none"
           data-testid="setup-panel"
         >
           {view === "done" ? (
@@ -1232,9 +1253,9 @@ export function AccountSetupFlow({
           ) : (
             <>
               <div className="mb-6 flex flex-col gap-3 border-b border-border/60 pb-5 sm:flex-row sm:items-start sm:justify-between sm:gap-4 sm:pb-6">
-                <div className="flex min-w-0 items-center gap-3.5">
-                  <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full border border-border/60 bg-surface-subtle/70 text-foreground/70 sm:h-11 sm:w-11">
-                    <CurrentStepIcon size={18} className="block" />
+                <div className="flex min-w-0 items-center gap-4">
+                  <span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl border border-primary bg-primary text-primary-foreground shadow-control sm:h-14 sm:w-14">
+                    <CurrentStepIcon size={22} className="block" />
                   </span>
                   <div className="min-w-0">
                     <p className="text-[11px] font-semibold uppercase leading-4 tracking-[0.08em] text-foreground/45 tabular-nums">

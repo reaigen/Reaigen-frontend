@@ -82,8 +82,8 @@ test("account controls and recovery use semantic theme surfaces", () => {
 });
 
 test("the setup wizard keeps indicators, labels, and headings on one visual system", () => {
-  assert.match(setup, /grid grid-cols-4 rounded-\[22px\]/);
-  assert.match(setup, /left-1\/2 top-\[13px\] h-px w-full/);
+  assert.match(setup, /grid grid-cols-4 rounded-\[24px\]/);
+  assert.match(setup, /left-1\/2 top-\[18px\] h-px w-full/);
   assert.match(setup, /inline-flex shrink-0 items-center justify-center rounded-full border/);
   assert.match(setup, /<CurrentStepIcon[\s\S]*?var\(--font-brand\)/);
   assert.match(field, /items-center justify-between/);
@@ -99,6 +99,13 @@ test("account setup is permanently discoverable in Settings with live backend st
   assert.match(settings, /useAccountSetup\(user\)/);
   assert.match(settings, /href="\/setup"/);
   assert.match(settings, /data-testid="settings-account-setup"/);
+  assert.match(settings, /data-testid="settings-setup-steps"/);
+  assert.match(settings, /data-testid=\{`settings-setup-step-\$\{step\.key\}`\}/);
+  assert.match(settings, /grid-cols-2 gap-2 sm:grid-cols-4/);
+  assert.match(settings, /status\?\.nextStep === step\.key/);
+  assert.match(settings, /SETTINGS_SETUP_STEPS[\s\S]*?ProfileIcon[\s\S]*?DeviceMobileIcon[\s\S]*?PriceIcon[\s\S]*?AgentIcon/);
+  assert.match(settings, /settingsTabs[\s\S]*?icon: ProfileIcon[\s\S]*?icon: LockIcon/);
+  assert.match(settings, /group-data-\[state=active\]:bg-primary/);
 });
 
 test("account elements use the Reaigen semantic palette instead of utility colors", () => {

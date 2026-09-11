@@ -64,14 +64,15 @@ export function CountrySelect({
         ) : (
           <span className="min-w-0 flex-1 truncate text-muted-foreground">{t("country.placeholder", lang)}</span>
         )}
-        <ChevronDownIcon
+        <span
           aria-hidden="true"
-          size={16}
           className={cn(
-            "h-4 w-4 shrink-0 text-foreground/55 transition-transform duration-200",
+            "flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-foreground/[0.07] text-foreground/75 transition-transform duration-200",
             open && "rotate-180",
           )}
-        />
+        >
+          <ChevronDownIcon size={15} className="block" />
+        </span>
       </button>
       <CountryPickerSheet
         open={open}
