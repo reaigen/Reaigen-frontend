@@ -2,6 +2,7 @@
 
 import * as React from "react";
 import { Button } from "../lib/ui/button";
+import { FormField, focusFirstInvalidField } from "../lib/ui/form-field";
 import { Input } from "../lib/ui/input";
 import { Label } from "../lib/ui/label";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "../lib/ui/tabs";
@@ -70,6 +71,7 @@ import {
   type TrainingResolution,
 } from "../lib/api/client";
 import { getSafeApiErrorMessage } from "../lib/api/error-message";
+import { isEmailAddress, normalizeWebAddress } from "../lib/form-validation";
 import {
   TRAINING_PROFILE_DEFAULTS,
   parseTrainingIterations,
@@ -87,6 +89,7 @@ import type { LocaleKey } from "../lib/locales";
 import { cn } from "../lib/utils";
 import { ManagedLegalDocuments } from "./content-documents";
 import { resolveQuotaPresentation } from "../lib/account-usage";
+import { CountrySelect } from "./country-select";
 import { InternationalPhoneInput } from "./international-phone-input";
 
 function useAutoDismiss(value: boolean, setter: (v: boolean) => void, ms = 3000) {
@@ -240,6 +243,7 @@ function ProfileTab({ user, onSaved, lang }: { user: UserProfile; onSaved: () =>
   const [avatarUploading, setAvatarUploading] = React.useState(false);
   const [emailResending, setEmailResending] = React.useState(false);
   const [emailResent, setEmailResent] = React.useState(false);
+  const [touched, setTouched] = React.useState({ firstName: false, lastName: false, username: false });
   const avatarInputRef = React.useRef<HTMLInputElement>(null);
   useAutoDismiss(success, setSuccess);
   useAutoDismiss(emailResent, setEmailResent);
@@ -281,6 +285,18 @@ function ProfileTab({ user, onSaved, lang }: { user: UserProfile; onSaved: () =>
     e.preventDefault();
     setError(null);
     setSuccess(false);
+    setTouched({ firstName: true, lastName: true, username: true });
+    const firstNameMissing = !firstName.trim();
+    const lastNameMissing = !lastName.trim();
+    const usernameMissing = !username.trim();
+    if (firstNameMissing || lastNameMissing || usernameMissing) {
+      focusFirstInvalidField([
+        firstNameMissing && "first-name",
+        lastNameMissing && "last-name",
+        usernameMissing && "username",
+      ]);
+      return;
+    }
     try {
       setLoading(true);
       await updateProfile({ first_name: firstName.trim(), last_name: lastName.trim(), username: username.trim() });
@@ -303,7 +319,7 @@ function ProfileTab({ user, onSaved, lang }: { user: UserProfile; onSaved: () =>
         <CardDescription>{t("settings.profile.subtitle", lang)}</CardDescription>
       </CardHeader>
       <CardContent>
-        <form className="space-y-4" onSubmit={handleSubmit}>
+        <form className="space-y-4" onSubmit={handleSubmit} noValidate>
           {/* Avatar */}
           <div className="flex items-center gap-4">
             <Avatar size="xl">
@@ -326,19 +342,52 @@ function ProfileTab({ user, onSaved, lang }: { user: UserProfile; onSaved: () =>
           </div>
 
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            <div className="space-y-1.5">
-              <Label htmlFor="first-name">{t("settings.profile.firstName", lang)}</Label>
-              <Input id="first-name" value={firstName} onChange={(e) => setFirstName(e.target.value)} />
-            </div>
-            <div className="space-y-1.5">
-              <Label htmlFor="last-name">{t("settings.profile.lastName", lang)}</Label>
-              <Input id="last-name" value={lastName} onChange={(e) => setLastName(e.target.value)} />
-            </div>
+            <FormField
+              id="first-name"
+              label={t("settings.profile.firstName", lang)}
+              error={touched.firstName && !firstName.trim() ? t("form.required", lang) : null}
+            >
+              {(control) => (
+                <Input
+                  {...control}
+                  value={firstName}
+                  onChange={(e) => setFirstName(e.target.value)}
+                  onBlur={() => setTouched((current) => ({ ...current, firstName: true }))}
+                  autoComplete="given-name"
+                />
+              )}
+            </FormField>
+            <FormField
+              id="last-name"
+              label={t("settings.profile.lastName", lang)}
+              error={touched.lastName && !lastName.trim() ? t("form.required", lang) : null}
+            >
+              {(control) => (
+                <Input
+                  {...control}
+                  value={lastName}
+                  onChange={(e) => setLastName(e.target.value)}
+                  onBlur={() => setTouched((current) => ({ ...current, lastName: true }))}
+                  autoComplete="family-name"
+                />
+              )}
+            </FormField>
           </div>
-          <div className="space-y-1.5">
-            <Label htmlFor="username">{t("settings.profile.username", lang)}</Label>
-            <Input id="username" value={username} onChange={(e) => setUsername(e.target.value)} />
-          </div>
+          <FormField
+            id="username"
+            label={t("settings.profile.username", lang)}
+            error={touched.username && !username.trim() ? t("form.required", lang) : null}
+          >
+            {(control) => (
+              <Input
+                {...control}
+                value={username}
+                onChange={(e) => setUsername(e.target.value)}
+                onBlur={() => setTouched((current) => ({ ...current, username: true }))}
+                autoComplete="username"
+              />
+            )}
+          </FormField>
           {/*
             The address is a fact, not a field — a disabled input reads as a
             broken form. A quiet row states it, and the chip carries the
@@ -373,8 +422,8 @@ function ProfileTab({ user, onSaved, lang }: { user: UserProfile; onSaved: () =>
               )}
             </div>
           </div>
-          {error && <p className="text-[12px] text-destructive">{error}</p>}
-          {success && <p className="text-[12px] text-success">{t("settings.profile.saved", lang)}</p>}
+          {error && <p className="text-[12px] text-destructive" role="alert">{error}</p>}
+          {success && <p className="text-[12px] text-success" role="status">{t("settings.profile.saved", lang)}</p>}
           <div className="pt-2">
             <Button type="submit" size="sm" className="h-11" loading={loading}>{t("settings.profile.save", lang)}</Button>
           </div>
@@ -412,6 +461,8 @@ function SellerTab({ user, onSaved, lang }: { user: UserProfile; onSaved: () => 
   const [success, setSuccess] = React.useState(false);
   const [phoneTouched, setPhoneTouched] = React.useState(false);
   const [secondaryPhoneTouched, setSecondaryPhoneTouched] = React.useState(false);
+  const [publicEmailTouched, setPublicEmailTouched] = React.useState(false);
+  const [websiteTouched, setWebsiteTouched] = React.useState(false);
   const [coverUploading, setCoverUploading] = React.useState(false);
   const coverInputRef = React.useRef<HTMLInputElement>(null);
   useAutoDismiss(success, setSuccess);
@@ -477,15 +528,28 @@ function SellerTab({ user, onSaved, lang }: { user: UserProfile; onSaved: () => 
     setSuccess(false);
     setPhoneTouched(true);
     setSecondaryPhoneTouched(true);
-    if ((phone.trim() && !isValidInternationalPhone(phone))
-      || (secondaryPhone.trim() && !isValidInternationalPhone(secondaryPhone))) return;
+    setPublicEmailTouched(true);
+    setWebsiteTouched(true);
+    const primaryInvalid = Boolean(phone.trim()) && !isValidInternationalPhone(phone);
+    const secondaryInvalid = Boolean(secondaryPhone.trim()) && !isValidInternationalPhone(secondaryPhone);
+    const emailInvalid = Boolean(publicEmail.trim()) && !isEmailAddress(publicEmail);
+    const websiteInvalid = normalizeWebAddress(website) === null;
+    if (primaryInvalid || secondaryInvalid || emailInvalid || websiteInvalid) {
+      focusFirstInvalidField([
+        primaryInvalid && "seller-phone",
+        secondaryInvalid && "seller-secondary-phone",
+        emailInvalid && "seller-public-email",
+        websiteInvalid && "seller-website",
+      ]);
+      return;
+    }
     try {
       setLoading(true);
       await Promise.all([
         updateSellerProfile({
           phone: phone.trim(),
           company: company.trim(),
-          website: website.trim(),
+          website: normalizeWebAddress(website) ?? website.trim(),
           bio: bio.trim(),
           job_title: jobTitle.trim(),
           linkedin_url: linkedin.trim(),
@@ -497,7 +561,7 @@ function SellerTab({ user, onSaved, lang }: { user: UserProfile; onSaved: () => 
           address: address.trim(),
           city: city.trim(),
           state: state.trim(),
-          country: country.trim(),
+          country: country.trim().toUpperCase(),
           postal_code: postalCode.trim(),
         }),
         updatePersonalizedData({
@@ -519,6 +583,11 @@ function SellerTab({ user, onSaved, lang }: { user: UserProfile; onSaved: () => 
 
   const hasSocial = !!(linkedin || twitter || instagram);
   const hasAddress = !!(address || city || state || country || postalCode);
+  const primaryPhoneError = phoneTouched && Boolean(phone.trim()) && !isValidInternationalPhone(phone);
+  const secondaryPhoneError = secondaryPhoneTouched && Boolean(secondaryPhone.trim()) && !isValidInternationalPhone(secondaryPhone);
+  const publicEmailError = publicEmailTouched && Boolean(publicEmail.trim()) && !isEmailAddress(publicEmail);
+  const normalizedWebsite = normalizeWebAddress(website);
+  const websiteError = websiteTouched && normalizedWebsite === null;
   return (
     <Card>
       <CardHeader>
@@ -526,7 +595,7 @@ function SellerTab({ user, onSaved, lang }: { user: UserProfile; onSaved: () => 
         <CardDescription>{t("settings.seller.subtitle", lang)}</CardDescription>
       </CardHeader>
       <CardContent>
-        <form className="space-y-4" onSubmit={handleSubmit}>
+        <form className="space-y-4" onSubmit={handleSubmit} noValidate>
           {/* Cover Image */}
           <div className="relative">
             <input ref={coverInputRef} type="file" accept="image/*" className="hidden" onChange={handleCoverChange} />
@@ -572,89 +641,83 @@ function SellerTab({ user, onSaved, lang }: { user: UserProfile; onSaved: () => 
 
           {/* Contact */}
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            <div className="space-y-1.5">
-              <Label htmlFor="seller-phone">{t("settings.seller.phone", lang)}</Label>
-              <InternationalPhoneInput
-                id="seller-phone"
-                value={phone}
-                onChange={setPhone}
-                onBlur={() => setPhoneTouched(true)}
-                lang={lang}
-                preferredCountry={country || p?.country}
-                error={phoneTouched && Boolean(phone.trim()) && !isValidInternationalPhone(phone)}
-                aria-describedby={phoneTouched && phone.trim() && !isValidInternationalPhone(phone) ? "seller-phone-error" : undefined}
-              />
-              {phoneTouched && phone.trim() && !isValidInternationalPhone(phone) ? (
-                <p id="seller-phone-error" role="alert" className="text-[12px] text-destructive">{t("phone.invalid", lang)}</p>
-              ) : null}
-            </div>
-            <div className="space-y-1.5">
-              <Label htmlFor="seller-company">{t("settings.seller.company", lang)}</Label>
-              <Input id="seller-company" value={company} onChange={(e) => setCompany(e.target.value)} />
-            </div>
+            <FormField id="seller-phone" label={t("settings.seller.phone", lang)} error={primaryPhoneError ? t("phone.invalid", lang) : null}>
+              {(control) => (
+                <InternationalPhoneInput
+                  id={control.id}
+                  value={phone}
+                  onChange={setPhone}
+                  onBlur={() => setPhoneTouched(true)}
+                  lang={lang}
+                  preferredCountry={country || p?.country}
+                  error={control.error}
+                  aria-describedby={control["aria-describedby"]}
+                />
+              )}
+            </FormField>
+            <FormField id="seller-company" label={t("settings.seller.company", lang)}>
+              {(control) => <Input {...control} value={company} onChange={(e) => setCompany(e.target.value)} autoComplete="organization" />}
+            </FormField>
           </div>
 
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            <div className="space-y-1.5">
-              <Label htmlFor="seller-public-email">{t("settings.seller.publicEmail", lang)}</Label>
-              <Input id="seller-public-email" value={publicEmail} onChange={(e) => setPublicEmail(e.target.value)} type="email" />
-            </div>
-            <div className="space-y-1.5">
-              <Label htmlFor="seller-secondary-phone">{t("settings.seller.secondaryPhone", lang)}</Label>
-              <InternationalPhoneInput
-                id="seller-secondary-phone"
-                value={secondaryPhone}
-                onChange={setSecondaryPhone}
-                onBlur={() => setSecondaryPhoneTouched(true)}
-                lang={lang}
-                preferredCountry={country || p?.country}
-                error={secondaryPhoneTouched && Boolean(secondaryPhone.trim()) && !isValidInternationalPhone(secondaryPhone)}
-                aria-describedby={secondaryPhoneTouched && secondaryPhone.trim() && !isValidInternationalPhone(secondaryPhone) ? "seller-secondary-phone-error" : undefined}
-              />
-              {secondaryPhoneTouched && secondaryPhone.trim() && !isValidInternationalPhone(secondaryPhone) ? (
-                <p id="seller-secondary-phone-error" role="alert" className="text-[12px] text-destructive">{t("phone.invalid", lang)}</p>
-              ) : null}
-            </div>
+            <FormField id="seller-public-email" label={t("settings.seller.publicEmail", lang)} error={publicEmailError ? t("form.invalidEmail", lang) : null}>
+              {(control) => <Input {...control} value={publicEmail} onChange={(e) => setPublicEmail(e.target.value)} onBlur={() => setPublicEmailTouched(true)} type="email" autoComplete="email" />}
+            </FormField>
+            <FormField id="seller-secondary-phone" label={t("settings.seller.secondaryPhone", lang)} error={secondaryPhoneError ? t("phone.invalid", lang) : null}>
+              {(control) => (
+                <InternationalPhoneInput
+                  id={control.id}
+                  value={secondaryPhone}
+                  onChange={setSecondaryPhone}
+                  onBlur={() => setSecondaryPhoneTouched(true)}
+                  lang={lang}
+                  preferredCountry={country || p?.country}
+                  error={control.error}
+                  aria-describedby={control["aria-describedby"]}
+                />
+              )}
+            </FormField>
           </div>
 
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            <div className="space-y-1.5">
-              <Label htmlFor="seller-job-title">{t("settings.seller.jobTitle", lang)}</Label>
-              <Input id="seller-job-title" value={jobTitle} onChange={(e) => setJobTitle(e.target.value)} />
-            </div>
-            <div className="space-y-1.5">
-              <Label htmlFor="seller-website">{t("settings.seller.website", lang)}</Label>
-              <Input id="seller-website" value={website} onChange={(e) => setWebsite(e.target.value)} placeholder="https://www.example.com" />
-            </div>
+            <FormField id="seller-job-title" label={t("settings.seller.jobTitle", lang)}>
+              {(control) => <Input {...control} value={jobTitle} onChange={(e) => setJobTitle(e.target.value)} autoComplete="organization-title" />}
+            </FormField>
+            <FormField id="seller-website" label={t("settings.seller.website", lang)} hint={t("form.websiteHint", lang)} error={websiteError ? t("form.invalidWebsite", lang) : null}>
+              {(control) => (
+                <Input
+                  {...control}
+                  value={website}
+                  onChange={(e) => setWebsite(e.target.value)}
+                  onBlur={() => {
+                    setWebsiteTouched(true);
+                    if (normalizedWebsite !== null) setWebsite(normalizedWebsite);
+                  }}
+                  inputMode="url"
+                  autoComplete="url"
+                />
+              )}
+            </FormField>
           </div>
 
-          <div className="space-y-1.5">
-            <Label htmlFor="seller-bio">{t("settings.seller.bio", lang)}</Label>
-            <Textarea
-              id="seller-bio"
-              value={bio}
-              onChange={(e) => setBio(e.target.value)}
-              rows={3}
-              placeholder={t("settings.seller.bio", lang) + "…"}
-            />
-          </div>
+          <FormField id="seller-bio" label={t("settings.seller.bio", lang)}>
+            {(control) => <Textarea {...control} value={bio} onChange={(e) => setBio(e.target.value)} rows={3} />}
+          </FormField>
 
           {/* Social — collapsible */}
           <Separator />
           <CollapsibleSection title={t("settings.seller.sectionSocial", lang)} defaultOpen={hasSocial}>
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-              <div className="space-y-1.5">
-                <Label htmlFor="seller-linkedin">{t("settings.seller.linkedin", lang)}</Label>
-                <Input id="seller-linkedin" value={linkedin} onChange={(e) => setLinkedin(e.target.value)} placeholder="https://linkedin.com/in/your-name" />
-              </div>
-              <div className="space-y-1.5">
-                <Label htmlFor="seller-twitter">{t("settings.seller.twitter", lang)}</Label>
-                <Input id="seller-twitter" value={twitter} onChange={(e) => setTwitter(e.target.value)} placeholder="@yourhandle" />
-              </div>
-              <div className="space-y-1.5">
-                <Label htmlFor="seller-instagram">{t("settings.seller.instagram", lang)}</Label>
-                <Input id="seller-instagram" value={instagram} onChange={(e) => setInstagram(e.target.value)} placeholder="@yourhandle" />
-              </div>
+              <FormField id="seller-linkedin" label={t("settings.seller.linkedin", lang)}>
+                {(control) => <Input {...control} value={linkedin} onChange={(e) => setLinkedin(e.target.value)} inputMode="url" />}
+              </FormField>
+              <FormField id="seller-twitter" label={t("settings.seller.twitter", lang)}>
+                {(control) => <Input {...control} value={twitter} onChange={(e) => setTwitter(e.target.value)} />}
+              </FormField>
+              <FormField id="seller-instagram" label={t("settings.seller.instagram", lang)}>
+                {(control) => <Input {...control} value={instagram} onChange={(e) => setInstagram(e.target.value)} />}
+              </FormField>
             </div>
           </CollapsibleSection>
 
@@ -669,46 +732,39 @@ function SellerTab({ user, onSaved, lang }: { user: UserProfile; onSaved: () => 
 
           {isRePro && (
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              <div className="space-y-1.5">
-                <Label htmlFor="seller-license">{t("settings.seller.license", lang)}</Label>
-                <Input id="seller-license" value={license} onChange={(e) => setLicense(e.target.value)} />
-              </div>
-              <div className="space-y-1.5">
-                <Label htmlFor="seller-agency">{t("settings.seller.agency", lang)}</Label>
-                <Input id="seller-agency" value={agency} onChange={(e) => setAgency(e.target.value)} />
-              </div>
+              <FormField id="seller-license" label={t("settings.seller.license", lang)}>
+                {(control) => <Input {...control} value={license} onChange={(e) => setLicense(e.target.value)} />}
+              </FormField>
+              <FormField id="seller-agency" label={t("settings.seller.agency", lang)}>
+                {(control) => <Input {...control} value={agency} onChange={(e) => setAgency(e.target.value)} />}
+              </FormField>
             </div>
           )}
 
           {/* Address — collapsible */}
           <Separator />
           <CollapsibleSection title={t("settings.seller.sectionAddress", lang)} defaultOpen={hasAddress}>
-            <div className="space-y-1.5">
-              <Label htmlFor="seller-address">{t("settings.seller.address", lang)}</Label>
-              <Input id="seller-address" value={address} onChange={(e) => setAddress(e.target.value)} />
-            </div>
+            <FormField id="seller-address" label={t("settings.seller.address", lang)}>
+              {(control) => <Input {...control} value={address} onChange={(e) => setAddress(e.target.value)} autoComplete="street-address" />}
+            </FormField>
             <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
-              <div className="space-y-1.5">
-                <Label htmlFor="seller-city">{t("settings.seller.city", lang)}</Label>
-                <Input id="seller-city" value={city} onChange={(e) => setCity(e.target.value)} />
-              </div>
-              <div className="space-y-1.5">
-                <Label htmlFor="seller-state">{t("settings.seller.state", lang)}</Label>
-                <Input id="seller-state" value={state} onChange={(e) => setState(e.target.value)} />
-              </div>
-              <div className="space-y-1.5">
-                <Label htmlFor="seller-country">{t("settings.seller.country", lang)}</Label>
-                <Input id="seller-country" value={country} onChange={(e) => setCountry(e.target.value)} maxLength={2} placeholder="SK" />
-              </div>
-              <div className="space-y-1.5">
-                <Label htmlFor="seller-postal-code">{t("settings.seller.postalCode", lang)}</Label>
-                <Input id="seller-postal-code" value={postalCode} onChange={(e) => setPostalCode(e.target.value)} />
-              </div>
+              <FormField id="seller-city" label={t("settings.seller.city", lang)}>
+                {(control) => <Input {...control} value={city} onChange={(e) => setCity(e.target.value)} autoComplete="address-level2" />}
+              </FormField>
+              <FormField id="seller-state" label={t("settings.seller.state", lang)}>
+                {(control) => <Input {...control} value={state} onChange={(e) => setState(e.target.value)} autoComplete="address-level1" />}
+              </FormField>
+              <FormField id="seller-country" label={t("settings.seller.country", lang)}>
+                {(control) => <CountrySelect id={control.id} value={country} onChange={setCountry} lang={lang} allowClear aria-describedby={control["aria-describedby"]} />}
+              </FormField>
+              <FormField id="seller-postal-code" label={t("settings.seller.postalCode", lang)}>
+                {(control) => <Input {...control} value={postalCode} onChange={(e) => setPostalCode(e.target.value)} autoComplete="postal-code" />}
+              </FormField>
             </div>
           </CollapsibleSection>
 
-          {error && <p className="text-[12px] text-destructive">{error}</p>}
-          {success && <p className="text-[12px] text-success">{t("settings.seller.saved", lang)}</p>}
+          {error && <p className="text-[12px] text-destructive" role="alert">{error}</p>}
+          {success && <p className="text-[12px] text-success" role="status">{t("settings.seller.saved", lang)}</p>}
           <div className="pt-2">
             <Button type="submit" size="sm" loading={loading}>{t("settings.seller.save", lang)}</Button>
           </div>
@@ -2206,6 +2262,7 @@ function BillingTab({ user, onSaved, lang }: { user: UserProfile; onSaved: () =>
   const [billingCountry, setBillingCountry] = React.useState(ba?.billing_country ?? "");
   const [vat, setVat] = React.useState(ba?.vat_number ?? "");
   const [billingDirty, setBillingDirty] = React.useState(false);
+  const [billingEmailTouched, setBillingEmailTouched] = React.useState(false);
   const [loading, setLoading] = React.useState(false);
   const [error, setError] = React.useState<string | null>(null);
   const [success, setSuccess] = React.useState(false);
@@ -2257,6 +2314,11 @@ function BillingTab({ user, onSaved, lang }: { user: UserProfile; onSaved: () =>
     e.preventDefault();
     setError(null);
     setSuccess(false);
+    setBillingEmailTouched(true);
+    if (billingEmail.trim() && !isEmailAddress(billingEmail)) {
+      focusFirstInvalidField(["settings-billing-email"]);
+      return;
+    }
     try {
       setLoading(true);
       const updated = await updateBilling({
@@ -2265,7 +2327,7 @@ function BillingTab({ user, onSaved, lang }: { user: UserProfile; onSaved: () =>
         billing_address: billingAddress.trim(),
         billing_city: billingCity.trim(),
         billing_postal_code: billingPostal.trim(),
-        billing_country: billingCountry.trim(),
+        billing_country: billingCountry.trim().toUpperCase(),
         vat_number: vat.trim(),
       });
       setLiveBilling(updated);
@@ -2566,41 +2628,47 @@ function BillingTab({ user, onSaved, lang }: { user: UserProfile; onSaved: () =>
         </CardHeader>
         <CardContent>
           <CollapsibleSection title={t("settings.billing.addressTitle", lang)} defaultOpen={hasAddressData}>
-            <form className="space-y-4" onSubmit={handleSubmit}>
+            <form className="space-y-4" onSubmit={handleSubmit} noValidate>
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                <div className="space-y-1.5">
-                  <Label>{t("settings.billing.name", lang)}</Label>
-                  <Input value={billingName} onChange={(e) => { setBillingName(e.target.value); setBillingDirty(true); }} />
-                </div>
-                <div className="space-y-1.5">
-                  <Label>{t("settings.billing.email", lang)}</Label>
-                  <Input value={billingEmail} onChange={(e) => { setBillingEmail(e.target.value); setBillingDirty(true); }} type="email" />
-                </div>
+                <FormField id="settings-billing-name" label={t("settings.billing.name", lang)}>
+                  {(control) => <Input {...control} value={billingName} onChange={(e) => { setBillingName(e.target.value); setBillingDirty(true); }} autoComplete="name" />}
+                </FormField>
+                <FormField
+                  id="settings-billing-email"
+                  label={t("settings.billing.email", lang)}
+                  error={billingEmailTouched && billingEmail.trim() && !isEmailAddress(billingEmail) ? t("form.invalidEmail", lang) : null}
+                >
+                  {(control) => <Input {...control} value={billingEmail} onChange={(e) => { setBillingEmail(e.target.value); setBillingDirty(true); }} onBlur={() => setBillingEmailTouched(true)} type="email" autoComplete="email" />}
+                </FormField>
               </div>
-              <div className="space-y-1.5">
-                <Label>{t("settings.billing.address", lang)}</Label>
-                <Input value={billingAddress} onChange={(e) => { setBillingAddress(e.target.value); setBillingDirty(true); }} />
-              </div>
+              <FormField id="settings-billing-address" label={t("settings.billing.address", lang)}>
+                {(control) => <Input {...control} value={billingAddress} onChange={(e) => { setBillingAddress(e.target.value); setBillingDirty(true); }} autoComplete="street-address" />}
+              </FormField>
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-                <div className="space-y-1.5">
-                  <Label>{t("settings.billing.city", lang)}</Label>
-                  <Input value={billingCity} onChange={(e) => { setBillingCity(e.target.value); setBillingDirty(true); }} />
-                </div>
-                <div className="space-y-1.5">
-                  <Label>{t("settings.billing.postalCode", lang)}</Label>
-                  <Input value={billingPostal} onChange={(e) => { setBillingPostal(e.target.value); setBillingDirty(true); }} />
-                </div>
-                <div className="space-y-1.5">
-                  <Label>{t("settings.billing.country", lang)}</Label>
-                  <Input value={billingCountry} onChange={(e) => { setBillingCountry(e.target.value); setBillingDirty(true); }} maxLength={2} placeholder="SK" />
-                </div>
-                <div className="space-y-1.5">
-                  <Label>{t("settings.billing.vat", lang)}</Label>
-                  <Input value={vat} onChange={(e) => { setVat(e.target.value); setBillingDirty(true); }} />
-                </div>
+                <FormField id="settings-billing-city" label={t("settings.billing.city", lang)}>
+                  {(control) => <Input {...control} value={billingCity} onChange={(e) => { setBillingCity(e.target.value); setBillingDirty(true); }} autoComplete="address-level2" />}
+                </FormField>
+                <FormField id="settings-billing-postal" label={t("settings.billing.postalCode", lang)}>
+                  {(control) => <Input {...control} value={billingPostal} onChange={(e) => { setBillingPostal(e.target.value); setBillingDirty(true); }} autoComplete="postal-code" />}
+                </FormField>
+                <FormField id="settings-billing-country" label={t("settings.billing.country", lang)}>
+                  {(control) => (
+                    <CountrySelect
+                      id={control.id}
+                      value={billingCountry}
+                      onChange={(nextCountry) => { setBillingCountry(nextCountry); setBillingDirty(true); }}
+                      lang={lang}
+                      allowClear
+                      aria-describedby={control["aria-describedby"]}
+                    />
+                  )}
+                </FormField>
+                <FormField id="settings-billing-vat" label={t("settings.billing.vat", lang)}>
+                  {(control) => <Input {...control} value={vat} onChange={(e) => { setVat(e.target.value); setBillingDirty(true); }} />}
+                </FormField>
               </div>
-              {error && <p className="text-[12px] text-destructive">{error}</p>}
-              {success && <p className="text-[12px] text-success">{t("settings.billing.saved", lang)}</p>}
+              {error && <p className="text-[12px] text-destructive" role="alert">{error}</p>}
+              {success && <p className="text-[12px] text-success" role="status">{t("settings.billing.saved", lang)}</p>}
               <div className="pt-2">
                 <Button type="submit" size="sm" loading={loading}>{t("settings.billing.save", lang)}</Button>
               </div>

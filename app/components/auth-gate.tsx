@@ -3,11 +3,13 @@
 import * as React from "react";
 import { Button } from "../lib/ui/button";
 import { Checkbox } from "../lib/ui/checkbox";
+import { FormField, focusFirstInvalidField } from "../lib/ui/form-field";
 import { Input } from "../lib/ui/input";
 import { Label } from "../lib/ui/label";
 import { requestPasswordReset, resendVerification, type StepUpChallenge } from "../lib/api/client";
 import type { SessionEndReason } from "../lib/session-end";
 import { getSafeApiErrorMessage } from "../lib/api/error-message";
+import { isEmailAddress } from "../lib/form-validation";
 import { getBrowserLanguage, t } from "../lib/i18n";
 import type { LocaleKey } from "../lib/locales";
 import { RegistrationLegalText } from "./content-documents";
@@ -234,20 +236,31 @@ function LoginCard({
   }
   const [password, setPassword] = React.useState("");
   const [showPassword, setShowPassword] = React.useState(false);
+  const [emailTouched, setEmailTouched] = React.useState(false);
+  const [passwordTouched, setPasswordTouched] = React.useState(false);
   const [loading, setLoading] = React.useState(false);
   const [error, setError] = React.useState<string | null>(null);
   const [resetSent, setResetSent] = React.useState(false);
   const [resetLoading, setResetLoading] = React.useState(false);
   const [stepUp, setStepUp] = React.useState<StepUpChallenge | null>(null);
   const [stepUpCode, setStepUpCode] = React.useState("");
-  const emailIsValid = /\S+@\S+\.\S+/.test(email.trim());
+  const emailIsValid = isEmailAddress(email);
   const canSubmit = emailIsValid && password.length > 0;
+  const emailError = emailTouched
+    ? !email.trim() ? t("form.required", lang) : !emailIsValid ? t("form.invalidEmail", lang) : null
+    : null;
+  const passwordError = passwordTouched && !password ? t("form.required", lang) : null;
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     setError(null);
     if (!canSubmit) {
-      setError(t("auth.validation.incomplete", lang));
+      setEmailTouched(true);
+      setPasswordTouched(true);
+      focusFirstInvalidField([
+        !emailIsValid && "login-email",
+        !password && "login-password",
+      ]);
       return;
     }
     try {
@@ -342,26 +355,25 @@ function LoginCard({
           <p className="mt-1 text-[12px] leading-relaxed text-foreground/65">{t("auth.verified.body", lang)}</p>
         </div>
       ) : null}
-      <div className="space-y-1.5">
-        <Label htmlFor="login-email" className="text-[13px] font-medium text-foreground">
-          {t("auth.login.emailLabel", lang)}
-        </Label>
-        <Input
-          id="login-email"
-          type="email"
-          placeholder={t("auth.login.emailPlaceholder", lang)}
-          value={email}
-          onChange={(e) => { setEmail(e.target.value); if (error) setError(null); }}
-          autoComplete="email"
-          className={INPUT_CLASS}
-        />
-      </div>
+      <FormField id="login-email" label={t("auth.login.emailLabel", lang)} error={emailError}>
+        {(control) => (
+          <Input
+            {...control}
+            type="email"
+            value={email}
+            onChange={(e) => { setEmail(e.target.value); if (error) setError(null); }}
+            onBlur={() => setEmailTouched(true)}
+            autoComplete="email"
+            className={INPUT_CLASS}
+          />
+        )}
+      </FormField>
 
-      <div className="space-y-1.5">
-        <div className="flex items-center justify-between">
-          <Label htmlFor="login-password" className="text-[13px] font-medium text-foreground">
-            {t("auth.login.passwordLabel", lang)}
-          </Label>
+      <FormField
+        id="login-password"
+        label={t("auth.login.passwordLabel", lang)}
+        error={passwordError}
+        action={(
           <button
             type="button"
             disabled={resetLoading || !emailIsValid}
@@ -376,26 +388,29 @@ function LoginCard({
           >
             {resetSent ? t("auth.login.forgotSent", lang) : resetLoading ? t("auth.login.forgotSending", lang) : t("auth.login.forgot", lang)}
           </button>
-        </div>
-        <div className="relative">
-          <Input
-            id="login-password"
-            type={showPassword ? "text" : "password"}
-            placeholder={t("auth.login.passwordPlaceholder", lang)}
-            value={password}
-            onChange={(e) => { setPassword(e.target.value); if (error) setError(null); }}
-            autoComplete="current-password"
-            className={`${INPUT_CLASS} pr-14`}
-          />
-          <button
-            type="button"
-            onClick={() => setShowPassword((v) => !v)}
-            className="absolute right-3 top-1/2 -translate-y-1/2 rounded-full px-2 py-1 text-[12px] font-semibold text-foreground/50 transition-colors hover:bg-foreground/[0.04] hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
-          >
-            {showPassword ? t("common.hide", lang) : t("common.show", lang)}
-          </button>
-        </div>
-      </div>
+        )}
+      >
+        {(control) => (
+          <div className="relative">
+            <Input
+              {...control}
+              type={showPassword ? "text" : "password"}
+              value={password}
+              onChange={(e) => { setPassword(e.target.value); if (error) setError(null); }}
+              onBlur={() => setPasswordTouched(true)}
+              autoComplete="current-password"
+              className={`${INPUT_CLASS} pr-14`}
+            />
+            <button
+              type="button"
+              onClick={() => setShowPassword((v) => !v)}
+              className="absolute right-3 top-1/2 -translate-y-1/2 rounded-full px-2 py-1 text-[12px] font-semibold text-foreground/50 transition-colors hover:bg-foreground/[0.04] hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+            >
+              {showPassword ? t("common.hide", lang) : t("common.show", lang)}
+            </button>
+          </div>
+        )}
+      </FormField>
 
       {error && (
         <div role="alert" className="rounded-2xl border border-destructive/20 bg-destructive/[0.045] px-4 py-3 text-[12px] font-medium leading-relaxed text-destructive">
@@ -450,9 +465,17 @@ function RegistrationCard({
   const [confirmPassword, setConfirmPassword] = React.useState("");
   const [showPassword, setShowPassword] = React.useState(false);
   const [agreeToTerms, setAgreeToTerms] = React.useState(false);
+  const [touched, setTouched] = React.useState({
+    firstName: false,
+    lastName: false,
+    email: false,
+    password: false,
+    confirmPassword: false,
+    terms: false,
+  });
   const [loading, setLoading] = React.useState(false);
   const [error, setError] = React.useState<string | null>(null);
-  const emailIsValid = /\S+@\S+\.\S+/.test(email.trim());
+  const emailIsValid = isEmailAddress(email);
   const passwordIsValid = password.length >= 8;
   const passwordsMatch = password === confirmPassword && confirmPassword.length > 0;
   // Email is the stable cross-platform account identifier. Name-derived
@@ -460,12 +483,33 @@ function RegistrationCard({
   // already uses the normalized email for this backend-required field.
   const username = email.trim().toLowerCase();
   const canSubmit = firstName.trim().length > 0 && lastName.trim().length > 0 && emailIsValid && passwordIsValid && passwordsMatch && agreeToTerms;
+  const touch = (key: keyof typeof touched) => setTouched((current) => ({ ...current, [key]: true }));
+  const firstNameError = touched.firstName && !firstName.trim() ? t("form.required", lang) : null;
+  const lastNameError = touched.lastName && !lastName.trim() ? t("form.required", lang) : null;
+  const emailError = touched.email
+    ? !email.trim() ? t("form.required", lang) : !emailIsValid ? t("form.invalidEmail", lang) : null
+    : null;
+  const passwordError = touched.password
+    ? !password ? t("form.required", lang) : !passwordIsValid ? t("auth.register.passwordShort", lang) : null
+    : null;
+  const confirmError = touched.confirmPassword
+    ? !confirmPassword ? t("form.required", lang) : !passwordsMatch ? t("auth.register.passwordMismatch", lang) : null
+    : null;
+  const termsError = touched.terms && !agreeToTerms ? t("auth.register.termsRequired", lang) : null;
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     setError(null);
     if (!canSubmit) {
-      setError(t("auth.validation.incomplete", lang));
+      setTouched({ firstName: true, lastName: true, email: true, password: true, confirmPassword: true, terms: true });
+      focusFirstInvalidField([
+        !firstName.trim() && "register-first-name",
+        !lastName.trim() && "register-last-name",
+        !emailIsValid && "register-email",
+        !passwordIsValid && "register-password",
+        !passwordsMatch && "register-confirm",
+        !agreeToTerms && "register-terms",
+      ]);
       return;
     }
     try {
@@ -492,66 +536,61 @@ function RegistrationCard({
   return (
     <form className="space-y-4" onSubmit={handleSubmit} noValidate>
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-        <div className="space-y-1.5">
-          <Label htmlFor="register-first-name" className="text-[13px] font-medium text-foreground">
-            {t("auth.register.firstNameLabel", lang)}
-          </Label>
-          <Input id="register-first-name" type="text" placeholder={t("auth.register.firstNamePlaceholder", lang)}
-            value={firstName} onChange={(e) => setFirstName(e.target.value)} autoComplete="given-name" className={INPUT_CLASS} />
-        </div>
-        <div className="space-y-1.5">
-          <Label htmlFor="register-last-name" className="text-[13px] font-medium text-foreground">
-            {t("auth.register.lastNameLabel", lang)}
-          </Label>
-          <Input id="register-last-name" type="text" placeholder={t("auth.register.lastNamePlaceholder", lang)}
-            value={lastName} onChange={(e) => setLastName(e.target.value)} autoComplete="family-name" className={INPUT_CLASS} />
-        </div>
+        <FormField id="register-first-name" label={t("auth.register.firstNameLabel", lang)} error={firstNameError}>
+          {(control) => (
+            <Input {...control} type="text" value={firstName} onChange={(e) => setFirstName(e.target.value)} onBlur={() => touch("firstName")} autoComplete="given-name" className={INPUT_CLASS} />
+          )}
+        </FormField>
+        <FormField id="register-last-name" label={t("auth.register.lastNameLabel", lang)} error={lastNameError}>
+          {(control) => (
+            <Input {...control} type="text" value={lastName} onChange={(e) => setLastName(e.target.value)} onBlur={() => touch("lastName")} autoComplete="family-name" className={INPUT_CLASS} />
+          )}
+        </FormField>
       </div>
 
-      <div className="space-y-1.5">
-        <Label htmlFor="register-email" className="text-[13px] font-medium text-foreground">
-          {t("auth.register.emailLabel", lang)}
-        </Label>
-        <Input id="register-email" type="email" placeholder={t("auth.register.emailPlaceholder", lang)}
-          value={email} onChange={(e) => setEmail(e.target.value)} autoComplete="email" className={INPUT_CLASS} />
-      </div>
+      <FormField id="register-email" label={t("auth.register.emailLabel", lang)} error={emailError}>
+        {(control) => (
+          <Input {...control} type="email" value={email} onChange={(e) => setEmail(e.target.value)} onBlur={() => touch("email")} autoComplete="email" className={INPUT_CLASS} />
+        )}
+      </FormField>
 
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-        <div className="space-y-1.5">
-          <Label htmlFor="register-password" className="text-[13px] font-medium text-foreground">
-            {t("auth.register.passwordLabel", lang)}
-          </Label>
-          <div className="relative">
-            <Input id="register-password" type={showPassword ? "text" : "password"} placeholder={t("auth.register.passwordPlaceholder", lang)}
-              value={password} onChange={(e) => setPassword(e.target.value)} autoComplete="new-password" className={`${INPUT_CLASS} pr-14`} />
-            <button type="button" onClick={() => setShowPassword((v) => !v)}
-              className="absolute right-3.5 top-1/2 -translate-y-1/2 text-[12px] font-medium text-foreground/55 hover:text-foreground transition-colors">
-              {showPassword ? t("common.hide", lang) : t("common.show", lang)}
-            </button>
+        <FormField id="register-password" label={t("auth.register.passwordLabel", lang)} hint={t("auth.register.passwordHint", lang)} error={passwordError}>
+          {(control) => (
+            <div className="relative">
+              <Input {...control} type={showPassword ? "text" : "password"}
+                value={password} onChange={(e) => setPassword(e.target.value)} onBlur={() => touch("password")} autoComplete="new-password" className={`${INPUT_CLASS} pr-14`} />
+              <button type="button" onClick={() => setShowPassword((v) => !v)}
+                className="absolute right-3.5 top-1/2 -translate-y-1/2 rounded-full px-1.5 py-1 text-[12px] font-medium text-foreground/55 transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
+                {showPassword ? t("common.hide", lang) : t("common.show", lang)}
+              </button>
+            </div>
+          )}
+        </FormField>
+        <FormField id="register-confirm" label={t("auth.register.confirmLabel", lang)} error={confirmError}>
+          {(control) => (
+            <Input {...control} type="password" value={confirmPassword} onChange={(e) => setConfirmPassword(e.target.value)} onBlur={() => touch("confirmPassword")} autoComplete="new-password" className={INPUT_CLASS} />
+          )}
+        </FormField>
+      </div>
+
+      <div>
+        <div className="flex items-start gap-2.5 text-[12px] text-foreground/60">
+          <Checkbox
+            id="register-terms"
+            className="mt-0.5 border-foreground/20"
+            checked={agreeToTerms}
+            onBlur={() => touch("terms")}
+            onCheckedChange={(checked) => { setAgreeToTerms(checked === true); touch("terms"); }}
+            aria-label={t("auth.register.terms", lang)}
+            aria-invalid={termsError ? true : undefined}
+            aria-describedby={termsError ? "register-terms-error" : undefined}
+          />
+          <div className="min-w-0 leading-relaxed">
+            <RegistrationLegalText lang={lang} />
           </div>
         </div>
-        <div className="space-y-1.5">
-          <Label htmlFor="register-confirm" className="text-[13px] font-medium text-foreground">
-            {t("auth.register.confirmLabel", lang)}
-          </Label>
-          <Input id="register-confirm" type="password" placeholder={t("auth.register.confirmPlaceholder", lang)}
-            value={confirmPassword} onChange={(e) => setConfirmPassword(e.target.value)} autoComplete="new-password" className={INPUT_CLASS} />
-        </div>
-      </div>
-      {!passwordsMatch && confirmPassword.length > 0 && (
-        <p className="text-[11px] text-destructive">{t("auth.register.passwordMismatch", lang)}</p>
-      )}
-
-      <div className="flex items-start gap-2.5 text-[12px] text-foreground/60">
-        <Checkbox
-          id="register-terms"
-          className="mt-0.5 border-foreground/20"
-          checked={agreeToTerms}
-          onCheckedChange={(checked) => setAgreeToTerms(checked === true)}
-        />
-        <div className="min-w-0 leading-relaxed">
-          <RegistrationLegalText lang={lang} />
-        </div>
+        {termsError ? <p id="register-terms-error" role="alert" className="mt-1.5 text-[12px] text-destructive">{termsError}</p> : null}
       </div>
 
       {error && (
