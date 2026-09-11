@@ -3,18 +3,18 @@ import { cn } from "../lib/utils";
 
 const tones = {
   neutral: "border-border/80 bg-card text-foreground/75",
-  strong: "border-foreground bg-foreground text-background",
-  success: "border-border/80 bg-card text-foreground/75",
-  warning: "border-border/80 bg-card text-foreground/75",
-  danger: "border-border/80 bg-card text-foreground/75",
+  strong: "border-primary bg-primary text-primary-foreground",
+  success: "border-success/20 bg-success/[0.06] text-success",
+  warning: "border-warning/20 bg-warning/[0.07] text-warning",
+  danger: "border-destructive/20 bg-destructive/[0.06] text-destructive",
 } as const;
 
 const dotTones = {
   neutral: "bg-foreground/35",
-  strong: "bg-background/75",
-  success: "bg-emerald-600",
-  warning: "bg-amber-600",
-  danger: "bg-red-600",
+  strong: "bg-primary-foreground/75",
+  success: "bg-success",
+  warning: "bg-warning",
+  danger: "bg-destructive",
 } as const;
 
 export function StatusPill({

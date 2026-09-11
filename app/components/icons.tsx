@@ -5,6 +5,7 @@ import {
   ArrowUpIcon as RadixArrowUpIcon,
   CheckIcon as RadixCheckIcon,
   ChevronDownIcon as RadixChevronDownIcon,
+  ChevronRightIcon as RadixChevronRightIcon,
   ClockIcon as RadixClockIcon,
   CopyIcon as RadixCopyIcon,
   CounterClockwiseClockIcon,
@@ -31,6 +32,7 @@ import {
   OpenInNewWindowIcon,
   Pencil2Icon,
   PlayIcon as RadixPlayIcon,
+  PersonIcon,
   MinusIcon as RadixMinusIcon,
   PlusIcon as RadixPlusIcon,
   RulerSquareIcon,
@@ -242,6 +244,7 @@ export function AgentIcon({
 export const LayoutIcon = fromRadix(DashboardIcon, "LayoutIcon");
 export const RulerIcon = fromRadix(RulerSquareIcon, "RulerIcon");
 export const PriceIcon = fromRadix(TokensIcon, "PriceIcon");
+export const ProfileIcon = fromRadix(PersonIcon, "ProfileIcon");
 export const DocumentIcon = fromRadix(FileTextIcon, "DocumentIcon");
 export const TechnicalIcon = fromRadix(MixerHorizontalIcon, "TechnicalIcon");
 export const UtilitiesIcon = fromRadix(LightningBoltIcon, "UtilitiesIcon");
@@ -287,6 +290,7 @@ export const ArrowLeftIcon = fromRadix(RadixArrowLeftIcon, "ArrowLeftIcon");
 export const ArrowRightIcon = fromRadix(RadixArrowRightIcon, "ArrowRightIcon");
 export const ArrowUpIcon = fromRadix(RadixArrowUpIcon, "ArrowUpIcon");
 export const ChevronDownIcon = fromRadix(RadixChevronDownIcon, "ChevronDownIcon");
+export const ChevronRightIcon = fromRadix(RadixChevronRightIcon, "ChevronRightIcon");
 export const CloseIcon = fromRadix(Cross2Icon, "CloseIcon");
 export const CheckIcon = fromRadix(RadixCheckIcon, "CheckIcon");
 export const CopyIcon = fromRadix(RadixCopyIcon, "CopyIcon");

@@ -40,7 +40,16 @@ import {
   type SetupMissingKey,
   type SetupStepKey,
 } from "../lib/account-setup";
-import { AgentIcon, CheckIcon, DeviceMobileIcon, EditIcon, PriceIcon } from "./icons";
+import {
+  AgentIcon,
+  ArrowLeftIcon,
+  ArrowRightIcon,
+  CheckIcon,
+  DeviceMobileIcon,
+  InfoIcon,
+  PriceIcon,
+  ProfileIcon,
+} from "./icons";
 import { CountrySelect } from "./country-select";
 import { StatusPill } from "./status-pill";
 import { useAccountSetup } from "./hooks/use-account-setup";
@@ -62,7 +71,7 @@ import { InternationalPhoneInput } from "./international-phone-input";
  */
 
 const STEPS: Array<{ key: SetupStepKey; label: LocaleKey; hint: LocaleKey; icon: React.ComponentType<{ size?: number; className?: string }> }> = [
-  { key: "profile", label: "setup.step.profile", hint: "setup.step.profileHint", icon: EditIcon },
+  { key: "profile", label: "setup.step.profile", hint: "setup.step.profileHint", icon: ProfileIcon },
   { key: "seller", label: "setup.step.seller", hint: "setup.step.sellerHint", icon: DeviceMobileIcon },
   { key: "billing", label: "setup.step.billing", hint: "setup.step.billingHint", icon: PriceIcon },
   { key: "permissions", label: "setup.step.permissions", hint: "setup.step.permissionsHint", icon: AgentIcon },
@@ -206,6 +215,7 @@ function StepFooter({
       <div className="flex min-h-9 min-w-0 flex-1 items-center justify-between gap-3 sm:min-h-11 sm:justify-start">
         {canBack ? (
           <Button type="button" variant="ghost" className="shrink-0" onClick={onBack} disabled={saving}>
+            <ArrowLeftIcon size={15} />
             {t("setup.back", lang)}
           </Button>
         ) : null}
@@ -221,6 +231,7 @@ function StepFooter({
       </div>
       <Button type="submit" className="w-full px-6 sm:w-auto" loading={saving} disabled={disabled} data-testid="setup-continue">
         {continueLabel ?? t("setup.continue", lang)}
+        <ArrowRightIcon size={15} />
       </Button>
     </div>
   );
@@ -514,7 +525,12 @@ function SellerStep({ user, lang, onSaved, onAdvance, onBack }: StepProps) {
         </Field>
         {otpSent ? (
           <div className="space-y-3 rounded-2xl border border-border/60 bg-surface-subtle/55 p-4 sm:p-5">
-            <Label htmlFor="setup-phone-code" className="text-[13px] text-foreground/85">{t("setup.seller.codeSent", lang)} {phoneDisplay.display || phone.trim()}</Label>
+            <div className="flex items-center gap-2.5">
+              <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full border border-border/60 bg-card text-foreground/65">
+                <DeviceMobileIcon size={15} className="block" />
+              </span>
+              <Label htmlFor="setup-phone-code" className="text-[13px] text-foreground/85">{t("setup.seller.codeSent", lang)} {phoneDisplay.display || phone.trim()}</Label>
+            </div>
             <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
               <Input
                 id="setup-phone-code"
@@ -1025,12 +1041,13 @@ export function AccountSetupFlow({
     return { complete: Boolean(state?.complete), missing: state?.missing ?? [] };
   };
 
-  // Every indicator owns an exact square and line box. That keeps the number
-  // or check optically centred instead of inheriting a nearby label's leading.
+  // Every indicator owns an exact square and line box. That keeps the step
+  // glyph or check optically centred instead of inheriting label leading.
   // The current step wins over complete state when someone revisits a step.
   const Indicator = ({ stepKey, index, size = "md" }: { stepKey: SetupStepKey; index: number; size?: "sm" | "md" }) => {
     const { complete } = stepState(stepKey);
     const current = view === stepKey;
+    const StepIcon = STEPS[index].icon;
     return (
       <span
         aria-hidden="true"
@@ -1038,13 +1055,15 @@ export function AccountSetupFlow({
           "relative z-10 inline-flex shrink-0 items-center justify-center rounded-full border text-[11px] font-semibold leading-none tabular-nums transition-[background-color,border-color,color] duration-200",
           size === "md" ? "h-8 w-8" : "h-7 w-7",
           current
-            ? "border-foreground bg-foreground text-background"
+            ? "border-primary bg-primary text-primary-foreground"
             : complete
               ? "border-success/20 bg-success/10 text-success"
               : "border-border/75 bg-card text-foreground/55",
         )}
       >
-        {complete && !current ? <CheckIcon size={size === "md" ? 14 : 13} className="block" /> : index + 1}
+        {complete && !current
+          ? <CheckIcon size={size === "md" ? 14 : 13} className="block" />
+          : <StepIcon size={size === "md" ? 15 : 14} className="block" />}
       </span>
     );
   };
@@ -1078,28 +1097,33 @@ export function AccountSetupFlow({
         </p>
         <div aria-hidden="true" className="mt-4 h-1 overflow-hidden rounded-full bg-muted sm:mt-5">
           <span
-            className="block h-full rounded-full bg-foreground transition-[width] duration-500"
+            className="block h-full rounded-full bg-primary transition-[width] duration-500"
             style={{ width: `${completionPercent}%` }}
           />
         </div>
       </header>
 
       {status && status.blockers.length > 0 ? (
-        <div role="alert" className="mb-4 space-y-2 rounded-2xl border border-destructive/20 bg-destructive/[0.045] px-4 py-3.5 sm:mb-5" data-testid="setup-blockers">
-          <p className="text-[13px] font-semibold text-destructive">{t("setup.blocker.title", lang)}</p>
-          <ul className="space-y-1.5 text-[12px] leading-relaxed text-foreground/75">
-            {status.blockers.map((blocker) => (
-              <li key={blocker} className="flex flex-wrap items-center gap-x-3 gap-y-1">
-                <span>{t(BLOCKER_LABELS[blocker], lang)}</span>
-                {blocker === "email_verified" ? (
-                  <button type="button" onClick={resend} className="font-semibold text-foreground underline underline-offset-4">
-                    {resent ? t("setup.blocker.resent", lang) : t("setup.blocker.resend", lang)}
-                  </button>
-                ) : null}
-              </li>
-            ))}
-          </ul>
-          {resendError ? <p className="text-[12px] text-destructive">{resendError}</p> : null}
+        <div role="alert" className="mb-4 flex gap-3 rounded-2xl border border-destructive/20 bg-destructive/[0.045] px-4 py-3.5 sm:mb-5" data-testid="setup-blockers">
+          <span aria-hidden="true" className="mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-destructive/10 text-destructive">
+            <InfoIcon size={14} className="block" />
+          </span>
+          <div className="min-w-0 space-y-2">
+            <p className="text-[13px] font-semibold text-destructive">{t("setup.blocker.title", lang)}</p>
+            <ul className="space-y-1.5 text-[12px] leading-relaxed text-foreground/75">
+              {status.blockers.map((blocker) => (
+                <li key={blocker} className="flex flex-wrap items-center gap-x-3 gap-y-1">
+                  <span>{t(BLOCKER_LABELS[blocker], lang)}</span>
+                  {blocker === "email_verified" ? (
+                    <button type="button" onClick={resend} className="font-semibold text-foreground underline underline-offset-4">
+                      {resent ? t("setup.blocker.resent", lang) : t("setup.blocker.resend", lang)}
+                    </button>
+                  ) : null}
+                </li>
+              ))}
+            </ul>
+            {resendError ? <p className="text-[12px] text-destructive">{resendError}</p> : null}
+          </div>
         </div>
       ) : null}
 
@@ -1183,7 +1207,7 @@ export function AccountSetupFlow({
               <span>{completedCount} / {STEPS.length}</span>
             </div>
             <div aria-hidden="true" className="h-1 overflow-hidden rounded-full bg-muted">
-              <span className="block h-full rounded-full bg-foreground transition-[width] duration-500" style={{ width: `${completionPercent}%` }} />
+              <span className="block h-full rounded-full bg-primary transition-[width] duration-500" style={{ width: `${completionPercent}%` }} />
             </div>
           </div>
         </nav>

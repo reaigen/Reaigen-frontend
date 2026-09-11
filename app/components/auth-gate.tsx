@@ -106,7 +106,7 @@ function BrandPanel({ lang }: { lang: string }) {
           {t("auth.brand.subtitle", lang)}
         </p>
         <div className="mt-7 inline-flex items-center gap-2 rounded-full border border-white/25 bg-black/20 px-3.5 py-2 text-[11px] font-semibold text-white/85 backdrop-blur-md">
-          <span className="h-1.5 w-1.5 rounded-full bg-emerald-400" aria-hidden="true" />
+          <span className="h-1.5 w-1.5 rounded-full bg-success ring-2 ring-success-foreground/25" aria-hidden="true" />
           {t("auth.brand.previewStatus", lang)}
         </div>
       </div>
