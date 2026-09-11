@@ -51,10 +51,10 @@ export function FormField({
       data-form-field
       data-invalid={error ? "true" : "false"}
     >
-      <div className="flex min-h-5 items-baseline justify-between gap-3">
-        <Label htmlFor={id}>{label}</Label>
+      <div className="flex min-h-5 items-center justify-between gap-3">
+        <Label htmlFor={id} className="text-[13px] leading-5 text-foreground/85">{label}</Label>
         {action ?? (optionalLabel ? (
-          <span className="shrink-0 text-[11px] font-medium text-muted-foreground">
+          <span className="shrink-0 text-[11px] font-medium leading-5 text-muted-foreground">
             {optionalLabel}
           </span>
         ) : null)}

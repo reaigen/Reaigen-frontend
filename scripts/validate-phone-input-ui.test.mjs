@@ -26,6 +26,13 @@ test("the picker is searchable, accessible, and accepts international paste", ()
   assert.match(picker, /getPhoneCountries\(lang\)/);
 });
 
+test("the calling-code control has a real, stateful dropdown affordance", () => {
+  assert.match(control, /import \{ ChevronDownIcon \} from "@radix-ui\/react-icons"/);
+  assert.match(control, /<ChevronDownIcon[\s\S]*?pickerOpen && "rotate-180"/);
+  assert.match(control, /aria-haspopup="dialog"/);
+  assert.doesNotMatch(control, /▾/);
+});
+
 test("SMS recovery has valid label and error relationships", () => {
   assert.match(recovery, /label htmlFor="recovery-phone"/);
   assert.match(recovery, /id="recovery-phone"/);

@@ -24,7 +24,7 @@ test("registration, setup, and Settings share one accessible account-field contr
   assert.match(auth, /<FormField/);
   assert.match(setup, /<FormField|<Field/);
   assert.match(settings, /<FormField/);
-  assert.match(field, /<Label htmlFor=\{id\}>/);
+  assert.match(field, /<Label htmlFor=\{id\}[\s>]/);
   assert.match(field, /"aria-invalid": error \? true : undefined/);
   assert.match(field, /"aria-describedby": describedBy/);
   assert.match(field, /id=\{errorId\} role="alert"/);
@@ -75,4 +75,13 @@ test("account controls and recovery use semantic theme surfaces", () => {
   assert.match(select, /bg-card/);
   assert.match(countrySelect, /bg-card/);
   assert.match(phoneInput, /bg-card/);
+});
+
+test("the setup wizard keeps indicators, labels, and headings on one visual system", () => {
+  assert.match(setup, /grid grid-cols-4 rounded-\[22px\]/);
+  assert.match(setup, /left-1\/2 top-\[13px\] h-px w-full/);
+  assert.match(setup, /inline-flex shrink-0 items-center justify-center rounded-full border/);
+  assert.match(setup, /<CurrentStepIcon[\s\S]*?var\(--font-brand\)/);
+  assert.match(field, /items-center justify-between/);
+  assert.match(field, /text-\[13px\] leading-5 text-foreground\/85/);
 });

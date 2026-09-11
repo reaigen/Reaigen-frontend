@@ -7,6 +7,7 @@ import type { LocaleKey } from "../lib/locales";
 import { getPhoneCountries } from "../lib/phone";
 import { BottomSheet } from "../lib/ui/bottom-sheet";
 import { cn } from "../lib/utils";
+import { CheckIcon } from "./icons";
 import { SearchField } from "./search-field";
 
 function searchable(value: string): string {
@@ -127,7 +128,15 @@ export function CountryPickerSheet({
                 <span className="shrink-0 text-[13px] tabular-nums text-muted-foreground">
                   {mode === "phone" ? `+${option.callingCode}` : option.code}
                 </span>
-                <span aria-hidden="true" className={cn("w-4 text-center text-[12px]", active ? "text-foreground" : "text-transparent")}>✓</span>
+                <span
+                  aria-hidden="true"
+                  className={cn(
+                    "flex h-5 w-5 shrink-0 items-center justify-center rounded-full transition-colors",
+                    active ? "bg-foreground text-background" : "text-transparent",
+                  )}
+                >
+                  <CheckIcon size={12} className="block" />
+                </span>
               </button>
             </li>
           );

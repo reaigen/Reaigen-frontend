@@ -42,7 +42,6 @@ import {
 } from "../lib/account-setup";
 import { AgentIcon, CheckIcon, DeviceMobileIcon, EditIcon, PriceIcon } from "./icons";
 import { CountrySelect } from "./country-select";
-import { PageHeader } from "./page-header";
 import { StatusPill } from "./status-pill";
 import { useAccountSetup } from "./hooks/use-account-setup";
 import { InternationalPhoneInput } from "./international-phone-input";
@@ -57,9 +56,9 @@ import { InternationalPhoneInput } from "./international-phone-input";
  * Composition follows Settings: one semantic application surface with a quiet
  * step rail on the left and the current step's form on the right (design
  * language: management pages cap reading width, a stable vertical section
- * rail on desktop). Phones get a four-cell step strip instead of a clipped
- * horizontal list. Steps are soft-rectangle rows, actions are capsules,
- * fields keep their rounded-rectangle geometry.
+ * rail on desktop). Phones get a connected, evenly centred stepper instead
+ * of a clipped horizontal list. Steps are soft-rectangle rows, actions are
+ * capsules, and fields keep their rounded-rectangle geometry.
  */
 
 const STEPS: Array<{ key: SetupStepKey; label: LocaleKey; hint: LocaleKey; icon: React.ComponentType<{ size?: number; className?: string }> }> = [
@@ -203,7 +202,7 @@ function StepFooter({
   ready?: boolean;
 }) {
   return (
-    <div className="mt-2 flex flex-col-reverse gap-2 border-t border-border/60 pt-5 sm:flex-row sm:items-center sm:justify-between">
+    <div className="mt-2 flex flex-col-reverse gap-2.5 border-t border-border/60 pt-5 sm:flex-row sm:items-center sm:justify-between">
       <div className="flex min-h-9 min-w-0 flex-1 items-center justify-between gap-3 sm:min-h-11 sm:justify-start">
         {canBack ? (
           <Button type="button" variant="ghost" className="shrink-0" onClick={onBack} disabled={saving}>
@@ -213,14 +212,14 @@ function StepFooter({
         {validationStatus ? (
           <p
             aria-live="polite"
-            className={cn("min-w-0 text-[12px]", ready ? "text-success" : "text-muted-foreground")}
+            className={cn("min-w-0 text-[12px] font-medium", ready ? "text-success" : "text-muted-foreground")}
             data-testid="setup-validation-status"
           >
             {validationStatus}
           </p>
         ) : null}
       </div>
-      <Button type="submit" className="w-full sm:w-auto" loading={saving} disabled={disabled} data-testid="setup-continue">
+      <Button type="submit" className="w-full px-6 sm:w-auto" loading={saving} disabled={disabled} data-testid="setup-continue">
         {continueLabel ?? t("setup.continue", lang)}
       </Button>
     </div>
@@ -282,7 +281,7 @@ function ProfileStep({ user, lang, onSaved, onAdvance }: StepProps) {
   }
 
   return (
-    <form className="space-y-5" onSubmit={handleSubmit} noValidate data-testid="setup-step-profile">
+    <form className="space-y-6" onSubmit={handleSubmit} noValidate data-testid="setup-step-profile">
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
         <Field id="setup-first-name" label={t("settings.profile.firstName", lang)} lang={lang} error={requiredError(firstName, touched.has("firstName"), lang)}>
           {(control) => <Input {...control} value={firstName} onChange={(e) => setFirstName(e.target.value)} onBlur={() => touch("firstName")} autoComplete="given-name" />}
@@ -295,8 +294,8 @@ function ProfileStep({ user, lang, onSaved, onAdvance }: StepProps) {
         {(control) => <Input {...control} value={username} onChange={(e) => setUsername(e.target.value)} onBlur={() => touch("username")} autoComplete="username" />}
       </Field>
       <div className="space-y-1.5">
-        <Label>{t("settings.profile.email", lang)}</Label>
-        <div className="flex min-h-11 flex-wrap items-center justify-between gap-3 rounded-xl border border-border/55 bg-surface-subtle px-3.5 py-2">
+        <p className="text-[13px] font-medium leading-5 text-foreground/85">{t("settings.profile.email", lang)}</p>
+        <div className="flex min-h-11 flex-wrap items-center justify-between gap-3 rounded-xl border border-border/55 bg-surface-subtle/75 px-4 py-2">
           <span className="min-w-0 truncate text-[14px] text-foreground/85">{user.email}</span>
           {user.email_verified ? (
             <StatusPill tone="success" dot>{t("settings.profile.emailVerified", lang)}</StatusPill>
@@ -481,7 +480,7 @@ function SellerStep({ user, lang, onSaved, onAdvance, onBack }: StepProps) {
   }
 
   return (
-    <form className="space-y-5" onSubmit={handleSubmit} noValidate data-testid="setup-step-seller">
+    <form className="space-y-6" onSubmit={handleSubmit} noValidate data-testid="setup-step-seller">
       <div className="space-y-3">
         <Field
           id="setup-phone"
@@ -514,9 +513,9 @@ function SellerStep({ user, lang, onSaved, onAdvance, onBack }: StepProps) {
           )}
         </Field>
         {otpSent ? (
-          <div className="space-y-2 rounded-2xl border border-border/65 bg-muted/20 p-4">
-            <Label htmlFor="setup-phone-code">{t("setup.seller.codeSent", lang)} {phoneDisplay.display || phone.trim()}</Label>
-            <div className="flex items-center gap-2">
+          <div className="space-y-3 rounded-2xl border border-border/60 bg-surface-subtle/55 p-4 sm:p-5">
+            <Label htmlFor="setup-phone-code" className="text-[13px] text-foreground/85">{t("setup.seller.codeSent", lang)} {phoneDisplay.display || phone.trim()}</Label>
+            <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
               <Input
                 id="setup-phone-code"
                 value={code}
@@ -525,9 +524,9 @@ function SellerStep({ user, lang, onSaved, onAdvance, onBack }: StepProps) {
                 maxLength={6}
                 inputMode="numeric"
                 autoComplete="one-time-code"
-                className="w-full max-w-[10.5rem] font-mono tracking-[0.2em]"
+                className="w-full text-center font-mono text-[15px] tracking-[0.24em] sm:max-w-[11rem]"
               />
-              <Button type="button" className="shrink-0" loading={otpBusy} disabled={code.length < 4} onClick={handleVerify}>
+              <Button type="button" className="w-full shrink-0 sm:w-auto" loading={otpBusy} disabled={code.length < 4} onClick={handleVerify}>
                 {t("setup.seller.confirmCode", lang)}
               </Button>
             </div>
@@ -709,9 +708,9 @@ function BillingStep({ user, lang, onSaved, onAdvance, onBack }: StepProps) {
   const tier = ba?.subscription_tier_detail;
 
   return (
-    <form className="space-y-5" onSubmit={handleSubmit} noValidate data-testid="setup-step-billing">
+    <form className="space-y-6" onSubmit={handleSubmit} noValidate data-testid="setup-step-billing">
       {tier ? (
-        <div className="flex min-h-11 items-center justify-between gap-4 rounded-xl border border-border/55 bg-surface-subtle px-3.5 py-2 text-[13px]">
+        <div className="flex min-h-11 items-center justify-between gap-4 rounded-xl border border-border/55 bg-surface-subtle/75 px-4 py-2 text-[13px]">
           <span className="text-muted-foreground">{t("settings.billing.plan", lang)}</span>
           <span className="flex items-center gap-2 font-medium">
             {tier.name}
@@ -877,7 +876,7 @@ function PermissionsStep({
   }
 
   return (
-    <form className="space-y-5" onSubmit={handleSubmit} noValidate data-testid="setup-step-permissions">
+    <form className="space-y-6" onSubmit={handleSubmit} noValidate data-testid="setup-step-permissions">
       <div className="divide-y divide-border/60">
         <ControlRow
           title={t("settings.reai.access", lang)}
@@ -1019,16 +1018,16 @@ export function AccountSetupFlow({
 
   const blocked = Boolean(status?.blockers.includes("reaigen_access") || status?.blockers.includes("account_disabled"));
   const completedCount = status?.completedCount ?? 0;
-  const progressText = `${completedCount} / ${STEPS.length} ${t("setup.stepsDone", lang)}`;
+  const completionPercent = Math.round((completedCount / STEPS.length) * 100);
 
   const stepState = (key: SetupStepKey) => {
     const state = status?.steps.find((item) => item.key === key);
     return { complete: Boolean(state?.complete), missing: state?.missing ?? [] };
   };
 
-  // The rail indicator: check when done, the step number otherwise. Current
-  // step is the one dark circle on the page; done steps use the semantic
-  // green as a small status mark, never as a fill.
+  // Every indicator owns an exact square and line box. That keeps the number
+  // or check optically centred instead of inheriting a nearby label's leading.
+  // The current step wins over complete state when someone revisits a step.
   const Indicator = ({ stepKey, index, size = "md" }: { stepKey: SetupStepKey; index: number; size?: "sm" | "md" }) => {
     const { complete } = stepState(stepKey);
     const current = view === stepKey;
@@ -1036,24 +1035,54 @@ export function AccountSetupFlow({
       <span
         aria-hidden="true"
         className={cn(
-          "flex shrink-0 items-center justify-center rounded-full text-[11px] font-semibold tabular-nums transition-colors duration-200",
-          size === "md" ? "h-7 w-7" : "h-6 w-6",
-          complete ? "bg-success/12 text-success" : current ? "bg-foreground text-background" : "bg-muted text-foreground/55",
+          "relative z-10 inline-flex shrink-0 items-center justify-center rounded-full border text-[11px] font-semibold leading-none tabular-nums transition-[background-color,border-color,color] duration-200",
+          size === "md" ? "h-8 w-8" : "h-7 w-7",
+          current
+            ? "border-foreground bg-foreground text-background"
+            : complete
+              ? "border-success/20 bg-success/10 text-success"
+              : "border-border/75 bg-card text-foreground/55",
         )}
       >
-        {complete ? <CheckIcon size={size === "md" ? 13 : 12} /> : index + 1}
+        {complete && !current ? <CheckIcon size={size === "md" ? 14 : 13} className="block" /> : index + 1}
       </span>
     );
   };
 
+  const CurrentStepIcon = view === "done" ? CheckIcon : STEPS[Math.max(0, stepIndex)].icon;
+
   return (
     <div className="mx-auto w-full max-w-[1120px] pb-12" data-testid="account-setup">
-      <PageHeader
-        title={t("setup.title", lang)}
-        meta={<span data-testid="setup-progress">{progressText}</span>}
-        description={t("setup.subtitle", lang)}
-        className="mb-4 sm:mb-5"
-      />
+      <header className="mb-5 sm:mb-6">
+        <div className="flex items-start justify-between gap-4">
+          <div className="min-w-0">
+            <p className="mb-1.5 text-[11px] font-semibold uppercase tracking-[0.09em] text-muted-foreground">
+              {t("setup.headerTitle", lang)}
+            </p>
+            <h1
+              className="text-balance text-[28px] font-normal leading-[1.08] tracking-[-0.025em] text-foreground sm:text-[32px]"
+              style={{ fontFamily: "var(--font-brand), ui-serif, Georgia, serif" }}
+            >
+              {t("setup.title", lang)}
+            </h1>
+          </div>
+          <span
+            data-testid="setup-progress"
+            className="mt-0.5 inline-flex h-8 shrink-0 items-center rounded-full border border-border/70 bg-card px-3 text-[11px] font-semibold tabular-nums text-foreground/65 shadow-control sm:mt-1 sm:text-[12px]"
+          >
+            {completedCount} / {STEPS.length}<span className="hidden sm:inline">&nbsp;{t("setup.stepsDone", lang)}</span>
+          </span>
+        </div>
+        <p className="mt-2.5 max-w-[68ch] text-[13px] leading-relaxed text-muted-foreground sm:text-[14px]">
+          {t("setup.subtitle", lang)}
+        </p>
+        <div aria-hidden="true" className="mt-4 h-1 overflow-hidden rounded-full bg-muted sm:mt-5">
+          <span
+            className="block h-full rounded-full bg-foreground transition-[width] duration-500"
+            style={{ width: `${completionPercent}%` }}
+          />
+        </div>
+      </header>
 
       {status && status.blockers.length > 0 ? (
         <div role="alert" className="mb-4 space-y-2 rounded-2xl border border-destructive/20 bg-destructive/[0.045] px-4 py-3.5 sm:mb-5" data-testid="setup-blockers">
@@ -1074,26 +1103,36 @@ export function AccountSetupFlow({
         </div>
       ) : null}
 
-      {/* Phones: one four-cell strip, every cell a touch target. */}
+      {/* Phones: connected centres, equal columns, and full-width touch targets. */}
       <nav aria-label={t("setup.headerTitle", lang)} className="mb-4 lg:hidden">
-        <ol className="grid grid-cols-4 gap-1 rounded-2xl border border-border/65 bg-card p-1 shadow-card">
+        <ol className="grid grid-cols-4 rounded-[22px] border border-border/65 bg-card px-2 py-3 shadow-card">
           {STEPS.map((step, index) => {
+            const { complete } = stepState(step.key);
             const current = view === step.key;
             return (
-              <li key={step.key} className="min-w-0">
+              <li key={step.key} className="relative min-w-0">
+                {index < STEPS.length - 1 ? (
+                  <span
+                    aria-hidden="true"
+                    className={cn(
+                      "absolute left-1/2 top-[13px] h-px w-full",
+                      complete ? "bg-success/25" : "bg-border/80",
+                    )}
+                  />
+                ) : null}
                 <button
                   type="button"
                   onClick={() => goTo(step.key)}
                   aria-current={current ? "step" : undefined}
                   data-testid={`setup-strip-${step.key}`}
-                  className={cn(
-                    "flex min-h-11 w-full flex-col items-center justify-center gap-1 rounded-xl px-1 py-1.5 transition-colors duration-200",
-                    current ? "bg-muted/70" : "hover:bg-foreground/[0.035]",
-                  )}
+                  data-complete={complete ? "true" : "false"}
+                  className="relative flex min-h-[3.25rem] w-full flex-col items-center justify-start gap-1.5 rounded-xl px-1 text-center focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
                 >
                   <Indicator stepKey={step.key} index={index} size="sm" />
-                  <span className={cn("w-full truncate text-center text-[11px] font-medium", current ? "text-foreground" : "text-foreground/60")}>
-                    {t(step.label, lang)}
+                  <span className="relative z-10 grid h-8 w-full place-items-center overflow-hidden text-center">
+                    <span className={cn("line-clamp-2 text-[10.5px] leading-4 sm:text-[11px]", current ? "font-semibold text-foreground" : "font-medium text-foreground/55")}>
+                      {t(step.label, lang)}
+                    </span>
                   </span>
                 </button>
               </li>
@@ -1102,10 +1141,10 @@ export function AccountSetupFlow({
         </ol>
       </nav>
 
-      <div className="settings-surface w-full lg:grid lg:grid-cols-[264px_minmax(0,1fr)] lg:items-stretch lg:overflow-hidden lg:rounded-3xl lg:border lg:border-border/65 lg:bg-card lg:shadow-card">
+      <div className="settings-surface w-full lg:grid lg:min-h-[38rem] lg:grid-cols-[276px_minmax(0,1fr)] lg:items-stretch lg:overflow-hidden lg:rounded-3xl lg:border lg:border-border/65 lg:bg-card lg:shadow-card">
         {/* Desktop: the stable vertical rail Settings uses, one row per step. */}
-        <nav aria-label={t("setup.headerTitle", lang)} className="hidden lg:flex lg:flex-col lg:border-r lg:border-border/65 lg:p-3">
-          <ol className="flex flex-col gap-1" data-testid="setup-rail">
+        <nav aria-label={t("setup.headerTitle", lang)} className="hidden lg:flex lg:flex-col lg:border-r lg:border-border/65 lg:bg-foreground/[0.015] lg:p-3">
+          <ol className="flex flex-col gap-1.5" data-testid="setup-rail">
             {STEPS.map((step, index) => {
               const { complete, missing } = stepState(step.key);
               const current = view === step.key;
@@ -1118,12 +1157,12 @@ export function AccountSetupFlow({
                     data-testid={`setup-rail-${step.key}`}
                     data-complete={complete ? "true" : "false"}
                     className={cn(
-                      "flex w-full items-start gap-3 rounded-2xl border px-3 py-2.5 text-left transition-[background-color,border-color] duration-200",
-                      current ? "border-foreground/15 bg-muted/70" : "border-transparent hover:bg-foreground/[0.035]",
+                      "flex min-h-[4.25rem] w-full items-center gap-3 rounded-2xl border px-3 py-2.5 text-left transition-[background-color,border-color] duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1",
+                      current ? "border-foreground/[0.12] bg-card shadow-card" : "border-transparent hover:bg-foreground/[0.035]",
                     )}
                   >
                     <Indicator stepKey={step.key} index={index} />
-                    <span className="min-w-0 pt-0.5">
+                    <span className="min-w-0 flex-1">
                       <span className={cn("block truncate text-[13px] font-semibold", current ? "text-foreground" : "text-foreground/80")}>{t(step.label, lang)}</span>
                       <span className="mt-0.5 line-clamp-2 text-[11px] leading-snug text-muted-foreground">
                         {complete
@@ -1138,17 +1177,26 @@ export function AccountSetupFlow({
               );
             })}
           </ol>
+          <div className="mt-auto px-3 pb-2 pt-6">
+            <div className="mb-2 flex items-center justify-between text-[11px] font-medium tabular-nums text-muted-foreground">
+              <span>{t("setup.stepsDone", lang)}</span>
+              <span>{completedCount} / {STEPS.length}</span>
+            </div>
+            <div aria-hidden="true" className="h-1 overflow-hidden rounded-full bg-muted">
+              <span className="block h-full rounded-full bg-foreground transition-[width] duration-500" style={{ width: `${completionPercent}%` }} />
+            </div>
+          </div>
         </nav>
 
         <section
           data-settings-card
-          className="rounded-2xl border border-border/65 bg-card p-4 shadow-card sm:p-5 lg:p-6"
+          className="rounded-3xl border border-border/65 bg-card p-5 shadow-card sm:p-6 lg:p-8"
           data-testid="setup-panel"
         >
           {view === "done" ? (
             <div className="flex flex-col items-center py-8 text-center" data-testid="setup-done">
-              <span className="flex h-14 w-14 items-center justify-center rounded-full bg-success/12 text-success"><CheckIcon size={26} /></span>
-              <h2 className="mt-5 text-[22px] font-semibold tracking-[-0.02em]">{t("setup.done.title", lang)}</h2>
+              <span className="flex h-14 w-14 items-center justify-center rounded-full border border-success/20 bg-success/10 text-success"><CheckIcon size={26} /></span>
+              <h2 className="mt-5 text-[26px] font-normal leading-tight tracking-[-0.02em]" style={{ fontFamily: "var(--font-brand), ui-serif, Georgia, serif" }}>{t("setup.done.title", lang)}</h2>
               <p className="mt-2 max-w-[46ch] text-[14px] leading-relaxed text-muted-foreground">
                 {status?.complete ? t("setup.done.subtitle", lang) : t("setup.done.subtitleIncomplete", lang)}
               </p>
@@ -1159,15 +1207,20 @@ export function AccountSetupFlow({
             </div>
           ) : (
             <>
-              <div className="mb-5 flex items-start justify-between gap-4 border-b border-border/60 pb-5">
-                <div className="min-w-0">
-                  <p className="text-[11px] font-semibold uppercase tracking-[0.08em] text-foreground/45 tabular-nums">
-                    {t("setup.stepEyebrow", lang)} {stepIndex + 1} / {STEPS.length}
-                  </p>
-                  <h2 className="mt-1 text-[18px] font-semibold tracking-[-0.02em]">{t(STEPS[stepIndex].label, lang)}</h2>
-                  <p className="mt-1 text-[13px] leading-relaxed text-muted-foreground">{t(STEPS[stepIndex].hint, lang)}</p>
+              <div className="mb-6 flex flex-col gap-3 border-b border-border/60 pb-5 sm:flex-row sm:items-start sm:justify-between sm:gap-4 sm:pb-6">
+                <div className="flex min-w-0 items-center gap-3.5">
+                  <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full border border-border/60 bg-surface-subtle/70 text-foreground/70 sm:h-11 sm:w-11">
+                    <CurrentStepIcon size={18} className="block" />
+                  </span>
+                  <div className="min-w-0">
+                    <p className="text-[11px] font-semibold uppercase leading-4 tracking-[0.08em] text-foreground/45 tabular-nums">
+                      {t("setup.stepEyebrow", lang)} {stepIndex + 1} / {STEPS.length}
+                    </p>
+                    <h2 className="mt-0.5 text-[22px] font-normal leading-tight tracking-[-0.02em] sm:text-[24px]" style={{ fontFamily: "var(--font-brand), ui-serif, Georgia, serif" }}>{t(STEPS[stepIndex].label, lang)}</h2>
+                    <p className="mt-0.5 line-clamp-2 text-[12px] leading-relaxed text-muted-foreground sm:text-[13px]">{t(STEPS[stepIndex].hint, lang)}</p>
+                  </div>
                 </div>
-                <Button type="button" variant="ghost" size="sm" onClick={skip} disabled={skipping} className="shrink-0 text-foreground/60 max-lg:h-11" data-testid="setup-skip">
+                <Button type="button" variant="ghost" size="sm" onClick={skip} disabled={skipping} className="h-9 shrink-0 self-end px-3 text-[12px] text-foreground/60 sm:self-auto" data-testid="setup-skip">
                   {t("setup.skip", lang)}
                 </Button>
               </div>

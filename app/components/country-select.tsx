@@ -64,7 +64,13 @@ export function CountrySelect({
         ) : (
           <span className="min-w-0 flex-1 truncate text-muted-foreground">{t("country.placeholder", lang)}</span>
         )}
-        <ChevronDownIcon aria-hidden="true" className="h-4 w-4 shrink-0 text-muted-foreground" />
+        <ChevronDownIcon
+          aria-hidden="true"
+          className={cn(
+            "h-4 w-4 shrink-0 text-foreground/55 transition-transform duration-200",
+            open && "rotate-180",
+          )}
+        />
       </button>
       <CountryPickerSheet
         open={open}

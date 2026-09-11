@@ -1,6 +1,7 @@
 "use client";
 
 import * as React from "react";
+import { ChevronDownIcon } from "@radix-ui/react-icons";
 import type { CountryCode } from "libphonenumber-js/min";
 import { t } from "../lib/i18n";
 import { cn } from "../lib/utils";
@@ -104,11 +105,17 @@ export function InternationalPhoneInput({
           aria-label={`${t("phone.changeCountry", lang)}: ${selected.name}, +${selected.callingCode}`}
           aria-haspopup="dialog"
           aria-expanded={pickerOpen}
-          className="flex min-w-[7.25rem] shrink-0 items-center gap-2 border-r border-border/70 bg-foreground/[0.025] px-3 text-left transition-colors hover:bg-foreground/[0.055] focus-visible:z-10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring disabled:pointer-events-none"
+          className="flex min-w-[6.75rem] shrink-0 items-center gap-2 border-r border-border/70 bg-foreground/[0.025] px-3 text-left transition-colors hover:bg-foreground/[0.055] focus-visible:z-10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring disabled:pointer-events-none"
         >
           <span aria-hidden="true" className="text-[18px] leading-none">{selected.flag}</span>
           <span className="text-[13px] font-semibold tabular-nums">+{selected.callingCode}</span>
-          <span aria-hidden="true" className="ml-auto text-[10px] text-muted-foreground">▾</span>
+          <ChevronDownIcon
+            aria-hidden="true"
+            className={cn(
+              "ml-auto h-4 w-4 shrink-0 text-foreground/55 transition-transform duration-200",
+              pickerOpen && "rotate-180",
+            )}
+          />
         </button>
         <input
           id={id}
