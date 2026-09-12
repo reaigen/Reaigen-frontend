@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { hasWebCreationAccess } from "../../lib/api/client";
+import { getWebCreationAccess } from "../../lib/api/client";
 
 /**
  * Whether this account may open the browser authoring tools.
@@ -21,15 +21,16 @@ import { hasWebCreationAccess } from "../../lib/api/client";
  * agents who have no use for it.
  *
  * Fails closed: unauthenticated, still loading, or an outright error all report
- * `allowed: false`. `hasWebCreationAccess` already folds 401 and 403 into a
- * plain `false`, so only real faults surface here, and those should not open a
- * destructive editor either.
+ * `allowed: false`. Advanced editing is a separate backend verdict and stays
+ * false unless the access response explicitly enables it.
  */
 export function useWebAuthoringAccess(isAuthenticated: boolean): {
   allowed: boolean;
+  advancedSplatEditor: boolean;
   loading: boolean;
 } {
   const [allowed, setAllowed] = React.useState(false);
+  const [advancedSplatEditor, setAdvancedSplatEditor] = React.useState(false);
   const [loading, setLoading] = React.useState(true);
 
   React.useEffect(() => {
@@ -37,16 +38,30 @@ export function useWebAuthoringAccess(isAuthenticated: boolean): {
     // decision: callers gate their own redirect on authentication, and a
     // premature `allowed: false` would race that and bounce the user somewhere
     // they did not ask to go.
-    if (!isAuthenticated) return;
+    if (!isAuthenticated) {
+      setAllowed(false);
+      setAdvancedSplatEditor(false);
+      return;
+    }
 
     let active = true;
     setLoading(true);
-    hasWebCreationAccess()
-      .then((value) => { if (active) setAllowed(value); })
-      .catch(() => { if (active) setAllowed(false); })
+    getWebCreationAccess()
+      .then((access) => {
+        if (!active) return;
+        setAllowed(access.allowed === true);
+        setAdvancedSplatEditor(
+          access.capabilities?.advanced_splat_editor === true,
+        );
+      })
+      .catch(() => {
+        if (!active) return;
+        setAllowed(false);
+        setAdvancedSplatEditor(false);
+      })
       .finally(() => { if (active) setLoading(false); });
     return () => { active = false; };
   }, [isAuthenticated]);
 
-  return { allowed, loading };
+  return { allowed, advancedSplatEditor, loading };
 }

@@ -13,6 +13,7 @@ import { Textarea } from "../lib/ui/textarea";
 import {
   grantReaiAgentConsent,
   grantReaiImprovementConsent,
+  getBillingCatalog,
   requestPhoneLinkOtp,
   resendVerification,
   revokeReaiImprovementConsent,
@@ -24,6 +25,7 @@ import {
   updateSellerProfile,
   verifyPhoneLinkOtp,
   type ReaiImprovementConsent,
+  type BillingCatalog,
   type UserProfile,
 } from "../lib/api/client";
 import { getReaiImprovementConsent } from "../lib/api/client";
@@ -649,11 +651,14 @@ function SellerStep({ user, lang, onSaved, onAdvance, onBack }: StepProps) {
 function BillingStep({ user, lang, onSaved, onAdvance, onBack }: StepProps) {
   const ba = user.billing_account;
   const p = user.profile;
+  const [billingCatalog, setBillingCatalog] = React.useState<BillingCatalog | null>(null);
   const fullName = `${user.first_name ?? ""} ${user.last_name ?? ""}`.trim();
   const [billingName, setBillingName] = React.useState(ba?.billing_name || p?.company || fullName);
   const [billingEmail, setBillingEmail] = React.useState(ba?.billing_email || user.email);
   const [billingAddress, setBillingAddress] = React.useState(ba?.billing_address ?? "");
+  const [billingAddressLine2, setBillingAddressLine2] = React.useState(ba?.billing_address_line2 ?? "");
   const [billingCity, setBillingCity] = React.useState(ba?.billing_city ?? "");
+  const [billingState, setBillingState] = React.useState(ba?.billing_state ?? "");
   const [billingPostal, setBillingPostal] = React.useState(ba?.billing_postal_code ?? "");
   const [billingCountry, setBillingCountry] = React.useState(ba?.billing_country ?? "");
   const [vat, setVat] = React.useState(ba?.vat_number ?? "");
@@ -661,13 +666,30 @@ function BillingStep({ user, lang, onSaved, onAdvance, onBack }: StepProps) {
   const [error, setError] = React.useState<string | null>(null);
   const { touched, touch, touchAll } = useTouchedFields<"name" | "email" | "address" | "city" | "postal" | "country">();
 
+  React.useEffect(() => {
+    let active = true;
+    void getBillingCatalog()
+      .then((catalog) => {
+        if (active) setBillingCatalog(catalog);
+      })
+      .catch(() => {
+        if (active) setBillingCatalog(null);
+      });
+    return () => {
+      active = false;
+    };
+  }, []);
+
   const sellerAddressAvailable = Boolean(p && (p.address || p.city || p.postal_code || p.country));
+  const billingCountries = billingCatalog?.countries ?? [];
   const nameMissing = !billingName.trim();
   const emailInvalid = !billingEmail.trim() || !isEmailAddress(billingEmail);
   const addressMissing = !billingAddress.trim();
   const cityMissing = !billingCity.trim();
   const postalMissing = !billingPostal.trim();
-  const countryInvalid = !isPhoneCountry(billingCountry);
+  const countryInvalid = !billingCatalog || !billingCountries.some(
+    (country) => country.code === billingCountry.trim().toUpperCase(),
+  );
   const issueCount = countFormIssues([
     nameMissing,
     emailInvalid,
@@ -682,6 +704,7 @@ function BillingStep({ user, lang, onSaved, onAdvance, onBack }: StepProps) {
     if (!p) return;
     setBillingAddress(p.address ?? "");
     setBillingCity(p.city ?? "");
+    setBillingState(p.state ?? "");
     setBillingPostal(p.postal_code ?? "");
     setBillingCountry((p.country ?? "").toUpperCase());
   }
@@ -708,7 +731,9 @@ function BillingStep({ user, lang, onSaved, onAdvance, onBack }: StepProps) {
         billing_name: billingName.trim(),
         billing_email: billingEmail.trim(),
         billing_address: billingAddress.trim(),
+        billing_address_line2: billingAddressLine2.trim(),
         billing_city: billingCity.trim(),
+        billing_state: billingState.trim(),
         billing_postal_code: billingPostal.trim(),
         billing_country: billingCountry.trim().toUpperCase(),
         vat_number: vat.trim(),
@@ -723,6 +748,11 @@ function BillingStep({ user, lang, onSaved, onAdvance, onBack }: StepProps) {
   }
 
   const tier = ba?.subscription_tier_detail;
+  const subscriptionStatusName = ba?.subscription_status
+    ? billingCatalog?.statuses.subscription?.find(
+      (status) => status.code === ba.subscription_status,
+    )?.name
+    : null;
 
   return (
     <form className="space-y-6" onSubmit={handleSubmit} noValidate data-testid="setup-step-billing">
@@ -731,7 +761,9 @@ function BillingStep({ user, lang, onSaved, onAdvance, onBack }: StepProps) {
           <span className="text-muted-foreground">{t("settings.billing.plan", lang)}</span>
           <span className="flex items-center gap-2 font-medium">
             {tier.name}
-            {ba?.subscription_status ? <StatusPill tone="neutral">{ba.subscription_status}</StatusPill> : null}
+            {subscriptionStatusName ? (
+              <StatusPill tone="neutral">{subscriptionStatusName}</StatusPill>
+            ) : null}
           </span>
         </div>
       ) : null}
@@ -767,9 +799,15 @@ function BillingStep({ user, lang, onSaved, onAdvance, onBack }: StepProps) {
       >
         {(control) => <Input {...control} value={billingAddress} onChange={(e) => setBillingAddress(e.target.value)} onBlur={() => touch("address")} autoComplete="street-address" />}
       </Field>
+      <Field id="setup-billing-address-line-2" label={t("settings.billing.addressLine2", lang)} optional lang={lang}>
+        {(control) => <Input {...control} value={billingAddressLine2} onChange={(e) => setBillingAddressLine2(e.target.value)} autoComplete="address-line2" />}
+      </Field>
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
         <Field id="setup-billing-city" label={t("settings.billing.city", lang)} lang={lang} error={requiredError(billingCity, touched.has("city"), lang)}>
           {(control) => <Input {...control} value={billingCity} onChange={(e) => setBillingCity(e.target.value)} onBlur={() => touch("city")} autoComplete="address-level2" />}
+        </Field>
+        <Field id="setup-billing-state" label={t("settings.billing.state", lang)} optional lang={lang}>
+          {(control) => <Input {...control} value={billingState} onChange={(e) => setBillingState(e.target.value)} autoComplete="address-level1" />}
         </Field>
         <Field id="setup-billing-postal" label={t("settings.billing.postalCode", lang)} lang={lang} error={requiredError(billingPostal, touched.has("postal"), lang)}>
           {(control) => <Input {...control} value={billingPostal} onChange={(e) => setBillingPostal(e.target.value)} onBlur={() => touch("postal")} autoComplete="postal-code" />}
@@ -781,6 +819,8 @@ function BillingStep({ user, lang, onSaved, onAdvance, onBack }: StepProps) {
               value={billingCountry}
               onChange={(nextCountry) => { setBillingCountry(nextCountry); touch("country"); }}
               lang={lang}
+              options={billingCountries}
+              disabled={!billingCatalog}
               error={control.error}
               aria-describedby={control["aria-describedby"]}
             />

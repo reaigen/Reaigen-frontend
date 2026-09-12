@@ -30,13 +30,17 @@ export function getApiErrorJson(error: unknown): Record<string, unknown> | null 
   }
 }
 
+export function getApiErrorCode(error: unknown): string | null {
+  const code = getApiErrorJson(error)?.code;
+  return typeof code === "string" && code.trim()
+    ? code.trim().toLowerCase()
+    : null;
+}
+
 export function isInsufficientComputeCredits(error: unknown) {
-  if (!(error instanceof ApiError) || error.status !== 403) return false;
-  const payload = getApiErrorJson(error);
-  const text = flattenValue(
-    payload?.detail ?? payload?.error ?? (error.body ?? ""),
-  ).toLowerCase();
-  return text.includes("compute credit");
+  return error instanceof ApiError
+    && error.status === 403
+    && getApiErrorCode(error) === "insufficient_compute_credits";
 }
 
 export function isApiNotFound(error: unknown) {

@@ -300,7 +300,11 @@ export default function WebTourEditorPage({
   const { id } = use(params);
   const tourId = Number(id);
   const { isAuthenticated, isLoading, user } = useAuth();
-  const { allowed, loading: accessLoading } = useWebAuthoringAccess(isAuthenticated);
+  const {
+    allowed,
+    advancedSplatEditor,
+    loading: accessLoading,
+  } = useWebAuthoringAccess(isAuthenticated);
   const { confirm, dialog: confirmDialog } = useConfirm();
   const router = useRouter();
   const viewerRef = useRef<SplatViewerHandle | null>(null);
@@ -551,6 +555,10 @@ export default function WebTourEditorPage({
   }, [pendingPruneMasks]);
 
   const stageCurrentPruneDraft = useCallback((closeEditor = true) => {
+    if (!advancedSplatEditor) {
+      if (closeEditor) setPruneEditorOpen(false);
+      return true;
+    }
     if (splatSelectionStats.dirty) {
       if (!selected?.asset.fingerprint) return false;
       const prune = viewerRef.current?.exportPruneMask(selected.asset.fingerprint);
@@ -565,7 +573,7 @@ export default function WebTourEditorPage({
     }
     if (closeEditor) setPruneEditorOpen(false);
     return true;
-  }, [selected, splatSelectionStats.dirty]);
+  }, [advancedSplatEditor, selected, splatSelectionStats.dirty]);
 
   const requestClosePruneEditor = useCallback(() => {
     stageCurrentPruneDraft(true);
@@ -647,12 +655,12 @@ export default function WebTourEditorPage({
       // Desktop starts with both authoring sidebars available. Phone starts
       // with a clean viewport and opens one intentional sheet at a time.
       setScenePanelOpen(!compact);
-      setInspectorOpen(!compact);
+      setInspectorOpen(advancedSplatEditor && !compact);
     };
     syncLayout();
     media.addEventListener("change", syncLayout);
     return () => media.removeEventListener("change", syncLayout);
-  }, []);
+  }, [advancedSplatEditor]);
 
   useEffect(() => {
     // Non-uniform scale is authored as TRS, so its axes are necessarily local.
@@ -673,7 +681,7 @@ export default function WebTourEditorPage({
         || target?.tagName === "SELECT"
       ) return;
       const key = event.key.toLowerCase();
-      if ((event.metaKey || event.ctrlKey) && key === "z") {
+      if (advancedSplatEditor && (event.metaKey || event.ctrlKey) && key === "z") {
         event.preventDefault();
         if (event.shiftKey) redoTransformRef.current();
         else undoTransformRef.current();
@@ -687,10 +695,10 @@ export default function WebTourEditorPage({
       }
       // Plain-key tools must not shadow browser chords (⌘F find, ⌘G, …).
       if (event.metaKey || event.ctrlKey || event.altKey) return;
-      if (key === "1") setTool("select");
-      else if (key === "2") setTool("move");
-      else if (key === "3") setTool("rotate");
-      else if (key === "4") setTool("scale");
+      if (advancedSplatEditor && key === "1") setTool("select");
+      else if (advancedSplatEditor && key === "2") setTool("move");
+      else if (advancedSplatEditor && key === "3") setTool("rotate");
+      else if (advancedSplatEditor && key === "4") setTool("scale");
       // F (frame) and V (orbit/fly) belong to the viewer's own key handler —
       // adding them here made V toggle twice per press and cancel itself.
       else if (key === "g") setShowGrid((value) => !value);
@@ -710,6 +718,7 @@ export default function WebTourEditorPage({
     window.addEventListener("keydown", handleEditorShortcut);
     return () => window.removeEventListener("keydown", handleEditorShortcut);
   }, [
+    advancedSplatEditor,
     cameraEditorOpen,
     pruneEditorOpen,
     requestClosePruneEditor,
@@ -924,7 +933,7 @@ export default function WebTourEditorPage({
     setCameraEditorOpen(false);
     if (nodeId === selectedId) {
       if (compactLayout) setScenePanelOpen(false);
-      setInspectorOpen(true);
+      if (advancedSplatEditor) setInspectorOpen(true);
       return;
     }
     stageCurrentPruneDraft(true);
@@ -941,7 +950,7 @@ export default function WebTourEditorPage({
     setTransformDirty(false);
     setSelectedId(nodeId);
     if (compactLayout) setScenePanelOpen(false);
-    setInspectorOpen(true);
+    if (advancedSplatEditor) setInspectorOpen(true);
   };
   selectNodeRef.current = selectNode;
 
@@ -1117,6 +1126,7 @@ export default function WebTourEditorPage({
   });
 
   const resetTransform = (part: "translation" | "rotationDeg" | "scale" | "all") => {
+    if (!advancedSplatEditor) return;
     pushTransformHistory();
     setTransformDirty(true);
     setWorkspaceDirty(true);
@@ -1143,7 +1153,7 @@ export default function WebTourEditorPage({
   });
 
   function pushTransformHistory() {
-    if (!selectedId || !draftTransform) return;
+    if (!advancedSplatEditor || !selectedId || !draftTransform) return;
     const undo = transformUndoRef.current[selectedId] ?? [];
     const snapshot = copyTransform(draftTransform);
     const previous = undo.at(-1);
@@ -1157,7 +1167,7 @@ export default function WebTourEditorPage({
   }
 
   const undoTransform = () => {
-    if (!selectedId || !draftTransform) return;
+    if (!advancedSplatEditor || !selectedId || !draftTransform) return;
     const undo = transformUndoRef.current[selectedId] ?? [];
     const previous = undo.at(-1);
     if (!previous) return;
@@ -1174,7 +1184,7 @@ export default function WebTourEditorPage({
   };
 
   const redoTransform = () => {
-    if (!selectedId || !draftTransform) return;
+    if (!advancedSplatEditor || !selectedId || !draftTransform) return;
     const redo = transformRedoRef.current[selectedId] ?? [];
     const next = redo.at(-1);
     if (!next) return;
@@ -1344,20 +1354,21 @@ export default function WebTourEditorPage({
           initialPruneMask={selectedPruneMask}
           globalSceneTransform={viewportTransform}
           spatialNavigation
-          spatialTransformTool={tool}
+          spatialTransformTool={advancedSplatEditor ? tool : "select"}
           spatialTransformSpace={transformSpace}
           spatialTransformSnap={snapEnabled}
-          onSpatialTransformStart={pushTransformHistory}
-          onSpatialTransformChange={(transform) => {
+          onSpatialTransformStart={advancedSplatEditor ? pushTransformHistory : undefined}
+          onSpatialTransformChange={advancedSplatEditor ? (transform) => {
             setDraftTransform(transform);
             setTransformDirty(true);
             setWorkspaceDirty(true);
-          }}
-          splatSelectionTool={pruneEditorOpen ? splatSelectionTool : "none"}
+          } : undefined}
+          splatSelectionTool={advancedSplatEditor && pruneEditorOpen ? splatSelectionTool : "none"}
           splatSelectionOperation={splatSelectionOperation}
           splatBrushRadius={splatBrushRadius}
           onSplatSelectionChange={setSplatSelectionStats}
           onSceneFrame={(frame) => {
+            if (!advancedSplatEditor) return undefined;
             if (
               autoGroundedNodesRef.current.has(selected.id)
             ) return undefined;
@@ -1672,7 +1683,7 @@ export default function WebTourEditorPage({
         </button>
       ) : null}
 
-      {selected && draftTransform && inspectorOpen && !cameraEditorOpen && (!compactLayout || !scenePanelOpen) ? (
+      {advancedSplatEditor && selected && draftTransform && inspectorOpen && !cameraEditorOpen && (!compactLayout || !scenePanelOpen) ? (
         <section data-testid="tour-editor-inspector-panel" className="floating-panel absolute inset-x-3 bottom-[calc(5.25rem+env(safe-area-inset-bottom,0px))] z-30 max-h-[56dvh] overflow-y-auto p-3 md:inset-x-auto md:bottom-7 md:right-0 md:top-12 md:z-20 md:max-h-none md:w-[19.5rem] md:rounded-none md:border-y-0 md:border-l md:border-r-0 md:bg-card md:shadow-none md:backdrop-blur-none">
           <div aria-hidden="true" className="mx-auto mb-2 h-1 w-9 rounded-full bg-foreground/15 md:hidden" />
           <div className="flex items-center justify-between gap-3 border-b border-border/60 pb-2.5">
@@ -1856,7 +1867,7 @@ export default function WebTourEditorPage({
         </section>
       ) : null}
 
-      {selected && !inspectorOpen && !cameraEditorOpen && (!compactLayout || !scenePanelOpen) ? (
+      {advancedSplatEditor && selected && !inspectorOpen && !cameraEditorOpen && (!compactLayout || !scenePanelOpen) ? (
         <button
           type="button"
           data-testid="tour-editor-inspector-open"
@@ -1873,7 +1884,7 @@ export default function WebTourEditorPage({
         </button>
       ) : null}
 
-      {pruneEditorOpen && selected ? (
+      {advancedSplatEditor && pruneEditorOpen && selected ? (
         <section className={cn(
           "floating-panel absolute bottom-20 left-3 z-30 w-[min(23rem,calc(100vw-1.5rem))] overflow-hidden p-3 shadow-control sm:left-4 md:bottom-[2.5rem]",
           scenePanelOpen ? "md:left-[21.75rem]" : "md:left-[4.5rem]",
@@ -2046,7 +2057,7 @@ export default function WebTourEditorPage({
 
       {selectedRenderable && !cameraEditorOpen ? (
         <nav className="floating-toolbar scrollbar-hide absolute bottom-[calc(0.75rem+env(safe-area-inset-bottom,0px))] left-1/2 z-30 max-w-[calc(100vw-1rem)] -translate-x-1/2 overflow-x-auto md:hidden">
-          {([
+          {advancedSplatEditor ? ([
             ["select", TechnicalIcon, "spatialEditor.selectTool"],
             ["move", MoveIcon, "spatialEditor.moveTool"],
             ["rotate", RotateIcon, "spatialEditor.rotateTool"],
@@ -2075,7 +2086,7 @@ export default function WebTourEditorPage({
                 <span className="text-[10px] font-medium">{t(label, lang)}</span>
               ) : null}
             </button>
-          ))}
+          )) : null}
           <button
             type="button"
             onClick={() => setCameraMode((value) => value === "orbit" ? "fly" : "orbit")}
@@ -2109,8 +2120,9 @@ export default function WebTourEditorPage({
           vertical rail on the left edge, view controls in a pill at the
           bottom-right, and nothing sits between the author and the scene. The
           rail is icon-only — names and shortcuts ride in the tooltips. */}
-      {selectedRenderable ? (
+      {advancedSplatEditor && selectedRenderable ? (
       <nav
+        data-testid="advanced-splat-controls"
         aria-label={t("webEditor.tools", lang)}
         className={cn(
           "floating-toolbar scrollbar-hide absolute top-1/2 z-30 hidden max-h-[calc(100dvh-8rem)] -translate-y-1/2 flex-col overflow-y-auto rounded-[1.4rem] md:flex",

@@ -1,35 +1,28 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import {
-  TRAINING_PROFILE_DEFAULTS,
-  parseTrainingIterations,
-} from "./training-quality.ts";
+import { parseTrainingIterations } from "./training-quality.ts";
 
-test("training profiles map speed and quality to explicit compute settings", () => {
-  assert.deepEqual(TRAINING_PROFILE_DEFAULTS.fast, {
-    resolution: "res2",
-    iterations: 5350,
-  });
-  assert.deepEqual(TRAINING_PROFILE_DEFAULTS.balanced, {
-    resolution: "res2",
-    iterations: 15000,
-  });
-  assert.deepEqual(TRAINING_PROFILE_DEFAULTS.quality, {
-    resolution: "res1",
-    iterations: 30000,
-  });
+const lookupPolicy = {
+  minimum_iterations: 1200,
+  maximum_iterations: 2400,
+  iteration_step: 300,
+};
+
+test("iteration validation accepts values described by the Django lookup", () => {
+  assert.equal(parseTrainingIterations("1200", lookupPolicy), 1200);
+  assert.equal(parseTrainingIterations(1800, lookupPolicy), 1800);
+  assert.equal(parseTrainingIterations("2400", lookupPolicy), 2400);
 });
 
-test("iteration validation accepts engine default and bounded whole numbers", () => {
-  assert.equal(parseTrainingIterations("0"), 0);
-  assert.equal(parseTrainingIterations("1000"), 1000);
-  assert.equal(parseTrainingIterations(30000), 30000);
-  assert.equal(parseTrainingIterations("60000"), 60000);
-});
-
-test("iteration validation rejects blanks, fractions, and unsafe bounds", () => {
-  for (const value of ["", "   ", 999, 60001, "1000.5", "not-a-number", null, true]) {
-    assert.equal(parseTrainingIterations(value), null, String(value));
+test("iteration validation rejects blanks, fractions, off-step values, and lookup bounds", () => {
+  for (const value of ["", "   ", 0, 1199, 1350, 2401, "1200.5", "not-a-number", null, true]) {
+    assert.equal(parseTrainingIterations(value, lookupPolicy), null, String(value));
   }
+});
+
+test("iteration validation fails closed without a valid lookup policy", () => {
+  assert.equal(parseTrainingIterations("1200", null), null);
+  assert.equal(parseTrainingIterations("1200", { ...lookupPolicy, iteration_step: 0 }), null);
+  assert.equal(parseTrainingIterations("1200", { ...lookupPolicy, maximum_iterations: 1000 }), null);
 });

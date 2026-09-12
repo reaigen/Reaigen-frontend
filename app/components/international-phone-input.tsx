@@ -7,6 +7,7 @@ import { cn } from "../lib/utils";
 import {
   getPhoneCountries,
   interpretPhoneInput,
+  isPhoneCountry,
   phoneInputDisplay,
   resolvePhoneCountry,
 } from "../lib/phone";
@@ -148,7 +149,9 @@ export function InternationalPhoneInput({
         open={pickerOpen}
         onOpenChange={setPickerOpen}
         value={country}
-        onSelect={chooseCountry}
+        onSelect={(nextCountry) => {
+          if (isPhoneCountry(nextCountry)) chooseCountry(nextCountry);
+        }}
         lang={lang}
         mode="phone"
       />

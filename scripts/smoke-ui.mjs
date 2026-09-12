@@ -34,7 +34,9 @@ async function openPage(path, { consent = false, webCreationAllowed = false } = 
     route.fulfill({
       status: webCreationAllowed ? 200 : 403,
       contentType: "application/json",
-      body: JSON.stringify(webCreationAllowed ? { allowed: true } : { detail: "Not enabled." }),
+      body: JSON.stringify(webCreationAllowed
+        ? { allowed: true, capabilities: { advanced_splat_editor: false } }
+        : { detail: "Not enabled." }),
     }),
   );
   if (consent) {
@@ -230,13 +232,17 @@ async function openPage(path, { consent = false, webCreationAllowed = false } = 
   const account = {
     first_name: "QA", last_name: "Setup", username: "qa_setup", phone_verified: false,
     profile: null,
-    billing: { billing_name: "", billing_email: "", billing_address: "", billing_city: "", billing_postal_code: "", billing_country: "", vat_number: "" },
+    billing: { billing_name: "", billing_email: "", billing_address: "", billing_address_line2: "", billing_city: "", billing_state: "", billing_postal_code: "", billing_country: "", vat_number: "" },
     consent: { consented: false, policy_version: "3", granted_at: null, privacy: {} },
     tools: { allow_all_tools: true, tools: { image: true }, overrides: {}, entitled_tools: {}, tool_status: {}, available_tools: ["image"], tool_catalog: {}, settings_surfaces: {}, writable: true, confirmation_required_for_writes: true, updated_at: "" },
     personalized: { onboarding_completed: false, onboarding_skipped: false, onboarding_step: 0, preferences: {} },
   };
   const json = (route, body, status = 200) => route.fulfill({ status, contentType: "application/json", body: JSON.stringify(body) });
   const readBody = (route) => { try { return JSON.parse(route.request().postData() ?? "{}"); } catch { return {}; } };
+  const chooseSlovakia = async (selector) => {
+    await page.click(selector);
+    await page.getByRole("dialog").getByRole("button", { name: /Slovakia.*SK/ }).click();
+  };
   await page.route("**/api/reaigen/users/me/", (route) => {
     if (route.request().method() === "PATCH") Object.assign(account, readBody(route));
     json(route, {
@@ -245,14 +251,14 @@ async function openPage(path, { consent = false, webCreationAllowed = false } = 
       phone_verified: account.phone_verified, last_login: null, date_joined: "2026-09-01T00:00:00Z",
       gdpr: { has_given_consent: true, consent_date: null, consent_version: "1", marketing_consent: false, data_processing_consent: true },
       profile: account.profile, personalized_data: account.personalized,
-      billing_account: { id: 1, subscription_tier_detail: { code: "FREE", name: "Free", max_posts: 3 }, subscription_status: "active", billing_cycle: "monthly", is_trial: false, is_active: true, has_reached_post_limit: false, has_reached_storage_limit: false, days_until_expiry: null, current_storage_gb: "0", current_posts_count: 0, payment_provider: "", ...account.billing },
+      billing_account: { id: 1, subscription_tier_detail: { code: "FREE", name: "Free" }, subscription_status: "active", billing_cycle: "monthly", is_trial: false, is_active: true, has_reached_post_limit: false, has_reached_storage_limit: false, days_until_expiry: null, current_storage_gb: "0", current_posts_count: 0, payment_provider: "", ...account.billing },
     });
   });
   await page.route("**/api/reaigen/users/permissions/", (route) => json(route, { capabilities: { role: "user", is_developer: false, tier: { code: "FREE", name: "Free" }, limits: {}, features: {}, apps: { reaigen: true }, creator_posting: { can_publish: false, has_reaigen_access: true, email_verified: true, phone_present: !!account.profile?.phone, phone_verified: account.phone_verified, seller_profile_complete: false, seller_profile_missing_fields: [], missing_requirements: [] } } }));
   await page.route("**/api/reaigen/profiles/me/", (route) => {
     if (route.request().method() === "PATCH") {
       const body = readBody(route);
-      if (body.phone === "+421000000000") return json(route, { phone: ["user profile with this phone already exists."] }, 400);
+      if (body.phone === "+421900111222") return json(route, { phone: ["user profile with this phone already exists."] }, 400);
       const phoneChanged = body.phone !== undefined && body.phone !== account.profile?.phone;
       if (phoneChanged) account.phone_verified = false;
       account.profile = { phone_verified: phoneChanged ? false : Boolean(account.profile?.phone_verified), ...(account.profile ?? {}), ...body, ...(phoneChanged ? { phone_verified: false } : {}) };
@@ -263,6 +269,21 @@ async function openPage(path, { consent = false, webCreationAllowed = false } = 
     if (route.request().method() === "PATCH") Object.assign(account.billing, readBody(route));
     json(route, account.billing);
   });
+  await page.route("**/api/reaigen/billing/catalog/", (route) => json(route, {
+    provider: {
+      provider: "", name: "", description: "", enabled: false, configured: false,
+      currency: "", customer_connected: false, subscription_connected: false,
+      payment_method: "", supports_checkout: false, supports_portal: false,
+      supports_payment_methods: false, connection_status: null,
+    },
+    cycles: [],
+    statuses: {
+      subscription: [{ code: "active", name: "Active", description: "", is_terminal: false, is_success: true, sort_order: 0 }],
+    },
+    tiers: [], credit_packs: [], compute_jobs: [], plan_features: [],
+    credit_balance_status: null,
+    countries: [{ code: "SK", name: "Slovakia" }],
+  }));
   await page.route("**/api/reaigen/personalized-data/me/", (route) => {
     if (route.request().method() === "PATCH") Object.assign(account.personalized, readBody(route));
     json(route, account.personalized);
@@ -294,12 +315,12 @@ async function openPage(path, { consent = false, webCreationAllowed = false } = 
 
   // A number another account owns: the backend refuses it, the step keeps
   // everything else and explains at the field instead of failing outright.
-  await page.fill("#setup-phone", "+421000000000");
+  await page.fill("#setup-phone", "+421900111222");
   await page.fill("#setup-bio", "Broker in Bratislava.");
   await page.fill("#setup-city", "Bratislava");
-  await page.fill("#setup-country", "sk");
+  await chooseSlovakia("#setup-country");
   await page.click('[data-testid="setup-continue"]');
-  await page.waitForSelector('[data-testid="setup-phone-error"]', { timeout: 20000 });
+  await page.waitForSelector("#setup-phone-error", { timeout: 20000 });
   await shot(page, "setup-phone-taken");
   const stayed = await page.evaluate(() => !!document.querySelector('[data-testid="setup-step-seller"]') && document.querySelector("#setup-phone")?.getAttribute("aria-invalid") === "true");
   check("account setup: a taken phone stays on the step with a field error", stayed && account.profile?.bio === "Broker in Bratislava." && !account.profile?.phone, JSON.stringify(account.profile));
@@ -307,7 +328,7 @@ async function openPage(path, { consent = false, webCreationAllowed = false } = 
   await page.fill("#setup-city", "Bratislava");
   await page.fill("#setup-address", "Hlavná 1");
   await page.fill("#setup-postal", "81101");
-  await page.fill("#setup-country", "sk");
+  await chooseSlovakia("#setup-country");
   await shot(page, "setup-seller");
   // Verify the number in place: the flow saves the profile first, then asks
   // for the code, and the verified flag comes back through /users/me/.
@@ -319,6 +340,7 @@ async function openPage(path, { consent = false, webCreationAllowed = false } = 
   check("account setup: phone verified through the OTP flow", account.phone_verified === true && account.profile?.phone === "+421900123456", JSON.stringify(account.profile));
   await page.click('[data-testid="setup-continue"]');
   await page.waitForSelector('[data-testid="setup-step-billing"]', { timeout: 20000 });
+  await page.waitForSelector("#setup-billing-country:not([disabled])", { timeout: 20000 });
   await shot(page, "setup-billing");
   const afterSeller = await page.evaluate(() => ({
     sellerDone: document.querySelector('[data-testid="setup-rail-seller"]')?.dataset.complete,

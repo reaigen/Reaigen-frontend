@@ -552,6 +552,12 @@ export interface ComputeCredits {
   included: number;
   purchased: number;
   total: number;
+  spendable: number;
+  blocked: boolean;
+  billing_hold: boolean;
+  billing_hold_reason: string;
+  debt: number;
+  compute_credit_debt: number;
   monthly_allowance: number;
   period_start: string | null;
 }
@@ -584,14 +590,6 @@ export interface BillingAccount {
     code: string;
     name: string;
     is_custom_pricing?: boolean;
-    /** @deprecated display mirror — runtime posts limit lives in TierLimit */
-    max_posts: number;
-    /** @deprecated storage is not tiered; value is 0 (not applicable) */
-    max_storage_gb: number;
-    /** @deprecated display mirror — runtime features come from TierFeature */
-    can_use_ai_processing: boolean;
-    /** @deprecated display mirror — runtime features come from TierFeature */
-    can_use_3d_processing: boolean;
   } | null;
   subscription_status: string;
   billing_cycle: string;
@@ -605,10 +603,17 @@ export interface BillingAccount {
   current_storage_gb: string;
   current_posts_count: number;
   payment_provider: string;
+  payment_method: string;
+  last_payment_date: string | null;
+  last_payment_amount: string | null;
+  last_payment_currency: string;
+  last_payment_display: string;
   billing_name: string;
   billing_email: string;
   billing_address: string;
+  billing_address_line2: string;
   billing_city: string;
+  billing_state: string;
   billing_postal_code: string;
   billing_country: string;
   vat_number: string;
@@ -771,14 +776,43 @@ export async function updatePersonalizedData(data: Partial<{
   });
 }
 
-export type TrainingResolution = "res1" | "res2";
-export type TrainingQuality = "fast" | "balanced" | "quality";
+export type TrainingResolution = string;
+export type TrainingQuality = string;
+
+export interface TrainingCatalogResolution {
+  code: string;
+  name: string;
+  description: string;
+  downsample: number;
+  sort_order: number;
+}
+
+export interface TrainingCatalogProfile {
+  code: string;
+  name: string;
+  description: string;
+  engine_quality_code: string;
+  default_resolution_code: string;
+  default_iterations: number;
+  minimum_iterations: number;
+  maximum_iterations: number;
+  iteration_step: number;
+  is_default: boolean;
+  sort_order: number;
+}
+
+export interface TrainingCatalog {
+  profiles: TrainingCatalogProfile[];
+  resolutions: TrainingCatalogResolution[];
+}
 
 export interface PipelinePreferences {
   id: number;
+  alignment_backend: string;
   default_training_resolution: TrainingResolution;
   default_training_iterations: number;
   training_quality: TrainingQuality;
+  training_catalog: TrainingCatalog;
   updated_at: string;
 }
 
@@ -858,7 +892,9 @@ export async function updateBilling(data: Partial<{
   billing_name: string;
   billing_email: string;
   billing_address: string;
+  billing_address_line2: string;
   billing_city: string;
+  billing_state: string;
   billing_postal_code: string;
   billing_country: string;
   vat_number: string;
@@ -866,6 +902,185 @@ export async function updateBilling(data: Partial<{
   return request("/api/reaigen/billing/me/", {
     method: "PATCH",
     body: JSON.stringify(data),
+  });
+}
+
+export interface BillingProviderStatus {
+  provider: string;
+  name: string;
+  description: string;
+  enabled: boolean;
+  configured: boolean;
+  checkout_sales_enabled: boolean;
+  currency: string;
+  customer_connected: boolean;
+  subscription_connected: boolean;
+  payment_method: string;
+  supports_checkout: boolean;
+  supports_portal: boolean;
+  portal_enabled: boolean;
+  supports_payment_methods: boolean;
+  connection_status: BillingCatalogStatus | null;
+}
+
+export interface BillingCheckoutRedirect {
+  checkout_id: string;
+  session_id: string;
+  url: string;
+}
+
+export interface BillingCheckoutResult {
+  id: string;
+  kind: string;
+  status: string;
+  product_code: string;
+  product_name: string;
+  billing_cycle: string;
+  pricing_country: string;
+  currency: string;
+  amount_minor: number;
+  credits: number;
+  completed_at: string | null;
+  created_at: string;
+}
+
+export interface BillingPayment {
+  id: string;
+  kind: string;
+  status: string;
+  amount_minor: number;
+  currency: string;
+  display_amount: string;
+  credits_granted: number;
+  refunded_amount_minor: number;
+  credits_reversed: number;
+  payment_method: string;
+  description: string;
+  paid_at: string;
+}
+
+export interface BillingCatalogStatus {
+  code: string;
+  name: string;
+  description: string;
+  is_terminal: boolean;
+  is_success: boolean;
+  sort_order: number;
+}
+
+export interface BillingCatalogCycle {
+  code: string;
+  name: string;
+  description: string;
+  sort_order: number;
+}
+
+export interface ComputeCreditPack {
+  code: string;
+  name: string;
+  description: string;
+  credits: number;
+  amount_minor: number;
+  currency: string;
+  display_price: string;
+  sort_order: number;
+}
+
+export interface BillingTierOption {
+  code: string;
+  name: string;
+  description: string;
+  is_custom_pricing: boolean;
+  checkout_enabled: boolean;
+  prices: Array<{
+    cycle_code: string;
+    amount_minor: number;
+    currency: string;
+    display_price: string;
+  }>;
+  sort_order: number;
+}
+
+export interface BillingCatalogComputeJob {
+  code: string;
+  name: string;
+  description: string;
+  credits_cost: number;
+  sort_order: number;
+}
+
+export interface BillingCatalogPlanFeature {
+  code: string;
+  name: string;
+  enabled: boolean;
+}
+
+export interface BillingCatalogCountry {
+  code: string;
+  name: string;
+}
+
+export interface BillingCatalog {
+  provider: BillingProviderStatus;
+  pricing_country: string;
+  cycles: BillingCatalogCycle[];
+  statuses: Record<string, BillingCatalogStatus[]>;
+  tiers: BillingTierOption[];
+  credit_packs: ComputeCreditPack[];
+  compute_jobs: BillingCatalogComputeJob[];
+  plan_features: BillingCatalogPlanFeature[];
+  credit_balance_status: BillingCatalogStatus | null;
+  countries: BillingCatalogCountry[];
+}
+
+export async function getBillingCatalog(): Promise<BillingCatalog> {
+  return freshRequest("/api/reaigen/billing/catalog/") as Promise<BillingCatalog>;
+}
+
+export async function getBillingPayments(): Promise<BillingPayment[]> {
+  const payload = await freshRequest(
+    "/api/reaigen/billing/payments/",
+  ) as unknown;
+  if (Array.isArray(payload)) return payload as BillingPayment[];
+  if (
+    payload
+    && typeof payload === "object"
+    && Array.isArray((payload as { results?: unknown }).results)
+  ) return (payload as { results: BillingPayment[] }).results;
+  throw new Error("Invalid billing payments response");
+}
+
+export async function createCreditCheckout(packCode: string): Promise<BillingCheckoutRedirect> {
+  return request("/api/reaigen/billing/credits/purchase/", {
+    method: "POST",
+    body: JSON.stringify({ pack_code: packCode }),
+  });
+}
+
+export async function createSubscriptionCheckout(
+  tierCode: string,
+  billingCycle: string,
+): Promise<BillingCheckoutRedirect> {
+  return request("/api/reaigen/billing/subscription/checkout/", {
+    method: "POST",
+    body: JSON.stringify({ tier_code: tierCode, billing_cycle: billingCycle }),
+  });
+}
+
+export async function createPaymentMethodCheckout(): Promise<BillingCheckoutRedirect> {
+  return request("/api/reaigen/billing/payment-method/checkout/", {
+    method: "POST",
+  });
+}
+
+export async function createBillingPortal(): Promise<{ url: string }> {
+  return request("/api/reaigen/billing/portal/", { method: "POST" });
+}
+
+export async function confirmBillingCheckout(sessionId: string): Promise<BillingCheckoutResult> {
+  return request("/api/reaigen/billing/checkout/confirm/", {
+    method: "POST",
+    body: JSON.stringify({ session_id: sessionId }),
   });
 }
 
@@ -1400,6 +1615,7 @@ export interface WebCreationAccess {
     openusd_hierarchy: boolean;
     cameras: boolean;
     ply_to_sog: boolean;
+    advanced_splat_editor: boolean;
   };
 }
 
@@ -3595,14 +3811,11 @@ export async function requestSplatRefinement(
     baseSceneRevision?: number;
     sceneStageSha256?: string;
     baseReconstructionVersion?: number;
+    trainingProfileCode?: string;
+    trainingResolutionCode?: string;
     iterations?: number;
-    preset?: string;
-    downsample?: 1 | 2 | 4 | 8;
     priority?: 0 | 1 | 2 | 3;
-    trainingEngine?: "gsplat" | "splatfiction" | "3dgut";
-    outputFormats?: Array<"ply" | "sog" | "splat">;
     targetProfiles: SceneDeliveryTargetProfile[];
-    trainingOverrides?: Record<string, unknown>;
   },
 ): Promise<{
   refinement: SceneRefinementSummary;

@@ -1,7 +1,6 @@
 "use client";
 
 import * as React from "react";
-import type { CountryCode } from "libphonenumber-js/min";
 import { t } from "../lib/i18n";
 import type { LocaleKey } from "../lib/locales";
 import { getPhoneCountries } from "../lib/phone";
@@ -37,6 +36,13 @@ const COPY: Record<"country" | "phone", {
   },
 };
 
+export interface CountryPickerOption {
+  code: string;
+  name: string;
+  callingCode: string;
+  flag: string;
+}
+
 /** One searchable region catalogue shared by country and calling-code fields. */
 export function CountryPickerSheet({
   open,
@@ -46,17 +52,20 @@ export function CountryPickerSheet({
   onClear,
   lang,
   mode,
+  countries: suppliedCountries,
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  value: CountryCode | null;
-  onSelect: (country: CountryCode) => void;
+  value: string | null;
+  onSelect: (country: string) => void;
   onClear?: () => void;
   lang: string;
   mode: "country" | "phone";
+  countries?: CountryPickerOption[];
 }) {
   const [query, setQuery] = React.useState("");
-  const countries = React.useMemo(() => getPhoneCountries(lang), [lang]);
+  const defaultCountries = React.useMemo(() => getPhoneCountries(lang), [lang]);
+  const countries = suppliedCountries ?? defaultCountries;
   const copy = COPY[mode];
   const filteredCountries = React.useMemo(() => {
     const needle = searchable(query.trim()).replace(/^\+/, "");

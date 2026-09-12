@@ -1,11 +1,10 @@
 "use client";
 
 import * as React from "react";
-import type { CountryCode } from "libphonenumber-js/min";
 import { t } from "../lib/i18n";
-import { getPhoneCountries, isPhoneCountry } from "../lib/phone";
+import { flagEmoji, getPhoneCountries } from "../lib/phone";
 import { cn } from "../lib/utils";
-import { CountryPickerSheet } from "./country-picker-sheet";
+import { CountryPickerSheet, type CountryPickerOption } from "./country-picker-sheet";
 import { ChevronDownIcon } from "./icons";
 
 /** Searchable country field that stores an ISO alpha-2 value. */
@@ -17,6 +16,7 @@ export function CountrySelect({
   disabled,
   error,
   allowClear,
+  options,
   className,
   "aria-describedby": ariaDescribedBy,
 }: {
@@ -27,12 +27,30 @@ export function CountrySelect({
   disabled?: boolean;
   error?: boolean;
   allowClear?: boolean;
+  options?: ReadonlyArray<{ code: string; name: string }>;
   className?: string;
   "aria-describedby"?: string;
 }) {
   const [open, setOpen] = React.useState(false);
-  const country = isPhoneCountry(value) ? value.toUpperCase() as CountryCode : null;
-  const countries = React.useMemo(() => getPhoneCountries(lang), [lang]);
+  const country = /^[A-Za-z]{2}$/.test(value.trim()) ? value.trim().toUpperCase() : null;
+  const phoneCountries = React.useMemo(() => getPhoneCountries(lang), [lang]);
+  const countries = React.useMemo<CountryPickerOption[]>(() => {
+    if (options === undefined) return phoneCountries;
+    const phoneCountryByCode = new Map<string, (typeof phoneCountries)[number]>(
+      phoneCountries.map((option) => [option.code, option]),
+    );
+    return options.flatMap((option): CountryPickerOption[] => {
+      const code = option.code.trim().toUpperCase();
+      if (!/^[A-Z]{2}$/.test(code)) return [];
+      const phoneCountry = phoneCountryByCode.get(code);
+      return [{
+        code,
+        name: option.name,
+        callingCode: phoneCountry?.callingCode ?? "",
+        flag: phoneCountry?.flag ?? flagEmoji(code),
+      }];
+    });
+  }, [options, phoneCountries]);
   const selected = country ? countries.find((option) => option.code === country) : null;
 
   return (
@@ -40,6 +58,7 @@ export function CountrySelect({
       <button
         id={id}
         type="button"
+        value={country ?? ""}
         disabled={disabled}
         onClick={() => setOpen(true)}
         aria-haspopup="dialog"
@@ -82,6 +101,7 @@ export function CountrySelect({
         onClear={allowClear ? () => onChange("") : undefined}
         lang={lang}
         mode="country"
+        countries={countries}
       />
     </>
   );

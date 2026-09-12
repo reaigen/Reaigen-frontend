@@ -21,8 +21,15 @@ import {
   updateLocalization,
   updatePersonalizedData,
   getBilling,
+  getBillingCatalog,
+  getBillingPayments,
   getUserCapabilities,
   updateBilling,
+  createBillingPortal,
+  createCreditCheckout,
+  createPaymentMethodCheckout,
+  createSubscriptionCheckout,
+  confirmBillingCheckout,
   changePassword,
   getAvailablePreferences,
   presignAvatar,
@@ -67,16 +74,15 @@ import {
   type ReaiImprovementConsent,
   type AccountQuotaUsage,
   type BillingAccount,
+  type BillingPayment,
+  type BillingCatalog,
+  type TrainingCatalog,
+  type TrainingCatalogProfile,
   type UserCapabilities,
-  type TrainingQuality,
-  type TrainingResolution,
 } from "../lib/api/client";
 import { getSafeApiErrorMessage } from "../lib/api/error-message";
 import { isEmailAddress, normalizeWebAddress } from "../lib/form-validation";
-import {
-  TRAINING_PROFILE_DEFAULTS,
-  parseTrainingIterations,
-} from "../lib/training-quality";
+import { parseTrainingIterations } from "../lib/training-quality";
 import {
   disableWebPushForUser,
   enableWebPushForUser,
@@ -1941,9 +1947,10 @@ function SettingsField({ label, children, hint }: { label: string; children: Rea
 /* ── Gaussian Training Tab ──────────────────────────────────────────── */
 
 function TrainingTab({ lang }: { lang: string }) {
-  const [quality, setQuality] = React.useState<TrainingQuality>("fast");
-  const [resolution, setResolution] = React.useState<TrainingResolution>("res2");
-  const [iterations, setIterations] = React.useState("5350");
+  const [profileCode, setProfileCode] = React.useState("");
+  const [resolution, setResolution] = React.useState("");
+  const [iterations, setIterations] = React.useState("");
+  const [trainingCatalog, setTrainingCatalog] = React.useState<TrainingCatalog | null>(null);
   const [loading, setLoading] = React.useState(true);
   const [loaded, setLoaded] = React.useState(false);
   const [saving, setSaving] = React.useState(false);
@@ -1951,36 +1958,62 @@ function TrainingTab({ lang }: { lang: string }) {
   const [saved, setSaved] = React.useState(false);
   useAutoDismiss(saved, setSaved);
 
+  const applyServerPreferences = React.useCallback((preferences: Awaited<ReturnType<typeof getPipelinePreferences>>) => {
+    const catalog = preferences.training_catalog;
+    const profiles = Array.isArray(catalog?.profiles) ? catalog.profiles : [];
+    const resolutions = Array.isArray(catalog?.resolutions) ? catalog.resolutions : [];
+    const selectedProfile = profiles.find(
+      (profile) => profile.code === preferences.training_quality,
+    );
+    const selectedResolution = resolutions.find(
+      (option) => option.code === preferences.default_training_resolution,
+    );
+    if (!selectedProfile || !selectedResolution) {
+      setTrainingCatalog(null);
+      setLoaded(false);
+      setError(t("settings.training.catalogUnavailable", lang));
+      return false;
+    }
+    setTrainingCatalog(catalog);
+    setProfileCode(selectedProfile.code);
+    setResolution(selectedResolution.code);
+    setIterations(String(preferences.default_training_iterations));
+    setLoaded(true);
+    return true;
+  }, [lang]);
+
   const loadPreferences = React.useCallback(() => {
     setLoading(true);
     setLoaded(false);
     setError(null);
     getPipelinePreferences()
-      .then((preferences) => {
-        setQuality(preferences.training_quality);
-        setResolution(preferences.default_training_resolution);
-        setIterations(String(preferences.default_training_iterations));
-        setLoaded(true);
-      })
+      .then(applyServerPreferences)
       .catch((err) => setError(getSafeApiErrorMessage(err, lang)))
       .finally(() => setLoading(false));
-  }, [lang]);
+  }, [applyServerPreferences, lang]);
 
   React.useEffect(() => { loadPreferences(); }, [loadPreferences]);
 
-  function applyProfile(value: string) {
-    const nextQuality = value as TrainingQuality;
-    const defaults = TRAINING_PROFILE_DEFAULTS[nextQuality];
-    setQuality(nextQuality);
-    setResolution(defaults.resolution);
-    setIterations(String(defaults.iterations));
+  const profiles = trainingCatalog?.profiles ?? [];
+  const resolutions = trainingCatalog?.resolutions ?? [];
+  const selectedProfile: TrainingCatalogProfile | null = profiles.find(
+    (profile) => profile.code === profileCode,
+  ) ?? null;
+  const selectedResolution = resolutions.find((option) => option.code === resolution) ?? null;
+
+  function applyProfile(code: string) {
+    const profile = profiles.find((option) => option.code === code);
+    if (!profile) return;
+    setProfileCode(profile.code);
+    setResolution(profile.default_resolution_code);
+    setIterations(String(profile.default_iterations));
   }
 
   async function handleSubmit(event: React.FormEvent) {
     event.preventDefault();
     setError(null);
-    const parsedIterations = parseTrainingIterations(iterations);
-    if (parsedIterations === null) {
+    const parsedIterations = parseTrainingIterations(iterations, selectedProfile);
+    if (!selectedProfile || !selectedResolution || parsedIterations === null) {
       setError(t("settings.training.iterationsError", lang));
       return;
     }
@@ -1988,14 +2021,11 @@ function TrainingTab({ lang }: { lang: string }) {
     try {
       setSaving(true);
       const preferences = await updatePipelinePreferences({
-        training_quality: quality,
+        training_quality: selectedProfile.code,
         default_training_resolution: resolution,
         default_training_iterations: parsedIterations,
       });
-      setQuality(preferences.training_quality);
-      setResolution(preferences.default_training_resolution);
-      setIterations(String(preferences.default_training_iterations));
-      setSaved(true);
+      if (applyServerPreferences(preferences)) setSaved(true);
     } catch (err) {
       setError(getSafeApiErrorMessage(err, lang));
     } finally {
@@ -2003,11 +2033,9 @@ function TrainingTab({ lang }: { lang: string }) {
     }
   }
 
-  const profileSummary = quality === "fast"
-    ? t("settings.training.fastHint", lang)
-    : quality === "balanced"
-      ? t("settings.training.balancedHint", lang)
-      : t("settings.training.qualityHint", lang);
+  const iterationRange = selectedProfile
+    ? `${selectedProfile.minimum_iterations.toLocaleString(lang)}–${selectedProfile.maximum_iterations.toLocaleString(lang)}`
+    : "—";
 
   return (
     <Card>
@@ -2018,7 +2046,7 @@ function TrainingTab({ lang }: { lang: string }) {
       <CardContent>
         {loading ? (
           <p className="py-8 text-center text-sm text-muted-foreground">{t("settings.training.loading", lang)}</p>
-        ) : !loaded ? (
+        ) : !loaded || !selectedProfile || !selectedResolution ? (
           <div className="flex flex-col items-center gap-3 py-8">
             {error && <p className="text-sm text-destructive" role="alert">{error}</p>}
             <Button type="button" variant="outline" size="sm" onClick={loadPreferences}>
@@ -2026,15 +2054,13 @@ function TrainingTab({ lang }: { lang: string }) {
             </Button>
           </div>
         ) : (
-          <form className="space-y-5" onSubmit={handleSubmit}>
+          <form className="space-y-5" onSubmit={handleSubmit} noValidate>
             <div className="rounded-2xl border border-border/65 bg-muted/20 px-4 py-3.5">
               <p className="text-[13px] font-medium">{t("settings.training.summary", lang)}</p>
-              <p className="mt-1 text-[12px] leading-relaxed text-muted-foreground">{profileSummary}</p>
+              <p className="mt-1 text-[12px] leading-relaxed text-muted-foreground">{selectedProfile.description}</p>
               <div className="mt-3 flex flex-wrap gap-2 text-[11px] font-medium text-foreground/70">
                 <span className="rounded-full bg-background px-2.5 py-1 shadow-sm">
-                  {resolution === "res1"
-                    ? t("settings.training.resolutionFull", lang)
-                    : t("settings.training.resolutionHalf", lang)}
+                  {selectedResolution.name}
                 </span>
                 <span className="rounded-full bg-background px-2.5 py-1 shadow-sm">
                   {Number(iterations || 0).toLocaleString()} {t("settings.training.iterationsShort", lang)}
@@ -2046,12 +2072,12 @@ function TrainingTab({ lang }: { lang: string }) {
               label={t("settings.training.profile", lang)}
               hint={t("settings.training.profileHint", lang)}
             >
-              <Select value={quality} onValueChange={applyProfile}>
+              <Select value={profileCode} onValueChange={applyProfile}>
                 <SelectTrigger aria-label={t("settings.training.profile", lang)}><SelectValue /></SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="fast">{t("settings.training.fast", lang)}</SelectItem>
-                  <SelectItem value="balanced">{t("settings.training.balanced", lang)}</SelectItem>
-                  <SelectItem value="quality">{t("settings.training.quality", lang)}</SelectItem>
+                  {profiles.map((profile) => (
+                    <SelectItem key={profile.code} value={profile.code}>{profile.name}</SelectItem>
+                  ))}
                 </SelectContent>
               </Select>
             </SettingsField>
@@ -2061,25 +2087,26 @@ function TrainingTab({ lang }: { lang: string }) {
             <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
               <SettingsField
                 label={t("settings.training.resolution", lang)}
-                hint={t("settings.training.resolutionHint", lang)}
+                hint={selectedResolution.description || undefined}
               >
-                <Select value={resolution} onValueChange={(value) => setResolution(value as TrainingResolution)}>
+                <Select value={resolution} onValueChange={setResolution}>
                   <SelectTrigger aria-label={t("settings.training.resolution", lang)}><SelectValue /></SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="res2">{t("settings.training.resolutionHalf", lang)}</SelectItem>
-                    <SelectItem value="res1">{t("settings.training.resolutionFull", lang)}</SelectItem>
+                    {resolutions.map((option) => (
+                      <SelectItem key={option.code} value={option.code}>{option.name}</SelectItem>
+                    ))}
                   </SelectContent>
                 </Select>
               </SettingsField>
               <SettingsField
                 label={t("settings.training.iterations", lang)}
-                hint={t("settings.training.iterationsHint", lang)}
+                hint={`${t("settings.training.iterationsHint", lang)} ${iterationRange}`}
               >
                 <Input
                   type="number"
-                  min={0}
-                  max={60000}
-                  step={50}
+                  min={selectedProfile.minimum_iterations}
+                  max={selectedProfile.maximum_iterations}
+                  step={selectedProfile.iteration_step}
                   inputMode="numeric"
                   value={iterations}
                   onChange={(event) => setIterations(event.target.value)}
@@ -2389,48 +2416,34 @@ function formatPlanLimit(value: number | null, lang: string): string {
   return String(value);
 }
 
-function fallbackQuota(used: number | null | undefined, limit: number | null): AccountQuotaUsage | null {
-  if (typeof used !== "number" || limit == null) return null;
-  return {
-    used,
-    limit,
-    remaining: limit === -1 ? null : Math.max(0, limit - used),
-    unlimited: limit === -1,
-    can_create: limit === -1 || (limit > 0 && used < limit),
-    period: "current",
-    period_start: null,
-  };
-}
-
-const tierBadgeColors: Record<string, string> = {
-  FREE: "bg-muted text-muted-foreground",
-  STANDARD: "bg-foreground/[0.05] text-foreground/65",
-  PRO: "bg-foreground/[0.07] text-foreground/72",
-  ENTERPRISE: "bg-foreground/[0.09] text-foreground/80",
-};
-
-function tierBadgeKey(code: string, lang: string): string {
-  const map: Record<string, string> = {
-    FREE: t("settings.billing.badgeFree", lang),
-    STANDARD: t("settings.billing.badgeStandard", lang),
-    PRO: t("settings.billing.badgePro", lang),
-    ENTERPRISE: t("settings.billing.badgeEnterprise", lang),
-  };
-  return map[code.toUpperCase()] ?? code;
+function catalogStatusName(catalog: BillingCatalog | null, category: string, code: string): string {
+  return catalog?.statuses[category]?.find((status) => status.code === code)?.name ?? "—";
 }
 
 function BillingTab({ user, onSaved, lang }: { user: UserProfile; onSaved: () => void; lang: string }) {
   const [liveBilling, setLiveBilling] = React.useState<BillingAccount | null>(user.billing_account);
   const [capabilities, setCapabilities] = React.useState<UserCapabilities | null>(null);
+  const [billingCatalog, setBillingCatalog] = React.useState<BillingCatalog | null>(null);
+  const [payments, setPayments] = React.useState<BillingPayment[] | null>(null);
+  const [paymentsLoadError, setPaymentsLoadError] = React.useState(false);
   const [accountRefreshing, setAccountRefreshing] = React.useState(true);
   const [accountRefreshError, setAccountRefreshError] = React.useState(false);
+  const [billingCycleChoice, setBillingCycleChoice] = React.useState(
+    user.billing_account?.billing_cycle ?? "",
+  );
+  const [paymentAction, setPaymentAction] = React.useState<string | null>(null);
+  const [paymentError, setPaymentError] = React.useState<string | null>(null);
+  const [checkoutMessage, setCheckoutMessage] = React.useState<string | null>(null);
+  const checkoutHandledRef = React.useRef(false);
   const ba = liveBilling ?? user.billing_account;
 
   // Billing address form
   const [billingName, setBillingName] = React.useState(ba?.billing_name ?? "");
   const [billingEmail, setBillingEmail] = React.useState(ba?.billing_email ?? "");
   const [billingAddress, setBillingAddress] = React.useState(ba?.billing_address ?? "");
+  const [billingAddressLine2, setBillingAddressLine2] = React.useState(ba?.billing_address_line2 ?? "");
   const [billingCity, setBillingCity] = React.useState(ba?.billing_city ?? "");
+  const [billingState, setBillingState] = React.useState(ba?.billing_state ?? "");
   const [billingPostal, setBillingPostal] = React.useState(ba?.billing_postal_code ?? "");
   const [billingCountry, setBillingCountry] = React.useState(ba?.billing_country ?? "");
   const [vat, setVat] = React.useState(ba?.vat_number ?? "");
@@ -2443,15 +2456,38 @@ function BillingTab({ user, onSaved, lang }: { user: UserProfile; onSaved: () =>
 
   const refreshAccountState = React.useCallback(async () => {
     setAccountRefreshing(true);
-    const [billingResult, capabilitiesResult] = await Promise.allSettled([getBilling(), getUserCapabilities()]);
+    const [
+      billingResult,
+      capabilitiesResult,
+      catalogResult,
+      paymentsResult,
+    ] = await Promise.allSettled([
+      getBilling(),
+      getUserCapabilities(),
+      getBillingCatalog(),
+      getBillingPayments(),
+    ]);
     if (billingResult.status === "fulfilled") {
       setLiveBilling(billingResult.value);
     }
     if (capabilitiesResult.status === "fulfilled") {
       setCapabilities(capabilitiesResult.value);
     }
+    if (catalogResult.status === "fulfilled") {
+      setBillingCatalog(catalogResult.value);
+      setBillingCycleChoice((current) => current || catalogResult.value.cycles[0]?.code || "");
+    }
+    if (paymentsResult.status === "fulfilled") {
+      setPayments(paymentsResult.value);
+      setPaymentsLoadError(false);
+    } else {
+      setPaymentsLoadError(true);
+    }
     setAccountRefreshError(
-      billingResult.status === "rejected" || capabilitiesResult.status === "rejected",
+      billingResult.status === "rejected"
+        || capabilitiesResult.status === "rejected"
+        || catalogResult.status === "rejected"
+        || paymentsResult.status === "rejected",
     );
     setAccountRefreshing(false);
   }, []);
@@ -2471,17 +2507,49 @@ function BillingTab({ user, onSaved, lang }: { user: UserProfile; onSaved: () =>
   }, [refreshAccountState]);
 
   React.useEffect(() => {
+    if (checkoutHandledRef.current) return;
+    checkoutHandledRef.current = true;
+    const params = new URLSearchParams(window.location.search);
+    const checkoutState = params.get("checkout");
+    const sessionId = params.get("session_id");
+    if (checkoutState === "canceled") {
+      setCheckoutMessage("canceled");
+    } else if (checkoutState === "success" && sessionId) {
+      setPaymentAction("confirm");
+      void confirmBillingCheckout(sessionId)
+        .then(async (checkout) => {
+          setCheckoutMessage(checkout.status);
+          await refreshAccountState();
+        })
+        .catch((err) => setPaymentError(getSafeApiErrorMessage(err, lang)))
+        .finally(() => setPaymentAction(null));
+    }
+    if (checkoutState) {
+      params.delete("checkout");
+      params.delete("session_id");
+      const query = params.toString();
+      window.history.replaceState(
+        {},
+        "",
+        `${window.location.pathname}${query ? `?${query}` : ""}${window.location.hash || "#billing"}`,
+      );
+    }
+  }, [lang, refreshAccountState]);
+
+  React.useEffect(() => {
     if (billingDirty) return;
     setBillingName(ba?.billing_name ?? "");
     setBillingEmail(ba?.billing_email ?? "");
     setBillingAddress(ba?.billing_address ?? "");
+    setBillingAddressLine2(ba?.billing_address_line2 ?? "");
     setBillingCity(ba?.billing_city ?? "");
+    setBillingState(ba?.billing_state ?? "");
     setBillingPostal(ba?.billing_postal_code ?? "");
     setBillingCountry(ba?.billing_country ?? "");
     setVat(ba?.vat_number ?? "");
   }, [ba, billingDirty]);
 
-  const hasAddressData = !!(billingName || billingEmail || billingAddress || billingCity || billingPostal || billingCountry || vat);
+  const hasAddressData = !!(billingName || billingEmail || billingAddress || billingAddressLine2 || billingCity || billingState || billingPostal || billingCountry || vat);
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -2498,7 +2566,9 @@ function BillingTab({ user, onSaved, lang }: { user: UserProfile; onSaved: () =>
         billing_name: billingName.trim(),
         billing_email: billingEmail.trim(),
         billing_address: billingAddress.trim(),
+        billing_address_line2: billingAddressLine2.trim(),
         billing_city: billingCity.trim(),
+        billing_state: billingState.trim(),
         billing_postal_code: billingPostal.trim(),
         billing_country: billingCountry.trim().toUpperCase(),
         vat_number: vat.trim(),
@@ -2514,46 +2584,63 @@ function BillingTab({ user, onSaved, lang }: { user: UserProfile; onSaved: () =>
     }
   }
 
-  const cycleLabel = ba?.billing_cycle === "monthly"
-    ? t("settings.billing.cycleMonthly", lang)
-    : ba?.billing_cycle === "yearly"
-      ? t("settings.billing.cycleYearly", lang)
-      : t("settings.billing.cycleNa", lang);
+  async function beginHostedBilling(action: string, create: () => Promise<{ url: string }>) {
+    setPaymentAction(action);
+    setPaymentError(null);
+    setCheckoutMessage(null);
+    try {
+      const checkout = await create();
+      window.location.assign(checkout.url);
+    } catch (err) {
+      setPaymentError(getSafeApiErrorMessage(err, lang));
+      setPaymentAction(null);
+    }
+  }
+
+  const cycleLabel = billingCatalog?.cycles.find(
+    (cycle) => cycle.code === ba?.billing_cycle,
+  )?.name ?? t("settings.billing.cycleNa", lang);
 
   const usage = capabilities?.usage ?? null;
   const tier = ba?.subscription_tier_detail;
-  const tierCode = (capabilities?.tier.code ?? tier?.code ?? "FREE").toUpperCase();
+  const tierCode = (capabilities?.tier.code ?? tier?.code ?? "").toUpperCase();
   const tierName = capabilities?.tier.name ?? tier?.name ?? "—";
   const reaigenAllowed = usage?.products.reaigen?.allowed
     ?? (capabilities ? Boolean(capabilities.apps.reaigen) : null);
   const reailistAllowed = usage?.products.reailist?.allowed
     ?? (capabilities ? Boolean(capabilities.apps.reailist) : null);
   const draftsQuota = usage?.drafts ?? null;
-  const postsQuota = usage?.posts
-    ?? fallbackQuota(ba?.current_posts_count, numericLimit(capabilities, "max_posts"));
+  const postsQuota = usage?.posts ?? null;
   const descriptionsQuota = usage?.ai_descriptions ?? null;
   const credits = usage?.credits ?? ba?.compute_credits ?? null;
-  const creditCosts = usage?.credit_costs ?? {};
-  const planFunctions: Array<{ key: string; label: LocaleKey }> = [
-    { key: "basic_upload", label: "settings.billing.functionBasicUpload" },
-    { key: "image_upload", label: "settings.billing.functionImageUpload" },
-    { key: "ai_processing", label: "settings.billing.functionAiProcessing" },
-    { key: "3d_processing", label: "settings.billing.function3dProcessing" },
-    { key: "agent_access", label: "settings.billing.functionAgent" },
-    { key: "web_scene_authoring", label: "settings.billing.functionWebCreation" },
-  ];
+  const planFunctions = billingCatalog?.plan_features ?? [];
   const uploadsPerDraft = numericLimit(capabilities, "max_uploads_per_draft");
   const processingJobs = numericLimit(capabilities, "max_processing_jobs");
-  const trialActive = ba?.subscription_status === "trial" && !!ba?.trial_ends_at;
-  const trialDaysLeft = trialActive
-    ? Math.max(
-        0,
-        Math.ceil(
-          (new Date(ba!.trial_ends_at as string).getTime() - Date.now()) /
-            86_400_000,
-        ),
-      )
+  const trialActive = ba?.is_trial === true;
+  const trialDaysLeft = trialActive ? ba?.days_until_expiry ?? null : null;
+  const selfServeTiers = (billingCatalog?.tiers ?? []).filter((option) => (
+    option.code !== tierCode && option.checkout_enabled
+  ));
+  const providerStatus = billingCatalog?.provider ?? null;
+  const creditPacks = billingCatalog?.credit_packs ?? [];
+  const paymentsReady = providerStatus?.configured === true
+    && providerStatus.enabled
+    && providerStatus.checkout_sales_enabled
+    && providerStatus.supports_checkout;
+  const paymentMethodReady = providerStatus?.configured === true
+    && providerStatus.enabled
+    && providerStatus.supports_payment_methods;
+  const portalReady = providerStatus?.configured === true
+    && providerStatus.enabled
+    && providerStatus.supports_portal
+    && providerStatus.portal_enabled;
+  const creditBalanceStatus = billingCatalog?.credit_balance_status ?? null;
+  const checkoutMessageStatus = checkoutMessage
+    ? billingCatalog?.statuses.checkout?.find((status) => status.code === checkoutMessage) ?? null
     : null;
+  const customPricingStatus = billingCatalog?.statuses.pricing?.find(
+    (status) => status.code === "custom",
+  ) ?? null;
 
   return (
     <div className="space-y-6">
@@ -2583,25 +2670,217 @@ function BillingTab({ user, onSaved, lang }: { user: UserProfile; onSaved: () =>
           <dl className="rounded-lg border border-border/65 px-4">
             <DataRow
               label={t("settings.billing.plan", lang)}
-              value={
-                <span className="flex items-center gap-2">
-                  {tierName}
-                  <span className={cn("rounded-full px-2.5 py-0.5 text-[11px] font-semibold", tierBadgeColors[tierCode] ?? tierBadgeColors.FREE)}>
-                    {tierBadgeKey(tierCode, lang)}
-                  </span>
-                </span>
-              }
+              value={tierName}
             />
-            <DataRow label={t("settings.billing.status", lang)} value={ba?.subscription_status ?? "—"} />
+            <DataRow
+              label={t("settings.billing.status", lang)}
+              value={ba?.subscription_status
+                ? catalogStatusName(billingCatalog, "subscription", ba.subscription_status)
+                : "—"}
+            />
             <DataRow label={t("settings.billing.cycle", lang)} value={cycleLabel} />
             {trialActive && trialDaysLeft != null && (
               <DataRow label={t("settings.billing.trial", lang)} value={`${trialDaysLeft} ${t("settings.billing.trialDaysLeft", lang)}`} />
             )}
             {tier?.is_custom_pricing && (
-              <DataRow label={t("settings.billing.pricing", lang)} value={t("settings.billing.customPricing", lang)} />
+              <DataRow label={t("settings.billing.pricing", lang)} value={customPricingStatus?.name ?? "—"} />
             )}
-            <DataRow label={t("settings.billing.provider", lang)} value={ba?.payment_provider || t("common.none", lang)} />
+            <DataRow
+              label={t("settings.billing.provider", lang)}
+              value={providerStatus?.name || t("common.none", lang)}
+            />
           </dl>
+        </CardContent>
+      </Card>
+
+      <Card data-testid="billing-payments">
+        <CardHeader>
+          <CardTitle>{t("settings.billing.paymentTitle", lang)}</CardTitle>
+          <CardDescription>{t("settings.billing.paymentSubtitle", lang)}</CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className={cn(
+            "rounded-2xl border px-4 py-3",
+            paymentsReady ? "border-success/30 bg-success/5" : "border-border/65 bg-muted/25",
+          )}>
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div>
+                <p className="text-[13px] font-semibold">
+                  {providerStatus == null
+                    ? t("settings.billing.checking", lang)
+                    : providerStatus.connection_status?.name ?? "—"}
+                </p>
+                <p className="mt-1 text-[12px] text-muted-foreground">
+                  {providerStatus?.connection_status?.description
+                    || providerStatus?.description
+                    || "—"}
+                </p>
+              </div>
+              <span className="rounded-full bg-background px-2.5 py-1 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
+                {providerStatus?.name ?? "—"}
+              </span>
+            </div>
+          </div>
+
+          <dl className="rounded-2xl border border-border/65 px-4">
+            <DataRow
+              label={t("settings.billing.paymentMethod", lang)}
+              value={providerStatus?.payment_method || ba?.payment_method || t("settings.billing.noPaymentMethod", lang)}
+            />
+            {ba?.last_payment_date && ba.last_payment_amount && (
+              <DataRow
+                label={t("settings.billing.lastPayment", lang)}
+                value={ba.last_payment_display || "—"}
+              />
+            )}
+          </dl>
+
+          {checkoutMessageStatus && (
+            <p
+              className={cn(
+                "text-[12px]",
+                checkoutMessageStatus.is_success ? "text-success" : "text-muted-foreground",
+              )}
+              role="status"
+            >
+              {checkoutMessageStatus.description || checkoutMessageStatus.name}
+            </p>
+          )}
+          {paymentError && <p className="text-[12px] text-destructive" role="alert">{paymentError}</p>}
+
+          <div className="flex flex-wrap gap-2">
+            <Button
+              type="button"
+              size="sm"
+              variant="outline"
+              disabled={!paymentMethodReady}
+              loading={paymentAction === "payment-method"}
+              onClick={() => void beginHostedBilling("payment-method", createPaymentMethodCheckout)}
+            >
+              {t("settings.billing.addPaymentMethod", lang)}
+            </Button>
+            <Button
+              type="button"
+              size="sm"
+              variant="outline"
+              disabled={!portalReady}
+              loading={paymentAction === "portal"}
+              onClick={() => void beginHostedBilling("portal", createBillingPortal)}
+            >
+              {t("settings.billing.manageBilling", lang)}
+            </Button>
+          </div>
+
+          <Separator />
+
+          <div className="space-y-3">
+            <div className="flex flex-wrap items-end justify-between gap-3">
+              <div>
+                <p className="text-[13px] font-semibold">{t("settings.billing.plansTitle", lang)}</p>
+                <p className="mt-1 text-[12px] text-muted-foreground">{t("settings.billing.plansSubtitle", lang)}</p>
+              </div>
+              <Select
+                value={billingCycleChoice}
+                onValueChange={setBillingCycleChoice}
+              >
+                <SelectTrigger className="w-40" aria-label={t("settings.billing.chooseCycle", lang)}>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {(billingCatalog?.cycles ?? []).map((cycle) => (
+                    <SelectItem key={cycle.code} value={cycle.code}>
+                      {cycle.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            {providerStatus?.subscription_connected ? (
+              <p className="rounded-xl bg-muted/35 px-3 py-2.5 text-[12px] text-muted-foreground">
+                {t("settings.billing.manageExistingPlan", lang)}
+              </p>
+            ) : (
+              <div className="grid gap-2 sm:grid-cols-2">
+                {selfServeTiers.map((option) => {
+                  const price = option.prices.find(
+                    (candidate) => candidate.cycle_code === billingCycleChoice,
+                  );
+                  const action = `tier-${option.code}-${billingCycleChoice}`;
+                  return (
+                    <div key={option.code} className="rounded-2xl border border-border/65 p-4">
+                      <div className="flex items-start justify-between gap-3">
+                        <div>
+                          <p className="text-[13px] font-semibold">{option.name}</p>
+                          {option.description && <p className="mt-1 text-[11px] text-muted-foreground">{option.description}</p>}
+                        </div>
+                        <span className="text-[13px] font-semibold">
+                          {price?.display_price ?? "—"}
+                        </span>
+                      </div>
+                      <Button
+                        type="button"
+                        size="xs"
+                        className="mt-3"
+                        disabled={!paymentsReady || !price}
+                        loading={paymentAction === action}
+                        onClick={() => void beginHostedBilling(
+                          action,
+                          () => createSubscriptionCheckout(option.code, billingCycleChoice),
+                        )}
+                      >
+                        {t("settings.billing.subscribe", lang)}
+                      </Button>
+                    </div>
+                  );
+                })}
+                {selfServeTiers.length === 0 && (
+                  <p className="text-[12px] text-muted-foreground">{t("settings.billing.noPlanChanges", lang)}</p>
+                )}
+              </div>
+            )}
+          </div>
+
+          <Separator />
+
+          <div>
+            <p className="mb-3 text-[13px] font-semibold">{t("settings.billing.historyTitle", lang)}</p>
+            {paymentsLoadError && payments == null ? (
+              <p className="text-[12px] text-destructive" role="alert">
+                {t("settings.billing.historyLoadError", lang)}
+              </p>
+            ) : payments == null ? (
+              <p className="text-[12px] text-muted-foreground">{t("settings.billing.checking", lang)}</p>
+            ) : payments.length === 0 ? (
+              <p className="text-[12px] text-muted-foreground">{t("settings.billing.historyEmpty", lang)}</p>
+            ) : (
+              <>
+                {paymentsLoadError && (
+                  <p className="mb-2 text-[12px] text-destructive" role="alert">
+                    {t("settings.billing.historyLoadError", lang)}
+                  </p>
+                )}
+                <div className="divide-y divide-border/65 rounded-2xl border border-border/65 px-4">
+                  {payments.slice(0, 8).map((payment) => (
+                    <div key={payment.id} className="flex items-center justify-between gap-4 py-3 text-[12px]">
+                      <div className="min-w-0">
+                        <p className="truncate font-medium">{payment.description}</p>
+                        <p className="mt-0.5 text-muted-foreground">
+                          {fmtDate(payment.paid_at, null, lang)} · {catalogStatusName(
+                            billingCatalog,
+                            "payment",
+                            payment.status,
+                          )}
+                        </p>
+                      </div>
+                      <span className="shrink-0 font-semibold">
+                        {payment.display_amount}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              </>
+            )}
+          </div>
         </CardContent>
       </Card>
 
@@ -2699,16 +2978,13 @@ function BillingTab({ user, onSaved, lang }: { user: UserProfile; onSaved: () =>
         <CardContent className="space-y-3">
           <div className="grid overflow-hidden rounded-2xl border border-border/65 sm:grid-cols-2">
             {planFunctions.map((item) => {
-              const enabled = capabilities == null || reaigenAllowed == null
-                ? null
-                : reaigenAllowed && Boolean(capabilities.features[item.key]);
               return (
                 <div
-                  key={item.key}
+                  key={item.code}
                   className="flex min-h-12 items-center justify-between gap-3 border-b border-border/65 px-4 py-3 last:border-b-0 sm:[&:nth-last-child(-n+2)]:border-b-0 sm:[&:nth-child(odd)]:border-r"
                 >
-                  <span className="text-[13px] font-medium">{t(item.label, lang)}</span>
-                  <AccessPill allowed={enabled} lang={lang} mode="inclusion" />
+                  <span className="text-[13px] font-medium">{item.name}</span>
+                  <AccessPill allowed={item.enabled} lang={lang} mode="inclusion" />
                 </div>
               );
             })}
@@ -2742,8 +3018,8 @@ function BillingTab({ user, onSaved, lang }: { user: UserProfile; onSaved: () =>
               <p className="mt-6 flex items-baseline gap-2">
                 <span className="text-3xl font-light tracking-tight">
                   {credits?.unlimited
-                    ? t("settings.billing.creditsUnlimited", lang)
-                    : credits?.total ?? "—"}
+                    ? creditBalanceStatus?.name ?? "—"
+                    : credits?.spendable ?? "—"}
                 </span>
                 {credits && !credits.unlimited && (
                   <span className="text-[12px] text-background/60">
@@ -2751,13 +3027,18 @@ function BillingTab({ user, onSaved, lang }: { user: UserProfile; onSaved: () =>
                   </span>
                 )}
               </p>
+              {creditBalanceStatus && !credits?.unlimited && (
+                <span className="mt-2 text-[11px] text-background/60">
+                  {creditBalanceStatus.name}
+                </span>
+              )}
             </div>
             <dl className="rounded-2xl border border-border/65 px-4">
               <DataRow
                 label={t("settings.billing.creditsIncluded", lang)}
                 value={credits
                   ? credits.unlimited
-                    ? t("settings.billing.creditsUnlimited", lang)
+                    ? creditBalanceStatus?.name ?? "—"
                     : `${credits.included} / ${credits.monthly_allowance}`
                   : "—"}
               />
@@ -2776,20 +3057,59 @@ function BillingTab({ user, onSaved, lang }: { user: UserProfile; onSaved: () =>
               {t("settings.billing.creditCosts", lang)}
             </p>
             <div className="grid gap-2 sm:grid-cols-2">
-              <div className="flex items-center justify-between rounded-xl bg-muted/35 px-3 py-2.5 text-[12px]">
-                <span className="text-muted-foreground">{t("settings.billing.creditMapping", lang)}</span>
-                <span className="font-semibold">
-                  {creditCosts.mapping ?? "—"} {creditCosts.mapping != null ? t("settings.billing.creditUnit", lang) : ""}
-                </span>
-              </div>
-              <div className="flex items-center justify-between rounded-xl bg-muted/35 px-3 py-2.5 text-[12px]">
-                <span className="text-muted-foreground">{t("settings.billing.creditSplatTraining", lang)}</span>
-                <span className="font-semibold">
-                  {creditCosts.splat_training ?? "—"} {creditCosts.splat_training != null ? t("settings.billing.creditUnit", lang) : ""}
-                </span>
-              </div>
+              {(billingCatalog?.compute_jobs ?? []).map((job) => (
+                <div
+                  key={job.code}
+                  className="flex items-center justify-between gap-3 rounded-xl bg-muted/35 px-3 py-2.5 text-[12px]"
+                  title={job.description}
+                >
+                  <span className="text-muted-foreground">{job.name}</span>
+                  <span className="shrink-0 font-semibold">
+                    {job.credits_cost} {t("settings.billing.creditUnit", lang)}
+                  </span>
+                </div>
+              ))}
             </div>
           </div>
+          {creditPacks.length > 0 && !credits?.unlimited && (
+            <div className="rounded-2xl border border-border/65 p-4">
+              <p className="text-[12px] font-semibold">{t("settings.billing.topupsTitle", lang)}</p>
+              <p className="mt-1 text-[11px] text-muted-foreground">{t("settings.billing.topupsSubtitle", lang)}</p>
+              <div className="mt-3 grid gap-2 sm:grid-cols-3">
+                {creditPacks.map((pack) => {
+                  const action = `pack-${pack.code}`;
+                  return (
+                    <div key={pack.code} className="rounded-xl bg-muted/35 p-3">
+                      <p className="text-[13px] font-semibold">{pack.name}</p>
+                      {pack.description && (
+                        <p className="mt-1 text-[11px] text-muted-foreground">{pack.description}</p>
+                      )}
+                      <p className="mt-1 text-[12px] text-muted-foreground">
+                        {pack.credits} {t("settings.billing.creditUnit", lang)}
+                      </p>
+                      <p className="mt-1 text-[12px] text-muted-foreground">
+                        {pack.display_price}
+                      </p>
+                      <Button
+                        type="button"
+                        size="xs"
+                        variant="outline"
+                        className="mt-3"
+                        disabled={!paymentsReady}
+                        loading={paymentAction === action}
+                        onClick={() => void beginHostedBilling(
+                          action,
+                          () => createCreditCheckout(pack.code),
+                        )}
+                      >
+                        {t("settings.billing.buyCredits", lang)}
+                      </Button>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
         </CardContent>
       </Card>
 
@@ -2815,11 +3135,17 @@ function BillingTab({ user, onSaved, lang }: { user: UserProfile; onSaved: () =>
                 </FormField>
               </div>
               <FormField id="settings-billing-address" label={t("settings.billing.address", lang)}>
-                {(control) => <Input {...control} value={billingAddress} onChange={(e) => { setBillingAddress(e.target.value); setBillingDirty(true); }} autoComplete="street-address" />}
+                {(control) => <Input {...control} value={billingAddress} onChange={(e) => { setBillingAddress(e.target.value); setBillingDirty(true); }} autoComplete="address-line1" />}
+              </FormField>
+              <FormField id="settings-billing-address-line2" label={t("settings.billing.addressLine2", lang)}>
+                {(control) => <Input {...control} value={billingAddressLine2} onChange={(e) => { setBillingAddressLine2(e.target.value); setBillingDirty(true); }} autoComplete="address-line2" />}
               </FormField>
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
                 <FormField id="settings-billing-city" label={t("settings.billing.city", lang)}>
                   {(control) => <Input {...control} value={billingCity} onChange={(e) => { setBillingCity(e.target.value); setBillingDirty(true); }} autoComplete="address-level2" />}
+                </FormField>
+                <FormField id="settings-billing-state" label={t("settings.billing.state", lang)}>
+                  {(control) => <Input {...control} value={billingState} onChange={(e) => { setBillingState(e.target.value); setBillingDirty(true); }} autoComplete="address-level1" />}
                 </FormField>
                 <FormField id="settings-billing-postal" label={t("settings.billing.postalCode", lang)}>
                   {(control) => <Input {...control} value={billingPostal} onChange={(e) => { setBillingPostal(e.target.value); setBillingDirty(true); }} autoComplete="postal-code" />}
@@ -2831,15 +3157,17 @@ function BillingTab({ user, onSaved, lang }: { user: UserProfile; onSaved: () =>
                       value={billingCountry}
                       onChange={(nextCountry) => { setBillingCountry(nextCountry); setBillingDirty(true); }}
                       lang={lang}
+                      options={billingCatalog?.countries ?? []}
+                      disabled={!billingCatalog}
                       allowClear
                       aria-describedby={control["aria-describedby"]}
                     />
                   )}
                 </FormField>
-                <FormField id="settings-billing-vat" label={t("settings.billing.vat", lang)}>
-                  {(control) => <Input {...control} value={vat} onChange={(e) => { setVat(e.target.value); setBillingDirty(true); }} />}
-                </FormField>
               </div>
+              <FormField id="settings-billing-vat" label={t("settings.billing.vat", lang)}>
+                {(control) => <Input {...control} value={vat} onChange={(e) => { setVat(e.target.value); setBillingDirty(true); }} />}
+              </FormField>
               {error && <p className="text-[12px] text-destructive" role="alert">{error}</p>}
               {success && <p className="text-[12px] text-success" role="status">{t("settings.billing.saved", lang)}</p>}
               <div className="pt-2">

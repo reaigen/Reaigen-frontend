@@ -1,21 +1,31 @@
-import type { TrainingQuality, TrainingResolution } from "./api/client";
-
-export interface TrainingProfileDefaults {
-  resolution: TrainingResolution;
-  iterations: number;
+export interface TrainingIterationPolicy {
+  minimum_iterations: number;
+  maximum_iterations: number;
+  iteration_step: number;
 }
 
-export const TRAINING_PROFILE_DEFAULTS: Record<TrainingQuality, TrainingProfileDefaults> = {
-  fast: { resolution: "res2", iterations: 5350 },
-  balanced: { resolution: "res2", iterations: 15000 },
-  quality: { resolution: "res1", iterations: 30000 },
-};
-
-export function parseTrainingIterations(value: unknown): number | null {
+/** Validate against the active Django lookup; this module owns no GPU limits. */
+export function parseTrainingIterations(
+  value: unknown,
+  policy: TrainingIterationPolicy | null | undefined,
+): number | null {
+  if (!policy) return null;
+  const minimum = policy.minimum_iterations;
+  const maximum = policy.maximum_iterations;
+  const step = policy.iteration_step;
+  if (
+    !Number.isInteger(minimum)
+    || !Number.isInteger(maximum)
+    || !Number.isInteger(step)
+    || minimum < 1
+    || maximum < minimum
+    || step < 1
+  ) return null;
   if (typeof value === "string" && value.trim() === "") return null;
   if (typeof value !== "string" && typeof value !== "number") return null;
   const parsed = Number(value);
   if (!Number.isInteger(parsed)) return null;
-  if (parsed !== 0 && (parsed < 1000 || parsed > 60000)) return null;
+  if (parsed < minimum || parsed > maximum) return null;
+  if ((parsed - minimum) % step !== 0) return null;
   return parsed;
 }

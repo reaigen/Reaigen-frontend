@@ -54,7 +54,7 @@ test("required setup fields react after blur and explain rejected submits", () =
   assert.ok((setup.match(/noValidate/g) ?? []).length >= 4);
 });
 
-test("country and phone fields use the same searchable metadata catalogue", () => {
+test("country and phone fields use searchable pickers with server-owned billing choices", () => {
   assert.match(setup, /id="setup-country"[\s\S]*?<CountrySelect/);
   assert.match(setup, /id="setup-billing-country"[\s\S]*?<CountrySelect/);
   assert.match(settings, /id="seller-country"[\s\S]*?<CountrySelect/);
@@ -63,6 +63,8 @@ test("country and phone fields use the same searchable metadata catalogue", () =
   assert.match(phoneInput, /<CountryPickerSheet/);
   assert.match(countryPicker, /getPhoneCountries\(lang\)/);
   assert.match(countryPicker, /<SearchField/);
+  assert.match(setup, /id="setup-billing-country"[\s\S]*?options=\{billingCountries\}/);
+  assert.match(settings, /id="settings-billing-country"[\s\S]*?options=\{billingCatalog\?\.countries \?\? \[\]\}/);
 });
 
 test("account forms have no fake identity, handle, domain, or country placeholders", () => {

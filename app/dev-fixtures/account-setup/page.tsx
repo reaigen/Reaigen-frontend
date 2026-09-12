@@ -31,7 +31,7 @@ const BASE_USER = {
   personalized_data: { onboarding_completed: false, onboarding_skipped: false, onboarding_step: 0, preferences: {} },
   billing_account: {
     id: 1,
-    subscription_tier_detail: { code: "FREE", name: "Free", max_posts: 3, max_storage_gb: 0, can_use_ai_processing: false, can_use_3d_processing: false },
+    subscription_tier_detail: { code: "FREE", name: "Free" },
     subscription_status: "active",
     billing_cycle: "monthly",
     is_trial: false,
@@ -45,7 +45,9 @@ const BASE_USER = {
     billing_name: "",
     billing_email: "",
     billing_address: "",
+    billing_address_line2: "",
     billing_city: "",
+    billing_state: "",
     billing_postal_code: "",
     billing_country: "",
     vat_number: "",
