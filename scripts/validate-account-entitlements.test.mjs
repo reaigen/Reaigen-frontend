@@ -24,6 +24,10 @@ const api = fs.readFileSync(path.join(root, "app/lib/api/client.ts"), "utf8");
 const apiErrors = fs.readFileSync(path.join(root, "app/lib/api/error-message.ts"), "utf8");
 const trainingValidation = fs.readFileSync(path.join(root, "app/lib/training-quality.ts"), "utf8");
 const english = fs.readFileSync(path.join(root, "app/lib/locales/en.ts"), "utf8");
+const englishBilling = english.slice(
+  english.indexOf("// Billing"),
+  english.indexOf('"settings.security.title"'),
+);
 
 test("settings refreshes every billing and entitlement fact from the backend", () => {
   const refreshBlock = settings.slice(
@@ -33,8 +37,8 @@ test("settings refreshes every billing and entitlement fact from the backend", (
   for (const request of [
     "getBilling()",
     "getUserCapabilities()",
-    "getBillingCatalog()",
-    "getBillingPayments()",
+    "getBillingCatalog(lang)",
+    "getBillingPayments(lang)",
   ]) {
     assert.ok(refreshBlock.includes(request), `${request} must be part of the account refresh`);
   }
@@ -49,11 +53,11 @@ test("settings refreshes every billing and entitlement fact from the backend", (
   );
   assert.match(
     api,
-    /getBillingCatalog[\s\S]{0,160}freshRequest\("\/api\/reaigen\/billing\/catalog\/"\)/,
+    /getBillingCatalog[\s\S]{0,260}freshRequest\(`\/api\/reaigen\/billing\/catalog\/\$\{query\}`\)/,
   );
   assert.match(
     api,
-    /getBillingPayments[\s\S]{0,180}"\/api\/reaigen\/billing\/payments\/"/,
+    /getBillingPayments[\s\S]{0,260}`\/api\/reaigen\/billing\/payments\/\$\{query\}`/,
   );
   const paymentsClient = api.slice(
     api.indexOf("export async function getBillingPayments"),
@@ -64,14 +68,43 @@ test("settings refreshes every billing and entitlement fact from the backend", (
   assert.doesNotMatch(paymentsClient, /results \?\? \[\]/);
 });
 
-test("settings never treats the deprecated tier post mirror as permission", () => {
+test("settings never exposes the internal publication product in billing", () => {
   const billingTab = settings.slice(
     settings.indexOf("function BillingTab"),
     settings.indexOf("/* ── Security Tab"),
   );
   assert.doesNotMatch(billingTab, /tier\?\.max_posts/);
-  assert.match(billingTab, /data-testid="reailist-access"/);
-  assert.match(billingTab, /productAllowed=\{reailistAllowed\}/);
+  assert.doesNotMatch(billingTab, /reailist/i);
+  assert.doesNotMatch(upgrade, /reailist/i);
+  assert.doesNotMatch(englishBilling, /reailist/i);
+});
+
+test("billing presentation is neutral and requests the selected locale", () => {
+  const billingTab = settings.slice(
+    settings.indexOf("function BillingTab"),
+    settings.indexOf("/* ── Security Tab"),
+  );
+  assert.doesNotMatch(billingTab, /(?:text|bg|border)-(?:success|green|emerald|lime)/);
+  assert.doesNotMatch(upgrade, /(?:text|bg|border)-(?:success|green|emerald|lime)/);
+  assert.match(api, /getBillingCatalog\(language\?: string\)/);
+  assert.match(api, /language=\$\{encodeURIComponent\(language\)\}/);
+  assert.match(billingTab, /getBillingCatalog\(lang\)/);
+  assert.match(upgrade, /getBillingCatalog\(lang\)/);
+  assert.match(billingTab, /billingCatalog\?\.account\?\.current_tier_name/);
+  assert.match(billingTab, /currentCatalogTier\?\.limits\?\.find/);
+  assert.doesNotMatch(englishBilling, /Django|billing server|server permission|backend verifies/i);
+});
+
+test("settings hides the plan chooser when Django reports no upgrades", () => {
+  const billingTab = settings.slice(
+    settings.indexOf("function BillingTab"),
+    settings.indexOf("/* ── Security Tab"),
+  );
+  assert.match(billingTab, /billingCatalog\?\.upgrade_options \?\? \[\]/);
+  assert.match(billingTab, /upgradeOptions\.length > 0/);
+  assert.match(billingTab, /data-testid="no-plan-upgrades"/);
+  assert.match(upgrade, /const upgradeOptions = catalog\.upgrade_options \?\? \[\]/);
+  assert.match(upgrade, /upgradeOptions\.length > 0/);
 });
 
 test("credits and plan functions remain visible while live data loads", () => {
@@ -140,7 +173,7 @@ test("insufficient-credit handling uses the structured API code", () => {
 test("the authenticated upgrade view uses Django offers and server previews", () => {
   assert.match(upgradePage, /useAuth\(\)/);
   assert.match(upgradePage, /<BillingUpgradeFlow lang=\{lang\}/);
-  assert.match(upgrade, /getBillingCatalog\(\)/);
+  assert.match(upgrade, /getBillingCatalog\(lang\)/);
   assert.match(api, /upgrade_options\?: BillingTierOption\[\]/);
   assert.match(upgrade, /const upgradeOptions = catalog\.upgrade_options \?\? \[\]/);
   assert.match(upgrade, /upgradeOptions\.map\(\(tier\)/);
@@ -151,10 +184,10 @@ test("the authenticated upgrade view uses Django offers and server previews", ()
   assert.match(upgrade, /tier\.features\?\.find\(/);
   assert.match(upgrade, /pack\.display_price/);
   assert.match(upgrade, /pack\.action/);
-  assert.match(upgrade, /previewSubscriptionCheckout\(tier\.code, cycle\)/);
-  assert.match(upgrade, /previewCreditCheckout\(pack\.code\)/);
+  assert.match(upgrade, /previewSubscriptionCheckout\(tier\.code, cycle, lang\)/);
+  assert.match(upgrade, /previewCreditCheckout\(pack\.code, lang\)/);
   assert.match(upgrade, /disabled=\{!preview\.action\.can_checkout\}/);
-  assert.match(upgrade, /confirmBillingCheckout\(sessionId\)/);
+  assert.match(upgrade, /confirmBillingCheckout\(sessionId, lang\)/);
 });
 
 test("the upgrade view contains no client-owned prices, tiers, limits, or credit costs", () => {

@@ -284,7 +284,7 @@ async function openPage(path, { consent = false, webCreationAllowed = false } = 
     if (route.request().method() === "PATCH") Object.assign(account.billing, readBody(route));
     json(route, account.billing);
   });
-  await page.route("**/api/reaigen/billing/catalog/", (route) => json(route, {
+  await page.route("**/api/reaigen/billing/catalog/**", (route) => json(route, {
     provider: {
       provider: "", name: "", description: "", enabled: false, configured: false,
       currency: "", customer_connected: false, subscription_connected: false,
@@ -426,7 +426,7 @@ async function openPage(path, { consent = false, webCreationAllowed = false } = 
     code: "current", name: "Current plan", description: "This is the plan currently assigned to the account.",
     is_terminal: true, is_success: true, sort_order: 10, can_checkout: false, requires_contact: false,
   };
-  await page.route("**/api/reaigen/billing/catalog/", (route) => route.fulfill({
+  await page.route("**/api/reaigen/billing/catalog/**", (route) => route.fulfill({
     status: 200,
     contentType: "application/json",
     body: JSON.stringify({

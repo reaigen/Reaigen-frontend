@@ -1064,6 +1064,7 @@ export interface BillingCatalogCountry {
 
 export interface BillingCatalog {
   schema_version?: number;
+  language?: string;
   provider: BillingProviderStatus;
   pricing_country: string;
   cycles: BillingCatalogCycle[];
@@ -1109,13 +1110,15 @@ export interface BillingPurchasePreview {
   action: BillingPurchaseAction;
 }
 
-export async function getBillingCatalog(): Promise<BillingCatalog> {
-  return freshRequest("/api/reaigen/billing/catalog/") as Promise<BillingCatalog>;
+export async function getBillingCatalog(language?: string): Promise<BillingCatalog> {
+  const query = language ? `?language=${encodeURIComponent(language)}` : "";
+  return freshRequest(`/api/reaigen/billing/catalog/${query}`) as Promise<BillingCatalog>;
 }
 
-export async function getBillingPayments(): Promise<BillingPayment[]> {
+export async function getBillingPayments(language?: string): Promise<BillingPayment[]> {
+  const query = language ? `?language=${encodeURIComponent(language)}` : "";
   const payload = await freshRequest(
-    "/api/reaigen/billing/payments/",
+    `/api/reaigen/billing/payments/${query}`,
   ) as unknown;
   if (Array.isArray(payload)) return payload as BillingPayment[];
   if (
@@ -1133,8 +1136,12 @@ export async function createCreditCheckout(packCode: string): Promise<BillingChe
   });
 }
 
-export async function previewCreditCheckout(packCode: string): Promise<BillingPurchasePreview> {
-  return request("/api/reaigen/billing/credits/purchase/preview/", {
+export async function previewCreditCheckout(
+  packCode: string,
+  language?: string,
+): Promise<BillingPurchasePreview> {
+  const query = language ? `?language=${encodeURIComponent(language)}` : "";
+  return request(`/api/reaigen/billing/credits/purchase/preview/${query}`, {
     method: "POST",
     body: JSON.stringify({ pack_code: packCode }),
   });
@@ -1153,8 +1160,10 @@ export async function createSubscriptionCheckout(
 export async function previewSubscriptionCheckout(
   tierCode: string,
   billingCycle: string,
+  language?: string,
 ): Promise<BillingPurchasePreview> {
-  return request("/api/reaigen/billing/subscription/checkout/preview/", {
+  const query = language ? `?language=${encodeURIComponent(language)}` : "";
+  return request(`/api/reaigen/billing/subscription/checkout/preview/${query}`, {
     method: "POST",
     body: JSON.stringify({ tier_code: tierCode, billing_cycle: billingCycle }),
   });
@@ -1170,8 +1179,12 @@ export async function createBillingPortal(): Promise<{ url: string }> {
   return request("/api/reaigen/billing/portal/", { method: "POST" });
 }
 
-export async function confirmBillingCheckout(sessionId: string): Promise<BillingCheckoutResult> {
-  return request("/api/reaigen/billing/checkout/confirm/", {
+export async function confirmBillingCheckout(
+  sessionId: string,
+  language?: string,
+): Promise<BillingCheckoutResult> {
+  const query = language ? `?language=${encodeURIComponent(language)}` : "";
+  return request(`/api/reaigen/billing/checkout/confirm/${query}`, {
     method: "POST",
     body: JSON.stringify({ session_id: sessionId }),
   });

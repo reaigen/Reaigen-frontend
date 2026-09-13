@@ -95,15 +95,10 @@ function StepRail({
 function StatusNotice({ status }: { status: BillingCatalogStatus }) {
   return (
     <div
-      className={cn(
-        "rounded-xl border px-3.5 py-3",
-        status.is_success
-          ? "border-success/30 bg-success/5"
-          : "border-border/65 bg-muted/30",
-      )}
+      className="rounded-xl border border-border/65 bg-muted/30 px-3.5 py-3"
       data-status-code={status.code}
     >
-      <p className={cn("text-[12px] font-semibold", status.is_success && "text-success")}>{status.name}</p>
+      <p className="text-[12px] font-semibold text-foreground">{status.name}</p>
       {status.description ? (
         <p className="mt-1 text-[12px] leading-relaxed text-muted-foreground">{status.description}</p>
       ) : null}
@@ -172,7 +167,7 @@ function PlanCard({
 
       {action ? (
         <div className="mt-5 flex-1">
-          <p className={cn("text-[12px] font-semibold", action.can_checkout && "text-success")}>{action.name}</p>
+          <p className="text-[12px] font-semibold text-foreground">{action.name}</p>
           {action.description ? (
             <p className="mt-1 text-[11px] leading-relaxed text-muted-foreground">{action.description}</p>
           ) : null}
@@ -255,7 +250,7 @@ function PlanComparison({ tiers, lang }: { tiers: BillingTierOption[]; lang: str
                 const status = tier.features?.find((row) => row.code === feature.code)?.status;
                 return (
                   <div key={`${tier.code}-${feature.code}`} className="flex items-center gap-2 border-b border-l border-border/55 px-3 py-3 text-[12px]">
-                    {enabled ? <CheckIcon size={14} className="text-success" /> : null}
+                    {enabled ? <CheckIcon size={14} className="text-foreground" /> : null}
                     <span className={enabled ? "font-semibold" : "text-muted-foreground"}>{status?.name ?? "—"}</span>
                   </div>
                 );
@@ -291,7 +286,7 @@ function CreditCard({
       <p className="mt-5 text-3xl font-light tracking-[-0.035em]">{pack.credits}</p>
       <p className="text-[11px] font-medium text-muted-foreground">{t("settings.billing.creditUnit", lang)}</p>
       <div className="mt-4 flex-1">
-        {pack.action ? <p className={cn("text-[11px] font-semibold", pack.action.can_checkout && "text-success")}>{pack.action.name}</p> : null}
+        {pack.action ? <p className="text-[11px] font-semibold text-foreground">{pack.action.name}</p> : null}
       </div>
       <Button
         type="button"
@@ -395,7 +390,7 @@ function PurchaseComplete({
 }) {
   return (
     <Surface className="mx-auto max-w-2xl text-center">
-      <span className="mx-auto flex size-12 items-center justify-center rounded-full bg-success text-success-foreground">
+      <span className="mx-auto flex size-12 items-center justify-center rounded-full bg-foreground text-background">
         <CheckIcon size={23} />
       </span>
       <h2 className="mt-4 text-[20px] font-semibold">{status.name}</h2>
@@ -426,7 +421,7 @@ export function BillingUpgradeFlow({ lang }: { lang: string }) {
   const checkoutHandled = React.useRef(false);
 
   const loadCatalog = React.useCallback(async () => {
-    const result = await getBillingCatalog();
+    const result = await getBillingCatalog(lang);
     if (
       result.schema_version !== 2
       || !result.account
@@ -482,7 +477,7 @@ export function BillingUpgradeFlow({ lang }: { lang: string }) {
     if (checkout === "success" && sessionId) {
       setStep("checkout");
       setPendingCode("confirm");
-      void confirmBillingCheckout(sessionId)
+      void confirmBillingCheckout(sessionId, lang)
         .then(async (result) => {
           setReceipt(result);
           const refreshed = await loadCatalog();
@@ -518,7 +513,7 @@ export function BillingUpgradeFlow({ lang }: { lang: string }) {
     setPendingCode(`plan-${tier.code}`);
     setError(null);
     try {
-      const result = await previewSubscriptionCheckout(tier.code, cycle);
+      const result = await previewSubscriptionCheckout(tier.code, cycle, lang);
       setPreview(result);
       setStep("review");
     } catch (err) {
@@ -532,7 +527,7 @@ export function BillingUpgradeFlow({ lang }: { lang: string }) {
     setPendingCode(`credits-${pack.code}`);
     setError(null);
     try {
-      const result = await previewCreditCheckout(pack.code);
+      const result = await previewCreditCheckout(pack.code, lang);
       setPreview(result);
       setStep("review");
     } catch (err) {
@@ -645,11 +640,18 @@ export function BillingUpgradeFlow({ lang }: { lang: string }) {
                   />
                 ))}
               </div>
-            ) : currentTier?.current_status ? (
-              <div className="mt-5" data-testid="no-plan-upgrades">
-                <StatusNotice status={currentTier.current_status} />
+            ) : (
+              <div className="mt-5 rounded-xl border border-border/65 bg-muted/30 px-3.5 py-3" data-testid="no-plan-upgrades">
+                <p className="text-[12px] font-semibold text-foreground">
+                  {t("settings.billing.noPlanChanges", lang)}
+                </p>
+                {currentTier?.current_status?.description ? (
+                  <p className="mt-1 text-[12px] leading-relaxed text-muted-foreground">
+                    {currentTier.current_status.description}
+                  </p>
+                ) : null}
               </div>
-            ) : null}
+            )}
           </Surface>
           {upgradeOptions.length > 0 ? <PlanComparison tiers={catalog.tiers} lang={lang} /> : null}
         </>

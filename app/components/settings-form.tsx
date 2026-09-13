@@ -2337,7 +2337,7 @@ function AccessPill({
       className={cn(
         "inline-flex shrink-0 items-center gap-1.5 rounded-full px-2.5 py-1 text-[11px] font-semibold",
         allowed == null && "bg-muted text-muted-foreground",
-        allowed === true && "bg-success/10 text-success",
+        allowed === true && "bg-foreground text-background",
         allowed === false && "bg-foreground/[0.07] text-foreground/65",
       )}
     >
@@ -2346,7 +2346,7 @@ function AccessPill({
         className={cn(
           "size-1.5 rounded-full",
           allowed == null && "bg-muted-foreground/45",
-          allowed === true && "bg-success",
+          allowed === true && "bg-background/75",
           allowed === false && "bg-foreground/35",
         )}
       />
@@ -2371,7 +2371,7 @@ function UsageBar({
     ? "bg-destructive"
     : presentation.percent >= 75
       ? "bg-foreground/60"
-      : "bg-success";
+      : "bg-foreground";
   const value = presentation.kind === "limited"
     ? `${presentation.used} / ${presentation.limit}`
     : presentation.kind === "unlimited"
@@ -2396,18 +2396,6 @@ function UsageBar({
       </div>
     </div>
   );
-}
-
-function numericLimit(capabilities: UserCapabilities | null, key: string): number | null {
-  const value = capabilities?.limits[key];
-  return typeof value === "number" && Number.isFinite(value) ? value : null;
-}
-
-function formatPlanLimit(value: number | null, lang: string): string {
-  if (value == null) return "—";
-  if (value === -1) return t("settings.billing.unlimited", lang);
-  if (value <= 0) return t("settings.billing.notIncluded", lang);
-  return String(value);
 }
 
 function catalogStatusName(catalog: BillingCatalog | null, category: string, code: string): string {
@@ -2455,8 +2443,8 @@ function BillingTab({ user, onSaved, lang }: { user: UserProfile; onSaved: () =>
     ] = await Promise.allSettled([
       getBilling(),
       getUserCapabilities(),
-      getBillingCatalog(),
-      getBillingPayments(),
+      getBillingCatalog(lang),
+      getBillingPayments(lang),
     ]);
     if (billingResult.status === "fulfilled") {
       setLiveBilling(billingResult.value);
@@ -2480,7 +2468,7 @@ function BillingTab({ user, onSaved, lang }: { user: UserProfile; onSaved: () =>
         || paymentsResult.status === "rejected",
     );
     setAccountRefreshing(false);
-  }, []);
+  }, [lang]);
 
   React.useEffect(() => {
     void refreshAccountState();
@@ -2506,7 +2494,7 @@ function BillingTab({ user, onSaved, lang }: { user: UserProfile; onSaved: () =>
       setCheckoutMessage("canceled");
     } else if (checkoutState === "success" && sessionId) {
       setPaymentAction("confirm");
-      void confirmBillingCheckout(sessionId)
+      void confirmBillingCheckout(sessionId, lang)
         .then(async (checkout) => {
           setCheckoutMessage(checkout.status);
           await refreshAccountState();
@@ -2593,18 +2581,25 @@ function BillingTab({ user, onSaved, lang }: { user: UserProfile; onSaved: () =>
 
   const usage = capabilities?.usage ?? null;
   const tier = ba?.subscription_tier_detail;
-  const tierName = capabilities?.tier.name ?? tier?.name ?? "—";
+  const currentCatalogTier = billingCatalog?.tiers.find((candidate) => candidate.is_current) ?? null;
+  const tierName = billingCatalog?.account?.current_tier_name
+    ?? currentCatalogTier?.name
+    ?? capabilities?.tier.name
+    ?? tier?.name
+    ?? "—";
   const reaigenAllowed = usage?.products.reaigen?.allowed
     ?? (capabilities ? Boolean(capabilities.apps.reaigen) : null);
-  const reailistAllowed = usage?.products.reailist?.allowed
-    ?? (capabilities ? Boolean(capabilities.apps.reailist) : null);
   const draftsQuota = usage?.drafts ?? null;
-  const postsQuota = usage?.posts ?? null;
   const descriptionsQuota = usage?.ai_descriptions ?? null;
   const credits = usage?.credits ?? ba?.compute_credits ?? null;
   const planFunctions = billingCatalog?.plan_features ?? [];
-  const uploadsPerDraft = numericLimit(capabilities, "max_uploads_per_draft");
-  const processingJobs = numericLimit(capabilities, "max_processing_jobs");
+  const uploadsPerDraft = currentCatalogTier?.limits?.find(
+    (limit) => limit.code === "max_uploads_per_draft",
+  ) ?? null;
+  const processingJobs = currentCatalogTier?.limits?.find(
+    (limit) => limit.code === "max_processing_jobs",
+  ) ?? null;
+  const upgradeOptions = billingCatalog?.upgrade_options ?? [];
   const trialActive = ba?.is_trial === true;
   const trialDaysLeft = trialActive ? ba?.days_until_expiry ?? null : null;
   const providerStatus = billingCatalog?.provider ?? null;
@@ -2687,7 +2682,7 @@ function BillingTab({ user, onSaved, lang }: { user: UserProfile; onSaved: () =>
         <CardContent className="space-y-4">
           <div className={cn(
             "rounded-2xl border px-4 py-3",
-            paymentsReady ? "border-success/30 bg-success/5" : "border-border/65 bg-muted/25",
+            paymentsReady ? "border-foreground/20 bg-foreground/[0.035]" : "border-border/65 bg-muted/25",
           )}>
             <div className="flex flex-wrap items-center justify-between gap-3">
               <div>
@@ -2725,7 +2720,7 @@ function BillingTab({ user, onSaved, lang }: { user: UserProfile; onSaved: () =>
             <p
               className={cn(
                 "text-[12px]",
-                checkoutMessageStatus.is_success ? "text-success" : "text-muted-foreground",
+                checkoutMessageStatus.is_success ? "text-foreground" : "text-muted-foreground",
               )}
               role="status"
             >
@@ -2765,12 +2760,22 @@ function BillingTab({ user, onSaved, lang }: { user: UserProfile; onSaved: () =>
                 <p className="text-[13px] font-semibold">{t("settings.billing.plansTitle", lang)}</p>
                 <p className="mt-1 text-[12px] text-muted-foreground">{t("settings.billing.plansSubtitle", lang)}</p>
               </div>
-              <Button asChild type="button" size="sm">
-                <Link href="/upgrade?mode=plans">
-                  {t("settings.billing.subscribe", lang)}
-                  <ChevronRightIcon size={15} />
-                </Link>
-              </Button>
+              {billingCatalog == null ? (
+                <span className="text-[12px] text-muted-foreground">
+                  {t("settings.billing.checking", lang)}
+                </span>
+              ) : upgradeOptions.length > 0 ? (
+                <Button asChild type="button" size="sm">
+                  <Link href="/upgrade?mode=plans">
+                    {t("settings.billing.subscribe", lang)}
+                    <ChevronRightIcon size={15} />
+                  </Link>
+                </Button>
+              ) : (
+                <span className="text-[12px] text-muted-foreground" data-testid="no-plan-upgrades">
+                  {t("settings.billing.noPlanChanges", lang)}
+                </span>
+              )}
             </div>
             {providerStatus?.subscription_connected ? (
               <p className="rounded-xl bg-muted/35 px-3 py-2.5 text-[12px] text-muted-foreground">
@@ -2823,29 +2828,24 @@ function BillingTab({ user, onSaved, lang }: { user: UserProfile; onSaved: () =>
         </CardContent>
       </Card>
 
-      {/* Product access and quotas come from one server snapshot. */}
+      {/* Customer-visible usage and quotas come from one server snapshot. */}
       <Card data-testid="product-access">
         <CardHeader>
           <CardTitle>{t("settings.billing.productsTitle", lang)}</CardTitle>
           <CardDescription>{t("settings.billing.productsSubtitle", lang)}</CardDescription>
         </CardHeader>
         <CardContent>
-          <div className="grid gap-3 lg:grid-cols-2">
+          <div>
             <article
               data-testid="reaigen-access"
               className="rounded-2xl border border-border/65 bg-muted/20 p-4"
             >
               <div className="flex items-start justify-between gap-4">
-                <div className="flex min-w-0 items-start gap-3">
-                  <span className="flex size-9 shrink-0 items-center justify-center rounded-full bg-foreground text-[12px] font-semibold text-background">
-                    1
-                  </span>
-                  <div className="min-w-0">
-                    <h3 className="text-[14px] font-semibold">Reaigen</h3>
-                    <p className="mt-1 text-[12px] leading-relaxed text-muted-foreground">
-                      {t("settings.billing.reaigenDescription", lang)}
-                    </p>
-                  </div>
+                <div className="min-w-0">
+                  <h3 className="text-[14px] font-semibold">Reaigen</h3>
+                  <p className="mt-1 text-[12px] leading-relaxed text-muted-foreground">
+                    {t("settings.billing.reaigenDescription", lang)}
+                  </p>
                 </div>
                 <AccessPill allowed={reaigenAllowed} lang={lang} />
               </div>
@@ -2870,39 +2870,6 @@ function BillingTab({ user, onSaved, lang }: { user: UserProfile; onSaved: () =>
                     {draftsQuota?.visible_total ?? "—"}
                   </span>
                 </div>
-              </div>
-            </article>
-
-            <article
-              data-testid="reailist-access"
-              className="rounded-2xl border border-border/65 bg-muted/20 p-4"
-            >
-              <div className="flex items-start justify-between gap-4">
-                <div className="flex min-w-0 items-start gap-3">
-                  <span className="flex size-9 shrink-0 items-center justify-center rounded-full border border-border bg-card text-[12px] font-semibold text-foreground/65">
-                    2
-                  </span>
-                  <div className="min-w-0">
-                    <h3 className="text-[14px] font-semibold">Reailist</h3>
-                    <p className="mt-1 text-[12px] leading-relaxed text-muted-foreground">
-                      {t("settings.billing.reailistDescription", lang)}
-                    </p>
-                  </div>
-                </div>
-                <AccessPill allowed={reailistAllowed} lang={lang} />
-              </div>
-              <div className="mt-5 space-y-4">
-                <UsageBar
-                  quota={postsQuota}
-                  productAllowed={reailistAllowed}
-                  label={t("settings.billing.posts", lang)}
-                  lang={lang}
-                />
-                {reailistAllowed === false && (
-                  <p className="rounded-xl bg-foreground/[0.045] px-3 py-2.5 text-[12px] leading-relaxed text-muted-foreground">
-                    {t("settings.billing.reailistBlockedDetail", lang)}
-                  </p>
-                )}
               </div>
             </article>
           </div>
@@ -2931,11 +2898,11 @@ function BillingTab({ user, onSaved, lang }: { user: UserProfile; onSaved: () =>
           <dl className="grid rounded-2xl border border-border/65 px-4 sm:grid-cols-2 sm:gap-x-8">
             <DataRow
               label={t("settings.billing.uploadsPerDraft", lang)}
-              value={formatPlanLimit(uploadsPerDraft, lang)}
+              value={uploadsPerDraft?.display_value ?? "—"}
             />
             <DataRow
               label={t("settings.billing.processingJobs", lang)}
-              value={formatPlanLimit(processingJobs, lang)}
+              value={processingJobs?.display_value ?? "—"}
             />
           </dl>
         </CardContent>
@@ -3103,7 +3070,7 @@ function BillingTab({ user, onSaved, lang }: { user: UserProfile; onSaved: () =>
                 {(control) => <Input {...control} value={vat} onChange={(e) => { setVat(e.target.value); setBillingDirty(true); }} />}
               </FormField>
               {error && <p className="text-[12px] text-destructive" role="alert">{error}</p>}
-              {success && <p className="text-[12px] text-success" role="status">{t("settings.billing.saved", lang)}</p>}
+              {success && <p className="text-[12px] text-foreground" role="status">{t("settings.billing.saved", lang)}</p>}
               <div className="pt-2">
                 <Button type="submit" size="sm" loading={loading}>{t("settings.billing.save", lang)}</Button>
               </div>

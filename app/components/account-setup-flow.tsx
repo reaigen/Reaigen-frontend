@@ -667,7 +667,7 @@ function BillingStep({ user, lang, onSaved, onAdvance, onBack }: StepProps) {
 
   React.useEffect(() => {
     let active = true;
-    void getBillingCatalog()
+    void getBillingCatalog(lang)
       .then((catalog) => {
         if (active) setBillingCatalog(catalog);
       })
@@ -677,7 +677,7 @@ function BillingStep({ user, lang, onSaved, onAdvance, onBack }: StepProps) {
     return () => {
       active = false;
     };
-  }, []);
+  }, [lang]);
 
   const sellerAddressAvailable = Boolean(p && (p.address || p.city || p.postal_code || p.country));
   const billingCountries = billingCatalog?.countries ?? [];
