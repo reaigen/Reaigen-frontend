@@ -26,9 +26,7 @@ import {
   getUserCapabilities,
   updateBilling,
   createBillingPortal,
-  createCreditCheckout,
   createPaymentMethodCheckout,
-  createSubscriptionCheckout,
   confirmBillingCheckout,
   changePassword,
   getAvailablePreferences,
@@ -2428,9 +2426,6 @@ function BillingTab({ user, onSaved, lang }: { user: UserProfile; onSaved: () =>
   const [paymentsLoadError, setPaymentsLoadError] = React.useState(false);
   const [accountRefreshing, setAccountRefreshing] = React.useState(true);
   const [accountRefreshError, setAccountRefreshError] = React.useState(false);
-  const [billingCycleChoice, setBillingCycleChoice] = React.useState(
-    user.billing_account?.billing_cycle ?? "",
-  );
   const [paymentAction, setPaymentAction] = React.useState<string | null>(null);
   const [paymentError, setPaymentError] = React.useState<string | null>(null);
   const [checkoutMessage, setCheckoutMessage] = React.useState<string | null>(null);
@@ -2475,7 +2470,6 @@ function BillingTab({ user, onSaved, lang }: { user: UserProfile; onSaved: () =>
     }
     if (catalogResult.status === "fulfilled") {
       setBillingCatalog(catalogResult.value);
-      setBillingCycleChoice((current) => current || catalogResult.value.cycles[0]?.code || "");
     }
     if (paymentsResult.status === "fulfilled") {
       setPayments(paymentsResult.value);
@@ -2603,7 +2597,6 @@ function BillingTab({ user, onSaved, lang }: { user: UserProfile; onSaved: () =>
 
   const usage = capabilities?.usage ?? null;
   const tier = ba?.subscription_tier_detail;
-  const tierCode = (capabilities?.tier.code ?? tier?.code ?? "").toUpperCase();
   const tierName = capabilities?.tier.name ?? tier?.name ?? "—";
   const reaigenAllowed = usage?.products.reaigen?.allowed
     ?? (capabilities ? Boolean(capabilities.apps.reaigen) : null);
@@ -2618,9 +2611,6 @@ function BillingTab({ user, onSaved, lang }: { user: UserProfile; onSaved: () =>
   const processingJobs = numericLimit(capabilities, "max_processing_jobs");
   const trialActive = ba?.is_trial === true;
   const trialDaysLeft = trialActive ? ba?.days_until_expiry ?? null : null;
-  const selfServeTiers = (billingCatalog?.tiers ?? []).filter((option) => (
-    option.code !== tierCode && option.checkout_enabled
-  ));
   const providerStatus = billingCatalog?.provider ?? null;
   const creditPacks = billingCatalog?.credit_packs ?? [];
   const paymentsReady = providerStatus?.configured === true
@@ -2779,65 +2769,18 @@ function BillingTab({ user, onSaved, lang }: { user: UserProfile; onSaved: () =>
                 <p className="text-[13px] font-semibold">{t("settings.billing.plansTitle", lang)}</p>
                 <p className="mt-1 text-[12px] text-muted-foreground">{t("settings.billing.plansSubtitle", lang)}</p>
               </div>
-              <Select
-                value={billingCycleChoice}
-                onValueChange={setBillingCycleChoice}
-              >
-                <SelectTrigger className="w-40" aria-label={t("settings.billing.chooseCycle", lang)}>
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  {(billingCatalog?.cycles ?? []).map((cycle) => (
-                    <SelectItem key={cycle.code} value={cycle.code}>
-                      {cycle.name}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+              <Button asChild type="button" size="sm">
+                <Link href="/upgrade?mode=plans">
+                  {t("settings.billing.subscribe", lang)}
+                  <ChevronRightIcon size={15} />
+                </Link>
+              </Button>
             </div>
             {providerStatus?.subscription_connected ? (
               <p className="rounded-xl bg-muted/35 px-3 py-2.5 text-[12px] text-muted-foreground">
                 {t("settings.billing.manageExistingPlan", lang)}
               </p>
-            ) : (
-              <div className="grid gap-2 sm:grid-cols-2">
-                {selfServeTiers.map((option) => {
-                  const price = option.prices.find(
-                    (candidate) => candidate.cycle_code === billingCycleChoice,
-                  );
-                  const action = `tier-${option.code}-${billingCycleChoice}`;
-                  return (
-                    <div key={option.code} className="rounded-2xl border border-border/65 p-4">
-                      <div className="flex items-start justify-between gap-3">
-                        <div>
-                          <p className="text-[13px] font-semibold">{option.name}</p>
-                          {option.description && <p className="mt-1 text-[11px] text-muted-foreground">{option.description}</p>}
-                        </div>
-                        <span className="text-[13px] font-semibold">
-                          {price?.display_price ?? "—"}
-                        </span>
-                      </div>
-                      <Button
-                        type="button"
-                        size="xs"
-                        className="mt-3"
-                        disabled={!paymentsReady || !price}
-                        loading={paymentAction === action}
-                        onClick={() => void beginHostedBilling(
-                          action,
-                          () => createSubscriptionCheckout(option.code, billingCycleChoice),
-                        )}
-                      >
-                        {t("settings.billing.subscribe", lang)}
-                      </Button>
-                    </div>
-                  );
-                })}
-                {selfServeTiers.length === 0 && (
-                  <p className="text-[12px] text-muted-foreground">{t("settings.billing.noPlanChanges", lang)}</p>
-                )}
-              </div>
-            )}
+            ) : null}
           </div>
 
           <Separator />
@@ -3077,7 +3020,6 @@ function BillingTab({ user, onSaved, lang }: { user: UserProfile; onSaved: () =>
               <p className="mt-1 text-[11px] text-muted-foreground">{t("settings.billing.topupsSubtitle", lang)}</p>
               <div className="mt-3 grid gap-2 sm:grid-cols-3">
                 {creditPacks.map((pack) => {
-                  const action = `pack-${pack.code}`;
                   return (
                     <div key={pack.code} className="rounded-xl bg-muted/35 p-3">
                       <p className="text-[13px] font-semibold">{pack.name}</p>
@@ -3091,18 +3033,14 @@ function BillingTab({ user, onSaved, lang }: { user: UserProfile; onSaved: () =>
                         {pack.display_price}
                       </p>
                       <Button
-                        type="button"
+                        asChild
                         size="xs"
                         variant="outline"
                         className="mt-3"
-                        disabled={!paymentsReady}
-                        loading={paymentAction === action}
-                        onClick={() => void beginHostedBilling(
-                          action,
-                          () => createCreditCheckout(pack.code),
-                        )}
                       >
-                        {t("settings.billing.buyCredits", lang)}
+                        <Link href="/upgrade?mode=credits">
+                          {t("settings.billing.buyCredits", lang)}
+                        </Link>
                       </Button>
                     </div>
                   );

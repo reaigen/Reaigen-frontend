@@ -939,6 +939,7 @@ export interface BillingCheckoutResult {
   pricing_country: string;
   currency: string;
   amount_minor: number;
+  display_amount: string;
   credits: number;
   completed_at: string | null;
   created_at: string;
@@ -968,6 +969,11 @@ export interface BillingCatalogStatus {
   sort_order: number;
 }
 
+export interface BillingPurchaseAction extends BillingCatalogStatus {
+  can_checkout: boolean;
+  requires_contact: boolean;
+}
+
 export interface BillingCatalogCycle {
   code: string;
   name: string;
@@ -983,6 +989,28 @@ export interface ComputeCreditPack {
   amount_minor: number;
   currency: string;
   display_price: string;
+  action?: BillingPurchaseAction;
+  sort_order: number;
+}
+
+export interface BillingTierPrice {
+  cycle_code: string;
+  amount_minor: number;
+  currency: string;
+  display_price: string;
+}
+
+export interface BillingTierAction extends BillingPurchaseAction {
+  cycle_code: string;
+}
+
+export interface BillingTierLimit {
+  code: string;
+  name: string;
+  description: string;
+  value: number;
+  display_value: string;
+  status: BillingCatalogStatus;
   sort_order: number;
 }
 
@@ -992,12 +1020,12 @@ export interface BillingTierOption {
   description: string;
   is_custom_pricing: boolean;
   checkout_enabled: boolean;
-  prices: Array<{
-    cycle_code: string;
-    amount_minor: number;
-    currency: string;
-    display_price: string;
-  }>;
+  prices: BillingTierPrice[];
+  actions?: BillingTierAction[];
+  features?: BillingCatalogPlanFeature[];
+  limits?: BillingTierLimit[];
+  is_current?: boolean;
+  current_status?: BillingPurchaseAction | null;
   sort_order: number;
 }
 
@@ -1012,7 +1040,10 @@ export interface BillingCatalogComputeJob {
 export interface BillingCatalogPlanFeature {
   code: string;
   name: string;
+  description?: string;
   enabled: boolean;
+  status?: BillingCatalogStatus;
+  sort_order?: number;
 }
 
 export interface BillingCatalogCountry {
@@ -1021,6 +1052,7 @@ export interface BillingCatalogCountry {
 }
 
 export interface BillingCatalog {
+  schema_version?: number;
   provider: BillingProviderStatus;
   pricing_country: string;
   cycles: BillingCatalogCycle[];
@@ -1031,6 +1063,38 @@ export interface BillingCatalog {
   plan_features: BillingCatalogPlanFeature[];
   credit_balance_status: BillingCatalogStatus | null;
   countries: BillingCatalogCountry[];
+  account?: {
+    current_tier_code: string;
+    current_tier_name: string;
+    billing_cycle: string;
+    subscription_status: BillingCatalogStatus | null;
+    has_active_entitlement: boolean;
+    is_trial: boolean;
+    billing_restricted: boolean;
+    credits: ComputeCredits;
+  };
+  purchase_flows?: {
+    subscription: BillingCatalogStatus[];
+    credits: BillingCatalogStatus[];
+  };
+}
+
+export interface BillingPurchasePreview {
+  kind: "subscription" | "credit_pack";
+  product_code: string;
+  product_name: string;
+  description: string;
+  billing_cycle: string;
+  billing_cycle_name: string;
+  price: ({
+    cycle_code?: string;
+    cycle_name?: string;
+    amount_minor: number;
+    currency: string;
+    display_price: string;
+  }) | null;
+  credits: number;
+  action: BillingPurchaseAction;
 }
 
 export async function getBillingCatalog(): Promise<BillingCatalog> {
@@ -1057,11 +1121,28 @@ export async function createCreditCheckout(packCode: string): Promise<BillingChe
   });
 }
 
+export async function previewCreditCheckout(packCode: string): Promise<BillingPurchasePreview> {
+  return request("/api/reaigen/billing/credits/purchase/preview/", {
+    method: "POST",
+    body: JSON.stringify({ pack_code: packCode }),
+  });
+}
+
 export async function createSubscriptionCheckout(
   tierCode: string,
   billingCycle: string,
 ): Promise<BillingCheckoutRedirect> {
   return request("/api/reaigen/billing/subscription/checkout/", {
+    method: "POST",
+    body: JSON.stringify({ tier_code: tierCode, billing_cycle: billingCycle }),
+  });
+}
+
+export async function previewSubscriptionCheckout(
+  tierCode: string,
+  billingCycle: string,
+): Promise<BillingPurchasePreview> {
+  return request("/api/reaigen/billing/subscription/checkout/preview/", {
     method: "POST",
     body: JSON.stringify({ tier_code: tierCode, billing_cycle: billingCycle }),
   });

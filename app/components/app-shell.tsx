@@ -362,7 +362,9 @@ function AppShellFrame({
     { href: "/dashboard", label: t("nav.dashboard", lang), icon: MainHomeIcon },
     { href: "/tours", label: t("nav.tours", lang), icon: MainTourIcon },
   ];
-  const settingsActive = pathname === "/settings" || pathname.startsWith("/settings/");
+  const settingsActive = pathname === "/settings"
+    || pathname.startsWith("/settings/")
+    || pathname === "/upgrade";
   const reaiContext = reaiWorkspaceContext
     ?? (pathname.startsWith("/settings") ? "settings" : (reaiDraftId ? "draft" : "creator"));
   const reaiContextLabel = reaiContext === "settings"

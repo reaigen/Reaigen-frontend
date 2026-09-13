@@ -12,6 +12,14 @@ const setup = fs.readFileSync(
   path.join(root, "app/components/account-setup-flow.tsx"),
   "utf8",
 );
+const upgrade = fs.readFileSync(
+  path.join(root, "app/components/billing-upgrade-flow.tsx"),
+  "utf8",
+);
+const upgradePage = fs.readFileSync(
+  path.join(root, "app/upgrade/page.tsx"),
+  "utf8",
+);
 const api = fs.readFileSync(path.join(root, "app/lib/api/client.ts"), "utf8");
 const apiErrors = fs.readFileSync(path.join(root, "app/lib/api/error-message.ts"), "utf8");
 const trainingValidation = fs.readFileSync(path.join(root, "app/lib/training-quality.ts"), "utf8");
@@ -127,4 +135,30 @@ test("insufficient-credit handling uses the structured API code", () => {
   assert.match(predicate, /getApiErrorCode\(error\) === "insufficient_compute_credits"/);
   assert.doesNotMatch(predicate, /includes\(|detail|error\.body/);
   assert.doesNotMatch(english, /top-up or upgrade your plan/i);
+});
+
+test("the authenticated upgrade view uses Django offers and server previews", () => {
+  assert.match(upgradePage, /useAuth\(\)/);
+  assert.match(upgradePage, /<BillingUpgradeFlow lang=\{lang\}/);
+  assert.match(upgrade, /getBillingCatalog\(\)/);
+  assert.match(upgrade, /tier\.prices\.find\(/);
+  assert.match(upgrade, /tier\.actions\?\.find\(/);
+  assert.match(upgrade, /tier\.limits\?\.find\(/);
+  assert.match(upgrade, /tier\.features\?\.find\(/);
+  assert.match(upgrade, /pack\.display_price/);
+  assert.match(upgrade, /pack\.action/);
+  assert.match(upgrade, /previewSubscriptionCheckout\(tier\.code, cycle\)/);
+  assert.match(upgrade, /previewCreditCheckout\(pack\.code\)/);
+  assert.match(upgrade, /disabled=\{!preview\.action\.can_checkout\}/);
+  assert.match(upgrade, /confirmBillingCheckout\(sessionId\)/);
+});
+
+test("the upgrade view contains no client-owned prices, tiers, limits, or credit costs", () => {
+  assert.doesNotMatch(upgrade, /\b(?:FREE|STANDARD|PRO|ENTERPRISE)\b/);
+  assert.doesNotMatch(upgrade, /[€$£]\s*\d|\d\s*[€$£]/);
+  assert.doesNotMatch(upgrade, /price_(?:monthly|yearly)|max_processing_jobs|included_compute_credits_per_month/);
+  assert.doesNotMatch(upgrade, /credits_cost\s*[?:=]\s*\d/);
+  assert.doesNotMatch(upgrade, /paymentsReady|supports_checkout\s*&&|checkout_sales_enabled\s*&&/);
+  assert.match(settings, /href="\/upgrade\?mode=plans"/);
+  assert.match(settings, /href="\/upgrade\?mode=credits"/);
 });
