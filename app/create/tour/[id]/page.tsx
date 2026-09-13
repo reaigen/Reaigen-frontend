@@ -34,6 +34,7 @@ import type { SplatViewerHandle } from "../../../components/splat-viewer";
 import {
   ApiError,
   getReaiAgentConsent,
+  getUserCapabilities,
   getWebTourAssetStatus,
   getWebTourWorkspace,
   saveWebTourThumbnail,
@@ -364,12 +365,26 @@ export default function WebTourEditorPage({
 
   useEffect(() => {
     let active = true;
-    getReaiAgentConsent()
+    getUserCapabilities()
+      .then((capabilities) => {
+        if (!active) return null;
+        const entitled = capabilities.apps.reaigen === true
+          && capabilities.features.agent_access === true;
+        if (!entitled) {
+          setAgentEnabled(false);
+          setAgentOpen(false);
+          return null;
+        }
+        return getReaiAgentConsent();
+      })
       .then((consent) => {
-        if (active) setAgentEnabled(consent.consented);
+        if (active && consent) setAgentEnabled(consent.consented);
       })
       .catch(() => {
-        if (active) setAgentEnabled(false);
+        if (active) {
+          setAgentEnabled(false);
+          setAgentOpen(false);
+        }
       });
     return () => { active = false; };
   }, []);

@@ -6,7 +6,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { Avatar, AvatarFallback, AvatarImage } from "../lib/ui/avatar";
 import { BottomSheet } from "../lib/ui/bottom-sheet";
-import { getReaiAgentConsent, type UserProfile } from "../lib/api/client";
+import { getReaiAgentConsent, getUserCapabilities, type UserProfile } from "../lib/api/client";
 import { clearAgentSession, readAgentPanelOpen, writeAgentPanelOpen } from "../lib/agent-session";
 import type { DraftDetailItem } from "../lib/tour-types";
 import { cn } from "../lib/utils";
@@ -421,11 +421,23 @@ function AppShellFrame({
   React.useEffect(() => {
     let active = true;
     const refresh = () => {
-      void getReaiAgentConsent()
-        .then((value) => {
+      void getUserCapabilities()
+        .then((capabilities) => {
           if (!active) return;
-          setReaiEnabled(value.consented);
-          if (!value.consented) setReaiOpen(false);
+          const entitled = capabilities.apps.reaigen === true
+            && capabilities.features.agent_access === true;
+          if (!entitled) {
+            setReaiEnabled(false);
+            clearAgentSession();
+            setReaiOpen(false);
+            return null;
+          }
+          return getReaiAgentConsent();
+        })
+        .then((consent) => {
+          if (!active || consent == null) return;
+          setReaiEnabled(consent.consented);
+          if (!consent.consented) setReaiOpen(false);
         })
         .catch(() => {
           if (active) setReaiEnabled(false);
@@ -433,17 +445,16 @@ function AppShellFrame({
     };
     const permissionChanged = (event: Event) => {
       const enabled = (event as CustomEvent<{ enabled?: boolean }>).detail?.enabled;
-      if (typeof enabled === "boolean") {
-        setReaiEnabled(enabled);
-        if (!enabled) {
-          // Withdrawing consent must not leave a parked transcript behind for
-          // the next navigation to restore.
-          clearAgentSession();
-          setReaiOpen(false);
-        }
-      } else {
-        refresh();
+      if (enabled === false) {
+        // Withdrawing consent must not leave a parked transcript behind for
+        // the next navigation to restore.
+        setReaiEnabled(false);
+        clearAgentSession();
+        setReaiOpen(false);
       }
+      // A browser event is never proof of entitlement. Re-read Django before
+      // enabling the launcher, including after an apparent consent grant.
+      refresh();
     };
     refresh();
     window.addEventListener("reai-consent-changed", permissionChanged);

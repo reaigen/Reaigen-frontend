@@ -12,6 +12,7 @@ import {
   getAgentCreationHistory,
   getMediaVersions,
   getReaiAgentConsent,
+  getUserCapabilities,
   manageMediaVersion,
   restoreAgentCreationRevision,
   setActiveSplat,
@@ -254,9 +255,10 @@ export function DraftVersionManager({
 }) {
   const { user } = useAuth();
   const dateFormat = user?.localization?.date_format;
-  // Opens on the listing, the first tab and the history that actually moves:
-  // every confirmed Agent edit lands there, while tour versions change rarely.
-  const [activeTab, setActiveTab] = React.useState<VersionTab>("listing");
+  // Tour versions are available independently. Agent-owned listing/media
+  // history is added only after Django explicitly grants the entitlement.
+  const [activeTab, setActiveTab] = React.useState<VersionTab>("tour");
+  const [agentEntitled, setAgentEntitled] = React.useState<boolean | null>(null);
   const [agentEnabled, setAgentEnabled] = React.useState<boolean | null>(null);
   const [history, setHistory] = React.useState<AgentCreationRevision[]>([]);
   const [media, setMedia] = React.useState<MediaVersionGroup[]>([]);
@@ -301,6 +303,23 @@ export function DraftVersionManager({
     setHistoryDataError(null);
     setMediaDataError(null);
     try {
+      let entitled = false;
+      try {
+        const capabilities = await getUserCapabilities();
+        entitled = capabilities.apps.reaigen === true
+          && capabilities.features.agent_access === true;
+      } catch {
+        // Unknown is not authorization. Keep optional Agent surfaces hidden.
+      }
+      setAgentEntitled(entitled);
+      if (!entitled) {
+        setAgentEnabled(null);
+        setHistory([]);
+        applyMediaGroups([]);
+        setActiveTab("tour");
+        return;
+      }
+
       const [mediaResult, consentResult] = await Promise.allSettled([
         getMediaVersions(draft.id),
         getReaiAgentConsent(),
@@ -456,7 +475,7 @@ export function DraftVersionManager({
     }
   };
 
-  const agentUnavailable = agentEnabled === false && !loadingVersionData;
+  const agentUnavailable = agentEntitled === true && agentEnabled === false && !loadingVersionData;
   const historyDataFailed = Boolean(historyDataError) && !loadingVersionData;
   const mediaDataFailed = Boolean(mediaDataError) && !loadingVersionData;
   const visibleError = actionError
@@ -478,7 +497,10 @@ export function DraftVersionManager({
     >
       <Tabs value={activeTab} onValueChange={(value) => setActiveTab(value as VersionTab)}>
         <div className="mb-1">
-          <TabsList className="selection-capsule-track grid h-auto w-full grid-cols-3">
+          <TabsList className={cn(
+            "selection-capsule-track grid h-auto w-full",
+            agentEntitled === true ? "grid-cols-3" : "grid-cols-1",
+          )}>
             {/*
               Listing, then tour, then media — the order the work is done in.
               The listing is the thing being published; the tour and the photos
@@ -486,9 +508,13 @@ export function DraftVersionManager({
               edited history first and buried the one that changes on every
               Agent edit.
             */}
-            <VersionTabTrigger value="listing" icon={VersionsIcon} label={t("draft.versions.listing", lang)} count={history.length} />
+            {agentEntitled === true ? (
+              <VersionTabTrigger value="listing" icon={VersionsIcon} label={t("draft.versions.listing", lang)} count={history.length} />
+            ) : null}
             <VersionTabTrigger value="tour" icon={TourIcon} label={t("draft.versions.tour", lang)} count={versions.length} />
-            <VersionTabTrigger value="media" icon={ImageIcon} label={t("draft.versions.media", lang)} count={media.length} />
+            {agentEntitled === true ? (
+              <VersionTabTrigger value="media" icon={ImageIcon} label={t("draft.versions.media", lang)} count={media.length} />
+            ) : null}
           </TabsList>
         </div>
 

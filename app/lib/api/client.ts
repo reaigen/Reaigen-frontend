@@ -505,6 +505,42 @@ export interface UserProfileData {
   updated_at: string;
 }
 
+export interface AdministrativeRegionLookup {
+  id: number;
+  code: string;
+  name: string;
+  display_name: string;
+  description: string;
+  is_active: boolean;
+  sort_order: number;
+  country_code: string;
+  locality_names: string[];
+  postal_code_prefixes: string[];
+}
+
+export async function getAdministrativeRegions(
+  countryCode: string,
+  language?: string,
+): Promise<AdministrativeRegionLookup[]> {
+  const country = countryCode.trim().toUpperCase();
+  if (!/^[A-Z]{2}$/.test(country)) return [];
+  const languageQuery = language
+    ? `&language=${encodeURIComponent(language)}`
+    : "";
+  const payload = await request(
+    `/api/reaigen/lookups/administrative-regions/?country_code=${encodeURIComponent(country)}${languageQuery}`,
+  ) as unknown;
+  if (Array.isArray(payload)) return payload as AdministrativeRegionLookup[];
+  if (
+    payload
+    && typeof payload === "object"
+    && Array.isArray((payload as { results?: unknown }).results)
+  ) {
+    return (payload as { results: AdministrativeRegionLookup[] }).results;
+  }
+  throw new Error("Invalid administrative-region lookup response");
+}
+
 export interface PersonalizedData {
   id: number;
   theme: string;

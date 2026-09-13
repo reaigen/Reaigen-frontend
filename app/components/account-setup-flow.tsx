@@ -30,6 +30,7 @@ import {
 } from "../lib/api/client";
 import { getReaiImprovementConsent } from "../lib/api/client";
 import { getApiErrorJson, getSafeApiErrorMessage } from "../lib/api/error-message";
+import { resolveAdministrativeRegion } from "../lib/address-region";
 import { countFormIssues, isEmailAddress, normalizeWebAddress } from "../lib/form-validation";
 import { t } from "../lib/i18n";
 import type { LocaleKey } from "../lib/locales";
@@ -44,17 +45,19 @@ import {
   type SetupStepKey,
 } from "../lib/account-setup";
 import {
-  AgentIcon,
   ArrowLeftIcon,
   ArrowRightIcon,
   DeviceMobileIcon,
   InfoIcon,
+  LockIcon,
   PriceIcon,
   ProfileIcon,
 } from "./icons";
 import { CountrySelect } from "./country-select";
+import { AddressRegionControl } from "./address-region-control";
 import { StatusPill } from "./status-pill";
 import { useAccountSetup } from "./hooks/use-account-setup";
+import { useAddressRegions } from "./hooks/use-address-regions";
 import { InternationalPhoneInput } from "./international-phone-input";
 
 /**
@@ -76,7 +79,7 @@ const STEPS: Array<{ key: SetupStepKey; label: LocaleKey; hint: LocaleKey; icon:
   { key: "profile", label: "setup.step.profile", hint: "setup.step.profileHint", icon: ProfileIcon },
   { key: "seller", label: "setup.step.seller", hint: "setup.step.sellerHint", icon: DeviceMobileIcon },
   { key: "billing", label: "setup.step.billing", hint: "setup.step.billingHint", icon: PriceIcon },
-  { key: "permissions", label: "setup.step.permissions", hint: "setup.step.permissionsHint", icon: AgentIcon },
+  { key: "permissions", label: "setup.step.permissions", hint: "setup.step.permissionsHint", icon: LockIcon },
 ];
 
 const MISSING_LABELS: Record<SetupMissingKey, LocaleKey> = {
@@ -346,6 +349,11 @@ function SellerStep({ user, lang, onSaved, onAdvance, onBack }: StepProps) {
   const [state, setState] = React.useState(p?.state ?? "");
   const [postalCode, setPostalCode] = React.useState(p?.postal_code ?? "");
   const [country, setCountry] = React.useState(p?.country ?? "");
+  const { regions: addressRegions, loading: addressRegionsLoading } = useAddressRegions(country, lang);
+  const automaticRegion = React.useMemo(
+    () => resolveAdministrativeRegion(addressRegions, country, city, postalCode),
+    [addressRegions, city, country, postalCode],
+  );
   const [isRePro, setIsRePro] = React.useState(p?.is_real_estate_professional ?? false);
   const [license, setLicense] = React.useState(p?.license_number ?? "");
   const [agency, setAgency] = React.useState(p?.agency_name ?? "");
@@ -594,8 +602,27 @@ function SellerStep({ user, lang, onSaved, onAdvance, onBack }: StepProps) {
           <Field id="setup-city" label={t("settings.seller.city", lang)} lang={lang} error={requiredError(city, touched.has("city"), lang)}>
             {(control) => <Input {...control} value={city} onChange={(e) => setCity(e.target.value)} onBlur={() => touch("city")} autoComplete="address-level2" />}
           </Field>
-          <Field id="setup-state" label={t("settings.seller.state", lang)} optional lang={lang}>
-            {(control) => <Input {...control} value={state} onChange={(e) => setState(e.target.value)} autoComplete="address-level1" />}
+          <Field
+            id="setup-state"
+            label={t("settings.seller.state", lang)}
+            optional
+            lang={lang}
+            hint={automaticRegion ? t("address.region.automaticHint", lang) : undefined}
+          >
+            {(control) => (
+              <AddressRegionControl
+                id={control.id}
+                value={state}
+                onChange={(nextState) => setState(nextState)}
+                country={country}
+                city={city}
+                postalCode={postalCode}
+                regions={addressRegions}
+                loading={addressRegionsLoading}
+                lang={lang}
+                ariaDescribedBy={control["aria-describedby"]}
+              />
+            )}
           </Field>
           <Field id="setup-postal" label={t("settings.seller.postalCode", lang)} optional lang={lang}>
             {(control) => <Input {...control} value={postalCode} onChange={(e) => setPostalCode(e.target.value)} autoComplete="postal-code" />}
@@ -660,6 +687,16 @@ function BillingStep({ user, lang, onSaved, onAdvance, onBack }: StepProps) {
   const [billingState, setBillingState] = React.useState(ba?.billing_state ?? "");
   const [billingPostal, setBillingPostal] = React.useState(ba?.billing_postal_code ?? "");
   const [billingCountry, setBillingCountry] = React.useState(ba?.billing_country ?? "");
+  const { regions: addressRegions, loading: addressRegionsLoading } = useAddressRegions(billingCountry, lang);
+  const automaticRegion = React.useMemo(
+    () => resolveAdministrativeRegion(
+      addressRegions,
+      billingCountry,
+      billingCity,
+      billingPostal,
+    ),
+    [addressRegions, billingCity, billingCountry, billingPostal],
+  );
   const [vat, setVat] = React.useState(ba?.vat_number ?? "");
   const [saving, setSaving] = React.useState(false);
   const [error, setError] = React.useState<string | null>(null);
@@ -805,8 +842,27 @@ function BillingStep({ user, lang, onSaved, onAdvance, onBack }: StepProps) {
         <Field id="setup-billing-city" label={t("settings.billing.city", lang)} lang={lang} error={requiredError(billingCity, touched.has("city"), lang)}>
           {(control) => <Input {...control} value={billingCity} onChange={(e) => setBillingCity(e.target.value)} onBlur={() => touch("city")} autoComplete="address-level2" />}
         </Field>
-        <Field id="setup-billing-state" label={t("settings.billing.state", lang)} optional lang={lang}>
-          {(control) => <Input {...control} value={billingState} onChange={(e) => setBillingState(e.target.value)} autoComplete="address-level1" />}
+        <Field
+          id="setup-billing-state"
+          label={t("settings.billing.state", lang)}
+          optional
+          lang={lang}
+          hint={automaticRegion ? t("address.region.automaticHint", lang) : undefined}
+        >
+          {(control) => (
+            <AddressRegionControl
+              id={control.id}
+              value={billingState}
+              onChange={(nextState) => setBillingState(nextState)}
+              country={billingCountry}
+              city={billingCity}
+              postalCode={billingPostal}
+              regions={addressRegions}
+              loading={addressRegionsLoading}
+              lang={lang}
+              ariaDescribedBy={control["aria-describedby"]}
+            />
+          )}
         </Field>
         <Field id="setup-billing-postal" label={t("settings.billing.postalCode", lang)} lang={lang} error={requiredError(billingPostal, touched.has("postal"), lang)}>
           {(control) => <Input {...control} value={billingPostal} onChange={(e) => setBillingPostal(e.target.value)} onBlur={() => touch("postal")} autoComplete="postal-code" />}
@@ -862,6 +918,10 @@ function PermissionsStep({
   const consentKnown = consent !== null && consent !== "blocked";
   const consented = consentKnown && consent.consented;
   const toolPermissions = signals?.toolPermissions ?? null;
+  const agentEntitled = signals?.capabilities == null
+    ? null
+    : signals.capabilities.apps.reaigen === true
+      && signals.capabilities.features.agent_access === true;
   const [acknowledged, setAcknowledged] = React.useState(false);
   const [improvement, setImprovement] = React.useState<ReaiImprovementConsent | null>(null);
   const [marketing, setMarketing] = React.useState(Boolean(user.gdpr?.marketing_consent));
@@ -869,13 +929,13 @@ function PermissionsStep({
   const [error, setError] = React.useState<string | null>(null);
 
   React.useEffect(() => {
-    if (!consented) return;
+    if (!consented || agentEntitled !== true) return;
     let active = true;
     getReaiImprovementConsent()
       .then((value) => { if (active) setImprovement(value); })
       .catch(() => { if (active) setImprovement(null); });
     return () => { active = false; };
-  }, [consented]);
+  }, [agentEntitled, consented]);
 
   async function run(key: string, action: () => Promise<void>) {
     if (busy) return;
@@ -920,7 +980,7 @@ function PermissionsStep({
   });
 
   const anyTool = Boolean(toolPermissions && (toolPermissions.allow_all_tools || Object.values(toolPermissions.tools).some(Boolean)));
-  const ready = consented && anyTool;
+  const ready = agentEntitled !== true || (consented && anyTool);
 
   async function handleSubmit(event: React.FormEvent) {
     event.preventDefault();
@@ -935,66 +995,70 @@ function PermissionsStep({
   return (
     <form className="space-y-6" onSubmit={handleSubmit} noValidate data-testid="setup-step-permissions">
       <div className="divide-y divide-border/60">
-        <ControlRow
-          title={t("settings.reai.access", lang)}
-          hint={consented ? t("settings.reai.accessEnabled", lang) : t("settings.reai.accessDisabled", lang)}
-          control={
-            <StatusPill tone="neutral" dot>
-              {consented ? t("common.allowed", lang) : t("common.notAllowed", lang)}
-            </StatusPill>
-          }
-        >
-          {blocked ? (
-            <p className="rounded-xl bg-muted/25 p-4 text-[12px] leading-relaxed text-foreground/70">{t("setup.blocker.reaigen_access", lang)}</p>
-          ) : consent === null ? (
-            <p className="text-[12px] text-muted-foreground">{t("common.loading", lang)}</p>
-          ) : consented ? null : (
-            <div className="space-y-3">
-              <div className="rounded-xl bg-muted/25 p-4 text-[12px] leading-relaxed text-foreground/70">
-                <p>{t("reai.consentData", lang)}</p>
-                <p className="mt-1.5">{t("reai.consentNoData", lang)}</p>
-                <p className="mt-1.5">{t("reai.consentStorage", lang)}</p>
-                <p className="mt-1.5">{t("reai.consentMedia", lang)}</p>
-              </div>
-              <label className="flex cursor-pointer items-start gap-2.5 text-[12px] leading-relaxed text-foreground/75">
-                <Checkbox checked={acknowledged} onCheckedChange={(checked) => setAcknowledged(checked === true)} className="mt-0.5" data-testid="setup-consent-ack" />
-                <span>{t("reai.consentLabel", lang)} · v{consentKnown ? consent.policy_version : ""}</span>
-              </label>
-              <Button type="button" loading={busy === "consent"} disabled={!acknowledged || busy !== null} onClick={enableAgent} data-testid="setup-enable-agent">
-                {t("reai.enable", lang)}
-              </Button>
-            </div>
-          )}
-        </ControlRow>
+        {agentEntitled === true ? (
+          <>
+            <ControlRow
+              title={t("settings.reai.access", lang)}
+              hint={consented ? t("settings.reai.accessEnabled", lang) : t("settings.reai.accessDisabled", lang)}
+              control={
+                <StatusPill tone="neutral" dot>
+                  {consented ? t("common.allowed", lang) : t("common.notAllowed", lang)}
+                </StatusPill>
+              }
+            >
+              {blocked ? (
+                <p className="rounded-xl bg-muted/25 p-4 text-[12px] leading-relaxed text-foreground/70">{t("setup.blocker.reaigen_access", lang)}</p>
+              ) : consent === null ? (
+                <p className="text-[12px] text-muted-foreground">{t("common.loading", lang)}</p>
+              ) : consented ? null : (
+                <div className="space-y-3">
+                  <div className="rounded-xl bg-muted/25 p-4 text-[12px] leading-relaxed text-foreground/70">
+                    <p>{t("reai.consentData", lang)}</p>
+                    <p className="mt-1.5">{t("reai.consentNoData", lang)}</p>
+                    <p className="mt-1.5">{t("reai.consentStorage", lang)}</p>
+                    <p className="mt-1.5">{t("reai.consentMedia", lang)}</p>
+                  </div>
+                  <label className="flex cursor-pointer items-start gap-2.5 text-[12px] leading-relaxed text-foreground/75">
+                    <Checkbox checked={acknowledged} onCheckedChange={(checked) => setAcknowledged(checked === true)} className="mt-0.5" data-testid="setup-consent-ack" />
+                    <span>{t("reai.consentLabel", lang)} · v{consentKnown ? consent.policy_version : ""}</span>
+                  </label>
+                  <Button type="button" loading={busy === "consent"} disabled={!acknowledged || busy !== null} onClick={enableAgent} data-testid="setup-enable-agent">
+                    {t("reai.enable", lang)}
+                  </Button>
+                </div>
+              )}
+            </ControlRow>
 
-        {consented ? (
-          <ControlRow
-            title={t("settings.reai.allTools", lang)}
-            hint={t("settings.reai.allToolsHelp", lang)}
-            control={
-              <Switch
-                aria-label={t("settings.reai.allTools", lang)}
-                checked={Boolean(toolPermissions?.allow_all_tools)}
-                disabled={!toolPermissions || busy !== null}
-                onCheckedChange={setAllTools}
-                data-testid="setup-all-tools"
+            {consented ? (
+              <ControlRow
+                title={t("settings.reai.allTools", lang)}
+                hint={t("settings.reai.allToolsHelp", lang)}
+                control={
+                  <Switch
+                    aria-label={t("settings.reai.allTools", lang)}
+                    checked={Boolean(toolPermissions?.allow_all_tools)}
+                    disabled={!toolPermissions || busy !== null}
+                    onCheckedChange={setAllTools}
+                    data-testid="setup-all-tools"
+                  />
+                }
+              >
+                {toolPermissions && !anyTool ? (
+                  <p className="text-[12px] text-foreground/65">{t("setup.permissions.noTools", lang)}</p>
+                ) : (
+                  <p className="text-[12px] leading-relaxed text-muted-foreground">{t("settings.reai.toolsConfirmation", lang)}</p>
+                )}
+              </ControlRow>
+            ) : null}
+
+            {consented && improvement ? (
+              <ControlRow
+                title={t("settings.reai.improvementPermission", lang)}
+                hint={t("settings.reai.improvementSubtitle", lang)}
+                control={<Switch aria-label={t("settings.reai.improvementPermission", lang)} checked={improvement.consented} disabled={busy !== null} onCheckedChange={toggleImprovement} />}
               />
-            }
-          >
-            {toolPermissions && !anyTool ? (
-              <p className="text-[12px] text-foreground/65">{t("setup.permissions.noTools", lang)}</p>
-            ) : (
-              <p className="text-[12px] leading-relaxed text-muted-foreground">{t("settings.reai.toolsConfirmation", lang)}</p>
-            )}
-          </ControlRow>
-        ) : null}
-
-        {consented && improvement ? (
-          <ControlRow
-            title={t("settings.reai.improvementPermission", lang)}
-            hint={t("settings.reai.improvementSubtitle", lang)}
-            control={<Switch aria-label={t("settings.reai.improvementPermission", lang)} checked={improvement.consented} disabled={busy !== null} onCheckedChange={toggleImprovement} />}
-          />
+            ) : null}
+          </>
         ) : null}
 
         <ControlRow
@@ -1078,6 +1142,7 @@ export function AccountSetupFlow({
   const hasBlockers = Boolean(status?.blockers.length);
   const ready = isAccountReady(status);
   const completedCount = status?.completedCount ?? 0;
+  const agentEntitled = status?.agentEntitled === true;
 
   const stepState = (key: SetupStepKey) => {
     const state = status?.steps.find((item) => item.key === key);
@@ -1138,7 +1203,7 @@ export function AccountSetupFlow({
           </span>
         </div>
         <p className="mt-2.5 max-w-[68ch] text-[13px] leading-relaxed text-muted-foreground sm:text-[14px]">
-          {t("setup.subtitle", lang)}
+          {t(agentEntitled ? "setup.subtitle" : "setup.subtitleBasic", lang)}
         </p>
         <div aria-hidden="true" className="mt-5 hidden grid-cols-4 gap-1.5 lg:grid">
           {STEPS.map((step) => {
@@ -1280,8 +1345,15 @@ export function AccountSetupFlow({
               <h2 className="mt-5 text-[26px] font-semibold leading-tight tracking-[-0.02em]">{t(ready ? "setup.done.title" : "setup.done.incompleteTitle", lang)}</h2>
               <p className="mt-2 max-w-[46ch] text-[14px] leading-relaxed text-muted-foreground">
                 {ready
-                  ? t("setup.done.subtitle", lang)
-                  : t(hasBlockers ? "setup.done.blockedSubtitle" : "setup.done.subtitleIncomplete", lang)}
+                  ? t(agentEntitled ? "setup.done.subtitle" : "setup.done.subtitleBasic", lang)
+                  : t(
+                    hasBlockers
+                      ? agentEntitled
+                        ? "setup.done.blockedSubtitle"
+                        : "setup.done.blockedSubtitleBasic"
+                      : "setup.done.subtitleIncomplete",
+                    lang,
+                  )}
               </p>
               <div className="mt-6 flex w-full flex-col gap-2 sm:w-auto sm:flex-row">
                 <Button asChild className="w-full sm:w-auto"><Link href="/dashboard">{t("setup.openDashboard", lang)}</Link></Button>
@@ -1331,7 +1403,7 @@ export function AccountSetupReminder({ user, lang, status }: { user: UserProfile
       <div className="min-w-0 flex-1">
         <p className="text-[13px] font-semibold">{t("setup.reminder.title", lang)}</p>
         <p className="mt-0.5 text-[12px] leading-relaxed text-foreground/65">
-          {status.completedCount} / {STEPS.length} {t("setup.stepsDone", lang)} · {t("setup.reminder.body", lang)}
+          {status.completedCount} / {STEPS.length} {t("setup.stepsDone", lang)} · {t(status.agentEntitled ? "setup.reminder.body" : "setup.reminder.bodyBasic", lang)}
         </p>
       </div>
       <Button asChild size="sm" className="shrink-0">

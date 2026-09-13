@@ -21,6 +21,11 @@ const upgradePage = fs.readFileSync(
   "utf8",
 );
 const api = fs.readFileSync(path.join(root, "app/lib/api/client.ts"), "utf8");
+const appShell = fs.readFileSync(path.join(root, "app/components/app-shell.tsx"), "utf8");
+const setupHook = fs.readFileSync(path.join(root, "app/components/hooks/use-account-setup.ts"), "utf8");
+const authGate = fs.readFileSync(path.join(root, "app/components/auth-gate.tsx"), "utf8");
+const tourEditor = fs.readFileSync(path.join(root, "app/create/tour/[id]/page.tsx"), "utf8");
+const versionManager = fs.readFileSync(path.join(root, "app/components/draft-version-manager.tsx"), "utf8");
 const apiErrors = fs.readFileSync(path.join(root, "app/lib/api/error-message.ts"), "utf8");
 const trainingValidation = fs.readFileSync(path.join(root, "app/lib/training-quality.ts"), "utf8");
 const english = fs.readFileSync(path.join(root, "app/lib/locales/en.ts"), "utf8");
@@ -111,6 +116,44 @@ test("credits and plan functions remain visible while live data loads", () => {
   assert.match(settings, /data-testid="compute-credits"/);
   assert.match(settings, /data-testid="plan-functions"/);
   assert.doesNotMatch(settings, /\{credits && \(/);
+});
+
+test("Agent surfaces fail closed from Django's Agent entitlement", () => {
+  assert.match(appShell, /getUserCapabilities\(\)[\s\S]*?capabilities\.features\.agent_access === true[\s\S]*?getReaiAgentConsent\(\)/);
+  assert.match(settings, /capabilities\.features\.agent_access === true/);
+  assert.match(settings, /tab\.value !== "reai" \|\| agentAllowed/);
+  assert.match(settings, /<PrivacyTab[^>]*agentAllowed=\{agentAllowed\}/);
+  assert.match(settings, /agentAllowed \? \([\s\S]*?<ReaiTab lang=\{lang\}/);
+  assert.match(setup, /signals\.capabilities\.features\.agent_access === true/);
+  assert.match(setup, /agentEntitled === true \? \(/);
+  assert.ok(
+    setupHook.indexOf("getUserCapabilities()") < setupHook.indexOf("getReaiAgentConsent()"),
+    "setup must resolve entitlement before requesting Agent consent",
+  );
+  assert.match(setupHook, /const \[consentResult\] = agentEntitled[\s\S]*?getReaiAgentConsent\(\)/);
+  assert.doesNotMatch(setupHook, /capabilities == null\s*\|\|/);
+  assert.match(setup, /agentEntitled === true \? \(/);
+  assert.ok(
+    tourEditor.indexOf("getUserCapabilities()") < tourEditor.indexOf("getReaiAgentConsent()"),
+    "tour editor must prove entitlement before requesting Agent consent",
+  );
+  assert.match(tourEditor, /capabilities\.features\.agent_access === true/);
+  assert.ok(
+    versionManager.indexOf("getUserCapabilities()") < versionManager.indexOf("getReaiAgentConsent()"),
+    "version manager must prove entitlement before requesting Agent data",
+  );
+  assert.match(versionManager, /if \(!entitled\) \{[\s\S]*?setActiveTab\("tour"\)/);
+  assert.match(versionManager, /agentEntitled === true \? \([\s\S]*?<VersionTabTrigger value="listing"/);
+});
+
+test("all-tools mode hides redundant individual Agent controls", () => {
+  assert.match(settings, /!toolPermissions\.allow_all_tools \? \([\s\S]*?toolPermissions\.available_tools\.map/);
+  assert.match(settings, /!agentPrivacy\.tools\.allow_all_tools \? \([\s\S]*?agentPrivacy\.tools\.available_tools\.map/);
+});
+
+test("sign-in fields render their localized placeholders", () => {
+  assert.match(authGate, /placeholder=\{t\("auth\.login\.emailPlaceholder", lang\)\}/);
+  assert.match(authGate, /placeholder=\{t\("auth\.login\.passwordPlaceholder", lang\)\}/);
 });
 
 test("payment actions require the precise capabilities reported by Django", () => {

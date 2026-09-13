@@ -363,6 +363,7 @@ function LoginCard({
             value={email}
             onChange={(e) => { setEmail(e.target.value); if (error) setError(null); }}
             onBlur={() => setEmailTouched(true)}
+            placeholder={t("auth.login.emailPlaceholder", lang)}
             autoComplete="email"
             className={INPUT_CLASS}
           />
@@ -398,6 +399,7 @@ function LoginCard({
               value={password}
               onChange={(e) => { setPassword(e.target.value); if (error) setError(null); }}
               onBlur={() => setPasswordTouched(true)}
+              placeholder={t("auth.login.passwordPlaceholder", lang)}
               autoComplete="current-password"
               className={`${INPUT_CLASS} pr-14`}
             />

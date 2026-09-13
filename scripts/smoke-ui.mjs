@@ -40,6 +40,23 @@ async function openPage(path, { consent = false, webCreationAllowed = false } = 
     }),
   );
   if (consent) {
+    await page.route("**/api/reaigen/users/permissions/", (route) =>
+      route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({
+          capabilities: {
+            role: "user",
+            is_developer: false,
+            tier: { code: "PRO", name: "Pro" },
+            limits: {},
+            features: { agent_access: true },
+            apps: { reaigen: true },
+            creator_posting: {},
+          },
+        }),
+      }),
+    );
     await page.route("**/reai-agent/consent/**", (route) =>
       route.fulfill({
         status: 200,
@@ -252,6 +269,8 @@ async function openPage(path, { consent = false, webCreationAllowed = false } = 
     tools: { allow_all_tools: true, tools: { image: true }, overrides: {}, entitled_tools: {}, tool_status: {}, available_tools: ["image"], tool_catalog: {}, settings_surfaces: {}, writable: true, confirmation_required_for_writes: true, updated_at: "" },
     personalized: { onboarding_completed: false, onboarding_skipped: false, onboarding_step: 0, preferences: {} },
   };
+  let agentEntitled = true;
+  let agentEndpointCalls = 0;
   const json = (route, body, status = 200) => route.fulfill({ status, contentType: "application/json", body: JSON.stringify(body) });
   const readBody = (route) => { try { return JSON.parse(route.request().postData() ?? "{}"); } catch { return {}; } };
   const chooseSlovakia = async (selector) => {
@@ -266,10 +285,10 @@ async function openPage(path, { consent = false, webCreationAllowed = false } = 
       phone_verified: account.phone_verified, last_login: null, date_joined: "2026-09-01T00:00:00Z",
       gdpr: { has_given_consent: true, consent_date: null, consent_version: "1", marketing_consent: false, data_processing_consent: true },
       profile: account.profile, personalized_data: account.personalized,
-      billing_account: { id: 1, subscription_tier_detail: { code: "FREE", name: "Free" }, subscription_status: "active", billing_cycle: "monthly", is_trial: false, is_active: true, has_reached_post_limit: false, has_reached_storage_limit: false, days_until_expiry: null, current_storage_gb: "0", current_posts_count: 0, payment_provider: "", ...account.billing },
+      billing_account: { id: 1, subscription_tier_detail: agentEntitled ? { code: "PRO", name: "Pro" } : { code: "FREE", name: "Free" }, subscription_status: "active", billing_cycle: "monthly", is_trial: false, is_active: true, has_reached_post_limit: false, has_reached_storage_limit: false, days_until_expiry: null, current_storage_gb: "0", current_posts_count: 0, payment_provider: "", ...account.billing },
     });
   });
-  await page.route("**/api/reaigen/users/permissions/", (route) => json(route, { capabilities: { role: "user", is_developer: false, tier: { code: "FREE", name: "Free" }, limits: {}, features: {}, apps: { reaigen: true }, creator_posting: { can_publish: false, has_reaigen_access: true, email_verified: true, phone_present: !!account.profile?.phone, phone_verified: account.phone_verified, seller_profile_complete: false, seller_profile_missing_fields: [], missing_requirements: [] } } }));
+  await page.route("**/api/reaigen/users/permissions/", (route) => json(route, { capabilities: { role: "user", is_developer: false, tier: agentEntitled ? { code: "PRO", name: "Pro" } : { code: "FREE", name: "Free" }, limits: {}, features: { agent_access: agentEntitled }, apps: { reaigen: true }, creator_posting: { can_publish: false, has_reaigen_access: true, email_verified: true, phone_present: !!account.profile?.phone, phone_verified: account.phone_verified, seller_profile_complete: false, seller_profile_missing_fields: [], missing_requirements: [] } } }));
   await page.route("**/api/reaigen/profiles/me/", (route) => {
     if (route.request().method() === "PATCH") {
       const body = readBody(route);
@@ -299,15 +318,34 @@ async function openPage(path, { consent = false, webCreationAllowed = false } = 
     credit_balance_status: null,
     countries: [{ code: "SK", name: "Slovakia" }],
   }));
+  await page.route("**/api/reaigen/lookups/administrative-regions/**", (route) => json(route, {
+    count: 1,
+    next: null,
+    previous: null,
+    results: [{
+      id: 1,
+      code: "SK_BA",
+      name: "Bratislavský kraj",
+      display_name: "Bratislava Region",
+      description: "",
+      is_active: true,
+      sort_order: 10,
+      country_code: "SK",
+      locality_names: ["Bratislava", "Malacky", "Pezinok"],
+      postal_code_prefixes: [],
+    }],
+  }));
   await page.route("**/api/reaigen/personalized-data/me/", (route) => {
     if (route.request().method() === "PATCH") Object.assign(account.personalized, readBody(route));
     json(route, account.personalized);
   });
   await page.route("**/api/reaigen/reai-agent/consent/", (route) => {
+    agentEndpointCalls += 1;
     if (route.request().method() === "POST") account.consent = { ...account.consent, consented: true, granted_at: "2026-09-10T00:00:00Z" };
     json(route, account.consent);
   });
   await page.route("**/api/reaigen/reai-agent/tool-permissions/", (route) => {
+    agentEndpointCalls += 1;
     if (route.request().method() === "PATCH") Object.assign(account.tools, readBody(route));
     json(route, account.tools);
   });
@@ -344,6 +382,9 @@ async function openPage(path, { consent = false, webCreationAllowed = false } = 
   await page.fill("#setup-address", "Hlavná 1");
   await page.fill("#setup-postal", "81101");
   await chooseSlovakia("#setup-country");
+  await page.waitForSelector('#setup-state[data-region-mode="automatic"]:disabled', { timeout: 20000 });
+  const sellerRegion = await page.locator("#setup-state").textContent();
+  check("account setup: obvious seller region is automatic and locked", sellerRegion?.includes("Bratislava Region") === true);
   await shot(page, "setup-seller");
   // Verify the number in place: the flow saves the profile first, then asks
   // for the code, and the verified flag comes back through /users/me/.
@@ -367,6 +408,9 @@ async function openPage(path, { consent = false, webCreationAllowed = false } = 
   await page.click('[data-testid="setup-billing-copy-address"]');
   const copied = await page.evaluate(() => ({ city: document.querySelector("#setup-billing-city").value, country: document.querySelector("#setup-billing-country").value }));
   check("account setup: billing can copy the seller address", copied.city === "Bratislava" && copied.country === "SK", JSON.stringify(copied));
+  await page.waitForSelector('#setup-billing-state[data-region-mode="automatic"]:disabled', { timeout: 20000 });
+  const billingRegion = await page.locator("#setup-billing-state").textContent();
+  check("account setup: copied billing region is automatic and locked", billingRegion?.includes("Bratislava Region") === true);
   await page.click('[data-testid="setup-continue"]');
   await page.waitForSelector('[data-testid="setup-step-permissions"]', { timeout: 20000 });
   check("account setup: billing saved with prefilled name and email", account.billing.billing_name === "QA Setup" && account.billing.billing_email === "qa.setup@reaigen.test" && account.billing.billing_postal_code === "81101", JSON.stringify(account.billing));
@@ -403,6 +447,34 @@ async function openPage(path, { consent = false, webCreationAllowed = false } = 
   await page.waitForSelector('[data-testid="account-setup-settings-fixture"]', { timeout: 20000 });
   await page.waitForTimeout(300);
   check("account setup: a completed account has no Settings setup card", await page.locator('[data-testid="settings-account-setup"]').count() === 0);
+
+  await page.goto(`${BASE}/dev-fixtures/account-setup?server=1&form=1#reai`, { waitUntil: "domcontentloaded", timeout: 120000 });
+  await page.waitForSelector('[data-testid="settings-tab-reai"][data-state="active"]', { timeout: 20000 });
+  await page.getByRole("switch", { name: "Allow all tools" }).waitFor({ timeout: 20000 });
+  check("Agent settings: allow-all hides individual tool controls", await page.locator('[data-testid="settings-agent-tool-list"]').count() === 0);
+  await page.click('[data-testid="settings-tab-privacy"]');
+  await page.waitForSelector('[data-testid="settings-agent-privacy"]', { timeout: 20000 });
+  await page.getByRole("switch", { name: "Allow all tools" }).waitFor({ timeout: 20000 });
+  check("Agent privacy: allow-all hides individual tool controls", await page.locator('[data-testid="settings-agent-privacy-tool-list"]').count() === 0);
+
+  // A regular Free account must not discover Agent through Settings,
+  // Privacy, or a direct #reai URL. Once Django denies the capability these
+  // surfaces must not probe any Agent endpoint either.
+  agentEntitled = false;
+  account.personalized.onboarding_completed = false;
+  account.personalized.onboarding_step = 0;
+  const callsBeforeFreeSettings = agentEndpointCalls;
+  await page.goto(`${BASE}/dev-fixtures/account-setup?server=1&form=1&free=1#reai`, { waitUntil: "domcontentloaded", timeout: 120000 });
+  await page.waitForSelector('[data-testid="account-settings-form-fixture"]', { timeout: 20000 });
+  await page.waitForFunction(() => window.location.hash === "#profile", null, { timeout: 20000 });
+  check(
+    "Free account: direct Agent settings link is rejected",
+    await page.locator('[data-testid="settings-tab-reai"]').count() === 0 && new URL(page.url()).hash === "#profile",
+  );
+  await page.click('[data-testid="settings-tab-privacy"]');
+  await page.waitForTimeout(300);
+  check("Free account: Privacy exposes no Agent controls", await page.locator('[data-testid="settings-agent-privacy"]').count() === 0);
+  check("Free account: hidden settings make no Agent API calls", agentEndpointCalls === callsBeforeFreeSettings, `calls=${agentEndpointCalls - callsBeforeFreeSettings}`);
   check("account setup: no page errors", pageErrors.length === 0, pageErrors[0] ?? "");
   await page.close();
 }
@@ -414,7 +486,11 @@ async function openPage(path, { consent = false, webCreationAllowed = false } = 
   await page.waitForSelector('[data-testid="account-setup-reminder"]', { timeout: 60000 });
   await shot(page, "setup-reminder");
   const text = await page.evaluate(() => document.querySelector('[data-testid="account-setup-reminder"]')?.textContent ?? "");
-  check("account setup: reminder shows progress and a way in", /1 \/ 4/.test(text) && /Continue setup/.test(text), text.slice(0, 120));
+  check(
+    "Free account setup: reminder shows progress without disclosing Agent",
+    /2 \/ 4/.test(text) && /Continue setup/.test(text) && !/Agent/i.test(text),
+    text.slice(0, 160),
+  );
   check("account setup reminder: no page errors", pageErrors.length === 0, pageErrors[0] ?? "");
   await page.close();
 }
@@ -484,6 +560,15 @@ async function openPage(path, { consent = false, webCreationAllowed = false } = 
   await page.route("**/api/auth/register/", (route) => json(route, { user: { id: 9 }, message: "Registration successful.", email_verification_required: true, verification_email_status: "sent" }, 201));
   await page.route("**/api/auth/resend-verification/**", (route) => { resends += 1; json(route, { sent: true }); });
   await page.waitForSelector("#login-email", { timeout: 60000 });
+  const loginPlaceholders = await page.evaluate(() => ({
+    email: document.querySelector("#login-email")?.getAttribute("placeholder"),
+    password: document.querySelector("#login-password")?.getAttribute("placeholder"),
+  }));
+  check(
+    "sign in: localized email and password placeholders are present",
+    loginPlaceholders.email === "you@email.com" && loginPlaceholders.password === "Enter password",
+    JSON.stringify(loginPlaceholders),
+  );
   await page.click("text=Create an account");
   await page.waitForSelector("#register-email", { timeout: 20000 });
   await page.fill("#register-first-name", "QA");

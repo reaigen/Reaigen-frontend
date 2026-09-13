@@ -249,9 +249,8 @@ function PlanComparison({ tiers, lang }: { tiers: BillingTierOption[]; lang: str
                 const enabled = tier.features?.find((row) => row.code === feature.code)?.enabled === true;
                 const status = tier.features?.find((row) => row.code === feature.code)?.status;
                 return (
-                  <div key={`${tier.code}-${feature.code}`} className="flex items-center gap-2 border-b border-l border-border/55 px-3 py-3 text-[12px]">
-                    {enabled ? <CheckIcon size={14} className="text-foreground" /> : null}
-                    <span className={enabled ? "font-semibold" : "text-muted-foreground"}>{status?.name ?? "—"}</span>
+                  <div key={`${tier.code}-${feature.code}`} className="border-b border-l border-border/45 px-3 py-2.5 text-[11px] text-muted-foreground">
+                    <span className={enabled ? "text-foreground/70" : "text-muted-foreground/65"}>{status?.name ?? "—"}</span>
                   </div>
                 );
               })}

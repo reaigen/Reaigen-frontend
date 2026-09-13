@@ -38,12 +38,16 @@ test("registration, setup, and Settings share one accessible account-field contr
 });
 
 test("registration validates each field without using labels as placeholders", () => {
+  const registration = auth.slice(
+    auth.indexOf("function RegistrationCard"),
+    auth.indexOf("export function AuthGate"),
+  );
   assert.match(auth, /id="register-first-name"[\s\S]*?error=\{firstNameError\}/);
   assert.match(auth, /id="register-email"[\s\S]*?error=\{emailError\}/);
   assert.match(auth, /id="register-password"[\s\S]*?error=\{passwordError\}/);
   assert.match(auth, /id="register-terms-error" role="alert"/);
   assert.match(auth, /isEmailAddress\(email\)/);
-  assert.doesNotMatch(auth, /placeholder=\{t\("auth\.(?:login|register)\./);
+  assert.doesNotMatch(registration, /placeholder=/);
 });
 
 test("required setup fields react after blur and explain rejected submits", () => {

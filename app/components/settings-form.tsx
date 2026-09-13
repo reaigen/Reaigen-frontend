@@ -80,6 +80,7 @@ import {
   type UserCapabilities,
 } from "../lib/api/client";
 import { getSafeApiErrorMessage } from "../lib/api/error-message";
+import { resolveAdministrativeRegion } from "../lib/address-region";
 import { isEmailAddress, normalizeWebAddress } from "../lib/form-validation";
 import { parseTrainingIterations } from "../lib/training-quality";
 import {
@@ -111,8 +112,10 @@ import { cn } from "../lib/utils";
 import { ManagedLegalDocuments } from "./content-documents";
 import { resolveQuotaPresentation } from "../lib/account-usage";
 import { CountrySelect } from "./country-select";
+import { AddressRegionControl } from "./address-region-control";
 import { InternationalPhoneInput } from "./international-phone-input";
 import { useAccountSetup } from "./hooks/use-account-setup";
+import { useAddressRegions } from "./hooks/use-address-regions";
 import { shouldPromptAccountSetup } from "../lib/account-setup";
 
 function useAutoDismiss(value: boolean, setter: (v: boolean) => void, ms = 3000) {
@@ -629,6 +632,11 @@ function SellerTab({ user, onSaved, lang }: { user: UserProfile; onSaved: () => 
   const [state, setState] = React.useState(p?.state ?? "");
   const [country, setCountry] = React.useState(p?.country ?? "");
   const [postalCode, setPostalCode] = React.useState(p?.postal_code ?? "");
+  const { regions: addressRegions, loading: addressRegionsLoading } = useAddressRegions(country, lang);
+  const automaticRegion = React.useMemo(
+    () => resolveAdministrativeRegion(addressRegions, country, city, postalCode),
+    [addressRegions, city, country, postalCode],
+  );
   const [loading, setLoading] = React.useState(false);
   const [error, setError] = React.useState<string | null>(null);
   const [success, setSuccess] = React.useState(false);
@@ -924,8 +932,25 @@ function SellerTab({ user, onSaved, lang }: { user: UserProfile; onSaved: () => 
               <FormField id="seller-city" label={t("settings.seller.city", lang)}>
                 {(control) => <Input {...control} value={city} onChange={(e) => setCity(e.target.value)} autoComplete="address-level2" />}
               </FormField>
-              <FormField id="seller-state" label={t("settings.seller.state", lang)}>
-                {(control) => <Input {...control} value={state} onChange={(e) => setState(e.target.value)} autoComplete="address-level1" />}
+              <FormField
+                id="seller-state"
+                label={t("settings.seller.state", lang)}
+                hint={automaticRegion ? t("address.region.automaticHint", lang) : undefined}
+              >
+                {(control) => (
+                  <AddressRegionControl
+                    id={control.id}
+                    value={state}
+                    onChange={(nextState) => setState(nextState)}
+                    country={country}
+                    city={city}
+                    postalCode={postalCode}
+                    regions={addressRegions}
+                    loading={addressRegionsLoading}
+                    lang={lang}
+                    ariaDescribedBy={control["aria-describedby"]}
+                  />
+                )}
               </FormField>
               <FormField id="seller-country" label={t("settings.seller.country", lang)}>
                 {(control) => <CountrySelect id={control.id} value={country} onChange={setCountry} lang={lang} allowClear aria-describedby={control["aria-describedby"]} />}
@@ -1171,7 +1196,8 @@ function ReaiTab({ lang }: { lang: string }) {
                 />
               </div>
 
-              <div className="divide-y divide-border/60 rounded-lg border border-border/65 px-4">
+              {!toolPermissions.allow_all_tools ? (
+                <div data-testid="settings-agent-tool-list" className="divide-y divide-border/60 rounded-lg border border-border/65 px-4">
                   {toolPermissions.available_tools.map((code) => {
                     // A tool the plan excludes can never be switched on: the
                     // backend keeps the preference but still reports it off,
@@ -1207,7 +1233,8 @@ function ReaiTab({ lang }: { lang: string }) {
                       </div>
                     );
                   })}
-              </div>
+                </div>
+              ) : null}
 
               <p className="text-[12px] leading-relaxed text-muted-foreground">{t("settings.reai.toolsConfirmation", lang)}</p>
             </div>
@@ -1248,7 +1275,17 @@ function ReaiTab({ lang }: { lang: string }) {
 
 /* ── Privacy Tab ─────────────────────────────────────────────────────── */
 
-function PrivacyTab({ user, onSaved, lang }: { user: UserProfile; onSaved: () => void; lang: string }) {
+function PrivacyTab({
+  user,
+  onSaved,
+  lang,
+  agentAllowed,
+}: {
+  user: UserProfile;
+  onSaved: () => void;
+  lang: string;
+  agentAllowed: boolean;
+}) {
   const p = user.profile ?? {} as Partial<NonNullable<typeof user.profile>>;
   const [isPublic, setIsPublic] = React.useState(p?.is_public ?? true);
   const [showEmail, setShowEmail] = React.useState(p?.show_email ?? false);
@@ -1284,6 +1321,10 @@ function PrivacyTab({ user, onSaved, lang }: { user: UserProfile; onSaved: () =>
   ]);
 
   React.useEffect(() => {
+    if (!agentAllowed) {
+      setAgentPrivacy(null);
+      return;
+    }
     let active = true;
     Promise.all([getReaiAgentConsent(), getReaiImprovementConsent()])
       .then(async ([consent, improvement]) => {
@@ -1294,7 +1335,7 @@ function PrivacyTab({ user, onSaved, lang }: { user: UserProfile; onSaved: () =>
         if (active) setAgentPrivacy(null);
       });
     return () => { active = false; };
-  }, []);
+  }, [agentAllowed]);
 
   async function setPrivacyTools(payload: {
     allow_all_tools?: boolean;
@@ -1455,12 +1496,13 @@ function PrivacyTab({ user, onSaved, lang }: { user: UserProfile; onSaved: () =>
         </CardContent>
       </Card>
 
-      <Card>
-        <CardHeader>
-          <CardTitle>{t("settings.privacy.agentTitle", lang)}</CardTitle>
-          <CardDescription>{t("settings.privacy.agentSubtitle", lang)}</CardDescription>
-        </CardHeader>
-        <CardContent>
+      {agentAllowed ? (
+        <Card data-testid="settings-agent-privacy">
+          <CardHeader>
+            <CardTitle>{t("settings.privacy.agentTitle", lang)}</CardTitle>
+            <CardDescription>{t("settings.privacy.agentSubtitle", lang)}</CardDescription>
+          </CardHeader>
+          <CardContent>
           <dl className="space-y-3 rounded-lg border border-border/65 px-4 py-3">
             <DataRow
               label={t("settings.privacy.agentAccess", lang)}
@@ -1494,7 +1536,8 @@ function PrivacyTab({ user, onSaved, lang }: { user: UserProfile; onSaved: () =>
                   aria-label={t("settings.reai.allTools", lang)}
                 />
               </div>
-              <div className="divide-y divide-border/60 rounded-lg border border-border/65 px-3">
+              {!agentPrivacy.tools.allow_all_tools ? (
+                <div data-testid="settings-agent-privacy-tool-list" className="divide-y divide-border/60 rounded-lg border border-border/65 px-3">
                   {agentPrivacy.tools.available_tools.map((code) => {
                     const entitled = agentPrivacy.tools?.tool_status[code]?.entitled ?? false;
                     const dataBoundary = agentPrivacy.tools?.tool_catalog[code]?.data_boundary;
@@ -1518,7 +1561,8 @@ function PrivacyTab({ user, onSaved, lang }: { user: UserProfile; onSaved: () =>
                       </div>
                     );
                   })}
-              </div>
+                </div>
+              ) : null}
               <div className="flex items-start justify-between gap-4 rounded-lg border border-border/65 px-3 py-2.5">
                 <div>
                   <p className="text-[12px] font-medium">{t("settings.reai.improvementPermission", lang)}</p>
@@ -1540,8 +1584,9 @@ function PrivacyTab({ user, onSaved, lang }: { user: UserProfile; onSaved: () =>
           >
             {t("settings.privacy.manageAgent", lang)}
           </a>
-        </CardContent>
-      </Card>
+          </CardContent>
+        </Card>
+      ) : null}
 
       <Card>
         <CardHeader>
@@ -2425,6 +2470,16 @@ function BillingTab({ user, onSaved, lang }: { user: UserProfile; onSaved: () =>
   const [billingState, setBillingState] = React.useState(ba?.billing_state ?? "");
   const [billingPostal, setBillingPostal] = React.useState(ba?.billing_postal_code ?? "");
   const [billingCountry, setBillingCountry] = React.useState(ba?.billing_country ?? "");
+  const { regions: addressRegions, loading: addressRegionsLoading } = useAddressRegions(billingCountry, lang);
+  const automaticRegion = React.useMemo(
+    () => resolveAdministrativeRegion(
+      addressRegions,
+      billingCountry,
+      billingCity,
+      billingPostal,
+    ),
+    [addressRegions, billingCity, billingCountry, billingPostal],
+  );
   const [vat, setVat] = React.useState(ba?.vat_number ?? "");
   const [billingDirty, setBillingDirty] = React.useState(false);
   const [billingEmailTouched, setBillingEmailTouched] = React.useState(false);
@@ -2876,35 +2931,40 @@ function BillingTab({ user, onSaved, lang }: { user: UserProfile; onSaved: () =>
         </CardContent>
       </Card>
 
-      <Card data-testid="plan-functions">
-        <CardHeader>
-          <CardTitle>{t("settings.billing.functionsTitle", lang)}</CardTitle>
-          <CardDescription>{t("settings.billing.functionsSubtitle", lang)}</CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-3">
-          <div className="grid overflow-hidden rounded-2xl border border-border/65 sm:grid-cols-2">
-            {planFunctions.map((item) => {
-              return (
-                <div
-                  key={item.code}
-                  className="flex min-h-12 items-center justify-between gap-3 border-b border-border/65 px-4 py-3 last:border-b-0 sm:[&:nth-last-child(-n+2)]:border-b-0 sm:[&:nth-child(odd)]:border-r"
-                >
-                  <span className="text-[13px] font-medium">{item.name}</span>
-                  <AccessPill allowed={item.enabled} lang={lang} mode="inclusion" />
+      <Card data-testid="plan-functions" className="bg-muted/[0.08] shadow-none">
+        <CardContent className="py-4">
+          <details>
+            <summary className="cursor-pointer text-[12px] font-medium text-muted-foreground marker:text-muted-foreground/50">
+              {t("settings.billing.functionsTitle", lang)}
+              <span className="ml-2 font-normal text-muted-foreground/75">
+                {t("settings.billing.functionsSubtitle", lang)}
+              </span>
+            </summary>
+            <div className="mt-3 border-t border-border/50 pt-2">
+              <dl className="divide-y divide-border/40">
+                {planFunctions.map((item) => (
+                  <div key={item.code} className="flex items-center justify-between gap-4 py-2 text-[12px]">
+                    <dt className="text-muted-foreground">{item.name}</dt>
+                    <dd className="shrink-0 text-[11px] text-muted-foreground/75">
+                      {t(item.enabled ? "settings.billing.included" : "settings.billing.notIncluded", lang)}
+                    </dd>
+                  </div>
+                ))}
+                <div className="flex items-center justify-between gap-4 py-2 text-[12px]">
+                  <dt className="text-muted-foreground">{t("settings.billing.uploadsPerDraft", lang)}</dt>
+                  <dd className="shrink-0 text-[11px] text-muted-foreground/75">
+                    {uploadsPerDraft?.display_value ?? "—"}
+                  </dd>
                 </div>
-              );
-            })}
-          </div>
-          <dl className="grid rounded-2xl border border-border/65 px-4 sm:grid-cols-2 sm:gap-x-8">
-            <DataRow
-              label={t("settings.billing.uploadsPerDraft", lang)}
-              value={uploadsPerDraft?.display_value ?? "—"}
-            />
-            <DataRow
-              label={t("settings.billing.processingJobs", lang)}
-              value={processingJobs?.display_value ?? "—"}
-            />
-          </dl>
+                <div className="flex items-center justify-between gap-4 py-2 text-[12px]">
+                  <dt className="text-muted-foreground">{t("settings.billing.processingJobs", lang)}</dt>
+                  <dd className="shrink-0 text-[11px] text-muted-foreground/75">
+                    {processingJobs?.display_value ?? "—"}
+                  </dd>
+                </div>
+              </dl>
+            </div>
+          </details>
         </CardContent>
       </Card>
 
@@ -3045,8 +3105,25 @@ function BillingTab({ user, onSaved, lang }: { user: UserProfile; onSaved: () =>
                 <FormField id="settings-billing-city" label={t("settings.billing.city", lang)}>
                   {(control) => <Input {...control} value={billingCity} onChange={(e) => { setBillingCity(e.target.value); setBillingDirty(true); }} autoComplete="address-level2" />}
                 </FormField>
-                <FormField id="settings-billing-state" label={t("settings.billing.state", lang)}>
-                  {(control) => <Input {...control} value={billingState} onChange={(e) => { setBillingState(e.target.value); setBillingDirty(true); }} autoComplete="address-level1" />}
+                <FormField
+                  id="settings-billing-state"
+                  label={t("settings.billing.state", lang)}
+                  hint={automaticRegion ? t("address.region.automaticHint", lang) : undefined}
+                >
+                  {(control) => (
+                    <AddressRegionControl
+                      id={control.id}
+                      value={billingState}
+                      onChange={(nextState) => { setBillingState(nextState); setBillingDirty(true); }}
+                      country={billingCountry}
+                      city={billingCity}
+                      postalCode={billingPostal}
+                      regions={addressRegions}
+                      loading={addressRegionsLoading}
+                      lang={lang}
+                      ariaDescribedBy={control["aria-describedby"]}
+                    />
+                  )}
                 </FormField>
                 <FormField id="settings-billing-postal" label={t("settings.billing.postalCode", lang)}>
                   {(control) => <Input {...control} value={billingPostal} onChange={(e) => { setBillingPostal(e.target.value); setBillingDirty(true); }} autoComplete="postal-code" />}
@@ -3855,9 +3932,31 @@ function PhoneSection({ user, onSaved, lang }: { user: UserProfile; onSaved: () 
 export function SettingsForm({ user, onSaved }: { user: UserProfile; onSaved: () => void }) {
   const lang = getUserLanguage(user.localization);
   const [activeTab, setActiveTab] = React.useState("profile");
+  const [agentAccess, setAgentAccess] = React.useState<boolean | null>(null);
+
   React.useEffect(() => {
-    const sections = ["profile", "seller", "privacy", "reai", "training", "localization", "notifications", "billing", "security"];
+    let active = true;
+    setAgentAccess(null);
+    void getUserCapabilities()
+      .then((capabilities) => {
+        if (!active) return;
+        setAgentAccess(
+          capabilities.apps.reaigen === true
+          && capabilities.features.agent_access === true,
+        );
+      })
+      .catch(() => {
+        if (active) setAgentAccess(false);
+      });
+    return () => { active = false; };
+  }, [user.id]);
+
+  const agentAllowed = agentAccess === true;
+  React.useEffect(() => {
+    const sections = ["profile", "seller", "privacy", "training", "localization", "notifications", "billing", "security"];
+    if (agentAllowed) sections.push("reai");
     const selectSection = (section: string) => {
+      if (section === "reai" && agentAccess === null) return;
       if (!sections.includes(section)) return;
       setActiveTab(section);
       window.history.replaceState(null, "", `#${section}`);
@@ -3876,12 +3975,21 @@ export function SettingsForm({ user, onSaved }: { user: UserProfile; onSaved: ()
       window.removeEventListener("hashchange", selectHashTab);
       window.removeEventListener("reai-settings-navigate", navigateFromAgent);
     };
-  }, []);
+  }, [agentAccess, agentAllowed]);
+
+  React.useEffect(() => {
+    if (
+      agentAccess !== false
+      || (activeTab !== "reai" && window.location.hash !== "#reai")
+    ) return;
+    setActiveTab("profile");
+    window.history.replaceState(null, "", "#profile");
+  }, [activeTab, agentAccess]);
   // Desktop settings navigation is a stable vertical list. Compact layouts
   // use the selector below instead of hiding destinations in a chip carousel.
   const triggerClassName =
     "group h-11 w-full justify-start gap-2.5 rounded-full border border-transparent bg-transparent px-2.5 py-0 text-left text-[13px] font-medium text-foreground/58 shadow-none transition-all hover:bg-foreground/[0.035] hover:text-foreground/80 data-[state=active]:border-foreground/15 data-[state=active]:bg-muted/70 data-[state=active]:text-foreground data-[state=active]:shadow-card data-[state=active]:backdrop-blur-xl";
-  const settingsTabs = [
+  const settingsTabs = ([
     { value: "profile", label: "settings.tab.profile", icon: ProfileIcon },
     { value: "seller", label: "settings.tab.seller", icon: DocumentIcon },
     { value: "privacy", label: "settings.tab.privacy", icon: EyeOpenIcon },
@@ -3891,7 +3999,7 @@ export function SettingsForm({ user, onSaved }: { user: UserProfile; onSaved: ()
     { value: "notifications", label: "settings.tab.notifications", icon: DeviceMobileIcon },
     { value: "billing", label: "settings.tab.billing", icon: PriceIcon },
     { value: "security", label: "settings.tab.security", icon: LockIcon },
-  ] as const;
+  ] as const).filter((tab) => tab.value !== "reai" || agentAllowed);
 
   return (
     <div className="w-full">
@@ -3941,7 +4049,7 @@ export function SettingsForm({ user, onSaved }: { user: UserProfile; onSaved: ()
             {settingsTabs.map((tab) => {
               const TabIcon = tab.icon;
               return (
-                <TabsTrigger key={tab.value} value={tab.value} className={triggerClassName}>
+                <TabsTrigger key={tab.value} value={tab.value} data-testid={`settings-tab-${tab.value}`} className={triggerClassName}>
                   <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-foreground/[0.045] text-foreground/60 transition-colors group-data-[state=active]:bg-primary group-data-[state=active]:text-primary-foreground">
                     <TabIcon size={14} className="block" />
                   </span>
@@ -3959,11 +4067,13 @@ export function SettingsForm({ user, onSaved }: { user: UserProfile; onSaved: ()
             <SellerTab user={user} onSaved={onSaved} lang={lang} />
           </TabsContent>
           <TabsContent value="privacy" className="mt-0">
-            <PrivacyTab user={user} onSaved={onSaved} lang={lang} />
+            <PrivacyTab user={user} onSaved={onSaved} lang={lang} agentAllowed={agentAllowed} />
           </TabsContent>
-          <TabsContent value="reai" className="mt-0">
-            <ReaiTab lang={lang} />
-          </TabsContent>
+          {agentAllowed ? (
+            <TabsContent value="reai" className="mt-0">
+              <ReaiTab lang={lang} />
+            </TabsContent>
+          ) : null}
           <TabsContent value="training" className="mt-0">
             <TrainingTab lang={lang} />
           </TabsContent>

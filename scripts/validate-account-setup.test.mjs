@@ -48,9 +48,14 @@ function user(overrides = {}) {
 const consented = { consented: true, policy_version: "1", granted_at: null, privacy: {} };
 const notConsented = { ...consented, consented: false };
 const allTools = { allow_all_tools: true, tools: {} };
+const agentCapabilities = {
+  apps: { reaigen: true },
+  features: { agent_access: true },
+  creator_posting: { phone_verified: true, has_reaigen_access: true, missing_requirements: [] },
+};
 
 test("a fully set-up account has no gaps and never re-prompts", () => {
-  const status = computeAccountSetupStatus({ user: user(), consent: consented, toolPermissions: allTools });
+  const status = computeAccountSetupStatus({ user: user(), consent: consented, toolPermissions: allTools, capabilities: agentCapabilities });
   assert.equal(status.complete, true);
   assert.equal(isAccountReady(status), true);
   assert.equal(status.nextStep, null);
@@ -65,7 +70,7 @@ test("a fresh registration opens on the seller step and prompts once", () => {
     profile: { phone: "", phone_verified: false, bio: "", city: "", country: "" },
     billing_account: { billing_name: "", billing_email: "", billing_address: "", billing_city: "", billing_postal_code: "", billing_country: "" },
   });
-  const status = computeAccountSetupStatus({ user: fresh, consent: notConsented });
+  const status = computeAccountSetupStatus({ user: fresh, consent: notConsented, capabilities: agentCapabilities });
   assert.equal(status.nextStep, "seller");
   assert.equal(status.completedCount, 1);
   assert.deepEqual(status.steps.find((step) => step.key === "seller").missing, ["phone", "bio", "city", "country"]);
@@ -77,7 +82,18 @@ test("a fresh registration opens on the seller step and prompts once", () => {
 
 test("a saved but unverified phone is its own gap", () => {
   const unverified = user({ phone_verified: false, profile: { ...user().profile, phone_verified: false } });
-  const status = computeAccountSetupStatus({ user: unverified, consent: consented, toolPermissions: allTools });
+  const status = computeAccountSetupStatus({
+    user: unverified,
+    consent: consented,
+    toolPermissions: allTools,
+    capabilities: {
+      ...agentCapabilities,
+      creator_posting: {
+        ...agentCapabilities.creator_posting,
+        phone_verified: false,
+      },
+    },
+  });
   assert.deepEqual(status.steps.find((step) => step.key === "seller").missing, ["phone_verified"]);
   // The backend's verdict wins over the profile mirror.
   const verdict = computeAccountSetupStatus({
@@ -94,8 +110,41 @@ test("consent without any enabled tool is not finished", () => {
     user: user(),
     consent: consented,
     toolPermissions: { allow_all_tools: false, tools: { image: false, translation: false } },
+    capabilities: agentCapabilities,
   });
   assert.deepEqual(status.steps.find((step) => step.key === "permissions").missing, ["agent_tools"]);
+});
+
+test("unknown capabilities do not disclose or require optional Agent setup", () => {
+  const status = computeAccountSetupStatus({
+    user: user(),
+    consent: null,
+    capabilities: null,
+  });
+
+  assert.deepEqual(status.steps.find((step) => step.key === "permissions").missing, []);
+  assert.equal(status.complete, true);
+});
+
+test("a Free account without Agent entitlement has no Agent setup gap", () => {
+  const status = computeAccountSetupStatus({
+    user: user(),
+    consent: "blocked",
+    capabilities: {
+      apps: { reaigen: true },
+      features: { agent_access: false },
+      creator_posting: {
+        phone_verified: true,
+        has_reaigen_access: true,
+        missing_requirements: [],
+      },
+    },
+  });
+
+  assert.deepEqual(status.steps.find((step) => step.key === "permissions").missing, []);
+  assert.equal(status.complete, true);
+  assert.equal(status.nextStep, null);
+  assert.deepEqual(status.blockers, []);
 });
 
 test("skipped or completed onboarding stops every automatic setup prompt", () => {

@@ -149,6 +149,9 @@ export function PropertyMapCard({
   const lat = coordinate(latitude, -90, 90);
   const lng = coordinate(longitude, -180, 180);
   const normalizedAddress = address?.replace(/\s+/g, " ").trim() ?? "";
+  const externalMapUrl = normalizedAddress
+    ? `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(normalizedAddress)}`
+    : null;
   const rawTarget = useMemo(() => (
     lat != null && lng != null
       ? { key: `${lat},${lng}`, lat, lng, address: normalizedAddress }
@@ -224,9 +227,26 @@ export function PropertyMapCard({
   }, [rawTarget]);
 
   useEffect(() => {
-    if (!target || !shouldLoad) {
+    if (!target) {
       setMapConfig(null);
-      setLoading(Boolean(target));
+      setLoading(false);
+      return;
+    }
+
+    // An address is not a coordinate. Do not make a request that the
+    // authenticated endpoint must reject, and do not silently send a private
+    // address to a geocoder. The rendered state below offers an explicit
+    // user-initiated Google Maps link instead.
+    if (target.lat == null || target.lng == null) {
+      setMapConfig(null);
+      setFailed(false);
+      setLoading(false);
+      return;
+    }
+
+    if (!shouldLoad) {
+      setMapConfig(null);
+      setLoading(true);
       return;
     }
 
@@ -344,6 +364,25 @@ export function PropertyMapCard({
               </button>
             </div>
           </div>
+        ) : target.lat == null || target.lng == null ? (
+          <div className="absolute inset-0 flex items-center justify-center px-6 text-center">
+            <div className="max-w-[21rem]">
+              <span className="media-overlay-surface mx-auto flex h-12 w-12 items-center justify-center rounded-full">
+                <MapPinIcon size={20} />
+              </span>
+              <p className="mt-3 text-[13px] font-semibold text-foreground/68">{t("draft.mapCoordinatesUnavailable", lang)}</p>
+              {externalMapUrl ? (
+                <a
+                  href={externalMapUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="media-overlay-control mt-3 inline-flex min-h-9 items-center justify-center rounded-full px-4 text-[11px] font-semibold focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                >
+                  {t("draft.openInMaps", lang)}
+                </a>
+              ) : null}
+            </div>
+          </div>
         ) : loading ? (
           <div className="absolute inset-0 flex items-center justify-center" role="status" aria-label={t("common.loading", lang)}>
             <span className="media-overlay-surface inline-flex min-h-11 items-center gap-2.5 rounded-full px-4 text-[11px] font-semibold">
@@ -358,15 +397,17 @@ export function PropertyMapCard({
           <LockIcon size={13} className="shrink-0" />
           <span className="truncate">{t("draft.location", lang)} · {t("draft.editor.private", lang)}</span>
         </div>
-        <button
-          type="button"
-          onClick={() => setExpanded(true)}
-          aria-label={t("draft.location", lang)}
-          title={t("draft.location", lang)}
-          className="media-overlay-control absolute right-3 top-3 inline-flex h-10 w-10 items-center justify-center rounded-full active:scale-[0.98] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white sm:right-4 sm:top-4"
-        >
-          <LayoutIcon size={15} />
-        </button>
+        {target.lat != null && target.lng != null ? (
+          <button
+            type="button"
+            onClick={() => setExpanded(true)}
+            aria-label={t("draft.location", lang)}
+            title={t("draft.location", lang)}
+            className="media-overlay-control absolute right-3 top-3 inline-flex h-10 w-10 items-center justify-center rounded-full active:scale-[0.98] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white sm:right-4 sm:top-4"
+          >
+            <LayoutIcon size={15} />
+          </button>
+        ) : null}
         {normalizedAddress ? (
           <p className="media-overlay-surface absolute bottom-10 left-3 right-3 line-clamp-2 rounded-[1rem] px-3 py-2.5 text-[11px] font-medium leading-relaxed sm:left-4 sm:right-auto sm:max-w-[min(75%,34rem)] sm:rounded-full sm:px-4 sm:py-2">
             {normalizedAddress}
@@ -412,6 +453,16 @@ export function PropertyMapCard({
                   <MapPinIcon size={28} />
                   <p className="text-[13px] font-semibold">{t("draft.mapPreviewUnavailable", lang)}</p>
                   <button type="button" onClick={handleRetry} className="rounded-full border border-border bg-card px-4 py-2 text-[11px] font-semibold transition-colors hover:bg-surface-subtle">{t("common.tryAgain", lang)}</button>
+                </div>
+              ) : target.lat == null || target.lng == null ? (
+                <div className="flex h-full flex-col items-center justify-center gap-3 px-6 text-center text-foreground/55">
+                  <MapPinIcon size={28} />
+                  <p className="text-[13px] font-semibold">{t("draft.mapCoordinatesUnavailable", lang)}</p>
+                  {externalMapUrl ? (
+                    <a href={externalMapUrl} target="_blank" rel="noopener noreferrer" className="rounded-full border border-border bg-card px-4 py-2 text-[11px] font-semibold transition-colors hover:bg-surface-subtle">
+                      {t("draft.openInMaps", lang)}
+                    </a>
+                  ) : null}
                 </div>
               ) : (
                 <div className="flex h-full items-center justify-center text-foreground/45"><span className="h-5 w-5 animate-spin rounded-full border-2 border-foreground/15 border-t-foreground/55 motion-reduce:animate-none" /></div>

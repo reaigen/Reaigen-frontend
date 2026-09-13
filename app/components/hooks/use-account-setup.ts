@@ -40,15 +40,27 @@ export function useAccountSetup(user: UserProfile | null) {
     }
     let active = true;
     (async () => {
-      const [consentResult, capabilitiesResult] = await Promise.allSettled([
-        getReaiAgentConsent(),
+      const [capabilitiesResult] = await Promise.allSettled([
         getUserCapabilities(),
       ]);
+      const capabilities = capabilitiesResult.status === "fulfilled"
+        ? capabilitiesResult.value
+        : null;
+      // Optional product surfaces fail closed. A missing capability response
+      // is not evidence that the account may discover or configure Agent.
+      const agentEntitled = capabilities?.apps.reaigen === true
+        && capabilities.features.agent_access === true;
+      const [consentResult] = agentEntitled
+        ? await Promise.allSettled([getReaiAgentConsent()])
+        : [null];
       // A 403 here is the backend refusing the account, not a missing
-      // preference — the status surfaces it as a blocker instead of a gap.
-      const consent: SetupSignals["consent"] = consentResult.status === "fulfilled"
+      // preference. A known non-Agent tier is not an account-level blocker;
+      // it simply has no Agent setup requirement.
+      const consent: SetupSignals["consent"] = consentResult?.status === "fulfilled"
         ? consentResult.value
-        : consentResult.reason instanceof ApiError && consentResult.reason.status === 403
+        : consentResult?.reason instanceof ApiError
+          && consentResult.reason.status === 403
+          && agentEntitled
           ? "blocked"
           : null;
       let toolPermissions: ReaiToolPermissions | null = null;
@@ -63,7 +75,7 @@ export function useAccountSetup(user: UserProfile | null) {
       setSignals({
         consent,
         toolPermissions,
-        capabilities: capabilitiesResult.status === "fulfilled" ? capabilitiesResult.value : null,
+        capabilities,
       });
     })();
     return () => {

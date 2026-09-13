@@ -58,6 +58,8 @@ export interface AccountSetupStatus {
   /** The guided flow was finished or dismissed before (backend flag). */
   onboardingCompleted: boolean;
   onboardingSkipped: boolean;
+  /** True only when Django explicitly grants the optional Agent product. */
+  agentEntitled: boolean;
 }
 
 export interface AccountSetupInput {
@@ -114,9 +116,13 @@ export function computeAccountSetupStatus(input: AccountSetupInput): AccountSetu
   if (!filled(billing?.billing_country)) billingMissing.push("billing_country");
 
   const permissionsMissing: SetupMissingKey[] = [];
+  // Agent is optional and must stay undiscoverable unless Django explicitly
+  // grants both the product and feature capabilities. Unknown fails closed.
+  const agentEntitled = capabilities?.apps?.reaigen === true
+    && capabilities.features?.agent_access === true;
   const consented = consent !== null && consent !== "blocked" && consent.consented;
-  if (!consented) permissionsMissing.push("agent_consent");
-  if (consented && toolPermissions) {
+  if (agentEntitled && !consented) permissionsMissing.push("agent_consent");
+  if (agentEntitled && consented && toolPermissions) {
     const anyTool = toolPermissions.allow_all_tools || Object.values(toolPermissions.tools).some(Boolean);
     if (!anyTool) permissionsMissing.push("agent_tools");
   }
@@ -148,6 +154,7 @@ export function computeAccountSetupStatus(input: AccountSetupInput): AccountSetu
     blockers,
     onboardingCompleted: Boolean(user.personalized_data?.onboarding_completed),
     onboardingSkipped: Boolean(user.personalized_data?.onboarding_skipped),
+    agentEntitled,
   };
 }
 

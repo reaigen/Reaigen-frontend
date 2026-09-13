@@ -60,6 +60,21 @@ test("the Parameters map keeps saved coordinates while the address is edited", (
   assert.match(mapCard, /if \(targetKeyRef\.current === nextKey\) return/);
 });
 
+test("address-only drafts do not make a doomed map-client request", () => {
+  const repositoryRoot = fileURLToPath(new URL("../../", import.meta.url));
+  const mapCard = readFileSync(`${repositoryRoot}/app/components/property-map-card.tsx`, "utf8");
+  const coordinateGuard = mapCard.indexOf("if (target.lat == null || target.lng == null)");
+  const clientRequest = mapCard.indexOf('fetch("/api/maps/client"');
+
+  assert.notEqual(coordinateGuard, -1);
+  assert.notEqual(clientRequest, -1);
+  assert.ok(coordinateGuard < clientRequest, "missing coordinates must be rejected before fetch");
+  assert.match(mapCard, /https:\/\/www\.google\.com\/maps\/search\/\?api=1&query=/);
+  assert.match(mapCard, /target="_blank"/);
+  assert.match(mapCard, /rel="noopener noreferrer"/);
+  assert.doesNotMatch(mapCard, /body: JSON\.stringify\(\{[^}]*address/s);
+});
+
 test("the property map renders interactively without tearing down a slow Google canvas", () => {
   const repositoryRoot = fileURLToPath(new URL("../../", import.meta.url));
   const mapCard = readFileSync(`${repositoryRoot}/app/components/property-map-card.tsx`, "utf8");
