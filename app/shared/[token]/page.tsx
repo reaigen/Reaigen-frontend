@@ -27,6 +27,7 @@ import type {
   RoomKitCageWall,
 } from "../../lib/tour-types";
 import dynamic from "next/dynamic";
+import { useRouter } from "next/navigation";
 import TourControls from "../../components/tour-controls";
 import FloorplanNav from "../../components/floorplan-nav";
 import { SharedPropertyPanel } from "../../components/shared-property-panel";
@@ -158,6 +159,7 @@ function SharedAccessShell({ children, lang }: { children: ReactNode; lang: stri
 // ── Page ───────────────────────────────────────────────────────────────
 
 export default function SharedPage({ params }: { params: Promise<{ token: string }> }) {
+  const router = useRouter();
   const { token } = use(params);
 
   const [lang, setLang] = useState("en");
@@ -531,7 +533,7 @@ export default function SharedPage({ params }: { params: Promise<{ token: string
           </div>
           {isAuthRequired || showRetry ? <div className="mt-6 flex justify-center">
           {isAuthRequired ? (
-            <Button className="h-11 px-5" onClick={() => { window.location.href = `/?next=${encodeURIComponent(`/shared/${token}`)}`; }}>
+            <Button className="h-11 px-5" onClick={() => router.push(`/?next=${encodeURIComponent(`/shared/${token}`)}`)}>
               {t("shared.error.signIn", lang)}
             </Button>
           ) : null}

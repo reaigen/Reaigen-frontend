@@ -195,8 +195,7 @@ function PlanCard({
   );
 }
 
-function PlanComparison({ catalog, lang }: { catalog: BillingCatalog; lang: string }) {
-  const tiers = catalog.tiers;
+function PlanComparison({ tiers, lang }: { tiers: BillingTierOption[]; lang: string }) {
   const limits = tiers[0]?.limits ?? [];
   const features = (tiers[0]?.features ?? []).filter((feature) => (
     tiers.some((tier) => tier.features?.some(
@@ -580,6 +579,10 @@ export function BillingUpgradeFlow({ lang }: { lang: string }) {
   const pricingCountry = catalog.countries.find((country) => country.code === catalog.pricing_country)?.name
     ?? catalog.pricing_country;
   const account = catalog.account;
+  // Django returns a separate, rank-checked purchase list. Missing data fails
+  // closed during a rolling deploy instead of exposing the unfiltered catalog.
+  const upgradeOptions = catalog.upgrade_options ?? [];
+  const currentTier = catalog.tiers.find((tier) => tier.is_current);
 
   return (
     <div className="space-y-5">
@@ -629,20 +632,26 @@ export function BillingUpgradeFlow({ lang }: { lang: string }) {
                 </SelectContent>
               </Select>
             </div>
-            <div className="mt-5 grid gap-3 md:grid-cols-2 xl:grid-cols-3">
-              {catalog.tiers.map((tier) => (
-                <PlanCard
-                  key={tier.code}
-                  tier={tier}
-                  cycle={cycle}
-                  pending={pendingCode === `plan-${tier.code}`}
-                  onReview={() => void reviewPlan(tier)}
-                  lang={lang}
-                />
-              ))}
-            </div>
+            {upgradeOptions.length > 0 ? (
+              <div className="mt-5 grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+                {upgradeOptions.map((tier) => (
+                  <PlanCard
+                    key={tier.code}
+                    tier={tier}
+                    cycle={cycle}
+                    pending={pendingCode === `plan-${tier.code}`}
+                    onReview={() => void reviewPlan(tier)}
+                    lang={lang}
+                  />
+                ))}
+              </div>
+            ) : currentTier?.current_status ? (
+              <div className="mt-5" data-testid="no-plan-upgrades">
+                <StatusNotice status={currentTier.current_status} />
+              </div>
+            ) : null}
           </Surface>
-          <PlanComparison catalog={catalog} lang={lang} />
+          {upgradeOptions.length > 0 ? <PlanComparison tiers={catalog.tiers} lang={lang} /> : null}
         </>
       ) : null}
 

@@ -68,7 +68,7 @@ export const metadata: Metadata = {
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="en" className={brandSerif.variable}>
+    <html lang="en" className={brandSerif.variable} data-scroll-behavior="smooth">
       <body>
         <AuthProvider>
           <WebVitalsReporter />

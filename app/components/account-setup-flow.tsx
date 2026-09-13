@@ -47,7 +47,6 @@ import {
   AgentIcon,
   ArrowLeftIcon,
   ArrowRightIcon,
-  CheckIcon,
   DeviceMobileIcon,
   InfoIcon,
   PriceIcon,
@@ -225,7 +224,7 @@ function StepFooter({
         {validationStatus ? (
           <p
             aria-live="polite"
-            className={cn("min-w-0 text-[12px] font-medium", ready ? "text-success" : "text-muted-foreground")}
+            className={cn("min-w-0 text-[12px] font-medium", ready ? "text-foreground" : "text-muted-foreground")}
             data-testid="setup-validation-status"
           >
             {validationStatus}
@@ -312,7 +311,7 @@ function ProfileStep({ user, lang, onSaved, onAdvance }: StepProps) {
         <div className="flex min-h-11 flex-wrap items-center justify-between gap-3 rounded-xl border border-border/55 bg-surface-subtle/75 px-4 py-2">
           <span className="min-w-0 truncate text-[14px] text-foreground/85">{user.email}</span>
           {user.email_verified ? (
-            <StatusPill tone="success" dot>{t("settings.profile.emailVerified", lang)}</StatusPill>
+            <StatusPill tone="neutral" dot>{t("settings.profile.emailVerified", lang)}</StatusPill>
           ) : (
             <button type="button" onClick={handleResend} className="shrink-0 rounded-full px-2.5 py-0.5 text-[11px] font-semibold text-foreground/65 underline underline-offset-4 hover:text-foreground">
               {resent ? t("setup.blocker.resent", lang) : t("setup.blocker.resend", lang)}
@@ -517,7 +516,7 @@ function SellerStep({ user, lang, onSaved, onAdvance, onBack }: StepProps) {
                 className="sm:max-w-[22rem]"
               />
               {phoneVerified && phoneMatchesSaved ? (
-                <StatusPill tone="success" dot className="self-start sm:self-auto">{t("setup.seller.phoneVerified", lang)}</StatusPill>
+                <StatusPill tone="neutral" dot className="self-start sm:self-auto">{t("setup.seller.phoneVerified", lang)}</StatusPill>
               ) : phone.trim().length > 0 && !otpSent ? (
                 <Button type="button" variant="outline" className="shrink-0" loading={otpBusy} disabled={!phoneValid} onClick={handleRequestOtp} data-testid="setup-verify-phone">
                   {t("setup.seller.verifyPhone", lang)}
@@ -928,6 +927,7 @@ function PermissionsStep({
     await run("finish", async () => {
       await updatePersonalizedData({ onboarding_completed: true, onboarding_skipped: false, onboarding_step: STEPS.length });
       await onSaved();
+      try { window.sessionStorage.setItem(ACCOUNT_SETUP_PROMPTED_KEY, "1"); } catch {}
       onAdvance();
     });
   }
@@ -939,7 +939,7 @@ function PermissionsStep({
           title={t("settings.reai.access", lang)}
           hint={consented ? t("settings.reai.accessEnabled", lang) : t("settings.reai.accessDisabled", lang)}
           control={
-            <StatusPill tone={consented ? "success" : "neutral"} dot>
+            <StatusPill tone="neutral" dot>
               {consented ? t("common.allowed", lang) : t("common.notAllowed", lang)}
             </StatusPill>
           }
@@ -1034,6 +1034,7 @@ export function AccountSetupFlow({
   // Opens on the first gap known from the profile alone; the user moves from
   // there. Later status changes never yank the view to a different step.
   const [view, setView] = React.useState<StepView>(() => {
+    if (user.personalized_data?.onboarding_completed) return "done";
     const first = computeAccountSetupStatus({ user, consent: null });
     return first.nextStep ?? "permissions";
   });
@@ -1099,18 +1100,16 @@ export function AccountSetupFlow({
           current
             ? "border-primary bg-primary text-primary-foreground ring-[3px] ring-primary/[0.07]"
             : complete
-              ? "border-success/20 bg-success/10 text-success"
+              ? "border-foreground/15 bg-muted/70 text-foreground/65"
               : "border-border/75 bg-card text-foreground/55",
         )}
       >
-        {complete && !current
-          ? <CheckIcon size={size === "md" ? 18 : 16} className="block" />
-          : <StepIcon size={size === "md" ? 18 : 16} className="block" />}
+        <StepIcon size={size === "md" ? 18 : 16} className="block" />
       </span>
     );
   };
 
-  const CurrentStepIcon = view === "done" ? CheckIcon : STEPS[Math.max(0, stepIndex)].icon;
+  const CurrentStepIcon = view === "done" ? ProfileIcon : STEPS[Math.max(0, stepIndex)].icon;
 
   return (
     <div className="mx-auto w-full max-w-[1120px] pb-12" data-testid="account-setup">
@@ -1121,8 +1120,7 @@ export function AccountSetupFlow({
               {t("setup.headerTitle", lang)}
             </p>
             <h1
-              className="text-balance text-[28px] font-normal leading-[1.08] tracking-[-0.025em] text-foreground sm:text-[32px]"
-              style={{ fontFamily: "var(--font-brand), ui-serif, Georgia, serif" }}
+              className="text-balance text-[28px] font-semibold leading-[1.08] tracking-[-0.025em] text-foreground sm:text-[32px]"
             >
               {t("setup.title", lang)}
             </h1>
@@ -1132,7 +1130,7 @@ export function AccountSetupFlow({
             className={cn(
               "mt-0.5 inline-flex h-9 shrink-0 items-center rounded-full border px-3.5 text-[11px] font-semibold tabular-nums shadow-control sm:mt-1 sm:text-[12px]",
               ready
-                ? "border-success/20 bg-success/10 text-success"
+                ? "border-foreground/20 bg-foreground text-background"
                 : "border-foreground/15 bg-card text-foreground/70",
             )}
           >
@@ -1152,7 +1150,7 @@ export function AccountSetupFlow({
                 className={cn(
                   "h-1.5 rounded-full transition-colors duration-300",
                   complete
-                    ? "bg-success"
+                    ? "bg-foreground/65"
                     : current
                       ? "bg-primary"
                       : "bg-muted",
@@ -1200,7 +1198,7 @@ export function AccountSetupFlow({
                     aria-hidden="true"
                     className={cn(
                       "absolute left-1/2 top-[22px] h-px w-full",
-                      complete ? "bg-success/25" : "bg-border/80",
+                      complete ? "bg-foreground/25" : "bg-border/80",
                     )}
                   />
                 ) : null}
@@ -1276,10 +1274,10 @@ export function AccountSetupFlow({
               <span className={cn(
                 "flex h-14 w-14 items-center justify-center rounded-full border",
                 ready
-                  ? "border-success/20 bg-success/10 text-success"
+                  ? "border-foreground/20 bg-foreground text-background"
                   : "border-border/70 bg-surface-subtle/70 text-foreground/70",
-              )}><CheckIcon size={26} /></span>
-              <h2 className="mt-5 text-[26px] font-normal leading-tight tracking-[-0.02em]" style={{ fontFamily: "var(--font-brand), ui-serif, Georgia, serif" }}>{t(ready ? "setup.done.title" : "setup.done.incompleteTitle", lang)}</h2>
+              )}><ProfileIcon size={25} /></span>
+              <h2 className="mt-5 text-[26px] font-semibold leading-tight tracking-[-0.02em]">{t(ready ? "setup.done.title" : "setup.done.incompleteTitle", lang)}</h2>
               <p className="mt-2 max-w-[46ch] text-[14px] leading-relaxed text-muted-foreground">
                 {ready
                   ? t("setup.done.subtitle", lang)
@@ -1301,7 +1299,7 @@ export function AccountSetupFlow({
                     <p className="text-[11px] font-semibold uppercase leading-4 tracking-[0.08em] text-foreground/45 tabular-nums">
                       {t("setup.stepEyebrow", lang)} {stepIndex + 1} / {STEPS.length}
                     </p>
-                    <h2 className="mt-0.5 text-[22px] font-normal leading-tight tracking-[-0.02em] sm:text-[24px]" style={{ fontFamily: "var(--font-brand), ui-serif, Georgia, serif" }}>{t(STEPS[stepIndex].label, lang)}</h2>
+                    <h2 className="mt-0.5 text-[22px] font-semibold leading-tight tracking-[-0.02em] sm:text-[24px]">{t(STEPS[stepIndex].label, lang)}</h2>
                     <p className="mt-0.5 line-clamp-2 text-[12px] leading-relaxed text-muted-foreground sm:text-[13px]">{t(STEPS[stepIndex].hint, lang)}</p>
                   </div>
                 </div>
@@ -1326,7 +1324,7 @@ export function AccountSetupFlow({
 /* ── Dashboard reminder ─────────────────────────────────────────────────── */
 
 export function AccountSetupReminder({ user, lang, status }: { user: UserProfile; lang: string; status: AccountSetupStatus | null }) {
-  if (!status || status.complete) return null;
+  if (!status || status.complete || status.onboardingCompleted || status.onboardingSkipped) return null;
   void user;
   return (
     <div className="floating-panel mb-4 flex flex-col gap-3 border-border/65 bg-card px-4 py-3.5 sm:flex-row sm:items-center" data-testid="account-setup-reminder">

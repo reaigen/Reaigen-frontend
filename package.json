@@ -2,6 +2,7 @@
   "name": "reaigen-frontend",
   "version": "0.1.0",
   "private": true,
+  "type": "module",
   "scripts": {
     "dev": "next dev --hostname 0.0.0.0 --port 3055",
     "build": "next build",
@@ -17,13 +18,14 @@
     "validate-currency-display": "node --experimental-strip-types --test scripts/validate-currency-display.test.mjs",
     "validate-collection-search": "node --experimental-strip-types --test app/lib/collection-search.test.mjs",
     "validate-proxy-path": "node --experimental-strip-types --test scripts/validate-proxy-path.test.mjs",
-    "check": "npm run lint && npm run typecheck && npm run validate-training-quality && npm run validate-proxy-path && npm run validate-auth-paths && npm run validate-api-retry-policy && npm run validate-camera-bounds && npm run validate-live-scan-device && npm run validate-live-scan-ui && npm run validate-splat-render-profile && npm run validate-floorplan && npm run validate-floorplan-integration && npm run validate-floorplan-collision && npm run validate-currency-display && npm run validate-collection-search && npm run validate-google-maps && npm run validate-panel-geometry && npm run validate-account-setup && npm run validate-account-forms && npm run validate-account-entitlements && npm run validate-web-authoring-access && npm run validate-phone-input && npm run build",
+    "check": "npm run lint && npm run typecheck && npm run validate-security-config && npm run validate-training-quality && npm run validate-proxy-path && npm run validate-auth-paths && npm run validate-api-retry-policy && npm run validate-camera-bounds && npm run validate-live-scan-device && npm run validate-live-scan-ui && npm run validate-splat-render-profile && npm run validate-floorplan && npm run validate-floorplan-integration && npm run validate-floorplan-collision && npm run validate-currency-display && npm run validate-collection-search && npm run validate-google-maps && npm run validate-panel-geometry && npm run validate-account-setup && npm run validate-account-forms && npm run validate-account-entitlements && npm run validate-web-authoring-access && npm run validate-phone-input && npm run build",
     "validate-training-quality": "node --experimental-strip-types --test app/lib/training-quality.test.mjs",
     "validate-floorplan-rendering": "node --experimental-strip-types --test scripts/validate-floorplan-rendering.test.mjs",
     "validate-floorplan-presentation": "node --experimental-strip-types --test scripts/validate-floorplan-presentation.test.mjs",
     "validate-splat-render-profile": "node --experimental-strip-types --test scripts/validate-splat-render-profile.test.mjs",
     "sog-metrics": "node --experimental-strip-types scripts/sog-render-metrics.mjs",
     "validate-auth-paths": "node --experimental-strip-types --test scripts/validate-auth-paths.test.mjs",
+    "validate-security-config": "node --test scripts/validate-security-config.test.mjs",
     "validate-api-retry-policy": "node --experimental-strip-types --test app/lib/api/retry-policy.test.mjs",
     "validate-camera-bounds": "node --experimental-strip-types --test app/lib/camera-bounds.test.mjs",
     "validate-live-scan-device": "node --experimental-strip-types --test app/lib/live-scan-device.test.mjs app/lib/live-scan-preview.test.mjs app/lib/point-cloud-bounds.test.mjs",
@@ -58,10 +60,10 @@
     "fflate": "^0.8.3",
     "framer-motion": "^12.35.0",
     "libphonenumber-js": "1.13.13",
-    "next": "16.2.12",
+    "next": "16.3.5",
     "react": "^19.2.4",
     "react-dom": "^19.2.4",
-    "sharp": "^0.35.3",
+    "sharp": "^0.35.4",
     "tailwind-merge": "^3.5.0",
     "three": "^0.185.1"
   },
@@ -74,15 +76,15 @@
     "@types/three": "^0.185.4",
     "autoprefixer": "^10.4.27",
     "eslint": "^9.39.5",
-    "eslint-config-next": "16.2.12",
-    "postcss": "8.5.19",
+    "eslint-config-next": "16.3.5",
+    "postcss": "8.5.28",
     "tailwindcss": "^3.4.17",
     "typescript": "^5.9.3"
   },
   "overrides": {
     "next": {
-      "postcss": "8.5.19",
-      "sharp": "0.35.3"
+      "postcss": "8.5.28",
+      "sharp": "0.35.4"
     }
   }
 }

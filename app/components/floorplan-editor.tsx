@@ -383,6 +383,9 @@ function initialProjection(base: ReturnType<typeof buildEditorBaseline>) {
 // ─────────────────────────────────────────────────────────────────────────────
 
 export default function FloorplanEditor({ draftId, draftData, lang, onClose, onSaved, units, targetAreaUnit }: Props) {
+  const [portalRoot, setPortalRoot] = useState<HTMLElement | null>(null);
+  useEffect(() => setPortalRoot(document.body), []);
+
   // ── immutable scan baseline ────────────────────────────────────────────────
   const [base] = useState(() => buildEditorBaseline(draftData));
 
@@ -2863,6 +2866,8 @@ export default function FloorplanEditor({ draftId, draftData, lang, onClose, onS
       nearestEdge, proj, roomNumbers, selectedDoor, selectedEdgeIndices, selectedObject,
       selectedWindow, toPts, wallQuads, wallStyle, windows]);
 
+  if (!portalRoot) return null;
+
   return createPortal(
     <div
       // Portaled to <body>: the shell wraps every page in a filled fade-in
@@ -3361,7 +3366,7 @@ export default function FloorplanEditor({ draftId, draftData, lang, onClose, onS
           </div>
       </div>
     </div>,
-    document.body,
+    portalRoot,
   );
 }
 

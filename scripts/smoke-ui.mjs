@@ -48,7 +48,10 @@ async function openPage(path, { consent = false, webCreationAllowed = false } = 
       }),
     );
   }
-  await page.goto(`${BASE}${path}`, { waitUntil: "domcontentloaded", timeout: 120000 });
+  const response = await page.goto(`${BASE}${path}`, { waitUntil: "domcontentloaded", timeout: 120000 });
+  if (!response || !response.ok()) {
+    throw new Error(`Navigation failed for ${path}: HTTP ${response?.status() ?? "no response"}`);
+  }
   return { page, pageErrors };
 }
 
@@ -197,11 +200,24 @@ async function openPage(path, { consent = false, webCreationAllowed = false } = 
       twin: stacked ? "stacked" : paired ? "paired" : cards.map((card) => `${Math.round(card.width)}@${Math.round(card.top)}`).join(","),
     };
   });
+  const waitForLayout = async (expected, timeout = 5000) => {
+    const deadline = Date.now() + timeout;
+    let actual;
+    do {
+      actual = await measure();
+      if (Object.entries(expected).every(([key, value]) => actual[key] === value)) return actual;
+      await page.waitForTimeout(50);
+    } while (Date.now() < deadline);
+    return actual;
+  };
+  // The selector above can arrive in streamed server HTML before React has
+  // attached the toggle handler. Wait for the fixture's first client effect so
+  // this tests a real interaction instead of racing hydration on a cold build.
+  await page.waitForSelector('[data-qa="draft-skeleton-fixture"][data-client-ready="true"]', { timeout: 60000 });
   const wide = await measure();
   check("draft skeleton: wide mode is 1360px / two columns", wide.maxWidth === "1360px" && wide.columns === 2 && wide.twin === "paired", JSON.stringify(wide));
   await page.click('[data-testid="detail-layout-toggle"]');
-  await page.waitForTimeout(350);
-  const focused = await measure();
+  const focused = await waitForLayout({ maxWidth: "920px", columns: 1, twin: "stacked" });
   check("draft skeleton: focused mode is 920px / one column", focused.maxWidth === "920px" && focused.columns === 1 && focused.twin === "stacked", JSON.stringify(focused));
   // The mode is a saved preference: a cold load must open in it from the
   // server HTML on — measured as soon as the silhouette exists, before
@@ -210,16 +226,15 @@ async function openPage(path, { consent = false, webCreationAllowed = false } = 
   await page.waitForSelector('[data-testid="draft-detail-skeleton"]', { timeout: 60000 });
   const persisted = await measure();
   check("draft skeleton: cold load opens in the saved mode", persisted.maxWidth === "920px" && persisted.columns === 1, JSON.stringify(persisted));
-  await page.waitForTimeout(600);
-  const hydrated = await measure();
+  await page.waitForSelector('[data-qa="draft-skeleton-fixture"][data-client-ready="true"]', { timeout: 60000 });
+  const hydrated = await waitForLayout({ maxWidth: "920px", columns: 1 });
   check("draft skeleton: hydration keeps the saved mode", hydrated.maxWidth === "920px" && hydrated.columns === 1, JSON.stringify(hydrated));
   await page.click('[data-testid="detail-layout-toggle"]');
-  await page.waitForTimeout(350);
+  await waitForLayout({ maxWidth: "1360px", columns: 2, twin: "paired" });
   // A docked Agent narrows the workspace, not the viewport: the loaded
   // listing collapses to one column there and the silhouette must too.
   await page.click('[data-qa="toggle-narrow"]');
-  await page.waitForTimeout(350);
-  const narrow = await measure();
+  const narrow = await waitForLayout({ maxWidth: "1360px", columns: 1, twin: "stacked" });
   check("draft skeleton: collapses with a narrow workspace", narrow.maxWidth === "1360px" && narrow.columns === 1 && narrow.twin === "stacked", JSON.stringify(narrow));
   check("draft skeleton: no page errors", pageErrors.length === 0, pageErrors[0] ?? "");
   await page.close();
@@ -368,6 +383,26 @@ async function openPage(path, { consent = false, webCreationAllowed = false } = 
   await page.waitForSelector('[data-testid="setup-done"]', { timeout: 20000 });
   await shot(page, "setup-done");
   check("account setup: finishing records onboarding as completed", account.personalized.onboarding_completed === true && account.personalized.onboarding_skipped === false, JSON.stringify(account.personalized));
+
+  // Recreate the page from the server-owned profile. This catches the real
+  // regression where a finished account reopened on the Permissions step.
+  await page.goto(`${BASE}/dev-fixtures/account-setup?server=1`, { waitUntil: "domcontentloaded", timeout: 120000 });
+  await page.waitForSelector('[data-testid="setup-done"]', { timeout: 20000 });
+  const reopenedPermissions = await page.locator('[data-testid="setup-step-permissions"]').count();
+  check("account setup: a cold reopen stays on Done", reopenedPermissions === 0, String(reopenedPermissions));
+
+  await page.reload({ waitUntil: "domcontentloaded", timeout: 120000 });
+  await page.waitForSelector('[data-testid="setup-done"]', { timeout: 20000 });
+  check("account setup: completion survives a cold reload", account.personalized.onboarding_completed === true);
+
+  await page.goto(`${BASE}/dev-fixtures/account-setup?server=1&reminder=1`, { waitUntil: "domcontentloaded", timeout: 120000 });
+  await page.waitForTimeout(300);
+  check("account setup: a completed account has no dashboard reminder", await page.locator('[data-testid="account-setup-reminder"]').count() === 0);
+
+  await page.goto(`${BASE}/dev-fixtures/account-setup?server=1&settings=1`, { waitUntil: "domcontentloaded", timeout: 120000 });
+  await page.waitForSelector('[data-testid="account-setup-settings-fixture"]', { timeout: 20000 });
+  await page.waitForTimeout(300);
+  check("account setup: a completed account has no Settings setup card", await page.locator('[data-testid="settings-account-setup"]').count() === 0);
   check("account setup: no page errors", pageErrors.length === 0, pageErrors[0] ?? "");
   await page.close();
 }
@@ -384,7 +419,63 @@ async function openPage(path, { consent = false, webCreationAllowed = false } = 
   await page.close();
 }
 
-// ── 8. registration: waits for the email link instead of a loading splash ──
+// ── 8. Enterprise: Django supplies no equal/lower plan options ─────────────
+{
+  const { page, pageErrors } = await openPage("/dev-fixtures/billing-upgrade");
+  const currentStatus = {
+    code: "current", name: "Current plan", description: "This is the plan currently assigned to the account.",
+    is_terminal: true, is_success: true, sort_order: 10, can_checkout: false, requires_contact: false,
+  };
+  await page.route("**/api/reaigen/billing/catalog/", (route) => route.fulfill({
+    status: 200,
+    contentType: "application/json",
+    body: JSON.stringify({
+      schema_version: 2,
+      provider: {
+        provider: "stripe", name: "Payments", description: "", enabled: true, configured: false,
+        checkout_sales_enabled: false, currency: "EUR", customer_connected: false,
+        subscription_connected: false, payment_method: "", supports_checkout: true,
+        supports_portal: true, portal_enabled: false, supports_payment_methods: true,
+        connection_status: { ...currentStatus, code: "not_connected", name: "Not connected", is_success: false },
+      },
+      pricing_country: "SK",
+      cycles: [{ code: "monthly", name: "Monthly", description: "", sort_order: 10 }],
+      statuses: { purchase_action: [currentStatus] },
+      tiers: [{
+        code: "ENTERPRISE", name: "Enterprise", description: "Custom account", is_custom_pricing: true,
+        checkout_enabled: false, prices: [], actions: [], features: [], limits: [], is_current: true,
+        is_upgrade: false, current_status: currentStatus, sort_order: 40,
+      }],
+      upgrade_options: [],
+      credit_packs: [], compute_jobs: [], plan_features: [], credit_balance_status: null,
+      countries: [{ code: "SK", name: "Slovakia" }],
+      account: {
+        current_tier_code: "ENTERPRISE", current_tier_name: "Enterprise", billing_cycle: "monthly",
+        subscription_status: currentStatus, has_active_entitlement: true, is_trial: false,
+        billing_restricted: false, credits: { unlimited: true, spendable: 0 },
+      },
+      purchase_flows: {
+        subscription: [{ ...currentStatus, code: "choose", name: "Choose", is_terminal: false }],
+        credits: [{ ...currentStatus, code: "choose", name: "Choose", is_terminal: false }],
+      },
+    }),
+  }));
+  await page.reload({ waitUntil: "domcontentloaded", timeout: 120000 });
+  await page.waitForSelector('[data-testid="no-plan-upgrades"]', { timeout: 20000 });
+  const planState = await page.evaluate(() => ({
+    optionCount: document.querySelectorAll("[data-tier-code]").length,
+    text: document.querySelector('[data-testid="billing-upgrade-fixture"]')?.textContent ?? "",
+  }));
+  check(
+    "billing plans: Enterprise receives no equal or lower choices",
+    planState.optionCount === 0 && planState.text.includes("Current plan") && !planState.text.includes("Free") && !planState.text.includes("Pro"),
+    JSON.stringify(planState),
+  );
+  check("billing plans: no page errors", pageErrors.length === 0, pageErrors[0] ?? "");
+  await page.close();
+}
+
+// ── 9. registration: waits for the email link instead of a loading splash ──
 {
   const { page, pageErrors } = await openPage("/");
   const json = (route, body, status = 200) => route.fulfill({ status, contentType: "application/json", body: JSON.stringify(body) });

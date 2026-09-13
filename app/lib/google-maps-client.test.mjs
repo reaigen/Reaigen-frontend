@@ -13,14 +13,14 @@ import {
 
 test("the Maps loader preserves path-compatible website authorization", () => {
   const url = new URL(googleMapsScriptUrl(
-    "AIzaSyExampleMapsJavaScriptKey123456789",
+    "maps-test-key",
     "sk",
     "__reaigenGoogleMapsReady",
   ));
 
   assert.equal(url.origin, "https://maps.googleapis.com");
   assert.equal(url.pathname, "/maps/api/js");
-  assert.equal(url.searchParams.get("key"), "AIzaSyExampleMapsJavaScriptKey123456789");
+  assert.equal(url.searchParams.get("key"), "maps-test-key");
   assert.equal(url.searchParams.get("language"), "sk");
   assert.equal(url.searchParams.get("callback"), "__reaigenGoogleMapsReady");
   assert.equal(url.searchParams.get("loading"), "async");
@@ -96,7 +96,7 @@ test("a stale in-document namespace requests one clean reload", async () => {
 
   try {
     await assert.rejects(
-      loadGoogleMaps("AIzaSyCurrentProductionKey123456789", "en"),
+      loadGoogleMaps("maps-current-test-key", "en"),
       /google-maps-stale-runtime/,
     );
     assert.equal(resetGoogleMapsFailure(), true);

@@ -8,6 +8,7 @@
 import { notFound, useSearchParams } from "next/navigation";
 import * as React from "react";
 import { AccountSetupFlow, AccountSetupReminder } from "../../components/account-setup-flow";
+import { AccountSetupEntry } from "../../components/settings-form";
 import { useAccountSetup } from "../../components/hooks/use-account-setup";
 import { getProfile, type UserProfile } from "../../lib/api/client";
 
@@ -61,13 +62,26 @@ function ReminderFixture({ user }: { user: UserProfile }) {
 
 function AccountSetupFixtureBody() {
   const params = useSearchParams();
-  const [user, setUser] = React.useState<UserProfile>(BASE_USER);
+  const loadFromServer = params.get("server") === "1";
+  const [user, setUser] = React.useState<UserProfile | null>(loadFromServer ? null : BASE_USER);
+  React.useEffect(() => {
+    if (!loadFromServer) return;
+    let active = true;
+    getProfile()
+      .then((next) => { if (active) setUser(next); })
+      .catch(() => { if (active) setUser(BASE_USER); });
+    return () => { active = false; };
+  }, [loadFromServer]);
   // The suite serves /users/me/ with whatever the steps saved so far.
   const onSaved = React.useCallback(async () => {
     const next = await getProfile();
     setUser(next);
     return next;
   }, []);
+  if (!user) return <div data-testid="account-setup-fixture-loading" />;
+  if (params.get("settings") === "1") {
+    return <div className="p-10" data-testid="account-setup-settings-fixture"><AccountSetupEntry user={user} lang="en" /></div>;
+  }
   if (params.get("reminder") === "1") return <div className="p-10"><ReminderFixture user={user} /></div>;
   return (
     <div className="p-6 sm:p-10">

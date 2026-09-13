@@ -77,6 +77,8 @@ const googleMapsSecurityHeaders = securityHeaders({ googleMaps: true });
 
 const nextConfig: NextConfig = {
   output: "standalone",
+  images: { unoptimized: true },
+  agentRules: false,
   devIndicators: false,
   skipTrailingSlashRedirect: true,
   allowedDevOrigins: ["127.0.0.1", "localhost", "0.0.0.0", "100.115.47.42", "100.78.1.23", "app-reaigen.publicrouter.sk"],

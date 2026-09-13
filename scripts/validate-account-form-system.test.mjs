@@ -87,7 +87,8 @@ test("the setup wizard keeps indicators, labels, and headings on one visual syst
   assert.match(setup, /grid grid-cols-4 rounded-\[24px\]/);
   assert.match(setup, /left-1\/2 top-\[22px\] h-px w-full/);
   assert.match(setup, /inline-flex shrink-0 items-center justify-center rounded-full border/);
-  assert.match(setup, /<CurrentStepIcon[\s\S]*?var\(--font-brand\)/);
+  assert.match(setup, /<CurrentStepIcon/);
+  assert.doesNotMatch(setup, /var\(--font-brand\)|CheckIcon|(?:text|bg|border)-success/);
   assert.match(field, /items-center justify-between/);
   assert.match(field, /text-\[13px\] leading-5 text-foreground\/85/);
   assert.match(setup, /const StepIcon = STEPS\[index\]\.icon/);
@@ -96,11 +97,12 @@ test("the setup wizard keeps indicators, labels, and headings on one visual syst
   assert.match(icons, /export const ProfileIcon/);
 });
 
-test("account setup is permanently discoverable in Settings with live backend state", () => {
+test("account setup disappears from Settings after completion or dismissal", () => {
   assert.match(settings, /function AccountSetupEntry/);
   assert.match(settings, /useAccountSetup\(user\)/);
-  assert.match(settings, /isAccountReady\(status\)/);
+  assert.match(settings, /!shouldPromptAccountSetup\(status\)\) return null/);
   assert.match(setup, /const ready = isAccountReady\(status\)/);
+  assert.match(setup, /status\.onboardingCompleted \|\| status\.onboardingSkipped/);
   assert.match(setup, /setup\.done\.blockedSubtitle/);
   assert.match(settings, /href="\/setup"/);
   assert.match(settings, /data-testid="settings-account-setup"/);
@@ -114,6 +116,11 @@ test("account setup is permanently discoverable in Settings with live backend st
   assert.match(settings, /SETTINGS_SETUP_STEPS[\s\S]*?ProfileIcon[\s\S]*?DeviceMobileIcon[\s\S]*?PriceIcon[\s\S]*?AgentIcon/);
   assert.match(settings, /settingsTabs[\s\S]*?icon: ProfileIcon[\s\S]*?icon: LockIcon/);
   assert.match(settings, /group-data-\[state=active\]:bg-primary/);
+  const setupEntry = settings.slice(
+    settings.indexOf("export function AccountSetupEntry"),
+    settings.indexOf("function formatAccountDate"),
+  );
+  assert.doesNotMatch(setupEntry, /var\(--font-brand\)|CheckIcon|(?:text|bg|border)-success/);
 });
 
 test("account elements use the Reaigen semantic palette instead of utility colors", () => {

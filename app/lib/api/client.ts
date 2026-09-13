@@ -159,20 +159,26 @@ function ttlForPath(path: string): number {
 
 /** Invalidate cache entries whose key starts with any of the given prefixes. */
 function invalidateCache(path: string) {
+  // A mutation creates two race windows: a GET may already be in flight when
+  // the write starts, or may begin while the write is being committed. Bump
+  // the generation and detach matching requests so neither can repopulate or
+  // be reused as the post-save refresh.
+  privateCacheGeneration += 1;
   // Derive prefix: e.g. "/api/reaigen/users/me/" → "/api/reaigen/users/"
   const segments = path.split("/").slice(0, -1); // drop last segment
   const prefix = segments.length > 3 ? segments.slice(0, -1).join("/") + "/" : path;
-  for (const key of cache.keys()) {
-    if (key.startsWith(prefix)) cache.delete(key);
-  }
+  const prefixes = [prefix];
   // The profile response embeds personalized_data, the seller profile, the
   // billing account and the phone-verified flag. A write to any of those must
   // invalidate the profile view too, or the account can appear to revert for
   // up to five minutes even though the backend saved it correctly — the
   // guided account setup reads its progress from exactly that view.
   if (EMBEDDED_IN_PROFILE_PREFIXES.some((prefix) => path.startsWith(prefix))) {
-    for (const key of cache.keys()) {
-      if (key.startsWith("/api/reaigen/users/")) cache.delete(key);
+    prefixes.push("/api/reaigen/users/");
+  }
+  for (const store of [cache, inFlight, freshInFlight]) {
+    for (const key of store.keys()) {
+      if (prefixes.some((candidate) => key.startsWith(candidate))) store.delete(key);
     }
   }
 }
@@ -207,7 +213,9 @@ async function request(path: string, options: RequestInit = {}) {
     });
 
     inFlight.set(path, promise);
-    promise.catch(() => {}).finally(() => inFlight.delete(path));
+    promise.catch(() => {}).finally(() => {
+      if (inFlight.get(path) === promise) inFlight.delete(path);
+    });
     return promise;
   }
 
@@ -230,6 +238,8 @@ async function request(path: string, options: RequestInit = {}) {
     throw new ApiError(res.status, body);
   }
 
+  // Also invalidate requests that began while the mutation was in flight.
+  invalidateCache(path);
   const text = await res.text();
   if (!text) return null;
   return JSON.parse(text);
@@ -1025,6 +1035,7 @@ export interface BillingTierOption {
   features?: BillingCatalogPlanFeature[];
   limits?: BillingTierLimit[];
   is_current?: boolean;
+  is_upgrade?: boolean;
   current_status?: BillingPurchaseAction | null;
   sort_order: number;
 }
@@ -1058,6 +1069,7 @@ export interface BillingCatalog {
   cycles: BillingCatalogCycle[];
   statuses: Record<string, BillingCatalogStatus[]>;
   tiers: BillingTierOption[];
+  upgrade_options?: BillingTierOption[];
   credit_packs: ComputeCreditPack[];
   compute_jobs: BillingCatalogComputeJob[];
   plan_features: BillingCatalogPlanFeature[];

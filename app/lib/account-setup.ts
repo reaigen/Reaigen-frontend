@@ -162,8 +162,9 @@ export function hasSynchronousSetupGaps(user: UserProfile): boolean {
 }
 
 /**
- * Whether sign-in should open the guided flow. Finished or dismissed flows
- * never re-prompt; the dashboard reminder covers the leftover gaps.
+ * Whether any automatic surface should open or advertise the guided flow.
+ * Finished or deliberately dismissed flows never re-prompt; their fields
+ * remain editable in the ordinary Settings sections.
  */
 export function shouldPromptAccountSetup(status: AccountSetupStatus): boolean {
   return !status.complete && !status.onboardingCompleted && !status.onboardingSkipped;

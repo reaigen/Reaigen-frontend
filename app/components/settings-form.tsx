@@ -2,6 +2,7 @@
 
 import * as React from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { Button } from "../lib/ui/button";
 import { FormField, focusFirstInvalidField } from "../lib/ui/form-field";
 import { Input } from "../lib/ui/input";
@@ -89,7 +90,6 @@ import {
 } from "../lib/web-push";
 import {
   AgentIcon,
-  CheckIcon,
   ChevronRightIcon,
   DeviceDesktopIcon,
   DeviceMobileIcon,
@@ -113,7 +113,7 @@ import { resolveQuotaPresentation } from "../lib/account-usage";
 import { CountrySelect } from "./country-select";
 import { InternationalPhoneInput } from "./international-phone-input";
 import { useAccountSetup } from "./hooks/use-account-setup";
-import { isAccountReady } from "../lib/account-setup";
+import { shouldPromptAccountSetup } from "../lib/account-setup";
 
 function useAutoDismiss(value: boolean, setter: (v: boolean) => void, ms = 3000) {
   React.useEffect(() => {
@@ -158,15 +158,18 @@ const SETTINGS_SETUP_STEPS = [
 ] as const;
 
 /**
- * Permanent Settings doorway into the single guided setup flow.
+ * Settings doorway into the guided setup flow while work remains.
  *
  * This is deliberately a full-width overview instead of a quiet sidebar row:
- * setup is part of Settings, its four backend-owned states are visible at a
- * glance, and the entry remains equally discoverable on phones and desktop.
+ * Its four backend-owned states remain visible until the user finishes or
+ * dismisses setup; after that, the ordinary Settings sections own editing.
  */
-function AccountSetupEntry({ user, lang }: { user: UserProfile; lang: string }) {
+export function AccountSetupEntry({ user, lang }: { user: UserProfile; lang: string }) {
   const { status, loading } = useAccountSetup(user);
-  const ready = !loading && isAccountReady(status);
+  // Once setup is finished or dismissed, its fields remain editable in their
+  // ordinary Settings sections without a permanent setup advertisement.
+  if (loading || !status || !shouldPromptAccountSetup(status)) return null;
+
   const blocked = !loading && Boolean(status?.blockers.length);
   // Profile, seller, and billing state is already authoritative on the user
   // payload. Keep that useful progress visible while only the permission
@@ -181,17 +184,17 @@ function AccountSetupEntry({ user, lang }: { user: UserProfile; lang: string }) 
     <Link
       href="/setup"
       data-testid="settings-account-setup"
-      data-complete={ready ? "true" : "false"}
+      data-complete="false"
       data-blocked={blocked ? "true" : "false"}
       aria-busy={loading || undefined}
       className={cn(
         "group relative mb-5 block w-full overflow-hidden rounded-[28px] border bg-card p-4 text-left shadow-card transition-[border-color,background-color] duration-200 hover:border-foreground/25 hover:bg-surface-subtle/20 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 sm:p-5",
-        ready ? "border-success/25" : blocked ? "border-destructive/25" : "border-foreground/[0.13]",
+        blocked ? "border-destructive/25" : "border-foreground/[0.13]",
       )}
     >
       <span
         aria-hidden="true"
-        className={cn("absolute inset-y-4 left-0 w-[3px] rounded-r-full", ready ? "bg-success" : blocked ? "bg-destructive" : "bg-primary")}
+        className={cn("absolute inset-y-4 left-0 w-[3px] rounded-r-full", blocked ? "bg-destructive" : "bg-primary")}
       />
 
       <span className="flex items-start gap-3.5 sm:gap-4">
@@ -199,18 +202,14 @@ function AccountSetupEntry({ user, lang }: { user: UserProfile; lang: string }) 
           aria-hidden="true"
           className={cn(
             "flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl border shadow-control sm:h-14 sm:w-14",
-            ready
-              ? "border-success/20 bg-success/10 text-success"
-              : blocked
-                ? "border-destructive/20 bg-destructive/[0.065] text-destructive"
-                : "border-border/70 bg-surface-subtle/70 text-foreground/70",
+            blocked
+              ? "border-destructive/20 bg-destructive/[0.065] text-destructive"
+              : "border-border/70 bg-surface-subtle/70 text-foreground/70",
           )}
         >
-          {ready
-            ? <CheckIcon size={22} className="block" />
-            : blocked
-              ? <InfoIcon size={22} className="block" />
-              : <SettingsIcon size={22} className="block" />}
+          {blocked
+            ? <InfoIcon size={22} className="block" />
+            : <SettingsIcon size={22} className="block" />}
         </span>
 
         <span className="min-w-0 flex-1">
@@ -218,14 +217,11 @@ function AccountSetupEntry({ user, lang }: { user: UserProfile; lang: string }) 
             {t("setup.headerTitle", lang)}
           </span>
           <span
-            className="mt-0.5 block text-[20px] font-normal leading-tight tracking-[-0.02em] text-foreground sm:text-[23px]"
-            style={{ fontFamily: "var(--font-brand), ui-serif, Georgia, serif" }}
+            className="mt-0.5 block text-[20px] font-semibold leading-tight tracking-[-0.02em] text-foreground sm:text-[23px]"
           >
             {blocked
               ? t("setup.blocker.title", lang)
-              : ready
-                ? t("setup.done.title", lang)
-                : t("setup.reminder.title", lang)}
+              : t("setup.reminder.title", lang)}
           </span>
           <span className="mt-1 hidden max-w-[68ch] text-[12px] leading-relaxed text-muted-foreground sm:block sm:text-[13px]">
             {t(blocked ? "setup.done.blockedSubtitle" : "setup.subtitle", lang)}
@@ -233,7 +229,7 @@ function AccountSetupEntry({ user, lang }: { user: UserProfile; lang: string }) 
         </span>
 
         <span className="hidden shrink-0 items-center gap-2 self-center rounded-full bg-primary px-4 py-2 text-[12px] font-semibold text-primary-foreground shadow-control sm:inline-flex">
-          {ready || blocked ? t("setup.settings.review", lang) : t("setup.reminder.action", lang)}
+          {blocked ? t("setup.settings.review", lang) : t("setup.reminder.action", lang)}
           <ChevronRightIcon aria-hidden="true" size={15} className="transition-transform group-hover:translate-x-0.5" />
         </span>
         <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-primary text-primary-foreground shadow-control sm:hidden" aria-hidden="true">
@@ -255,7 +251,7 @@ function AccountSetupEntry({ user, lang }: { user: UserProfile; lang: string }) 
               className={cn(
                 "flex min-h-[3.75rem] items-center gap-2.5 rounded-2xl border px-3 py-2.5 transition-colors",
                 stepComplete
-                  ? "border-success/20 bg-success/[0.055]"
+                  ? "border-foreground/15 bg-muted/45"
                   : isNext
                     ? "border-primary/20 bg-primary/[0.045]"
                     : "border-border/60 bg-surface-subtle/45",
@@ -266,17 +262,17 @@ function AccountSetupEntry({ user, lang }: { user: UserProfile; lang: string }) 
                 className={cn(
                   "flex h-8 w-8 shrink-0 items-center justify-center rounded-xl border",
                   stepComplete
-                    ? "border-success/20 bg-success/10 text-success"
+                    ? "border-foreground/15 bg-muted/70 text-foreground/65"
                     : isNext
                       ? "border-primary bg-primary text-primary-foreground"
                       : "border-border/70 bg-card text-foreground/55",
                 )}
               >
-                {stepComplete ? <CheckIcon size={15} className="block" /> : <StepIcon size={16} className="block" />}
+                <StepIcon size={16} className="block" />
               </span>
               <span className="min-w-0">
                 <span className="block truncate text-[12px] font-semibold text-foreground/85">{t(step.label, lang)}</span>
-                <span className={cn("mt-0.5 block truncate text-[10.5px] font-medium", stepComplete ? "text-success" : isNext ? "text-foreground/70" : "text-muted-foreground")}>
+                <span className={cn("mt-0.5 block truncate text-[10.5px] font-medium", stepComplete || isNext ? "text-foreground/70" : "text-muted-foreground")}>
                   {stepComplete
                     ? t("setup.status.done", lang)
                     : isNext
@@ -292,11 +288,11 @@ function AccountSetupEntry({ user, lang }: { user: UserProfile; lang: string }) 
       <span className="mt-3 flex items-center gap-3">
         <span className="h-1.5 min-w-0 flex-1 overflow-hidden rounded-full bg-muted" aria-hidden="true">
           <span
-            className={cn("block h-full rounded-full transition-[width] duration-500", ready ? "bg-success" : blocked ? "bg-destructive" : "bg-primary")}
+            className={cn("block h-full rounded-full transition-[width] duration-500", blocked ? "bg-destructive" : "bg-primary")}
             style={{ width: `${progressPercent}%` }}
           />
         </span>
-        <span className={cn("shrink-0 text-[11px] font-semibold tabular-nums", ready ? "text-success" : blocked ? "text-destructive" : "text-foreground/65")}>
+        <span className={cn("shrink-0 text-[11px] font-semibold tabular-nums", blocked ? "text-destructive" : "text-foreground/65")}>
           {progress}
         </span>
       </span>
@@ -3249,6 +3245,7 @@ function PasswordSection({ hasExistingPassword, lang }: { hasExistingPassword: b
 }
 
 function DevicesSection({ lang }: { lang: string }) {
+  const router = useRouter();
   const [sessions, setSessions] = React.useState<DeviceSession[] | null>(null);
   const [loading, setLoading] = React.useState(true);
   const [busyId, setBusyId] = React.useState<string | null>(null);
@@ -3275,7 +3272,7 @@ function DevicesSection({ lang }: { lang: string }) {
       if (result.was_current) {
         // We just signed ourselves out — clear local state and leave.
         try { await apiLogout(); } catch { /* cookies already dead */ }
-        window.location.assign("/");
+        router.replace("/");
         return;
       }
       load();
@@ -3312,7 +3309,7 @@ function DevicesSection({ lang }: { lang: string }) {
     // Everything is revoked server-side, this session included — clear
     // local cookies and leave.
     try { await apiLogout(); } catch { /* tokens already dead */ }
-    window.location.assign("/");
+    router.replace("/");
   }
 
   if (loading && sessions === null) {

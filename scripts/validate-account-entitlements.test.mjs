@@ -141,6 +141,10 @@ test("the authenticated upgrade view uses Django offers and server previews", ()
   assert.match(upgradePage, /useAuth\(\)/);
   assert.match(upgradePage, /<BillingUpgradeFlow lang=\{lang\}/);
   assert.match(upgrade, /getBillingCatalog\(\)/);
+  assert.match(api, /upgrade_options\?: BillingTierOption\[\]/);
+  assert.match(upgrade, /const upgradeOptions = catalog\.upgrade_options \?\? \[\]/);
+  assert.match(upgrade, /upgradeOptions\.map\(\(tier\)/);
+  assert.match(upgrade, /data-testid="no-plan-upgrades"/);
   assert.match(upgrade, /tier\.prices\.find\(/);
   assert.match(upgrade, /tier\.actions\?\.find\(/);
   assert.match(upgrade, /tier\.limits\?\.find\(/);

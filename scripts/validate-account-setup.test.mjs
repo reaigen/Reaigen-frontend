@@ -98,7 +98,7 @@ test("consent without any enabled tool is not finished", () => {
   assert.deepEqual(status.steps.find((step) => step.key === "permissions").missing, ["agent_tools"]);
 });
 
-test("skipped or completed onboarding stops the sign-in prompt but keeps the reminder", () => {
+test("skipped or completed onboarding stops every automatic setup prompt", () => {
   const skipped = user({
     personalized_data: { onboarding_completed: false, onboarding_skipped: true, onboarding_step: 2 },
     billing_account: null,

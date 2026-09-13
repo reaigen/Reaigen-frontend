@@ -6,7 +6,7 @@
 // way the loaded listing does beside a docked Agent.
 
 import { notFound } from "next/navigation";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { DetailLayoutToggle } from "../../components/detail-layout-toggle";
 import { DraftDetailSkeleton } from "../../components/draft-detail-skeleton";
 import { useDetailLayout } from "../../lib/detail-layout";
@@ -15,10 +15,16 @@ const twinCard = "h-10 rounded-xl bg-foreground/[0.075]";
 
 export default function DraftSkeletonFixture() {
   const [narrow, setNarrow] = useState(false);
+  const [clientReady, setClientReady] = useState(false);
   const detailLayout = useDetailLayout();
+  useEffect(() => setClientReady(true), []);
   if (process.env.NODE_ENV === "production") notFound();
   return (
-    <div className="p-10">
+    <div
+      data-qa="draft-skeleton-fixture"
+      data-client-ready={clientReady ? "true" : "false"}
+      className="p-10"
+    >
       <div className="mb-4 flex items-center gap-3">
         <DetailLayoutToggle lang="sk" />
         <button type="button" data-qa="toggle-narrow" onClick={() => setNarrow((value) => !value)} className="rounded-full border px-4 py-2">

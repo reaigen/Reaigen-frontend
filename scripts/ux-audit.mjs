@@ -235,7 +235,11 @@ export async function collectErgonomics(page, viewport) {
       }
       return {
         root: selectorFor(root),
-        owners: owners.map(({ element: _element, ...owner }) => owner),
+        owners: owners.map(({ selector, clientHeight, scrollHeight }) => ({
+          selector,
+          clientHeight,
+          scrollHeight,
+        })),
         nestedPairs,
       };
     }).filter((panel) => panel.owners.length > 0);
