@@ -22,6 +22,10 @@ const upgradePage = fs.readFileSync(
 );
 const api = fs.readFileSync(path.join(root, "app/lib/api/client.ts"), "utf8");
 const appShell = fs.readFileSync(path.join(root, "app/components/app-shell.tsx"), "utf8");
+const subscriptionWelcome = fs.readFileSync(
+  path.join(root, "app/components/subscription-welcome-card.tsx"),
+  "utf8",
+);
 const setupHook = fs.readFileSync(path.join(root, "app/components/hooks/use-account-setup.ts"), "utf8");
 const authGate = fs.readFileSync(path.join(root, "app/components/auth-gate.tsx"), "utf8");
 const tourEditor = fs.readFileSync(path.join(root, "app/create/tour/[id]/page.tsx"), "utf8");
@@ -241,4 +245,39 @@ test("the upgrade view contains no client-owned prices, tiers, limits, or credit
   assert.doesNotMatch(upgrade, /paymentsReady|supports_checkout\s*&&|checkout_sales_enabled\s*&&/);
   assert.match(settings, /href="\/upgrade\?mode=plans"/);
   assert.match(settings, /href="\/upgrade\?mode=credits"/);
+});
+
+test("an upward subscription change is presented once from Django-owned data", () => {
+  assert.match(appShell, /<SubscriptionWelcomeCard userId=\{user\.id\} language=\{lang\}/);
+  assert.match(api, /export interface SubscriptionWelcomeNotice/);
+  assert.match(
+    api,
+    /getSubscriptionWelcome[\s\S]*?freshRequest\([\s\S]*?\/api\/reaigen\/billing\/subscription-welcome\//,
+  );
+  assert.match(
+    api,
+    /acknowledgeSubscriptionWelcome[\s\S]*?method: "POST"[\s\S]*?notice_id: noticeId/,
+  );
+  assert.match(subscriptionWelcome, /getSubscriptionWelcome\(language\)/);
+  assert.match(subscriptionWelcome, /acknowledgeSubscriptionWelcome\(notice\.id\)/);
+  assert.match(subscriptionWelcome, /notice\.title/);
+  assert.match(subscriptionWelcome, /notice\.section_title/);
+  assert.match(subscriptionWelcome, /notice\.items\.map/);
+  assert.match(subscriptionWelcome, /notice\.action_label/);
+  assert.match(upgrade, /requestSubscriptionWelcomeRefresh\(\)/);
+  assert.doesNotMatch(subscriptionWelcome, /localStorage|sessionStorage/);
+});
+
+test("the subscription welcome card is calm and owns no commercial copy", () => {
+  assert.doesNotMatch(subscriptionWelcome, /\b(?:FREE|STANDARD|PRO|ENTERPRISE)\b/);
+  assert.doesNotMatch(subscriptionWelcome, /[€$£]\s*\d|\d\s*[€$£]/);
+  assert.doesNotMatch(subscriptionWelcome, /CheckIcon|CheckCircledIcon/);
+  assert.doesNotMatch(
+    subscriptionWelcome,
+    /(?:text|bg|border)-(?:success|green|emerald|lime)/,
+  );
+  assert.doesNotMatch(
+    subscriptionWelcome,
+    /Welcome to|What you can do|Start creating|Free|Standard|Enterprise/,
+  );
 });

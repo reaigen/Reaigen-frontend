@@ -1128,6 +1128,28 @@ export interface BillingCatalog {
   };
 }
 
+export interface SubscriptionWelcomeItem {
+  kind: "feature" | "limit";
+  code: string;
+  name: string;
+  description: string;
+  display_value: string;
+}
+
+export interface SubscriptionWelcomeNotice {
+  id: number;
+  kind: "subscription_welcome";
+  from_tier: { code: string; name: string };
+  to_tier: { code: string; name: string };
+  title: string;
+  description: string;
+  section_title: string;
+  items: SubscriptionWelcomeItem[];
+  action_label: string;
+  error_message: string;
+  created_at: string;
+}
+
 export interface BillingPurchasePreview {
   kind: "subscription" | "credit_pack";
   product_code: string;
@@ -1149,6 +1171,27 @@ export interface BillingPurchasePreview {
 export async function getBillingCatalog(language?: string): Promise<BillingCatalog> {
   const query = language ? `?language=${encodeURIComponent(language)}` : "";
   return freshRequest(`/api/reaigen/billing/catalog/${query}`) as Promise<BillingCatalog>;
+}
+
+export async function getSubscriptionWelcome(
+  language?: string,
+): Promise<{ notice: SubscriptionWelcomeNotice | null }> {
+  const query = language ? `?language=${encodeURIComponent(language)}` : "";
+  return freshRequest(
+    `/api/reaigen/billing/subscription-welcome/${query}`,
+  ) as Promise<{ notice: SubscriptionWelcomeNotice | null }>;
+}
+
+export async function acknowledgeSubscriptionWelcome(
+  noticeId: number,
+): Promise<{ acknowledged: true; notice_id: number }> {
+  return request(
+    "/api/reaigen/billing/subscription-welcome/acknowledge/",
+    {
+      method: "POST",
+      body: JSON.stringify({ notice_id: noticeId }),
+    },
+  ) as Promise<{ acknowledged: true; notice_id: number }>;
 }
 
 export async function getBillingPayments(language?: string): Promise<BillingPayment[]> {

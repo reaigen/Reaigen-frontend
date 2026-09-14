@@ -17,6 +17,7 @@ import {
   type ComputeCreditPack,
 } from "../lib/api/client";
 import { getSafeApiErrorMessage } from "../lib/api/error-message";
+import { requestSubscriptionWelcomeRefresh } from "../lib/subscription-welcome-events";
 import { Button } from "../lib/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "../lib/ui/select";
 import { Tabs, TabsList, TabsTrigger } from "../lib/ui/tabs";
@@ -483,6 +484,9 @@ export function BillingUpgradeFlow({ lang }: { lang: string }) {
           const completed = findStatus(refreshed, "checkout", result.status);
           if (completed) setCheckoutStatus(completed);
           setStep("complete");
+          if (result.kind === "subscription") {
+            requestSubscriptionWelcomeRefresh();
+          }
         })
         .catch((err) => {
           setError(getSafeApiErrorMessage(err, lang));

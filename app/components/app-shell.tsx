@@ -16,6 +16,7 @@ import { useWebAuthoringAccess } from "./hooks/use-web-authoring-access";
 import { REAI_COMPOSE_EVENT } from "../lib/reai-compose";
 import { ReaigenWordmark } from "./reaigen-wordmark";
 import { SearchField } from "./search-field";
+import { SubscriptionWelcomeCard } from "./subscription-welcome-card";
 import { AgentIcon, ArrowLeftIcon, CloseIcon, DocumentIcon, MainHomeIcon, MainSettingsIcon, MainSignOutIcon, MainTourIcon, PlusIcon, TourIcon } from "./icons";
 
 // The agent contains its own composer, media tooling, history, and orchestration
@@ -679,6 +680,9 @@ function AppShellFrame({
         ...(reaiPanelWidth ? { "--reai-panel-width": `${reaiPanelWidth}px` } : {}),
       } as React.CSSProperties}
     >
+      {!immersive ? (
+        <SubscriptionWelcomeCard userId={user.id} language={lang} />
+      ) : null}
       {!immersive ? (
         <aside className="app-sidebar fixed inset-y-0 left-0 z-[60] hidden flex-col overflow-visible bg-card text-foreground md:flex">
           <Link
