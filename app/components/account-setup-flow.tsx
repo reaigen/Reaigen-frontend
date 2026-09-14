@@ -89,8 +89,6 @@ const MISSING_LABELS: Record<SetupMissingKey, LocaleKey> = {
   phone: "setup.missing.phone",
   phone_verified: "setup.missing.phone_verified",
   bio: "setup.missing.bio",
-  city: "setup.missing.city",
-  country: "setup.missing.country",
   billing_name: "setup.missing.billing_name",
   billing_email: "setup.missing.billing_email",
   billing_address: "setup.missing.billing_address",
@@ -364,7 +362,7 @@ function SellerStep({ user, lang, onSaved, onAdvance, onBack }: StepProps) {
   // the phone field carries the explanation, and the user can change it.
   const [phoneError, setPhoneError] = React.useState<string | null>(null);
   const [phoneTouched, setPhoneTouched] = React.useState(false);
-  const { touched, touch, touchAll } = useTouchedFields<"bio" | "website" | "city" | "country">();
+  const { touched, touch, touchAll } = useTouchedFields<"bio" | "website" | "country">();
 
   // Phone verification. The OTP is sent to the number on the saved profile,
   // so a freshly typed number is saved first and verified second.
@@ -378,14 +376,12 @@ function SellerStep({ user, lang, onSaved, onAdvance, onBack }: StepProps) {
 
   const phoneValid = isValidInternationalPhone(phone);
   const bioMissing = !bio.trim();
-  const cityMissing = !city.trim();
-  const countryInvalid = !isPhoneCountry(country);
+  const countryInvalid = Boolean(country.trim()) && !isPhoneCountry(country);
   const normalizedWebsite = normalizeWebAddress(website);
   const websiteInvalid = normalizedWebsite === null;
   const issueCount = countFormIssues([
     !phoneValid,
     bioMissing,
-    cityMissing,
     countryInvalid,
     websiteInvalid,
   ]);
@@ -446,12 +442,11 @@ function SellerStep({ user, lang, onSaved, onAdvance, onBack }: StepProps) {
     if (saving) return;
     if (!canSubmit) {
       setPhoneTouched(true);
-      touchAll(["bio", "website", "city", "country"]);
+      touchAll(["bio", "website", "country"]);
       focusFirstInvalidField([
         !phoneValid && "setup-phone",
         bioMissing && "setup-bio",
         websiteInvalid && "setup-website",
-        cityMissing && "setup-city",
         countryInvalid && "setup-country",
       ]);
       return;
@@ -599,8 +594,8 @@ function SellerStep({ user, lang, onSaved, onAdvance, onBack }: StepProps) {
           {(control) => <Input {...control} value={address} onChange={(e) => setAddress(e.target.value)} autoComplete="street-address" />}
         </Field>
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
-          <Field id="setup-city" label={t("settings.seller.city", lang)} lang={lang} error={requiredError(city, touched.has("city"), lang)}>
-            {(control) => <Input {...control} value={city} onChange={(e) => setCity(e.target.value)} onBlur={() => touch("city")} autoComplete="address-level2" />}
+          <Field id="setup-city" label={t("settings.seller.city", lang)} optional lang={lang}>
+            {(control) => <Input {...control} value={city} onChange={(e) => setCity(e.target.value)} autoComplete="address-level2" />}
           </Field>
           <Field
             id="setup-state"
@@ -627,7 +622,7 @@ function SellerStep({ user, lang, onSaved, onAdvance, onBack }: StepProps) {
           <Field id="setup-postal" label={t("settings.seller.postalCode", lang)} optional lang={lang}>
             {(control) => <Input {...control} value={postalCode} onChange={(e) => setPostalCode(e.target.value)} autoComplete="postal-code" />}
           </Field>
-          <Field id="setup-country" label={t("settings.seller.country", lang)} lang={lang} error={touched.has("country") && countryInvalid ? t("form.required", lang) : null}>
+          <Field id="setup-country" label={t("settings.seller.country", lang)} optional lang={lang} error={touched.has("country") && countryInvalid ? t("form.required", lang) : null}>
             {(control) => (
               <CountrySelect
                 id={control.id}

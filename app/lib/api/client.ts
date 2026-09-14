@@ -497,6 +497,10 @@ export interface UserProfileData {
   show_email: boolean;
   show_phone: boolean;
   allow_contact: boolean;
+  /** Django-owned list of profile fields that currently contain usable data. */
+  available_public_fields?: string[];
+  /** Available fields after public-profile/contact privacy switches. */
+  visible_public_fields?: string[];
   portfolio_slug: string | null;
   portfolio_visibility: string;
   portfolio_title: string;
@@ -771,6 +775,7 @@ export interface CreatorPostingState {
   phone_present: boolean;
   phone_verified: boolean;
   seller_profile_complete: boolean;
+  seller_profile_required_fields?: string[];
   seller_profile_missing_fields: string[];
   missing_requirements: string[];
 }

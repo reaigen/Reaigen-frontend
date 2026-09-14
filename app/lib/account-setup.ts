@@ -6,7 +6,7 @@ import type { ReaiAgentConsent, ReaiToolPermissions, UserCapabilities, UserProfi
  * authorises against.
  *
  * The backend owns the hard rules (`/users/permissions/` → `creator_posting`:
- * verified email, verified phone, first/last name, bio, Reaigen access), and
+ * verified email, verified phone, Django-declared seller fields, Reaigen access), and
  * `PersonalizedData.onboarding_*` remembers whether the guided flow was
  * finished or skipped. This module only folds those into four steps the
  * guided flow and the dashboard reminder can render; nothing here grants
@@ -23,8 +23,6 @@ export type SetupMissingKey =
   | "phone"
   | "phone_verified"
   | "bio"
-  | "city"
-  | "country"
   | "billing_name"
   | "billing_email"
   | "billing_address"
@@ -89,23 +87,30 @@ export function computeAccountSetupStatus(input: AccountSetupInput): AccountSetu
   const profile = user.profile;
   const billing = user.billing_account;
   const posting = capabilities?.creator_posting;
+  const serverMissingFields = new Set(posting?.seller_profile_missing_fields ?? []);
+  const serverRequiredFields = Array.isArray(posting?.seller_profile_required_fields)
+    ? new Set(posting.seller_profile_required_fields)
+    : null;
+  const serverMarksMissing = (field: "first_name" | "last_name" | "bio") => (
+    serverMissingFields.has(field)
+    && (serverRequiredFields === null || serverRequiredFields.has(field))
+  );
 
   const profileMissing: SetupMissingKey[] = [];
-  if (!filled(user.first_name)) profileMissing.push("first_name");
-  if (!filled(user.last_name)) profileMissing.push("last_name");
+  if (posting ? serverMarksMissing("first_name") : !filled(user.first_name)) profileMissing.push("first_name");
+  if (posting ? serverMarksMissing("last_name") : !filled(user.last_name)) profileMissing.push("last_name");
   if (!filled(user.username)) profileMissing.push("username");
 
   const sellerMissing: SetupMissingKey[] = [];
-  const phonePresent = filled(profile?.phone);
+  const phonePresent = posting?.phone_present ?? filled(profile?.phone);
   if (!phonePresent) sellerMissing.push("phone");
-  // Verification is reported three ways (backend verdict, account flag,
-  // profile mirror) and refreshes at different moments; any of them saying
-  // "verified" for the saved number is enough.
-  const phoneVerified = phonePresent && Boolean(posting?.phone_verified || user.phone_verified || profile?.phone_verified);
+  // Once loaded, Django's verdict is authoritative. Profile mirrors are only
+  // a bootstrap fallback while capabilities are not available yet.
+  const phoneVerified = phonePresent && (
+    posting?.phone_verified ?? Boolean(user.phone_verified || profile?.phone_verified)
+  );
   if (phonePresent && !phoneVerified) sellerMissing.push("phone_verified");
-  if (!filled(profile?.bio)) sellerMissing.push("bio");
-  if (!filled(profile?.city)) sellerMissing.push("city");
-  if (!filled(profile?.country)) sellerMissing.push("country");
+  if (posting ? serverMarksMissing("bio") : !filled(profile?.bio)) sellerMissing.push("bio");
 
   const billingMissing: SetupMissingKey[] = [];
   if (!filled(billing?.billing_name)) billingMissing.push("billing_name");

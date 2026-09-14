@@ -33,6 +33,7 @@ interface ShareCreateFormProps {
   formId?: string;
   /** Mirrors internal PIN validity out so a host footer can disable its submit. */
   onValidityChange?: (valid: boolean) => void;
+  availableFields?: ReadonlySet<string>;
 }
 
 export interface ShareFormData {
@@ -60,6 +61,7 @@ export function ShareCreateForm({
   stickyActionsAtPanelEdge = false,
   formId,
   onValidityChange,
+  availableFields,
 }: ShareCreateFormProps) {
   const [privacyLevel, setPrivacyLevel] = React.useState<PrivacyLevel>("open");
   const [pin, setPin] = React.useState("");
@@ -85,12 +87,17 @@ export function ShareCreateForm({
     // photos ⇄ uploads, floorplan ⇄ floorplan; details off strips
     // everything but title/media.
     const fields = new Set(scope.selectedFields);
-    fields.add("title");
-    if (scope.tour) fields.add("tour");
+    if (availableFields) {
+      for (const field of fields) {
+        if (!availableFields.has(field)) fields.delete(field);
+      }
+    }
+    if (!availableFields || availableFields.has("title")) fields.add("title");
+    if (scope.tour && (!availableFields || availableFields.has("tour"))) fields.add("tour");
     else fields.delete("tour");
-    if (scope.photos) fields.add("uploads");
+    if (scope.photos && (!availableFields || availableFields.has("uploads"))) fields.add("uploads");
     else fields.delete("uploads");
-    if (scope.floorplan) fields.add("floorplan");
+    if (scope.floorplan && (!availableFields || availableFields.has("floorplan"))) fields.add("floorplan");
     else fields.delete("floorplan");
     if (!scope.details) {
       for (const f of Array.from(fields)) {
@@ -138,6 +145,7 @@ export function ShareCreateForm({
             lang={lang}
             layout={layout === "workspace" ? "workspace" : "default"}
             detailsMode={layout === "workspace" ? "inline" : detailsMode}
+            availableFields={availableFields}
           />
         </section>
 
@@ -191,12 +199,20 @@ export function ShareCreateForm({
   );
 }
 
-export function defaultContentScope(hasTour: boolean, hasPhotos: boolean, hasFloorplan: boolean): ContentScope {
+export function defaultContentScope(
+  hasTour: boolean,
+  hasPhotos: boolean,
+  hasFloorplan: boolean,
+  availableFields?: ReadonlySet<string>,
+): ContentScope {
+  const selectedFields = new Set(
+    SHARE_BUNDLES.less.filter((field) => !availableFields || availableFields.has(field)),
+  );
   return {
-    tour: hasTour,
-    photos: hasPhotos,
+    tour: hasTour && (!availableFields || availableFields.has("tour")),
+    photos: hasPhotos && (!availableFields || availableFields.has("uploads")),
     details: true,
-    floorplan: hasFloorplan,
-    selectedFields: new Set(SHARE_BUNDLES.less),
+    floorplan: hasFloorplan && (!availableFields || availableFields.has("floorplan")),
+    selectedFields,
   };
 }

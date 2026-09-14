@@ -1287,9 +1287,16 @@ function PrivacyTab({
   agentAllowed: boolean;
 }) {
   const p = user.profile ?? {} as Partial<NonNullable<typeof user.profile>>;
+  const hasPublicFieldContract = Array.isArray(p.available_public_fields);
+  const emailAvailable = hasPublicFieldContract
+    ? p.available_public_fields!.includes("email")
+    : Boolean(user.email?.trim());
+  const phoneAvailable = hasPublicFieldContract
+    ? p.available_public_fields!.includes("phone")
+    : Boolean(p.phone?.trim() && p.phone_verified);
   const [isPublic, setIsPublic] = React.useState(p?.is_public ?? true);
-  const [showEmail, setShowEmail] = React.useState(p?.show_email ?? false);
-  const [showPhone, setShowPhone] = React.useState(p?.show_phone ?? false);
+  const [showEmail, setShowEmail] = React.useState(emailAvailable && (p?.show_email ?? false));
+  const [showPhone, setShowPhone] = React.useState(phoneAvailable && (p?.show_phone ?? false));
   const [allowContact, setAllowContact] = React.useState(p?.allow_contact ?? true);
   const [loading, setLoading] = React.useState(false);
   const [error, setError] = React.useState<string | null>(null);
@@ -1308,8 +1315,8 @@ function PrivacyTab({
 
   React.useEffect(() => {
     setIsPublic(p?.is_public ?? true);
-    setShowEmail(p?.show_email ?? false);
-    setShowPhone(p?.show_phone ?? false);
+    setShowEmail(emailAvailable && (p?.show_email ?? false));
+    setShowPhone(phoneAvailable && (p?.show_phone ?? false));
     setAllowContact(p?.allow_contact ?? true);
     setMarketingConsent(user.gdpr?.marketing_consent ?? false);
   }, [
@@ -1317,6 +1324,8 @@ function PrivacyTab({
     p?.is_public,
     p?.show_email,
     p?.show_phone,
+    emailAvailable,
+    phoneAvailable,
     user.gdpr?.marketing_consent,
   ]);
 
@@ -1395,8 +1404,8 @@ function PrivacyTab({
       setLoading(true);
       await updateSellerProfile({
         is_public: isPublic,
-        show_email: isPublic ? showEmail : false,
-        show_phone: isPublic ? showPhone : false,
+        show_email: isPublic && emailAvailable ? showEmail : false,
+        show_phone: isPublic && phoneAvailable ? showPhone : false,
         allow_contact: isPublic ? allowContact : false,
       });
       setSuccess(true);
@@ -1408,7 +1417,10 @@ function PrivacyTab({
     }
   }
 
-  const visibleContactDetails = [showEmail, showPhone].filter(Boolean).length;
+  const visibleContactDetails = [
+    emailAvailable && showEmail,
+    phoneAvailable && showPhone,
+  ].filter(Boolean).length;
   const hasPublicContactDetails = isPublic && visibleContactDetails > 0;
   const statusLabel = !isPublic
     ? t("settings.privacy.statusPrivate", lang)
@@ -1460,20 +1472,24 @@ function PrivacyTab({
               checked={isPublic}
               onChange={setIsPublic}
             />
-            <ToggleRow
-              label={t("settings.privacy.showEmail", lang)}
-              hint={isPublic ? t("settings.privacy.showEmailHint", lang) : t("settings.privacy.disabledByPrivate", lang)}
-              checked={showEmail}
-              onChange={setShowEmail}
-              disabled={!isPublic}
-            />
-            <ToggleRow
-              label={t("settings.privacy.showPhone", lang)}
-              hint={isPublic ? t("settings.privacy.showPhoneHint", lang) : t("settings.privacy.disabledByPrivate", lang)}
-              checked={showPhone}
-              onChange={setShowPhone}
-              disabled={!isPublic}
-            />
+            {emailAvailable ? (
+              <ToggleRow
+                label={t("settings.privacy.showEmail", lang)}
+                hint={isPublic ? t("settings.privacy.showEmailHint", lang) : t("settings.privacy.disabledByPrivate", lang)}
+                checked={showEmail}
+                onChange={setShowEmail}
+                disabled={!isPublic}
+              />
+            ) : null}
+            {phoneAvailable ? (
+              <ToggleRow
+                label={t("settings.privacy.showPhone", lang)}
+                hint={isPublic ? t("settings.privacy.showPhoneHint", lang) : t("settings.privacy.disabledByPrivate", lang)}
+                checked={showPhone}
+                onChange={setShowPhone}
+                disabled={!isPublic}
+              />
+            ) : null}
             <ToggleRow
               label={t("settings.privacy.allowContact", lang)}
               hint={isPublic ? t("settings.privacy.allowContactHint", lang) : t("settings.privacy.disabledByPrivate", lang)}

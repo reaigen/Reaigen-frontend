@@ -4,6 +4,7 @@ import * as React from "react";
 import { ListBulletIcon } from "@radix-ui/react-icons";
 import { t, type LocaleKey } from "../../lib/i18n";
 import {
+  ALL_SHARE_FIELDS,
   SHARE_BUNDLES,
   SHARE_FIELD_GROUPS,
   type ShareBundleName,
@@ -31,6 +32,7 @@ interface ContentScopeSelectorProps {
   lang: string;
   layout?: "default" | "workspace";
   detailsMode?: "panel" | "inline";
+  availableFields?: ReadonlySet<string>;
 }
 
 // ── Bundle detection ───────────────────────────────────────────────────
@@ -63,12 +65,19 @@ export function ContentScopeSelector({
   lang,
   layout = "default",
   detailsMode = "panel",
+  availableFields,
 }: ContentScopeSelectorProps) {
   const [detailsExpanded, setDetailsExpanded] = React.useState(false);
   const unavailableFields = new Set<string>();
   if (!hasTour) unavailableFields.add("tour");
   if (!hasPhotos) unavailableFields.add("uploads");
   if (!hasFloorplan) unavailableFields.add("floorplan");
+  if (availableFields) {
+    for (const field of ALL_SHARE_FIELDS) {
+      if (!availableFields.has(field)) unavailableFields.add(field);
+    }
+  }
+  const fieldAvailable = (field: string) => !availableFields || availableFields.has(field);
   const activeBundle = detectBundle(scope.selectedFields, unavailableFields);
 
   const toggleCard = (key: "tour" | "photos" | "details" | "floorplan") => {
@@ -76,7 +85,10 @@ export function ContentScopeSelector({
   };
 
   const handleBundleClick = (name: ShareBundleName) => {
-    onChange({ ...scope, selectedFields: new Set(SHARE_BUNDLES[name]) });
+    onChange({
+      ...scope,
+      selectedFields: new Set(SHARE_BUNDLES[name].filter(fieldAvailable)),
+    });
     setDetailsExpanded(false);
   };
 
@@ -84,28 +96,31 @@ export function ContentScopeSelector({
     const next = new Set(scope.selectedFields);
     if (checked) next.add(field);
     else next.delete(field);
-    next.add("title");
+    if (fieldAvailable("title")) next.add("title");
     onChange({ ...scope, selectedFields: next });
   };
 
   const cards: { key: "tour" | "photos" | "details" | "floorplan"; icon: React.ReactNode; labelKey: LocaleKey; available: boolean }[] = [
-    { key: "tour", icon: <MainTourIcon size={16} />, labelKey: "sharing.scopeTour", available: hasTour },
-    { key: "photos", icon: <ImageIcon size={16} />, labelKey: "sharing.scopePhotos", available: hasPhotos },
-    { key: "details", icon: <ListBulletIcon width={16} height={16} aria-hidden="true" />, labelKey: "sharing.scopeDetails", available: true },
-    { key: "floorplan", icon: <FloorplanIcon size={16} />, labelKey: "sharing.scopeFloorplan", available: hasFloorplan },
+    { key: "tour", icon: <MainTourIcon size={16} />, labelKey: "sharing.scopeTour", available: hasTour && fieldAvailable("tour") },
+    { key: "photos", icon: <ImageIcon size={16} />, labelKey: "sharing.scopePhotos", available: hasPhotos && fieldAvailable("uploads") },
+    { key: "details", icon: <ListBulletIcon width={16} height={16} aria-hidden="true" />, labelKey: "sharing.scopeDetails", available: SHARE_FIELD_GROUPS.some((group) => group.fields.some(fieldAvailable)) },
+    { key: "floorplan", icon: <FloorplanIcon size={16} />, labelKey: "sharing.scopeFloorplan", available: hasFloorplan && fieldAvailable("floorplan") },
   ];
   const fieldGroups = (
     <div className={cn(
       "grid gap-5",
       layout === "workspace" && "sm:grid-cols-2 lg:grid-cols-3",
     )}>
-      {SHARE_FIELD_GROUPS.map((group) => (
+      {SHARE_FIELD_GROUPS.map((group) => {
+        const fields = group.fields.filter(fieldAvailable);
+        if (fields.length === 0) return null;
+        return (
         <section key={group.key}>
           <h4 className="mb-2 text-[11px] font-semibold uppercase tracking-[0.045em] text-muted-foreground">
             {t(`shareDialog.fieldGroup.${group.key}` as LocaleKey, lang)}
           </h4>
           <div className="grid grid-cols-2 gap-2">
-            {group.fields.map((field) => {
+            {fields.map((field) => {
               const isTitle = field === "title";
               const checked = isTitle || scope.selectedFields.has(field);
               return (
@@ -128,7 +143,8 @@ export function ContentScopeSelector({
             })}
           </div>
         </section>
-      ))}
+        );
+      })}
     </div>
   );
 
@@ -139,20 +155,18 @@ export function ContentScopeSelector({
       </h3>
 
       <div className={cn("grid grid-cols-1 gap-2 min-[480px]:grid-cols-2", layout === "workspace" && "sm:grid-cols-4")}>
-        {cards.map((card) => {
-          const active = card.available && scope[card.key];
+        {cards.filter((card) => card.available).map((card) => {
+          const active = scope[card.key];
           return (
             <button
               key={card.key}
               type="button"
-              disabled={!card.available}
-              aria-disabled={!card.available}
               aria-pressed={active}
               onClick={() => toggleCard(card.key)}
               className={`floating-panel-shape pen-touch-target group relative flex min-h-16 w-full items-center gap-2.5 border px-3 py-2 text-left transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 ${
-                !card.available
-                  ? "cursor-not-allowed border-border/45 bg-surface-subtle text-foreground/38"
-                  : `${active ? "border-foreground/20 bg-foreground/[0.065] text-foreground" : "border-border/65 bg-card text-foreground/55 hover:border-foreground/18 hover:bg-foreground/[0.035] hover:text-foreground"}`
+                active
+                  ? "border-foreground/20 bg-foreground/[0.065] text-foreground"
+                  : "border-border/65 bg-card text-foreground/55 hover:border-foreground/18 hover:bg-foreground/[0.035] hover:text-foreground"
               }`}
             >
               <span className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-full transition-colors ${active ? "bg-foreground/[0.12] text-foreground" : "bg-secondary/80 text-foreground/45"}`}>

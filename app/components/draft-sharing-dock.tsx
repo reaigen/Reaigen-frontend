@@ -15,6 +15,7 @@ import {
 import { getSafeApiErrorMessage } from "../lib/api/error-message";
 import { formatDate, t } from "../lib/i18n";
 import { currentGalleryUploads } from "../lib/media";
+import { availableDraftShareFields } from "../lib/share-field-availability";
 import {
   copyToClipboard,
   expiryLabel,
@@ -79,22 +80,28 @@ function primaryShareSplat(data: SplatsByDraftPayload | null) {
 function scopeFromShare(
   share: ShareData,
   capabilities: { tour: boolean; photos: boolean; floorplan: boolean },
+  availableFields?: ReadonlySet<string>,
 ): ContentScope {
   const visibleFields = new Set(
     share.fields
       .filter((field) => field.is_visible)
       .map((field) => field.field_name),
   );
+  if (availableFields) {
+    for (const field of visibleFields) {
+      if (!availableFields.has(field)) visibleFields.delete(field);
+    }
+  }
   if (visibleFields.size === 0) {
     return {
       tour: false,
       photos: false,
       floorplan: false,
       details: false,
-      selectedFields: new Set(["title"]),
+      selectedFields: new Set(),
     };
   }
-  visibleFields.add("title");
+  if (!availableFields || availableFields.has("title")) visibleFields.add("title");
   const structuralFields = new Set(["title", "tour", "uploads", "floorplan"]);
   return {
     tour: capabilities.tour && visibleFields.has("tour"),
@@ -160,6 +167,14 @@ export function DraftSharingDock({
       || entry.data_key === "wall_graph_json"
     )),
   );
+  const availableFields = React.useMemo(
+    () => availableDraftShareFields(draft, {
+      tour: hasTour,
+      photos: hasPhotos,
+      floorplan: hasFloorplan,
+    }),
+    [draft, hasFloorplan, hasPhotos, hasTour],
+  );
 
   const [shares, setShares] = React.useState<ShareData[]>([]);
   const [linksLoading, setLinksLoading] = React.useState(false);
@@ -168,7 +183,7 @@ export function DraftSharingDock({
   const [selectedShareId, setSelectedShareId] = React.useState<number | null>(null);
   const [editingShare, setEditingShare] = React.useState<ShareData | null>(null);
   const [scope, setScope] = React.useState<ContentScope>(() => (
-    defaultContentScope(hasTour, hasPhotos, hasFloorplan)
+    defaultContentScope(hasTour, hasPhotos, hasFloorplan, availableFields)
   ));
   const [formError, setFormError] = React.useState<string | null>(null);
   const [saving, setSaving] = React.useState(false);
@@ -298,9 +313,9 @@ export function DraftSharingDock({
     setEditingShare(null);
     setFormError(null);
     showFeedback(null);
-    setScope(defaultContentScope(hasTour, hasPhotos, hasFloorplan));
+    setScope(defaultContentScope(hasTour, hasPhotos, hasFloorplan, availableFields));
     setFormVersion((version) => version + 1);
-  }, [hasFloorplan, hasPhotos, hasTour, showFeedback]);
+  }, [availableFields, hasFloorplan, hasPhotos, hasTour, showFeedback]);
 
   const showCreateView = React.useCallback(() => {
     resetForm();
@@ -327,10 +342,10 @@ export function DraftSharingDock({
       tour: hasTour,
       photos: hasPhotos,
       floorplan: hasFloorplan,
-    }));
+    }, availableFields));
     setFormVersion((version) => version + 1);
     setActiveView("create");
-  }, [hasFloorplan, hasPhotos, hasTour, selectedShare, showFeedback]);
+  }, [availableFields, hasFloorplan, hasPhotos, hasTour, selectedShare, showFeedback]);
 
   const handleSubmit = React.useCallback(async (formData: ShareFormData) => {
     setFormError(null);
@@ -360,7 +375,7 @@ export function DraftSharingDock({
         )));
         setSelectedShareId(updated.id);
         setEditingShare(null);
-        setScope(defaultContentScope(hasTour, hasPhotos, hasFloorplan));
+        setScope(defaultContentScope(hasTour, hasPhotos, hasFloorplan, availableFields));
         setFormVersion((version) => version + 1);
         setActiveView("links");
         showFeedback({ kind: "saved" });
@@ -378,7 +393,7 @@ export function DraftSharingDock({
       setSelectedShareId(created.id);
       // The form stays on screen, so hand it back blank for the next link
       // instead of leaving the settings of the one just created.
-      setScope(defaultContentScope(hasTour, hasPhotos, hasFloorplan));
+      setScope(defaultContentScope(hasTour, hasPhotos, hasFloorplan, availableFields));
       setFormVersion((version) => version + 1);
       setActiveView("links");
       await copyShare(created);
@@ -392,6 +407,7 @@ export function DraftSharingDock({
     }
   }, [
     copyShare,
+    availableFields,
     draftId,
     editingShare,
     hasFloorplan,
@@ -521,6 +537,7 @@ export function DraftSharingDock({
           hasTour={hasTour}
           hasPhotos={hasPhotos}
           hasFloorplan={hasFloorplan}
+          availableFields={availableFields}
           lang={lang}
           onSubmit={handleSubmit}
           saving={saving}

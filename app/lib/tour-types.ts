@@ -785,6 +785,7 @@ export interface ShareData {
   requires_pin: boolean;
   is_accessible: boolean;
   fields: ShareFieldData[];
+  available_field_names?: string[];
   data_features: string[] | null;
   created_at: string;
   updated_at: string;
@@ -1000,6 +1001,7 @@ export interface DraftDataEntry {
   data_value: string;
   data_type: string;
   sort_order: number;
+  status?: string;
 }
 
 export interface DraftDetailItem extends DraftListingItem {
@@ -1007,6 +1009,8 @@ export interface DraftDetailItem extends DraftListingItem {
   address?: string;
   raw_uploads: DraftUpload[];
   draft_data: DraftDataEntry[];
+  /** Django-owned list of fields that currently have a shareable value. */
+  available_share_fields?: string[];
   year_built: number | null;
   floorplan_id: number | null;
   splat_id: number | null;

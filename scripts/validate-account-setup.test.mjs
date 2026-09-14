@@ -51,7 +51,14 @@ const allTools = { allow_all_tools: true, tools: {} };
 const agentCapabilities = {
   apps: { reaigen: true },
   features: { agent_access: true },
-  creator_posting: { phone_verified: true, has_reaigen_access: true, missing_requirements: [] },
+  creator_posting: {
+    phone_present: true,
+    phone_verified: true,
+    has_reaigen_access: true,
+    seller_profile_required_fields: ["first_name", "last_name", "bio"],
+    seller_profile_missing_fields: [],
+    missing_requirements: [],
+  },
 };
 
 test("a fully set-up account has no gaps and never re-prompts", () => {
@@ -70,10 +77,22 @@ test("a fresh registration opens on the seller step and prompts once", () => {
     profile: { phone: "", phone_verified: false, bio: "", city: "", country: "" },
     billing_account: { billing_name: "", billing_email: "", billing_address: "", billing_city: "", billing_postal_code: "", billing_country: "" },
   });
-  const status = computeAccountSetupStatus({ user: fresh, consent: notConsented, capabilities: agentCapabilities });
+  const status = computeAccountSetupStatus({
+    user: fresh,
+    consent: notConsented,
+    capabilities: {
+      ...agentCapabilities,
+      creator_posting: {
+        ...agentCapabilities.creator_posting,
+        phone_present: false,
+        phone_verified: false,
+        seller_profile_missing_fields: ["bio"],
+      },
+    },
+  });
   assert.equal(status.nextStep, "seller");
   assert.equal(status.completedCount, 1);
-  assert.deepEqual(status.steps.find((step) => step.key === "seller").missing, ["phone", "bio", "city", "country"]);
+  assert.deepEqual(status.steps.find((step) => step.key === "seller").missing, ["phone", "bio"]);
   assert.equal(status.steps.find((step) => step.key === "billing").missing.length, 6);
   assert.deepEqual(status.steps.find((step) => step.key === "permissions").missing, ["agent_consent"]);
   assert.equal(shouldPromptAccountSetup(status), true);
@@ -90,6 +109,7 @@ test("a saved but unverified phone is its own gap", () => {
       ...agentCapabilities,
       creator_posting: {
         ...agentCapabilities.creator_posting,
+        phone_present: true,
         phone_verified: false,
       },
     },
@@ -100,9 +120,32 @@ test("a saved but unverified phone is its own gap", () => {
     user: unverified,
     consent: consented,
     toolPermissions: allTools,
-    capabilities: { creator_posting: { phone_verified: true, has_reaigen_access: true, missing_requirements: [] } },
+    capabilities: { creator_posting: { phone_present: true, phone_verified: true, has_reaigen_access: true, seller_profile_missing_fields: [], missing_requirements: [] } },
   });
   assert.equal(verdict.steps.find((step) => step.key === "seller").complete, true);
+});
+
+test("Django requirements ignore optional address fields and unknown future keys", () => {
+  const profileWithoutAddress = {
+    ...user().profile,
+    city: "",
+    country: "",
+  };
+  const status = computeAccountSetupStatus({
+    user: user({ profile: profileWithoutAddress }),
+    consent: consented,
+    toolPermissions: allTools,
+    capabilities: {
+      ...agentCapabilities,
+      creator_posting: {
+        ...agentCapabilities.creator_posting,
+        seller_profile_missing_fields: ["future_field_not_in_schema"],
+      },
+    },
+  });
+
+  assert.deepEqual(status.steps.find((step) => step.key === "seller").missing, []);
+  assert.equal(status.complete, true);
 });
 
 test("consent without any enabled tool is not finished", () => {
