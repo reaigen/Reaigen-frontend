@@ -107,6 +107,23 @@ const authFailureListeners = new Set<(reason: GoogleMapsFailureReason) => void>(
  */
 export const REAIGEN_GOOGLE_MAPS_VERSION = "3.65";
 
+/**
+ * Address-only drafts cannot use the production browser key for geocoding.
+ * This Google-hosted embed is mounted only after an explicit user action, so
+ * the private address is not disclosed to Google during ordinary page load.
+ */
+export function googleMapsAddressEmbedUrl(address: string, language: string) {
+  const normalizedAddress = address.replace(/\s+/g, " ").trim();
+  if (normalizedAddress.length < 3) return null;
+
+  const url = new URL("https://www.google.com/maps");
+  url.searchParams.set("q", normalizedAddress);
+  url.searchParams.set("z", "15");
+  url.searchParams.set("output", "embed");
+  url.searchParams.set("hl", language.slice(0, 2).toLowerCase());
+  return url.toString();
+}
+
 function installAuthFailureHandler() {
   if (authFailureHandlerInstalled) return;
   authFailureHandlerInstalled = true;

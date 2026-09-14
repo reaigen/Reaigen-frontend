@@ -6,6 +6,7 @@ import test from "node:test";
 import {
   REAIGEN_GOOGLE_MAP_STYLES,
   REAIGEN_GOOGLE_MAPS_VERSION,
+  googleMapsAddressEmbedUrl,
   googleMapsScriptUrl,
   loadGoogleMaps,
   resetGoogleMapsFailure,
@@ -27,6 +28,21 @@ test("the Maps loader preserves path-compatible website authorization", () => {
   assert.equal(REAIGEN_GOOGLE_MAPS_VERSION, "3.65");
   assert.equal(url.searchParams.get("v"), REAIGEN_GOOGLE_MAPS_VERSION);
   assert.equal(url.searchParams.has("auth_referrer_policy"), false);
+});
+
+test("an address-only map uses a keyless Google embed with a normalized locale", () => {
+  const url = new URL(googleMapsAddressEmbedUrl(
+    "  Bratislava   Castle, Slovakia  ",
+    "sk-SK",
+  ));
+
+  assert.equal(url.origin, "https://www.google.com");
+  assert.equal(url.pathname, "/maps");
+  assert.equal(url.searchParams.get("q"), "Bratislava Castle, Slovakia");
+  assert.equal(url.searchParams.get("output"), "embed");
+  assert.equal(url.searchParams.get("hl"), "sk");
+  assert.equal(url.searchParams.has("key"), false);
+  assert.equal(googleMapsAddressEmbedUrl("  ", "en"), null);
 });
 
 test("the production map runtime is Google Maps JavaScript only", () => {
@@ -60,7 +76,7 @@ test("the Parameters map keeps saved coordinates while the address is edited", (
   assert.match(mapCard, /if \(targetKeyRef\.current === nextKey\) return/);
 });
 
-test("address-only drafts do not make a doomed map-client request", () => {
+test("address-only drafts wait for an explicit in-app Google map request", () => {
   const repositoryRoot = fileURLToPath(new URL("../../", import.meta.url));
   const mapCard = readFileSync(`${repositoryRoot}/app/components/property-map-card.tsx`, "utf8");
   const coordinateGuard = mapCard.indexOf("if (target.lat == null || target.lng == null)");
@@ -69,10 +85,29 @@ test("address-only drafts do not make a doomed map-client request", () => {
   assert.notEqual(coordinateGuard, -1);
   assert.notEqual(clientRequest, -1);
   assert.ok(coordinateGuard < clientRequest, "missing coordinates must be rejected before fetch");
-  assert.match(mapCard, /https:\/\/www\.google\.com\/maps\/search\/\?api=1&query=/);
-  assert.match(mapCard, /target="_blank"/);
-  assert.match(mapCard, /rel="noopener noreferrer"/);
+  assert.match(mapCard, /addressMapRequested/);
+  assert.match(mapCard, /GoogleAddressMapFrame/);
+  assert.match(mapCard, /referrerPolicy="strict-origin-when-cross-origin"/);
+  assert.doesNotMatch(mapCard, /target="_blank"/);
+  assert.doesNotMatch(mapCard, /maps\/search\/\?api=1/);
   assert.doesNotMatch(mapCard, /body: JSON\.stringify\(\{[^}]*address/s);
+});
+
+test("the browser-key route validates cookie tokens against Django", () => {
+  const repositoryRoot = fileURLToPath(new URL("../../", import.meta.url));
+  const route = readFileSync(`${repositoryRoot}/app/api/maps/client/route.ts`, "utf8");
+  const verifier = readFileSync(`${repositoryRoot}/app/lib/server/creator-session.ts`, "utf8");
+
+  assert.match(route, /verifyCreatorSession\(accessToken, refreshToken\)/);
+  assert.match(route, /if \(!session\.ok\)/);
+  assert.match(verifier, /\/api\/v1\/core\/users\/me\//);
+  assert.match(verifier, /refreshSession\(refreshToken, candidates\)/);
+  assert.doesNotMatch(route, /const hasCreatorSession = Boolean/);
+  assert.ok(
+    route.indexOf("verifyCreatorSession(accessToken, refreshToken)")
+      < route.indexOf("process.env.GOOGLE_MAPS_KEY"),
+    "authentication must run before exposing browser-key configuration state",
+  );
 });
 
 test("the property map renders interactively without tearing down a slow Google canvas", () => {

@@ -19,8 +19,9 @@ The Google Cloud key must have:
 
 Do not enable or introduce OpenStreetMap, Leaflet, Nominatim, Mapbox, or a
 silent fallback provider. Address-only drafts are not geocoded by this client.
-The property map renders saved latitude and longitude, keeping exact location
-inside the authenticated creator workspace.
+They offer a user-triggered Google-hosted map frame inside the authenticated
+creator workspace. The frame is absent until the user chooses **Show map**, so
+ordinary page loading does not disclose the private address to Google.
 
 After changing `GOOGLE_MAPS_KEY`, redeploy the production frontend. Never put
 the key in a `NEXT_PUBLIC_*` variable, repository file, log, screenshot, or
@@ -30,7 +31,10 @@ documentation example.
 
 `PropertyMapCard` sends saved coordinates to the same-origin
 `POST /api/maps/client` route. The route returns those validated coordinates
-and the website-restricted browser key only to the authenticated workspace.
+and the website-restricted browser key only after validating the cookie token
+against Django. Cookie presence alone is not authentication. Expired access
+tokens use the shared silent-refresh path; forged or refused sessions receive
+no browser key.
 
 The browser runtime:
 
@@ -93,11 +97,16 @@ Then verify production:
    the intended Ready Vercel deployment.
 2. Open an authenticated draft with saved coordinates and verify colored map
    tiles, the Google attribution, pan, zoom, expansion, and retry behavior.
-3. Leave a tab open across a deployment, navigate back to the draft, and
+3. Open an address-only draft, confirm no Google frame request occurs during
+   page load, choose **Show map**, and verify the Google map stays inside the
+   location card and expanded dialog.
+4. Submit a valid-coordinate request to `/api/maps/client` with no cookies and
+   with a forged cookie. Both must return `401` without an API key response.
+5. Leave a tab open across a deployment, navigate back to the draft, and
    confirm it reloads at most once and then shows the current authorized map.
-4. Confirm the console has no `RefererNotAllowedMapError`,
+6. Confirm the console has no `RefererNotAllowedMapError`,
    `BillingNotEnabledMapError`, `InvalidKeyMapError`, or CSP violations.
-5. Search the production source for disallowed map providers and confirm none
+7. Search the production source for disallowed map providers and confirm none
    are present.
 
 An HTTP 200 from the page and Maps bootstrap does not prove that tiles rendered.

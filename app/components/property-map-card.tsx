@@ -8,6 +8,7 @@ import {
   GoogleMapMarker,
   REAIGEN_GOOGLE_MAP_STYLES,
   REAIGEN_GOOGLE_MAPS_VERSION,
+  googleMapsAddressEmbedUrl,
   loadGoogleMaps,
   resetGoogleMapsFailure,
   subscribeGoogleMapsFailure,
@@ -131,6 +132,36 @@ function coordinate(value: string | number | null | undefined, min: number, max:
   return Number.isFinite(parsed) && parsed >= min && parsed <= max ? parsed : null;
 }
 
+function GoogleAddressMapFrame({
+  address,
+  lang,
+  instance,
+  onLoad,
+  onError,
+}: {
+  address: string;
+  lang: string;
+  instance: string;
+  onLoad: () => void;
+  onError: () => void;
+}) {
+  const src = googleMapsAddressEmbedUrl(address, lang);
+  if (!src) return null;
+
+  return (
+    <iframe
+      key={instance}
+      src={src}
+      title={`${t("draft.location", lang)} · Google Maps`}
+      className="absolute inset-0 h-full w-full border-0"
+      referrerPolicy="strict-origin-when-cross-origin"
+      allowFullScreen
+      onLoad={onLoad}
+      onError={onError}
+    />
+  );
+}
+
 export function PropertyMapCard({
   address,
   latitude,
@@ -149,9 +180,6 @@ export function PropertyMapCard({
   const lat = coordinate(latitude, -90, 90);
   const lng = coordinate(longitude, -180, 180);
   const normalizedAddress = address?.replace(/\s+/g, " ").trim() ?? "";
-  const externalMapUrl = normalizedAddress
-    ? `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(normalizedAddress)}`
-    : null;
   const rawTarget = useMemo(() => (
     lat != null && lng != null
       ? { key: `${lat},${lng}`, lat, lng, address: normalizedAddress }
@@ -162,10 +190,13 @@ export function PropertyMapCard({
   const [target, setTarget] = useState(rawTarget);
   const [mapConfig, setMapConfig] = useState<ClientMapConfig | null>(null);
   const [failed, setFailed] = useState(false);
-  const [loading, setLoading] = useState(Boolean(rawTarget));
+  const [loading, setLoading] = useState(Boolean(rawTarget?.lat != null && rawTarget?.lng != null));
   const [retryNonce, setRetryNonce] = useState(0);
   const [expanded, setExpanded] = useState(false);
   const [shouldLoad, setShouldLoad] = useState(false);
+  const [addressMapRequested, setAddressMapRequested] = useState(false);
+  const [addressMapStatus, setAddressMapStatus] = useState<"idle" | "loading" | "ready" | "failed">("idle");
+  const [addressMapNonce, setAddressMapNonce] = useState(0);
   const cardRef = useRef<HTMLElement>(null);
   const targetKeyRef = useRef(rawTarget?.key ?? null);
 
@@ -212,11 +243,13 @@ export function PropertyMapCard({
       // canvas does not disappear, refetch its key, and rebuild on every key.
       setTarget(rawTarget);
       setFailed(false);
+      setAddressMapRequested(false);
+      setAddressMapStatus("idle");
     };
 
-    // Saved coordinates can render immediately. Address-only drafts remain
-    // visible as cards but fail closed because this deployment intentionally
-    // enables only the Google Maps JavaScript API, not a geocoding provider.
+    // Saved coordinates can render immediately. Address-only drafts debounce
+    // while an editor is typing and wait for explicit consent before their
+    // address is sent to the Google-hosted map frame.
     if (!rawTarget || rawTarget.lat != null) {
       updateTarget();
       return;
@@ -235,8 +268,7 @@ export function PropertyMapCard({
 
     // An address is not a coordinate. Do not make a request that the
     // authenticated endpoint must reject, and do not silently send a private
-    // address to a geocoder. The rendered state below offers an explicit
-    // user-initiated Google Maps link instead.
+    // address to Google. The rendered state below waits for explicit action.
     if (target.lat == null || target.lng == null) {
       setMapConfig(null);
       setFailed(false);
@@ -320,14 +352,25 @@ export function PropertyMapCard({
     setRetryNonce((value) => value + 1);
   }, []);
 
+  const handleShowAddressMap = useCallback(() => {
+    setAddressMapRequested(true);
+    setAddressMapStatus("loading");
+  }, []);
+
+  const handleRetryAddressMap = useCallback(() => {
+    setAddressMapNonce((value) => value + 1);
+    setAddressMapStatus("loading");
+  }, []);
+
   if (!target) return null;
+  const isAddressOnly = target.lat == null || target.lng == null;
 
   return (
     <>
       <section
         ref={cardRef}
         aria-label={t("draft.location", lang)}
-        aria-busy={loading}
+        aria-busy={loading || addressMapStatus === "loading"}
         className={cn(
           "group relative isolate overflow-hidden rounded-[1.6rem] border border-border/65 bg-[#e9eae7] shadow-card",
           compact ? "aspect-[4/3] min-h-[15rem] sm:aspect-[16/7]" : "aspect-[4/3] min-h-[17rem] sm:aspect-[18/7]",
@@ -348,6 +391,15 @@ export function PropertyMapCard({
             onError={handleMapError}
           />
         ) : null}
+        {isAddressOnly && addressMapRequested && addressMapStatus !== "failed" ? (
+          <GoogleAddressMapFrame
+            address={target.address}
+            lang={lang}
+            instance={`inline-${target.key}-${addressMapNonce}`}
+            onLoad={() => setAddressMapStatus("ready")}
+            onError={() => setAddressMapStatus("failed")}
+          />
+        ) : null}
         {failed ? (
           <div className="absolute inset-0 flex items-center justify-center px-6 text-center">
             <div className="max-w-[18rem]">
@@ -364,26 +416,50 @@ export function PropertyMapCard({
               </button>
             </div>
           </div>
-        ) : target.lat == null || target.lng == null ? (
+        ) : null}
+        {!failed && isAddressOnly && addressMapStatus === "failed" ? (
+          <div className="absolute inset-0 flex items-center justify-center px-6 text-center">
+            <div className="max-w-[18rem]">
+              <span className="media-overlay-surface mx-auto flex h-12 w-12 items-center justify-center rounded-full">
+                <MapPinIcon size={20} />
+              </span>
+              <p className="mt-3 text-[13px] font-semibold text-foreground/68">{t("draft.mapPreviewUnavailable", lang)}</p>
+              <button
+                type="button"
+                onClick={handleRetryAddressMap}
+                className="media-overlay-control mt-3 inline-flex min-h-9 items-center justify-center rounded-full px-4 text-[11px] font-semibold focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              >
+                {t("common.tryAgain", lang)}
+              </button>
+            </div>
+          </div>
+        ) : null}
+        {!failed && isAddressOnly && !addressMapRequested ? (
           <div className="absolute inset-0 flex items-center justify-center px-6 text-center">
             <div className="max-w-[21rem]">
               <span className="media-overlay-surface mx-auto flex h-12 w-12 items-center justify-center rounded-full">
                 <MapPinIcon size={20} />
               </span>
-              <p className="mt-3 text-[13px] font-semibold text-foreground/68">{t("draft.mapCoordinatesUnavailable", lang)}</p>
-              {externalMapUrl ? (
-                <a
-                  href={externalMapUrl}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="media-overlay-control mt-3 inline-flex min-h-9 items-center justify-center rounded-full px-4 text-[11px] font-semibold focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                >
-                  {t("draft.openInMaps", lang)}
-                </a>
-              ) : null}
+              <p className="mt-3 text-[13px] font-semibold text-foreground/68">{t("draft.mapAddressPrompt", lang)}</p>
+              <button
+                type="button"
+                onClick={handleShowAddressMap}
+                className="media-overlay-control mt-3 inline-flex min-h-9 items-center justify-center rounded-full px-4 text-[11px] font-semibold focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              >
+                {t("draft.showMap", lang)}
+              </button>
             </div>
           </div>
-        ) : loading ? (
+        ) : null}
+        {!failed && isAddressOnly && addressMapRequested && addressMapStatus === "loading" ? (
+          <div className="pointer-events-none absolute inset-0 flex items-center justify-center" role="status" aria-label={t("common.loading", lang)}>
+            <span className="media-overlay-surface inline-flex min-h-11 items-center gap-2.5 rounded-full px-4 text-[11px] font-semibold">
+              <span className="h-3.5 w-3.5 animate-spin rounded-full border border-foreground/15 border-t-foreground/55 motion-reduce:animate-none" aria-hidden="true" />
+              {t("common.loading", lang)}
+            </span>
+          </div>
+        ) : null}
+        {!failed && !isAddressOnly && loading ? (
           <div className="absolute inset-0 flex items-center justify-center" role="status" aria-label={t("common.loading", lang)}>
             <span className="media-overlay-surface inline-flex min-h-11 items-center gap-2.5 rounded-full px-4 text-[11px] font-semibold">
               <span className="h-3.5 w-3.5 animate-spin rounded-full border border-foreground/15 border-t-foreground/55 motion-reduce:animate-none" aria-hidden="true" />
@@ -397,7 +473,7 @@ export function PropertyMapCard({
           <LockIcon size={13} className="shrink-0" />
           <span className="truncate">{t("draft.location", lang)} · {t("draft.editor.private", lang)}</span>
         </div>
-        {target.lat != null && target.lng != null ? (
+        {!isAddressOnly || (addressMapRequested && addressMapStatus === "ready") ? (
           <button
             type="button"
             onClick={() => setExpanded(true)}
@@ -440,7 +516,7 @@ export function PropertyMapCard({
               </button>
             </header>
             <div className="relative min-h-0 flex-1 overflow-hidden border-y border-border/55 bg-[#e9eae7]">
-              {mapConfig && !failed ? (
+              {mapConfig && !failed && !isAddressOnly ? (
                 <GoogleMapCanvas
                   {...mapConfig}
                   language={lang.slice(0, 2).toLowerCase()}
@@ -448,25 +524,39 @@ export function PropertyMapCard({
                   interactive
                   onError={handleMapError}
                 />
-              ) : failed ? (
+              ) : null}
+              {failed && !isAddressOnly ? (
                 <div className="flex h-full flex-col items-center justify-center gap-3 px-6 text-center text-foreground/55">
                   <MapPinIcon size={28} />
                   <p className="text-[13px] font-semibold">{t("draft.mapPreviewUnavailable", lang)}</p>
                   <button type="button" onClick={handleRetry} className="rounded-full border border-border bg-card px-4 py-2 text-[11px] font-semibold transition-colors hover:bg-surface-subtle">{t("common.tryAgain", lang)}</button>
                 </div>
-              ) : target.lat == null || target.lng == null ? (
+              ) : null}
+              {isAddressOnly && addressMapRequested && addressMapStatus !== "failed" ? (
+                <GoogleAddressMapFrame
+                  address={target.address}
+                  lang={lang}
+                  instance={`expanded-${target.key}-${addressMapNonce}`}
+                  onLoad={() => setAddressMapStatus("ready")}
+                  onError={() => setAddressMapStatus("failed")}
+                />
+              ) : null}
+              {isAddressOnly && addressMapStatus === "failed" ? (
                 <div className="flex h-full flex-col items-center justify-center gap-3 px-6 text-center text-foreground/55">
                   <MapPinIcon size={28} />
-                  <p className="text-[13px] font-semibold">{t("draft.mapCoordinatesUnavailable", lang)}</p>
-                  {externalMapUrl ? (
-                    <a href={externalMapUrl} target="_blank" rel="noopener noreferrer" className="rounded-full border border-border bg-card px-4 py-2 text-[11px] font-semibold transition-colors hover:bg-surface-subtle">
-                      {t("draft.openInMaps", lang)}
-                    </a>
-                  ) : null}
+                  <p className="text-[13px] font-semibold">{t("draft.mapPreviewUnavailable", lang)}</p>
+                  <button type="button" onClick={handleRetryAddressMap} className="rounded-full border border-border bg-card px-4 py-2 text-[11px] font-semibold transition-colors hover:bg-surface-subtle">{t("common.tryAgain", lang)}</button>
                 </div>
-              ) : (
+              ) : null}
+              {isAddressOnly && !addressMapRequested ? (
+                <div className="flex h-full flex-col items-center justify-center gap-3 px-6 text-center text-foreground/55">
+                  <MapPinIcon size={28} />
+                  <button type="button" onClick={handleShowAddressMap} className="rounded-full border border-border bg-card px-4 py-2 text-[11px] font-semibold transition-colors hover:bg-surface-subtle">{t("draft.showMap", lang)}</button>
+                </div>
+              ) : null}
+              {!isAddressOnly && !mapConfig && !failed ? (
                 <div className="flex h-full items-center justify-center text-foreground/45"><span className="h-5 w-5 animate-spin rounded-full border-2 border-foreground/15 border-t-foreground/55 motion-reduce:animate-none" /></div>
-              )}
+              ) : null}
             </div>
             {normalizedAddress ? (
               <p className="px-5 py-4 text-[13px] font-medium text-foreground/72 sm:px-7">{normalizedAddress}</p>

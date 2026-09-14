@@ -15,17 +15,21 @@ requirements rather than optional presentation details.
 - The frontend proxy sanitizes public shared-property responses as a second
   boundary. It removes exact address and coordinate fields from both the root
   response and nested property data before the response reaches browser code.
-- The map bootstrap route requires creator authentication and a same-origin
-  request. It returns only the website-restricted Maps JavaScript key and the
-  resolved center needed by the authenticated location card; it is never used
-  by a public shared page. The browser key must be restricted to Reaigen's
-  production referrers, the Maps JavaScript API, and an explicit usage quota.
+- The map bootstrap route requires a same-origin request and validates the
+  presented session against Django; an access/refresh cookie merely being
+  present is not authentication. It returns only the website-restricted Maps
+  JavaScript key and the resolved center needed by the authenticated location
+  card; it is never used by a public shared page. The browser key must be
+  restricted to Reaigen's production referrers, the Maps JavaScript API, and an
+  explicit usage quota.
 - The map bootstrap accepts saved coordinates only. It does not send private
   addresses to any geocoder, and it does not switch to another map provider if
   Google Maps is unavailable.
-- Expanded maps remain inside Reaigen. Do not provide an external Google Maps
-  deep link that could expose the address through a third-party URL or browser
-  history.
+- An address-only card may mount a Google-hosted map frame only after the user
+  explicitly chooses **Show map**. It must not issue that request during page
+  load or silently geocode the address. Inline and expanded maps remain inside
+  Reaigen; do not provide an external Google Maps deep link that places the
+  private address in top-level browser history.
 
 ## Stable async layout
 
@@ -77,8 +81,9 @@ requirements rather than optional presentation details.
 Before committing or deploying these surfaces:
 
 1. Run lint, type checking, validation tests, and a production build.
-2. Confirm an unauthenticated request to `/api/maps/client` is rejected and
-   that no alternative map-provider endpoint or client request exists.
+2. Confirm unauthenticated and forged-cookie requests to `/api/maps/client` are
+   rejected and that no alternative map-provider endpoint or client request
+   exists.
 3. Confirm the local app responds on port 3055, or on temporary fallback port
    3057 when 3055 is already occupied.
 4. Test an authenticated property and a public shared link at desktop and phone
