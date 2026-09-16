@@ -1578,6 +1578,7 @@ const de: LocaleStrings = {
   "reai.consentStorage":                 "Chats werden standardmäßig nicht gespeichert. Optionale Verbesserungsspeicherung erfordert eine separate Einwilligung. OpenRouter nutzt verpflichtende Null-Datenspeicherung ohne Anbieter-Datenerhebung.",
   "reai.improvementConsent":             "Optional redigierte Chats, Werkzeugaktionen und Feldänderungen in Reaigen zur Produktverbesserung speichern. Ausschalten löscht gespeicherte Verbesserungsdaten. Kein automatisches Modelltraining.",
   "reai.feedbackPrompt":                 "War das hilfreich?",
+  "reai.createListingPhotosFailed":         "Das Angebot wurde angelegt, aber {count} Foto(s) wurden nicht hochgeladen. Sie können sie im Angebot ergänzen.",
   "reai.createListingTitle":                "Neues Angebot",
   "reai.createListingBody":                 "Ich lege das Angebot mit dem an, was Sie mir gesagt haben. Alles lässt sich danach ändern.",
   "reai.createListingWithPhotos":           "Ich lege das Angebot mit Ihren Angaben an und füge die {count} abgelegten Fotos hinzu.",

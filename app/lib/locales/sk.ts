@@ -1578,6 +1578,7 @@ const sk: LocaleStrings = {
   "reai.consentStorage":                 "Konverzácie sa predvolene neukladajú. Voliteľné ukladanie na zlepšovanie vyžaduje samostatný súhlas. OpenRouter má povinnú nulovú retenciu a zakázaný zber dát.",
   "reai.improvementConsent":             "Voliteľne uložiť redigované konverzácie, akcie nástrojov a zmeny polí v Reaigene na zlepšovanie produktu. Vypnutím sa uložené údaje vymažú. Bez automatického trénovania modelov.",
   "reai.feedbackPrompt":                 "Bolo to užitočné?",
+  "reai.createListingPhotosFailed":         "Ponuka bola vytvorená, ale {count} fotiek sa nenahralo. Môžete ich pridať priamo v ponuke.",
   "reai.createListingTitle":                "Nová ponuka",
   "reai.createListingBody":                 "Ponuku vytvorím s tým, čo ste mi povedali. Čokoľvek sa dá potom zmeniť.",
   "reai.createListingWithPhotos":           "Ponuku vytvorím s tým, čo ste mi povedali, a pridám {count} pretiahnutých fotiek.",

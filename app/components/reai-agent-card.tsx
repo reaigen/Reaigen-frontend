@@ -945,12 +945,22 @@ export function ReaiAgentCard({
       }
       if (answer.action_code === "create_listing") {
         const result = await applyReaiCreationAction(answer.action_token, improvementConversationId);
-        // Photos dropped while describing the listing belong to it.
+        // The listing exists from here on. A photo that fails to upload must
+        // not hide that: leaving the confirm card up with only an error would
+        // send the creator back to describe a listing they already have.
         if (pendingPhotos.length) {
+          const failed: File[] = [];
           for (const [index, file] of pendingPhotos.entries()) {
-            await uploadDraftPhoto(result.draft_id, file, index, {});
+            try {
+              await uploadDraftPhoto(result.draft_id, file, index, {});
+            } catch {
+              failed.push(file);
+            }
           }
-          setPendingPhotos([]);
+          setPendingPhotos(failed);
+          if (failed.length) {
+            setError(t("reai.createListingPhotosFailed", lang).replace("{count}", String(failed.length)));
+          }
         }
         window.dispatchEvent(new CustomEvent("reai-creations-updated", {
           detail: { draftIds: [result.draft_id] },

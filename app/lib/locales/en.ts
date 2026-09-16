@@ -1599,6 +1599,7 @@ const en = {
   "reai.consentStorage":                 "Chats are not stored by default. Optional improvement storage is a separate consent. Inference uses OpenRouter with zero-data-retention required and provider data collection denied.",
   "reai.improvementConsent":             "Optionally save redacted chats, tool actions, and draft-field changes in Reaigen for product improvement. Turning this off erases saved improvement data. No automatic model training.",
   "reai.feedbackPrompt":                 "Was this useful?",
+  "reai.createListingPhotosFailed":         "The listing was created, but {count} photo(s) did not upload. You can add them in the listing.",
   "reai.createListingTitle":                "New listing",
   "reai.createListingBody":                 "I will create this listing with what you have told me. You can change anything afterwards.",
   "reai.createListingWithPhotos":           "I will create this listing with what you have told me, and add the {count} photo(s) you dropped in.",
