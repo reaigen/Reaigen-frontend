@@ -2808,7 +2808,17 @@ export interface ReaiAgentResponse {
   /** Experimental extra-user native mini-apps; never arbitrary HTML or script. */
   tinyui?: ReaiAgentTinyUi;
   proposal_token: string | null;
-  action_code?: "revoke_all_shares" | "manage_shares" | "share_inventory" | "share_status" | "current_creation_overview" | "open_creation" | "create_creation" | "clarify_missing_price" | "set_missing_prices" | "open_tour" | "set_tour_cover" | "settings_navigation" | "settings_update" | "select_share_fields" | "create_draft_share" | "translate_description" | "grade_draft_images" | "retouch_draft_image" | "cleanplate_draft_images" | "generative_hdr_draft_image" | "organize_draft_images" | "generate_draft_video" | "viewer_control";
+  action_code?: "revoke_all_shares" | "manage_shares" | "share_inventory" | "share_status" | "current_creation_overview" | "open_creation" | "create_creation" | "clarify_missing_price" | "set_missing_prices" | "open_tour" | "set_tour_cover" | "settings_navigation" | "settings_update" | "select_share_fields" | "create_draft_share" | "translate_description" | "grade_draft_images" | "retouch_draft_image" | "cleanplate_draft_images" | "generative_hdr_draft_image" | "organize_draft_images" | "generate_draft_video" | "viewer_control" | "tool_unavailable" | "needs_creation" | "needs_owned_creation" | "needs_photo" | "generate_description";
+  /** Present when Agent offers to run the description generator again. */
+  description_generation?: {
+    draft_id: number;
+    overrides: Record<string, unknown>;
+    has_existing_description: boolean;
+  };
+  /** Present when the tool the request needed is off for this account. */
+  blocked_tools?: { tool: string; reason: "tier_feature" | "user_policy" }[];
+  /** The stored answer this response corresponds to, for per-turn feedback. */
+  improvement_message_id?: number | null;
   action_token?: string | null;
   action_count?: number;
   share_action?: "list" | "pause" | "resume" | "revoke";
@@ -3160,6 +3170,31 @@ export async function applyReaiWorkspaceAction(
   return result;
 }
 
+/** Run the description generator for a confirmed Agent request. */
+export async function applyReaiDescriptionAction(
+  actionToken: string,
+  improvementConversationId: string | null = null,
+): Promise<{
+  action: "generate_description";
+  draft_id: number;
+  service_id: number;
+  status: string;
+  applied_settings: Record<string, unknown>;
+  execution_mode: string;
+}> {
+  const result = await request("/api/reaigen/reai-agent/workspace/description-actions/apply/", {
+    method: "POST",
+    body: JSON.stringify({
+      action_token: actionToken,
+      confirmed: true,
+      improvement_conversation_id: improvementConversationId,
+    }),
+  });
+  cache.delete(`/api/reaigen/drafts/${result.draft_id}/`);
+  inFlight.delete(`/api/reaigen/drafts/${result.draft_id}/`);
+  return result;
+}
+
 export async function applyReaiMediaAction(
   actionToken: string,
   improvementConversationId: string | null = null,
@@ -3381,14 +3416,46 @@ export async function deleteReaiImprovementConversation(
   });
 }
 
+/** Why an answer was rated unhelpful. Matches the server's reason list. */
+export type ReaiFeedbackReason =
+  | "refused_possible"
+  | "wrong_tool"
+  | "wrong_language"
+  | "wrong_facts"
+  | "incomplete"
+  | "unclear"
+  | "too_slow"
+  | "other";
+
+export const REAI_FEEDBACK_REASONS: ReaiFeedbackReason[] = [
+  "refused_possible",
+  "wrong_tool",
+  "wrong_language",
+  "wrong_facts",
+  "incomplete",
+  "unclear",
+  "too_slow",
+  "other",
+];
+
 export async function saveReaiFeedback(
   conversationId: string,
   helpful: boolean,
   correction = "",
-): Promise<{ saved: boolean; feedback_id: number }> {
+  // Which answer, and which failure family. A rating on the thread alone could
+  // not say either, so a complaint could not be traced back to a turn.
+  messageId?: number | null,
+  reason?: ReaiFeedbackReason | null,
+): Promise<{ saved: boolean; feedback_id: number; message_id: number | null; reason: string | null }> {
   return request("/api/reaigen/reai-agent/improvement-conversations/", {
     method: "POST",
-    body: JSON.stringify({ conversation_id: conversationId, helpful, correction }),
+    body: JSON.stringify({
+      conversation_id: conversationId,
+      helpful,
+      correction,
+      ...(messageId ? { message_id: messageId } : {}),
+      ...(reason ? { reason } : {}),
+    }),
   });
 }
 

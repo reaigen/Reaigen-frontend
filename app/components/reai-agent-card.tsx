@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 
 import {
+  applyReaiDescriptionAction,
   applyReaiMediaAction,
   applyReaiTourCoverAction,
   applyReaiTranslationAction,
@@ -20,6 +21,8 @@ import {
   restoreAgentCreationRevision,
   manageAgentMediaVersion,
   saveReaiFeedback,
+  REAI_FEEDBACK_REASONS,
+  type ReaiFeedbackReason,
   updateLocalization,
   uploadDraftPhoto,
   type AgentCreationRevision,
@@ -198,6 +201,8 @@ type ChatTurn = {
   content: string;
   response?: ReaiAgentResponse;
   feedback?: boolean;
+  /** Set while the reason picker is open for a thumbs-down on this turn. */
+  feedbackReasonOpen?: boolean;
   proposalStatus?: "applied" | "dismissed";
   actionStatus?: "pending" | "applied" | "failed" | "dismissed";
 };
@@ -935,6 +940,18 @@ export function ReaiAgentCard({
         } : turn));
         return;
       }
+      if (answer.action_code === "generate_description") {
+        const result = await applyReaiDescriptionAction(answer.action_token, improvementConversationId);
+        window.dispatchEvent(new CustomEvent("reai-creations-updated", {
+          detail: { draftIds: [result.draft_id] },
+        }));
+        setTurns((current) => current.map((turn) => turn.id === turnId ? {
+          ...turn,
+          actionStatus: "applied",
+          response: { ...answer, action_token: null },
+        } : turn));
+        return;
+      }
       if (["grade_draft_images", "retouch_draft_image", "cleanplate_draft_images", "generative_hdr_draft_image", "organize_draft_images", "generate_draft_video"].includes(answer.action_code || "")) {
         const result = await applyReaiMediaAction(answer.action_token, improvementConversationId);
         window.dispatchEvent(new CustomEvent("reai-media-updated", {
@@ -1071,18 +1088,35 @@ export function ReaiAgentCard({
     window.setTimeout(() => setCopiedShareUrl((current) => current === url ? null : current), 1800);
   };
 
-  const sendFeedback = async (turnId: number, helpful: boolean, conversationId?: string | null) => {
+  const sendFeedback = async (
+    turnId: number,
+    helpful: boolean,
+    conversationId?: string | null,
+    messageId?: number | null,
+    reason?: ReaiFeedbackReason,
+  ) => {
     const id = conversationId || improvementConversationId;
     if (!id || busy) return;
     setBusy(true);
     try {
-      await saveReaiFeedback(id, helpful);
-      setTurns((current) => current.map((turn) => turn.id === turnId ? { ...turn, feedback: helpful } : turn));
+      await saveReaiFeedback(id, helpful, "", messageId ?? null, reason ?? null);
+      setTurns((current) => current.map((turn) => turn.id === turnId
+        ? { ...turn, feedback: helpful, feedbackReasonOpen: false }
+        : turn));
     } catch (err) {
       setError(errorText(err, lang));
     } finally {
       setBusy(false);
     }
+  };
+
+  // A thumbs-down alone says only that something was wrong. Asking which of
+  // the failure families it was is one tap, and it is what makes the rating
+  // usable: the same reason across many turns is the next thing to fix.
+  const openFeedbackReasons = (turnId: number) => {
+    setTurns((current) => current.map((turn) => turn.id === turnId
+      ? { ...turn, feedbackReasonOpen: true }
+      : { ...turn, feedbackReasonOpen: false }));
   };
 
   return (
@@ -1732,6 +1766,45 @@ export function ReaiAgentCard({
                         )}
                       </div>
                     )}
+                    {answer?.action_code === "generate_description" && (answer.action_token || turn.actionStatus) && (
+                      <div className="mt-4 overflow-hidden floating-panel-shape border border-border/65 bg-card shadow-control">
+                        <div className="px-3.5 py-3">
+                          <p className="text-xs font-semibold text-foreground">
+                            {t("reai.describeGenerateTitle", lang)}
+                          </p>
+                          <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
+                            {t(
+                              answer.description_generation?.has_existing_description
+                                ? "reai.describeGenerateReplaces"
+                                : "reai.describeGenerateFirst",
+                              lang,
+                            )}
+                          </p>
+                        </div>
+                        {answer.action_token && (
+                          <div className="flex items-center gap-2 border-t border-border/45 px-3.5 py-3">
+                            <Button type="button" size="sm" className="flex-1 rounded-2xl sm:flex-none" loading={busy} onClick={() => void applyAction(turn.id, answer)}>
+                              {t("reai.describeGenerateConfirm", lang)}
+                            </Button>
+                            <Button type="button" variant="ghost" size="sm" className="rounded-2xl" disabled={busy} onClick={() => dismissAction(turn.id)}>
+                              {t("reai.dismissProposal", lang)}
+                            </Button>
+                          </div>
+                        )}
+                        {turn.actionStatus && (
+                          <div className="border-t border-border/45 px-3.5 py-3">
+                            <AgentStatusBadge tone={turn.actionStatus === "applied" ? "pending" : "neutral"}>
+                              {t(
+                                turn.actionStatus === "applied"
+                                  ? "reai.describeGenerateQueued"
+                                  : "reai.proposalDismissed",
+                                lang,
+                              )}
+                            </AgentStatusBadge>
+                          </div>
+                        )}
+                      </div>
+                    )}
                     {(answer?.action_code === "revoke_all_shares" || answer?.action_code === "manage_shares") && (answer.action_token || turn.actionStatus) && (
                       <div className="mt-4 overflow-hidden floating-panel-shape border border-border/65 bg-card shadow-control">
                         <div className="px-3.5 py-3">
@@ -1868,7 +1941,9 @@ export function ReaiAgentCard({
                           type="button"
                           aria-label={t("reai.feedbackGood", lang)}
                           disabled={busy || turn.feedback !== undefined}
-                          onClick={() => void sendFeedback(turn.id, true, answer.improvement_conversation_id)}
+                          onClick={() => void sendFeedback(
+                            turn.id, true, answer.improvement_conversation_id, answer.improvement_message_id,
+                          )}
                           className={cn(
                             "flex h-7 w-7 items-center justify-center rounded-2xl transition-colors hover:bg-foreground/[0.04] hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none",
                             turn.feedback === true ? "text-foreground" : "disabled:opacity-40",
@@ -1880,7 +1955,7 @@ export function ReaiAgentCard({
                           type="button"
                           aria-label={t("reai.feedbackBad", lang)}
                           disabled={busy || turn.feedback !== undefined}
-                          onClick={() => void sendFeedback(turn.id, false, answer.improvement_conversation_id)}
+                          onClick={() => openFeedbackReasons(turn.id)}
                           className={cn(
                             "flex h-7 w-7 items-center justify-center rounded-2xl transition-colors hover:bg-foreground/[0.04] hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none",
                             turn.feedback === false ? "text-foreground" : "disabled:opacity-40",
@@ -1888,6 +1963,35 @@ export function ReaiAgentCard({
                         >
                           <CloseIcon size={12} />
                         </button>
+                        {turn.feedback !== undefined && (
+                          <span className="ml-1">{t("reai.feedbackThanks", lang)}</span>
+                        )}
+                      </div>
+                    )}
+                    {answer && turn.feedbackReasonOpen && turn.feedback === undefined && (
+                      <div className="mt-2 rounded-2xl bg-foreground/[0.03] p-2 text-[11px]">
+                        <div className="mb-1 px-1 text-muted-foreground">
+                          {t("reai.feedbackReasonPrompt", lang)}
+                        </div>
+                        <div className="flex flex-wrap gap-1">
+                          {REAI_FEEDBACK_REASONS.map((reason) => (
+                            <button
+                              key={reason}
+                              type="button"
+                              disabled={busy}
+                              onClick={() => void sendFeedback(
+                                turn.id,
+                                false,
+                                answer.improvement_conversation_id,
+                                answer.improvement_message_id,
+                                reason,
+                              )}
+                              className="min-h-9 rounded-2xl bg-foreground/[0.04] px-2 py-1 transition-colors hover:bg-foreground/[0.08] hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-40"
+                            >
+                              {t(`reai.feedbackReason.${reason}` as never, lang)}
+                            </button>
+                          ))}
+                        </div>
                       </div>
                     )}
                   </div>
