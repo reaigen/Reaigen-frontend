@@ -3189,6 +3189,9 @@ export async function applyReaiCreationAction(
   applied: string[];
   navigation_path: string;
   execution_mode: string;
+  already_created?: boolean;
+  /** What the agent says next, inside the listing it just created. */
+  follow_up?: { reply: string; suggested_actions: string[] };
 }> {
   const result = await request("/api/reaigen/reai-agent/workspace/creation-actions/apply/", {
     method: "POST",

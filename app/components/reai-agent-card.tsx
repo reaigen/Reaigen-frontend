@@ -754,6 +754,8 @@ export function ReaiAgentCard({
     return true;
   }, [currentTourId, draftId, improvementConversationId, lang]);
 
+  const lastAssistantTurnId = [...turns].reverse().find((turn) => turn.role === "assistant")?.id;
+
   const ask = async (override?: string) => {
     const requestText = (override ?? message).trim();
     if (!requestText || busy) return;
@@ -965,11 +967,29 @@ export function ReaiAgentCard({
         window.dispatchEvent(new CustomEvent("reai-creations-updated", {
           detail: { draftIds: [result.draft_id] },
         }));
-        setTurns((current) => current.map((turn) => turn.id === turnId ? {
-          ...turn,
-          actionStatus: "applied",
-          response: { ...answer, action_token: null },
-        } : turn));
+        const followUp = result.follow_up;
+        setTurns((current) => {
+          const updated = current.map((turn) => turn.id === turnId ? {
+            ...turn,
+            actionStatus: "applied" as const,
+            response: { ...answer, action_token: null },
+          } : turn);
+          if (!followUp?.reply) return updated;
+          // The conversation carries on inside the new listing: the agent asks
+          // for the next missing fact and offers the description, instead of
+          // falling silent the moment the listing opens.
+          return [...updated, {
+            id: Date.now() + 1,
+            role: "assistant" as const,
+            content: followUp.reply,
+            response: {
+              reply: followUp.reply,
+              proposed_changes: {},
+              suggested_actions: followUp.suggested_actions || [],
+              proposal_token: null,
+            },
+          }];
+        });
         router.push(result.navigation_path);
         return;
       }
@@ -1505,6 +1525,27 @@ export function ReaiAgentCard({
                       : "py-1"}
                   >
                     <p className={cn("whitespace-pre-line text-[14px] leading-6", turn.role === "user" ? "text-background" : "text-foreground")}>{turn.content}</p>
+                    {/* The agent often ends with options — "Central heating", "Write a
+                        new description". They were returned by the server and never
+                        shown, so the creator had to retype an answer the agent had
+                        already offered. Only the latest turn's options are live. */}
+                    {turn.role === "assistant"
+                      && !!answer?.suggested_actions?.length
+                      && turn.id === lastAssistantTurnId && (
+                      <div className="mt-2 flex flex-wrap gap-1.5">
+                        {answer.suggested_actions.slice(0, 4).map((suggestion) => (
+                          <button
+                            key={suggestion}
+                            type="button"
+                            disabled={busy}
+                            onClick={() => void ask(suggestion)}
+                            className="min-h-9 rounded-2xl border border-border/60 bg-card px-3 py-1.5 text-left text-[12px] text-foreground transition-colors hover:bg-foreground/[0.04] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-40"
+                          >
+                            {suggestion}
+                          </button>
+                        ))}
+                      </div>
+                    )}
                     {answer && <AgentVersionStamp answer={answer} />}
                     {answer && (
                       <>
