@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 
 import {
+  applyReaiCreationAction,
   applyReaiDescriptionAction,
   applyReaiMediaAction,
   applyReaiTourCoverAction,
@@ -451,6 +452,8 @@ export function ReaiAgentCard({
   const composerRef = useRef<HTMLTextAreaElement>(null);
   const [turns, setTurns] = useState<ChatTurn[]>([]);
   const [busy, setBusy] = useState(false);
+  /** Photos dropped before the listing they belong to exists. */
+  const [pendingPhotos, setPendingPhotos] = useState<File[]>([]);
   const [showHistory, setShowHistory] = useState(false);
   const [showMediaHistory, setShowMediaHistory] = useState(false);
   const [history, setHistory] = useState<AgentCreationRevision[]>([]);
@@ -940,6 +943,26 @@ export function ReaiAgentCard({
         } : turn));
         return;
       }
+      if (answer.action_code === "create_listing") {
+        const result = await applyReaiCreationAction(answer.action_token, improvementConversationId);
+        // Photos dropped while describing the listing belong to it.
+        if (pendingPhotos.length) {
+          for (const [index, file] of pendingPhotos.entries()) {
+            await uploadDraftPhoto(result.draft_id, file, index, {});
+          }
+          setPendingPhotos([]);
+        }
+        window.dispatchEvent(new CustomEvent("reai-creations-updated", {
+          detail: { draftIds: [result.draft_id] },
+        }));
+        setTurns((current) => current.map((turn) => turn.id === turnId ? {
+          ...turn,
+          actionStatus: "applied",
+          response: { ...answer, action_token: null },
+        } : turn));
+        router.push(result.navigation_path);
+        return;
+      }
       if (answer.action_code === "generate_description") {
         const result = await applyReaiDescriptionAction(answer.action_token, improvementConversationId);
         window.dispatchEvent(new CustomEvent("reai-creations-updated", {
@@ -1029,9 +1052,16 @@ export function ReaiAgentCard({
    * an earlier version rather than deleting it.
    */
   const handleDroppedFiles = async (files: File[]) => {
-    if (!draftId || files.length === 0 || uploading) return;
+    if (files.length === 0 || uploading) return;
     const images = files.filter((file) => file.type.startsWith("image/") || /\.(jpe?g|png|webp|heic|heif|tiff?|bmp)$/i.test(file.name));
     if (images.length === 0) return;
+    if (!draftId) {
+      // No listing yet to attach them to. Photos dropped while describing a
+      // new listing are kept here and uploaded the moment Agent creates it,
+      // instead of being silently discarded.
+      setPendingPhotos((current) => [...current, ...images].slice(0, 24));
+      return;
+    }
     const replacing = pool.filter((item): item is AgentPoolImage => item.kind === "image");
     const target = images.length === 1 && replacing.length === 1 ? replacing[0] : null;
     setUploading(true);
@@ -1761,6 +1791,37 @@ export function ReaiAgentCard({
                                       : "reai.mediaQueued",
                                 lang,
                               )}
+                            </AgentStatusBadge>
+                          </div>
+                        )}
+                      </div>
+                    )}
+                    {answer?.action_code === "create_listing" && (answer.action_token || turn.actionStatus) && (
+                      <div className="mt-4 overflow-hidden floating-panel-shape border border-border/65 bg-card shadow-control">
+                        <div className="px-3.5 py-3">
+                          <p className="text-xs font-semibold text-foreground">
+                            {answer.listing_draft?.title || t("reai.createListingTitle", lang)}
+                          </p>
+                          <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
+                            {pendingPhotos.length
+                              ? t("reai.createListingWithPhotos", lang).replace("{count}", String(pendingPhotos.length))
+                              : t("reai.createListingBody", lang)}
+                          </p>
+                        </div>
+                        {answer.action_token && (
+                          <div className="flex items-center gap-2 border-t border-border/45 px-3.5 py-3">
+                            <Button type="button" size="sm" className="flex-1 rounded-2xl sm:flex-none" loading={busy} onClick={() => void applyAction(turn.id, answer)}>
+                              {t("reai.createListingConfirm", lang)}
+                            </Button>
+                            <Button type="button" variant="ghost" size="sm" className="rounded-2xl" disabled={busy} onClick={() => dismissAction(turn.id)}>
+                              {t("reai.dismissProposal", lang)}
+                            </Button>
+                          </div>
+                        )}
+                        {turn.actionStatus && (
+                          <div className="border-t border-border/45 px-3.5 py-3">
+                            <AgentStatusBadge tone={turn.actionStatus === "applied" ? "success" : "neutral"}>
+                              {t(turn.actionStatus === "applied" ? "reai.createListingDone" : "reai.proposalDismissed", lang)}
                             </AgentStatusBadge>
                           </div>
                         )}

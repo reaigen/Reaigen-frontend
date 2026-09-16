@@ -2808,7 +2808,15 @@ export interface ReaiAgentResponse {
   /** Experimental extra-user native mini-apps; never arbitrary HTML or script. */
   tinyui?: ReaiAgentTinyUi;
   proposal_token: string | null;
-  action_code?: "revoke_all_shares" | "manage_shares" | "share_inventory" | "share_status" | "current_creation_overview" | "open_creation" | "create_creation" | "clarify_missing_price" | "set_missing_prices" | "open_tour" | "set_tour_cover" | "settings_navigation" | "settings_update" | "select_share_fields" | "create_draft_share" | "translate_description" | "grade_draft_images" | "retouch_draft_image" | "cleanplate_draft_images" | "generative_hdr_draft_image" | "organize_draft_images" | "generate_draft_video" | "viewer_control" | "tool_unavailable" | "needs_creation" | "needs_owned_creation" | "needs_photo" | "generate_description";
+  action_code?: "revoke_all_shares" | "manage_shares" | "share_inventory" | "share_status" | "current_creation_overview" | "open_creation" | "create_creation" | "clarify_missing_price" | "set_missing_prices" | "open_tour" | "set_tour_cover" | "settings_navigation" | "settings_update" | "select_share_fields" | "create_draft_share" | "translate_description" | "grade_draft_images" | "retouch_draft_image" | "cleanplate_draft_images" | "generative_hdr_draft_image" | "organize_draft_images" | "generate_draft_video" | "viewer_control" | "tool_unavailable" | "needs_creation" | "needs_owned_creation" | "needs_photo" | "generate_description" | "create_listing" | "clarify_new_listing";
+  /** Present when Agent assembled a new listing from the conversation. */
+  listing_draft?: {
+    title: string;
+    fields: Record<string, unknown>;
+    specs: Record<string, Record<string, unknown>>;
+    missing: string[];
+    ready: boolean;
+  };
   /** Present when Agent offers to run the description generator again. */
   description_generation?: {
     draft_id: number;
@@ -3167,6 +3175,31 @@ export async function applyReaiWorkspaceAction(
   // invalidator cannot infer that the sharing collection is now stale.
   cache.delete("/api/reaigen/shares/");
   inFlight.delete("/api/reaigen/shares/");
+  return result;
+}
+
+/** Create the listing Agent assembled from the conversation. */
+export async function applyReaiCreationAction(
+  actionToken: string,
+  improvementConversationId: string | null = null,
+): Promise<{
+  action: "create_listing";
+  draft_id: number;
+  title: string;
+  applied: string[];
+  navigation_path: string;
+  execution_mode: string;
+}> {
+  const result = await request("/api/reaigen/reai-agent/workspace/creation-actions/apply/", {
+    method: "POST",
+    body: JSON.stringify({
+      action_token: actionToken,
+      confirmed: true,
+      improvement_conversation_id: improvementConversationId,
+    }),
+  });
+  cache.delete("/api/reaigen/drafts/");
+  inFlight.delete("/api/reaigen/drafts/");
   return result;
 }
 
