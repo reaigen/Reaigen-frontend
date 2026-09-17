@@ -5,17 +5,14 @@ import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 
 import {
-  applyReaiCreationAction,
-  applyReaiDescriptionAction,
-  applyReaiMediaAction,
+  advanceReaiAgentPlan,
   applyReaiTourCoverAction,
-  applyReaiTranslationAction,
-  applyReaiWorkspaceAction,
   applyReaiWorkspaceProposal,
   askReaiWorkspace,
   getAgentCreationHistory,
   getAgentMediaVersions,
   getDraft,
+  getDraftService,
   getReaiAgentConsent,
   getReaiImprovementConsent,
   listUnits,
@@ -51,6 +48,22 @@ import {
   readAgentTranscript,
   writeAgentTranscript,
 } from "../lib/agent-session";
+import {
+  announceAgentActionResult,
+  executeAgentAction,
+  type AgentActionResult,
+} from "../lib/agent-actions";
+import { isPlanConfirmation, isPlanStop } from "../lib/agent-plan-confirmation";
+import {
+  AgentPlanRunner,
+  createPlanSnapshot,
+  isLivePlanPhase,
+  isTerminalPlanPhase,
+  openPlanQuestions,
+  planApprovalDigests,
+  type AgentPlanSnapshot,
+  type AgentPlanUploadResult,
+} from "../lib/agent-plan-runner";
 import { getSafeApiErrorMessage } from "../lib/api/error-message";
 import { formatDate, t } from "../lib/i18n";
 import type { LocaleKey } from "../lib/locales";
@@ -67,11 +80,12 @@ import { Button } from "../lib/ui/button";
 import { cn } from "../lib/utils";
 import { REAI_COMPOSE_EVENT, readReaiComposeDetail } from "../lib/reai-compose";
 import { AgentMiniUi } from "./agent-mini-ui";
+import { AgentPlanCard } from "./agent-plan-card";
 import { AgentTinyUi } from "./agent-tiny-ui";
 import { MediaVersionCard, type MediaAction } from "./draft-version-manager";
 import { useAuth } from "./hooks/use-auth";
 import { StatusPill } from "./status-pill";
-import { AgentIcon, SearchIcon, VersionsIcon, LayoutIcon, SparklesIcon, CheckIcon, CloseIcon, EditIcon, LockIcon, InfoIcon } from "./icons";
+import { AgentIcon, SearchIcon, VersionsIcon, LayoutIcon, SparklesIcon, CheckIcon, CloseIcon, EditIcon, LockIcon, InfoIcon, ImageIcon } from "./icons";
 
 // Maps a quick-action key to its icon, so the agent suggestions read as
 // distinct, recognisable actions rather than flat text rows.
@@ -206,7 +220,71 @@ type ChatTurn = {
   feedbackReasonOpen?: boolean;
   proposalStatus?: "applied" | "dismissed";
   actionStatus?: "pending" | "applied" | "failed" | "dismissed";
+  /** The action plan this turn is (the plan card) or belongs to (a step's confirm card). */
+  planId?: string;
+  /** Set on a step's own confirm card; its buttons go through the plan runner. */
+  planStepId?: string;
+  /** The plan card's live state, parked with the transcript so a reload can resume it. */
+  planState?: AgentPlanSnapshot;
 };
+
+function withPlanSnapshot(turns: ChatTurn[], snapshot: AgentPlanSnapshot): ChatTurn[] {
+  const ended = isTerminalPlanPhase(snapshot.phase);
+  return turns.map((turn) => {
+    if (turn.planId !== snapshot.planId) return turn;
+    if (!turn.planStepId) return { ...turn, planState: snapshot };
+    // A step card left open when its plan ended must not stay confirmable.
+    if (ended && turn.response?.action_token && !turn.actionStatus) {
+      return { ...turn, actionStatus: "dismissed", response: { ...turn.response, action_token: null } };
+    }
+    return turn;
+  });
+}
+
+/** The confirm card after its action ran, identical for a tapped card and a plan step. */
+function withAppliedAction(turn: ChatTurn, answer: ReaiAgentResponse, outcome: AgentActionResult): ChatTurn {
+  if (outcome.kind === "translate_description") {
+    const result = outcome.result;
+    return {
+      ...turn,
+      actionStatus: "applied",
+      response: {
+        ...answer,
+        action_token: null,
+        translation_action: {
+          field: "description",
+          source_language: "auto",
+          target_language: result.target_language,
+          status: result.status,
+          cached: result.cached,
+          translated_text: result.translated_text,
+        },
+      },
+    };
+  }
+  if (outcome.kind === "workspace") {
+    const result = outcome.result;
+    return {
+      ...turn,
+      actionStatus: "applied",
+      response: {
+        ...answer,
+        action_token: null,
+        share_id: result.action === "create_draft_share" ? result.share_id : answer.share_id,
+        share_url: result.action === "create_draft_share" ? result.share_url : answer.share_url,
+        share_path: result.action === "create_draft_share" ? result.share_path : answer.share_path,
+        selected_share_fields: result.action === "create_draft_share"
+          ? result.selected_share_fields
+          : answer.selected_share_fields,
+      },
+    };
+  }
+  return {
+    ...turn,
+    actionStatus: "applied",
+    response: { ...answer, action_token: null },
+  };
+}
 
 function contextualShareUrl(answer: ReaiAgentResponse): string | null {
   if (answer.share_path && typeof window !== "undefined") {
@@ -402,6 +480,8 @@ function safeAgentNavigationPath(answer: ReaiAgentResponse): string | null {
   if (answer.action_code === "open_creation" && /^\/draft\/[1-9]\d*\/?$/.test(path)) return path;
   if (answer.action_code === "create_creation" && path === "/create") return path;
   if (answer.action_code === "open_tour" && /^\/create\/tour\/[1-9]\d*\/?$/.test(path)) return path;
+  // A plan opens the listing it just created before it adds photos and text.
+  if (answer.action_code === "create_listing" && /^\/draft\/[1-9]\d*\/?$/.test(path)) return path;
   if (answer.action_code === "settings_navigation" && /^\/settings(?:#[a-z_-]+)?$/.test(path)) return path;
   return null;
 }
@@ -470,6 +550,29 @@ export function ReaiAgentCard({
   const [pendingViewerActionTurnId, setPendingViewerActionTurnId] = useState<number | null>(null);
   const pendingViewerActionTurnRef = useRef<number | null>(null);
   const viewerActionTimeoutRef = useRef<number | null>(null);
+  /*
+   * Action plans run across several awaits and outlive the render that started
+   * them, so everything the runner reads goes through refs rather than the
+   * closure of one render: the latest transcript, the dropped photos, the
+   * conversation id and the language.
+   */
+  const runnerRef = useRef<AgentPlanRunner<AgentActionResult> | null>(null);
+  const turnsRef = useRef<ChatTurn[]>([]);
+  const pendingPhotosRef = useRef<File[]>([]);
+  const improvementConversationIdRef = useRef<string | null>(null);
+  const langRef = useRef(lang);
+  /**
+   * Turn ids. `Date.now()` alone collided when a plan appended several turns in
+   * the same millisecond, and every turn update matches by id.
+   */
+  const nextTurnIdRef = useRef(0);
+  /** An open plan question the next typed message answers, shown above the composer. */
+  const [answering, setAnswering] = useState<{ planId: string; stepId: string; text: string } | null>(null);
+
+  useEffect(() => { turnsRef.current = turns; }, [turns]);
+  useEffect(() => { pendingPhotosRef.current = pendingPhotos; }, [pendingPhotos]);
+  useEffect(() => { improvementConversationIdRef.current = improvementConversationId; }, [improvementConversationId]);
+  useEffect(() => { langRef.current = lang; }, [lang]);
 
   useEffect(() => {
     const handleResult = (event: Event) => {
@@ -552,7 +655,11 @@ export function ReaiAgentCard({
   // navigation. Rehydrate the parked transcript on mount, then keep the parked
   // copy in step with it.
   useEffect(() => {
-    setTurns(readAgentTranscript<ChatTurn>(transcriptKey) ?? []);
+    const restored = readAgentTranscript<ChatTurn>(transcriptKey) ?? [];
+    nextTurnIdRef.current = restored.reduce((highest, turn) => (
+      typeof turn.id === "number" && turn.id > highest ? turn.id : highest
+    ), nextTurnIdRef.current);
+    setTurns(restored);
     restoredTranscriptKeyRef.current = transcriptKey;
     setTranscriptRestored(true);
   }, [transcriptKey]);
@@ -657,6 +764,12 @@ export function ReaiAgentCard({
     }
     pendingViewerActionTurnRef.current = null;
     setPendingViewerActionTurnId(null);
+    // A running plan stops with the conversation it belongs to. Steps that
+    // already ran stay; nothing further runs from this window.
+    const runner = runnerRef.current;
+    runnerRef.current = null;
+    void runner?.stop();
+    setAnswering(null);
     setBusy(false);
     setTurns([]);
     setMessage("");
@@ -698,6 +811,185 @@ export function ReaiAgentCard({
     window.addEventListener("reai-new-conversation", startNew);
     return () => window.removeEventListener("reai-new-conversation", startNew);
   }, [resetConversation]);
+
+  // Withdrawing consent stops a running plan at once; the server would refuse
+  // its next step anyway, but polling and uploads must not carry on meanwhile.
+  useEffect(() => {
+    const consentChanged = (event: Event) => {
+      if ((event as CustomEvent<{ enabled?: boolean }>).detail?.enabled === true) return;
+      const runner = runnerRef.current;
+      runnerRef.current = null;
+      void runner?.stop();
+      setAnswering(null);
+    };
+    window.addEventListener("reai-consent-changed", consentChanged);
+    return () => window.removeEventListener("reai-consent-changed", consentChanged);
+  }, []);
+
+  // Leaving the workspace unmounts the panel: stop watching, but do not cancel.
+  // The parked plan comes back paused and waits for Continue.
+  useEffect(() => () => runnerRef.current?.dispose(), []);
+
+  const newTurnId = () => {
+    nextTurnIdRef.current = Math.max(Date.now(), nextTurnIdRef.current + 1);
+    return nextTurnIdRef.current;
+  };
+
+  /** Photos dropped before the listing existed, uploaded as the plan's photo step. */
+  const uploadPlanPhotos = async (
+    planDraftId: number,
+    _expectedCount: number,
+    startIndex: number,
+  ): Promise<AgentPlanUploadResult> => {
+    const files = pendingPhotosRef.current;
+    if (!files.length) return { uploadedUploadIds: [], failedCount: 0, attemptedCount: 0 };
+    const uploadedUploadIds: number[] = [];
+    const failed: File[] = [];
+    for (const [index, file] of files.entries()) {
+      try {
+        const upload = await uploadDraftPhoto(planDraftId, file, startIndex + index, {});
+        uploadedUploadIds.push(upload.id);
+      } catch {
+        failed.push(file);
+      }
+    }
+    // Keep what failed, plus anything dropped while the upload ran.
+    const remaining = [...failed, ...pendingPhotosRef.current.filter((file) => !files.includes(file))];
+    pendingPhotosRef.current = remaining;
+    setPendingPhotos(remaining);
+    return { uploadedUploadIds, failedCount: failed.length, attemptedCount: files.length };
+  };
+
+  const createPlanRunner = () => new AgentPlanRunner<AgentActionResult>({
+    advance: advanceReaiAgentPlan,
+    execute: async (actionCode, actionToken) => {
+      const outcome = await executeAgentAction(actionCode, actionToken, improvementConversationIdRef.current);
+      announceAgentActionResult(outcome);
+      return outcome;
+    },
+    uploadPhotos: uploadPlanPhotos,
+    getService: getDraftService,
+    onSnapshot: (snapshot) => {
+      setTurns((current) => withPlanSnapshot(current, snapshot));
+      setAnswering((current) => {
+        if (!current || current.planId !== snapshot.planId) return current;
+        const askedNow = snapshot.phase === "asking" && snapshot.stepId === current.stepId;
+        const askedUpFront = !snapshot.plan.approval
+          && (snapshot.phase === "awaiting_approval" || snapshot.phase === "asking")
+          && Boolean(snapshot.plan.steps.find((step) => step.step_id === current.stepId)?.question);
+        return askedNow || askedUpFront ? current : null;
+      });
+    },
+    onConfirm: (stepId, stepResponse, snapshot) => {
+      const id = newTurnId();
+      setTurns((current) => {
+        // Re-minted after a field change or an expired token: update the open card in place.
+        const index = current.findIndex((turn) => (
+          turn.planId === snapshot.planId && turn.planStepId === stepId && !turn.actionStatus
+        ));
+        if (index >= 0) {
+          const updated = [...current];
+          updated[index] = { ...updated[index], content: stepResponse.reply || updated[index].content, response: stepResponse };
+          return updated;
+        }
+        return [...current, {
+          id,
+          role: "assistant" as const,
+          content: stepResponse.reply,
+          response: stepResponse,
+          planId: snapshot.planId,
+          planStepId: stepId,
+        }];
+      });
+    },
+    onAsk: (stepId, question, snapshot) => {
+      if (stepId && question.allows_text) setAnswering({ planId: snapshot.planId, stepId, text: question.text });
+    },
+    onNavigate: (planDraftId) => {
+      const path = safeAgentNavigationPath({
+        reply: "",
+        proposed_changes: {},
+        suggested_actions: [],
+        proposal_token: null,
+        action_code: "create_listing",
+        navigation_path: `/draft/${planDraftId}`,
+      });
+      if (path) router.push(path);
+    },
+    writeTranscript: (snapshot) => writeAgentTranscript(transcriptKey, withPlanSnapshot(turnsRef.current, snapshot)),
+    onDraftChanged: (draftIds) => {
+      window.dispatchEvent(new CustomEvent("reai-creations-updated", { detail: { draftIds } }));
+    },
+    onDone: (summary) => {
+      const followUp = summary?.follow_up;
+      if (!followUp?.reply) return;
+      const id = newTurnId();
+      setTurns((current) => [...current, {
+        id,
+        role: "assistant" as const,
+        content: followUp.reply,
+        response: {
+          reply: followUp.reply,
+          proposed_changes: {},
+          suggested_actions: followUp.suggested_actions || [],
+          proposal_token: null,
+        },
+      }]);
+    },
+    pendingPhotoCount: () => pendingPhotosRef.current.length,
+    conversationId: () => improvementConversationIdRef.current,
+    describeError: (err) => {
+      const text = errorText(err, langRef.current);
+      return text === t("reai.error", langRef.current) ? null : text;
+    },
+  });
+
+  /**
+   * The runner for a plan turn, created on first use. A plan restored from the
+   * parked transcript gets one only when the creator acts on it, so a reload
+   * never starts anything by itself.
+   */
+  const planRunnerFor = (planTurn: ChatTurn | undefined): AgentPlanRunner<AgentActionResult> | null => {
+    const snapshot = planTurn?.planState;
+    if (!planTurn || !snapshot) return null;
+    // Only the newest plan is live. A tap on an older plan's leftover card must
+    // never take the runner away from the plan that is actually running.
+    const latestPlanId = [...turnsRef.current]
+      .reverse()
+      .find((turn) => turn.response?.action_code === "action_plan" && turn.planState)?.planId;
+    if (latestPlanId && latestPlanId !== snapshot.planId) return null;
+    const existing = runnerRef.current;
+    if (existing && existing.planId === snapshot.planId) return existing;
+    existing?.dispose();
+    const runner = createPlanRunner();
+    runner.start(planTurn.id, snapshot);
+    runnerRef.current = runner;
+    return runner;
+  };
+
+  const planTurnOf = (planId: string | undefined) => (
+    planId ? turnsRef.current.find((turn) => turn.planId === planId && !turn.planStepId) : undefined
+  );
+
+  /** A newer plan replaces every live older one, including plans restored without a runner. */
+  const stopLivePlans = () => {
+    const runner = runnerRef.current;
+    runnerRef.current = null;
+    const stopped = new Set<string>();
+    if (runner?.planId) {
+      stopped.add(runner.planId);
+      void runner.stop();
+    }
+    for (const turn of turnsRef.current) {
+      const snapshot = turn.planState;
+      if (!snapshot || turn.planStepId || stopped.has(snapshot.planId) || !isLivePlanPhase(snapshot.phase)) continue;
+      stopped.add(snapshot.planId);
+      const orphan = createPlanRunner();
+      orphan.start(turn.id, snapshot);
+      void orphan.stop();
+    }
+    setAnswering(null);
+  };
 
   const confirmViewerAction = useCallback(async (turnId: number, answer: ReaiAgentResponse) => {
     if (
@@ -755,13 +1047,50 @@ export function ReaiAgentCard({
   }, [currentTourId, draftId, improvementConversationId, lang]);
 
   const lastAssistantTurnId = [...turns].reverse().find((turn) => turn.role === "assistant")?.id;
+  /** Only the newest plan can be acted on; older plan cards are a record. */
+  const latestPlanTurnId = [...turns].reverse().find((turn) => turn.response?.action_code === "action_plan" && turn.planState)?.id;
 
   const ask = async (override?: string) => {
     const requestText = (override ?? message).trim();
     if (!requestText || busy) return;
-    const userTurn: ChatTurn = { id: Date.now(), role: "user", content: requestText };
+    const userTurn: ChatTurn = { id: newTurnId(), role: "user", content: requestText };
     setTurns((current) => [...current, userTurn]);
     setMessage("");
+
+    // A bare "stop" ends the live plan, even while a question is open: no
+    // answer to a plan question is ever that single word.
+    const latestPlanTurn = [...turns].reverse().find((turn) => turn.response?.action_code === "action_plan" && turn.planState);
+    const latestPlan = latestPlanTurn?.planState;
+    if (latestPlan && isLivePlanPhase(latestPlan.phase) && isPlanStop(requestText)) {
+      void planRunnerFor(latestPlanTurn)?.stop();
+      setAnswering(null);
+      return;
+    }
+    // An open plan question takes the typed text as its answer. It goes to the
+    // plan, never back through the router as a fresh request.
+    if (answering) {
+      const runner = planRunnerFor(turns.find((turn) => turn.planId === answering.planId && !turn.planStepId));
+      setAnswering(null);
+      if (runner && !runner.busy) {
+        void runner.answer(answering.stepId, { text: requestText });
+        return;
+      }
+    }
+    // "yes" approves the plan only while it is the very last thing Agent said
+    // and nothing in it still needs an answer.
+    const latestAssistantTurn = [...turns].reverse().find((turn) => turn.role === "assistant");
+    if (
+      latestPlan
+      && latestAssistantTurn?.id === latestPlanTurn?.id
+      && latestPlan.phase === "awaiting_approval"
+      && !latestPlan.plan.approval
+      && latestPlan.plan.approval_options.includes("all")
+      && openPlanQuestions(latestPlan.plan, pendingPhotos.length).length === 0
+      && isPlanConfirmation(requestText, lang)
+    ) {
+      void planRunnerFor(latestPlanTurn)?.approve("all", planApprovalDigests(latestPlan.plan), pendingPhotos.length);
+      return;
+    }
 
     const pendingProposal = [...turns].reverse().find((turn) => (
       turn.role === "assistant"
@@ -774,9 +1103,10 @@ export function ReaiAgentCard({
     ) {
       const applied = await apply(pendingProposal.id, pendingProposal.response);
       if (applied) {
+        const appliedTurnId = newTurnId();
         setTurns((current) => [
           ...current,
-          { id: Date.now() + 1, role: "assistant", content: t("reai.applied", lang) },
+          { id: appliedTurnId, role: "assistant", content: t("reai.applied", lang) },
         ]);
       }
       return;
@@ -799,9 +1129,16 @@ export function ReaiAgentCard({
     setBusy(true);
     setError(null);
     try {
-      const pendingActionCode = [...turns]
+      // Plan turns and their step cards are driven by the plan itself, so they
+      // hand the router no pending code. Looking past them to an older turn
+      // would resurrect a finished flow and switch off the copy-edit guard the
+      // server keeps for a message with no pending action.
+      const latestResponseTurn = [...turns]
         .reverse()
-        .find((turn) => turn.role === "assistant" && turn.response)?.response?.action_code;
+        .find((turn) => turn.role === "assistant" && turn.response);
+      const pendingActionCode = latestResponseTurn?.planId || latestResponseTurn?.response?.action_code === "action_plan"
+        ? undefined
+        : latestResponseTurn?.response?.action_code;
       const response = await askReaiWorkspace(
         requestText,
         draftId,
@@ -813,6 +1150,7 @@ export function ReaiAgentCard({
         currentUploadId,
         poolItemsForRequest(pool),
         currentTourId,
+        { pendingPhotoCount: pendingPhotos.length },
       );
       if (!draftId && response.operation === "list" && response.search_query) {
         window.dispatchEvent(new CustomEvent("reai-workspace-search", {
@@ -839,16 +1177,36 @@ export function ReaiAgentCard({
         dispatchReaiViewerAction(response.client_action, { draftId, tourId: currentTourId });
       }
       if (response.improvement_conversation_id) setImprovementConversationId(response.improvement_conversation_id);
+      const assistantTurnId = newTurnId();
+      const plan = response.action_code === "action_plan" && response.plan && response.plan_token
+        ? response.plan
+        : null;
+      const planSnapshot = plan && response.plan_token
+        ? createPlanSnapshot(assistantTurnId, plan, response.plan_token, response.reply, Date.now())
+        : null;
       const assistantTurn: ChatTurn = {
-        id: Date.now() + 1,
+        id: assistantTurnId,
         role: "assistant",
         content: response.reply,
         response,
+        ...(planSnapshot ? { planId: planSnapshot.planId, planState: planSnapshot } : {}),
       };
+      if (planSnapshot) stopLivePlans();
       setTurns((current) => [
         ...current,
         assistantTurn,
       ]);
+      if (planSnapshot) {
+        // Registered, not started: nothing runs until the creator approves.
+        const runner = createPlanRunner();
+        runner.start(assistantTurnId, planSnapshot);
+        runnerRef.current = runner;
+        const typedQuestion = openPlanQuestions(planSnapshot.plan, pendingPhotos.length)
+          .find((step) => step.question?.allows_text);
+        if (typedQuestion?.question) {
+          setAnswering({ planId: planSnapshot.planId, stepId: typedQuestion.step_id, text: typedQuestion.question.text });
+        }
+      }
       const navigationPath = safeAgentNavigationPath(response);
       if (navigationPath) {
         // Navigation can unmount this page before the persistence effect runs.
@@ -917,36 +1275,35 @@ export function ReaiAgentCard({
     } : turn));
   };
 
-  const applyAction = async (turnId: number, answer: ReaiAgentResponse) => {
-    if (!answer.action_token) return;
+  /** Confirm on a plan step's own card: the plan runs the step and carries on. */
+  const confirmPlanStep = async (stepTurn: ChatTurn, answer: ReaiAgentResponse) => {
+    const runner = planRunnerFor(planTurnOf(stepTurn.planId));
+    if (!runner || !stepTurn.planStepId) return;
     setBusy(true);
     setError(null);
     try {
-      if (answer.action_code === "translate_description") {
-        const result = await applyReaiTranslationAction(answer.action_token, improvementConversationId);
-        window.dispatchEvent(new CustomEvent("reai-creations-updated", {
-          detail: { draftIds: [result.draft_id], translationStatus: result.status },
-        }));
-        setTurns((current) => current.map((turn) => turn.id === turnId ? {
-          ...turn,
-          actionStatus: "applied",
-          response: {
-            ...answer,
-            action_token: null,
-            translation_action: {
-              field: "description",
-              source_language: "auto",
-              target_language: result.target_language,
-              status: result.status,
-              cached: result.cached,
-              translated_text: result.translated_text,
-            },
-          },
-        } : turn));
-        return;
+      const outcome = await runner.confirmStep(stepTurn.planStepId, answer);
+      if (outcome) {
+        setTurns((current) => current.map((turn) => turn.id === stepTurn.id ? withAppliedAction(turn, answer, outcome) : turn));
       }
-      if (answer.action_code === "create_listing") {
-        const result = await applyReaiCreationAction(answer.action_token, improvementConversationId);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const applyAction = async (turnId: number, answer: ReaiAgentResponse) => {
+    if (!answer.action_token) return;
+    const planStepTurn = turns.find((turn) => turn.id === turnId && turn.planId && turn.planStepId);
+    if (planStepTurn) {
+      await confirmPlanStep(planStepTurn, answer);
+      return;
+    }
+    setBusy(true);
+    setError(null);
+    try {
+      const outcome = await executeAgentAction(answer.action_code, answer.action_token, improvementConversationId);
+      if (outcome.kind === "create_listing") {
+        const result = outcome.result;
         // The listing exists from here on. A photo that fails to upload must
         // not hide that: leaving the confirm card up with only an error would
         // send the creator back to describe a listing they already have.
@@ -964,10 +1321,9 @@ export function ReaiAgentCard({
             setError(t("reai.createListingPhotosFailed", lang).replace("{count}", String(failed.length)));
           }
         }
-        window.dispatchEvent(new CustomEvent("reai-creations-updated", {
-          detail: { draftIds: [result.draft_id] },
-        }));
+        announceAgentActionResult(outcome);
         const followUp = result.follow_up;
+        const followUpTurnId = newTurnId();
         setTurns((current) => {
           const updated = current.map((turn) => turn.id === turnId ? {
             ...turn,
@@ -979,7 +1335,7 @@ export function ReaiAgentCard({
           // for the next missing fact and offers the description, instead of
           // falling silent the moment the listing opens.
           return [...updated, {
-            id: Date.now() + 1,
+            id: followUpTurnId,
             role: "assistant" as const,
             content: followUp.reply,
             response: {
@@ -993,62 +1349,15 @@ export function ReaiAgentCard({
         router.push(result.navigation_path);
         return;
       }
-      if (answer.action_code === "generate_description") {
-        const result = await applyReaiDescriptionAction(answer.action_token, improvementConversationId);
-        window.dispatchEvent(new CustomEvent("reai-creations-updated", {
-          detail: { draftIds: [result.draft_id] },
-        }));
-        setTurns((current) => current.map((turn) => turn.id === turnId ? {
-          ...turn,
-          actionStatus: "applied",
-          response: { ...answer, action_token: null },
-        } : turn));
-        return;
+      announceAgentActionResult(outcome);
+      setTurns((current) => current.map((turn) => turn.id === turnId ? withAppliedAction(turn, answer, outcome) : turn));
+      if (
+        outcome.kind === "media"
+        && answer.action_code !== "generate_draft_video"
+        && answer.action_code !== "organize_draft_images"
+      ) {
+        setTimeout(() => void loadMediaHistory(), outcome.result.status === "pending" ? 2500 : 0);
       }
-      if (["grade_draft_images", "retouch_draft_image", "cleanplate_draft_images", "generative_hdr_draft_image", "organize_draft_images", "generate_draft_video"].includes(answer.action_code || "")) {
-        const result = await applyReaiMediaAction(answer.action_token, improvementConversationId);
-        window.dispatchEvent(new CustomEvent("reai-media-updated", {
-          detail: { draftId: result.draft_id, action: result.action, pending: result.status === "pending" },
-        }));
-        window.dispatchEvent(new CustomEvent("reai-creations-updated", { detail: { draftIds: [result.draft_id] } }));
-        setTurns((current) => current.map((turn) => turn.id === turnId ? {
-          ...turn,
-          actionStatus: "applied",
-          response: { ...answer, action_token: null },
-        } : turn));
-        if (answer.action_code !== "generate_draft_video" && answer.action_code !== "organize_draft_images") {
-          setTimeout(() => void loadMediaHistory(), result.status === "pending" ? 2500 : 0);
-        }
-        return;
-      }
-      const result = await applyReaiWorkspaceAction(answer.action_token, improvementConversationId);
-      if (result.action === "revoke_all_shares" || result.action === "manage_shares") {
-        window.dispatchEvent(new CustomEvent("reai-shares-updated", {
-          detail: {
-            revokedCount: result.revoked_count,
-            updatedCount: "updated_count" in result ? result.updated_count : result.revoked_count,
-            operation: "operation" in result ? result.operation : "revoke",
-          },
-        }));
-      } else {
-        window.dispatchEvent(new CustomEvent("reai-shares-updated", {
-          detail: { created: result.created, draftId: result.draft_id, shareId: result.share_id },
-        }));
-      }
-      setTurns((current) => current.map((turn) => turn.id === turnId ? {
-        ...turn,
-        actionStatus: "applied",
-        response: {
-          ...answer,
-          action_token: null,
-          share_id: result.action === "create_draft_share" ? result.share_id : answer.share_id,
-          share_url: result.action === "create_draft_share" ? result.share_url : answer.share_url,
-          share_path: result.action === "create_draft_share" ? result.share_path : answer.share_path,
-          selected_share_fields: result.action === "create_draft_share"
-            ? result.selected_share_fields
-            : answer.selected_share_fields,
-        },
-      } : turn));
     } catch (err) {
       setError(errorText(err, lang));
     } finally {
@@ -1057,6 +1366,13 @@ export function ReaiAgentCard({
   };
 
   const dismissAction = (turnId: number) => {
+    const planStepTurn = turns.find((turn) => turn.id === turnId && turn.planId && turn.planStepId);
+    if (planStepTurn?.planStepId) {
+      // Dismissing a step's card skips that step; the rest of the plan goes on.
+      const runner = planRunnerFor(planTurnOf(planStepTurn.planId));
+      if (!runner || runner.busy) return;
+      void runner.skipStep(planStepTurn.planStepId);
+    }
     setTurns((current) => current.map((turn) => turn.id === turnId && turn.response ? {
       ...turn,
       actionStatus: "dismissed",
@@ -1072,8 +1388,13 @@ export function ReaiAgentCard({
     } : turn));
   };
 
+  // Files are accepted on an open listing (uploaded at once) and, in the creator
+  // workspace, before the listing exists: they wait below the conversation and
+  // are uploaded when Agent creates it. The second case used to be rejected
+  // here, which left the waiting-photos branch below unreachable.
   const acceptsDrop = (dataTransfer: DataTransfer) =>
-    dragHasPoolItem(dataTransfer) || (Boolean(draftId) && dragHasFiles(dataTransfer));
+    dragHasPoolItem(dataTransfer)
+    || (dragHasFiles(dataTransfer) && (Boolean(draftId) || workspaceContext === "creator"));
 
   /**
    * Files dropped from the computer become photos on the open creation. When a
@@ -1515,6 +1836,7 @@ export function ReaiAgentCard({
             <div className={cn("space-y-4 overflow-y-auto pr-1", panel ? "min-h-0 flex-1" : "max-h-[420px]")} aria-live="polite">
               {turns.map((turn) => {
                 const answer = turn.response;
+                const planState = turn.planState;
                 const shareUrl = answer ? contextualShareUrl(answer) : null;
                 const targetTitle = answer?.draft_results?.find((draft) => answer.selected_creation_ids?.includes(draft.id))?.creation_data.title;
                 return (
@@ -1531,6 +1853,7 @@ export function ReaiAgentCard({
                         already offered. Only the latest turn's options are live. */}
                     {turn.role === "assistant"
                       && !!answer?.suggested_actions?.length
+                      && !turn.planStepId
                       && turn.id === lastAssistantTurnId && (
                       <div className="mt-2 flex flex-wrap gap-1.5">
                         {answer.suggested_actions.slice(0, 4).map((suggestion) => (
@@ -1562,6 +1885,36 @@ export function ReaiAgentCard({
                         />
                         <AgentTinyUi answer={answer} busy={busy} onPrompt={(prompt) => void ask(prompt)} lang={lang} />
                       </>
+                    )}
+                    {answer?.action_code === "action_plan" && planState && (
+                      <AgentPlanCard
+                        snapshot={planState}
+                        lang={lang}
+                        live={turn.id === latestPlanTurnId}
+                        pendingPhotoCount={pendingPhotos.length}
+                        onApprove={(approval) => void planRunnerFor(turn)?.approve(
+                          approval,
+                          planApprovalDigests(planState.plan),
+                          pendingPhotos.length,
+                        )}
+                        onCancel={() => {
+                          setAnswering(null);
+                          void planRunnerFor(turn)?.stop();
+                        }}
+                        onStop={() => {
+                          setAnswering(null);
+                          void planRunnerFor(turn)?.stop();
+                        }}
+                        onContinue={() => void planRunnerFor(turn)?.resume()}
+                        onSkip={(stepId) => void planRunnerFor(turn)?.skipStep(stepId)}
+                        onRetry={(stepId) => void planRunnerFor(turn)?.retry(stepId)}
+                        onRetryPhotos={() => void planRunnerFor(turn)?.retryPhotoUploads()}
+                        onAnswer={(stepId, value) => void planRunnerFor(turn)?.answer(stepId, value)}
+                        onTypeAnswer={(stepId, question) => {
+                          setAnswering({ planId: planState.planId, stepId, text: question.text });
+                          composerRef.current?.focus({ preventScroll: true });
+                        }}
+                      />
                     )}
                     {answer?.action_code === "set_tour_cover" && (answer.client_action || turn.actionStatus) && (
                       <div className="mt-4 overflow-hidden floating-panel-shape border border-border/65 bg-card shadow-control">
@@ -2160,6 +2513,24 @@ export function ReaiAgentCard({
               })}
             </div>
           )}
+          {!showHistory && !showMediaHistory && !draftId && pendingPhotos.length > 0 && (
+            <div className="flex items-center gap-1.5 rounded-2xl border border-border/60 bg-background/70 p-1.5">
+              <span className="inline-flex max-w-full items-center gap-1.5 rounded-xl border border-border/60 bg-card py-1 pl-2 pr-1.5 text-[11px]">
+                <ImageIcon size={12} className="shrink-0 text-foreground/50" aria-hidden="true" />
+                <span className="min-w-0 truncate text-foreground/75">
+                  {t("reai.plan.photoChip", lang).replace("{count}", String(pendingPhotos.length))}
+                </span>
+                <button
+                  type="button"
+                  aria-label={t("reai.plan.photoChipRemove", lang)}
+                  onClick={() => setPendingPhotos([])}
+                  className="rounded-lg p-0.5 text-foreground/40 transition-colors hover:text-foreground"
+                >
+                  <CloseIcon size={12} />
+                </button>
+              </span>
+            </div>
+          )}
           {!showHistory && !showMediaHistory && (pool.length > 0 || uploading) && (
             <div className="flex flex-wrap items-center gap-1.5 rounded-2xl border border-border/60 bg-background/70 p-1.5">
               {pool.map((item) => {
@@ -2201,6 +2572,22 @@ export function ReaiAgentCard({
                   {t("reai.pool.clear", lang)}
                 </button>
               )}
+            </div>
+          )}
+          {!showHistory && !showMediaHistory && answering && (
+            <div className="flex items-start gap-2 rounded-2xl border border-border/60 bg-background/70 px-3 py-2" role="status">
+              <p className="min-w-0 flex-1 text-[12px] leading-5 text-foreground/80">
+                <span className="font-medium text-foreground">{t("reai.plan.answering", lang)}</span>{" "}
+                {answering.text}
+              </p>
+              <button
+                type="button"
+                aria-label={t("reai.plan.answeringClose", lang)}
+                onClick={() => setAnswering(null)}
+                className="rounded-lg p-0.5 text-foreground/40 transition-colors hover:text-foreground"
+              >
+                <CloseIcon size={12} />
+              </button>
             </div>
           )}
           {!showHistory && !showMediaHistory && <div className={cn(

@@ -770,6 +770,20 @@ export default function DraftPreviewPage({
     return () => window.removeEventListener("reai-media-updated", refreshMedia);
   }, [draftId]);
 
+  // Agent writes descriptions, translations and photos into this listing while
+  // it is open — an action plan does all three in a row. Only the dashboard used
+  // to listen, so the page kept showing the text from before. Bypass the short
+  // detail cache: the job finished after the last read was cached.
+  useEffect(() => {
+    const refreshCreation = (event: Event) => {
+      const draftIds = (event as CustomEvent<{ draftIds?: unknown }>).detail?.draftIds;
+      if (!Array.isArray(draftIds) || !draftIds.includes(draftId)) return;
+      void refreshDraft(draftId).then(setDraft).catch(() => {});
+    };
+    window.addEventListener("reai-creations-updated", refreshCreation);
+    return () => window.removeEventListener("reai-creations-updated", refreshCreation);
+  }, [draftId]);
+
   // These collections are passed into media and detail components. Keeping
   // their identities stable avoids re-running gallery preload/effect work when
   // an unrelated panel opens or closes.

@@ -2808,7 +2808,15 @@ export interface ReaiAgentResponse {
   /** Experimental extra-user native mini-apps; never arbitrary HTML or script. */
   tinyui?: ReaiAgentTinyUi;
   proposal_token: string | null;
-  action_code?: "revoke_all_shares" | "manage_shares" | "share_inventory" | "share_status" | "current_creation_overview" | "open_creation" | "create_creation" | "clarify_missing_price" | "set_missing_prices" | "open_tour" | "set_tour_cover" | "settings_navigation" | "settings_update" | "select_share_fields" | "create_draft_share" | "translate_description" | "grade_draft_images" | "retouch_draft_image" | "cleanplate_draft_images" | "generative_hdr_draft_image" | "organize_draft_images" | "generate_draft_video" | "viewer_control" | "tool_unavailable" | "needs_creation" | "needs_owned_creation" | "needs_photo" | "generate_description" | "create_listing" | "clarify_new_listing";
+  action_code?: "revoke_all_shares" | "manage_shares" | "share_inventory" | "share_status" | "current_creation_overview" | "open_creation" | "create_creation" | "clarify_missing_price" | "set_missing_prices" | "open_tour" | "set_tour_cover" | "settings_navigation" | "settings_update" | "select_share_fields" | "create_draft_share" | "translate_description" | "grade_draft_images" | "retouch_draft_image" | "cleanplate_draft_images" | "generative_hdr_draft_image" | "organize_draft_images" | "generate_draft_video" | "viewer_control" | "tool_unavailable" | "needs_creation" | "needs_owned_creation" | "needs_photo" | "generate_description" | "create_listing" | "clarify_new_listing" | "action_plan";
+  /**
+   * Present with action_code "action_plan": the ordered steps Agent read out of
+   * one multi-step request. Display only — nothing in it can be executed; every
+   * step is minted server-side, one at a time, through the plan advance endpoint.
+   */
+  plan?: ReaiAgentPlan;
+  /** Signed, server-held plan state. Opaque to the client. */
+  plan_token?: string | null;
   /** Present when Agent assembled a new listing from the conversation. */
   listing_draft?: {
     title: string;
@@ -2893,6 +2901,178 @@ export interface ReaiAgentResponse {
     raw_media_sent_to_model?: boolean;
   };
   client_action?: import("../reai-viewer-actions").ReaiViewerAction | null;
+}
+
+export type ReaiAgentPlanStepKind =
+  | "create_listing"
+  | "attach_photos"
+  | "generate_description"
+  | "translate_description"
+  | "share_listing";
+
+export type ReaiAgentPlanStepStatus =
+  | "ready"
+  | "needs_input"
+  | "blocked"
+  | "awaiting_confirmation"
+  | "running"
+  | "waiting_job"
+  | "done"
+  | "failed"
+  | "skipped"
+  | "skipped_dependency";
+
+export type ReaiAgentPlanStatus =
+  | "awaiting_approval"
+  | "needs_input"
+  | "blocked"
+  | "running"
+  | "paused"
+  | "done"
+  | "cancelled";
+
+export type ReaiAgentPlanBlockReason =
+  | "tier_feature"
+  | "user_policy"
+  | "owner_only"
+  | "service_permission"
+  | "quota"
+  | "listing_unavailable"
+  | "no_description"
+  | "job_failed"
+  | "description_changed";
+
+export type ReaiAgentPlanQuestionKind =
+  | "listing_facts"
+  | "photos"
+  | "target_language"
+  | "add_prerequisite"
+  | "share_fields";
+
+export type ReaiAgentPlanSpend = "post_allowance" | "ai_description" | "translation_job" | "public_link";
+
+export interface ReaiAgentPlanQuestion {
+  kind: ReaiAgentPlanQuestionKind;
+  /** Localized by the server in the account language. */
+  text: string;
+  /** Chip values are echoed back as the answer; a yes/no question carries booleans. */
+  options: Array<{ value: string | boolean; label: string }>;
+  allows_text: boolean;
+  /** Set when the previous answer could not be read. */
+  reask?: boolean;
+}
+
+/** Per-kind preview; only the keys for the step's own kind are present. */
+export interface ReaiAgentPlanStepPreview {
+  title?: string;
+  fields?: Record<string, unknown>;
+  specs?: Record<string, Record<string, unknown>>;
+  photo_count?: number;
+  overrides?: Record<string, unknown>;
+  overwrites_existing_description?: boolean;
+  target_language?: string | null;
+  field_names?: string[];
+  fields_source?: "requested" | "default" | "all" | string;
+  excluded?: string[];
+  pin_protected?: boolean;
+}
+
+export interface ReaiAgentPlanStep {
+  step_id: string;
+  kind: ReaiAgentPlanStepKind;
+  tool_code: string;
+  label: string;
+  quote: string;
+  confirmation: "none" | "plan" | "step";
+  confirmation_reason: string | null;
+  spends: ReaiAgentPlanSpend[];
+  depends_on: string[];
+  soft_after: string[];
+  status: ReaiAgentPlanStepStatus;
+  question: ReaiAgentPlanQuestion | null;
+  preview: ReaiAgentPlanStepPreview | null;
+  blocked: { reason: ReaiAgentPlanBlockReason; detail?: string | null } | null;
+  result: Record<string, unknown> | null;
+  digest: string;
+}
+
+export interface ReaiAgentPlan {
+  plan_id: string;
+  version: string;
+  language: string;
+  status: ReaiAgentPlanStatus;
+  target: { kind: "new_listing" | "open_listing"; draft_id?: number | null; title?: string | null };
+  draft_id: number | null;
+  approval: "all" | "step" | null;
+  approval_options: Array<"all" | "step">;
+  steps: ReaiAgentPlanStep[];
+  declined: Array<{ kind: string; quote: string; label: string }>;
+  not_included: Array<{ quote: string; reason: string; label?: string }>;
+  notes: Array<{ code: string; text: string }>;
+}
+
+export interface ReaiAgentPlanSummary {
+  draft_id: number | null;
+  share_url?: string | null;
+  completed: string[];
+  skipped: string[];
+  failed: string[];
+  follow_up?: { reply: string; suggested_actions?: string[] } | null;
+}
+
+export type ReaiAgentPlanNext = {
+  step_id?: string | null;
+  summary?: ReaiAgentPlanSummary | null;
+} & (
+  | { mode: "awaiting_approval" | "done" | "cancelled" }
+  /** The step's existing builder output, including its action_code and action_token. */
+  | { mode: "execute" | "confirm"; step_id: string; step_response: ReaiAgentResponse }
+  | { mode: "client"; step_id: string; client: { kind: "upload_pending_photos"; draft_id: number; expected_count: number } }
+  | {
+      mode: "wait";
+      wait: {
+        waiting_on: Array<{ step_id: string; service_id: number | null; service_name: string }>;
+        retry_after_ms: number;
+        budget_ms: number;
+      };
+    }
+  | { mode: "ask"; step_id: string; question: ReaiAgentPlanQuestion }
+  | {
+      mode: "blocked";
+      blocked: { reason: ReaiAgentPlanBlockReason; detail: string | null; options: Array<"skip" | "stop" | "retry"> };
+    }
+);
+
+export type ReaiAgentPlanMode = ReaiAgentPlanNext["mode"];
+
+export interface ReaiAgentPlanAnswer {
+  target_language?: string;
+  share_field_names?: string[];
+  photos?: "dropped" | "skip";
+  add_prerequisite?: boolean;
+  text?: string;
+}
+
+export interface ReaiAgentPlanAdvanceBody {
+  intent: "approve" | "continue" | "answer" | "skip" | "retry" | "refresh" | "cancel";
+  /** Required by the server for approve and retry. */
+  confirmed?: boolean;
+  approval?: "all" | "step";
+  /** The digests the creator saw; the server answers 409 plan_changed when they differ. */
+  digests?: Record<string, string>;
+  step_id?: string;
+  answer?: ReaiAgentPlanAnswer;
+  client_state?: { pending_photo_count?: number };
+  client_result?: { step_id: string; uploaded_upload_ids: number[]; failed_count: number };
+  improvement_conversation_id?: string | null;
+}
+
+export interface ReaiAgentPlanAdvanceResponse {
+  plan: ReaiAgentPlan;
+  plan_token: string;
+  reply: string;
+  execution_mode?: string;
+  next: ReaiAgentPlanNext;
 }
 
 export type ReaiToolCode =
@@ -3061,7 +3241,17 @@ export async function askReaiWorkspace(
   /** The Agent window's working pool: what the user dragged in. */
   attachedItems?: Array<{ kind: "image"; upload_id: number } | { kind: "field"; path: string }>,
   currentTourId?: number,
+  /**
+   * Request context that is not a positional concern of the classic call.
+   * `pendingPhotoCount`: photos dropped in the panel that are waiting for a
+   * listing to exist. Only a count is sent — it lets a plan include "add the
+   * photos" as a step; the files stay in the browser until that step runs.
+   */
+  options: { pendingPhotoCount?: number } = {},
 ): Promise<ReaiAgentResponse> {
+  const pendingPhotoCount = options.pendingPhotoCount && options.pendingPhotoCount > 0
+    ? Math.min(24, Math.floor(options.pendingPhotoCount))
+    : undefined;
   return request("/api/reaigen/reai-agent/workspace/assist/", {
     method: "POST",
     body: JSON.stringify({
@@ -3075,7 +3265,28 @@ export async function askReaiWorkspace(
       current_upload_id: currentUploadId,
       attached_items: attachedItems?.length ? attachedItems : undefined,
       current_tour_id: currentTourId,
+      pending_photo_count: pendingPhotoCount,
     }),
+  });
+}
+
+export const REAI_AGENT_PLAN_ADVANCE_PATH = "/api/reaigen/reai-agent/workspace/plans/advance/";
+
+/**
+ * Move an Agent action plan one decision forward.
+ *
+ * Exactly one POST per call, never retried here: an advance can mint the token
+ * for a step that spends allowance, and repeating it is the runner's decision
+ * after the creator taps Continue — not a transport concern. `request()` does
+ * not retry non-GET requests, which is what this relies on.
+ */
+export async function advanceReaiAgentPlan(
+  planToken: string,
+  body: ReaiAgentPlanAdvanceBody,
+): Promise<ReaiAgentPlanAdvanceResponse> {
+  return request(REAI_AGENT_PLAN_ADVANCE_PATH, {
+    method: "POST",
+    body: JSON.stringify({ ...body, plan_token: planToken }),
   });
 }
 
@@ -3128,6 +3339,10 @@ export async function applyReaiTranslationAction(
   cached: boolean;
   translated_text: string | null;
   execution_mode: "translation_service";
+  /** Plan-bound translations go through the processing queue and report their job. */
+  service_id?: number;
+  /** True when an identical job was already running and was reused. */
+  deduplicated?: boolean;
 }> {
   return request("/api/reaigen/reai-agent/workspace/translations/apply/", {
     method: "POST",
@@ -3217,6 +3432,8 @@ export async function applyReaiDescriptionAction(
   status: string;
   applied_settings: Record<string, unknown>;
   execution_mode: string;
+  /** A replayed plan step: the job was already queued, and nothing was spent twice. */
+  already_started?: boolean;
 }> {
   const result = await request("/api/reaigen/reai-agent/workspace/description-actions/apply/", {
     method: "POST",
