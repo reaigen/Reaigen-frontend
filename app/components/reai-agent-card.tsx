@@ -1402,6 +1402,35 @@ export function ReaiAgentCard({
    * this one": the upload supersedes it, which keeps the original reviewable as
    * an earlier version rather than deleting it.
    */
+  // A drop with nothing typed is the request. Agent names what arrived and
+  // offers the two to four things that fit it; each chip is a sentence the
+  // router runs, with the pool still attached. Nothing runs until a tap.
+  const reactToDrop = async (nextPool: AgentPoolItem[], pendingCount: number) => {
+    if (busy || message.trim()) return;
+    try {
+      const response = await askReaiWorkspace(
+        "",
+        draftId,
+        turns.slice(-4).map((turn) => ({ role: turn.role, content: turn.content })),
+        improvementConversationId,
+        undefined,
+        undefined,
+        workspaceContext,
+        currentUploadId,
+        poolItemsForRequest(nextPool),
+        currentTourId,
+        { pendingPhotoCount: pendingCount },
+      );
+      if (response.action_code !== "attachment_options") return;
+      setTurns((current) => [
+        ...current,
+        { id: newTurnId(), role: "assistant", content: response.reply, response },
+      ]);
+    } catch {
+      // The drop itself succeeded; an unanswered drop is not an error worth a banner.
+    }
+  };
+
   const handleDroppedFiles = async (files: File[]) => {
     if (files.length === 0 || uploading) return;
     const images = files.filter((file) => file.type.startsWith("image/") || /\.(jpe?g|png|webp|heic|heif|tiff?|bmp)$/i.test(file.name));
@@ -1410,7 +1439,9 @@ export function ReaiAgentCard({
       // No listing yet to attach them to. Photos dropped while describing a
       // new listing are kept here and uploaded the moment Agent creates it,
       // instead of being silently discarded.
+      const nextCount = Math.min(24, pendingPhotos.length + images.length);
       setPendingPhotos((current) => [...current, ...images].slice(0, 24));
+      void reactToDrop(pool, nextCount);
       return;
     }
     const replacing = pool.filter((item): item is AgentPoolImage => item.kind === "image");
@@ -1429,15 +1460,17 @@ export function ReaiAgentCard({
       }
       const last = uploaded[uploaded.length - 1];
       if (last) {
-        setPool((current) => addPoolItem(
-          target ? removePoolItem(current, poolItemKey(target)) : current,
+        const nextPool = addPoolItem(
+          target ? removePoolItem(pool, poolItemKey(target)) : pool,
           {
             kind: "image",
             uploadId: last.id,
             url: last.file_url,
             label: target ? t("reai.pool.replacedPhoto", lang) : t("reai.pool.newPhoto", lang),
           },
-        ));
+        );
+        setPool(nextPool);
+        void reactToDrop(nextPool, 0);
       }
       onDraftUpdated?.(await getDraft(draftId));
     } catch (err) {
@@ -1454,7 +1487,9 @@ export function ReaiAgentCard({
     setDropActive(false);
     const item = readDragItem(event.dataTransfer);
     if (item) {
-      setPool((current) => addPoolItem(current, item));
+      const nextPool = addPoolItem(pool, item);
+      setPool(nextPool);
+      void reactToDrop(nextPool, pendingPhotos.length);
       return;
     }
     void handleDroppedFiles(Array.from(event.dataTransfer.files));

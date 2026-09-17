@@ -2808,7 +2808,9 @@ export interface ReaiAgentResponse {
   /** Experimental extra-user native mini-apps; never arbitrary HTML or script. */
   tinyui?: ReaiAgentTinyUi;
   proposal_token: string | null;
-  action_code?: "revoke_all_shares" | "manage_shares" | "share_inventory" | "share_status" | "current_creation_overview" | "open_creation" | "create_creation" | "clarify_missing_price" | "set_missing_prices" | "open_tour" | "set_tour_cover" | "settings_navigation" | "settings_update" | "select_share_fields" | "create_draft_share" | "translate_description" | "grade_draft_images" | "retouch_draft_image" | "cleanplate_draft_images" | "generative_hdr_draft_image" | "organize_draft_images" | "generate_draft_video" | "viewer_control" | "tool_unavailable" | "needs_creation" | "needs_owned_creation" | "needs_photo" | "generate_description" | "create_listing" | "clarify_new_listing" | "action_plan";
+  action_code?: "revoke_all_shares" | "manage_shares" | "share_inventory" | "share_status" | "current_creation_overview" | "open_creation" | "create_creation" | "clarify_missing_price" | "set_missing_prices" | "open_tour" | "set_tour_cover" | "settings_navigation" | "settings_update" | "select_share_fields" | "create_draft_share" | "translate_description" | "grade_draft_images" | "retouch_draft_image" | "cleanplate_draft_images" | "generative_hdr_draft_image" | "organize_draft_images" | "generate_draft_video" | "viewer_control" | "tool_unavailable" | "needs_creation" | "needs_owned_creation" | "needs_photo" | "generate_description" | "create_listing" | "clarify_new_listing" | "action_plan" | "attachment_options";
+  /** What a bare drop was read as, and which tool each offered chip runs. */
+  attachment?: { kind: "photo" | "photos" | "files" | "field" | "mixed" | "blocked"; field: string | null; photo_count: number; tool_codes: string[] };
   /**
    * Present with action_code "action_plan": the ordered steps Agent read out of
    * one multi-step request. Display only — nothing in it can be executed; every
