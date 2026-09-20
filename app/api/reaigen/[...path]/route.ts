@@ -6,12 +6,14 @@ import {
   setAuthCookies,
   expireSession,
 } from "../../../lib/server/auth-cookies";
-import { fetchBackend } from "../../../lib/server/backend-fetch";
+import { fetchBackend, proxyBackendTimeoutMs } from "../../../lib/server/backend-fetch";
 import { isSafeProxyPath } from "../../../lib/server/proxy-path";
 import { refreshSession } from "../../../lib/server/token-refresh";
 
 const BACKEND_URL =
   process.env.REAIGEN_BACKEND_URL ?? "http://localhost:8000";
+// Allow the bounded upstream Agent budget plus authentication/transport overhead.
+export const maxDuration = 120;
 const SHARE_PIN_COOKIE_PREFIX = "reaigen_share_pin_";
 const SHARE_SESSION_COOKIE_PREFIX = "reaigen_share_session_";
 const DJANGO_SESSION_COOKIE_NAME = "sessionid";
@@ -262,12 +264,16 @@ async function proxy(
 
   const init: RequestInit = { method: req.method, headers };
   if (req.method !== "GET" && req.method !== "HEAD") {
-    init.body = await req.text();
+    // Multipart uploads contain binary document/media bytes. Decoding them as
+    // UTF-8 corrupts compressed PDF streams (and their byte offsets) before
+    // Django sees the file. A buffered byte body also survives a single 401
+    // refresh replay without reading the incoming request twice.
+    init.body = await req.arrayBuffer();
   }
 
   for (const baseUrl of backendCandidates()) {
     const target = `${resolveTarget(baseUrl, joined)}${slash}${qs}`;
-    const timeoutMs = joined === "users/me" ? 5_000 : undefined;
+    const timeoutMs = proxyBackendTimeoutMs(joined);
     try {
       let res = await fetchBackend(target, { ...init, cache: "no-store" }, timeoutMs);
 

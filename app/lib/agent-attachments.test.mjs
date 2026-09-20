@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { registerHooks } from "node:module";
 import test from "node:test";
-import { describeAgentAttachment, pendingImageCount, remainingAgentAttachments } from "./agent-attachments.ts";
+import { describeAgentAttachment, documentIntakeBlock, documentReadState, pendingAttachmentDescriptors, pendingImageCount, remainingAgentAttachments } from "./agent-attachments.ts";
 import { pendingCreationContextToken } from "./agent-conversation.ts";
 import { canApplyDirectEdit } from "./agent-direct-edit.ts";
 import { addPoolItem, poolItemsForRequest } from "./agent-pool.ts";
@@ -14,6 +14,18 @@ registerHooks({ resolve(specifier, context, nextResolve) {
 } });
 const client = await import("./api/client.ts");
 const json = (value, status = 200) => new Response(JSON.stringify(value), { status });
+
+test("reading failures retain their cause and never get reported as parsed content", () => {
+  const file = new File(["%PDF-1.7"], "report.pdf", { type: "application/pdf" });
+  assert.equal(documentIntakeBlock(file), null);
+  assert.equal(documentIntakeBlock({ name: "big.pdf", size: 4_000_001 }), "too_large");
+  assert.equal(documentIntakeBlock({ name: "private.docx", size: 100 }), "unsupported");
+  const failed = documentReadState({ status: "evidence_only", reason: "encrypted" });
+  assert.deepEqual(failed, { status: "evidence_only", reason: "encrypted" });
+  assert.deepEqual(pendingAttachmentDescriptors([file], new Map([[file, failed]]))[0].analysis, failed);
+  assert.deepEqual(documentReadState({ status: "evidence_only", reason: "<script>" }), { status: "evidence_only", reason: "unreadable" });
+  assert.deepEqual(documentReadState({ status: "extracted", reason: null }), { status: "extracted" });
+});
 
 async function withTransport(respond, run) {
   const original = globalThis.fetch;

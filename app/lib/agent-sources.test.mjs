@@ -1,6 +1,18 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { consumeAcceptedAgentSources, discardAgentSourceTokens, discardPoolSourceTokens, isAgentAttachmentResponse } from "./agent-sources.ts";
+import { activeAgentSourceTokens, consumeAcceptedAgentSources, discardAgentSourceTokens, discardPoolSourceTokens, isAgentAttachmentResponse } from "./agent-sources.ts";
+
+test("ordinary follow-ups retain all active documents after their initial field mapping", () => {
+  const pending = new Map([["specification", "spec-token"]]);
+  const archive = [{ token: "spec-token" }, { token: "report-token" }, { token: "other-listing", draftId: 42 }];
+  consumeAcceptedAgentSources(pending, ["spec-token"], "signed-listing-facts");
+  assert.equal(pending.size, 0);
+  assert.deepEqual(activeAgentSourceTokens(pending.values(), archive), ["spec-token", "report-token"]);
+  assert.deepEqual(activeAgentSourceTokens([], archive, 42), ["other-listing"]);
+  assert.deepEqual(activeAgentSourceTokens(["spec-token"], archive), ["spec-token", "report-token"]);
+  assert.deepEqual(activeAgentSourceTokens(["spec-token", "other-listing"], archive), ["spec-token", "report-token"]);
+  assert.deepEqual(activeAgentSourceTokens(["spec-token"], archive, 42), ["other-listing"]);
+});
 
 test("source tokens are consumed only after signed context accepts them; later files remain pending", () => {
   const first = new File(["facts"], "facts.txt");

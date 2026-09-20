@@ -1,5 +1,12 @@
 const DEFAULT_BACKEND_TIMEOUT_MS = 12_000;
 
+/** Agent turns may include two bounded inference calls, not a single CRUD read. */
+export function proxyBackendTimeoutMs(path: string): number | undefined {
+  if (path === "users/me") return 5_000;
+  if (/^reai-agent\/(?:workspace\/source-import|workspace\/assist|drafts\/\d+\/assist)$/.test(path)) return 105_000;
+  return undefined;
+}
+
 function configuredTimeoutMs(): number {
   const parsed = Number(process.env.REAIGEN_BACKEND_TIMEOUT_MS);
   if (!Number.isFinite(parsed)) return DEFAULT_BACKEND_TIMEOUT_MS;

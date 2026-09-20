@@ -3316,6 +3316,7 @@ export interface ReaiAgentIntakeResponse {
   name: string;
   kind: string;
   status: string;
+  reason?: string | null;
   extracted_text?: string;
   source_token?: string | null;
   candidate?: { fields?: Record<string, unknown>; specs?: Record<string, unknown> };
@@ -3348,6 +3349,7 @@ export async function importReaiSources(options: {
   conversation?: Array<{ role: "user" | "assistant"; content: string }>;
   language?: string;
   importRequestId?: string;
+  improvementConversationId?: string | null;
 }): Promise<ReaiAgentResponse> {
   return request("/api/reaigen/reai-agent/workspace/source-import/", {
     method: "POST",
@@ -3359,6 +3361,7 @@ export async function importReaiSources(options: {
       conversation: options.conversation?.slice(-4),
       language: options.language,
       import_request_id: options.importRequestId,
+      improvement_conversation_id: options.improvementConversationId || undefined,
     }),
   });
 }

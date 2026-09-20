@@ -1,10 +1,13 @@
 export type AgentAttachmentKind = "image" | "document" | "video";
+export type AgentDocumentReadFailure = "unsupported" | "too_large" | "encrypted" | "no_text" | "too_many_pages" | "unreadable" | "request_failed";
+export type AgentDocumentReadState = { status: "extracted" } | { status: "evidence_only"; reason: AgentDocumentReadFailure };
 
 export type AgentAttachmentDescriptor = {
   name: string;
   content_type: string;
   size: number;
   kind: AgentAttachmentKind;
+  analysis?: AgentDocumentReadState;
 };
 
 const FILE_TYPES: Record<string, { contentType: string; kind: AgentAttachmentKind }> = {
@@ -30,6 +33,20 @@ const FILE_TYPES: Record<string, { contentType: string; kind: AgentAttachmentKin
 
 export const AGENT_ATTACHMENT_ACCEPT = Object.keys(FILE_TYPES).map((extension) => `.${extension}`).join(",");
 export const MAX_AGENT_ATTACHMENTS = 24;
+// Leave space for multipart headers below Vercel's 4.5 MB function-body cap.
+// Larger originals remain private evidence; do not send a doomed intake POST.
+export const MAX_AGENT_INLINE_DOCUMENT_BYTES = 4_000_000;
+
+export function documentIntakeBlock(file: Pick<File, "name" | "size">): AgentDocumentReadFailure | null {
+  if (!/\.(pdf|txt)$/i.test(file.name)) return "unsupported";
+  return file.size > MAX_AGENT_INLINE_DOCUMENT_BYTES ? "too_large" : null;
+}
+
+export function documentReadState(intake: { status: string; reason?: string | null }): AgentDocumentReadState {
+  if (intake.status === "extracted") return { status: "extracted" };
+  const reasons: AgentDocumentReadFailure[] = ["unsupported", "too_large", "encrypted", "no_text", "too_many_pages", "unreadable", "request_failed"];
+  return { status: "evidence_only", reason: reasons.find((reason) => reason === intake.reason) ?? "unreadable" };
+}
 
 /** Metadata only; this never claims to have read the file's contents. */
 export function describeAgentAttachment(file: Pick<File, "name" | "type" | "size">): AgentAttachmentDescriptor | null {
@@ -46,10 +63,10 @@ export function describeAgentAttachment(file: Pick<File, "name" | "type" | "size
   return { name: file.name.slice(0, 255), content_type: type.contentType, size: file.size, kind: type.kind };
 }
 
-export function pendingAttachmentDescriptors(files: readonly File[]): AgentAttachmentDescriptor[] {
+export function pendingAttachmentDescriptors(files: readonly File[], analyses?: ReadonlyMap<File, AgentDocumentReadState>): AgentAttachmentDescriptor[] {
   return files.flatMap((file) => {
     const descriptor = describeAgentAttachment(file);
-    return descriptor ? [descriptor] : [];
+    return descriptor ? [{ ...descriptor, ...(descriptor.kind === "document" && analyses?.has(file) ? { analysis: analyses.get(file) } : {}) }] : [];
   }).slice(0, MAX_AGENT_ATTACHMENTS);
 }
 

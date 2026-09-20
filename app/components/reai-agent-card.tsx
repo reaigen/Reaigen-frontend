@@ -69,8 +69,8 @@ import { pendingAgentTurn, pendingCreationContextToken } from "../lib/agent-conv
 import { canApplyDirectEdit, isCurrentEditContext, proposalUndo, type AgentEditContext, type AgentEditUndo } from "../lib/agent-direct-edit";
 import { MAX_SOURCE_IMAGE_PREVIEWS, markSourceImportAttempt, monitorSourceImportProgress, reviewedSourceImageFile, reviewedSourceImport, sourceImageCandidates, unattemptedSourceImports } from "../lib/agent-document-import";
 import { proposalFieldUnit } from "../lib/agent-proposal";
-import { consumeAcceptedAgentSources, discardAgentSourceTokens, discardPoolSourceTokens, isAgentAttachmentResponse } from "../lib/agent-sources";
-import { AGENT_ATTACHMENT_ACCEPT, MAX_AGENT_ATTACHMENTS, describeAgentAttachment, pendingAttachmentDescriptors, pendingImageCount, remainingAgentAttachments } from "../lib/agent-attachments";
+import { activeAgentSourceTokens, consumeAcceptedAgentSources, discardAgentSourceTokens, discardPoolSourceTokens, isAgentAttachmentResponse } from "../lib/agent-sources";
+import { AGENT_ATTACHMENT_ACCEPT, MAX_AGENT_ATTACHMENTS, describeAgentAttachment, documentIntakeBlock, documentReadState, pendingAttachmentDescriptors, pendingImageCount, remainingAgentAttachments, type AgentDocumentReadState } from "../lib/agent-attachments";
 import {
   AgentPlanRunner,
   createPlanSnapshot,
@@ -551,6 +551,8 @@ export function ReaiAgentCard({
   const [attachmentNotice, setAttachmentNotice] = useState<string | null>(null);
   const [intakeBusy, setIntakeBusy] = useState(false);
   const sourceTokensRef = useRef(new Map<File, string>());
+  const documentReadStatesRef = useRef(new Map<File, AgentDocumentReadState>());
+  const [documentReadStates, setDocumentReadStates] = useState(new Map<File, AgentDocumentReadState>());
   // Keep original source authority for explicit follow-up/retry, separately
   // from fresh sources automatically sent with the next pending draft turn.
   const sourceArchiveRef = useRef(new Map<AgentDocumentSource, { token: string; draftId?: number }>());
@@ -827,6 +829,8 @@ export function ReaiAgentCard({
     for (const controller of jobMonitorsRef.current.values()) controller.abort();
     jobMonitorsRef.current.clear();
     sourceTokensRef.current.clear();
+    documentReadStatesRef.current.clear();
+    setDocumentReadStates(new Map());
     sourceArchiveRef.current.clear();
     sourceImportAttemptsRef.current.clear();
     sourceImportBusyRef.current = false;
@@ -1202,8 +1206,9 @@ export function ReaiAgentCard({
       },
     });
     try {
-      const response = reviewedSourceImport(await importReaiSources({ ...options, importRequestId: requestId }));
+      const response = reviewedSourceImport(await importReaiSources({ ...options, importRequestId: requestId, improvementConversationId }));
       if (generation === intakeGenerationRef.current && user?.id === editContextRef.current.userId) {
+        if (response.improvement_conversation_id) setImprovementConversationId(response.improvement_conversation_id);
         setSourceImportRetry(response.source_import?.status === "unavailable" ? retry : null);
         setSourceImportFollowUp(response.source_import?.requires_input ? retry : null);
       }
@@ -1345,11 +1350,15 @@ export function ReaiAgentCard({
     }
 
     const conversation = turns.slice(-4).map(({ role, content }) => ({ role, content }));
-    const sourceTokens = [...sourceTokensRef.current.values(), ...pool.flatMap((item) => item.kind === "document" && item.sourceToken ? [item.sourceToken] : [])];
+    const sourceTokens = activeAgentSourceTokens(
+      [...sourceTokensRef.current.values(), ...pool.flatMap((item) => item.kind === "document" && item.sourceToken ? [item.sourceToken] : [])],
+      sourceArchiveRef.current.values(), draftId,
+    );
     const followUpTokens = sourceImportFollowUp?.options.currentDraftId === draftId
       && sourceImportFollowUp?.generation === generation && sourceImportFollowUp?.userId === user?.id
       ? sourceImportFollowUp.options.sourceTokens : [];
-    const importTokens = [...new Set([...followUpTokens, ...unattemptedSourceImports(sourceTokens, sourceImportAttemptsRef.current, draftId)])];
+    const newSourceTokens = unattemptedSourceImports(sourceTokens, sourceImportAttemptsRef.current, draftId);
+    const importTokens = [...new Set([...followUpTokens, ...(newSourceTokens.length ? sourceTokens : [])])];
     setBusy(true);
     setError(null);
     try {
@@ -1375,7 +1384,7 @@ export function ReaiAgentCard({
         currentTourId,
         {
           pendingPhotoCount: pendingImageCount(pendingAttachments),
-          pendingAttachments: pendingAttachmentDescriptors(pendingAttachments),
+          pendingAttachments: pendingAttachmentDescriptors(pendingAttachments, documentReadStatesRef.current),
           creationContextToken: !draftId ? pendingCreationContextToken(turns) : null,
           sourceTokens,
         },
@@ -1560,7 +1569,14 @@ export function ReaiAgentCard({
       if (outcome.kind === "create_listing") {
         const result = outcome.result;
         for (const [file, source] of sourceArchiveRef.current) {
-          if (source.draftId === undefined) sourceArchiveRef.current.set(file, { ...source, draftId: result.draft_id });
+          if (source.draftId === undefined) {
+            // Creating the reviewed draft is not a new document-analysis
+            // request. Carry the attempt marker along with its source scope.
+            if (!unattemptedSourceImports([source.token], sourceImportAttemptsRef.current).length) {
+              markSourceImportAttempt([source.token], sourceImportAttemptsRef.current, result.draft_id);
+            }
+            sourceArchiveRef.current.set(file, { ...source, draftId: result.draft_id });
+          }
         }
         setSourceImages((current) => current.map((image) => image.draftId === undefined ? { ...image, draftId: result.draft_id, key: `${result.draft_id}:${image.source.name}:${image.candidate.sha256}:${image.candidate.id}` } : image));
         // The listing exists from here on. A photo that fails to upload must
@@ -1656,14 +1672,17 @@ export function ReaiAgentCard({
     if (busy || sourceImportBusyRef.current || message.trim() || !consent?.consented) return;
     const generation = intakeGenerationRef.current;
     const requestSequence = ++assistSequenceRef.current;
-    const sourceTokens = [...sourceTokensRef.current.values(), ...nextPool.flatMap((item) => item.kind === "document" && item.sourceToken ? [item.sourceToken] : [])];
+    const sourceTokens = activeAgentSourceTokens(
+      [...sourceTokensRef.current.values(), ...nextPool.flatMap((item) => item.kind === "document" && item.sourceToken ? [item.sourceToken] : [])],
+      sourceArchiveRef.current.values(), draftId,
+    );
     const newImportTokens = unattemptedSourceImports(sourceTokens, sourceImportAttemptsRef.current, draftId);
     const followUpTokens = sourceImportFollowUp?.options.currentDraftId === draftId
       && sourceImportFollowUp?.generation === generation ? sourceImportFollowUp.options.sourceTokens : [];
     // A photo/field drop cannot answer a document ambiguity. Keep the question
     // active; only another document or the creator's words can continue it.
     if (sourceImportFollowUp && followUpTokens.length && !newImportTokens.length) return;
-    const importTokens = [...new Set([...newImportTokens, ...(newImportTokens.length ? followUpTokens : [])])];
+    const importTokens = [...new Set(newImportTokens.length ? [...sourceTokens, ...followUpTokens] : [])];
     setBusy(true);
     try {
       const response = importTokens.length ? await importSources({
@@ -1683,7 +1702,7 @@ export function ReaiAgentCard({
         currentTourId,
         {
           pendingPhotoCount: pendingImageCount(pendingFiles),
-          pendingAttachments: pendingAttachmentDescriptors(pendingFiles),
+          pendingAttachments: pendingAttachmentDescriptors(pendingFiles, documentReadStatesRef.current),
           creationContextToken: !draftId ? pendingCreationContextToken(turns) : null,
           sourceTokens,
         },
@@ -1696,6 +1715,7 @@ export function ReaiAgentCard({
         ...current,
         { id: newTurnId(), role: "assistant", content: response.reply, response },
       ]);
+      if (response.improvement_conversation_id) setImprovementConversationId(response.improvement_conversation_id);
     } catch (err) {
       if (generation !== intakeGenerationRef.current || requestSequence !== assistSequenceRef.current) return;
       if (getApiErrorCode(err) === "agent_source_expired") {
@@ -1788,7 +1808,14 @@ export function ReaiAgentCard({
     }
   };
 
+  const rememberDocumentReadState = (file: File, state: AgentDocumentReadState) => {
+    documentReadStatesRef.current.set(file, state);
+    setDocumentReadStates(new Map(documentReadStatesRef.current));
+  };
+
   const rememberSourceIntake = (source: AgentDocumentSource, intake: ReaiAgentIntakeResponse) => {
+    const readState = documentReadState(intake);
+    if (source instanceof File) rememberDocumentReadState(source, readState);
     if (intake.source_token) {
       if (source instanceof File) sourceTokensRef.current.set(source, intake.source_token);
       for (const key of sourceArchiveRef.current.keys()) {
@@ -1801,7 +1828,7 @@ export function ReaiAgentCard({
       ...current,
       ...candidates.map((candidate) => ({ key: `${draftId ?? "new"}:${source.name}:${candidate.sha256}:${candidate.id}`, source, candidate, draftId })),
     ].filter((candidate, index, all) => all.findIndex((other) => other.key === candidate.key) === index).slice(-MAX_SOURCE_IMAGE_PREVIEWS));
-    if (!intake.source_token) setAttachmentNotice(t("reai.attachments.notAnalyzed", lang));
+    if (readState.status !== "extracted") setAttachmentNotice(t(`reai.attachments.read.${readState.reason}`, lang));
   };
 
   const loadSavedEvidence = async () => {
@@ -1861,17 +1888,21 @@ export function ReaiAgentCard({
       for (const file of accepted) {
         if (generation !== intakeGenerationRef.current) return;
         if (describeAgentAttachment(file)?.kind !== "document") continue;
-        if (!/\.(pdf|txt)$/i.test(file.name)) {
-          setAttachmentNotice(t("reai.attachments.notAnalyzed", lang));
+        const intakeBlock = documentIntakeBlock(file);
+        if (intakeBlock) {
+          rememberDocumentReadState(file, { status: "evidence_only", reason: intakeBlock });
+          setAttachmentNotice(t(`reai.attachments.read.${intakeBlock}`, lang));
           continue;
         }
         try {
           const intake = await intakeReaiAttachment(file);
           if (generation !== intakeGenerationRef.current) return;
           rememberSourceIntake(file, intake);
-        } catch {
+        } catch (err) {
           if (generation !== intakeGenerationRef.current) return;
-          setAttachmentNotice(t("reai.attachments.notAnalyzed", lang));
+          rememberDocumentReadState(file, { status: "evidence_only", reason: "request_failed" });
+          setAttachmentNotice(t("reai.attachments.read.request_failed", lang));
+          setError(errorText(err, lang));
         }
       }
       if (draftId) {
@@ -3081,6 +3112,7 @@ export function ReaiAgentCard({
                   <DocumentIcon size={12} className="shrink-0 text-foreground/50" aria-hidden="true" />
                   <span className="min-w-0 truncate text-foreground/75" title={file.name}>
                     {file.name}{describeAgentAttachment(file)?.kind === "document" ? ` · ${t("reai.attachments.privateEvidence", lang)}` : ""}
+                    {documentReadStates.get(file)?.status === "evidence_only" ? ` · ${t("reai.attachments.unread", lang)}` : ""}
                   </span>
                   <button
                     type="button"
@@ -3088,6 +3120,8 @@ export function ReaiAgentCard({
                     aria-label={`${t("reai.pool.remove", lang)} — ${file.name}`}
                     onClick={() => {
                       sourceTokensRef.current.delete(file);
+                      documentReadStatesRef.current.delete(file);
+                      setDocumentReadStates(new Map(documentReadStatesRef.current));
                       sourceArchiveRef.current.delete(file);
                       setSourceImages((current) => current.filter((image) => image.source !== file).map((image) => image.selectedFile === file ? { ...image, selectedFile: undefined } : image));
                       pendingAttachmentsRef.current = pendingAttachmentsRef.current.filter((entry) => entry !== file);

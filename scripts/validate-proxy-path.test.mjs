@@ -1,7 +1,103 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import { registerHooks } from "node:module";
+import { createServer } from "node:http";
+import { once } from "node:events";
+import { deflateSync } from "node:zlib";
 
 import { isSafeProxyPath, isSafeProxySegment } from "../app/lib/server/proxy-path.ts";
+import { proxyBackendTimeoutMs } from "../app/lib/server/backend-fetch.ts";
+
+test("agent composition outlives both model deadlines without slowing unrelated routes", () => {
+  for (const path of ["reai-agent/workspace/source-import", "reai-agent/workspace/assist", "reai-agent/drafts/12/assist"]) {
+    assert.ok(proxyBackendTimeoutMs(path) > 2 * 45_000 + 2 * 3050, path);
+    assert.ok(proxyBackendTimeoutMs(path) < 120_000, path);
+  }
+  assert.equal(proxyBackendTimeoutMs("users/me"), 5_000);
+  for (const path of ["reai-agent/workspace/source-import/id/status", "drafts", "reai-agent/workspace/apply"]) {
+    assert.equal(proxyBackendTimeoutMs(path), undefined, path);
+  }
+});
+
+registerHooks({ resolve(specifier, context, nextResolve) {
+  if (specifier === "next/server") return nextResolve("next/server.js", context);
+  try { return nextResolve(specifier, context); } catch (error) {
+    if (specifier.startsWith(".") && !/\.[cm]?[jt]sx?$/.test(specifier)) return nextResolve(`${specifier}.ts`, context);
+    throw error;
+  }
+} });
+
+function compressedDocument() {
+  const content = deflateSync(Buffer.from("BT /F1 12 Tf 40 740 Td (Apartment, 85 m2, 240000 EUR. Technical report.) Tj ET"));
+  const objects = [
+    Buffer.from("<< /Type /Catalog /Pages 2 0 R >>"),
+    Buffer.from("<< /Type /Pages /Kids [3 0 R] /Count 1 >>"),
+    Buffer.from("<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Resources << /Font << /F1 4 0 R >> >> /Contents 5 0 R >>"),
+    Buffer.from("<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>"),
+    Buffer.concat([Buffer.from(`<< /Length ${content.length} /Filter /FlateDecode >>\nstream\n`), content, Buffer.from("\nendstream")]),
+  ];
+  const parts = [Buffer.from("%PDF-1.7\n%\xe2\xe3\xcf\xd3\n", "latin1")];
+  const offsets = [];
+  for (const [index, object] of objects.entries()) {
+    offsets.push(parts.reduce((total, part) => total + part.length, 0));
+    parts.push(Buffer.from(`${index + 1} 0 obj\n`), object, Buffer.from("\nendobj\n"));
+  }
+  const xref = parts.reduce((total, part) => total + part.length, 0);
+  parts.push(Buffer.from(`xref\n0 ${objects.length + 1}\n0000000000 65535 f \n${offsets.map((offset) => `${String(offset).padStart(10, "0")} 00000 n \n`).join("")}trailer\n<< /Size ${objects.length + 1} /Root 1 0 R >>\nstartxref\n${xref}\n%%EOF\n`));
+  return Buffer.concat(parts);
+}
+
+test("real proxy forwards multipart document bytes unchanged, including after token refresh", async () => {
+  const received = [];
+  let refreshed = false;
+  const server = createServer(async (request, response) => {
+    const chunks = [];
+    for await (const chunk of request) chunks.push(chunk);
+    if (request.url === "/api/v1/core/auth/refresh/") {
+      refreshed = true;
+      response.writeHead(200, { "Content-Type": "application/json" });
+      response.end(JSON.stringify({ access: "fixture-refreshed", refresh: "fixture-rotated" }));
+      return;
+    }
+    const formRequest = new Request("http://fixture.invalid/", {
+      method: "POST", headers: { "Content-Type": request.headers["content-type"] }, body: Buffer.concat(chunks),
+    });
+    const data = await formRequest.formData();
+    const file = data.get("file");
+    received.push({ bytes: Buffer.from(await file.arrayBuffer()), name: file.name, type: file.type });
+    response.writeHead(request.headers.authorization === "Bearer fixture-expired" ? 401 : 200, { "Content-Type": "application/json" });
+    response.end(JSON.stringify({ status: "received" }));
+  });
+  server.listen(0, "127.0.0.1");
+  await once(server, "listening");
+  const previous = process.env.REAIGEN_BACKEND_URL;
+  process.env.REAIGEN_BACKEND_URL = `http://127.0.0.1:${server.address().port}`;
+  try {
+    const { NextRequest } = await import("next/server.js");
+    const { POST } = await import("../app/api/reaigen/[...path]/route.ts");
+    for (const token of ["fixture-valid", "fixture-expired"]) {
+      const bytes = compressedDocument();
+      const body = new FormData();
+      body.set("file", new File([bytes], "technical-report.pdf", { type: "application/pdf" }));
+      const request = new NextRequest("http://web.invalid/api/reaigen/reai-agent/workspace/intake/", {
+        method: "POST", body,
+        headers: { Cookie: `reaigen_access=${token}; reaigen_refresh=fixture-refresh` },
+      });
+      const result = await POST(request, { params: Promise.resolve({ path: ["reai-agent", "workspace", "intake"] }) });
+      assert.equal(result.status, 200);
+      assert.equal(received.at(-1).name, "technical-report.pdf");
+      assert.equal(received.at(-1).type, "application/pdf");
+      assert.deepEqual(received.at(-1).bytes, bytes, "compressed PDF must not be decoded and re-encoded as UTF-8");
+    }
+    assert.equal(refreshed, true);
+    assert.equal(received.length, 3, "only a rejected authentication may replay the request body");
+    assert.deepEqual(received[1].bytes, received[2].bytes);
+  } finally {
+    if (previous === undefined) delete process.env.REAIGEN_BACKEND_URL;
+    else process.env.REAIGEN_BACKEND_URL = previous;
+    await new Promise((resolve) => server.close(resolve));
+  }
+});
 
 /**
  * Every path template the API client actually builds, taken from

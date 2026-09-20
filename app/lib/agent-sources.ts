@@ -1,5 +1,17 @@
 import type { AgentPoolItem } from "./agent-pool";
 
+/** Accepted field facts do not replace the document's other contents. */
+export function activeAgentSourceTokens(
+  pending: Iterable<string>,
+  archived: Iterable<{ token: string; draftId?: number }>,
+  draftId?: number,
+): string[] {
+  const sources = [...archived];
+  const active = sources.filter((source) => source.draftId === draftId).map((source) => source.token);
+  const inactive = new Set(sources.filter((source) => source.draftId !== draftId).map((source) => source.token));
+  return [...new Set([...active, ...[...pending].filter((token) => !inactive.has(token))])].slice(-24);
+}
+
 export function discardAgentSourceTokens<T>(sources: Map<T, string>, sent: readonly string[]): void {
   for (const [file, token] of sources) {
     if (sent.includes(token)) sources.delete(file);
