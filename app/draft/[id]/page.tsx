@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState, use, type ReactNode } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, use, type ReactNode } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import dynamic from "next/dynamic";
@@ -9,7 +9,7 @@ import { AppShell } from "../../components/app-shell";
 import { Button } from "../../lib/ui/button";
 import { getDraft, getDraftTourAssets, getSplatsByDraft, listUnits, refreshDraft, translateDraftDescription } from "../../lib/api/client";
 import { isApiNotFound } from "../../lib/api/error-message";
-import { writeDragItem } from "../../lib/agent-pool";
+import { writeDragItem, type AgentPoolField } from "../../lib/agent-pool";
 import { getUserLanguage, t } from "../../lib/i18n";
 import { currentGalleryUploads } from "../../lib/media";
 import { mediaProxyUrl } from "../../lib/image-preview";
@@ -564,6 +564,12 @@ export default function DraftPreviewPage({
   const [detailsExpanded, setDetailsExpanded] = useState(false);
   const [translationPending, setTranslationPending] = useState(false);
   const [activeImageId, setActiveImageId] = useState<number | null>(null);
+  const [agentField, setAgentField] = useState<{ draftId: number; field: AgentPoolField } | null>(null);
+  const clearAgentField = useCallback(() => setAgentField(null), []);
+  const selectGalleryImage = useCallback((imageId: number | null) => {
+    setActiveImageId(imageId);
+    setAgentField(null);
+  }, []);
   const [activeMediaView, setActiveMediaView] = useState<"photos" | "video">("photos");
   const [activeVideoIndex, setActiveVideoIndex] = useState(0);
   const [editorOpen, setEditorOpen] = useState(false);
@@ -926,6 +932,8 @@ export default function DraftPreviewPage({
       reaiDraftId={draftId}
       reaiDraftTitle={draft?.title}
       reaiUploadId={activeImageId ?? undefined}
+      reaiField={agentField?.draftId === draftId ? agentField.field : undefined}
+      onReaiFieldClear={clearAgentField}
       reaiWorkspaceContext={floorplanFullscreen ? "floorplan" : "draft"}
       headerBackHref="/dashboard"
       headerBackLabel={t("nav.dashboard", lang)}
@@ -1050,7 +1058,7 @@ export default function DraftPreviewPage({
                     images={images}
                     alt={draft.title}
                     lang={lang}
-                    onActiveImageChange={setActiveImageId}
+                    onActiveImageChange={selectGalleryImage}
                     onManage={() => setMediaOpen(true)}
                     manageLabel={t("draft.media.manage", lang)}
                   />
@@ -1167,8 +1175,12 @@ export default function DraftPreviewPage({
             {facts.length > 0 && (
               <div className="draft-facts-grid mt-4 flex gap-2.5 overflow-x-auto pb-1 scrollbar-hide sm:grid sm:grid-cols-3 sm:overflow-visible sm:pb-0 md:mt-5 md:border-t md:border-border/65 md:pt-5">
                 {facts.map((fact) => (
-                  <div
+                  <button
                     key={fact.label}
+                    type="button"
+                    disabled={!fact.path}
+                    aria-pressed={Boolean(fact.path && agentField?.draftId === draftId && agentField.field.path === fact.path)}
+                    onClick={() => fact.path && setAgentField({ draftId, field: { kind: "field", path: fact.path, label: fact.label, value: fact.value } })}
                     // Parameters with a canonical field behind them can be
                     // dragged into the Agent window to be asked about or edited.
                     draggable={Boolean(fact.path)}
@@ -1183,7 +1195,8 @@ export default function DraftPreviewPage({
                     }}
                     className={cn(
                       "flex w-[9.75rem] flex-none items-center gap-2.5 rounded-[1.25rem] border border-border/45 bg-card px-3 py-2.5 sm:w-auto sm:min-w-0 md:border-0 md:bg-surface-subtle md:ring-1 md:ring-inset md:ring-border/35",
-                      fact.path && "cursor-grab active:cursor-grabbing",
+                      fact.path && "cursor-grab text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring active:cursor-grabbing",
+                      agentField?.draftId === draftId && agentField.field.path === fact.path && "ring-2 ring-foreground/40",
                     )}
                   >
                     <span className="detail-icon-chip">
@@ -1193,7 +1206,7 @@ export default function DraftPreviewPage({
                       <span className="block select-text truncate text-[14px] font-semibold tabular-nums">{fact.value}</span>
                       <span className="mt-1 block truncate text-[11px] font-medium text-foreground/55">{fact.label}{fact.sub ? ` · ${fact.sub}` : ""}</span>
                     </span>
-                  </div>
+                  </button>
                 ))}
               </div>
             )}
@@ -1386,8 +1399,12 @@ export default function DraftPreviewPage({
                     </h2>
                     <div className={cn("draft-detail-grid grid grid-cols-1 gap-2.5", visibleRows.length > 1 && "sm:grid-cols-2")}>
                       {visibleRows.map((row, index) => (
-                        <div
+                        <button
                           key={`${row.label}-${index}`}
+                          type="button"
+                          disabled={!row.path}
+                          aria-pressed={Boolean(row.path && agentField?.draftId === draftId && agentField.field.path === row.path)}
+                          onClick={() => row.path && setAgentField({ draftId, field: { kind: "field", path: row.path, label: row.label, value: row.value } })}
                           draggable={Boolean(row.path)}
                           onDragStart={(event) => {
                             if (!row.path) return;
@@ -1400,7 +1417,8 @@ export default function DraftPreviewPage({
                           }}
                           className={cn(
                             "detail-card group flex min-w-0 items-center gap-3 px-3.5 py-3.5 transition-[border-color,box-shadow,transform]",
-                            row.path && "cursor-grab hover:-translate-y-px hover:border-foreground/20 hover:shadow-card active:cursor-grabbing",
+                            row.path && "cursor-grab text-left hover:-translate-y-px hover:border-foreground/20 hover:shadow-card focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring active:cursor-grabbing",
+                            agentField?.draftId === draftId && agentField.field.path === row.path && "ring-2 ring-foreground/40",
                           )}
                         >
                           <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full border border-border/55 bg-surface-subtle/75 text-foreground/62 shadow-[inset_0_1px_0_rgba(255,255,255,0.82)]">
@@ -1410,7 +1428,7 @@ export default function DraftPreviewPage({
                             <span className="block break-words text-[11px] font-medium text-foreground/52">{row.label}</span>
                             <span className="mt-1.5 block select-text break-words text-[14px] font-semibold leading-snug text-foreground tabular-nums">{row.value}</span>
                           </span>
-                        </div>
+                        </button>
                       ))}
                       {detailsLong && (
                         <div className="flex justify-center pt-1 sm:col-span-2">

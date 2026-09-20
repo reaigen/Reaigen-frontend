@@ -2,6 +2,7 @@ import type { DraftDataEntry } from "../tour-types";
 import { randomUUID } from "../uuid";
 import { isSessionEndReason, rememberSessionEndReason, SESSION_END_REASON_HEADER } from "../session-end";
 import { isRetryableGetHttpStatus } from "./retry-policy";
+import { describeAgentAttachment, type AgentAttachmentDescriptor } from "../agent-attachments";
 
 export class ApiError extends Error {
   status: number;
@@ -19,6 +20,7 @@ const inFlight = new Map<string, Promise<unknown>>();
 const freshInFlight = new Map<string, Promise<unknown>>();
 const cache = new Map<string, { data: unknown; ts: number }>();
 let privateCacheGeneration = 0;
+let privateIdentityGeneration = 0;
 
 /**
  * Establish a hard identity boundary for private browser data.
@@ -29,9 +31,11 @@ let privateCacheGeneration = 0;
  */
 export function resetPrivateApiState() {
   privateCacheGeneration += 1;
+  privateIdentityGeneration += 1;
   cache.clear();
   inFlight.clear();
   freshInFlight.clear();
+  draftPhotoUploadSessions.clear();
 }
 
 /** Session expired: flush all cached data and signal the app to
@@ -226,7 +230,7 @@ async function request(path: string, options: RequestInit = {}) {
     ...options,
     credentials: "include",
     headers: {
-      "Content-Type": "application/json",
+      ...(options.body instanceof FormData ? {} : { "Content-Type": "application/json" }),
       ...options.headers,
     },
     cache: "no-store" as const,
@@ -2351,7 +2355,7 @@ interface DraftUploadPage {
 
 export async function listDraftUploads(
   draftId: number,
-  options: { includeDeleted?: boolean; fresh?: boolean } = {},
+  options: { includeDeleted?: boolean; fresh?: boolean; role?: "evidence" } = {},
 ): Promise<DraftUpload[]> {
   const query = new URLSearchParams({
     draft_post: String(draftId),
@@ -2359,6 +2363,7 @@ export async function listDraftUploads(
     ordering: "sort_order,uploaded_at",
   });
   if (options.includeDeleted) query.set("include_deleted", "true");
+  if (options.role) query.set("role", options.role);
   const path = `/api/reaigen/uploads/?${query.toString()}`;
   const payload = options.fresh ? await freshRequest(path) : await request(path);
   return (payload as DraftUploadPage)?.results ?? (Array.isArray(payload) ? payload : []);
@@ -2423,14 +2428,20 @@ interface DraftMediaPresignResponse {
   upload_mode: "single" | "multipart";
   upload_key: string;
   presigned_url?: string;
+  multipart?: {
+    upload_id: string;
+    part_size: number;
+    parts: Array<{ part_number: number; url: string }>;
+  };
 }
 
 interface DraftPhotoUploadSession {
   assetType: AssetTypeLookup;
-  presign: DraftMediaPresignResponse & { presigned_url: string };
+  presign: DraftMediaPresignResponse;
   contentType: string;
   sortOrder: number;
   putComplete: boolean;
+  parts: Array<{ part_number: number; etag: string }>;
   createdAt: number;
 }
 
@@ -2454,21 +2465,29 @@ export async function uploadDraftPhoto(
   sortOrder: number,
   options: DraftPhotoUploadOptions = {},
 ): Promise<DraftUpload> {
-  const extension = file.name.split(".").pop()?.toLowerCase() ?? "";
-  const inferredTypes: Record<string, string> = {
-    jpg: "image/jpeg",
-    jpeg: "image/jpeg",
-    png: "image/png",
-    webp: "image/webp",
-    heic: "image/heic",
-    heif: "image/heif",
-    tif: "image/tiff",
-    tiff: "image/tiff",
-    bmp: "image/bmp",
+  if (describeAgentAttachment(file)?.kind !== "image") throw new Error("Select a supported photo.");
+  return uploadDraftAttachment(draftId, file, sortOrder, options);
+}
+
+/** Upload listing media or a private document, with resumable multipart video. */
+export async function uploadDraftAttachment(
+  draftId: number,
+  file: File,
+  sortOrder: number,
+  options: DraftPhotoUploadOptions = {},
+): Promise<DraftUpload> {
+  const descriptor = describeAgentAttachment(file);
+  if (!descriptor) throw new Error("This file type or size is not supported.");
+  const { content_type: contentType, kind } = descriptor;
+  const role = kind === "document" ? "evidence" : kind === "video" ? "video" : "photo";
+  const assetCode = kind === "document" ? "DOCUMENT" : kind === "video" ? "VIDEO" : "RAW_IMAGE";
+  const generation = privateIdentityGeneration;
+  const assertCurrentIdentity = () => {
+    if (generation !== privateIdentityGeneration) throw new ApiError(409, JSON.stringify({ detail: "Your session changed. Select the file again." }));
   };
-  const contentType = file.type || inferredTypes[extension] || "application/octet-stream";
   const sessionKey = [
     draftId,
+    role,
     options.logicalAssetId ?? "new",
     options.supersedesId ?? "none",
     file.name,
@@ -2483,7 +2502,7 @@ export async function uploadDraftPhoto(
 
   if (!uploadSession) {
     const [assetType, presign] = await Promise.all([
-      getAssetTypeByCode("RAW_IMAGE"),
+      getAssetTypeByCode(assetCode),
       request("/api/reaigen/uploads/presign/", {
         method: "POST",
         body: JSON.stringify({
@@ -2491,38 +2510,60 @@ export async function uploadDraftPhoto(
           filename: file.name,
           content_type: contentType,
           file_size: file.size,
+          role,
           ...(options.logicalAssetId ? { logical_asset_id: options.logicalAssetId } : {}),
         }),
       }) as Promise<DraftMediaPresignResponse>,
     ]);
 
-    if (presign.upload_mode !== "single" || !presign.presigned_url) {
-      throw new Error("This photo is too large for the browser uploader.");
-    }
+    assertCurrentIdentity();
+    if (presign.upload_mode === "single" && !presign.presigned_url) throw new Error("Upload URL is missing.");
+    if (presign.upload_mode === "multipart" && (!presign.multipart?.upload_id || !presign.multipart.part_size || !presign.multipart.parts.length)) throw new Error("Upload parts are missing.");
     uploadSession = {
       assetType,
-      presign: { ...presign, presigned_url: presign.presigned_url },
+      presign,
       contentType,
       sortOrder,
       putComplete: false,
+      parts: [],
       createdAt: Date.now(),
     };
     draftPhotoUploadSessions.set(sessionKey, uploadSession);
   }
 
   if (!uploadSession.putComplete) {
-    const storageResponse = await fetch(uploadSession.presign.presigned_url, {
-      method: "PUT",
-      headers: { "Content-Type": uploadSession.contentType },
-      body: file,
-      credentials: "omit",
-    });
-    if (!storageResponse.ok) {
-      throw new ApiError(storageResponse.status, await storageResponse.text());
+    if (uploadSession.presign.upload_mode === "multipart" && uploadSession.presign.multipart) {
+      const multipart = uploadSession.presign.multipart;
+      for (const part of multipart.parts) {
+        assertCurrentIdentity();
+        if (uploadSession.parts.some((uploaded) => uploaded.part_number === part.part_number)) continue;
+        const start = (part.part_number - 1) * multipart.part_size;
+        const storageResponse = await fetch(part.url, {
+          method: "PUT",
+          body: file.slice(start, Math.min(start + multipart.part_size, file.size)),
+          credentials: "omit",
+        });
+        if (!storageResponse.ok) throw new ApiError(storageResponse.status, "");
+        const etag = storageResponse.headers.get("ETag");
+        if (!etag) throw new Error("Upload receipt is missing. Please retry.");
+        uploadSession.parts.push({ part_number: part.part_number, etag });
+      }
+    } else {
+      assertCurrentIdentity();
+      const storageResponse = await fetch(uploadSession.presign.presigned_url as string, {
+        method: "PUT",
+        headers: { "Content-Type": uploadSession.contentType },
+        body: file,
+        credentials: "omit",
+      });
+      if (!storageResponse.ok) {
+        throw new ApiError(storageResponse.status, "");
+      }
     }
     uploadSession.putComplete = true;
   }
 
+  assertCurrentIdentity();
   const confirmed = await request("/api/reaigen/uploads/confirm/", {
     method: "POST",
     body: JSON.stringify({
@@ -2533,11 +2574,13 @@ export async function uploadDraftPhoto(
       file_size: file.size,
       content_type: uploadSession.contentType,
       sort_order: uploadSession.sortOrder,
-      role: "photo",
+      role,
+      ...(uploadSession.presign.multipart ? { upload_id: uploadSession.presign.multipart.upload_id, parts: uploadSession.parts } : {}),
       ...(options.logicalAssetId ? { logical_asset_id: options.logicalAssetId } : {}),
       ...(options.supersedesId ? { supersedes: options.supersedesId } : {}),
     }),
   });
+  assertCurrentIdentity();
   draftPhotoUploadSessions.delete(sessionKey);
   cache.delete(`/api/reaigen/drafts/${draftId}/`);
   inFlight.delete(`/api/reaigen/drafts/${draftId}/`);
@@ -2786,6 +2829,19 @@ export interface ReaiAgentVersionManifest {
 
 export interface ReaiAgentResponse {
   reply: string;
+  /** Document mapping is a review candidate, never authority for a direct edit. */
+  source_import?: {
+    status: "mapped" | "unavailable";
+    requires_input?: boolean;
+    mappings: ReaiAgentSourceMapping[];
+    image_candidates?: Array<Omit<ReaiAgentSourceImageCandidate, "preview_data_url">>;
+    warnings?: string[];
+  };
+  /** Server-only verification of explicit typed values for one current draft. */
+  direct_edit?: boolean;
+  direct_edit_draft_id?: number;
+  /** Owner-signed cumulative facts for an unsaved listing. Never an action token. */
+  creation_context_token?: string | null;
   /** Exact Agent behavior/build identity. Optional only for pre-versioned tab history. */
   agent_version?: ReaiAgentVersionManifest;
   execution_mode?: "deterministic" | "fast" | "standard" | "reasoning" | "safe_fallback";
@@ -2808,7 +2864,7 @@ export interface ReaiAgentResponse {
   /** Experimental extra-user native mini-apps; never arbitrary HTML or script. */
   tinyui?: ReaiAgentTinyUi;
   proposal_token: string | null;
-  action_code?: "revoke_all_shares" | "manage_shares" | "share_inventory" | "share_status" | "current_creation_overview" | "open_creation" | "create_creation" | "clarify_missing_price" | "set_missing_prices" | "open_tour" | "set_tour_cover" | "settings_navigation" | "settings_update" | "select_share_fields" | "create_draft_share" | "translate_description" | "grade_draft_images" | "retouch_draft_image" | "cleanplate_draft_images" | "generative_hdr_draft_image" | "organize_draft_images" | "generate_draft_video" | "viewer_control" | "tool_unavailable" | "needs_creation" | "needs_owned_creation" | "needs_photo" | "generate_description" | "create_listing" | "clarify_new_listing" | "action_plan" | "attachment_options";
+  action_code?: "revoke_all_shares" | "manage_shares" | "share_inventory" | "share_status" | "current_creation_overview" | "open_creation" | "create_creation" | "clarify_missing_price" | "set_missing_prices" | "open_tour" | "set_tour_cover" | "settings_navigation" | "settings_update" | "select_share_fields" | "create_draft_share" | "translate_description" | "grade_draft_images" | "retouch_draft_image" | "cleanplate_draft_images" | "generative_hdr_draft_image" | "organize_draft_images" | "generate_draft_video" | "viewer_control" | "tool_unavailable" | "needs_creation" | "needs_owned_creation" | "needs_photo" | "generate_description" | "create_listing" | "clarify_new_listing" | "discuss_new_listing" | "action_plan" | "attachment_options";
   /** What a bare drop was read as, and which tool each offered chip runs. */
   attachment?: { kind: "photo" | "photos" | "files" | "field" | "mixed" | "blocked"; field: string | null; photo_count: number; tool_codes: string[] };
   /**
@@ -2826,6 +2882,10 @@ export interface ReaiAgentResponse {
     specs: Record<string, Record<string, unknown>>;
     missing: string[];
     ready: boolean;
+    source_conflicts?: Array<{
+      field: string;
+      candidates: Array<{ value: unknown; sources: Array<{ name: string; digest: string }> }>;
+    }>;
   };
   /** Present when Agent offers to run the description generator again. */
   description_generation?: {
@@ -3231,6 +3291,91 @@ export async function applyReaiAgentProposal(
   });
 }
 
+export interface ReaiAgentSourceMapping {
+  field: string;
+  value: unknown;
+  source_name: string;
+  page: number;
+  excerpt?: string;
+}
+
+export interface ReaiAgentSourceImageCandidate {
+  id: string;
+  page: number;
+  pages?: number[];
+  width: number;
+  height: number;
+  mime_type: "image/jpeg";
+  byte_size: number;
+  sha256: string;
+  preview_data_url: string;
+  requires_review: true;
+}
+
+export interface ReaiAgentIntakeResponse {
+  name: string;
+  kind: string;
+  status: string;
+  extracted_text?: string;
+  source_token?: string | null;
+  candidate?: { fields?: Record<string, unknown>; specs?: Record<string, unknown> };
+  page_chunks?: Array<{ page: number; text: string }>;
+  image_candidates?: ReaiAgentSourceImageCandidate[];
+  evidence_upload_id?: number;
+  draft_id?: number;
+}
+
+/** Read a document as private evidence without persisting or publishing it. */
+export async function intakeReaiAttachment(file: File): Promise<ReaiAgentIntakeResponse> {
+  const body = new FormData();
+  body.append("file", file);
+  return request("/api/reaigen/reai-agent/workspace/intake/", { method: "POST", body });
+}
+
+/** Explicit owner-only re-read of stored private evidence; no URL or upload. */
+export async function intakeSavedReaiEvidence(draftId: number, uploadId: number): Promise<ReaiAgentIntakeResponse> {
+  return request(`/api/reaigen/reai-agent/workspace/drafts/${draftId}/sources/${uploadId}/intake/`, {
+    method: "POST", body: JSON.stringify({}),
+  });
+}
+
+/** Map extracted document data into a signed review; never apply or publish it. */
+export async function importReaiSources(options: {
+  sourceTokens: string[];
+  message: string;
+  currentDraftId?: number;
+  creationContextToken?: string | null;
+  conversation?: Array<{ role: "user" | "assistant"; content: string }>;
+  language?: string;
+  importRequestId?: string;
+}): Promise<ReaiAgentResponse> {
+  return request("/api/reaigen/reai-agent/workspace/source-import/", {
+    method: "POST",
+    body: JSON.stringify({
+      source_tokens: [...new Set(options.sourceTokens)].slice(0, 24),
+      message: options.message,
+      current_draft_id: options.currentDraftId,
+      creation_context_token: options.creationContextToken || undefined,
+      conversation: options.conversation?.slice(-4),
+      language: options.language,
+      import_request_id: options.importRequestId,
+    }),
+  });
+}
+
+export type ReaiSourceImportStage = "reading" | "searching" | "mapping" | "validating" | "ready" | "needs_input" | "failed";
+export type ReaiSourceImportProgress = {
+  stage: ReaiSourceImportStage;
+  updated_at: string;
+  terminal: boolean;
+  history?: Array<{ stage: ReaiSourceImportStage; updated_at: string }>;
+};
+
+/** Read live owner-scoped status without a stale cache entry or another POST. */
+export async function getReaiSourceImportProgress(requestId: string, signal?: AbortSignal): Promise<ReaiSourceImportProgress> {
+  return await fetchGetData(`/api/reaigen/reai-agent/workspace/source-import/${encodeURIComponent(requestId)}/status/`, { signal, cache: "no-store" }) as ReaiSourceImportProgress;
+}
+
 export async function askReaiWorkspace(
   message: string,
   currentDraftId?: number,
@@ -3241,7 +3386,7 @@ export async function askReaiWorkspace(
   workspaceContext?: "creator" | "draft" | "settings" | "floorplan" | "virtual_tour",
   currentUploadId?: number,
   /** The Agent window's working pool: what the user dragged in. */
-  attachedItems?: Array<{ kind: "image"; upload_id: number } | { kind: "field"; path: string }>,
+  attachedItems?: Array<{ kind: "image" | "document" | "video"; upload_id: number } | { kind: "field"; path: string }>,
   currentTourId?: number,
   /**
    * Request context that is not a positional concern of the classic call.
@@ -3249,7 +3394,12 @@ export async function askReaiWorkspace(
    * listing to exist. Only a count is sent — it lets a plan include "add the
    * photos" as a step; the files stay in the browser until that step runs.
    */
-  options: { pendingPhotoCount?: number } = {},
+  options: {
+    pendingPhotoCount?: number;
+    pendingAttachments?: AgentAttachmentDescriptor[];
+    creationContextToken?: string | null;
+    sourceTokens?: string[];
+  } = {},
 ): Promise<ReaiAgentResponse> {
   const pendingPhotoCount = options.pendingPhotoCount && options.pendingPhotoCount > 0
     ? Math.min(24, Math.floor(options.pendingPhotoCount))
@@ -3268,6 +3418,9 @@ export async function askReaiWorkspace(
       attached_items: attachedItems?.length ? attachedItems : undefined,
       current_tour_id: currentTourId,
       pending_photo_count: pendingPhotoCount,
+      pending_attachments: options.pendingAttachments?.length ? options.pendingAttachments.slice(0, 24) : undefined,
+      creation_context_token: options.creationContextToken || undefined,
+      source_tokens: options.sourceTokens?.length ? options.sourceTokens.slice(0, 24) : undefined,
     }),
   });
 }
@@ -3296,7 +3449,7 @@ export async function applyReaiWorkspaceProposal(
   proposalToken: string,
   currentDraftId?: number,
   improvementConversationId: string | null = null,
-): Promise<{ applied: string[]; applied_draft_ids: number[]; current_draft: DraftDetailItem | null }> {
+): Promise<{ applied: string[]; applied_draft_ids: number[]; current_draft: DraftDetailItem | null; undo_revision_id?: number | null; applied_revision_id?: number | null }> {
   return request("/api/reaigen/reai-agent/workspace/apply/", {
     method: "POST",
     body: JSON.stringify({
@@ -3582,10 +3735,11 @@ export async function getAgentCreationHistory(
 export async function restoreAgentCreationRevision(
   draftId: number,
   revisionId: number,
+  expectedRevisionId?: number,
 ): Promise<{ restored: boolean; revision_id: number | null; draft: DraftDetailItem }> {
   return request(`/api/reaigen/reai-agent/workspace/drafts/${draftId}/history/${revisionId}/restore/`, {
     method: "POST",
-    body: JSON.stringify({ confirmed: true }),
+    body: JSON.stringify({ confirmed: true, ...(expectedRevisionId !== undefined ? { expected_revision_id: expectedRevisionId } : {}) }),
   });
 }
 

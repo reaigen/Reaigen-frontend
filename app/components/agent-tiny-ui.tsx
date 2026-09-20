@@ -3,6 +3,7 @@
 import { Component, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 
 import type { ReaiAgentResponse, ReaiAgentTinyUiBlock } from "../lib/api/client";
+import { rentalReturns } from "../lib/agent-finance";
 import {
   type GoogleMapCenter,
   type GoogleMapMarker,
@@ -617,17 +618,16 @@ function TinyFinanceCalculator({
   const calculations = useMemo(() => {
     const price = values.purchase_price;
     const rent = values.monthly_rent;
-    const costs = values.annual_operating_costs ?? 0;
+    const costs = values.annual_operating_costs;
     const area = values.area_m2;
     const down = values.down_payment;
     const rate = values.annual_interest_rate;
     const years = values.term_years;
     const result: Array<{ label: string; value: string }> = [];
     if (price && area) result.push({ label: copy.priceM2, value: `${(price / area).toLocaleString(lang, { maximumFractionDigits: 0 })} ${block.currency}` });
-    if (price && rent != null) {
-      result.push({ label: copy.yield, value: `${(rent * 12 / price * 100).toFixed(2)}%` });
-      result.push({ label: copy.capRate, value: `${(Math.max(0, rent * 12 - costs) / price * 100).toFixed(2)}%` });
-    }
+    const returns = rentalReturns(price, rent, costs);
+    if (returns.grossYield != null) result.push({ label: copy.yield, value: `${returns.grossYield.toFixed(2)}%` });
+    if (returns.capRate != null) result.push({ label: copy.capRate, value: `${returns.capRate.toFixed(2)}%` });
     if (price && down != null && rate != null && years) {
       const principal = Math.max(0, price - down);
       const months = Math.round(years * 12);
@@ -649,7 +649,7 @@ function TinyFinanceCalculator({
     { key: "term_years", label: copy.term, step: 1 },
   ];
   const discuss = () => onPrompt(
-    `Analyze this property financial scenario using purchase price ${values.purchase_price ?? "not set"} ${block.currency}, area ${values.area_m2 ?? "not set"} m2, monthly rent ${values.monthly_rent ?? "not set"} ${block.currency}, annual operating costs ${values.annual_operating_costs ?? 0} ${block.currency}, down payment ${values.down_payment ?? "not set"} ${block.currency}, annual interest rate ${values.annual_interest_rate ?? "not set"} percent, and term years ${values.term_years ?? "not set"}.`,
+    `Analyze this property financial scenario using purchase price ${values.purchase_price ?? "not set"} ${block.currency}, area ${values.area_m2 ?? "not set"} m2, monthly rent ${values.monthly_rent ?? "not set"} ${block.currency}, annual operating costs ${values.annual_operating_costs ?? "not set"} ${block.currency}, down payment ${values.down_payment ?? "not set"} ${block.currency}, annual interest rate ${values.annual_interest_rate ?? "not set"} percent, and term years ${values.term_years ?? "not set"}.`,
   );
   return (
     <section aria-label={block.title} className="floating-panel-shape overflow-hidden border border-violet-500/25 bg-card shadow-control">

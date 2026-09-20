@@ -65,7 +65,12 @@ export function resolveUnit(
   value: number | string | null | undefined,
   categories?: string | readonly string[],
 ) {
-  return findUnitById(units, value) ?? findUnit(units, value == null ? "" : String(value), categories);
+  const byId = findUnitById(units, value);
+  const allowedCategories = categories == null ? null : new Set(
+    (Array.isArray(categories) ? categories : [categories]).map(normalizedCategory),
+  );
+  if (byId) return !allowedCategories || allowedCategories.has(unitCategory(byId)) ? byId : null;
+  return findUnit(units, value == null ? "" : String(value), categories);
 }
 
 /** A display label supplied by the unit lookup, never a client-side fallback. */

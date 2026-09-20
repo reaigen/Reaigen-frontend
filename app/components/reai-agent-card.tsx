@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import Image from "next/image";
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 
@@ -13,8 +14,14 @@ import {
   getAgentMediaVersions,
   getDraft,
   getDraftService,
+  refreshDraft,
   getReaiAgentConsent,
+  getReaiSourceImportProgress,
   getReaiImprovementConsent,
+  intakeReaiAttachment,
+  intakeSavedReaiEvidence,
+  importReaiSources,
+  listDraftUploads,
   listUnits,
   restoreAgentCreationRevision,
   manageAgentMediaVersion,
@@ -23,10 +30,14 @@ import {
   type ReaiFeedbackReason,
   updateLocalization,
   uploadDraftPhoto,
+  uploadDraftAttachment,
   type AgentCreationRevision,
   type AgentMediaVersionGroup,
   type ReaiAgentConsent,
   type ReaiAgentResponse,
+  type ReaiAgentSourceImageCandidate,
+  type ReaiAgentIntakeResponse,
+  type ReaiSourceImportProgress,
   type ReaiImprovementConsent,
 } from "../lib/api/client";
 import {
@@ -40,8 +51,8 @@ import {
   readDragItem,
   removePoolItem,
   writeAgentPool,
-  type AgentPoolImage,
   type AgentPoolItem,
+  type AgentPoolField,
 } from "../lib/agent-pool";
 import {
   agentTranscriptKey,
@@ -53,7 +64,13 @@ import {
   executeAgentAction,
   type AgentActionResult,
 } from "../lib/agent-actions";
-import { isPlanConfirmation, isPlanStop } from "../lib/agent-plan-confirmation";
+import { isPlanConfirmation, isPlanStop, isProposalConfirmation } from "../lib/agent-plan-confirmation";
+import { pendingAgentTurn, pendingCreationContextToken } from "../lib/agent-conversation";
+import { canApplyDirectEdit, isCurrentEditContext, proposalUndo, type AgentEditContext, type AgentEditUndo } from "../lib/agent-direct-edit";
+import { MAX_SOURCE_IMAGE_PREVIEWS, markSourceImportAttempt, monitorSourceImportProgress, reviewedSourceImageFile, reviewedSourceImport, sourceImageCandidates, unattemptedSourceImports } from "../lib/agent-document-import";
+import { proposalFieldUnit } from "../lib/agent-proposal";
+import { consumeAcceptedAgentSources, discardAgentSourceTokens, discardPoolSourceTokens, isAgentAttachmentResponse } from "../lib/agent-sources";
+import { AGENT_ATTACHMENT_ACCEPT, MAX_AGENT_ATTACHMENTS, describeAgentAttachment, pendingAttachmentDescriptors, pendingImageCount, remainingAgentAttachments } from "../lib/agent-attachments";
 import {
   AgentPlanRunner,
   createPlanSnapshot,
@@ -61,10 +78,12 @@ import {
   isTerminalPlanPhase,
   openPlanQuestions,
   planApprovalDigests,
+  systemPlanClock,
   type AgentPlanSnapshot,
   type AgentPlanUploadResult,
 } from "../lib/agent-plan-runner";
-import { getSafeApiErrorMessage } from "../lib/api/error-message";
+import { getApiErrorCode, getSafeApiErrorMessage } from "../lib/api/error-message";
+import { agentJobFromAction, monitorAgentJob, type AgentJobState } from "../lib/agent-job-monitor";
 import { formatDate, t } from "../lib/i18n";
 import type { LocaleKey } from "../lib/locales";
 import { PROPERTY_FIELD_SECTIONS, subtypeOptions, type PropertyFieldDefinition, type PropertyType } from "../lib/property-field-registry";
@@ -75,9 +94,10 @@ import {
   dispatchReaiViewerAction,
   readReaiViewerActionResult,
 } from "../lib/reai-viewer-actions";
-import { baseUnitForCategory, resolveUnit, unitLabel, type UnitLookup } from "../lib/unit-catalog";
+import { resolveUnit, unitLabel, type UnitLookup } from "../lib/unit-catalog";
 import { Button } from "../lib/ui/button";
 import { cn } from "../lib/utils";
+import { randomUUID } from "../lib/uuid";
 import { REAI_COMPOSE_EVENT, readReaiComposeDetail } from "../lib/reai-compose";
 import { AgentMiniUi } from "./agent-mini-ui";
 import { AgentPlanCard } from "./agent-plan-card";
@@ -85,7 +105,7 @@ import { AgentTinyUi } from "./agent-tiny-ui";
 import { MediaVersionCard, type MediaAction } from "./draft-version-manager";
 import { useAuth } from "./hooks/use-auth";
 import { StatusPill } from "./status-pill";
-import { AgentIcon, SearchIcon, VersionsIcon, LayoutIcon, SparklesIcon, CheckIcon, CloseIcon, EditIcon, LockIcon, InfoIcon, ImageIcon } from "./icons";
+import { AgentIcon, SearchIcon, VersionsIcon, LayoutIcon, SparklesIcon, CheckIcon, CloseIcon, EditIcon, LockIcon, InfoIcon, DocumentIcon, PlusIcon } from "./icons";
 
 // Maps a quick-action key to its icon, so the agent suggestions read as
 // distinct, recognisable actions rather than flat text rows.
@@ -218,8 +238,11 @@ type ChatTurn = {
   feedback?: boolean;
   /** Set while the reason picker is open for a thumbs-down on this turn. */
   feedbackReasonOpen?: boolean;
-  proposalStatus?: "applied" | "dismissed";
+  proposalStatus?: "pending" | "applied" | "failed" | "undone" | "dismissed";
+  directEdit?: boolean;
+  undo?: AgentEditUndo;
   actionStatus?: "pending" | "applied" | "failed" | "dismissed";
+  job?: AgentJobState;
   /** The action plan this turn is (the plan card) or belongs to (a step's confirm card). */
   planId?: string;
   /** Set on a step's own confirm card; its buttons go through the plan runner. */
@@ -227,6 +250,10 @@ type ChatTurn = {
   /** The plan card's live state, parked with the transcript so a reload can resume it. */
   planState?: AgentPlanSnapshot;
 };
+
+type AgentDocumentSource = File | { name: string; uploadId: number; draftId: number };
+type SourceImageReview = { key: string; source: AgentDocumentSource; candidate: ReaiAgentSourceImageCandidate; selectedFile?: File; uploaded?: boolean; draftId?: number };
+type SourceImportRetry = { options: Parameters<typeof importReaiSources>[0]; generation: number; userId?: number };
 
 function withPlanSnapshot(turns: ChatTurn[], snapshot: AgentPlanSnapshot): ChatTurn[] {
   const ended = isTerminalPlanPhase(snapshot.phase);
@@ -243,11 +270,14 @@ function withPlanSnapshot(turns: ChatTurn[], snapshot: AgentPlanSnapshot): ChatT
 
 /** The confirm card after its action ran, identical for a tapped card and a plan step. */
 function withAppliedAction(turn: ChatTurn, answer: ReaiAgentResponse, outcome: AgentActionResult): ChatTurn {
+  const job = agentJobFromAction(outcome);
+  const actionStatus = job?.status === "failed" ? "failed" : job && job.status !== "completed" ? "pending" : "applied";
   if (outcome.kind === "translate_description") {
     const result = outcome.result;
     return {
       ...turn,
-      actionStatus: "applied",
+      actionStatus,
+      ...(job ? { job } : {}),
       response: {
         ...answer,
         action_token: null,
@@ -281,7 +311,8 @@ function withAppliedAction(turn: ChatTurn, answer: ReaiAgentResponse, outcome: A
   }
   return {
     ...turn,
-    actionStatus: "applied",
+    actionStatus,
+    ...(job ? { job } : {}),
     response: { ...answer, action_token: null },
   };
 }
@@ -305,6 +336,8 @@ const revisionFieldKeys = {
 } as const;
 
 function agentFieldLabel(field: string, lang: string): string {
+  const definition = specFieldDefinitions.get(field.replace(/^specs\./, ""));
+  if (definition) return t(definition.labelKey, lang);
   const key = revisionFieldKeys[field as keyof typeof revisionFieldKeys];
   return key ? t(key, lang) : field.replaceAll("_", " ");
 }
@@ -323,21 +356,12 @@ function proposalValue(
     ? null
     : new Intl.NumberFormat(lang || "en", { maximumFractionDigits: 2 }).format(number);
   const firstCreation = answer.draft_results?.[0]?.creation_data;
-  if (field === "area" && formatted) {
-    const measurements = firstCreation?.floorplan_measurements as { total_floor_area_m2?: number } | undefined;
-    const unit = measurements?.total_floor_area_m2 != null
-      ? baseUnitForCategory(units, "AREA")
-      : resolveUnit(units, firstCreation?.area_unit as string | number | null | undefined, "AREA");
-    const label = unitLabel(unit);
-    return `${formatted}${label ? ` ${label}` : ""}`;
+  if (["currency", "area_unit", "lot_size_unit"].includes(field)) {
+    const unit = resolveUnit(units, typeof value === "number" || typeof value === "string" ? value : null, field === "currency" ? "CURRENCY" : "AREA");
+    return unitLabel(unit) || t("reai.emptyValue", lang);
   }
-  if (field === "lot_size" && formatted) {
-    const unit = resolveUnit(units, firstCreation?.lot_size_unit as string | number | null | undefined, "AREA");
-    const label = unitLabel(unit);
-    return `${formatted}${label ? ` ${label}` : ""}`;
-  }
-  if (field === "price" && formatted) {
-    const unit = resolveUnit(units, firstCreation?.currency, "CURRENCY");
+  if ((field === "area" || field === "lot_size" || field === "price") && formatted) {
+    const unit = proposalFieldUnit(field, answer.proposed_changes, firstCreation, units);
     const label = unitLabel(unit);
     return `${formatted}${label ? ` ${label}` : ""}`;
   }
@@ -486,25 +510,11 @@ function safeAgentNavigationPath(answer: ReaiAgentResponse): string | null {
   return null;
 }
 
-function isExplicitProposalConfirmation(value: string): boolean {
-  const normalized = value
-    .normalize("NFD")
-    .replace(/[\u0300-\u036f]/g, "")
-    .toLocaleLowerCase()
-    .replace(/\s+/g, " ")
-    .trim();
-
-  return [
-    /\b(save|apply|confirm)\b/,
-    /\buse (it|this|that)(?: change)?\b/,
-    /\b(uloz|pouzi|potvrd|aplikuj)\b/,
-    /\b(speichern|anwenden|bestatigen|ubernehmen)\b/,
-  ].some((pattern) => pattern.test(normalized));
-}
-
 export function ReaiAgentCard({
   draftId,
   currentUploadId,
+  currentField,
+  onFieldClear,
   currentTourId,
   workspaceContext = draftId ? "draft" : "creator",
   lang,
@@ -514,6 +524,8 @@ export function ReaiAgentCard({
 }: {
   draftId?: number;
   currentUploadId?: number;
+  currentField?: AgentPoolField;
+  onFieldClear?: () => void;
   currentTourId?: number;
   workspaceContext?: "creator" | "draft" | "settings" | "floorplan" | "virtual_tour";
   lang: string;
@@ -530,10 +542,32 @@ export function ReaiAgentCard({
   const [improvementConversationId, setImprovementConversationId] = useState<string | null>(null);
   const [message, setMessage] = useState("");
   const composerRef = useRef<HTMLTextAreaElement>(null);
+  const attachmentInputRef = useRef<HTMLInputElement>(null);
   const [turns, setTurns] = useState<ChatTurn[]>([]);
   const [busy, setBusy] = useState(false);
-  /** Photos dropped before the listing they belong to exists. */
-  const [pendingPhotos, setPendingPhotos] = useState<File[]>([]);
+  /** Local files waiting for a listing, or a failed upload's explicit retry. */
+  const [pendingAttachments, setPendingAttachments] = useState<File[]>([]);
+  const [attachmentDraftId, setAttachmentDraftId] = useState<number | null>(null);
+  const [attachmentNotice, setAttachmentNotice] = useState<string | null>(null);
+  const [intakeBusy, setIntakeBusy] = useState(false);
+  const sourceTokensRef = useRef(new Map<File, string>());
+  // Keep original source authority for explicit follow-up/retry, separately
+  // from fresh sources automatically sent with the next pending draft turn.
+  const sourceArchiveRef = useRef(new Map<AgentDocumentSource, { token: string; draftId?: number }>());
+  const sourceImportAttemptsRef = useRef(new Set<string>());
+  const sourceImportBusyRef = useRef(false);
+  const sourceImportControllerRef = useRef<AbortController | null>(null);
+  const [sourceImportProgress, setSourceImportProgress] = useState<{ id: string; progress: ReaiSourceImportProgress | null } | null>(null);
+  const [sourceImportRetry, setSourceImportRetry] = useState<SourceImportRetry | null>(null);
+  const [sourceImportFollowUp, setSourceImportFollowUp] = useState<SourceImportRetry | null>(null);
+  const [sourceImages, setSourceImages] = useState<SourceImageReview[]>([]);
+  const [savedEvidence, setSavedEvidence] = useState<{ draftId: number; files: DraftUpload[] } | null>(null);
+  const intakeGenerationRef = useRef(0);
+  const assistSequenceRef = useRef(0);
+  const editContextRef = useRef<AgentEditContext>({ draftId, userId: user?.id, generation: 0, consented: false });
+  useEffect(() => {
+    editContextRef.current = { draftId, userId: user?.id, generation: intakeGenerationRef.current, consented: Boolean(consent?.consented) };
+  }, [draftId, user?.id, consent?.consented]);
   const [showHistory, setShowHistory] = useState(false);
   const [showMediaHistory, setShowMediaHistory] = useState(false);
   const [history, setHistory] = useState<AgentCreationRevision[]>([]);
@@ -557,8 +591,9 @@ export function ReaiAgentCard({
    * conversation id and the language.
    */
   const runnerRef = useRef<AgentPlanRunner<AgentActionResult> | null>(null);
+  const jobMonitorsRef = useRef(new Map<number, AbortController>());
   const turnsRef = useRef<ChatTurn[]>([]);
-  const pendingPhotosRef = useRef<File[]>([]);
+  const pendingAttachmentsRef = useRef<File[]>([]);
   const improvementConversationIdRef = useRef<string | null>(null);
   const langRef = useRef(lang);
   /**
@@ -570,9 +605,32 @@ export function ReaiAgentCard({
   const [answering, setAnswering] = useState<{ planId: string; stepId: string; text: string } | null>(null);
 
   useEffect(() => { turnsRef.current = turns; }, [turns]);
-  useEffect(() => { pendingPhotosRef.current = pendingPhotos; }, [pendingPhotos]);
+  useEffect(() => { pendingAttachmentsRef.current = pendingAttachments; }, [pendingAttachments]);
   useEffect(() => { improvementConversationIdRef.current = improvementConversationId; }, [improvementConversationId]);
   useEffect(() => { langRef.current = lang; }, [lang]);
+
+  useEffect(() => {
+    for (const turn of turns) {
+      const job = turn.job;
+      if (!job || job.status !== "pending" || jobMonitorsRef.current.has(turn.id)) continue;
+      const controller = new AbortController();
+      jobMonitorsRef.current.set(turn.id, controller);
+      void monitorAgentJob(job, { getService: getDraftService, ...systemPlanClock, signal: controller.signal })
+        .then(async (status) => {
+          if (!status || controller.signal.aborted) return;
+          setTurns((current) => current.map((entry) => entry.id === turn.id ? {
+            ...entry,
+            job: { ...job, status },
+            actionStatus: status === "completed" ? "applied" : status === "failed" ? "failed" : "pending",
+          } : entry));
+          if (status === "completed") {
+            try { await refreshDraft(job.draftId); } catch { /* The job result is known even if refreshing the listing fails. */ }
+            if (!controller.signal.aborted) window.dispatchEvent(new CustomEvent("reai-creations-updated", { detail: { draftIds: [job.draftId] } }));
+          }
+        })
+        .finally(() => jobMonitorsRef.current.delete(turn.id));
+    }
+  }, [turns]);
 
   useEffect(() => {
     const handleResult = (event: Event) => {
@@ -622,13 +680,14 @@ export function ReaiAgentCard({
   const restoredTranscriptKeyRef = useRef<string | null>(null);
   const [pool, setPool] = useState<AgentPoolItem[]>([]);
   const [poolRestored, setPoolRestored] = useState(false);
-  const restoredPoolKeyRef = useRef<string | null>(null);
+  const [restoredPoolKey, setRestoredPoolKey] = useState<string | null>(null);
   const [dropActive, setDropActive] = useState(false);
   const [uploading, setUploading] = useState(false);
   const dragDepthRef = useRef(0);
   const compactPanel = panel && compact;
   const transcriptKey = agentTranscriptKey();
   const poolKey = agentPoolKey(workspaceContext, draftId);
+  const requestPool = currentField ? addPoolItem(pool, currentField) : pool;
   const quickActions = workspaceContext === "settings"
     ? (["reai.quickSettingsAgent", "reai.quickSettingsLanguage", "reai.quickSettingsSecurity"] as const)
     : draftId
@@ -651,11 +710,17 @@ export function ReaiAgentCard({
     return () => window.removeEventListener(REAI_COMPOSE_EVENT, compose);
   }, []);
 
-  // Each page mounts its own shell, so this component is recreated on every
-  // navigation. Rehydrate the parked transcript on mount, then keep the parked
-  // copy in step with it.
+  // The persistent workspace shell carries this transcript across draft routes.
+  // Rehydrate after a real remount, without replaying interrupted writes.
   useEffect(() => {
-    const restored = readAgentTranscript<ChatTurn>(transcriptKey) ?? [];
+    const restored = (readAgentTranscript<ChatTurn>(transcriptKey) ?? []).map((turn): ChatTurn => (
+      turn.directEdit && turn.proposalStatus === "pending" ? {
+        ...turn,
+        content: t("reai.directEdit.failed", langRef.current),
+        proposalStatus: "failed",
+        response: turn.response ? { ...turn.response, proposal_token: null } : undefined,
+      } : turn
+    ));
     nextTurnIdRef.current = restored.reduce((highest, turn) => (
       typeof turn.id === "number" && turn.id > highest ? turn.id : highest
     ), nextTurnIdRef.current);
@@ -676,14 +741,14 @@ export function ReaiAgentCard({
   // transcript: what you dropped is still there after a navigation.
   useEffect(() => {
     setPool(readAgentPool(poolKey));
-    restoredPoolKeyRef.current = poolKey;
+    setRestoredPoolKey(poolKey);
     setPoolRestored(true);
   }, [poolKey]);
 
   useEffect(() => {
-    if (!poolRestored || restoredPoolKeyRef.current !== poolKey) return;
+    if (!poolRestored || restoredPoolKey !== poolKey) return;
     writeAgentPool(poolKey, pool);
-  }, [pool, poolKey, poolRestored]);
+  }, [pool, poolKey, poolRestored, restoredPoolKey]);
 
   useEffect(() => {
     let active = true;
@@ -758,6 +823,26 @@ export function ReaiAgentCard({
   };
 
   const resetConversation = useCallback(() => {
+    intakeGenerationRef.current += 1;
+    for (const controller of jobMonitorsRef.current.values()) controller.abort();
+    jobMonitorsRef.current.clear();
+    sourceTokensRef.current.clear();
+    sourceArchiveRef.current.clear();
+    sourceImportAttemptsRef.current.clear();
+    sourceImportBusyRef.current = false;
+    sourceImportControllerRef.current?.abort();
+    sourceImportControllerRef.current = null;
+    setSourceImportProgress(null);
+    setSourceImportRetry(null);
+    setSourceImportFollowUp(null);
+    setSourceImages([]);
+    setSavedEvidence(null);
+    pendingAttachmentsRef.current = [];
+    setPendingAttachments([]);
+    setAttachmentDraftId(null);
+    setAttachmentNotice(null);
+    setIntakeBusy(false);
+    setUploading(false);
     if (viewerActionTimeoutRef.current != null) {
       window.clearTimeout(viewerActionTimeoutRef.current);
       viewerActionTimeoutRef.current = null;
@@ -816,7 +901,22 @@ export function ReaiAgentCard({
   // its next step anyway, but polling and uploads must not carry on meanwhile.
   useEffect(() => {
     const consentChanged = (event: Event) => {
+      setConsentReloadKey((current) => current + 1);
       if ((event as CustomEvent<{ enabled?: boolean }>).detail?.enabled === true) return;
+      intakeGenerationRef.current += 1;
+      editContextRef.current = { ...editContextRef.current, consented: false, generation: intakeGenerationRef.current };
+      setConsent((current) => current ? { ...current, consented: false } : null);
+      sourceImportControllerRef.current?.abort();
+      sourceImportControllerRef.current = null;
+      sourceImportBusyRef.current = false;
+      setSourceImportProgress(null);
+      setSourceImportRetry(null);
+      setSourceImportFollowUp(null);
+      setBusy(false);
+      setIntakeBusy(false);
+      setUploading(false);
+      for (const controller of jobMonitorsRef.current.values()) controller.abort();
+      jobMonitorsRef.current.clear();
       const runner = runnerRef.current;
       runnerRef.current = null;
       void runner?.stop();
@@ -828,7 +928,13 @@ export function ReaiAgentCard({
 
   // Leaving the workspace unmounts the panel: stop watching, but do not cancel.
   // The parked plan comes back paused and waits for Continue.
-  useEffect(() => () => runnerRef.current?.dispose(), []);
+  useEffect(() => () => {
+    intakeGenerationRef.current += 1;
+    sourceImportControllerRef.current?.abort();
+    for (const controller of jobMonitorsRef.current.values()) controller.abort();
+    jobMonitorsRef.current.clear();
+    runnerRef.current?.dispose();
+  }, []);
 
   const newTurnId = () => {
     nextTurnIdRef.current = Math.max(Date.now(), nextTurnIdRef.current + 1);
@@ -841,11 +947,13 @@ export function ReaiAgentCard({
     _expectedCount: number,
     startIndex: number,
   ): Promise<AgentPlanUploadResult> => {
-    const files = pendingPhotosRef.current;
+    const generation = intakeGenerationRef.current;
+    const files = pendingAttachmentsRef.current.filter((file) => describeAgentAttachment(file)?.kind === "image");
     if (!files.length) return { uploadedUploadIds: [], failedCount: 0, attemptedCount: 0 };
     const uploadedUploadIds: number[] = [];
     const failed: File[] = [];
     for (const [index, file] of files.entries()) {
+      if (generation !== intakeGenerationRef.current) return { uploadedUploadIds, failedCount: files.length - uploadedUploadIds.length, attemptedCount: files.length };
       try {
         const upload = await uploadDraftPhoto(planDraftId, file, startIndex + index, {});
         uploadedUploadIds.push(upload.id);
@@ -854,9 +962,10 @@ export function ReaiAgentCard({
       }
     }
     // Keep what failed, plus anything dropped while the upload ran.
-    const remaining = [...failed, ...pendingPhotosRef.current.filter((file) => !files.includes(file))];
-    pendingPhotosRef.current = remaining;
-    setPendingPhotos(remaining);
+    if (generation !== intakeGenerationRef.current) return { uploadedUploadIds, failedCount: failed.length, attemptedCount: files.length };
+    const remaining = remainingAgentAttachments(pendingAttachmentsRef.current, files, failed);
+    pendingAttachmentsRef.current = remaining;
+    setPendingAttachments(remaining);
     return { uploadedUploadIds, failedCount: failed.length, attemptedCount: files.length };
   };
 
@@ -936,7 +1045,7 @@ export function ReaiAgentCard({
         },
       }]);
     },
-    pendingPhotoCount: () => pendingPhotosRef.current.length,
+    pendingPhotoCount: () => pendingImageCount(pendingAttachmentsRef.current),
     conversationId: () => improvementConversationIdRef.current,
     describeError: (err) => {
       const text = errorText(err, langRef.current);
@@ -1050,9 +1159,127 @@ export function ReaiAgentCard({
   /** Only the newest plan can be acted on; older plan cards are a record. */
   const latestPlanTurnId = [...turns].reverse().find((turn) => turn.response?.action_code === "action_plan" && turn.planState)?.id;
 
+  const forgetExpiredSources = (tokens: readonly string[]) => {
+    discardAgentSourceTokens(sourceTokensRef.current, tokens);
+    for (const [file, source] of sourceArchiveRef.current) if (tokens.includes(source.token)) sourceArchiveRef.current.delete(file);
+    setPool((current) => discardPoolSourceTokens(current, tokens));
+    setSourceImportRetry(null);
+    setSourceImportFollowUp(null);
+    setAttachmentNotice(t("reai.attachments.sourceExpired", lang));
+  };
+
+  const discussSources = () => {
+    const tokens = [...sourceArchiveRef.current.values()].filter((source) => source.draftId === draftId).map((source) => source.token).slice(-24);
+    if (!tokens.length) {
+      setAttachmentNotice(t("reai.attachments.sourceExpired", lang));
+      return;
+    }
+    setSourceImportFollowUp({
+      options: { sourceTokens: [...new Set(tokens)], message: "", currentDraftId: draftId },
+      generation: intakeGenerationRef.current, userId: user?.id,
+    });
+    composerRef.current?.focus();
+  };
+
+  const importSources = async (options: Parameters<typeof importReaiSources>[0]): Promise<ReaiAgentResponse> => {
+    const generation = intakeGenerationRef.current;
+    const retry: SourceImportRetry = { options, generation, userId: user?.id };
+    markSourceImportAttempt(options.sourceTokens, sourceImportAttemptsRef.current, options.currentDraftId);
+    sourceImportBusyRef.current = true;
+    setSourceImportFollowUp(null);
+    const requestId = randomUUID();
+    const controller = new AbortController();
+    sourceImportControllerRef.current?.abort();
+    sourceImportControllerRef.current = controller;
+    setSourceImportProgress({ id: requestId, progress: null });
+    void monitorSourceImportProgress({
+      ...systemPlanClock, signal: controller.signal,
+      getStatus: () => getReaiSourceImportProgress(requestId, controller.signal),
+      onProgress: (progress) => {
+        if (generation === intakeGenerationRef.current && user?.id === editContextRef.current.userId && !controller.signal.aborted) {
+          setSourceImportProgress({ id: requestId, progress });
+        }
+      },
+    });
+    try {
+      const response = reviewedSourceImport(await importReaiSources({ ...options, importRequestId: requestId }));
+      if (generation === intakeGenerationRef.current && user?.id === editContextRef.current.userId) {
+        setSourceImportRetry(response.source_import?.status === "unavailable" ? retry : null);
+        setSourceImportFollowUp(response.source_import?.requires_input ? retry : null);
+      }
+      return response;
+    } catch (err) {
+      if (generation === intakeGenerationRef.current && user?.id === editContextRef.current.userId && getApiErrorCode(err) !== "agent_source_expired") setSourceImportRetry(retry);
+      throw err;
+    } finally {
+      controller.abort();
+      if (generation === intakeGenerationRef.current) {
+        sourceImportBusyRef.current = false;
+        if (sourceImportControllerRef.current === controller) sourceImportControllerRef.current = null;
+        setSourceImportProgress((current) => current?.id === requestId ? null : current);
+      }
+    }
+  };
+
+  const retrySourceImport = async () => {
+    const retry = sourceImportRetry;
+    if (!retry || busy || uploading || intakeBusy || sourceImportBusyRef.current || !consent?.consented
+      || retry.generation !== intakeGenerationRef.current || retry.userId !== user?.id || retry.options.currentDraftId !== draftId) return;
+    setBusy(true);
+    setError(null);
+    try {
+      const response = await importSources(retry.options);
+      if (retry.generation !== intakeGenerationRef.current || retry.userId !== editContextRef.current.userId) return;
+      consumeAcceptedAgentSources(sourceTokensRef.current, retry.options.sourceTokens, response.creation_context_token);
+      if (response.creation_context_token) setPool((current) => discardPoolSourceTokens(current, retry.options.sourceTokens));
+      setTurns((current) => [...current, { id: newTurnId(), role: "assistant", content: response.reply, response }]);
+    } catch (err) {
+      if (retry.generation === intakeGenerationRef.current) {
+        if (getApiErrorCode(err) === "agent_source_expired") forgetExpiredSources(retry.options.sourceTokens);
+        setError(errorText(err, lang));
+      }
+    } finally {
+      if (retry.generation === intakeGenerationRef.current) setBusy(false);
+    }
+  };
+
+  /** Shared signed apply path; callers own the serialized busy state. */
+  const submitProposal = async (turnId: number, answer: ReaiAgentResponse, context: AgentEditContext, conversationId: string | null, direct = false): Promise<boolean> => {
+    if (!answer.proposal_token || !isCurrentEditContext(context, { ...editContextRef.current, generation: intakeGenerationRef.current })) return false;
+    try {
+      const result = await applyReaiWorkspaceProposal(answer.proposal_token, context.draftId, conversationId);
+      if (context.generation !== intakeGenerationRef.current || context.userId !== editContextRef.current.userId || !editContextRef.current.consented) return false;
+      const stillCurrent = isCurrentEditContext(context, { ...editContextRef.current, generation: intakeGenerationRef.current });
+      if (result.current_draft && stillCurrent) onDraftUpdated?.(result.current_draft);
+      window.dispatchEvent(new CustomEvent("reai-creations-updated", { detail: { draftIds: result.applied_draft_ids } }));
+      setTurns((current) => current.map((turn) => turn.id === turnId ? {
+        ...turn,
+        proposalStatus: "applied",
+        ...(direct ? { content: t("reai.directEdit.saved", lang), undo: proposalUndo(result, context.draftId) } : {}),
+        response: { ...answer, proposal_token: null },
+      } : turn.undo && result.applied_draft_ids.includes(turn.undo.draftId) ? { ...turn, undo: undefined } : turn));
+      if (showHistory && stillCurrent) await loadHistory();
+      return true;
+    } catch (err) {
+      if (context.generation !== intakeGenerationRef.current || context.userId !== editContextRef.current.userId || !editContextRef.current.consented) return false;
+      setError(errorText(err, lang));
+      if (direct) setTurns((current) => current.map((turn) => turn.id === turnId ? {
+        ...turn,
+        content: t("reai.directEdit.failed", lang),
+        proposalStatus: "failed",
+        // A dropped response may have committed. Never automatically replay it.
+        response: { ...answer, proposal_token: null },
+      } : turn));
+      return false;
+    }
+  };
+
   const ask = async (override?: string) => {
     const requestText = (override ?? message).trim();
-    if (!requestText || busy) return;
+    if (!requestText || busy || uploading || intakeBusy || sourceImportBusyRef.current || !consent?.consented) return;
+    assistSequenceRef.current += 1;
+    const generation = intakeGenerationRef.current;
+    const editContext: AgentEditContext = { draftId, userId: user?.id, generation, consented: Boolean(consent?.consented) };
     const userTurn: ChatTurn = { id: newTurnId(), role: "user", content: requestText };
     setTurns((current) => [...current, userTurn]);
     setMessage("");
@@ -1085,21 +1312,18 @@ export function ReaiAgentCard({
       && latestPlan.phase === "awaiting_approval"
       && !latestPlan.plan.approval
       && latestPlan.plan.approval_options.includes("all")
-      && openPlanQuestions(latestPlan.plan, pendingPhotos.length).length === 0
+      && openPlanQuestions(latestPlan.plan, pendingImageCount(pendingAttachments)).length === 0
       && isPlanConfirmation(requestText, lang)
     ) {
-      void planRunnerFor(latestPlanTurn)?.approve("all", planApprovalDigests(latestPlan.plan), pendingPhotos.length);
+      void planRunnerFor(latestPlanTurn)?.approve("all", planApprovalDigests(latestPlan.plan), pendingImageCount(pendingAttachments));
       return;
     }
 
-    const pendingProposal = [...turns].reverse().find((turn) => (
-      turn.role === "assistant"
-      && Boolean(turn.response?.proposal_token)
-      && !turn.proposalStatus
-    ));
+    const pendingProposal = pendingAgentTurn(turns);
     if (
       pendingProposal?.response?.proposal_token
-      && isExplicitProposalConfirmation(requestText)
+      && !sourceImportFollowUp
+      && isProposalConfirmation(requestText, lang)
     ) {
       const applied = await apply(pendingProposal.id, pendingProposal.response);
       if (applied) {
@@ -1111,21 +1335,21 @@ export function ReaiAgentCard({
       }
       return;
     }
-    const pendingViewerAction = [...turns].reverse().find((turn) => (
-      turn.role === "assistant"
-      && Boolean(turn.response?.client_action?.confirmation_required)
-      && turn.actionStatus !== "applied"
-      && turn.actionStatus !== "dismissed"
-    ));
+    const pendingViewerAction = pendingAgentTurn(turns);
     if (
-      pendingViewerAction?.response?.client_action
-      && isExplicitProposalConfirmation(requestText)
+      pendingViewerAction?.response?.client_action?.confirmation_required
+      && isProposalConfirmation(requestText, lang)
     ) {
       void confirmViewerAction(pendingViewerAction.id, pendingViewerAction.response);
       return;
     }
 
     const conversation = turns.slice(-4).map(({ role, content }) => ({ role, content }));
+    const sourceTokens = [...sourceTokensRef.current.values(), ...pool.flatMap((item) => item.kind === "document" && item.sourceToken ? [item.sourceToken] : [])];
+    const followUpTokens = sourceImportFollowUp?.options.currentDraftId === draftId
+      && sourceImportFollowUp?.generation === generation && sourceImportFollowUp?.userId === user?.id
+      ? sourceImportFollowUp.options.sourceTokens : [];
+    const importTokens = [...new Set([...followUpTokens, ...unattemptedSourceImports(sourceTokens, sourceImportAttemptsRef.current, draftId)])];
     setBusy(true);
     setError(null);
     try {
@@ -1133,13 +1357,12 @@ export function ReaiAgentCard({
       // hand the router no pending code. Looking past them to an older turn
       // would resurrect a finished flow and switch off the copy-edit guard the
       // server keeps for a message with no pending action.
-      const latestResponseTurn = [...turns]
-        .reverse()
-        .find((turn) => turn.role === "assistant" && turn.response);
-      const pendingActionCode = latestResponseTurn?.planId || latestResponseTurn?.response?.action_code === "action_plan"
-        ? undefined
-        : latestResponseTurn?.response?.action_code;
-      const response = await askReaiWorkspace(
+      const pendingActionCode = pendingAgentTurn(turns)?.response?.action_code;
+      const response = importTokens.length ? await importSources({
+        sourceTokens: importTokens, message: requestText, currentDraftId: draftId,
+        creationContextToken: !draftId ? pendingCreationContextToken(turns) : null,
+        conversation, language: lang,
+      }) : await askReaiWorkspace(
         requestText,
         draftId,
         conversation,
@@ -1147,11 +1370,19 @@ export function ReaiAgentCard({
         undefined,
         pendingActionCode,
         workspaceContext,
-        currentUploadId,
-        poolItemsForRequest(pool),
+        currentField ? undefined : currentUploadId,
+        poolItemsForRequest(requestPool),
         currentTourId,
-        { pendingPhotoCount: pendingPhotos.length },
+        {
+          pendingPhotoCount: pendingImageCount(pendingAttachments),
+          pendingAttachments: pendingAttachmentDescriptors(pendingAttachments),
+          creationContextToken: !draftId ? pendingCreationContextToken(turns) : null,
+          sourceTokens,
+        },
       );
+      if (generation !== intakeGenerationRef.current || editContext.userId !== editContextRef.current.userId || !editContextRef.current.consented) return;
+      consumeAcceptedAgentSources(sourceTokensRef.current, sourceTokens, response.creation_context_token);
+      if (response.creation_context_token) setPool((current) => discardPoolSourceTokens(current, sourceTokens));
       if (!draftId && response.operation === "list" && response.search_query) {
         window.dispatchEvent(new CustomEvent("reai-workspace-search", {
           detail: { query: response.search_query },
@@ -1178,6 +1409,8 @@ export function ReaiAgentCard({
       }
       if (response.improvement_conversation_id) setImprovementConversationId(response.improvement_conversation_id);
       const assistantTurnId = newTurnId();
+      const directEdit = !importTokens.length && isCurrentEditContext(editContext, { ...editContextRef.current, generation: intakeGenerationRef.current })
+        && canApplyDirectEdit(response, editContext);
       const plan = response.action_code === "action_plan" && response.plan && response.plan_token
         ? response.plan
         : null;
@@ -1189,6 +1422,7 @@ export function ReaiAgentCard({
         role: "assistant",
         content: response.reply,
         response,
+        ...(directEdit ? { directEdit: true, proposalStatus: "pending" as const, content: t("reai.directEdit.saving", lang) } : {}),
         ...(planSnapshot ? { planId: planSnapshot.planId, planState: planSnapshot } : {}),
       };
       if (planSnapshot) stopLivePlans();
@@ -1196,12 +1430,16 @@ export function ReaiAgentCard({
         ...current,
         assistantTurn,
       ]);
+      if (directEdit) {
+        await submitProposal(assistantTurnId, response, editContext, response.improvement_conversation_id ?? improvementConversationId, true);
+        return;
+      }
       if (planSnapshot) {
         // Registered, not started: nothing runs until the creator approves.
         const runner = createPlanRunner();
         runner.start(assistantTurnId, planSnapshot);
         runnerRef.current = runner;
-        const typedQuestion = openPlanQuestions(planSnapshot.plan, pendingPhotos.length)
+        const typedQuestion = openPlanQuestions(planSnapshot.plan, pendingImageCount(pendingAttachments))
           .find((step) => step.question?.allows_text);
         if (typedQuestion?.question) {
           setAnswering({ planId: planSnapshot.planId, stepId: typedQuestion.step_id, text: typedQuestion.question.text });
@@ -1216,36 +1454,51 @@ export function ReaiAgentCard({
         router.push(navigationPath);
       }
     } catch (err) {
+      if (generation !== intakeGenerationRef.current) return;
+      if (getApiErrorCode(err) === "agent_source_expired") {
+        forgetExpiredSources(importTokens.length ? importTokens : sourceTokens);
+      }
       setError(errorText(err, lang));
       setTurns((current) => current.filter((turn) => turn.id !== userTurn.id));
       setMessage(requestText);
     } finally {
-      setBusy(false);
+      if (generation === intakeGenerationRef.current) setBusy(false);
     }
   };
 
   const apply = async (turnId: number, answer: ReaiAgentResponse): Promise<boolean> => {
-    if (!answer.proposal_token) return false;
+    if (!answer.proposal_token || busy || uploading || intakeBusy || !consent?.consented) return false;
+    const generation = intakeGenerationRef.current;
     setBusy(true);
     setError(null);
     try {
-      const result = await applyReaiWorkspaceProposal(answer.proposal_token, draftId, improvementConversationId);
-      if (result.current_draft) onDraftUpdated?.(result.current_draft);
-      window.dispatchEvent(new CustomEvent("reai-creations-updated", {
-        detail: { draftIds: result.applied_draft_ids },
-      }));
-      if (showHistory) await loadHistory();
-      setTurns((current) => current.map((turn) => turn.id === turnId ? {
-        ...turn,
-        proposalStatus: "applied",
-        response: { ...answer, proposal_token: null },
-      } : turn));
-      return true;
-    } catch (err) {
-      setError(errorText(err, lang));
-      return false;
+      return await submitProposal(turnId, answer, { draftId, userId: user?.id, generation, consented: true }, improvementConversationId);
     } finally {
-      setBusy(false);
+      if (generation === intakeGenerationRef.current) setBusy(false);
+    }
+  };
+
+  const undoProposal = async (turn: ChatTurn) => {
+    const undo = turn.undo;
+    if (!undo || undo.draftId !== draftId || busy || uploading || intakeBusy || !consent?.consented) return;
+    const context: AgentEditContext = { draftId, userId: user?.id, generation: intakeGenerationRef.current, consented: true };
+    if (!isCurrentEditContext(context, { ...editContextRef.current, generation: intakeGenerationRef.current })) return;
+    setBusy(true);
+    setError(null);
+    try {
+      const result = await restoreAgentCreationRevision(undo.draftId, undo.revisionId, undo.expectedRevisionId);
+      if (context.generation !== intakeGenerationRef.current || context.userId !== editContextRef.current.userId || !editContextRef.current.consented) return;
+      const stillCurrent = isCurrentEditContext(context, { ...editContextRef.current, generation: intakeGenerationRef.current });
+      if (stillCurrent) onDraftUpdated?.(result.draft);
+      window.dispatchEvent(new CustomEvent("reai-creations-updated", { detail: { draftIds: [undo.draftId] } }));
+      setTurns((current) => current.map((entry) => entry.id === turn.id ? {
+        ...entry, undo: undefined, proposalStatus: "undone", content: t("reai.directEdit.undone", lang),
+      } : entry.undo?.draftId === undo.draftId ? { ...entry, undo: undefined } : entry));
+      if (showHistory && stillCurrent) await loadHistory();
+    } catch (err) {
+      if (context.generation === intakeGenerationRef.current && context.userId === editContextRef.current.userId) setError(errorText(err, lang));
+    } finally {
+      if (context.generation === intakeGenerationRef.current) setBusy(false);
     }
   };
 
@@ -1292,7 +1545,8 @@ export function ReaiAgentCard({
   };
 
   const applyAction = async (turnId: number, answer: ReaiAgentResponse) => {
-    if (!answer.action_token) return;
+    if (!answer.action_token || busy || uploading || intakeBusy || !consent?.consented) return;
+    const generation = intakeGenerationRef.current;
     const planStepTurn = turns.find((turn) => turn.id === turnId && turn.planId && turn.planStepId);
     if (planStepTurn) {
       await confirmPlanStep(planStepTurn, answer);
@@ -1302,29 +1556,22 @@ export function ReaiAgentCard({
     setError(null);
     try {
       const outcome = await executeAgentAction(answer.action_code, answer.action_token, improvementConversationId);
+      if (generation !== intakeGenerationRef.current) return;
       if (outcome.kind === "create_listing") {
         const result = outcome.result;
+        for (const [file, source] of sourceArchiveRef.current) {
+          if (source.draftId === undefined) sourceArchiveRef.current.set(file, { ...source, draftId: result.draft_id });
+        }
+        setSourceImages((current) => current.map((image) => image.draftId === undefined ? { ...image, draftId: result.draft_id, key: `${result.draft_id}:${image.source.name}:${image.candidate.sha256}:${image.candidate.id}` } : image));
         // The listing exists from here on. A photo that fails to upload must
         // not hide that: leaving the confirm card up with only an error would
         // send the creator back to describe a listing they already have.
-        if (pendingPhotos.length) {
-          const failed: File[] = [];
-          for (const [index, file] of pendingPhotos.entries()) {
-            try {
-              await uploadDraftPhoto(result.draft_id, file, index, {});
-            } catch {
-              failed.push(file);
-            }
-          }
-          setPendingPhotos(failed);
-          if (failed.length) {
-            setError(t("reai.createListingPhotosFailed", lang).replace("{count}", String(failed.length)));
-          }
-        }
+        if (pendingAttachmentsRef.current.length) await uploadAttachments(result.draft_id, [...pendingAttachmentsRef.current]);
+        if (generation !== intakeGenerationRef.current) return;
         announceAgentActionResult(outcome);
         const followUp = result.follow_up;
         const followUpTurnId = newTurnId();
-        setTurns((current) => {
+        const updatedTurns = ((current: ChatTurn[]) => {
           const updated = current.map((turn) => turn.id === turnId ? {
             ...turn,
             actionStatus: "applied" as const,
@@ -1345,7 +1592,10 @@ export function ReaiAgentCard({
               proposal_token: null,
             },
           }];
-        });
+        })(turnsRef.current);
+        turnsRef.current = updatedTurns;
+        setTurns(updatedTurns);
+        writeAgentTranscript(transcriptKey, updatedTurns);
         router.push(result.navigation_path);
         return;
       }
@@ -1359,9 +1609,10 @@ export function ReaiAgentCard({
         setTimeout(() => void loadMediaHistory(), outcome.result.status === "pending" ? 2500 : 0);
       }
     } catch (err) {
+      if (generation !== intakeGenerationRef.current) return;
       setError(errorText(err, lang));
     } finally {
-      setBusy(false);
+      if (generation === intakeGenerationRef.current) setBusy(false);
     }
   };
 
@@ -1396,19 +1647,30 @@ export function ReaiAgentCard({
     dragHasPoolItem(dataTransfer)
     || (dragHasFiles(dataTransfer) && (Boolean(draftId) || workspaceContext === "creator"));
 
-  /**
-   * Files dropped from the computer become photos on the open creation. When a
-   * single photo is already sitting in the pool, the drop is read as "replace
-   * this one": the upload supersedes it, which keeps the original reviewable as
-   * an earlier version rather than deleting it.
-   */
+  // A file drop adds listing media or private evidence. Replacing an existing
+  // version remains an explicit action in the media manager.
   // A drop with nothing typed is the request. Agent names what arrived and
   // offers the two to four things that fit it; each chip is a sentence the
   // router runs, with the pool still attached. Nothing runs until a tap.
-  const reactToDrop = async (nextPool: AgentPoolItem[], pendingCount: number) => {
-    if (busy || message.trim()) return;
+  const reactToDrop = async (nextPool: AgentPoolItem[], pendingFiles: File[]) => {
+    if (busy || sourceImportBusyRef.current || message.trim() || !consent?.consented) return;
+    const generation = intakeGenerationRef.current;
+    const requestSequence = ++assistSequenceRef.current;
+    const sourceTokens = [...sourceTokensRef.current.values(), ...nextPool.flatMap((item) => item.kind === "document" && item.sourceToken ? [item.sourceToken] : [])];
+    const newImportTokens = unattemptedSourceImports(sourceTokens, sourceImportAttemptsRef.current, draftId);
+    const followUpTokens = sourceImportFollowUp?.options.currentDraftId === draftId
+      && sourceImportFollowUp?.generation === generation ? sourceImportFollowUp.options.sourceTokens : [];
+    // A photo/field drop cannot answer a document ambiguity. Keep the question
+    // active; only another document or the creator's words can continue it.
+    if (sourceImportFollowUp && followUpTokens.length && !newImportTokens.length) return;
+    const importTokens = [...new Set([...newImportTokens, ...(newImportTokens.length ? followUpTokens : [])])];
+    setBusy(true);
     try {
-      const response = await askReaiWorkspace(
+      const response = importTokens.length ? await importSources({
+        sourceTokens: importTokens, message: "", currentDraftId: draftId,
+        creationContextToken: !draftId ? pendingCreationContextToken(turnsRef.current) : null,
+        conversation: turnsRef.current.slice(-4).map(({ role, content }) => ({ role, content })), language: lang,
+      }) : await askReaiWorkspace(
         "",
         draftId,
         turns.slice(-4).map((turn) => ({ role: turn.role, content: turn.content })),
@@ -1419,64 +1681,207 @@ export function ReaiAgentCard({
         currentUploadId,
         poolItemsForRequest(nextPool),
         currentTourId,
-        { pendingPhotoCount: pendingCount },
+        {
+          pendingPhotoCount: pendingImageCount(pendingFiles),
+          pendingAttachments: pendingAttachmentDescriptors(pendingFiles),
+          creationContextToken: !draftId ? pendingCreationContextToken(turns) : null,
+          sourceTokens,
+        },
       );
-      if (response.action_code !== "attachment_options") return;
+      if (generation !== intakeGenerationRef.current) return;
+      if (requestSequence !== assistSequenceRef.current || (!importTokens.length && !isAgentAttachmentResponse(response.action_code))) return;
+      consumeAcceptedAgentSources(sourceTokensRef.current, sourceTokens, response.creation_context_token);
+      if (response.creation_context_token) setPool((current) => discardPoolSourceTokens(current, sourceTokens));
       setTurns((current) => [
         ...current,
         { id: newTurnId(), role: "assistant", content: response.reply, response },
       ]);
-    } catch {
-      // The drop itself succeeded; an unanswered drop is not an error worth a banner.
+    } catch (err) {
+      if (generation !== intakeGenerationRef.current || requestSequence !== assistSequenceRef.current) return;
+      if (getApiErrorCode(err) === "agent_source_expired") {
+        forgetExpiredSources(importTokens.length ? importTokens : sourceTokens);
+      }
+      // Mapping can incur usage, so report failure and require an explicit retry.
+      if (importTokens.length) setError(errorText(err, lang));
+    } finally {
+      if (generation === intakeGenerationRef.current) setBusy(false);
+    }
+  };
+
+  const uploadAttachments = async (targetDraftId: number, files: File[]) => {
+    const generation = intakeGenerationRef.current;
+    setUploading(true);
+    setAttachmentDraftId(targetDraftId);
+    const failed: File[] = [];
+    let nextPool = draftId === targetDraftId ? pool : readAgentPool(agentPoolKey("draft", targetDraftId));
+    let firstError: unknown;
+    for (const [index, file] of files.entries()) {
+      if (generation !== intakeGenerationRef.current) break;
+      try {
+        const upload = await uploadDraftAttachment(targetDraftId, file, index);
+        if (generation !== intakeGenerationRef.current) return nextPool;
+        const kind = describeAgentAttachment(file)?.kind;
+        if (kind === "image") {
+          nextPool = addPoolItem(nextPool, { kind, uploadId: upload.id, url: upload.file_url, label: file.name });
+        } else if (kind) {
+          nextPool = addPoolItem(nextPool, { kind, uploadId: upload.id, label: file.name, sourceToken: sourceTokensRef.current.get(file) });
+        }
+        sourceTokensRef.current.delete(file);
+        const archived = sourceArchiveRef.current.get(file);
+        if (archived) {
+          const savedSource = { name: file.name, uploadId: upload.id, draftId: targetDraftId };
+          sourceArchiveRef.current.delete(file);
+          sourceArchiveRef.current.set(savedSource, { ...archived, draftId: targetDraftId });
+          setSourceImages((current) => current.map((image) => image.source === file ? { ...image, source: savedSource, draftId: targetDraftId } : image));
+        }
+        setSourceImages((current) => current.map((image) => image.selectedFile === file ? { ...image, uploaded: true, draftId: targetDraftId } : image.source === file ? { ...image, draftId: targetDraftId } : image));
+      } catch (err) {
+        failed.push(file);
+        firstError ??= err;
+      }
+    }
+    if (generation !== intakeGenerationRef.current) return nextPool;
+    const remaining = remainingAgentAttachments(pendingAttachmentsRef.current, files, failed);
+    pendingAttachmentsRef.current = remaining;
+    setPendingAttachments(remaining);
+    writeAgentPool(agentPoolKey("draft", targetDraftId), nextPool);
+    if (draftId === targetDraftId) setPool(nextPool);
+    setUploading(false);
+    if (failed.length) {
+      setAttachmentNotice(t("reai.attachments.failed", lang).replace("{count}", String(failed.length)));
+      if (firstError) setError(errorText(firstError, lang));
+    }
+    window.dispatchEvent(new CustomEvent("reai-creations-updated", { detail: { draftIds: [targetDraftId] } }));
+    if (draftId === targetDraftId && onDraftUpdated) {
+      try { onDraftUpdated(await getDraft(targetDraftId)); } catch { /* Uploads already succeeded; refresh may be retried. */ }
+    }
+    return nextPool;
+  };
+
+  const toggleSourceImage = async (image: SourceImageReview) => {
+    if (image.uploaded || image.draftId !== draftId || busy || uploading || intakeBusy || !consent?.consented) return;
+    if (image.selectedFile) {
+      pendingAttachmentsRef.current = pendingAttachmentsRef.current.filter((file) => file !== image.selectedFile);
+      setPendingAttachments(pendingAttachmentsRef.current);
+      setSourceImages((current) => current.map((entry) => entry.key === image.key ? { ...entry, selectedFile: undefined } : entry));
+      return;
+    }
+    if (pendingAttachmentsRef.current.length >= MAX_AGENT_ATTACHMENTS) {
+      setAttachmentNotice(t("reai.import.imageLimit", lang));
+      return;
+    }
+    const generation = intakeGenerationRef.current;
+    setIntakeBusy(true);
+    setError(null);
+    try {
+      const file = await reviewedSourceImageFile(image.candidate, image.source.name);
+      if (generation !== intakeGenerationRef.current) return;
+      // Selecting a brochure picture only stages local bytes. No upload or
+      // gallery publication happens until Create / Add selected images.
+      pendingAttachmentsRef.current = [...pendingAttachmentsRef.current, file];
+      setPendingAttachments(pendingAttachmentsRef.current);
+      setSourceImages((current) => current.map((entry) => entry.key === image.key ? { ...entry, selectedFile: file } : entry));
+    } catch (err) {
+      if (generation === intakeGenerationRef.current) setError(errorText(err, lang));
+    } finally {
+      if (generation === intakeGenerationRef.current) setIntakeBusy(false);
+    }
+  };
+
+  const rememberSourceIntake = (source: AgentDocumentSource, intake: ReaiAgentIntakeResponse) => {
+    if (intake.source_token) {
+      if (source instanceof File) sourceTokensRef.current.set(source, intake.source_token);
+      for (const key of sourceArchiveRef.current.keys()) {
+        if (!(source instanceof File) && !(key instanceof File) && key.uploadId === source.uploadId && key.draftId === source.draftId) sourceArchiveRef.current.delete(key);
+      }
+      sourceArchiveRef.current.set(source, { token: intake.source_token, draftId });
+    }
+    const candidates = sourceImageCandidates(intake.image_candidates);
+    if (candidates.length) setSourceImages((current) => [
+      ...current,
+      ...candidates.map((candidate) => ({ key: `${draftId ?? "new"}:${source.name}:${candidate.sha256}:${candidate.id}`, source, candidate, draftId })),
+    ].filter((candidate, index, all) => all.findIndex((other) => other.key === candidate.key) === index).slice(-MAX_SOURCE_IMAGE_PREVIEWS));
+    if (!intake.source_token) setAttachmentNotice(t("reai.attachments.notAnalyzed", lang));
+  };
+
+  const loadSavedEvidence = async () => {
+    if (!draftId || busy || intakeBusy || uploading || !consent?.consented) return;
+    if (savedEvidence?.draftId === draftId) { setSavedEvidence(null); return; }
+    const generation = intakeGenerationRef.current;
+    setBusy(true);
+    setError(null);
+    try {
+      const files = await listDraftUploads(draftId, { role: "evidence", fresh: true });
+      if (generation === intakeGenerationRef.current && editContextRef.current.draftId === draftId && editContextRef.current.userId === user?.id) {
+        setSavedEvidence({ draftId, files: files.filter((file) => file.role === "evidence" && !file.is_deleted) });
+      }
+    } catch (err) {
+      if (generation === intakeGenerationRef.current) setError(errorText(err, lang));
+    } finally {
+      if (generation === intakeGenerationRef.current) setBusy(false);
+    }
+  };
+
+  const reviewSavedEvidence = async (upload: DraftUpload) => {
+    if (!draftId || savedEvidence?.draftId !== draftId || busy || intakeBusy || uploading || !consent?.consented) return;
+    const generation = intakeGenerationRef.current;
+    setIntakeBusy(true);
+    setError(null);
+    try {
+      const intake = await intakeSavedReaiEvidence(draftId, upload.id);
+      if (generation !== intakeGenerationRef.current || editContextRef.current.draftId !== draftId || editContextRef.current.userId !== user?.id) return;
+      if (intake.draft_id !== draftId || intake.evidence_upload_id !== upload.id) throw new Error(t("common.somethingWentWrongTryAgain", lang));
+      const source = { name: intake.name || upload.original_file_name || upload.file_name, uploadId: upload.id, draftId };
+      rememberSourceIntake(source, intake);
+      const nextPool = addPoolItem(pool, { kind: "document", uploadId: upload.id, label: source.name, sourceToken: intake.source_token || undefined });
+      setPool(nextPool);
+      if (intake.source_token) await reactToDrop(nextPool, pendingAttachmentsRef.current);
+    } catch (err) {
+      if (generation === intakeGenerationRef.current) setError(errorText(err, lang));
+    } finally {
+      if (generation === intakeGenerationRef.current) setIntakeBusy(false);
     }
   };
 
   const handleDroppedFiles = async (files: File[]) => {
-    if (files.length === 0 || uploading) return;
-    const images = files.filter((file) => file.type.startsWith("image/") || /\.(jpe?g|png|webp|heic|heif|tiff?|bmp)$/i.test(file.name));
-    if (images.length === 0) return;
-    if (!draftId) {
-      // No listing yet to attach them to. Photos dropped while describing a
-      // new listing are kept here and uploaded the moment Agent creates it,
-      // instead of being silently discarded.
-      const nextCount = Math.min(24, pendingPhotos.length + images.length);
-      setPendingPhotos((current) => [...current, ...images].slice(0, 24));
-      void reactToDrop(pool, nextCount);
-      return;
-    }
-    const replacing = pool.filter((item): item is AgentPoolImage => item.kind === "image");
-    const target = images.length === 1 && replacing.length === 1 ? replacing[0] : null;
-    setUploading(true);
+    if (files.length === 0 || uploading || intakeBusy || busy || !consent?.consented) return;
+    // Failed uploads belong to their original listing, never the page opened later.
+    if (attachmentDraftId && attachmentDraftId !== draftId && pendingAttachmentsRef.current.length) return;
+    const accepted = files.filter((file) => describeAgentAttachment(file)).slice(0, MAX_AGENT_ATTACHMENTS - pendingAttachmentsRef.current.length);
+    const rejected = files.length - accepted.length;
+    setAttachmentNotice(rejected ? t("reai.attachments.rejected", lang).replace("{count}", String(rejected)) : null);
+    if (!accepted.length) return;
+    const nextFiles = [...pendingAttachmentsRef.current, ...accepted];
+    pendingAttachmentsRef.current = nextFiles;
+    setPendingAttachments(nextFiles);
+    const generation = intakeGenerationRef.current;
+    setIntakeBusy(true);
     setError(null);
     try {
-      const uploaded: DraftUpload[] = [];
-      for (const [index, file] of images.entries()) {
-        uploaded.push(await uploadDraftPhoto(
-          draftId,
-          file,
-          index,
-          target ? { supersedesId: target.uploadId } : {},
-        ));
+      for (const file of accepted) {
+        if (generation !== intakeGenerationRef.current) return;
+        if (describeAgentAttachment(file)?.kind !== "document") continue;
+        if (!/\.(pdf|txt)$/i.test(file.name)) {
+          setAttachmentNotice(t("reai.attachments.notAnalyzed", lang));
+          continue;
+        }
+        try {
+          const intake = await intakeReaiAttachment(file);
+          if (generation !== intakeGenerationRef.current) return;
+          rememberSourceIntake(file, intake);
+        } catch {
+          if (generation !== intakeGenerationRef.current) return;
+          setAttachmentNotice(t("reai.attachments.notAnalyzed", lang));
+        }
       }
-      const last = uploaded[uploaded.length - 1];
-      if (last) {
-        const nextPool = addPoolItem(
-          target ? removePoolItem(pool, poolItemKey(target)) : pool,
-          {
-            kind: "image",
-            uploadId: last.id,
-            url: last.file_url,
-            label: target ? t("reai.pool.replacedPhoto", lang) : t("reai.pool.newPhoto", lang),
-          },
-        );
-        setPool(nextPool);
-        void reactToDrop(nextPool, 0);
+      if (draftId) {
+        const nextPool = await uploadAttachments(draftId, accepted);
+        if (generation === intakeGenerationRef.current) await reactToDrop(nextPool, pendingAttachmentsRef.current);
+      } else {
+        await reactToDrop(pool, nextFiles);
       }
-      onDraftUpdated?.(await getDraft(draftId));
-    } catch (err) {
-      setError(errorText(err, lang));
     } finally {
-      setUploading(false);
+      if (generation === intakeGenerationRef.current) setIntakeBusy(false);
     }
   };
 
@@ -1489,7 +1894,7 @@ export function ReaiAgentCard({
     if (item) {
       const nextPool = addPoolItem(pool, item);
       setPool(nextPool);
-      void reactToDrop(nextPool, pendingPhotos.length);
+      void reactToDrop(nextPool, pendingAttachmentsRef.current);
       return;
     }
     void handleDroppedFiles(Array.from(event.dataTransfer.files));
@@ -1867,7 +2272,7 @@ export function ReaiAgentCard({
               </div>
             </div>
           )}
-          {!showHistory && !showMediaHistory && turns.length > 0 && (
+          {!showHistory && !showMediaHistory && (turns.length > 0 || sourceImportProgress) && (
             <div className={cn("space-y-4 overflow-y-auto pr-1", panel ? "min-h-0 flex-1" : "max-h-[420px]")} aria-live="polite">
               {turns.map((turn) => {
                 const answer = turn.response;
@@ -1905,6 +2310,71 @@ export function ReaiAgentCard({
                       </div>
                     )}
                     {answer && <AgentVersionStamp answer={answer} />}
+                    {answer?.source_import && (
+                      <div className="mt-3 space-y-3 rounded-2xl border border-border/65 bg-card p-3 text-xs">
+                        <p className="font-medium">{t("reai.import.review", lang)}</p>
+                        <p className="text-muted-foreground">{t("reai.import.reviewHint", lang)}</p>
+                        {answer.listing_draft && (
+                          <dl className="space-y-2">
+                            {Object.entries(answer.listing_draft.fields).map(([field, value]) => (
+                              <div key={field}>
+                                <dt className="font-medium">{agentFieldLabel(field, lang)}</dt>
+                                <dd className="mt-1 whitespace-pre-wrap break-words text-muted-foreground">{proposalValue(field, value, { ...answer, proposed_changes: answer.listing_draft!.fields }, unitCatalog, lang)}</dd>
+                              </div>
+                            ))}
+                            {proposalSpecEntries(answer.listing_draft.specs, lang).map((entry) => (
+                              <div key={entry.key}><dt className="font-medium">{entry.label}</dt><dd className="mt-1 text-muted-foreground">{entry.value}</dd></div>
+                            ))}
+                          </dl>
+                        )}
+                        {!!answer.source_import.mappings?.length && (
+                          <details className="border-t border-border/40 pt-2">
+                            <summary className="cursor-pointer font-medium">{t("reai.import.mappings", lang)}</summary>
+                            <dl className="mt-2 space-y-3">
+                              {answer.source_import.mappings.map((mapping, index) => (
+                                <div key={`${mapping.field}-${index}`}>
+                                  <dt className="font-medium">{agentFieldLabel(mapping.field, lang)}</dt>
+                                  <dd className="mt-1 whitespace-pre-wrap break-words text-muted-foreground">
+                                    {mapping.field.startsWith("specs.")
+                                      ? localizedSpecValue(mapping.value, lang, mapping.field.split(".")[1], mapping.field.split(".")[2])
+                                      : proposalValue(mapping.field, mapping.value, { ...answer, proposed_changes: answer.listing_draft?.fields ?? answer.proposed_changes }, unitCatalog, lang)}
+                                    <p className="mt-1 text-[11px]">{mapping.source_name}{mapping.page > 0 ? ` · ${t("reai.import.page", lang).replace("{page}", String(mapping.page))}` : ""}</p>
+                                    {mapping.excerpt && <blockquote className="mt-1 border-l-2 border-border pl-2 text-[11px]">{mapping.excerpt}</blockquote>}
+                                  </dd>
+                                </div>
+                              ))}
+                            </dl>
+                          </details>
+                        )}
+                        {answer.source_import.warnings?.map((warning, index) => <p key={index} className="text-muted-foreground">{warning}</p>)}
+                        {turn.id === lastAssistantTurnId && <Button type="button" variant="ghost" size="xs" disabled={busy || uploading || intakeBusy} onClick={discussSources}>{t("reai.import.askSources", lang)}</Button>}
+                      </div>
+                    )}
+                    {Boolean(answer?.listing_draft?.source_conflicts?.length) && (
+                      <div className="mt-3 rounded-2xl border border-border/65 bg-card p-3 text-xs">
+                        <p className="font-medium">{t("reai.attachments.conflicts", lang)}</p>
+                        {answer?.listing_draft?.source_conflicts?.map((conflict) => (
+                          <div key={conflict.field} className="mt-2">
+                            <p className="font-medium">{agentFieldLabel(conflict.field, lang)}</p>
+                            {conflict.candidates.map((candidate, index) => (
+                              <p key={index} className="mt-1 break-words text-muted-foreground">
+                                {typeof candidate.value === "object" ? JSON.stringify(candidate.value) : String(candidate.value)}
+                                {candidate.sources.length ? ` · ${candidate.sources.map((source) => source.name).join(", ")}` : ""}
+                              </p>
+                            ))}
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                    {turn.job && (
+                      <div className="mt-3 flex flex-wrap items-center gap-2">
+                        <AgentStatusBadge tone={turn.job.status === "completed" ? "success" : turn.job.status === "pending" ? "pending" : "neutral"}>
+                          {t(`reai.job.${turn.job.status}` as LocaleKey, lang)}
+                        </AgentStatusBadge>
+                        {turn.job.status === "completed" && <Link href={`/draft/${turn.job.draftId}`} className="text-xs underline">{t("reai.job.viewResult", lang)}</Link>}
+                        {turn.job.status === "paused" && turn.job.serviceIds.length > 0 && <button type="button" className="text-xs underline" onClick={() => setTurns((current) => current.map((entry) => entry.id === turn.id && entry.job ? { ...entry, job: { ...entry.job, status: "pending" } } : entry))}>{t("reai.job.checkStatus", lang)}</button>}
+                      </div>
+                    )}
                     {answer && (
                       <>
                         <AgentMiniUi
@@ -1926,11 +2396,11 @@ export function ReaiAgentCard({
                         snapshot={planState}
                         lang={lang}
                         live={turn.id === latestPlanTurnId}
-                        pendingPhotoCount={pendingPhotos.length}
+                        pendingPhotoCount={pendingImageCount(pendingAttachments)}
                         onApprove={(approval) => void planRunnerFor(turn)?.approve(
                           approval,
                           planApprovalDigests(planState.plan),
-                          pendingPhotos.length,
+                          pendingImageCount(pendingAttachments),
                         )}
                         onCancel={() => {
                           setAnswering(null);
@@ -2014,7 +2484,7 @@ export function ReaiAgentCard({
                     {answer && Object.keys(answer.proposed_changes).length > 0 && (
                       <div className="mt-4 overflow-hidden floating-panel-shape border border-border/65 bg-card shadow-control">
                         <div className="border-b border-border/45 px-3.5 py-3">
-                          <p className="text-xs font-semibold text-foreground">{t("reai.proposal", lang)}</p>
+                          <p className="text-xs font-semibold text-foreground">{t(turn.directEdit ? "reai.directEdit.title" : "reai.proposal", lang)}</p>
                           <p className="mt-0.5 truncate text-xs text-muted-foreground">
                             {targetTitle || t("nav.creation", lang)}
                             {(answer.selected_creation_ids?.length || 0) > 1 ? ` · ${answer.selected_creation_ids?.length} ${t("reai.targets", lang).toLocaleLowerCase(lang)}` : ""}
@@ -2058,7 +2528,7 @@ export function ReaiAgentCard({
                             );
                           })}
                         </ul>
-                        {answer.proposal_token && (
+                        {answer.proposal_token && !turn.directEdit && (
                           <div className="flex items-center gap-2 border-t border-border/45 px-3.5 py-3">
                             <Button type="button" size="xs" className="rounded-2xl" loading={busy} onClick={() => apply(turn.id, answer)}>
                               {t("reai.apply", lang)}
@@ -2068,11 +2538,16 @@ export function ReaiAgentCard({
                             </Button>
                           </div>
                         )}
-                        {!answer.proposal_token && turn.proposalStatus && (
-                          <div className="border-t border-border/45 px-3.5 py-3">
-                            <AgentStatusBadge tone={turn.proposalStatus === "applied" ? "success" : "neutral"}>
-                              {t(turn.proposalStatus === "applied" ? "reai.proposalApplied" : "reai.proposalDismissed", lang)}
+                        {turn.proposalStatus && (!answer.proposal_token || turn.directEdit) && (
+                          <div className="flex flex-wrap items-center gap-2 border-t border-border/45 px-3.5 py-3">
+                            <AgentStatusBadge tone={turn.proposalStatus === "applied" ? "success" : turn.proposalStatus === "pending" ? "pending" : "neutral"}>
+                              {t(turn.proposalStatus === "pending" ? "common.saving"
+                                : turn.proposalStatus === "undone" ? "reai.directEdit.undone"
+                                : turn.proposalStatus === "failed" ? "reai.directEdit.unconfirmed"
+                                : turn.proposalStatus === "applied" ? "reai.proposalApplied" : "reai.proposalDismissed", lang)}
                             </AgentStatusBadge>
+                            {turn.undo && turn.undo.draftId === draftId && <Button type="button" variant="ghost" size="xs" className="rounded-2xl" disabled={busy || uploading || intakeBusy} onClick={() => void undoProposal(turn)}>{t("common.undo", lang)}</Button>}
+                            {turn.directEdit && turn.proposalStatus === "failed" && answer.direct_edit_draft_id && <Link href={`/draft/${answer.direct_edit_draft_id}`} className="text-xs underline">{t("reai.job.viewResult", lang)}</Link>}
                           </div>
                         )}
                       </div>
@@ -2126,7 +2601,7 @@ export function ReaiAgentCard({
                             </Button>
                           </div>
                         )}
-                        {!answer.action_token && (turn.actionStatus || answer.translation_action.status !== "awaiting_confirmation") && (
+                        {!turn.job && !answer.action_token && (turn.actionStatus || answer.translation_action.status !== "awaiting_confirmation") && (
                           <div className="border-t border-border/45 px-3.5 py-3">
                             <AgentStatusBadge tone={
                               turn.actionStatus === "dismissed" || answer.translation_action.status === "unavailable"
@@ -2213,7 +2688,7 @@ export function ReaiAgentCard({
                             </Button>
                           </div>
                         )}
-                        {!answer.action_token && turn.actionStatus && (
+                        {!turn.job && !answer.action_token && turn.actionStatus && (
                           <div className="border-t border-border/45 px-3.5 py-3">
                             <AgentStatusBadge tone={
                               turn.actionStatus !== "applied"
@@ -2242,8 +2717,8 @@ export function ReaiAgentCard({
                             {answer.listing_draft?.title || t("reai.createListingTitle", lang)}
                           </p>
                           <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
-                            {pendingPhotos.length
-                              ? t("reai.createListingWithPhotos", lang).replace("{count}", String(pendingPhotos.length))
+                            {pendingAttachments.length
+                              ? t("reai.attachments.createWithFiles", lang).replace("{count}", String(pendingAttachments.length))
                               : t("reai.createListingBody", lang)}
                           </p>
                         </div>
@@ -2257,7 +2732,7 @@ export function ReaiAgentCard({
                             </Button>
                           </div>
                         )}
-                        {turn.actionStatus && (
+                        {turn.actionStatus && !turn.job && (
                           <div className="border-t border-border/45 px-3.5 py-3">
                             <AgentStatusBadge tone={turn.actionStatus === "applied" ? "success" : "neutral"}>
                               {t(turn.actionStatus === "applied" ? "reai.createListingDone" : "reai.proposalDismissed", lang)}
@@ -2291,7 +2766,7 @@ export function ReaiAgentCard({
                             </Button>
                           </div>
                         )}
-                        {turn.actionStatus && (
+                        {turn.actionStatus && !turn.job && (
                           <div className="border-t border-border/45 px-3.5 py-3">
                             <AgentStatusBadge tone={turn.actionStatus === "applied" ? "pending" : "neutral"}>
                               {t(
@@ -2497,10 +2972,16 @@ export function ReaiAgentCard({
                   </div>
                 );
               })}
-              {busy && <PendingAnswer lang={lang} />}
+              {sourceImportProgress ? (
+                <div role="status" aria-live="polite" className="rounded-2xl border border-border/60 bg-card px-3.5 py-3 text-xs">
+                  <p className="font-medium">{t("reai.import.progressTitle", lang)}</p>
+                  <p className="mt-1 flex items-center gap-2 text-muted-foreground"><span className="h-1.5 w-1.5 animate-pulse rounded-full bg-current" aria-hidden="true" />{sourceImportProgress.progress ? t(`reai.import.stage.${sourceImportProgress.progress.stage}` as LocaleKey, lang) : t("reai.working", lang)}</p>
+                  <p className="mt-2 text-[11px] text-muted-foreground">{t("reai.import.progressHint", lang)}</p>
+                </div>
+              ) : busy && <PendingAnswer lang={lang} />}
             </div>
           )}
-          {!showHistory && !showMediaHistory && turns.length === 0 && (
+          {!showHistory && !showMediaHistory && turns.length === 0 && !sourceImportProgress && (
             <div className={cn(
               "flex flex-col",
               panel ? "min-h-0 flex-1 items-center justify-center px-6 pb-8 text-center" : "py-2",
@@ -2519,7 +3000,7 @@ export function ReaiAgentCard({
             </div>
           )}
           {error && <p role="alert" className="rounded-2xl border border-destructive/20 bg-destructive/[0.045] px-3 py-2.5 text-[12px] text-destructive">{error}</p>}
-          {!showHistory && !showMediaHistory && turns.length === 0 && (!panel || (!composerFocused && !message.trim())) && (
+          {!showHistory && !showMediaHistory && turns.length === 0 && !sourceImportProgress && (!panel || (!composerFocused && !message.trim())) && (
             <div className={cn(
               "flex gap-2",
               compactPanel
@@ -2548,27 +3029,84 @@ export function ReaiAgentCard({
               })}
             </div>
           )}
-          {!showHistory && !showMediaHistory && !draftId && pendingPhotos.length > 0 && (
-            <div className="flex items-center gap-1.5 rounded-2xl border border-border/60 bg-background/70 p-1.5">
-              <span className="inline-flex max-w-full items-center gap-1.5 rounded-xl border border-border/60 bg-card py-1 pl-2 pr-1.5 text-[11px]">
-                <ImageIcon size={12} className="shrink-0 text-foreground/50" aria-hidden="true" />
-                <span className="min-w-0 truncate text-foreground/75">
-                  {t("reai.plan.photoChip", lang).replace("{count}", String(pendingPhotos.length))}
-                </span>
-                <button
-                  type="button"
-                  aria-label={t("reai.plan.photoChipRemove", lang)}
-                  onClick={() => setPendingPhotos([])}
-                  className="rounded-lg p-0.5 text-foreground/40 transition-colors hover:text-foreground"
-                >
-                  <CloseIcon size={12} />
-                </button>
-              </span>
+          {!showHistory && !showMediaHistory && (attachmentNotice || intakeBusy) && (
+            <p role="status" className="px-2 text-xs text-muted-foreground">{intakeBusy ? t("reai.attachments.reading", lang) : attachmentNotice}</p>
+          )}
+          {!showHistory && !showMediaHistory && draftId && (
+            <div className="text-xs">
+              <Button type="button" variant="ghost" size="xs" disabled={busy || uploading || intakeBusy} onClick={() => void loadSavedEvidence()}>{t("reai.import.savedEvidence", lang)}</Button>
+              {savedEvidence?.draftId === draftId && (
+                <div className="mt-1 max-h-40 overflow-y-auto rounded-2xl border border-border/60 bg-card p-2">
+                  <p className="px-1 py-1 text-muted-foreground">{t("reai.import.savedEvidenceHint", lang)}</p>
+                  {savedEvidence.files.length === 0 && <p className="px-1 py-1 text-muted-foreground">{t("reai.import.noSavedEvidence", lang)}</p>}
+                  {savedEvidence.files.map((file) => <button key={file.id} type="button" disabled={busy || uploading || intakeBusy} onClick={() => void reviewSavedEvidence(file)} className="block w-full truncate rounded-xl px-2 py-2 text-left hover:bg-foreground/[0.04] disabled:opacity-40">{file.original_file_name || file.file_name}</button>)}
+                </div>
+              )}
             </div>
           )}
-          {!showHistory && !showMediaHistory && (pool.length > 0 || uploading) && (
+          {!showHistory && !showMediaHistory && sourceImportRetry && sourceImportRetry.options.currentDraftId === draftId && (
+            <div className="rounded-2xl border border-border/60 bg-card p-3 text-xs">
+              <p className="text-muted-foreground">{t("reai.import.retryHint", lang)}</p>
+              <Button type="button" variant="ghost" size="xs" className="mt-1" disabled={busy || uploading || intakeBusy} onClick={() => void retrySourceImport()}>{t("reai.import.retry", lang)}</Button>
+            </div>
+          )}
+          {!showHistory && !showMediaHistory && sourceImportFollowUp?.options.currentDraftId === draftId && sourceImportFollowUp && (
+            <div className="flex items-center gap-2 rounded-2xl border border-border/60 px-3 py-2 text-xs">
+              <span className="flex-1 text-muted-foreground">{t("reai.import.nextSourceQuestion", lang)}</span>
+              <button type="button" aria-label={t("reai.pool.remove", lang)} disabled={busy || intakeBusy} onClick={() => setSourceImportFollowUp(null)}><CloseIcon size={12} /></button>
+            </div>
+          )}
+          {!showHistory && !showMediaHistory && sourceImages.some((image) => image.draftId === draftId) && (
+            <details className="rounded-2xl border border-border/60 bg-card p-3 text-xs">
+              <summary className="cursor-pointer font-medium">{t("reai.import.images", lang)}</summary>
+              <p className="mt-2 text-muted-foreground">{t(draftId ? "reai.import.imagesExistingHint" : "reai.import.imagesHint", lang)}</p>
+              <div className="mt-3 grid max-h-72 grid-cols-2 gap-2 overflow-y-auto">
+                {sourceImages.filter((image) => image.draftId === draftId).map((image) => (
+                  <button key={image.key} type="button" aria-pressed={Boolean(image.selectedFile)} disabled={image.uploaded || busy || uploading || intakeBusy} onClick={() => void toggleSourceImage(image)} className={cn("overflow-hidden rounded-xl border p-1 text-left disabled:opacity-60", image.selectedFile ? "border-foreground ring-1 ring-foreground" : "border-border")}>
+                    <Image src={image.candidate.preview_data_url} alt={`${image.source.name} · ${t("reai.import.page", lang).replace("{page}", String(image.candidate.page))}`} width={image.candidate.width} height={image.candidate.height} unoptimized className="h-24 w-full rounded-lg object-contain" />
+                    <span className="mt-1 block truncate px-1">{image.source.name}</span>
+                    <span className="block px-1 text-muted-foreground">{t("reai.import.page", lang).replace("{page}", String(image.candidate.page))}{image.uploaded ? ` · ${t("common.saved", lang)}` : image.selectedFile ? ` · ${t("reai.import.selected", lang)}` : ""}</span>
+                  </button>
+                ))}
+              </div>
+              {draftId && sourceImages.some((image) => image.draftId === draftId && image.selectedFile && !image.uploaded) && (
+                <Button type="button" size="xs" className="mt-2" disabled={busy || uploading || intakeBusy} onClick={() => void uploadAttachments(draftId, sourceImages.flatMap((image) => image.draftId === draftId && image.selectedFile && !image.uploaded ? [image.selectedFile] : []))}>{t("reai.import.addImages", lang)}</Button>
+              )}
+            </details>
+          )}
+          {!showHistory && !showMediaHistory && pendingAttachments.length > 0 && (
             <div className="flex flex-wrap items-center gap-1.5 rounded-2xl border border-border/60 bg-background/70 p-1.5">
-              {pool.map((item) => {
+              {pendingAttachments.map((file, index) => (
+                <span key={`${file.name}-${index}`} className="inline-flex max-w-full items-center gap-1.5 rounded-xl border border-border/60 bg-card py-1 pl-2 pr-1.5 text-[11px]">
+                  <DocumentIcon size={12} className="shrink-0 text-foreground/50" aria-hidden="true" />
+                  <span className="min-w-0 truncate text-foreground/75" title={file.name}>
+                    {file.name}{describeAgentAttachment(file)?.kind === "document" ? ` · ${t("reai.attachments.privateEvidence", lang)}` : ""}
+                  </span>
+                  <button
+                    type="button"
+                    disabled={uploading || intakeBusy || busy}
+                    aria-label={`${t("reai.pool.remove", lang)} — ${file.name}`}
+                    onClick={() => {
+                      sourceTokensRef.current.delete(file);
+                      sourceArchiveRef.current.delete(file);
+                      setSourceImages((current) => current.filter((image) => image.source !== file).map((image) => image.selectedFile === file ? { ...image, selectedFile: undefined } : image));
+                      pendingAttachmentsRef.current = pendingAttachmentsRef.current.filter((entry) => entry !== file);
+                      setPendingAttachments(pendingAttachmentsRef.current);
+                    }}
+                    className="rounded-lg p-0.5 text-foreground/40 transition-colors hover:text-foreground disabled:opacity-40"
+                  ><CloseIcon size={12} /></button>
+                </span>
+              ))}
+              {attachmentDraftId && (
+                <button type="button" disabled={uploading || intakeBusy || busy} className="px-2 py-1 text-xs underline disabled:opacity-40" onClick={() => void uploadAttachments(attachmentDraftId, [...pendingAttachmentsRef.current])}>
+                  {t("reai.attachments.retry", lang).replace("{id}", String(attachmentDraftId))}
+                </button>
+              )}
+            </div>
+          )}
+          {!showHistory && !showMediaHistory && (requestPool.length > 0 || uploading) && (
+            <div className="flex flex-wrap items-center gap-1.5 rounded-2xl border border-border/60 bg-background/70 p-1.5">
+              {requestPool.map((item) => {
                 const key = poolItemKey(item);
                 return (
                   <span
@@ -2578,16 +3116,19 @@ export function ReaiAgentCard({
                     {item.kind === "image" ? (
                       // eslint-disable-next-line @next/next/no-img-element
                       <img src={item.url} alt="" className="h-7 w-7 rounded-lg object-cover" />
-                    ) : (
+                    ) : item.kind === "field" ? (
                       <span className="flex h-7 min-w-7 items-center rounded-lg bg-foreground/[0.04] px-1.5 font-medium text-foreground/70">
                         {item.value || "—"}
                       </span>
-                    )}
-                    <span className="max-w-[9rem] truncate text-foreground/75">{item.label}</span>
+                    ) : <DocumentIcon size={14} aria-hidden="true" />}
+                    <span className="max-w-[12rem] truncate text-foreground/75">{item.label}{item.kind === "document" ? ` · ${t("reai.attachments.privateEvidence", lang)}` : ""}</span>
                     <button
                       type="button"
                       aria-label={`${t("reai.pool.remove", lang)} — ${item.label}`}
-                      onClick={() => setPool((current) => removePoolItem(current, key))}
+                      onClick={() => {
+                        if (currentField && poolItemKey(currentField) === key) onFieldClear?.();
+                        setPool((current) => removePoolItem(current, key));
+                      }}
                       className="rounded-lg p-0.5 text-foreground/40 transition-colors hover:text-foreground"
                     >
                       <CloseIcon size={12} />
@@ -2598,10 +3139,10 @@ export function ReaiAgentCard({
               {uploading && (
                 <span className="px-1.5 text-[11px] text-muted-foreground">{t("reai.pool.uploading", lang)}</span>
               )}
-              {pool.length > 0 && (
+              {requestPool.length > 0 && (
                 <button
                   type="button"
-                  onClick={() => setPool([])}
+                  onClick={() => { setPool([]); onFieldClear?.(); }}
                   className="ml-auto rounded-lg px-2 py-1 text-[11px] text-foreground/50 transition-colors hover:text-foreground"
                 >
                   {t("reai.pool.clear", lang)}
@@ -2629,6 +3170,16 @@ export function ReaiAgentCard({
             "floating-panel-shape flex items-end gap-1.5 border border-border bg-white transition-colors focus-within:border-foreground/25",
             compactPanel ? "p-1.5" : "p-2",
           )}>
+            {(Boolean(draftId) || workspaceContext === "creator") && <>
+              <input ref={attachmentInputRef} type="file" multiple accept={AGENT_ATTACHMENT_ACCEPT} className="hidden" onChange={(event) => {
+                const files = Array.from(event.currentTarget.files ?? []);
+                event.currentTarget.value = "";
+                void handleDroppedFiles(files);
+              }} />
+              <button type="button" disabled={busy || uploading || intakeBusy} onClick={() => attachmentInputRef.current?.click()} aria-label={t("reai.attachments.add", lang)} title={t("reai.attachments.add", lang)} className="floating-icon-button shrink-0 text-foreground/55 disabled:opacity-40">
+                <PlusIcon size={18} />
+              </button>
+            </>}
             <textarea
               ref={composerRef}
               value={message}
@@ -2651,7 +3202,7 @@ export function ReaiAgentCard({
             />
             <button
               type="button"
-              disabled={!message.trim() || busy}
+              disabled={!message.trim() || busy || uploading || intakeBusy}
               onClick={() => void ask()}
               aria-label={t("reai.ask", lang)}
               className={cn(

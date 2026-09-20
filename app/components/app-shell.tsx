@@ -8,6 +8,7 @@ import { Avatar, AvatarFallback, AvatarImage } from "../lib/ui/avatar";
 import { BottomSheet } from "../lib/ui/bottom-sheet";
 import { getReaiAgentConsent, getUserCapabilities, type UserProfile } from "../lib/api/client";
 import { clearAgentSession, readAgentPanelOpen, writeAgentPanelOpen } from "../lib/agent-session";
+import type { AgentPoolField } from "../lib/agent-pool";
 import type { DraftDetailItem } from "../lib/tour-types";
 import { cn } from "../lib/utils";
 import { t, getUserLanguage } from "../lib/i18n";
@@ -142,6 +143,8 @@ export type AppShellProps = {
   reaiDraftTitle?: string;
   /** Exact current gallery photo; never inferred from URL or pixels. */
   reaiUploadId?: number;
+  reaiField?: AgentPoolField;
+  onReaiFieldClear?: () => void;
   /** Viewer surface currently controlled by Agent. */
   reaiWorkspaceContext?: "creator" | "draft" | "settings" | "floorplan" | "virtual_tour";
   /** Owner-scoped tour resource currently open in the viewer. */
@@ -169,7 +172,7 @@ export type AppShellProps = {
 
 type AppShellOverrides = Pick<
   AppShellProps,
-  "immersive" | "hideMobileNav" | "reaiDraftId" | "reaiDraftTitle" | "reaiUploadId" | "reaiWorkspaceContext" | "reaiTourId" | "onReaiDraftUpdated" | "headerSearch" | "headerBackHref" | "headerBackLabel" | "headerTitle" | "headerTitleLoading" | "headerMeta" | "headerAction"
+  "immersive" | "hideMobileNav" | "reaiDraftId" | "reaiDraftTitle" | "reaiUploadId" | "reaiField" | "onReaiFieldClear" | "reaiWorkspaceContext" | "reaiTourId" | "onReaiDraftUpdated" | "headerSearch" | "headerBackHref" | "headerBackLabel" | "headerTitle" | "headerTitleLoading" | "headerMeta" | "headerAction"
 >;
 
 type PersistentShellBridge = {
@@ -184,6 +187,8 @@ function NestedAppShell({
   reaiDraftId,
   reaiDraftTitle,
   reaiUploadId,
+  reaiField,
+  onReaiFieldClear,
   reaiWorkspaceContext,
   reaiTourId,
   onReaiDraftUpdated,
@@ -214,6 +219,8 @@ function NestedAppShell({
       reaiDraftId,
       reaiDraftTitle,
       reaiUploadId,
+      reaiField,
+      onReaiFieldClear,
       reaiWorkspaceContext,
       reaiTourId,
       onReaiDraftUpdated: registeredDraftUpdate,
@@ -242,6 +249,8 @@ function NestedAppShell({
     reaiDraftTitle,
     reaiTourId,
     reaiUploadId,
+    reaiField,
+    onReaiFieldClear,
     reaiWorkspaceContext,
   ]);
 
@@ -285,6 +294,8 @@ export function PersistentAppShell({
         reaiDraftId={overrides.reaiDraftId}
         reaiDraftTitle={overrides.reaiDraftTitle}
         reaiUploadId={overrides.reaiUploadId}
+        reaiField={overrides.reaiField}
+        onReaiFieldClear={overrides.onReaiFieldClear}
         reaiWorkspaceContext={overrides.reaiWorkspaceContext}
         reaiTourId={overrides.reaiTourId}
         onReaiDraftUpdated={overrides.onReaiDraftUpdated}
@@ -310,6 +321,8 @@ function AppShellFrame({
   reaiDraftId,
   reaiDraftTitle,
   reaiUploadId,
+  reaiField,
+  onReaiFieldClear,
   reaiWorkspaceContext,
   reaiTourId,
   onReaiDraftUpdated,
@@ -1124,7 +1137,7 @@ function AppShellFrame({
             */}
             <div className={cn("min-h-0 flex-1", dockedAgentViewport && "border-l border-border")}>
               {reaiCardMounted ? (
-                <ReaiAgentCard draftId={reaiDraftId} currentUploadId={reaiUploadId} currentTourId={reaiTourId} workspaceContext={reaiContext} lang={lang} onDraftUpdated={onReaiDraftUpdated} panel compact={compactAgentViewport} />
+                <ReaiAgentCard draftId={reaiDraftId} currentUploadId={reaiUploadId} currentField={reaiField} onFieldClear={onReaiFieldClear} currentTourId={reaiTourId} workspaceContext={reaiContext} lang={lang} onDraftUpdated={onReaiDraftUpdated} panel compact={compactAgentViewport} />
               ) : null}
             </div>
           </div>

@@ -3,7 +3,7 @@
  *
  * A plan can create a listing and spend allowance, so a typed reply may only
  * approve it when the whole message is an unambiguous yes. Substring matching —
- * which is enough for "apply" on a single field edit — would read "yes, but
+ * is unsafe even for a single field edit — would read "yes, but
  * change the price first" or Slovak "ja chcem najprv…" ("I want to first…") as
  * consent. So: every word must belong to an accepted phrase, the message stays
  * short, and any hedge word anywhere rejects it. The accepted phrases are the
@@ -105,4 +105,19 @@ export function isPlanConfirmation(text: string, accountLanguage: string | null 
 export function isPlanStop(text: string): boolean {
   const words = planWords(text);
   return words.length === 1 && STOP_WORDS.has(words[0]);
+}
+
+/** A field edit or viewer mutation requires a whole, affirmative command. */
+export function isProposalConfirmation(text: string, accountLanguage: string): boolean {
+  // A question about applying is not authorization, even if it is one word.
+  if (text.includes("?")) return false;
+  const normalized = planWords(text).join(" ");
+  const phrases: Record<string, string[]> = {
+    en: ["save", "save it", "save this", "apply", "apply it", "apply this", "apply the changes", "confirm", "use it", "use this", "use that", "use this change"],
+    sk: ["uloz", "uloz to", "pouzi", "pouzi to", "potvrd", "potvrdzujem", "aplikuj"],
+    cs: ["uloz", "uloz to", "pouzij", "pouzij to", "potvrd", "potvrzuji", "aplikuj"],
+    de: ["speichern", "anwenden", "bestatigen", "bestatige", "ubernehmen"],
+  };
+  const accepted = [...phrases.en, ...(phrases[languageCode(accountLanguage)] ?? [])];
+  return accepted.some((phrase) => [phrase, `${phrase} please`, `please ${phrase}`, `yes ${phrase}`].includes(normalized));
 }

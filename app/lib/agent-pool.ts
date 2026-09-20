@@ -40,10 +40,17 @@ export type AgentPoolField = {
   value: string;
 };
 
-export type AgentPoolItem = AgentPoolImage | AgentPoolField;
+export type AgentPoolFile = {
+  kind: "document" | "video";
+  uploadId: number;
+  label: string;
+  sourceToken?: string;
+};
+
+export type AgentPoolItem = AgentPoolImage | AgentPoolField | AgentPoolFile;
 
 export function poolItemKey(item: AgentPoolItem): string {
-  return item.kind === "image" ? `image:${item.uploadId}` : `field:${item.path}`;
+  return item.kind === "field" ? `field:${item.path}` : `${item.kind}:${item.uploadId}`;
 }
 
 function isPoolItem(value: unknown): value is AgentPoolItem {
@@ -51,11 +58,13 @@ function isPoolItem(value: unknown): value is AgentPoolItem {
   // Intersecting the two members would make `kind` never, so read the shape
   // loosely and narrow on the discriminant by hand.
   const candidate = value as Record<string, unknown>;
-  if (candidate.kind === "image") {
-    return typeof candidate.uploadId === "number" && typeof candidate.url === "string";
+  if (typeof candidate.label !== "string") return false;
+  if (["image", "document", "video"].includes(String(candidate.kind))) {
+    return typeof candidate.uploadId === "number" && Number.isSafeInteger(candidate.uploadId) && candidate.uploadId > 0
+      && (candidate.kind !== "image" || typeof candidate.url === "string");
   }
   if (candidate.kind === "field") {
-    return typeof candidate.path === "string" && candidate.path.length > 0;
+    return typeof candidate.path === "string" && candidate.path.length > 0 && typeof candidate.value === "string";
   }
   return false;
 }
@@ -151,8 +160,8 @@ export function clearAgentPools(): void {
 /** The wire shape sent to Django; labels stay client-side. */
 export function poolItemsForRequest(items: AgentPoolItem[]) {
   return items.map((item) =>
-    item.kind === "image"
-      ? { kind: "image" as const, upload_id: item.uploadId }
-      : { kind: "field" as const, path: item.path },
+    item.kind === "field"
+      ? { kind: "field" as const, path: item.path }
+      : { kind: item.kind, upload_id: item.uploadId },
   );
 }
