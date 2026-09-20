@@ -1,19 +1,134 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import { registerHooks } from "node:module";
 import test from "node:test";
-import { describeAgentAttachment, documentIntakeBlock, documentReadState, pendingAttachmentDescriptors, pendingImageCount, remainingAgentAttachments } from "./agent-attachments.ts";
+import { createElement } from "react";
+import { renderToStaticMarkup } from "react-dom/server";
+import ts from "typescript";
+import { AGENT_ATTACHMENT_ACCEPT, describeAgentAttachment, documentIntakeBlock, documentReadState, pendingAttachmentDescriptors, pendingImageCount, remainingAgentAttachments } from "./agent-attachments.ts";
+import { AGENT_MESSAGE_LIMIT, canSendAgentMessage, resizeAgentComposer, shouldSendAgentMessage } from "./agent-composer.ts";
 import { pendingCreationContextToken } from "./agent-conversation.ts";
 import { canApplyDirectEdit } from "./agent-direct-edit.ts";
 import { addPoolItem, poolItemsForRequest } from "./agent-pool.ts";
 
 registerHooks({ resolve(specifier, context, nextResolve) {
   try { return nextResolve(specifier, context); } catch (error) {
-    if (specifier.startsWith(".") && !/\.[cm]?[jt]sx?$/.test(specifier)) return nextResolve(`${specifier}.ts`, context);
+    if (specifier.startsWith(".") && !/\.[cm]?[jt]sx?$/.test(specifier)) {
+      for (const suffix of [".ts", ".tsx", "/index.ts"]) {
+        try { return nextResolve(`${specifier}${suffix}`, context); } catch { /* Try the next source form. */ }
+      }
+    }
     throw error;
   }
+}, load(url, context, nextLoad) {
+  if (url.startsWith("file:") && url.endsWith(".tsx")) {
+    return {
+      format: "module", shortCircuit: true,
+      source: ts.transpileModule(readFileSync(new URL(url), "utf8"), {
+        compilerOptions: { jsx: ts.JsxEmit.ReactJSX, module: ts.ModuleKind.ESNext, target: ts.ScriptTarget.ES2022 },
+      }).outputText,
+    };
+  }
+  return nextLoad(url, context);
 } });
 const client = await import("./api/client.ts");
+const { AgentComposer } = await import("../components/agent-composer.tsx");
 const json = (value, status = 200) => new Response(JSON.stringify(value), { status });
+
+function renderComposer(overrides = {}) {
+  return renderToStaticMarkup(createElement(AgentComposer, {
+    value: "", onChange() {}, onSend() {}, onFiles() {}, textareaRef: { current: null },
+    onFocusChange() {}, placeholder: "Describe your post", canAttach: true, busy: false,
+    busyLabel: "Reading document…", hasContext: false, lang: "en", ...overrides,
+  }));
+}
+
+test("composer keeps the full-width message above a separate attachment/send toolbar", () => {
+  const html = renderComposer();
+  const textarea = html.match(/<textarea[^>]*>/)[0];
+  assert.match(textarea, /aria-label="Message Agent"/);
+  assert.match(textarea, /rows="2"/);
+  assert.match(textarea, /maxLength="2000"/);
+  assert.match(textarea, /w-full/);
+  assert.match(textarea, /min-h-16/);
+  assert.match(textarea, /max-h-40/);
+  assert.ok(html.indexOf("<textarea") < html.indexOf('data-testid="agent-composer-toolbar"'));
+  assert.match(html, /Enter to send\. Shift\+Enter for a new line/);
+  const buttons = html.match(/<button[^>]*>/g);
+  assert.equal(buttons.length, 2);
+  assert.doesNotMatch(buttons[0], / disabled=""/);
+  assert.match(buttons[0], /min-h-11 min-w-11/);
+  assert.match(buttons[1], /h-11 w-11/);
+  assert.match(buttons[1], / disabled=""/);
+  assert.match(html, />Add files</);
+  assert.ok(html.includes(`accept="${AGENT_ATTACHMENT_ACCEPT}"`));
+});
+
+test("composer busy state blocks sending and picking files but keeps the next message editable", () => {
+  const html = renderComposer({ value: "Next question", busy: true });
+  assert.ok(html.match(/<button[^>]*>/g).every((button) => / disabled=""/.test(button)));
+  assert.match(html, /aria-label="Reading document…"/);
+  assert.match(html.match(/<input[^>]*>/)[0], / disabled=""/);
+  assert.doesNotMatch(html.match(/<textarea[^>]*>/)[0], / (?:disabled|readOnly)=""/);
+  assert.match(html, /Next question<\/textarea>/);
+  assert.match(html, /motion-reduce:animate-none/);
+});
+
+test("composer hides attachments in unsupported workspaces and bounds context above the message", () => {
+  const withoutAttachments = renderComposer({ value: "Help with settings", canAttach: false });
+  assert.doesNotMatch(withoutAttachments, /type="file"|Add files/);
+  assert.equal(withoutAttachments.match(/<button[^>]*>/g).length, 1);
+  assert.doesNotMatch(withoutAttachments.match(/<button[^>]*>/)[0], / disabled=""/);
+  const html = renderComposer({ hasContext: true, children: createElement("span", {}, "Private evidence") });
+  assert.match(html, /data-testid="agent-composer-context" class="max-h-40[^\"]*overflow-y-auto/);
+  assert.ok(html.indexOf("Private evidence") < html.indexOf("<textarea"));
+  assert.doesNotMatch(renderComposer({ children: "Hidden context" }), /Hidden context/);
+});
+
+test("composer labels and remaining capacity follow the account language", () => {
+  for (const [lang, label] of [["en", "Add files"], ["sk", "Pridať súbory"], ["cs", "Přidat soubory"], ["de", "Dateien hinzufügen"]]) {
+    assert.ok(renderComposer({ lang }).includes(label));
+  }
+  assert.doesNotMatch(renderComposer({ value: "Short" }), /characters remaining/);
+  const html = renderComposer({ value: "a".repeat(2000) });
+  assert.match(html, /aria-label="0 characters remaining"/);
+  assert.match(html, /2000\/2000/);
+});
+
+test("composer Enter sends only intentional text, not IME confirmation, newlines or held keys", () => {
+  const enter = { key: "Enter", shiftKey: false, altKey: false, isComposing: false, keyCode: 13, repeat: false };
+  assert.equal(shouldSendAgentMessage(enter, "Set the title", false), true);
+  for (const override of [{ shiftKey: true }, { altKey: true }, { isComposing: true }, { keyCode: 229 }, { repeat: true }, { key: "Escape" }]) {
+    assert.equal(shouldSendAgentMessage({ ...enter, ...override }, "Set the title", false), false);
+  }
+  assert.equal(shouldSendAgentMessage(enter, "Set the title", true), false);
+  for (const value of ["", "  \n", "a".repeat(AGENT_MESSAGE_LIMIT + 1)]) assert.equal(canSendAgentMessage(value, false), false);
+  assert.equal(canSendAgentMessage("a".repeat(AGENT_MESSAGE_LIMIT), false), true);
+});
+
+test("composer grows, scrolls at its limit, and shrinks after the message is sent", () => {
+  let contentHeight = 48;
+  const textarea = { style: { height: "", overflowY: "" }, get scrollHeight() {
+    assert.equal(this.style.height, "0px", "measure after releasing the previous height");
+    return contentHeight;
+  } };
+  for (const [measured, height, overflowY] of [[48, "64px", "hidden"], [112, "112px", "hidden"], [520, "160px", "auto"], [48, "64px", "hidden"]]) {
+    contentHeight = measured;
+    resizeAgentComposer(textarea);
+    assert.deepEqual(textarea.style, { height, overflowY });
+  }
+});
+
+test("composer wiring retains the same file-drop and message authorization boundaries", () => {
+  const source = readFileSync(new URL("../components/reai-agent-card.tsx", import.meta.url), "utf8");
+  assert.match(source, /onSend=\{\(\) => void ask\(\)\}/);
+  assert.match(source, /onFiles=\{\(files\) => void handleDroppedFiles\(files\)\}/);
+  assert.match(source, /onDrop=\{handleDrop\}/);
+  assert.match(source, /busy=\{busy \|\| uploading \|\| intakeBusy \|\| Boolean\(sourceImportProgress\)\}/);
+  assert.match(source, /if \(!requestText \|\| busy \|\| uploading \|\| intakeBusy \|\| sourceImportBusyRef.current \|\| !consent\?\.consented\) return/);
+  assert.match(source, /reai\.attachments\.privateEvidence/);
+  assert.match(source, /reai\.attachments\.unread/);
+});
 
 test("reading failures retain their cause and never get reported as parsed content", () => {
   const file = new File(["%PDF-1.7"], "report.pdf", { type: "application/pdf" });

@@ -70,7 +70,7 @@ import { canApplyDirectEdit, isCurrentEditContext, proposalUndo, type AgentEditC
 import { MAX_SOURCE_IMAGE_PREVIEWS, markSourceImportAttempt, monitorSourceImportProgress, reviewedSourceImageFile, reviewedSourceImport, sourceImageCandidates, unattemptedSourceImports } from "../lib/agent-document-import";
 import { proposalFieldUnit } from "../lib/agent-proposal";
 import { activeAgentSourceTokens, consumeAcceptedAgentSources, discardAgentSourceTokens, discardPoolSourceTokens, isAgentAttachmentResponse } from "../lib/agent-sources";
-import { AGENT_ATTACHMENT_ACCEPT, MAX_AGENT_ATTACHMENTS, describeAgentAttachment, documentIntakeBlock, documentReadState, pendingAttachmentDescriptors, pendingImageCount, remainingAgentAttachments, type AgentDocumentReadState } from "../lib/agent-attachments";
+import { MAX_AGENT_ATTACHMENTS, describeAgentAttachment, documentIntakeBlock, documentReadState, pendingAttachmentDescriptors, pendingImageCount, remainingAgentAttachments, type AgentDocumentReadState } from "../lib/agent-attachments";
 import {
   AgentPlanRunner,
   createPlanSnapshot,
@@ -100,12 +100,13 @@ import { cn } from "../lib/utils";
 import { randomUUID } from "../lib/uuid";
 import { REAI_COMPOSE_EVENT, readReaiComposeDetail } from "../lib/reai-compose";
 import { AgentMiniUi } from "./agent-mini-ui";
+import { AgentComposer } from "./agent-composer";
 import { AgentPlanCard } from "./agent-plan-card";
 import { AgentTinyUi } from "./agent-tiny-ui";
 import { MediaVersionCard, type MediaAction } from "./draft-version-manager";
 import { useAuth } from "./hooks/use-auth";
 import { StatusPill } from "./status-pill";
-import { AgentIcon, SearchIcon, VersionsIcon, LayoutIcon, SparklesIcon, CheckIcon, CloseIcon, EditIcon, LockIcon, InfoIcon, DocumentIcon, PlusIcon } from "./icons";
+import { AgentIcon, SearchIcon, VersionsIcon, LayoutIcon, SparklesIcon, CheckIcon, CloseIcon, EditIcon, LockIcon, InfoIcon, DocumentIcon, ImageIcon, VideoIcon } from "./icons";
 
 // Maps a quick-action key to its icon, so the agent suggestions read as
 // distinct, recognisable actions rather than flat text rows.
@@ -542,7 +543,6 @@ export function ReaiAgentCard({
   const [improvementConversationId, setImprovementConversationId] = useState<string | null>(null);
   const [message, setMessage] = useState("");
   const composerRef = useRef<HTMLTextAreaElement>(null);
-  const attachmentInputRef = useRef<HTMLInputElement>(null);
   const [turns, setTurns] = useState<ChatTurn[]>([]);
   const [busy, setBusy] = useState(false);
   /** Local files waiting for a listing, or a failed upload's explicit retry. */
@@ -3105,15 +3105,36 @@ export function ReaiAgentCard({
               )}
             </details>
           )}
-          {!showHistory && !showMediaHistory && pendingAttachments.length > 0 && (
-            <div className="flex flex-wrap items-center gap-1.5 rounded-2xl border border-border/60 bg-background/70 p-1.5">
-              {pendingAttachments.map((file, index) => (
-                <span key={`${file.name}-${index}`} className="inline-flex max-w-full items-center gap-1.5 rounded-xl border border-border/60 bg-card py-1 pl-2 pr-1.5 text-[11px]">
-                  <DocumentIcon size={12} className="shrink-0 text-foreground/50" aria-hidden="true" />
-                  <span className="min-w-0 truncate text-foreground/75" title={file.name}>
-                    {file.name}{describeAgentAttachment(file)?.kind === "document" ? ` · ${t("reai.attachments.privateEvidence", lang)}` : ""}
-                    {documentReadStates.get(file)?.status === "evidence_only" ? ` · ${t("reai.attachments.unread", lang)}` : ""}
-                  </span>
+          {!showHistory && !showMediaHistory && <AgentComposer
+            lang={lang}
+            value={message}
+            onChange={setMessage}
+            onSend={() => void ask()}
+            onFiles={(files) => void handleDroppedFiles(files)}
+            textareaRef={composerRef}
+            onFocusChange={setComposerFocused}
+            placeholder={t(workspaceContext === "settings" ? "reai.settingsPlaceholder" : (draftId ? "reai.draftPlaceholder" : "reai.placeholder"), lang)}
+            canAttach={Boolean(draftId) || workspaceContext === "creator"}
+            busy={busy || uploading || intakeBusy || Boolean(sourceImportProgress)}
+            busyLabel={t(intakeBusy ? "reai.attachments.reading" : uploading ? "reai.pool.uploading" : "reai.working", lang)}
+            hasContext={Boolean(pendingAttachments.length || requestPool.length || uploading || answering)}
+          >
+          {pendingAttachments.length > 0 && (
+            <div className="space-y-1">
+              {pendingAttachments.map((file, index) => {
+                const kind = describeAgentAttachment(file)?.kind;
+                const Icon = kind === "image" ? ImageIcon : kind === "video" ? VideoIcon : DocumentIcon;
+                const readState = documentReadStates.get(file);
+                return (
+                <div key={`${file.name}-${index}`} className="flex min-w-0 items-center gap-2 rounded-[20px] bg-foreground/[0.035] py-1 pl-3 pr-1">
+                  <Icon size={18} className="shrink-0 text-foreground/55" aria-hidden="true" />
+                  <div className="min-w-0 flex-1">
+                    <p className="truncate text-[12px] font-medium text-foreground/85" title={file.name}>{file.name}</p>
+                    <p className="flex items-center gap-1 text-[11px] text-muted-foreground" title={readState?.status === "evidence_only" ? t(`reai.attachments.read.${readState.reason}`, lang) : undefined}>
+                      {kind === "document" ? <><LockIcon size={11} className="shrink-0" aria-hidden="true" />{t("reai.attachments.privateEvidence", lang)}</> : file.name.split(".").pop()?.toUpperCase()}
+                      {readState?.status === "evidence_only" ? ` · ${t("reai.attachments.unread", lang)}` : ""}
+                    </p>
+                  </div>
                   <button
                     type="button"
                     disabled={uploading || intakeBusy || busy}
@@ -3127,47 +3148,51 @@ export function ReaiAgentCard({
                       pendingAttachmentsRef.current = pendingAttachmentsRef.current.filter((entry) => entry !== file);
                       setPendingAttachments(pendingAttachmentsRef.current);
                     }}
-                    className="rounded-lg p-0.5 text-foreground/40 transition-colors hover:text-foreground disabled:opacity-40"
-                  ><CloseIcon size={12} /></button>
-                </span>
-              ))}
+                    className="inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-[20px] text-foreground/50 transition-colors hover:bg-foreground/[0.06] hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-40"
+                  ><CloseIcon size={15} aria-hidden="true" /></button>
+                </div>
+              ); })}
               {attachmentDraftId && (
-                <button type="button" disabled={uploading || intakeBusy || busy} className="px-2 py-1 text-xs underline disabled:opacity-40" onClick={() => void uploadAttachments(attachmentDraftId, [...pendingAttachmentsRef.current])}>
+                <button type="button" disabled={uploading || intakeBusy || busy} className="min-h-11 px-3 text-xs underline disabled:opacity-40" onClick={() => void uploadAttachments(attachmentDraftId, [...pendingAttachmentsRef.current])}>
                   {t("reai.attachments.retry", lang).replace("{id}", String(attachmentDraftId))}
                 </button>
               )}
             </div>
           )}
-          {!showHistory && !showMediaHistory && (requestPool.length > 0 || uploading) && (
-            <div className="flex flex-wrap items-center gap-1.5 rounded-2xl border border-border/60 bg-background/70 p-1.5">
+          {(requestPool.length > 0 || uploading) && (
+            <div className="space-y-1">
               {requestPool.map((item) => {
                 const key = poolItemKey(item);
                 return (
-                  <span
+                  <div
                     key={key}
-                    className="inline-flex max-w-full items-center gap-1.5 rounded-xl border border-border/60 bg-card py-1 pl-1 pr-1.5 text-[11px]"
+                    className="flex min-w-0 items-center gap-2 rounded-[20px] bg-foreground/[0.035] py-1 pl-3 pr-1 text-[12px]"
                   >
                     {item.kind === "image" ? (
                       // eslint-disable-next-line @next/next/no-img-element
-                      <img src={item.url} alt="" className="h-7 w-7 rounded-lg object-cover" />
+                      <img src={item.url} alt="" className="h-8 w-8 shrink-0 rounded-lg object-cover" />
                     ) : item.kind === "field" ? (
-                      <span className="flex h-7 min-w-7 items-center rounded-lg bg-foreground/[0.04] px-1.5 font-medium text-foreground/70">
+                      <span className="max-w-[5rem] shrink-0 truncate rounded-lg bg-foreground/[0.04] px-1.5 py-1 font-medium text-foreground/70" title={item.value || undefined}>
                         {item.value || "—"}
                       </span>
-                    ) : <DocumentIcon size={14} aria-hidden="true" />}
-                    <span className="max-w-[12rem] truncate text-foreground/75">{item.label}{item.kind === "document" ? ` · ${t("reai.attachments.privateEvidence", lang)}` : ""}</span>
+                    ) : item.kind === "video" ? <VideoIcon size={18} className="shrink-0 text-foreground/55" aria-hidden="true" /> : <DocumentIcon size={18} className="shrink-0 text-foreground/55" aria-hidden="true" />}
+                    <div className="min-w-0 flex-1">
+                      <p className="truncate font-medium text-foreground/85" title={item.label}>{item.label}</p>
+                      {item.kind === "document" && <p className="flex items-center gap-1 text-[11px] text-muted-foreground"><LockIcon size={11} className="shrink-0" aria-hidden="true" />{t("reai.attachments.privateEvidence", lang)}</p>}
+                    </div>
                     <button
                       type="button"
+                      disabled={busy || uploading || intakeBusy}
                       aria-label={`${t("reai.pool.remove", lang)} — ${item.label}`}
                       onClick={() => {
                         if (currentField && poolItemKey(currentField) === key) onFieldClear?.();
                         setPool((current) => removePoolItem(current, key));
                       }}
-                      className="rounded-lg p-0.5 text-foreground/40 transition-colors hover:text-foreground"
+                      className="inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-[20px] text-foreground/50 transition-colors hover:bg-foreground/[0.06] hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-40"
                     >
-                      <CloseIcon size={12} />
+                      <CloseIcon size={15} aria-hidden="true" />
                     </button>
-                  </span>
+                  </div>
                 );
               })}
               {uploading && (
@@ -3176,17 +3201,18 @@ export function ReaiAgentCard({
               {requestPool.length > 0 && (
                 <button
                   type="button"
+                  disabled={busy || uploading || intakeBusy}
                   onClick={() => { setPool([]); onFieldClear?.(); }}
-                  className="ml-auto rounded-lg px-2 py-1 text-[11px] text-foreground/50 transition-colors hover:text-foreground"
+                  className="min-h-11 rounded-[20px] px-3 text-[12px] text-foreground/60 transition-colors hover:bg-foreground/[0.04] hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-40"
                 >
                   {t("reai.pool.clear", lang)}
                 </button>
               )}
             </div>
           )}
-          {!showHistory && !showMediaHistory && answering && (
-            <div className="flex items-start gap-2 rounded-2xl border border-border/60 bg-background/70 px-3 py-2" role="status">
-              <p className="min-w-0 flex-1 text-[12px] leading-5 text-foreground/80">
+          {answering && (
+            <div className="flex items-start gap-2 rounded-[20px] bg-foreground/[0.035] py-1 pl-3 pr-1" role="status">
+              <p className="min-w-0 flex-1 py-2 text-[12px] leading-5 text-foreground/80">
                 <span className="font-medium text-foreground">{t("reai.plan.answering", lang)}</span>{" "}
                 {answering.text}
               </p>
@@ -3194,60 +3220,13 @@ export function ReaiAgentCard({
                 type="button"
                 aria-label={t("reai.plan.answeringClose", lang)}
                 onClick={() => setAnswering(null)}
-                className="rounded-lg p-0.5 text-foreground/40 transition-colors hover:text-foreground"
+                className="inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-[20px] text-foreground/50 transition-colors hover:bg-foreground/[0.06] hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
               >
-                <CloseIcon size={12} />
+                <CloseIcon size={15} aria-hidden="true" />
               </button>
             </div>
           )}
-          {!showHistory && !showMediaHistory && <div className={cn(
-            "floating-panel-shape flex items-end gap-1.5 border border-border bg-white transition-colors focus-within:border-foreground/25",
-            compactPanel ? "p-1.5" : "p-2",
-          )}>
-            {(Boolean(draftId) || workspaceContext === "creator") && <>
-              <input ref={attachmentInputRef} type="file" multiple accept={AGENT_ATTACHMENT_ACCEPT} className="hidden" onChange={(event) => {
-                const files = Array.from(event.currentTarget.files ?? []);
-                event.currentTarget.value = "";
-                void handleDroppedFiles(files);
-              }} />
-              <button type="button" disabled={busy || uploading || intakeBusy} onClick={() => attachmentInputRef.current?.click()} aria-label={t("reai.attachments.add", lang)} title={t("reai.attachments.add", lang)} className="floating-icon-button shrink-0 text-foreground/55 disabled:opacity-40">
-                <PlusIcon size={18} />
-              </button>
-            </>}
-            <textarea
-              ref={composerRef}
-              value={message}
-              onChange={(event) => setMessage(event.target.value)}
-              onFocus={() => setComposerFocused(true)}
-              onBlur={() => setComposerFocused(false)}
-              maxLength={2000}
-              rows={1}
-              placeholder={t(workspaceContext === "settings" ? "reai.settingsPlaceholder" : (draftId ? "reai.draftPlaceholder" : "reai.placeholder"), lang)}
-              onKeyDown={(event) => {
-                if (event.key === "Enter" && !event.shiftKey) {
-                  event.preventDefault();
-                  void ask();
-                }
-              }}
-              className={cn(
-                "min-w-0 flex-1 resize-none overflow-y-auto bg-transparent px-2.5 py-2.5 text-[14px] leading-5 outline-none [field-sizing:content] placeholder:text-foreground/40",
-                compactPanel ? "min-h-11" : "min-h-12",
-              )}
-            />
-            <button
-              type="button"
-              disabled={!message.trim() || busy || uploading || intakeBusy}
-              onClick={() => void ask()}
-              aria-label={t("reai.ask", lang)}
-              className={cn(
-                "bg-creative text-creative-foreground hover:bg-creative/90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-creative focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-25",
-                compactPanel ? "floating-icon-button px-0" : "floating-control w-auto gap-1.5 px-3.5",
-              )}
-            >
-              <SparklesIcon size={15} />
-              <span className={compactPanel ? "sr-only" : undefined}>{t("reai.ask", lang)}</span>
-            </button>
-          </div>}
+          </AgentComposer>}
         </div>
       )}
     </section>

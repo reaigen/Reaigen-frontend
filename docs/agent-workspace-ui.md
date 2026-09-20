@@ -123,6 +123,18 @@ prototype.
 
 ## Interaction and status feedback
 
+- The composer is one 20 px rounded card. The full-width, labelled message area
+  sits above the attachment/send toolbar; neither button takes space from typing.
+  Its text grows from 64 px to 160 px, then scrolls. Clearing or sending shrinks it
+  again. Enter sends, Shift+Enter adds a line, and IME confirmation never sends.
+- A labelled **Add files** control opens the same guarded file intake used by
+  drag-and-drop. A separate arrow sends the typed message. While work is running,
+  both actions are disabled and the send control shows activity; typing the next
+  message remains possible. These presentation controls grant no new permissions.
+- Attached files, selected workspace context and the active question share a
+  bounded, scrollable tray inside the composer. Document privacy and unread
+  status appear separately from the filename. Add, send and remove targets are
+  at least 44 x 44 px; selected values and long filenames cannot widen the panel.
 - Cards, controls, buttons, inputs, and status markers use the same 20 px Agent corner radius.
 - Interactive targets are at least 44 x 44 px on phones, including compact share links.
 - Opening Agent below the docked breakpoint moves keyboard focus to its close control. On phones,
@@ -172,3 +184,19 @@ History is a compact newest-first timeline, not a stack of large form cards. Eac
 
 Restoring is always confirmed. The current state is checkpointed by the backend before restore, so
 the replaced version remains recoverable.
+
+## Composer verification — 2026-09-21
+
+The full `npm run check` passed after the composer redesign: lint, TypeScript,
+security and transport contracts, all 71 Agent checks, the other frontend
+regression suites, and the production build. The new checks render the real
+composer with React's server renderer and exercise its keyboard and sizing
+helpers. They cover localized labels, disabled actions during work, editable
+next-message text, the bounded context tray, the unchanged file accept list,
+IME/newline handling and the existing guarded message/file-drop handlers.
+Log: `/private/tmp/reaigen-agent-composer-check-20260921.log`.
+
+These are not visual or signed-in end-to-end results. Browser discovery returned
+no connected browser during this check, so actual layout and the authenticated
+file-drop → conversation → draft flow remain unverified. The changes are local;
+this work did not push to Gitea/GitHub or deploy to Vercel/AWS.
