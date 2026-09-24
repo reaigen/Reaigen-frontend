@@ -50,19 +50,70 @@ export function isApiNotFound(error: unknown) {
   return text.toLowerCase().includes("not found");
 }
 
+/**
+ * The backend writes its refusals in English ("Email verification required
+ * before you can sign in.", "Invalid credentials."). Shown as they are, a
+ * Slovak sign-in screen carried an English sentence in a red box. Each known
+ * refusal maps to a locale key; anything unknown still passes through the
+ * safety check above, so a new backend message is never hidden.
+ */
+export type ApiErrorKind = "verification" | "credentials" | "throttled" | "disabled" | "conflict" | "validation";
+
+const KNOWN_ERROR_CODES: Record<string, { key: LocaleKey; kind: ApiErrorKind }> = {
+  email_not_verified: { key: "auth.error.emailVerification", kind: "verification" },
+  email_verification_required: { key: "auth.error.emailVerification", kind: "verification" },
+  invalid_credentials: { key: "auth.error.invalidCredentials", kind: "credentials" },
+  throttled: { key: "auth.error.throttled", kind: "throttled" },
+  account_disabled: { key: "auth.session.accountDisabled", kind: "disabled" },
+};
+
+const KNOWN_ERROR_MESSAGES: Array<[RegExp, LocaleKey, ApiErrorKind]> = [
+  [/^email verification required\b/i, "auth.error.emailVerification", "verification"],
+  [/^invalid credentials\b/i, "auth.error.invalidCredentials", "credentials"],
+  [/^too many (?:requests|attempts)\b/i, "auth.error.throttled", "throttled"],
+  [/^request was throttled\b/i, "auth.error.throttled", "throttled"],
+  [/^user account (?:is disabled|has been deleted)\b/i, "auth.session.accountDisabled", "disabled"],
+  [/^a user with this email already exists\b/i, "auth.error.emailTaken", "conflict"],
+  [/^this phone number is already registered\b/i, "auth.error.phoneTaken", "conflict"],
+  [/^code must contain 6 digits\b/i, "auth.error.codeSixDigits", "validation"],
+  [/^(?:code|otp) must be numeric\b/i, "auth.error.codeNumeric", "validation"],
+  [/^code must be at least 6 characters\b/i, "auth.error.codeSixDigits", "validation"],
+];
+
+function apiErrorDetail(error: ApiError): string {
+  const payload = getApiErrorJson(error);
+  return payload
+    ? flattenValue(payload.detail ?? payload.error ?? payload.message ?? payload.non_field_errors ?? payload)
+    : error.body;
+}
+
+export function classifyApiError(error: unknown): { key: LocaleKey; kind: ApiErrorKind } | null {
+  if (!(error instanceof ApiError)) return null;
+  const code = getApiErrorCode(error);
+  if (code && KNOWN_ERROR_CODES[code]) return KNOWN_ERROR_CODES[code];
+  if (error.status === 429) return KNOWN_ERROR_CODES.throttled;
+  const detail = apiErrorDetail(error).trim();
+  for (const [pattern, key, kind] of KNOWN_ERROR_MESSAGES) {
+    if (pattern.test(detail)) return { key, kind };
+  }
+  return null;
+}
+
+export function isEmailVerificationError(error: unknown) {
+  return classifyApiError(error)?.kind === "verification";
+}
+
 export function getSafeApiErrorMessage(
   error: unknown,
   lang: string,
   fallbackKey: LocaleKey = "common.somethingWentWrongTryAgain",
 ) {
   if (error instanceof ApiError) {
+    const known = classifyApiError(error);
+    if (known) return t(known.key, lang);
     if (error.status >= 500) return t("common.serviceTemporarilyUnavailable", lang);
 
-    const payload = getApiErrorJson(error);
-    const detail = payload
-      ? flattenValue(payload.detail ?? payload.error ?? payload.message ?? payload.non_field_errors ?? payload)
-      : error.body;
-
+    const detail = apiErrorDetail(error);
     return isSafeForUser(detail) ? detail.trim().slice(0, 240) : t(fallbackKey, lang);
   }
 

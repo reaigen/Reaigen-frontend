@@ -8,7 +8,7 @@ import { Input } from "../lib/ui/input";
 import { Label } from "../lib/ui/label";
 import { requestPasswordReset, resendVerification, type StepUpChallenge } from "../lib/api/client";
 import type { SessionEndReason } from "../lib/session-end";
-import { getSafeApiErrorMessage } from "../lib/api/error-message";
+import { getSafeApiErrorMessage, isEmailVerificationError } from "../lib/api/error-message";
 import { isEmailAddress } from "../lib/form-validation";
 import { getBrowserLanguage, t } from "../lib/i18n";
 import type { LocaleKey } from "../lib/locales";
@@ -50,6 +50,38 @@ const SESSION_END_COPY: Record<SessionEndReason, LocaleKey> = {
   account_disabled: "auth.session.accountDisabled",
   expired: "auth.session.expired",
 };
+
+/**
+ * What the sign-in screens say when something did not go through. One
+ * surface for both kinds: a refusal the creator can act on (verify the
+ * address, wait a moment) reads as information, a failure reads as a
+ * failure — a small mark tells them apart, the box stays the same calm
+ * surface as the rest of the form instead of a red panel.
+ */
+function AuthNotice({ tone, message, children, testId }: {
+  tone: "error" | "info";
+  message: string;
+  children?: React.ReactNode;
+  testId?: string;
+}) {
+  return (
+    <div
+      role={tone === "error" ? "alert" : "status"}
+      data-tone={tone}
+      data-testid={testId}
+      className="flex gap-3 rounded-2xl border border-border bg-surface-subtle px-4 py-3.5"
+    >
+      <span
+        aria-hidden="true"
+        className={`mt-[7px] h-1.5 w-1.5 shrink-0 rounded-full ${tone === "error" ? "bg-destructive" : "bg-warning"}`}
+      />
+      <div className="min-w-0 flex-1">
+        <p className="text-[13px] font-medium leading-relaxed text-foreground">{message}</p>
+        {children}
+      </div>
+    </div>
+  );
+}
 
 /* ── Shared input style ───────────────────────────────────────────────── */
 
@@ -180,9 +212,7 @@ function VerificationPendingCard({ lang, email, onBack }: { lang: string; email:
         <p className="break-all text-[15px] font-semibold text-foreground" data-testid="verification-pending-email">{email}</p>
         <p className="mt-2 text-[13px] leading-relaxed text-foreground/65">{t("auth.register.pendingHint", lang)}</p>
       </div>
-      {error ? (
-        <p role="alert" className="rounded-2xl border border-destructive/20 bg-destructive/[0.045] px-4 py-3 text-[12px] font-medium leading-relaxed text-destructive">{error}</p>
-      ) : null}
+      {error ? <AuthNotice tone="error" message={error} /> : null}
       <Button
         type="button"
         variant="outline"
@@ -236,6 +266,9 @@ function LoginCard({
   }
   const [password, setPassword] = React.useState("");
   const [showPassword, setShowPassword] = React.useState(false);
+  // Known from the refusal itself, not from the wording: the message is
+  // shown in the creator's language, so its text cannot be searched.
+  const [verificationRequired, setVerificationRequired] = React.useState(false);
   const [emailTouched, setEmailTouched] = React.useState(false);
   const [passwordTouched, setPasswordTouched] = React.useState(false);
   const [loading, setLoading] = React.useState(false);
@@ -271,6 +304,7 @@ function LoginCard({
         setStepUpCode("");
       }
     } catch (err) {
+      setVerificationRequired(isEmailVerificationError(err));
       setError(getSafeApiErrorMessage(err, lang));
     } finally {
       setLoading(false);
@@ -322,11 +356,7 @@ function LoginCard({
             autoFocus
           />
         </div>
-        {error && (
-          <p role="alert" className="rounded-2xl border border-destructive/20 bg-destructive/[0.045] px-4 py-3 text-[12px] font-medium leading-relaxed text-destructive">
-            {error}
-          </p>
-        )}
+        {error && <AuthNotice tone="error" message={error} />}
         <Button
           type="submit"
           className="h-[3.25rem] w-full rounded-full text-[14px] font-semibold shadow-none disabled:opacity-100 disabled:bg-foreground disabled:text-background"
@@ -415,20 +445,19 @@ function LoginCard({
       </FormField>
 
       {error && (
-        <div role="alert" className="rounded-2xl border border-destructive/20 bg-destructive/[0.045] px-4 py-3 text-[12px] font-medium leading-relaxed text-destructive">
-          <p>{error}</p>
-          {/verif/i.test(error) && emailIsValid ? (
+        <AuthNotice tone={verificationRequired ? "info" : "error"} message={error} testId="login-notice">
+          {verificationRequired && emailIsValid ? (
             <button
               type="button"
               onClick={resendFromError}
               disabled={resendState !== "idle"}
-              className="mt-1.5 font-semibold text-foreground underline underline-offset-4 disabled:opacity-60"
+              className="mt-2 text-[13px] font-semibold text-foreground underline underline-offset-4 disabled:opacity-60"
               data-testid="login-resend-verification"
             >
               {resendState === "sent" ? t("auth.session.resent", lang) : t("auth.login.resendVerification", lang)}
             </button>
           ) : null}
-        </div>
+        </AuthNotice>
       )}
 
       <Button
