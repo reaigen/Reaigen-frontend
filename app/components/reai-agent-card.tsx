@@ -499,6 +499,12 @@ function errorText(error: unknown, lang: string): string {
   return getSafeApiErrorMessage(error, lang, "reai.error");
 }
 
+// Warning codes the import reports, as sentences; an unknown code is not shown raw.
+const IMPORT_WARNING_KEYS: Record<string, Parameters<typeof t>[0]> = {
+  mapping_unavailable: "reai.import.warning.mappingUnavailable",
+  conflicting_source_values: "reai.import.warning.conflictingValues",
+};
+
 function safeAgentNavigationPath(answer: ReaiAgentResponse): string | null {
   const path = answer.navigation_path;
   if (!path || !path.startsWith("/") || path.startsWith("//")) return null;
@@ -1770,7 +1776,9 @@ export function ReaiAgentCard({
     if (draftId === targetDraftId) setPool(nextPool);
     setUploading(false);
     if (failed.length) {
-      setAttachmentNotice(t("reai.attachments.failed", lang).replace("{count}", String(failed.length)));
+      setAttachmentNotice(failed.length === 1
+        ? t("reai.attachments.failedOne", lang)
+        : t("reai.attachments.failed", lang).replace("{count}", String(failed.length)));
       if (firstError) setError(errorText(firstError, lang));
     }
     window.dispatchEvent(new CustomEvent("reai-creations-updated", { detail: { draftIds: [targetDraftId] } }));
@@ -2379,7 +2387,10 @@ export function ReaiAgentCard({
                             </dl>
                           </details>
                         )}
-                        {answer.source_import.warnings?.map((warning, index) => <p key={index} className="text-muted-foreground">{warning}</p>)}
+                        {answer.source_import.warnings?.map((warning, index) => {
+                          const key = IMPORT_WARNING_KEYS[warning];
+                          return key ? <p key={index} className="text-muted-foreground">{t(key, lang)}</p> : null;
+                        })}
                         {turn.id === lastAssistantTurnId && <Button type="button" variant="ghost" size="xs" disabled={busy || uploading || intakeBusy} onClick={discussSources}>{t("reai.import.askSources", lang)}</Button>}
                       </div>
                     )}
