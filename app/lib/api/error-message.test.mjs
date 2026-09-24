@@ -29,8 +29,8 @@ const refusal = (status, body) => new ApiError(status, JSON.stringify(body));
 
 test("the backend's English sign-in refusals are shown in the creator's language", () => {
   const unverified = refusal(400, { non_field_errors: ["Email verification required before you can sign in."] });
-  assert.equal(getSafeApiErrorMessage(unverified, "sk"), "Pred prihlásením overte svoju e-mailovú adresu. Skontrolujte schránku alebo si nechajte overovací e-mail poslať znova.");
-  assert.equal(getSafeApiErrorMessage(unverified, "de").startsWith("Bestätigen Sie Ihre E-Mail-Adresse"), true);
+  assert.equal(getSafeApiErrorMessage(unverified, "sk"), "Táto adresa ešte nie je overená. Skontrolujte schránku alebo si nechajte overovací e-mail poslať znova.");
+  assert.equal(getSafeApiErrorMessage(unverified, "de").startsWith("Diese Adresse ist noch nicht bestätigt"), true);
   assert.equal(getSafeApiErrorMessage(refusal(400, { non_field_errors: ["Invalid credentials."] }), "cs"), "E-mail nebo heslo nesedí. Zkuste to znovu.");
   assert.equal(getSafeApiErrorMessage(refusal(400, { detail: "Invalid credentials." }), "en"), "The email or password is not right. Try again.");
 });

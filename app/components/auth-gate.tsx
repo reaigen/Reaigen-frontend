@@ -52,34 +52,36 @@ const SESSION_END_COPY: Record<SessionEndReason, LocaleKey> = {
 };
 
 /**
- * What the sign-in screens say when something did not go through. One
- * surface for both kinds: a refusal the creator can act on (verify the
- * address, wait a moment) reads as information, a failure reads as a
- * failure — a small mark tells them apart, the box stays the same calm
- * surface as the rest of the form instead of a red panel.
+ * What the sign-in screens say when something did not go through.
+ *
+ * A failure is one quiet line under the form with a small mark — no panel,
+ * no red block. A refusal the creator can act on (the address is not
+ * verified yet) is a card in the same surface as the rest of the screen,
+ * with a title and the action right there.
  */
-function AuthNotice({ tone, message, children, testId }: {
+function AuthNotice({ tone, message, title, children, testId }: {
   tone: "error" | "info";
   message: string;
+  title?: string;
   children?: React.ReactNode;
   testId?: string;
 }) {
-  return (
-    <div
-      role={tone === "error" ? "alert" : "status"}
-      data-tone={tone}
-      data-testid={testId}
-      className="flex gap-3 rounded-2xl border border-border bg-surface-subtle px-4 py-3.5"
-    >
-      <span
-        aria-hidden="true"
-        className={`mt-[7px] h-1.5 w-1.5 shrink-0 rounded-full ${tone === "error" ? "bg-destructive" : "bg-warning"}`}
-      />
-      <div className="min-w-0 flex-1">
-        <p className="text-[13px] font-medium leading-relaxed text-foreground">{message}</p>
+  if (tone === "info") {
+    return (
+      <div role="status" data-tone="info" data-testid={testId} className="rounded-2xl border border-border bg-surface-subtle px-5 py-4">
+        {title ? <p className="text-[14px] font-semibold text-foreground">{title}</p> : null}
+        <p className={`text-[13px] leading-relaxed text-foreground/70${title ? " mt-1" : ""}`}>{message}</p>
         {children}
       </div>
-    </div>
+    );
+  }
+  return (
+    <p role="alert" data-tone="error" data-testid={testId} className="flex items-start gap-2 px-1 text-[13px] font-medium leading-relaxed text-foreground/80">
+      <svg aria-hidden="true" viewBox="0 0 16 16" className="mt-[3px] h-3.5 w-3.5 shrink-0 text-destructive" fill="currentColor">
+        <path d="M8 1.5a6.5 6.5 0 1 1 0 13 6.5 6.5 0 0 1 0-13Zm0 3.25a.75.75 0 0 0-.75.75v3a.75.75 0 0 0 1.5 0v-3A.75.75 0 0 0 8 4.75Zm0 5.5a.875.875 0 1 0 0 1.75.875.875 0 0 0 0-1.75Z" />
+      </svg>
+      <span>{message}</span>
+    </p>
   );
 }
 
@@ -445,17 +447,24 @@ function LoginCard({
       </FormField>
 
       {error && (
-        <AuthNotice tone={verificationRequired ? "info" : "error"} message={error} testId="login-notice">
+        <AuthNotice
+          tone={verificationRequired ? "info" : "error"}
+          title={verificationRequired ? t("auth.error.emailVerificationTitle", lang) : undefined}
+          message={error}
+          testId="login-notice"
+        >
           {verificationRequired && emailIsValid ? (
-            <button
+            <Button
               type="button"
+              variant="outline"
+              className="mt-3 h-11 w-full rounded-full text-[13px] font-semibold shadow-none"
               onClick={resendFromError}
               disabled={resendState !== "idle"}
-              className="mt-2 text-[13px] font-semibold text-foreground underline underline-offset-4 disabled:opacity-60"
+              loading={resendState === "busy"}
               data-testid="login-resend-verification"
             >
               {resendState === "sent" ? t("auth.session.resent", lang) : t("auth.login.resendVerification", lang)}
-            </button>
+            </Button>
           ) : null}
         </AuthNotice>
       )}
