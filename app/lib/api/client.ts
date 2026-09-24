@@ -2875,6 +2875,12 @@ export interface ReaiAgentResponse {
   plan?: ReaiAgentPlan;
   /** Signed, server-held plan state. Opaque to the client. */
   plan_token?: string | null;
+  /**
+   * Signed memory of this conversation (standing instructions, earlier
+   * requests). Opaque; sent back with the next message so the agent keeps
+   * what was said beyond the last few turns.
+   */
+  thread_token?: string | null;
   /** Present when Agent assembled a new listing from the conversation. */
   listing_draft?: {
     title: string;
@@ -3350,6 +3356,7 @@ export async function importReaiSources(options: {
   language?: string;
   importRequestId?: string;
   improvementConversationId?: string | null;
+  threadToken?: string | null;
 }): Promise<ReaiAgentResponse> {
   return request("/api/reaigen/reai-agent/workspace/source-import/", {
     method: "POST",
@@ -3358,6 +3365,7 @@ export async function importReaiSources(options: {
       message: options.message,
       current_draft_id: options.currentDraftId,
       creation_context_token: options.creationContextToken || undefined,
+      thread_token: options.threadToken || undefined,
       conversation: options.conversation?.slice(-4),
       language: options.language,
       import_request_id: options.importRequestId,
@@ -3402,6 +3410,7 @@ export async function askReaiWorkspace(
     pendingAttachments?: AgentAttachmentDescriptor[];
     creationContextToken?: string | null;
     sourceTokens?: string[];
+    threadToken?: string | null;
   } = {},
 ): Promise<ReaiAgentResponse> {
   const pendingPhotoCount = options.pendingPhotoCount && options.pendingPhotoCount > 0
@@ -3423,6 +3432,7 @@ export async function askReaiWorkspace(
       pending_photo_count: pendingPhotoCount,
       pending_attachments: options.pendingAttachments?.length ? options.pendingAttachments.slice(0, 24) : undefined,
       creation_context_token: options.creationContextToken || undefined,
+      thread_token: options.threadToken || undefined,
       source_tokens: options.sourceTokens?.length ? options.sourceTokens.slice(0, 24) : undefined,
     }),
   });

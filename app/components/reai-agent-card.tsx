@@ -65,7 +65,7 @@ import {
   type AgentActionResult,
 } from "../lib/agent-actions";
 import { isPlanConfirmation, isPlanStop, isProposalConfirmation } from "../lib/agent-plan-confirmation";
-import { pendingAgentTurn, pendingCreationContextToken } from "../lib/agent-conversation";
+import { latestThreadToken, pendingAgentTurn, pendingCreationContextToken } from "../lib/agent-conversation";
 import { canApplyDirectEdit, isCurrentEditContext, proposalUndo, type AgentEditContext, type AgentEditUndo } from "../lib/agent-direct-edit";
 import { MAX_SOURCE_IMAGE_PREVIEWS, markSourceImportAttempt, monitorSourceImportProgress, reviewedSourceImageFile, reviewedSourceImport, sourceImageCandidates, unattemptedSourceImports } from "../lib/agent-document-import";
 import { proposalFieldUnit } from "../lib/agent-proposal";
@@ -1370,7 +1370,7 @@ export function ReaiAgentCard({
       const response = importTokens.length ? await importSources({
         sourceTokens: importTokens, message: requestText, currentDraftId: draftId,
         creationContextToken: !draftId ? pendingCreationContextToken(turns) : null,
-        conversation, language: lang,
+        conversation, language: lang, threadToken: latestThreadToken(turns),
       }) : await askReaiWorkspace(
         requestText,
         draftId,
@@ -1387,6 +1387,7 @@ export function ReaiAgentCard({
           pendingAttachments: pendingAttachmentDescriptors(pendingAttachments, documentReadStatesRef.current),
           creationContextToken: !draftId ? pendingCreationContextToken(turns) : null,
           sourceTokens,
+          threadToken: latestThreadToken(turns),
         },
       );
       if (generation !== intakeGenerationRef.current || editContext.userId !== editContextRef.current.userId || !editContextRef.current.consented) return;
@@ -1705,6 +1706,7 @@ export function ReaiAgentCard({
           pendingAttachments: pendingAttachmentDescriptors(pendingFiles, documentReadStatesRef.current),
           creationContextToken: !draftId ? pendingCreationContextToken(turns) : null,
           sourceTokens,
+          threadToken: latestThreadToken(turns),
         },
       );
       if (generation !== intakeGenerationRef.current) return;
