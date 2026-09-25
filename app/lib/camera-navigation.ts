@@ -229,11 +229,19 @@ export function stableCameraPreviewPose(
 
   const fromUp = stableCameraReferenceUp(rawFromUp);
   const toUp = stableCameraReferenceUp(rawToUp, fromUp);
-  const up = orthonormalCameraUp(stableCameraReferenceUp([
+  const referenceUp = stableCameraReferenceUp([
     fromUp[0] + (toUp[0] - fromUp[0]) * t,
     fromUp[1] + (toUp[1] - fromUp[1]) * t,
     fromUp[2] + (toUp[2] - fromUp[2]) * t,
-  ], t < 0.5 ? fromUp : toUp), forward, t < 0.5 ? fromUp : toUp);
+  ], t < 0.5 ? fromUp : toUp);
+  // The pose carries the authored *reference* up: a pitched shot keeps its
+  // level Y-up horizon, and a look-at yields the same basis for any up in
+  // that plane. Only when the reference up runs nearly along the forward —
+  // where the look-at's right vector shrinks towards zero and float noise
+  // becomes a twitching horizon — is the forward component removed first.
+  const up = Math.abs(dot(referenceUp, forward)) > 0.95
+    ? orthonormalCameraUp(referenceUp, forward, t < 0.5 ? fromUp : toUp)
+    : referenceUp;
 
   return {
     position: [

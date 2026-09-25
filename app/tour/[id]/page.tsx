@@ -433,12 +433,6 @@ export default function TourPage({
         lang={lang}
       />
 
-      {viewerReady ? (
-        <>
-          <div className="pointer-events-none absolute inset-x-0 top-0 z-10 h-28 bg-gradient-to-b from-black/50 to-transparent" aria-hidden="true" />
-          <div className="pointer-events-none absolute inset-x-0 bottom-0 z-10 h-36 bg-gradient-to-t from-black/55 to-transparent" aria-hidden="true" />
-        </>
-      ) : null}
 
       {/* Top bar */}
       <>

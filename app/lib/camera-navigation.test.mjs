@@ -28,10 +28,10 @@ test("physical navigation keys win over the active keyboard layout", () => {
   assert.equal(cameraMovementKey({ code: "Digit1", key: "1" }), null);
 });
 
-test("every saved-camera selection recalls one exact authored pose", () => {
+test("editing and the initial placement recall the exact authored pose; preview flies between angles", () => {
   assert.equal(savedCameraNavigationIsInstant("edit"), true);
   assert.equal(savedCameraNavigationIsInstant("initial"), true);
-  assert.equal(savedCameraNavigationIsInstant("preview"), true);
+  assert.equal(savedCameraNavigationIsInstant("preview"), false);
 });
 
 test("camera preview stays on the authored segment and lands exactly", () => {
@@ -148,6 +148,16 @@ test("pitched Dr Johnson preview keeps a level Y-up horizon without roll", () =>
       stableCameraUp(pose.forward, [0, 1, 0]),
     );
   }
+});
+
+test("a reference up that runs along the forward is straightened before it reaches the look-at", () => {
+  // Looking almost straight down with a Y-up reference: the raw pair would
+  // give a look-at a right vector of nearly zero length.
+  const down = [0.02, -0.9998, 0.0];
+  const pose = stableCameraPreviewPose([0, 0, 0], [0, 0, 0], down, down, [0, 1, 0], [0, 1, 0], 0.5);
+  const along = pose.forward[0] * pose.up[0] + pose.forward[1] * pose.up[1] + pose.forward[2] * pose.up[2];
+  assert.ok(Math.abs(along) < 1e-9, `up still leans along the forward: ${along}`);
+  assert.ok(Math.abs(Math.hypot(...pose.up) - 1) < 1e-9);
 });
 
 test("camera controls do not strand WASD focus while text fields keep their keys", () => {
