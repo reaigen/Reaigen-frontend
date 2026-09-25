@@ -146,7 +146,7 @@ export type AppShellProps = {
   reaiField?: AgentPoolField;
   onReaiFieldClear?: () => void;
   /** Viewer surface currently controlled by Agent. */
-  reaiWorkspaceContext?: "creator" | "draft" | "settings" | "floorplan" | "virtual_tour";
+  reaiWorkspaceContext?: "creator" | "draft" | "settings" | "floorplan" | "virtual_tour" | "advanced_tour";
   /** Owner-scoped tour resource currently open in the viewer. */
   reaiTourId?: number;
   onReaiDraftUpdated?: (draft: DraftDetailItem) => void;
@@ -619,7 +619,8 @@ function AppShellFrame({
 
   // The floorplan workspace has no agent tooling prepared, so the agent is not
   // offered there: the launcher disappears and an already-open panel closes.
-  const agentSuppressed = reaiWorkspaceContext === "floorplan";
+  // The floor plan and the advanced 3D editor are not agent surfaces.
+  const agentSuppressed = reaiWorkspaceContext === "floorplan" || reaiWorkspaceContext === "advanced_tour";
   React.useEffect(() => {
     if (agentSuppressed) setReaiOpen(false);
   }, [agentSuppressed]);
@@ -1149,7 +1150,7 @@ function AppShellFrame({
             */}
             <div className={cn("min-h-0 flex-1", dockedAgentViewport && "border-l border-border")}>
               {reaiCardMounted ? (
-                <ReaiAgentCard draftId={reaiDraftId} currentUploadId={reaiUploadId} currentField={reaiField} onFieldClear={onReaiFieldClear} currentTourId={reaiTourId} workspaceContext={reaiContext} lang={lang} onDraftUpdated={onReaiDraftUpdated} panel compact={compactAgentViewport} />
+                <ReaiAgentCard draftId={reaiDraftId} currentUploadId={reaiUploadId} currentField={reaiField} onFieldClear={onReaiFieldClear} currentTourId={reaiTourId} workspaceContext={reaiContext === "advanced_tour" ? undefined : reaiContext} lang={lang} onDraftUpdated={onReaiDraftUpdated} panel compact={compactAgentViewport} />
               ) : null}
             </div>
           </div>

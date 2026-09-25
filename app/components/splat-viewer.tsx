@@ -1383,6 +1383,40 @@ async function settleHiddenGaussian(
   return true;
 }
 
+/**
+ * Read a response body while reporting how much of it has arrived. A
+ * reconstruction is tens of megabytes; with ``arrayBuffer()`` the status sat
+ * on "Downloading…" with nothing moving until the whole file was in, and the
+ * scene then appeared all at once. When the server does not say how long the
+ * body is, the fraction stays unknown and the megabytes are reported instead.
+ */
+async function readBodyWithProgress(
+  response: Response,
+  onProgress?: (fraction: number | null, loadedBytes: number) => void,
+): Promise<ArrayBuffer> {
+  const total = Number(response.headers.get("content-length") || 0);
+  const reader = response.body?.getReader();
+  if (!reader) return response.arrayBuffer();
+  const chunks: Uint8Array[] = [];
+  let loaded = 0;
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    if (value) {
+      chunks.push(value);
+      loaded += value.byteLength;
+      onProgress?.(total > 0 ? Math.min(1, loaded / total) : null, loaded);
+    }
+  }
+  const out = new Uint8Array(loaded);
+  let offset = 0;
+  for (const chunk of chunks) {
+    out.set(chunk, offset);
+    offset += chunk.byteLength;
+  }
+  return out.buffer;
+}
+
 async function loadCompositionGaussian(
   BABYLON: any,
   scene: any,
@@ -6333,7 +6367,18 @@ const SplatViewer = forwardRef<SplatViewerHandle, Props>(function SplatViewer(
           // repeat opens fast without risking a stale reconstruction.
           const resp = await fetch(splatUrl, { cache: "force-cache" });
           if (!resp.ok) throw new Error(`Download ${resp.status}`);
-          rawBuffer = await resp.arrayBuffer();
+          let lastShown = -1;
+          rawBuffer = await readBodyWithProgress(resp, (fraction, loadedBytes) => {
+            if (disposed) return;
+            const shown = fraction === null ? Math.floor(loadedBytes / (1024 * 1024)) : Math.round(fraction * 100);
+            if (shown === lastShown) return;
+            lastShown = shown;
+            setStatus(
+              fraction === null
+                ? `${t("viewer.status.downloading", lang)} ${shown} MB`
+                : `${t("viewer.status.downloading", lang)} ${shown} %`,
+            );
+          });
           if (disposed) return;
           if (sourceCacheEligible && splatId) {
             deferSplatCacheWrite(splatId, "source", rawBuffer, outputsVersion);
@@ -7381,7 +7426,7 @@ const SplatViewer = forwardRef<SplatViewerHandle, Props>(function SplatViewer(
             event.currentTarget.focus();
           }
         }}
-        className={`block h-full w-full outline-none ${
+        className={`block h-full w-full outline-none transition-opacity duration-500 ease-out ${
           spinoffEligible && spatialNavigation ? "absolute inset-0 z-10" : ""
         }`}
         style={{ touchAction: "none", overscrollBehavior: "none" }}

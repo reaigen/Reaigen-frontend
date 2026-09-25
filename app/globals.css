@@ -213,10 +213,19 @@
     color: hsl(var(--foreground));
   }
 
+  /* The panels themselves are written with bg-black/60; the remap listed
+     /70, /55 and /45 only, so in the workspace the panel stayed a
+     translucent black while its text had already been turned dark — dark
+     on dark, unreadable over a light scene. Every panel surface is mapped
+     here, and it is opaque enough to read on any scene. */
   .camera-editor-workspace [class~="bg-black/70"],
+  .camera-editor-workspace [class~="bg-black/60"],
   .camera-editor-workspace [class~="bg-black/55"],
   .camera-editor-workspace [class~="bg-black/45"] {
-    background-color: hsl(var(--card) / 0.9) !important;
+    background-color: hsl(var(--card) / 0.97) !important;
+    backdrop-filter: none !important;
+    -webkit-backdrop-filter: none !important;
+    box-shadow: 0 12px 32px -12px hsl(var(--foreground) / 0.25), 0 0 0 1px hsl(var(--border) / 0.9) !important;
   }
 
   .camera-editor-workspace [class~="text-white"],
@@ -228,15 +237,16 @@
   .camera-editor-workspace [class~="text-white/65"],
   .camera-editor-workspace [class~="text-white/60"],
   .camera-editor-workspace [class~="text-white/55"] {
-    color: hsl(var(--foreground) / 0.78) !important;
+    color: hsl(var(--foreground) / 0.92) !important;
   }
 
   .camera-editor-workspace [class~="text-white/50"],
   .camera-editor-workspace [class~="text-white/45"],
   .camera-editor-workspace [class~="text-white/40"] {
-    color: hsl(var(--foreground) / 0.62) !important;
+    color: hsl(var(--foreground) / 0.7) !important;
   }
 
+  .camera-editor-workspace [class~="border-white/[0.16]"],
   .camera-editor-workspace [class~="border-white/15"],
   .camera-editor-workspace [class~="border-white/10"],
   .camera-editor-workspace [class~="border-white/[0.1]"],
@@ -245,6 +255,8 @@
     border-color: hsl(var(--border) / 0.68) !important;
   }
 
+  .camera-editor-workspace [class~="bg-white/25"],
+  .camera-editor-workspace [class~="bg-white/[0.18]"],
   .camera-editor-workspace [class~="bg-white/15"],
   .camera-editor-workspace [class~="bg-white/10"],
   .camera-editor-workspace [class~="bg-white/[0.12]"],

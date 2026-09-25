@@ -378,7 +378,11 @@ export default function WebTourEditorPage({
         return getReaiAgentConsent();
       })
       .then((consent) => {
-        if (active && consent) setAgentEnabled(consent.consented);
+        // The advanced 3D editor is not an agent surface (operator decision,
+        // 2026-09-25): the agent lives in the listing workspace. Consent is
+        // still read so an entitlement change is noticed, but the panel and
+        // its launcher never appear here.
+        if (active && consent) setAgentEnabled(false);
       })
       .catch(() => {
         if (active) {
