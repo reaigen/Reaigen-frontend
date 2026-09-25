@@ -1883,6 +1883,16 @@ const SplatViewer = forwardRef<SplatViewerHandle, Props>(function SplatViewer(
     pointer: { x: number; y: number };
   } | null>(null);
   const [ready, setReady] = useState(false);
+  // "Ready" used to mean "the camera is placed", and the loading surface
+  // started fading before the first sorted frame had been drawn — for a few
+  // hundred milliseconds the page cross-faded into the bare dark backdrop,
+  // the black blink seen on some loads. Readiness now waits for a frame that
+  // has the splats in it (or 1.5 s, whichever comes first).
+  const firstPaintGateRef = useRef<{ since: number } | null>(null);
+  const markReadyAfterFirstPaint = useCallback(() => {
+    firstPaintGateRef.current = { since: performance.now() };
+    immersiveRenderBurstUntilRef.current = performance.now() + 1500;
+  }, []);
   const [spinoffStatus, setSpinoffStatus] = useState<"idle" | "loading" | "ready" | "error">("idle");
   const [tourData, setTourData] = useState<TourData | null>(null);
   const [immersiveAdjusted, setImmersiveAdjusted] = useState(false);
@@ -6104,6 +6114,19 @@ const SplatViewer = forwardRef<SplatViewerHandle, Props>(function SplatViewer(
             lastIdleRenderAt = now;
           }
           scene.render();
+          const paintGate = firstPaintGateRef.current;
+          if (paintGate) {
+            const gaussian = gsRef.current as any;
+            const view = gaussian?._cameraViewInfos?.get?.(camera.uniqueId);
+            const painted = !gaussian
+              || Boolean(view?.splatIndexBufferSet && view.sortAppliedId === view.sortRequestId);
+            if (painted || now - paintGate.since > 1500) {
+              firstPaintGateRef.current = null;
+              setReady(true);
+            } else {
+              immersiveRenderBurstUntilRef.current = now + 300;
+            }
+          }
           if (
             !spinoffEligible
             && gaussianSortMotion.settle(performance.now())
@@ -6420,7 +6443,7 @@ const SplatViewer = forwardRef<SplatViewerHandle, Props>(function SplatViewer(
                 camera.fov,
               );
             }
-            setReady(true);
+            markReadyAfterFirstPaint();
             viewerInitializing = false;
             return;
           }
@@ -6674,7 +6697,7 @@ const SplatViewer = forwardRef<SplatViewerHandle, Props>(function SplatViewer(
               camera.fov,
             );
           }
-          setReady(true);
+          markReadyAfterFirstPaint();
           viewerInitializing = false;
           return;
         }
@@ -6722,7 +6745,7 @@ const SplatViewer = forwardRef<SplatViewerHandle, Props>(function SplatViewer(
             camera.fov,
           );
         }
-        setReady(true);
+        markReadyAfterFirstPaint();
         viewerInitializing = false;
         setStatus("");
         onReady?.();
