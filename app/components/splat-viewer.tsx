@@ -5895,8 +5895,10 @@ const SplatViewer = forwardRef<SplatViewerHandle, Props>(function SplatViewer(
             return;
           }
 
-          // Travel animation
-          anim.elapsed = Math.min(anim.elapsed + dt, anim.duration);
+          // Travel animation. A frame that stalled on a sort must not throw the
+          // flight forward by a tenth of a second; the flight simply takes the
+          // stall's time, which reads as smooth rather than as a jump.
+          anim.elapsed = Math.min(anim.elapsed + Math.min(dt, 1 / 30), anim.duration);
           const rawT = anim.elapsed / anim.duration;
           const et = quintic(rawT);
           // Keep position, orientation and FOV on one timing curve. A leading
@@ -6003,6 +6005,12 @@ const SplatViewer = forwardRef<SplatViewerHandle, Props>(function SplatViewer(
             coastPitch: coast.pitch,
           });
           if (moving) {
+            // A flight between saved poses and a finger on the glass need the
+            // display's own cadence: the 60-frame cap on a 90 Hz panel renders
+            // in alternating 11/22 ms steps, which is the jitter seen on the
+            // way to a pose and the wobble under a drag. The cap stays for
+            // coasting and render bursts, where nobody is steering.
+            const steering = animRef.current.active || immersivePointersActiveRef.current;
             const nextMotionTimestamp = nextViewerMotionFrameTimestamp(
               lastMotionRenderAt,
               now,
@@ -6010,8 +6018,8 @@ const SplatViewer = forwardRef<SplatViewerHandle, Props>(function SplatViewer(
               // camera pose at the display's native cadence. Capping Babylon's
               // controller at 60 produced alternating 11/22 ms steps on 90 Hz
               // panels, visible as camera jiggle even when the renderer had
-              // ample headroom. Babylon-drawn Gaussians retain the cap.
-              spinoffEligible ? "quality" : performanceProfile,
+              // ample headroom.
+              spinoffEligible || steering ? "quality" : performanceProfile,
             );
             if (nextMotionTimestamp == null) return;
             lastMotionRenderAt = nextMotionTimestamp;
