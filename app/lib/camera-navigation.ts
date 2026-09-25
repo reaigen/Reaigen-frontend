@@ -163,6 +163,42 @@ export const POV_LANDSCAPE_FOV = 62 * Math.PI / 180;
 const POV_PORTRAIT_ACROSS = 40 * Math.PI / 180;
 const POV_MAX_FOV = 80 * Math.PI / 180;
 
+export interface FirstPersonEase {
+  fromFov: number;
+  toFov: number;
+  fromUp: Vec3;
+  toUp: Vec3;
+  startedAt: number;
+  duration: number;
+}
+
+/**
+ * The lens and horizon at one moment of the ease into first person.
+ *
+ * Progress is quintic-smoothed on the wall clock; the reference up is
+ * interpolated and re-normalized so a rolled shot levels without a snap.
+ * `done` at the end of the duration (or on a non-positive duration) lets the
+ * render loop drop the ease.
+ */
+export function firstPersonEase(
+  ease: FirstPersonEase,
+  now: number,
+): { fov: number; up: Vec3; done: boolean } {
+  const raw = ease.duration > 0 ? (now - ease.startedAt) / ease.duration : 1;
+  const t = Number.isFinite(raw) ? Math.max(0, Math.min(1, raw)) : 1;
+  const e = t * t * t * (t * (t * 6 - 15) + 10);
+  const up = normalized([
+    ease.fromUp[0] + (ease.toUp[0] - ease.fromUp[0]) * e,
+    ease.fromUp[1] + (ease.toUp[1] - ease.fromUp[1]) * e,
+    ease.fromUp[2] + (ease.toUp[2] - ease.fromUp[2]) * e,
+  ], ease.toUp);
+  return {
+    fov: ease.fromFov + (ease.toFov - ease.fromFov) * e,
+    up,
+    done: t >= 1,
+  };
+}
+
 export function povVerticalFov(aspect: number): number {
   if (!Number.isFinite(aspect) || aspect >= 1) return POV_LANDSCAPE_FOV;
   const opened = 2 * Math.atan(Math.tan(POV_PORTRAIT_ACROSS / 2) / Math.max(0.3, aspect));

@@ -65,6 +65,8 @@ import {
   cameraWalkDirection,
   stableCameraPreviewPose,
   stableCameraReferenceUp,
+  type FirstPersonEase,
+  firstPersonEase,
   levelReferenceUp,
   povVerticalFov,
 } from "@/app/lib/camera-navigation";
@@ -1770,9 +1772,7 @@ const SplatViewer = forwardRef<SplatViewerHandle, Props>(function SplatViewer(
   const freeModeRef = useRef(false);
   const immersivePoseRef = useRef<ImmersivePose>(defaultImmersivePose());
   const immersiveCoastRef = useRef({ yaw: 0, pitch: 0 });
-  const povTransitionRef = useRef<{
-    fromFov: number; toFov: number; fromUp: Vec3; toUp: Vec3; startedAt: number; duration: number;
-  } | null>(null);
+  const povTransitionRef = useRef<FirstPersonEase | null>(null);
   const enterPovRef = useRef<(() => void) | null>(null);
   const immersivePointersActiveRef = useRef(false);
   const immersiveRenderBurstUntilRef = useRef(0);
@@ -5932,20 +5932,14 @@ const SplatViewer = forwardRef<SplatViewerHandle, Props>(function SplatViewer(
             const pov = povTransitionRef.current;
             if (pov && !anim.active) {
               const povNow = performance.now();
-              const pt = Math.min(1, (povNow - pov.startedAt) / pov.duration);
-              const pe = quintic(pt);
-              camera.fov = pov.fromFov + (pov.toFov - pov.fromFov) * pe;
-              const easedUp = normalizeVec3([
-                pov.fromUp[0] + (pov.toUp[0] - pov.fromUp[0]) * pe,
-                pov.fromUp[1] + (pov.toUp[1] - pov.fromUp[1]) * pe,
-                pov.fromUp[2] + (pov.toUp[2] - pov.fromUp[2]) * pe,
-              ], pov.toUp);
-              cameraUpRef.current = easedUp;
-              camera.upVector.set(easedUp[0], easedUp[1], easedUp[2]);
+              const eased = firstPersonEase(pov, povNow);
+              camera.fov = eased.fov;
+              cameraUpRef.current = eased.up;
+              camera.upVector.set(eased.up[0], eased.up[1], eased.up[2]);
               const pose = immersivePoseRef.current;
               if (pose.enabled) pose.fov = camera.fov;
               immersiveRenderBurstUntilRef.current = Math.max(immersiveRenderBurstUntilRef.current, povNow + 120);
-              if (pt >= 1) povTransitionRef.current = null;
+              if (eased.done) povTransitionRef.current = null;
             }
 
             // Scroll-driven Steadicam

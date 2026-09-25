@@ -17,6 +17,7 @@ import {
   levelReferenceUp,
   povVerticalFov,
   POV_LANDSCAPE_FOV,
+  firstPersonEase,
 } from "./camera-navigation.ts";
 import { transformCanonicalDirection } from "./global-scene-transform.ts";
 
@@ -186,6 +187,31 @@ test("the first-person lens is 62° in landscape and opens on a portrait phone w
   const across = degrees(2 * Math.atan(Math.tan(povVerticalFov(0.46) / 2) * 0.46));
   assert.ok(Math.abs(across - 40) < 0.5, `across ${across}`);
   assert.ok(Math.abs(degrees(povVerticalFov(0.1)) - 80) < 1e-9);
+});
+
+test("the ease into first person starts on the shot's lens, lands on the walking lens with a level horizon, and then ends", () => {
+  const ease = {
+    fromFov: 0.66,
+    toFov: POV_LANDSCAPE_FOV,
+    fromUp: [0.2, 0.97, 0.1],
+    toUp: [0, 1, 0],
+    startedAt: 1000,
+    duration: 480,
+  };
+  const start = firstPersonEase(ease, 1000);
+  assert.ok(Math.abs(start.fov - 0.66) < 1e-12);
+  assert.ok(Math.abs(Math.hypot(...start.up) - 1) < 1e-9, "the up is always unit length");
+  assert.equal(start.done, false);
+  const middle = firstPersonEase(ease, 1240);
+  assert.ok(middle.fov > 0.66 && middle.fov < POV_LANDSCAPE_FOV);
+  assert.ok(middle.up[1] > start.up[1] && middle.up[1] < 1);
+  const end = firstPersonEase(ease, 1480);
+  assert.ok(Math.abs(end.fov - POV_LANDSCAPE_FOV) < 1e-12);
+  closeTo(end.up, [0, 1, 0]);
+  assert.equal(end.done, true);
+  // A stalled clock never leaves the ease half-applied.
+  assert.equal(firstPersonEase({ ...ease, duration: 0 }, 1000).done, true);
+  assert.equal(firstPersonEase(ease, Number.NaN).done, true);
 });
 
 test("camera controls do not strand WASD focus while text fields keep their keys", () => {
