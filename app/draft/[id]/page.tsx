@@ -1416,8 +1416,10 @@ export default function DraftPreviewPage({
                             });
                           }}
                           className={cn(
-                            "detail-card group flex min-w-0 items-center gap-3 px-3.5 py-3.5 transition-[border-color,box-shadow,transform]",
-                            row.path && "cursor-grab text-left hover:-translate-y-px hover:border-foreground/20 hover:shadow-card focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring active:cursor-grabbing",
+                            // A button centres its content; every card reads left of its icon,
+                            // whether or not the value can be dragged to the agent.
+                            "detail-card group flex min-w-0 items-center gap-3 px-3.5 py-3.5 text-left transition-[border-color,box-shadow,transform]",
+                            row.path && "cursor-grab hover:-translate-y-px hover:border-foreground/20 hover:shadow-card focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring active:cursor-grabbing",
                             agentField?.draftId === draftId && agentField.field.path === row.path && "ring-2 ring-foreground/40",
                           )}
                         >

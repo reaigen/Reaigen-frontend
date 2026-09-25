@@ -61,6 +61,33 @@ export function writeAgentTranscript<T>(key: string, turns: T[]): void {
   }
 }
 
+const ENABLED_KEY = "reai:agent-enabled";
+
+/**
+ * Whether the agent was on the last time this tab checked. The shell is
+ * mounted per page, so without this the launcher was hidden on every
+ * navigation until two requests came back, and popped in a second later.
+ * It is a hint for the first paint only; the server's answer still wins.
+ */
+export function readAgentEnabled(): boolean {
+  if (typeof window === "undefined") return false;
+  try {
+    return window.sessionStorage.getItem(ENABLED_KEY) === "1";
+  } catch {
+    return false;
+  }
+}
+
+export function writeAgentEnabled(enabled: boolean): void {
+  if (typeof window === "undefined") return;
+  try {
+    if (enabled) window.sessionStorage.setItem(ENABLED_KEY, "1");
+    else window.sessionStorage.removeItem(ENABLED_KEY);
+  } catch {
+    // Storage full or blocked: the launcher simply waits for the server again.
+  }
+}
+
 export function readAgentPanelOpen(): boolean {
   if (typeof window === "undefined") return false;
   try {
@@ -91,6 +118,7 @@ export function clearAgentSession(): void {
       }
     }
     window.sessionStorage.removeItem(PANEL_OPEN_KEY);
+    window.sessionStorage.removeItem(ENABLED_KEY);
   } catch {
     // Nothing actionable; the auth-boundary purge is the backstop.
   }

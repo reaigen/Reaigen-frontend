@@ -7,7 +7,7 @@ import { usePathname } from "next/navigation";
 import { Avatar, AvatarFallback, AvatarImage } from "../lib/ui/avatar";
 import { BottomSheet } from "../lib/ui/bottom-sheet";
 import { getReaiAgentConsent, getUserCapabilities, type UserProfile } from "../lib/api/client";
-import { clearAgentSession, readAgentPanelOpen, writeAgentPanelOpen } from "../lib/agent-session";
+import { clearAgentSession, readAgentPanelOpen, writeAgentPanelOpen, readAgentEnabled, writeAgentEnabled } from "../lib/agent-session";
 import type { AgentPoolField } from "../lib/agent-pool";
 import type { DraftDetailItem } from "../lib/tour-types";
 import { cn } from "../lib/utils";
@@ -398,12 +398,17 @@ function AppShellFrame({
   // panel shut mid-conversation. Restore before paint to avoid it flashing
   // open, and mirror every later change back.
   React.useLayoutEffect(() => {
+    if (readAgentEnabled()) setReaiEnabled(true);
     if (readAgentPanelOpen()) setReaiOpen(true);
   }, []);
 
   React.useEffect(() => {
     writeAgentPanelOpen(reaiOpen);
   }, [reaiOpen]);
+
+  React.useEffect(() => {
+    writeAgentEnabled(reaiEnabled);
+  }, [reaiEnabled]);
 
   // Once opened, retain the mounted card while the drawer is hidden so its
   // conversation and draft state survive a close/reopen in the same route.
@@ -466,8 +471,15 @@ function AppShellFrame({
         clearAgentSession();
         setReaiOpen(false);
       }
+      if (enabled === true) {
+        // Settings dispatches this only after Django granted the consent:
+        // show the launcher now, so turning the agent on is one step, not a
+        // disabled second and a jump. The re-read below still withdraws it
+        // if entitlement disagrees.
+        setReaiEnabled(true);
+      }
       // A browser event is never proof of entitlement. Re-read Django before
-      // enabling the launcher, including after an apparent consent grant.
+      // trusting the launcher, including after an apparent consent grant.
       refresh();
     };
     refresh();

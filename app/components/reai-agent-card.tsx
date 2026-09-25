@@ -545,6 +545,10 @@ export function ReaiAgentCard({
   const dateFormat = user?.localization?.date_format;
   const [consent, setConsent] = useState<ReaiAgentConsent | null>(null);
   const [consentResolved, setConsentResolved] = useState(false);
+  const consentRef = useRef<ReaiAgentConsent | null>(null);
+  useEffect(() => {
+    consentRef.current = consent;
+  }, [consent]);
   const [improvementConsent, setImprovementConsent] = useState<ReaiImprovementConsent | null>(null);
   const [improvementConversationId, setImprovementConversationId] = useState<string | null>(null);
   const [message, setMessage] = useState("");
@@ -760,7 +764,11 @@ export function ReaiAgentCard({
 
   useEffect(() => {
     let active = true;
-    setConsentResolved(false);
+    // A reload after the agent was switched on (or the language changed)
+    // keeps what the card already shows while the fresh answer arrives.
+    // Blanking it first put a spinner between "enable in settings" and the
+    // composer, and the panel jumped through three heights.
+    setConsentResolved((resolved) => resolved && consentRef.current !== null);
     setError(null);
     getReaiAgentConsent()
       .then((value) => {
@@ -912,7 +920,13 @@ export function ReaiAgentCard({
   useEffect(() => {
     const consentChanged = (event: Event) => {
       setConsentReloadKey((current) => current + 1);
-      if ((event as CustomEvent<{ enabled?: boolean }>).detail?.enabled === true) return;
+      if ((event as CustomEvent<{ enabled?: boolean }>).detail?.enabled === true) {
+        // Settings just confirmed the agent is on: show the composer now and
+        // let the reload confirm it, instead of a disabled box, a spinner
+        // and then the composer.
+        setConsent((current) => current ? { ...current, consented: true } : current);
+        return;
+      }
       intakeGenerationRef.current += 1;
       editContextRef.current = { ...editContextRef.current, consented: false, generation: intakeGenerationRef.current };
       setConsent((current) => current ? { ...current, consented: false } : null);

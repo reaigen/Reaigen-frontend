@@ -1024,8 +1024,13 @@ function ReaiTab({ lang }: { lang: string }) {
     setError(null);
     setSuccess(null);
     try {
-      setConsent(await grantReaiAgentConsent(consent.policy_version));
-      setToolPermissions(await getReaiToolPermissions());
+      // One transition, not two: the section used to re-render as "on" with
+      // no tool permissions yet (every tool shown disabled), then again when
+      // they arrived. Fetch both, then show both.
+      const granted = await grantReaiAgentConsent(consent.policy_version);
+      const permissions = await getReaiToolPermissions();
+      setConsent(granted);
+      setToolPermissions(permissions);
       setAcknowledged(false);
       setSuccess(t("settings.reai.enabled", lang));
       window.dispatchEvent(new CustomEvent("reai-consent-changed", { detail: { enabled: true } }));
