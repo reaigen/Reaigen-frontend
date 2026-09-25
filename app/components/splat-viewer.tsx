@@ -7039,10 +7039,15 @@ const SplatViewer = forwardRef<SplatViewerHandle, Props>(function SplatViewer(
             syncCamera();
             renderer.renderOnce();
           },
-          stats: () => ({
-            frame: renderer.stats.frame,
-            projectedSplats: renderer.stats.projectedSplats,
-          }),
+          stats: () => {
+            const stats = renderer.stats;
+            return {
+              frame: stats.frame,
+              projectedSplats: stats.projectedSplats,
+              overflow: stats.projectionOverflow,
+              selection: stats.selectionProbability,
+            };
+          },
           requestFrame: (callback) => {
             window.requestAnimationFrame(callback);
           },
@@ -7443,7 +7448,7 @@ const SplatViewer = forwardRef<SplatViewerHandle, Props>(function SplatViewer(
               },
               now: () => performance.now(),
               aborted: () => disposed,
-            }).then((outcome) => {
+            }, { contentFrames: 3 }).then((outcome) => {
               if (disposed || outcome === "aborted") return;
               canvas.dataset.sparkFirstFrame = outcome;
               setSpinoffStatus("ready");

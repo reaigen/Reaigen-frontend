@@ -4,7 +4,7 @@ import test from "node:test";
 const { waitForFirstContentFrame } = await import("./first-content-frame.ts");
 
 function fakeEngine({ contentAfterDraws = 2, throwFirst = 0 } = {}) {
-  const state = { frame: 0, draws: 0, projected: 0, clock: 0, frames: [] };
+  const state = { frame: 0, draws: 0, projected: 0, clock: 0, frames: [], overflow: false, selection: 1 };
   const probe = {
     draw() {
       state.draws += 1;
@@ -12,7 +12,7 @@ function fakeEngine({ contentAfterDraws = 2, throwFirst = 0 } = {}) {
       state.frame += 1;
       if (state.frame >= contentAfterDraws) state.projected = 480_000;
     },
-    stats: () => ({ frame: state.frame, projectedSplats: state.projected }),
+    stats: () => ({ frame: state.frame, projectedSplats: state.projected, overflow: state.overflow, selection: state.selection }),
     requestFrame: (callback) => { state.frames.push(callback); },
     now: () => state.clock,
   };
@@ -38,6 +38,29 @@ test("the reveal waits for consecutive frames that show Gaussians", async () => 
   await Promise.resolve();
   assert.equal(outcome, "painted");
   assert.equal(state.draws, 4);
+});
+
+test("frames that overflowed the capacity, and the frame after a resample, do not count", async () => {
+  const { probe, state, tick } = fakeEngine({ contentAfterDraws: 1 });
+  let outcome = null;
+  void waitForFirstContentFrame(probe, { contentFrames: 3 }).then((value) => { outcome = value; });
+  // The first frames project the whole scene into a capacity that cannot
+  // hold it: splats are dropped, the picture has holes.
+  state.overflow = true;
+  tick(); tick(); tick(); tick();
+  await Promise.resolve();
+  assert.equal(outcome, null, "overflowing frames are not the picture");
+  // The readback settles the selection; the accumulated image restarts.
+  state.overflow = false;
+  state.selection = 0.31;
+  tick();
+  tick();
+  await Promise.resolve();
+  assert.equal(outcome, null, "the resample frame and one more are not three");
+  tick();
+  tick();
+  await Promise.resolve();
+  assert.equal(outcome, "painted");
 });
 
 test("a draw the backend refuses is retried on the next frame instead of failing the reveal", async () => {
