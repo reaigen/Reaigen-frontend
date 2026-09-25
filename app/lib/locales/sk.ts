@@ -1581,6 +1581,7 @@ const sk: LocaleStrings = {
   "reai.createListingPhotosFailed":         "Ponuka bola vytvorená, ale {count} fotiek sa nenahralo. Môžete ich pridať priamo v ponuke.",
   "reai.createListingTitle":                "Nová ponuka",
   "reai.createListingBody":                 "Ponuku vytvorím s tým, čo ste mi povedali. Čokoľvek sa dá potom zmeniť.",
+  "reai.listingSoFar":                     "Ponuka zatiaľ",
   "reai.createListingWithPhotos":           "Ponuku vytvorím s tým, čo ste mi povedali, a pridám {count} pretiahnutých fotiek.",
   "reai.createListingConfirm":              "Vytvoriť",
   "reai.createListingDone":                 "Vytvorené — otváram",

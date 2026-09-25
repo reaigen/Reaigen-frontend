@@ -421,6 +421,39 @@ function localizedSpecValue(value: unknown, lang: string, section: string, key: 
   return option ? t(option.labelKey, lang) : raw.replaceAll("_", " ");
 }
 
+// The listing being built in the conversation, fact by fact, so the creator
+// sees it take shape instead of reading it back from the chat. Only what was
+// said is shown; nothing is listed as missing or unknown.
+const LISTING_DRAFT_HIDDEN_FIELDS = new Set(["title", "currency", "area_unit", "lot_size_unit"]);
+
+function ListingDraftFacts({ answer, lang, unitCatalog }: {
+  answer: ReaiAgentResponse;
+  lang: string;
+  unitCatalog: readonly UnitLookup[];
+}) {
+  const draft = answer.listing_draft;
+  if (!draft) return null;
+  const fields = Object.entries(draft.fields).filter(([field, value]) => !LISTING_DRAFT_HIDDEN_FIELDS.has(field) && value !== null && value !== "");
+  const specs = proposalSpecEntries(draft.specs, lang);
+  if (!fields.length && !specs.length) return null;
+  return (
+    <dl className="mt-2 grid grid-cols-2 gap-x-3 gap-y-1.5 text-xs">
+      {fields.map(([field, value]) => (
+        <div key={field} className="min-w-0">
+          <dt className="text-muted-foreground">{agentFieldLabel(field, lang)}</dt>
+          <dd className="break-words font-medium text-foreground">{proposalValue(field, value, { ...answer, proposed_changes: draft.fields }, unitCatalog, lang)}</dd>
+        </div>
+      ))}
+      {specs.map((entry) => (
+        <div key={entry.key} className="min-w-0">
+          <dt className="text-muted-foreground">{entry.label}</dt>
+          <dd className="break-words font-medium text-foreground">{entry.value}</dd>
+        </div>
+      ))}
+    </dl>
+  );
+}
+
 function proposalSpecEntries(value: unknown, lang: string): Array<{ key: string; label: string; value: string }> {
   if (!value || typeof value !== "object" || Array.isArray(value)) return [];
   const entries: Array<{ key: string; label: string; value: string }> = [];
@@ -553,6 +586,10 @@ export function ReaiAgentCard({
   const [improvementConversationId, setImprovementConversationId] = useState<string | null>(null);
   const [message, setMessage] = useState("");
   const composerRef = useRef<HTMLTextAreaElement>(null);
+  // The conversation follows its newest message — a sent message, a streamed
+  // sentence, a card — unless the creator has scrolled up to read.
+  const conversationRef = useRef<HTMLDivElement>(null);
+  const followConversationRef = useRef(true);
   const [turns, setTurns] = useState<ChatTurn[]>([]);
   const [busy, setBusy] = useState(false);
   /** Local files waiting for a listing, or a failed upload's explicit retry. */
@@ -617,6 +654,18 @@ export function ReaiAgentCard({
   const [answering, setAnswering] = useState<{ planId: string; stepId: string; text: string } | null>(null);
 
   useEffect(() => { turnsRef.current = turns; }, [turns]);
+  useEffect(() => {
+    const element = conversationRef.current;
+    if (!element) return;
+    // A message the creator just sent always brings the view down; otherwise
+    // follow only while they are already at the bottom.
+    if (turns[turns.length - 1]?.role === "user") followConversationRef.current = true;
+    if (!followConversationRef.current) return;
+    const frame = requestAnimationFrame(() => {
+      element.scrollTo({ top: element.scrollHeight, behavior: "smooth" });
+    });
+    return () => cancelAnimationFrame(frame);
+  }, [turns, busy, sourceImportProgress]);
   useEffect(() => { pendingAttachmentsRef.current = pendingAttachments; }, [pendingAttachments]);
   useEffect(() => { improvementConversationIdRef.current = improvementConversationId; }, [improvementConversationId]);
   useEffect(() => { langRef.current = lang; }, [lang]);
@@ -2354,7 +2403,15 @@ export function ReaiAgentCard({
             </div>
           )}
           {!showHistory && !showMediaHistory && (turns.length > 0 || sourceImportProgress) && (
-            <div className={cn("space-y-4 overflow-y-auto pr-1", panel ? "min-h-0 flex-1" : "max-h-[420px]")} aria-live="polite">
+            <div
+              ref={conversationRef}
+              onScroll={(event) => {
+                const element = event.currentTarget;
+                followConversationRef.current = element.scrollHeight - element.scrollTop - element.clientHeight < 120;
+              }}
+              className={cn("space-y-4 overflow-y-auto pr-1", panel ? "min-h-0 flex-1" : "max-h-[420px]")}
+              aria-live="polite"
+            >
               {turns.map((turn) => {
                 const answer = turn.response;
                 const planState = turn.planState;
@@ -2794,6 +2851,14 @@ export function ReaiAgentCard({
                         )}
                       </div>
                     )}
+                    {answer?.action_code === "clarify_new_listing" && answer.listing_draft && !answer.source_import && turn.id === lastAssistantTurnId && (
+                      <div className="mt-4 overflow-hidden floating-panel-shape border border-border/65 bg-card px-3.5 py-3 shadow-control">
+                        <p className="text-xs font-semibold text-foreground">
+                          {answer.listing_draft.title || t("reai.listingSoFar", lang)}
+                        </p>
+                        <ListingDraftFacts answer={answer} lang={lang} unitCatalog={unitCatalog} />
+                      </div>
+                    )}
                     {answer?.action_code === "create_listing" && (answer.action_token || turn.actionStatus) && (
                       <div className="mt-4 overflow-hidden floating-panel-shape border border-border/65 bg-card shadow-control">
                         <div className="px-3.5 py-3">
@@ -2805,6 +2870,7 @@ export function ReaiAgentCard({
                               ? t("reai.attachments.createWithFiles", lang).replace("{count}", String(pendingAttachments.length))
                               : t("reai.createListingBody", lang)}
                           </p>
+                          {!answer.source_import && <ListingDraftFacts answer={answer} lang={lang} unitCatalog={unitCatalog} />}
                         </div>
                         {answer.action_token && (
                           <div className="flex items-center gap-2 border-t border-border/45 px-3.5 py-3">

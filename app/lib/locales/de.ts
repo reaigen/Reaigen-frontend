@@ -1581,6 +1581,7 @@ const de: LocaleStrings = {
   "reai.createListingPhotosFailed":         "Das Angebot wurde angelegt, aber {count} Foto(s) wurden nicht hochgeladen. Sie können sie im Angebot ergänzen.",
   "reai.createListingTitle":                "Neues Angebot",
   "reai.createListingBody":                 "Ich lege das Angebot mit dem an, was Sie mir gesagt haben. Alles lässt sich danach ändern.",
+  "reai.listingSoFar":                     "Das Angebot bisher",
   "reai.createListingWithPhotos":           "Ich lege das Angebot mit Ihren Angaben an und füge die {count} abgelegten Fotos hinzu.",
   "reai.createListingConfirm":              "Anlegen",
   "reai.createListingDone":                 "Angelegt — wird geöffnet",

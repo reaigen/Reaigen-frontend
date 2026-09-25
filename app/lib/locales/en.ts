@@ -1602,6 +1602,7 @@ const en = {
   "reai.createListingPhotosFailed":         "The listing was created, but {count} photo(s) did not upload. You can add them in the listing.",
   "reai.createListingTitle":                "New listing",
   "reai.createListingBody":                 "I will create this listing with what you have told me. You can change anything afterwards.",
+  "reai.listingSoFar":                     "The listing so far",
   "reai.createListingWithPhotos":           "I will create this listing with what you have told me, and add the {count} photo(s) you dropped in.",
   "reai.createListingConfirm":              "Create it",
   "reai.createListingDone":                 "Created — opening it now",

@@ -223,3 +223,21 @@ this work did not push to Gitea/GitHub or deploy to Vercel/AWS.
   the card was made; the card shows that message as the error.
 
 Tests: `app/lib/agent-conversation.test.mjs`.
+
+## Following the conversation and seeing the listing take shape (2026-09-26)
+
+- **Auto-scroll.** The message list scrolls to its newest message whenever a
+  turn is added, a streamed sentence arrives or a document import advances.
+  A message the creator sends always brings the view down; scrolling more
+  than ~120 px up to reread stops the following until they return to the
+  bottom (`conversationRef`, `followConversationRef` in
+  `reai-agent-card.tsx`).
+- **The listing so far.** Every creation turn carries `listing_draft`
+  (title, fields, specs). While facts are still being collected
+  (`clarify_new_listing`) the latest turn shows a "The listing so far" card,
+  and the create card lists the same facts (`ListingDraftFacts`), formatted
+  with the unit catalogue like proposals. Only what was said is shown —
+  nothing is listed as missing or unknown.
+- Guarded by `scripts/validate-agent-panel.test.mjs` (run with
+  `node --test scripts/validate-agent-panel.test.mjs`; adding it to
+  `npm run check` needs a `package.json` change, which waits for approval).

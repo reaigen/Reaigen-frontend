@@ -1581,6 +1581,7 @@ const cs: LocaleStrings = {
   "reai.createListingPhotosFailed":         "Nabídka byla vytvořena, ale {count} fotek se nenahrálo. Můžete je přidat přímo v nabídce.",
   "reai.createListingTitle":                "Nová nabídka",
   "reai.createListingBody":                 "Nabídku vytvořím s tím, co jste mi řekli. Cokoli se dá potom změnit.",
+  "reai.listingSoFar":                     "Nabídka zatím",
   "reai.createListingWithPhotos":           "Nabídku vytvořím s tím, co jste mi řekli, a přidám {count} přetažených fotek.",
   "reai.createListingConfirm":              "Vytvořit",
   "reai.createListingDone":                 "Vytvořeno — otevírám",
