@@ -64,7 +64,7 @@ import {
   executeAgentAction,
   type AgentActionResult,
 } from "../lib/agent-actions";
-import { isPlanConfirmation, isPlanStop, isProposalConfirmation } from "../lib/agent-plan-confirmation";
+import { isPlanConfirmation, isPlanStop, isProposalCancellation, isProposalConfirmation } from "../lib/agent-plan-confirmation";
 import { latestThreadToken, pendingAgentTurn, pendingCreationContextToken } from "../lib/agent-conversation";
 import { canApplyDirectEdit, isCurrentEditContext, proposalUndo, type AgentEditContext, type AgentEditUndo } from "../lib/agent-direct-edit";
 import { MAX_SOURCE_IMAGE_PREVIEWS, markSourceImportAttempt, monitorSourceImportProgress, reviewedSourceImageFile, reviewedSourceImport, sourceImageCandidates, unattemptedSourceImports } from "../lib/agent-document-import";
@@ -1348,8 +1348,34 @@ export function ReaiAgentCard({
     if (
       pendingProposal?.response?.proposal_token
       && !sourceImportFollowUp
+      && isProposalCancellation(requestText, lang)
+    ) {
+      // "Cancel the title change. Keep the saved title.": the card is
+      // withdrawn here; a model turn that said "cancelled" used to leave its
+      // Apply button live.
+      dismissProposal(pendingProposal.id);
+      setTurns((current) => [
+        ...current,
+        { id: newTurnId(), role: "assistant", content: t("reai.proposalCancelled", lang) },
+      ]);
+      return;
+    }
+    if (
+      pendingProposal?.response?.proposal_token
+      && !sourceImportFollowUp
       && isProposalConfirmation(requestText, lang)
     ) {
+      // A proposal made for another listing is not applied from this one:
+      // "apply the pending change" after switching listings used to reach
+      // the model, which minted the pending value for whatever was open.
+      const owners = (pendingProposal.response as { selected_creation_ids?: number[] }).selected_creation_ids ?? [];
+      if (draftId && owners.length > 0 && !owners.includes(draftId)) {
+        setTurns((current) => [
+          ...current,
+          { id: newTurnId(), role: "assistant", content: t("reai.proposalElsewhere", lang) },
+        ]);
+        return;
+      }
       const applied = await apply(pendingProposal.id, pendingProposal.response);
       if (applied) {
         const appliedTurnId = newTurnId();

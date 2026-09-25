@@ -1873,6 +1873,8 @@ const de: LocaleStrings = {
   "reai.quickSettingsLanguage":          "Sprache und Region",
   "reai.quickSettingsSecurity":          "Sicherheit",
   "reai.applied":                        "Die bestätigten Änderungen wurden auf den Entwurf angewendet.",
+  "reai.proposalCancelled":              "Nichts wurde gespeichert. Der Vorschlag ist zurückgezogen.",
+  "reai.proposalElsewhere":              "Dieser Vorschlag gehört zu einem anderen Angebot. Öffnen Sie es, um ihn dort anzuwenden, oder nennen Sie mir die Änderung hier erneut.",
   "reai.error":                          "Agent ist derzeit nicht verfügbar. Bitte versuchen Sie es später erneut.",
   "reai.enableInSettings":               "Der Agent-Zugriff wird in Ihren Kontoeinstellungen verwaltet.",
   "reai.openSettings":                   "Einstellungen öffnen",

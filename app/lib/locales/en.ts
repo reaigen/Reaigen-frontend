@@ -1894,6 +1894,8 @@ const en = {
   "reai.quickSettingsLanguage":          "Language and region",
   "reai.quickSettingsSecurity":          "Security",
   "reai.applied":                        "The confirmed changes were applied to the draft.",
+  "reai.proposalCancelled":              "Nothing was saved. The proposal is withdrawn.",
+  "reai.proposalElsewhere":              "That proposal belongs to another listing. Open it to apply it, or tell me the change again here.",
   "reai.error":                          "Agent is unavailable right now. Please try again later.",
   "reai.enableInSettings":               "Agent access is managed in your account settings.",
   "reai.openSettings":                   "Open settings",

@@ -119,5 +119,36 @@ export function isProposalConfirmation(text: string, accountLanguage: string): b
     de: ["speichern", "anwenden", "bestatigen", "bestatige", "ubernehmen"],
   };
   const accepted = [...phrases.en, ...(phrases[languageCode(accountLanguage)] ?? [])];
-  return accepted.some((phrase) => [phrase, `${phrase} please`, `please ${phrase}`, `yes ${phrase}`].includes(normalized));
+  if (accepted.some((phrase) => [phrase, `${phrase} please`, `please ${phrase}`, `yes ${phrase}`].includes(normalized))) return true;
+  // "Apply the pending change.", "Now apply the earlier proposal.", "Apply
+  // that diff.", "použi tú zmenu", "übernimm den Vorschlag": the card's own
+  // proposal, named. Anything more than the command and its object is not
+  // a confirmation ("apply the discount to the price").
+  return PENDING_CONFIRMATION.test(normalized);
+}
+
+const PENDING_CONFIRMATION = new RegExp(
+  "^(?:(?:now|please|ok|okay|so|then|yes|dobre|tak|teraz|prosim|ano|bitte|jetzt|ja)\\s+)*"
+  + "(?:apply|use|confirm|commit|pouzi|pouzit|pouzite|aplikuj|potvrd|potvrdte|uloz|ulozit|ulozte|pouzij|potvrdit|ubernimm|ubernehmen|anwenden|bestatige|speichere|speichern)"
+  + "(?:\\s+(?:the|that|this|it|tu|to|tuto|ten|die|das|den|es))?"
+  + "(?:\\s+(?:pending|earlier|previous|last|proposed|prepared|open|cakajucu|navrhovanu|predchadzajucu|poslednu|pripravenu|vorherigen|letzten|offenen))*"
+  + "(?:\\s+(?:change|changes|proposal|edit|diff|update|zmenu|zmeny|navrh|upravu|anderung|anderungen|vorschlag))?"
+  + "(?:\\s+(?:please|prosim|bitte|now|teraz|jetzt))?$",
+);
+
+const PENDING_CANCELLATION = new RegExp(
+  "^(?:(?:please|ok|okay|no|nie|ne|nein|prosim|bitte)\\s+)*"
+  + "(?:cancel|discard|drop|forget|withdraw|dismiss|scrap|zrus|zrusit|zruste|zahod|zabudni|zabudnite|nechaj to tak|nechajte to tak|abbrechen|verwerfen|verwirf|vergiss)"
+  + "(?:\\s+(?:that|this|it|the|to|tu|tuto|ten|das|den|die|es))?"
+  + "(?:\\s+(?:title|price|area|proposed|pending|last|earlier|navrhovanu|poslednu|cakajucu|vorherigen|letzten))*"
+  + "(?:\\s+(?:change|changes|proposal|edit|zmenu|zmeny|navrh|upravu|anderung|anderungen|vorschlag))?"
+  + "(?:\\s+(?:keep|leave|nechaj|ponechaj|nechajte|behalte|lass)\\b.*)?$",
+);
+
+/** The whole message withdraws the card's pending proposal: "cancel that change", "zruš to", "Cancel the title change. Keep the saved title." */
+export function isProposalCancellation(text: string, accountLanguage: string): boolean {
+  if (text.includes("?")) return false;
+  void accountLanguage;
+  const normalized = planWords(text).join(" ");
+  return normalized.length > 0 && PENDING_CANCELLATION.test(normalized);
 }

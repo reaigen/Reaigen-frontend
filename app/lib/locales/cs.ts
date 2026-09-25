@@ -1873,6 +1873,8 @@ const cs: LocaleStrings = {
   "reai.quickSettingsLanguage":          "Jazyk a region",
   "reai.quickSettingsSecurity":          "Zabezpečení",
   "reai.applied":                        "Potvrzené změny byly použity v konceptu.",
+  "reai.proposalCancelled":              "Nic se neuložilo. Návrh je stažen.",
+  "reai.proposalElsewhere":              "Tento návrh patří jiné nabídce. Otevřete ji a použijte ho tam, nebo mi změnu řekněte znovu tady.",
   "reai.error":                          "Agent momentálně není dostupný. Zkuste to později.",
   "reai.enableInSettings":               "Přístup k Agentovi se spravuje v nastavení účtu.",
   "reai.openSettings":                   "Otevřít nastavení",

@@ -200,3 +200,26 @@ These are not visual or signed-in end-to-end results. Browser discovery returned
 no connected browser during this check, so actual layout and the authenticated
 file-drop → conversation → draft flow remain unverified. The changes are local;
 this work did not push to Gitea/GitHub or deploy to Vercel/AWS.
+
+## Pending proposals and typed confirmations (2026-09-25, Bench 02)
+
+- A typed message that names the card's own proposal is a confirmation and
+  applies that card's token: "Apply the pending change.", "Now apply the
+  earlier proposal.", "Apply that diff.", "použi tú zmenu", "übernimm den
+  Vorschlag" (`isProposalConfirmation`). A qualified or unrelated "apply"
+  ("apply the discount to the price", "apply for a permit") is not.
+- A whole-message cancel withdraws the pending card here — the Apply button
+  is gone and "Nothing was saved. The proposal is withdrawn." is shown
+  (`isProposalCancellation`). A model turn that only *said* "cancelled" used
+  to leave the button live.
+- A pending card made for another listing (`selected_creation_ids` does not
+  include the open draft) is never applied from this listing: "That proposal
+  belongs to another listing. Open it to apply it, or tell me the change
+  again here." Switching listings used to send the words to the backend,
+  which minted the pending value for whatever was open.
+- The backend answers the same words deterministically when no card is
+  pending ("There is no pending change in this conversation to apply"), and
+  refuses a stale proposal at apply with 409 when the listing changed since
+  the card was made; the card shows that message as the error.
+
+Tests: `app/lib/agent-conversation.test.mjs`.
