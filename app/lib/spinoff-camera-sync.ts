@@ -26,9 +26,11 @@ export interface CameraPoseSource {
  * Asking for the view matrix first folds the pending pose into the target;
  * Babylon skips the recompute when nothing changed.
  */
-export function currentCameraTarget(source: CameraPoseSource): { x: number; y: number; z: number } {
+export function currentCameraTarget<
+  Source extends { getTarget(): unknown; getViewMatrix?(force?: boolean): unknown },
+>(source: Source): ReturnType<Source["getTarget"]> {
   source.getViewMatrix?.();
-  return source.getTarget();
+  return source.getTarget() as ReturnType<Source["getTarget"]>;
 }
 
 function normalizeVec3(value: Vec3, fallback: Vec3 = [0, 0, 1]): Vec3 {

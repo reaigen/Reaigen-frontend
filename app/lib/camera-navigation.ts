@@ -129,6 +129,46 @@ export function orthonormalCameraUp(rawUp: Vec3, rawForward: Vec3, fallbackUp: V
   return Math.abs(forward[0]) < 0.9 ? [1, 0, 0] : [0, 0, 1];
 }
 
+/**
+ * A reference up the look-at can use.
+ *
+ * `camera.upVector` is the *reference* up — the horizon a pose is judged
+ * against, not the camera's oriented up — and the walk plane, the touch pan
+ * and the engine sync all read it that way; handing them the oriented up of
+ * a pitched shot tilted the ground they walk on ("a constrained local
+ * axis"). Only when the reference up runs nearly along the forward, looking
+ * straight down, does the look-at lose its right vector to float noise; then
+ * the forward component is removed first.
+ */
+export function levelReferenceUp(rawUp: Vec3, rawForward: Vec3, fallbackUp: Vec3 = [0, 1, 0]): Vec3 {
+  const up = normalized(rawUp, fallbackUp);
+  const forward = normalized(rawForward, [0, 0, 1]);
+  return Math.abs(dot(up, forward)) > 0.95
+    ? orthonormalCameraUp(up, forward, fallbackUp)
+    : up;
+}
+
+/**
+ * The lens for walking through a scene in first person.
+ *
+ * Authored shots keep their own lens — the default is 0.66 rad, a 38°
+ * vertical field that frames a room the way a photograph does. Walking
+ * through that lens reads as a telescope. A first-person view wants the
+ * field games and headsets settled on: about 62° vertical in landscape,
+ * 95° across a 16:9 frame. A portrait phone would show a 30° strip of the
+ * room through the same vertical field, so it opens the vertical until
+ * about 40° fits across, capped where the edges start to stretch.
+ */
+export const POV_LANDSCAPE_FOV = 62 * Math.PI / 180;
+const POV_PORTRAIT_ACROSS = 40 * Math.PI / 180;
+const POV_MAX_FOV = 80 * Math.PI / 180;
+
+export function povVerticalFov(aspect: number): number {
+  if (!Number.isFinite(aspect) || aspect >= 1) return POV_LANDSCAPE_FOV;
+  const opened = 2 * Math.atan(Math.tan(POV_PORTRAIT_ACROSS / 2) / Math.max(0.3, aspect));
+  return Math.min(POV_MAX_FOV, Math.max(POV_LANDSCAPE_FOV, opened));
+}
+
 export function stableCameraReferenceUp(
   rawUp: Vec3,
   rawFallbackUp?: Vec3,
@@ -236,12 +276,8 @@ export function stableCameraPreviewPose(
   ], t < 0.5 ? fromUp : toUp);
   // The pose carries the authored *reference* up: a pitched shot keeps its
   // level Y-up horizon, and a look-at yields the same basis for any up in
-  // that plane. Only when the reference up runs nearly along the forward —
-  // where the look-at's right vector shrinks towards zero and float noise
-  // becomes a twitching horizon — is the forward component removed first.
-  const up = Math.abs(dot(referenceUp, forward)) > 0.95
-    ? orthonormalCameraUp(referenceUp, forward, t < 0.5 ? fromUp : toUp)
-    : referenceUp;
+  // that plane (see levelReferenceUp for the one case that is straightened).
+  const up = levelReferenceUp(referenceUp, forward, t < 0.5 ? fromUp : toUp);
 
   return {
     position: [

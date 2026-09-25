@@ -65,7 +65,8 @@ import {
   cameraWalkDirection,
   stableCameraPreviewPose,
   stableCameraReferenceUp,
-  orthonormalCameraUp,
+  levelReferenceUp,
+  povVerticalFov,
 } from "@/app/lib/camera-navigation";
 import {
   nextViewerMotionFrameTimestamp,
@@ -1769,6 +1770,10 @@ const SplatViewer = forwardRef<SplatViewerHandle, Props>(function SplatViewer(
   const freeModeRef = useRef(false);
   const immersivePoseRef = useRef<ImmersivePose>(defaultImmersivePose());
   const immersiveCoastRef = useRef({ yaw: 0, pitch: 0 });
+  const povTransitionRef = useRef<{
+    fromFov: number; toFov: number; fromUp: Vec3; toUp: Vec3; startedAt: number; duration: number;
+  } | null>(null);
+  const enterPovRef = useRef<(() => void) | null>(null);
   const immersivePointersActiveRef = useRef(false);
   const immersiveRenderBurstUntilRef = useRef(0);
   const spatialNavigationRef = useRef(spatialNavigation);
@@ -2413,6 +2418,7 @@ const SplatViewer = forwardRef<SplatViewerHandle, Props>(function SplatViewer(
     anim.duration = instant
       ? 0.001
       : Math.max(0.5, Math.min(1.25, 0.38 + distance * 0.12 + yawDistance * 0.16));
+    povTransitionRef.current = null;
     anim.active = true;
     (anim as any).exactForward = useExactForward;
 
@@ -2535,12 +2541,12 @@ const SplatViewer = forwardRef<SplatViewerHandle, Props>(function SplatViewer(
     ];
 
     if (instant) {
-      const settledUp = orthonormalCameraUp(targetUp, targetForward, cameraUpRef.current);
+      const settledUp = levelReferenceUp(targetUp, targetForward, cameraUpRef.current);
       cameraUpRef.current = settledUp;
       cam.upVector.set(...settledUp);
       cam.position.set(pos[0], pos[1], pos[2]);
       cam.setTarget(new B.Vector3(toTarget[0], toTarget[1], toTarget[2]));
-      cam.upVector.set(...targetUp);
+      cam.upVector.set(...settledUp);
       cam.fov = targetFov;
       immersiveRenderBurstUntilRef.current = performance.now() + 220;
       animRef.current.active = false;
@@ -2588,6 +2594,7 @@ const SplatViewer = forwardRef<SplatViewerHandle, Props>(function SplatViewer(
       0.34,
       Math.min(0.9, 0.28 + dist * 0.12 + yawDistance * 0.12),
     );
+    povTransitionRef.current = null;
     anim.active = true;
     anim.holdActive = false;
     anim.holdDuration = 0;
@@ -2645,6 +2652,40 @@ const SplatViewer = forwardRef<SplatViewerHandle, Props>(function SplatViewer(
       cam.attachControl(canvasRef.current, true);
     }
   }, [immersiveControls, setImmersiveBase, syncSpatialOrbitToCamera]);
+
+  /**
+   * First person. Flying between saved cameras presents each shot through
+   * its authored lens and basis. Taking the camera into your own hands — a
+   * key, a drag, a touch — is a different act: it asks for the walking lens
+   * (povVerticalFov) and a level horizon. Both ease in over half a second,
+   * in the render loop; the next flight to a saved camera cancels the easing
+   * and eases back to that shot's own lens.
+   */
+  const enterPov = useCallback(() => {
+    const cam = cameraRef.current;
+    const canvas = canvasRef.current;
+    if (!cam || !canvas || spatialNavigationRef.current) return;
+    const toFov = povVerticalFov((canvas.clientWidth || 1) / (canvas.clientHeight || 1));
+    const toUp = transformSpatialDirection([0, 1, 0]);
+    const fromUp = cameraUpRef.current;
+    const pending = povTransitionRef.current;
+    if (pending && Math.abs(pending.toFov - toFov) < 1e-6) return;
+    const level = fromUp[0] * toUp[0] + fromUp[1] * toUp[1] + fromUp[2] * toUp[2] > 0.9999;
+    if (!pending && Math.abs(cam.fov - toFov) < 1e-4 && level) return;
+    povTransitionRef.current = {
+      fromFov: cam.fov,
+      toFov,
+      fromUp: [fromUp[0], fromUp[1], fromUp[2]],
+      toUp,
+      startedAt: performance.now(),
+      duration: 480,
+    };
+    immersiveRenderBurstUntilRef.current = performance.now() + 600;
+  }, [transformSpatialDirection]);
+
+  useEffect(() => {
+    enterPovRef.current = enterPov;
+  }, [enterPov]);
 
   const applySpatialOrbitPose = useCallback(() => {
     const camera = cameraRef.current;
@@ -4290,7 +4331,7 @@ const SplatViewer = forwardRef<SplatViewerHandle, Props>(function SplatViewer(
     camera.cameraDirection.set(0, 0, 0);
     camera.cameraRotation.set(0, 0);
     if (!camera.rotationQuaternion) {
-      const target = camera.getTarget();
+      const target = currentCameraTarget(camera);
       const forward = target.subtract(camera.position).normalize();
       const up = camera.upVector.clone().normalize();
       camera.rotationQuaternion = B.Quaternion.FromLookDirectionLH(forward, up);
@@ -4337,7 +4378,7 @@ const SplatViewer = forwardRef<SplatViewerHandle, Props>(function SplatViewer(
     );
 
     const syncFlyAngles = () => {
-      const target = camera.getTarget();
+      const target = currentCameraTarget(camera);
       const forward = target.subtract(camera.position).normalize();
       flyYaw = Math.atan2(forward.z, forward.x);
       flyPitch = Math.asin(Math.max(-1, Math.min(1, forward.y)));
@@ -4442,7 +4483,7 @@ const SplatViewer = forwardRef<SplatViewerHandle, Props>(function SplatViewer(
       applySpatialOrbitPose();
     };
     const moveFly = (amount: number) => {
-      const target = camera.getTarget();
+      const target = currentCameraTarget(camera);
       const forward = target.subtract(camera.position).normalize();
       const up = camera.upVector.clone();
       const movement = forward.scale(amount);
@@ -4453,7 +4494,7 @@ const SplatViewer = forwardRef<SplatViewerHandle, Props>(function SplatViewer(
       markMoving();
     };
     const panFly = (dx: number, dy: number) => {
-      const target = camera.getTarget();
+      const target = currentCameraTarget(camera);
       const forward = target.subtract(camera.position).normalize();
       const authoredUp = camera.upVector?.clone?.() ?? B.Vector3.Up();
       const right = B.Vector3.Cross(authoredUp, forward).normalize();
@@ -4778,7 +4819,7 @@ const SplatViewer = forwardRef<SplatViewerHandle, Props>(function SplatViewer(
 
     const movementObserver = scene.onBeforeRenderObservable.add(() => {
       if (!pressed.size) return;
-      const target = camera.getTarget();
+      const target = currentCameraTarget(camera);
       const forward = target.subtract(camera.position).normalize();
       const direction = cameraWalkDirection(
         [forward.x, forward.y, forward.z],
@@ -5132,7 +5173,7 @@ const SplatViewer = forwardRef<SplatViewerHandle, Props>(function SplatViewer(
         event.preventDefault();
         event.stopPropagation();
         if (!freeModeRef.current) enableFreeCamera();
-        if (nativeDesktopControls) return;
+        enterPovRef.current?.();
         pressed.add(key);
         // Wake an idle shared viewer before its next throttled render. The
         // movement observer then extends this burst on every rendered frame.
@@ -5159,17 +5200,19 @@ const SplatViewer = forwardRef<SplatViewerHandle, Props>(function SplatViewer(
 
     const movementObserver = scene.onBeforeRenderObservable.add(() => {
       if (!pressed.size) return;
-      const target = camera.getTarget();
+      const target = currentCameraTarget(camera);
       const forward = normalizeVec3([
         target.x - camera.position.x,
         target.y - camera.position.y,
         target.z - camera.position.z,
       ]);
       const pose = immersivePoseRef.current;
+      // The walk plane is the scene's ground, not the shot's — the same
+      // gravity-locked axis the immersive base uses (see setImmersiveBase).
       const up = normalizeVec3(
         immersiveControls && pose.enabled
           ? pose.baseUp
-          : [camera.upVector.x, camera.upVector.y, camera.upVector.z],
+          : transformCanonicalDirection([0, 1, 0], globalSceneTransformRef.current),
         [0, 1, 0],
       );
       const direction = cameraWalkDirection(forward, up, pressed, pose.baseForward);
@@ -5214,12 +5257,36 @@ const SplatViewer = forwardRef<SplatViewerHandle, Props>(function SplatViewer(
     window.addEventListener("keyup", handleKeyUp, keyboardCapture);
     window.addEventListener("blur", clearPressed);
     document.addEventListener("visibilitychange", handleVisibilityChange);
+    // A desktop drag is Babylon's native mouse look; its first few pixels are
+    // the moment the viewer takes the camera into their hands.
+    const dragCanvas = nativeDesktopControls ? canvasRef.current : null;
+    let dragStart: { x: number; y: number } | null = null;
+    const handleDragStart = (event: PointerEvent) => {
+      if (event.pointerType === "touch") return;
+      dragStart = { x: event.clientX, y: event.clientY };
+    };
+    const handleDragMove = (event: PointerEvent) => {
+      if (!dragStart || !event.buttons) return;
+      if (Math.hypot(event.clientX - dragStart.x, event.clientY - dragStart.y) < 4) return;
+      dragStart = null;
+      if (!freeModeRef.current) enableFreeCamera();
+      enterPovRef.current?.();
+    };
+    const handleDragEnd = () => { dragStart = null; };
+    dragCanvas?.addEventListener("pointerdown", handleDragStart);
+    dragCanvas?.addEventListener("pointermove", handleDragMove);
+    dragCanvas?.addEventListener("pointerup", handleDragEnd);
+    dragCanvas?.addEventListener("pointercancel", handleDragEnd);
     return () => {
       pressed.clear();
       window.removeEventListener("keydown", handleKeyDown, keyboardCapture);
       window.removeEventListener("keyup", handleKeyUp, keyboardCapture);
       window.removeEventListener("blur", clearPressed);
       document.removeEventListener("visibilitychange", handleVisibilityChange);
+      dragCanvas?.removeEventListener("pointerdown", handleDragStart);
+      dragCanvas?.removeEventListener("pointermove", handleDragMove);
+      dragCanvas?.removeEventListener("pointerup", handleDragEnd);
+      dragCanvas?.removeEventListener("pointercancel", handleDragEnd);
       scene.onBeforeRenderObservable.remove(movementObserver);
     };
   }, [
@@ -5288,6 +5355,7 @@ const SplatViewer = forwardRef<SplatViewerHandle, Props>(function SplatViewer(
       setShowGestureHint(false);
       animRef.current.holdActive = false;
       immersiveRenderBurstUntilRef.current = performance.now() + 350;
+      enterPovRef.current?.();
     };
 
     const handlePointerDown = (event: PointerEvent) => {
@@ -5742,15 +5810,18 @@ const SplatViewer = forwardRef<SplatViewerHandle, Props>(function SplatViewer(
         // and turn at a rate close to Splatfiction's viewport (~375 px/rad).
         camera.inertia = 0;
         camera.angularSensibility = 400;
-        // Restore the native FreeCamera bindings used by the known-good July
-        // tour viewer. Spatial and immersive modes detach Babylon and keep
-        // their dedicated transform-aware movement implementations.
-        camera.keysUp = [87];       // W only
-        camera.keysDown = [83];     // S only
-        camera.keysLeft = [65];     // A only
-        camera.keysRight = [68];    // D only
-        camera.keysUpward = [69];   // E
-        camera.keysDownward = [81]; // Q
+        // Babylon's native keyboard input walks along the camera's own axes:
+        // W followed the pitch of the shot into the floor, A and D strafed in
+        // the tilted image plane — the "constrained local axis" a tester felt
+        // the moment they took the camera into their hands. Every mode now
+        // walks through the movement observer, in the scene's ground plane,
+        // so the native bindings are emptied; the native mouse look stays.
+        camera.keysUp = [];
+        camera.keysDown = [];
+        camera.keysLeft = [];
+        camera.keysRight = [];
+        camera.keysUpward = [];
+        camera.keysDownward = [];
         cameraRef.current = camera;
         const cameraMotionMeshes = () => [
           gsRef.current,
@@ -5856,6 +5927,27 @@ const SplatViewer = forwardRef<SplatViewerHandle, Props>(function SplatViewer(
               return;
             }
 
+            // First-person lens and horizon easing in (enterPov); a flight
+            // cancels it and owns the lens itself.
+            const pov = povTransitionRef.current;
+            if (pov && !anim.active) {
+              const povNow = performance.now();
+              const pt = Math.min(1, (povNow - pov.startedAt) / pov.duration);
+              const pe = quintic(pt);
+              camera.fov = pov.fromFov + (pov.toFov - pov.fromFov) * pe;
+              const easedUp = normalizeVec3([
+                pov.fromUp[0] + (pov.toUp[0] - pov.fromUp[0]) * pe,
+                pov.fromUp[1] + (pov.toUp[1] - pov.fromUp[1]) * pe,
+                pov.fromUp[2] + (pov.toUp[2] - pov.fromUp[2]) * pe,
+              ], pov.toUp);
+              cameraUpRef.current = easedUp;
+              camera.upVector.set(easedUp[0], easedUp[1], easedUp[2]);
+              const pose = immersivePoseRef.current;
+              if (pose.enabled) pose.fov = camera.fov;
+              immersiveRenderBurstUntilRef.current = Math.max(immersiveRenderBurstUntilRef.current, povNow + 120);
+              if (pt >= 1) povTransitionRef.current = null;
+            }
+
             // Scroll-driven Steadicam
             if (Math.abs(scrollVelocityRef.current) > 0.001) {
               const pd = pathDataRef.current;
@@ -5890,7 +5982,7 @@ const SplatViewer = forwardRef<SplatViewerHandle, Props>(function SplatViewer(
                 const ux = pd.ups[lo][0] + (pd.ups[hi][0] - pd.ups[lo][0]) * t;
                 const uy = pd.ups[lo][1] + (pd.ups[hi][1] - pd.ups[lo][1]) * t;
                 const uz = pd.ups[lo][2] + (pd.ups[hi][2] - pd.ups[lo][2]) * t;
-                cameraUpRef.current = orthonormalCameraUp([ux, uy, uz], [fx, fy, fz], cameraUpRef.current);
+                cameraUpRef.current = levelReferenceUp([ux, uy, uz], [fx, fy, fz], cameraUpRef.current);
                 camera.upVector.set(
                   cameraUpRef.current[0],
                   cameraUpRef.current[1],
@@ -5946,7 +6038,7 @@ const SplatViewer = forwardRef<SplatViewerHandle, Props>(function SplatViewer(
             // never mutate or approximate the camera that will be edited or
             // delivered after the flight.
             const finalForward = normalizeVec3(anim.toForward);
-            const finalUp = orthonormalCameraUp(stableCameraReferenceUp(anim.toUp, anim.fromUp), finalForward, anim.fromUp);
+            const finalUp = levelReferenceUp(stableCameraReferenceUp(anim.toUp, anim.fromUp), finalForward, anim.fromUp);
             camera.position.set(...anim.toPos);
             cameraUpRef.current = finalUp;
             camera.upVector.set(...finalUp);

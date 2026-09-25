@@ -14,6 +14,9 @@ import {
   stableCameraPreviewPose,
   stableCameraReferenceUp,
   stableCameraUp,
+  levelReferenceUp,
+  povVerticalFov,
+  POV_LANDSCAPE_FOV,
 } from "./camera-navigation.ts";
 import { transformCanonicalDirection } from "./global-scene-transform.ts";
 
@@ -158,6 +161,31 @@ test("a reference up that runs along the forward is straightened before it reach
   const along = pose.forward[0] * pose.up[0] + pose.forward[1] * pose.up[1] + pose.forward[2] * pose.up[2];
   assert.ok(Math.abs(along) < 1e-9, `up still leans along the forward: ${along}`);
   assert.ok(Math.abs(Math.hypot(...pose.up) - 1) < 1e-9);
+});
+
+test("the reference up of a pitched shot stays level; only a look straight down is straightened", () => {
+  const pitched = [0.7, -0.5, 0.5];
+  closeTo(levelReferenceUp([0, 1, 0], pitched), [0, 1, 0]);
+  const down = levelReferenceUp([0, 1, 0], [0.02, -0.9998, 0]);
+  const along = down[0] * 0.02 + down[1] * -0.9998;
+  assert.ok(Math.abs(along) < 1e-6);
+  assert.ok(Math.abs(Math.hypot(...down) - 1) < 1e-9);
+});
+
+test("the first-person lens is 62° in landscape and opens on a portrait phone without stretching", () => {
+  const degrees = (radians) => radians * 180 / Math.PI;
+  assert.ok(Math.abs(degrees(POV_LANDSCAPE_FOV) - 62) < 1e-9);
+  assert.equal(povVerticalFov(16 / 9), POV_LANDSCAPE_FOV);
+  assert.equal(povVerticalFov(1), POV_LANDSCAPE_FOV);
+  assert.equal(povVerticalFov(Number.NaN), POV_LANDSCAPE_FOV);
+  const nineSixteen = degrees(povVerticalFov(9 / 16));
+  assert.ok(nineSixteen > 62 && nineSixteen < 70, `9:16 → ${nineSixteen}`);
+  const tallPhone = degrees(povVerticalFov(0.46));
+  assert.ok(tallPhone > nineSixteen && tallPhone < 80, `tall phone → ${tallPhone}`);
+  // About 40° of the room across a tall phone, never more than 80° tall.
+  const across = degrees(2 * Math.atan(Math.tan(povVerticalFov(0.46) / 2) * 0.46));
+  assert.ok(Math.abs(across - 40) < 0.5, `across ${across}`);
+  assert.ok(Math.abs(degrees(povVerticalFov(0.1)) - 80) < 1e-9);
 });
 
 test("camera controls do not strand WASD focus while text fields keep their keys", () => {
