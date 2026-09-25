@@ -64,6 +64,7 @@ import {
   cameraWalkDirection,
   stableCameraPreviewPose,
   stableCameraReferenceUp,
+  orthonormalCameraUp,
 } from "@/app/lib/camera-navigation";
 import {
   nextViewerMotionFrameTimestamp,
@@ -111,6 +112,73 @@ function slerpAngle(a: number, b: number, t: number): number {
   if (d > Math.PI) d -= Math.PI * 2;
   if (d < -Math.PI) d += Math.PI * 2;
   return a + d * t;
+}
+
+const SAVED_PATH_SAMPLES_PER_SEGMENT = 24;
+
+/**
+ * Centripetal Catmull-Rom through the saved poses. Centripetal
+ * parameterisation (alpha 0.5) is the one that never loops or overshoots
+ * between unevenly spaced poses, which saved cameras always are.
+ */
+function densifySavedCameraPath(
+  controlPositions: Vec3[],
+  controlForwards: Vec3[],
+  controlUps: Vec3[],
+): { positions: Vec3[]; forwards: Vec3[]; ups: Vec3[]; controlIndices: number[] } {
+  const count = controlPositions.length;
+  if (count < 2) {
+    return {
+      positions: controlPositions.map((p) => [...p] as Vec3),
+      forwards: controlForwards.map((f) => [...f] as Vec3),
+      ups: controlUps.map((u) => [...u] as Vec3),
+      controlIndices: controlPositions.map((_, i) => i),
+    };
+  }
+  const at = (index: number) => controlPositions[Math.max(0, Math.min(count - 1, index))];
+  const knot = (a: Vec3, b: Vec3, previous: number) =>
+    previous + Math.sqrt(Math.hypot(b[0] - a[0], b[1] - a[1], b[2] - a[2])) || previous + 1e-4;
+  const positions: Vec3[] = [];
+  const forwards: Vec3[] = [];
+  const ups: Vec3[] = [];
+  const controlIndices: number[] = [];
+  const lerpUnit = (a: Vec3, b: Vec3, t: number): Vec3 => normalizeVec3([
+    a[0] + (b[0] - a[0]) * t,
+    a[1] + (b[1] - a[1]) * t,
+    a[2] + (b[2] - a[2]) * t,
+  ], a);
+  for (let i = 0; i < count - 1; i += 1) {
+    const p0 = at(i - 1), p1 = at(i), p2 = at(i + 1), p3 = at(i + 2);
+    const t0 = 0;
+    const t1 = knot(p0, p1, t0);
+    const t2 = knot(p1, p2, t1);
+    const t3 = knot(p2, p3, t2);
+    controlIndices.push(positions.length);
+    const samples = i === count - 2 ? SAVED_PATH_SAMPLES_PER_SEGMENT + 1 : SAVED_PATH_SAMPLES_PER_SEGMENT;
+    for (let k = 0; k < samples; k += 1) {
+      const u = k / SAVED_PATH_SAMPLES_PER_SEGMENT;
+      const tt = t1 + (t2 - t1) * u;
+      const mix = (a: Vec3, b: Vec3, ta: number, tb: number): Vec3 => {
+        const span = tb - ta || 1e-6;
+        const wa = (tb - tt) / span;
+        const wb = (tt - ta) / span;
+        return [a[0] * wa + b[0] * wb, a[1] * wa + b[1] * wb, a[2] * wa + b[2] * wb];
+      };
+      const a1 = mix(p0, p1, t0, t1);
+      const a2 = mix(p1, p2, t1, t2);
+      const a3 = mix(p2, p3, t2, t3);
+      const b1 = mix(a1, a2, t0, t2);
+      const b2 = mix(a2, a3, t1, t3);
+      const c = mix(b1, b2, t1, t2);
+      positions.push(u === 0 ? [...p1] as Vec3 : u >= 1 ? [...p2] as Vec3 : c);
+      // Orientation eases along the segment so a turn starts and ends softly.
+      const eased = u * u * (3 - 2 * u);
+      forwards.push(lerpUnit(controlForwards[i], controlForwards[i + 1], eased));
+      ups.push(lerpUnit(controlUps[i], controlUps[i + 1], eased));
+    }
+  }
+  controlIndices.push(positions.length - 1);
+  return { positions, forwards, ups, controlIndices };
 }
 
 function normalizeVec3(value: Vec3, fallback: Vec3 = [0, 0, 1]): Vec3 {
@@ -2246,41 +2314,43 @@ const SplatViewer = forwardRef<SplatViewerHandle, Props>(function SplatViewer(
       ? cameraFovRadians(normalizedData.sceneFov, 0.66)
       : null;
 
-    const positions: Vec3[] = [];
-    const forwards: Vec3[] = [];
-    const ups: Vec3[] = [];
-    const shots: TourShot[] = [];
-    const arcLens: number[] = [];
-    let totalArc = 0;
+    const controlPositions: Vec3[] = [];
+    const controlForwards: Vec3[] = [];
+    const controlUps: Vec3[] = [];
+    for (const cam of cams) {
+      const pos = cam.position as Vec3;
+      controlPositions.push([pos[0], pos[1], pos[2]]);
+      controlForwards.push(normalizeVec3((cam.forward ?? [0, 0, 1]) as Vec3, [0, 0, 1]));
+      controlUps.push(normalizeVec3((cam.up ?? [0, 1, 0]) as Vec3, [0, 1, 0]));
+    }
 
+    // The trajectory used to be the saved cameras joined by straight lines:
+    // every pose was a kink in direction and speed, which is the jitter felt
+    // when scrolling along a tour. A centripetal Catmull-Rom spline through
+    // the same poses keeps each of them exact (it passes through its control
+    // points) and bends smoothly in between; forwards and ups follow the
+    // same curve so the look turns as gently as the path.
+    const { positions, forwards, ups, controlIndices } = densifySavedCameraPath(
+      controlPositions,
+      controlForwards,
+      controlUps,
+    );
+    const arcLens: number[] = [0];
+    let totalArc = 0;
+    for (let i = 1; i < positions.length; i += 1) {
+      const prev = positions[i - 1];
+      const pos = positions[i];
+      totalArc += Math.hypot(pos[0] - prev[0], pos[1] - prev[1], pos[2] - prev[2]);
+      arcLens.push(totalArc);
+    }
+
+    const shots: TourShot[] = [];
     for (let i = 0; i < cams.length; i += 1) {
       const cam = cams[i];
-      const pos = cam.position as Vec3;
-      const rawFwd = (cam.forward ?? [0, 0, 1]) as Vec3;
-      const len = Math.hypot(rawFwd[0], rawFwd[1], rawFwd[2]) || 1;
-      const forward: Vec3 = [rawFwd[0] / len, rawFwd[1] / len, rawFwd[2] / len];
-      positions.push([pos[0], pos[1], pos[2]]);
-      forwards.push([forward[0], forward[1], forward[2]]);
-      const rawUp = (cam.up ?? [0, 1, 0]) as Vec3;
-      const upLength = Math.hypot(rawUp[0], rawUp[1], rawUp[2]) || 1;
-      ups.push([
-        rawUp[0] / upLength,
-        rawUp[1] / upLength,
-        rawUp[2] / upLength,
-      ]);
-
-      if (i === 0) {
-        arcLens.push(0);
-      } else {
-        const prev = positions[i - 1];
-        totalArc += Math.hypot(pos[0] - prev[0], pos[1] - prev[1], pos[2] - prev[2]);
-        arcLens.push(totalArc);
-      }
-
       shots.push({
         storyBeat: "saved-camera",
         label: `${t("tour.controls.shot", lang)} ${i + 1}`,
-        startIdx: i,
+        startIdx: controlIndices[i],
         fov: sceneCameraFov ?? cameraFovRadians(cam.fov ?? normalizedData.fovY, 0.66),
         holdAfter: 3.5,
         moveDuration: 1.2,
@@ -2528,8 +2598,9 @@ const SplatViewer = forwardRef<SplatViewerHandle, Props>(function SplatViewer(
     ];
 
     if (instant) {
-      cameraUpRef.current = targetUp;
-      cam.upVector.set(...targetUp);
+      const settledUp = orthonormalCameraUp(targetUp, targetForward, cameraUpRef.current);
+      cameraUpRef.current = settledUp;
+      cam.upVector.set(...settledUp);
       cam.position.set(pos[0], pos[1], pos[2]);
       cam.setTarget(new B.Vector3(toTarget[0], toTarget[1], toTarget[2]));
       cam.upVector.set(...targetUp);
@@ -5852,8 +5923,14 @@ const SplatViewer = forwardRef<SplatViewerHandle, Props>(function SplatViewer(
             if (Math.abs(scrollVelocityRef.current) > 0.001) {
               const pd = pathDataRef.current;
               if (pd) {
-                progressRef.current += scrollVelocityRef.current * dt;
-                scrollVelocityRef.current *= 0.95;
+                // Damping in time, not in frames: the old 0.95 per frame
+                // decayed twice as fast at 120 Hz as at 60, and a stalled
+                // frame let one wheel tick jump the camera. The ceiling keeps
+                // a burst of ticks from becoming a lurch.
+                const maxSpeed = Math.max(0.35, pd.totalArc * 0.45);
+                scrollVelocityRef.current = Math.max(-maxSpeed, Math.min(maxSpeed, scrollVelocityRef.current));
+                progressRef.current += scrollVelocityRef.current * Math.min(dt, 1 / 30);
+                scrollVelocityRef.current *= Math.exp(-3.1 * dt);
                 progressRef.current = Math.max(0, Math.min(pd.totalArc, progressRef.current));
                 if (progressRef.current >= pd.totalArc || progressRef.current <= 0) {
                   scrollVelocityRef.current = 0;
@@ -5876,8 +5953,7 @@ const SplatViewer = forwardRef<SplatViewerHandle, Props>(function SplatViewer(
                 const ux = pd.ups[lo][0] + (pd.ups[hi][0] - pd.ups[lo][0]) * t;
                 const uy = pd.ups[lo][1] + (pd.ups[hi][1] - pd.ups[lo][1]) * t;
                 const uz = pd.ups[lo][2] + (pd.ups[hi][2] - pd.ups[lo][2]) * t;
-                const upLength = Math.hypot(ux, uy, uz) || 1;
-                cameraUpRef.current = [ux / upLength, uy / upLength, uz / upLength];
+                cameraUpRef.current = orthonormalCameraUp([ux, uy, uz], [fx, fy, fz], cameraUpRef.current);
                 camera.upVector.set(
                   cameraUpRef.current[0],
                   cameraUpRef.current[1],
@@ -5933,7 +6009,7 @@ const SplatViewer = forwardRef<SplatViewerHandle, Props>(function SplatViewer(
             // never mutate or approximate the camera that will be edited or
             // delivered after the flight.
             const finalForward = normalizeVec3(anim.toForward);
-            const finalUp = stableCameraReferenceUp(anim.toUp, anim.fromUp);
+            const finalUp = orthonormalCameraUp(stableCameraReferenceUp(anim.toUp, anim.fromUp), finalForward, anim.fromUp);
             camera.position.set(...anim.toPos);
             cameraUpRef.current = finalUp;
             camera.upVector.set(...finalUp);

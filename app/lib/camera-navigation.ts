@@ -95,6 +95,40 @@ export function stableCameraUp(
  * persistence changes its meaning and can turn ordinary pitch into roll when
  * the saved camera is transformed back into presentation space.
  */
+/**
+ * The up vector a camera can actually use: perpendicular to its forward.
+ *
+ * Saved poses that pitch down leave the scene up almost parallel to the
+ * look direction; a look-at built from that pair has a right vector of
+ * nearly zero length, and normalising it amplifies float noise into a
+ * horizon that twitches up and down every frame. Removing the forward
+ * component first keeps the basis well-conditioned. When the two are truly
+ * parallel the fallback (or world Y) decides.
+ */
+export function orthonormalCameraUp(rawUp: Vec3, rawForward: Vec3, fallbackUp: Vec3 = [0, 1, 0]): Vec3 {
+  const forward = normalized(rawForward, [0, 0, 1]);
+  const up = normalized(rawUp, fallbackUp);
+  const along = dot(up, forward);
+  const candidate: Vec3 = [
+    up[0] - forward[0] * along,
+    up[1] - forward[1] * along,
+    up[2] - forward[2] * along,
+  ];
+  const length = Math.hypot(candidate[0], candidate[1], candidate[2]);
+  if (length > 1e-3) return [candidate[0] / length, candidate[1] / length, candidate[2] / length];
+  const alt = normalized(fallbackUp, [0, 1, 0]);
+  const altAlong = dot(alt, forward);
+  const altCandidate: Vec3 = [
+    alt[0] - forward[0] * altAlong,
+    alt[1] - forward[1] * altAlong,
+    alt[2] - forward[2] * altAlong,
+  ];
+  const altLength = Math.hypot(altCandidate[0], altCandidate[1], altCandidate[2]);
+  if (altLength > 1e-3) return [altCandidate[0] / altLength, altCandidate[1] / altLength, altCandidate[2] / altLength];
+  // Looking straight along world Y: any horizontal axis is a valid up.
+  return Math.abs(forward[0]) < 0.9 ? [1, 0, 0] : [0, 0, 1];
+}
+
 export function stableCameraReferenceUp(
   rawUp: Vec3,
   rawFallbackUp?: Vec3,
@@ -195,11 +229,11 @@ export function stableCameraPreviewPose(
 
   const fromUp = stableCameraReferenceUp(rawFromUp);
   const toUp = stableCameraReferenceUp(rawToUp, fromUp);
-  const up = stableCameraReferenceUp([
+  const up = orthonormalCameraUp(stableCameraReferenceUp([
     fromUp[0] + (toUp[0] - fromUp[0]) * t,
     fromUp[1] + (toUp[1] - fromUp[1]) * t,
     fromUp[2] + (toUp[2] - fromUp[2]) * t,
-  ], t < 0.5 ? fromUp : toUp);
+  ], t < 0.5 ? fromUp : toUp), forward, t < 0.5 ? fromUp : toUp);
 
   return {
     position: [
