@@ -78,7 +78,7 @@ test("the Parameters map keeps saved coordinates while the address is edited", (
   assert.match(mapCard, /if \(targetKeyRef\.current === nextKey\) return/);
 });
 
-test("address-only drafts wait for an explicit in-app Google map request", () => {
+test("address-only drafts never send the address to our route or a Google frame", () => {
   const repositoryRoot = fileURLToPath(new URL("../../", import.meta.url));
   const mapCard = readFileSync(`${repositoryRoot}/app/components/property-map-card.tsx`, "utf8");
   const coordinateGuard = mapCard.indexOf("if (target.lat == null || target.lng == null)");

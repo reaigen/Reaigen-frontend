@@ -65,9 +65,11 @@ test("the property map draws Mapbox first and falls back to Google", () => {
   assert.match(card, /<GoogleMapCanvas/);
 });
 
-test("an address-only draft is geocoded only after Show map, and the address never reaches our route", () => {
+test("an address-only draft is geocoded as soon as the card is in view, and the address never reaches our route", () => {
   const card = read("app/components/property-map-card.tsx");
-  const effect = card.slice(card.indexOf("After \"Show map\" only"));
+  // No click needed any more (2026-09-26), but only once the card is in view.
+  assert.match(card, /if \(!shouldLoad \|\| !target \|\| target\.lat != null \|\| addressMapRequested\) return;\s*setAddressMapRequested\(true\);/);
+  const effect = card.slice(card.indexOf("Once requested: ask the route"));
   assert.match(effect, /!addressMapRequested/);
   assert.match(effect, /body: JSON\.stringify\(\{ purpose: "geocode" \}\)/);
   assert.match(effect, /geocodeAddress\(target\.address, lang, mapboxToken/);

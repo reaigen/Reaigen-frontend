@@ -553,7 +553,18 @@ export function PropertyMapCard({
     setAddressMapStatus("failed");
   }, []);
 
-  // After "Show map" only: ask the route for the Mapbox token (never sending
+  // An address-only draft draws its map as soon as the card is in view, like
+  // one with coordinates (operator, 2026-09-26: "by default we want to load
+  // map immediately, not to wait to click"). The click was a consent step
+  // from when the address went to a Google frame; it now goes only to the
+  // Mapbox geocoder, from the browser.
+  useEffect(() => {
+    if (!shouldLoad || !target || target.lat != null || addressMapRequested) return;
+    setAddressMapRequested(true);
+    setAddressMapStatus("loading");
+  }, [addressMapRequested, shouldLoad, target]);
+
+  // Once requested: ask the route for the Mapbox token (never sending
   // the address there), geocode in the browser, and draw the Mapbox map.
   useEffect(() => {
     if (!target || target.lat != null || !addressMapRequested || addressMiss || addressMapbox) return;

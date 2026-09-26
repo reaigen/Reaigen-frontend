@@ -54,8 +54,8 @@ only then returns `{ apiKey, mapboxToken, latitude, longitude }`.
 - **Google fallback**: when Mapbox has no token or fails and a Google key
   exists, the same card draws the Google canvas (the contract below). With no
   Google key, the card shows the unavailable state with Try again.
-- **Address-only drafts** are never geocoded during page load. Only after the
-  creator chooses **Show map**, the card asks the route for the Mapbox token
+- **Address-only drafts** draw their map as soon as the card is in view (no
+  click since 2026-09-26: "load map immediately"): the card asks the route for the Mapbox token
   (`{ purpose: "geocode" }` — the address is not sent to our route) and
   geocodes the address in the browser with Mapbox Geocoding v6 (one best
   match, temporary results, nothing stored). A trailing two-letter country
@@ -139,9 +139,9 @@ Then verify production:
 2. Sign in on `/`, then open an authenticated draft with saved coordinates
    without reloading, and verify Mapbox tiles, the Mapbox attribution and logo,
    pan, zoom, expansion, and retry behavior.
-3. Open an address-only draft, confirm no geocoding or map request occurs
-   during page load, choose **Show map**, and verify the Mapbox map stays
-   inside the location card and expanded dialog.
+3. Open an address-only draft and verify the Mapbox map appears without a
+   click, inside the location card and the expanded dialog; an address the
+   map cannot place shows the not-found message, never a world map.
 4. Submit a valid-coordinate request to `/api/maps/client` with no cookies and
    with a forged cookie. Both must return `401` without a key or token.
 5. With `MAPBOX_ACCESS_TOKEN` unset (a preview), confirm the Google fallback
