@@ -160,7 +160,7 @@ test("account setup disappears from Settings after completion or dismissal", () 
 test("setup saves seller details without a phone and keeps typed input when leaving a step", () => {
   // Bench 06 B06-F01/F03: Skip dropped typed seller details, and the step
   // refused to save without a phone although Settings saves the same fields.
-  assert.match(setup, /const phoneValid = phoneEmpty \|\| isValidInternationalPhone\(phone\)/);
+  assert.match(setup, /const phoneValid = phoneEmpty \|\| phoneNumberValid;/);
   assert.match(setup, /id="setup-phone"\s+label=\{t\("settings\.seller\.phone", lang\)\}\s+optional/);
   assert.match(setup, /if \(!\(await keepTypedInput\(\)\)\) \{/);
   assert.match(setup, /onClick=\{\(\) => \{ void leaveTo\(step\.key\); \}\}/);

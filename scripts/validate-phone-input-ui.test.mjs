@@ -41,7 +41,9 @@ test("SMS recovery has valid label and error relationships", () => {
 });
 
 test("OTP and recovery actions require metadata-backed validation", () => {
-  assert.match(setup, /const phoneValid = isValidInternationalPhone\(phone\)/);
+  assert.match(setup, /const phoneNumberValid = isValidInternationalPhone\(phone\)/);
+  assert.match(setup, /if \(!phoneNumberValid\) return;/);
+  assert.match(setup, /disabled=\{!phoneNumberValid\} onClick=\{handleRequestOtp\}/);
   assert.match(recovery, /const phoneValid = isValidInternationalPhone\(phone\)/);
   assert.match(recovery, /disabled=\{loading \|\|[\s\S]*!phoneValid/);
 });

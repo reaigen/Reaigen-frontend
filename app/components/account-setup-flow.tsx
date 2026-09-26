@@ -399,7 +399,9 @@ function SellerStep({ user, lang, onSaved, onAdvance, onBack, registerPendingSav
   // publishing requirement, checked when a listing is published, not a
   // condition for saving the rest of the seller profile (B06-F03).
   const phoneEmpty = !phone.trim();
-  const phoneValid = phoneEmpty || isValidInternationalPhone(phone);
+  // A code can only go to a real number; saving only needs "none or valid".
+  const phoneNumberValid = isValidInternationalPhone(phone);
+  const phoneValid = phoneEmpty || phoneNumberValid;
   const bioMissing = !bio.trim();
   const countryInvalid = Boolean(country.trim()) && !isPhoneCountry(country);
   const normalizedWebsite = normalizeWebAddress(website);
@@ -528,7 +530,7 @@ function SellerStep({ user, lang, onSaved, onAdvance, onBack, registerPendingSav
 
   async function handleRequestOtp() {
     setPhoneTouched(true);
-    if (!phoneValid) return;
+    if (!phoneNumberValid) return;
     setError(null);
     setOtpBusy(true);
     try {
@@ -585,7 +587,7 @@ function SellerStep({ user, lang, onSaved, onAdvance, onBack, registerPendingSav
               {phoneVerified && phoneMatchesSaved ? (
                 <StatusPill tone="neutral" dot className="self-start sm:self-auto">{t("setup.seller.phoneVerified", lang)}</StatusPill>
               ) : phone.trim().length > 0 && !otpSent ? (
-                <Button type="button" variant="outline" className="shrink-0" loading={otpBusy} disabled={!phoneValid} onClick={handleRequestOtp} data-testid="setup-verify-phone">
+                <Button type="button" variant="outline" className="shrink-0" loading={otpBusy} disabled={!phoneNumberValid} onClick={handleRequestOtp} data-testid="setup-verify-phone">
                   {t("setup.seller.verifyPhone", lang)}
                 </Button>
               ) : null}
