@@ -31,7 +31,7 @@ test("the backend's English sign-in refusals are shown in the creator's language
   const unverified = refusal(400, { non_field_errors: ["Email verification required before you can sign in."] });
   assert.equal(getSafeApiErrorMessage(unverified, "sk"), "Táto adresa ešte nie je overená. Skontrolujte schránku alebo si nechajte overovací e-mail poslať znova.");
   assert.equal(getSafeApiErrorMessage(unverified, "de").startsWith("Diese Adresse ist noch nicht bestätigt"), true);
-  assert.equal(getSafeApiErrorMessage(refusal(400, { non_field_errors: ["Invalid credentials."] }), "cs"), "E-mail nebo heslo nesedí. Zkuste to znovu.");
+  assert.equal(getSafeApiErrorMessage(refusal(400, { non_field_errors: ["Invalid credentials."] }), "cs"), "E-mail a heslo se neshodují. Zkuste to prosím znovu.");
   assert.equal(getSafeApiErrorMessage(refusal(400, { detail: "Invalid credentials." }), "en"), "The email or password is not right. Try again.");
 });
 
@@ -45,7 +45,7 @@ test("verification is known from the refusal, not from the words on screen", () 
 test("a throttle, by status or by wording, asks the creator to wait", () => {
   const byStatus = refusal(429, { error: "Too many requests. Please wait before retrying.", reason: "throttled", retry_after_seconds: 3600 });
   assert.equal(classifyApiError(byStatus)?.kind, "throttled");
-  assert.equal(getSafeApiErrorMessage(byStatus, "sk"), "Príliš veľa pokusov. Chvíľu počkajte a skúste to znova.");
+  assert.equal(getSafeApiErrorMessage(byStatus, "sk"), "Príliš veľa pokusov. Počkajte, prosím, chvíľu a skúste to znova.");
   assert.equal(classifyApiError(refusal(400, { detail: "Request was throttled. Expected available in 20s." }))?.kind, "throttled");
 });
 
