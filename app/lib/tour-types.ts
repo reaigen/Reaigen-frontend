@@ -863,6 +863,8 @@ export interface DraftListingItem {
   title: string;
   description: string;
   display_address: string | null;
+  /** The private full address (street and number); the list serializer returns it to the owner. */
+  address?: string | null;
   city: string;
   state: string;
   country: string;

@@ -159,10 +159,14 @@ export default function DashboardPage() {
   );
   const visibleDrafts = React.useMemo(() => {
     if (!normalizedSearchInput || normalizedSearchInput === normalizedResolvedQuery) return drafts;
+    // A number is a filter only the server reads ("byty pod 200000",
+    // "3 izbové"); matching it as text here flashed "no results" first.
+    if (/\d/.test(normalizedSearchInput)) return drafts;
     return drafts.filter((draft) => matchesCollectionQuery(
       normalizedSearchInput,
       draft.title,
       draft.description,
+      draft.address,
       draft.display_address,
       draft.city,
       draft.state,

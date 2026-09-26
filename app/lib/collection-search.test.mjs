@@ -20,3 +20,13 @@ test("collection search can match terms across separate card fields", () => {
     false,
   );
 });
+
+test("the dashboard's instant match reads the street and leaves number filters to the server (2026-09-26)", async () => {
+  const { readFileSync } = await import("node:fs");
+  const dashboard = readFileSync(new URL("../dashboard/page.tsx", import.meta.url), "utf8");
+  // "bajkalska" finds "Bajkalská 9": the private address is part of the match.
+  assert.match(dashboard, /draft\.address,\s*draft\.display_address,/);
+  assert.equal(matchesCollectionQuery("bajkalska 9", "Byt", null, "Bajkalská 9, Bratislava"), true);
+  // "byty pod 200000" is a filter the server reads; no local "no results" flash.
+  assert.match(dashboard, /if \(\/\\d\/\.test\(normalizedSearchInput\)\) return drafts;/);
+});
