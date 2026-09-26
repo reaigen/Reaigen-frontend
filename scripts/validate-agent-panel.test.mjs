@@ -58,3 +58,9 @@ test("TinyUI distances are shown in the creator's own unit from the server", () 
   assert.match(tiny, /const distance = block\.distance_label \|\|/);
   assert.match(tiny, /\{place\.distance_label \|\|/);
 });
+
+test("what was dragged into the chat goes with one message and then leaves the pool", () => {
+  assert.match(card, /const sentPoolKeys = new Set\(requestPool\.map\(\(item\) => poolItemKey\(item\)\)\);/);
+  assert.match(card, /setPool\(\(current\) => current\.filter\(\(item\) => !sentPoolKeys\.has\(poolItemKey\(item\)\)\)\);/);
+  assert.match(card, /attachments: requestPool\.map\(\(item\) => item\.label\)/, "the sent items are shown under the message");
+});

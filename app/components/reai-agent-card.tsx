@@ -236,6 +236,8 @@ type ChatTurn = {
   id: number;
   role: "user" | "assistant";
   content: string;
+  /** What the creator sent with this message (dragged fields, photos, files), shown under it. */
+  attachments?: string[];
   response?: ReaiAgentResponse;
   feedback?: boolean;
   /** Set while the reason picker is open for a thumbs-down on this turn. */
@@ -1436,7 +1438,14 @@ export function ReaiAgentCard({
     assistSequenceRef.current += 1;
     const generation = intakeGenerationRef.current;
     const editContext: AgentEditContext = { draftId, userId: user?.id, generation, consented: Boolean(consent?.consented) };
-    const userTurn: ChatTurn = { id: newTurnId(), role: "user", content: requestText };
+    // The pool travels with this one message and then belongs to it: it was
+    // never emptied, so dragged parameters sat as "pending" forever and rode
+    // along with every later message (2026-09-26).
+    const sentPoolKeys = new Set(requestPool.map((item) => poolItemKey(item)));
+    const userTurn: ChatTurn = {
+      id: newTurnId(), role: "user", content: requestText,
+      ...(requestPool.length ? { attachments: requestPool.map((item) => item.label) } : {}),
+    };
     setTurns((current) => [...current, userTurn]);
     setMessage("");
 
@@ -1572,6 +1581,12 @@ export function ReaiAgentCard({
       if (generation !== intakeGenerationRef.current || editContext.userId !== editContextRef.current.userId || !editContextRef.current.consented) return;
       consumeAcceptedAgentSources(sourceTokensRef.current, sourceTokens, response.creation_context_token);
       if (response.creation_context_token) setPool((current) => discardPoolSourceTokens(current, sourceTokens));
+      // Sent and answered: what went with this message leaves the pool (a
+      // failed send keeps it, so the creator can try again).
+      if (sentPoolKeys.size) {
+        setPool((current) => current.filter((item) => !sentPoolKeys.has(poolItemKey(item))));
+        if (currentField && sentPoolKeys.has(poolItemKey(currentField))) onFieldClear?.();
+      }
       if (!draftId && response.operation === "list" && response.search_query) {
         window.dispatchEvent(new CustomEvent("reai-workspace-search", {
           detail: { query: response.search_query },
@@ -2512,7 +2527,18 @@ export function ReaiAgentCard({
                       : "py-1"}
                   >
                     {turn.role === "user"
-                      ? <p className="whitespace-pre-line break-words text-[14px] leading-6 text-background [overflow-wrap:anywhere]">{turn.content}</p>
+                      ? (
+                        <>
+                          <p className="whitespace-pre-line break-words text-[14px] leading-6 text-background [overflow-wrap:anywhere]">{turn.content}</p>
+                          {Boolean(turn.attachments?.length) && (
+                            <ul className="mt-1.5 flex flex-wrap gap-1" aria-label={t("reai.pool.sentWith", lang)}>
+                              {turn.attachments!.map((label, index) => (
+                                <li key={index} className="max-w-full truncate rounded-full bg-background/15 px-2 py-0.5 text-[11px] text-background/85">{label}</li>
+                              ))}
+                            </ul>
+                          )}
+                        </>
+                      )
                       : <AgentReplyText text={turn.content} />}
                     {/* The agent often ends with options — "Central heating", "Write a
                         new description". They were returned by the server and never

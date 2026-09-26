@@ -1896,6 +1896,7 @@ const sk: LocaleStrings = {
   "reai.pool.dropHint":                "Pretiahnite sem fotku alebo parameter a pracujte s ním",
   "reai.pool.remove":                  "Odstrániť",
   "reai.pool.clear":                   "Vyčistiť",
+  "reai.pool.sentWith":                 "Odoslané s touto správou",
   "reai.pool.uploading":               "Nahráva sa…",
   "reai.pool.newPhoto":                "Nová fotka",
   "reai.attachments.add": "Pridať fotky, videá alebo zdrojové dokumenty",

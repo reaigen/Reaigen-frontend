@@ -1917,6 +1917,7 @@ const en = {
   "reai.pool.dropHint":                "Drop a photo or a parameter here to work on it",
   "reai.pool.remove":                  "Remove",
   "reai.pool.clear":                   "Clear",
+  "reai.pool.sentWith":                 "Sent with this message",
   "reai.pool.uploading":               "Uploading…",
   "reai.pool.newPhoto":                "New photo",
   "reai.attachments.add": "Add images, videos or source documents",

@@ -263,3 +263,8 @@ Tests: `app/lib/agent-conversation.test.mjs`.
   with 409.
 - **Long words.** Bubbles and table cells wrap unbroken text (ids, URLs,
   run titles) with `overflow-wrap: anywhere` instead of spilling out.
+- **Dragged items belong to the message that sends them.** Parameters,
+  photos or files dragged into the chat travel with the next message, are
+  shown as chips under it ("Sent with this message") and leave the pool once
+  the answer arrives; a failed send keeps them for a retry. They used to stay
+  as "pending" forever and ride along with every later message.

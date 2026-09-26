@@ -1896,6 +1896,7 @@ const de: LocaleStrings = {
   "reai.pool.dropHint":                "Foto oder Parameter hier ablegen, um damit zu arbeiten",
   "reai.pool.remove":                  "Entfernen",
   "reai.pool.clear":                   "Leeren",
+  "reai.pool.sentWith":                 "Mit dieser Nachricht gesendet",
   "reai.pool.uploading":               "Wird hochgeladen…",
   "reai.pool.newPhoto":                "Neues Foto",
   "reai.attachments.add": "Bilder, Videos oder Quelldokumente hinzufügen",
