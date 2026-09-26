@@ -95,6 +95,7 @@ import {
   readReaiViewerActionResult,
 } from "../lib/reai-viewer-actions";
 import { resolveUnit, unitLabel, type UnitLookup } from "../lib/unit-catalog";
+import { parseAgentReply, type ReplyInline } from "../lib/agent-reply-format";
 import { Button } from "../lib/ui/button";
 import { cn } from "../lib/utils";
 import { randomUUID } from "../lib/uuid";
@@ -269,6 +270,18 @@ function withPlanSnapshot(turns: ChatTurn[], snapshot: AgentPlanSnapshot): ChatT
   });
 }
 
+/** An open, unplanned card with its Apply/Create button withdrawn; any other turn unchanged. */
+function withdrawnCard(turn: ChatTurn): ChatTurn {
+  if (!turn.response || turn.planId) return turn;
+  if (turn.response.proposal_token && !turn.proposalStatus) {
+    return { ...turn, proposalStatus: "dismissed", response: { ...turn.response, proposal_token: null } };
+  }
+  if (turn.response.action_token && !turn.actionStatus) {
+    return { ...turn, actionStatus: "dismissed", response: { ...turn.response, action_token: null } };
+  }
+  return turn;
+}
+
 /** The confirm card after its action ran, identical for a tapped card and a plan step. */
 function withAppliedAction(turn: ChatTurn, answer: ReaiAgentResponse, outcome: AgentActionResult): ChatTurn {
   const job = agentJobFromAction(outcome);
@@ -419,6 +432,55 @@ function localizedSpecValue(value: unknown, lang: string, section: string, key: 
   const options = key === "property_subtype" ? propertySubtypeOptions : definition?.options;
   const option = options?.find((item) => item.value === raw);
   return option ? t(option.labelKey, lang) : raw.replaceAll("_", " ");
+}
+
+function ReplyInlineText({ parts }: { parts: ReplyInline[] }) {
+  return <>{parts.map((part, index) => part.strong ? <strong key={index} className="font-semibold">{part.text}</strong> : <span key={index}>{part.text}</span>)}</>;
+}
+
+// An agent reply with its tables, lists and bold rendered (agent-reply-format);
+// everything stays text, so React escapes it.
+function AgentReplyText({ text }: { text: string }) {
+  const blocks = parseAgentReply(text);
+  return (
+    <div className="space-y-2 text-[14px] leading-6 text-foreground">
+      {blocks.map((block, index) => {
+        if (block.kind === "table") {
+          return (
+            <div key={index} className="overflow-x-auto rounded-xl border border-border/60">
+              <table className="w-full border-collapse text-left text-[13px] leading-5">
+                <thead className="bg-muted/40">
+                  <tr>{block.header.map((cell, column) => <th key={column} className="px-2.5 py-1.5 font-semibold"><ReplyInlineText parts={cell} /></th>)}</tr>
+                </thead>
+                <tbody>
+                  {block.rows.map((row, rowIndex) => (
+                    <tr key={rowIndex} className="border-t border-border/50">
+                      {row.map((cell, column) => <td key={column} className="px-2.5 py-1.5 align-top"><ReplyInlineText parts={cell} /></td>)}
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          );
+        }
+        if (block.kind === "list") {
+          const List = block.ordered ? "ol" : "ul";
+          return (
+            <List key={index} className={cn("space-y-0.5 pl-5", block.ordered ? "list-decimal" : "list-disc")}>
+              {block.items.map((item, itemIndex) => <li key={itemIndex}><ReplyInlineText parts={item} /></li>)}
+            </List>
+          );
+        }
+        return (
+          <p key={index} className="break-words">
+            {block.lines.map((line, lineIndex) => (
+              <span key={lineIndex}>{lineIndex > 0 && <br />}<ReplyInlineText parts={line} /></span>
+            ))}
+          </p>
+        );
+      })}
+    </div>
+  );
 }
 
 // The listing being built in the conversation, fact by fact, so the creator
@@ -1395,14 +1457,16 @@ export function ReaiAgentCard({
 
     const pendingProposal = pendingAgentTurn(turns);
     if (
-      pendingProposal?.response?.proposal_token
+      (pendingProposal?.response?.proposal_token || pendingProposal?.response?.action_token)
       && !sourceImportFollowUp
       && isProposalCancellation(requestText, lang)
     ) {
       // "Cancel the title change. Keep the saved title.": the card is
       // withdrawn here; a model turn that said "cancelled" used to leave its
-      // Apply button live.
-      dismissProposal(pendingProposal.id);
+      // Apply button live. A create card is withdrawn the same way (Bench 04
+      // S03: "Cancel this proposed change" left "Create" clickable).
+      if (pendingProposal.response?.proposal_token) dismissProposal(pendingProposal.id);
+      else dismissAction(pendingProposal.id);
       setTurns((current) => [
         ...current,
         { id: newTurnId(), role: "assistant", content: t("reai.proposalCancelled", lang) },
@@ -1531,8 +1595,11 @@ export function ReaiAgentCard({
         ...(planSnapshot ? { planId: planSnapshot.planId, planState: planSnapshot } : {}),
       };
       if (planSnapshot) stopLivePlans();
+      // The server heard a cancel the panel did not ("Zrušme to"): no earlier
+      // card keeps a live Apply or Create button.
+      const withdrawn = (response as { pending_proposal?: string | null }).pending_proposal === "cancel";
       setTurns((current) => [
-        ...current,
+        ...(withdrawn ? current.map((turn) => withdrawnCard(turn)) : current),
         assistantTurn,
       ]);
       if (directEdit) {
@@ -2424,7 +2491,9 @@ export function ReaiAgentCard({
                       ? "ml-auto w-fit max-w-[85%] rounded-2xl bg-foreground px-3.5 py-2.5"
                       : "py-1"}
                   >
-                    <p className={cn("whitespace-pre-line text-[14px] leading-6", turn.role === "user" ? "text-background" : "text-foreground")}>{turn.content}</p>
+                    {turn.role === "user"
+                      ? <p className="whitespace-pre-line text-[14px] leading-6 text-background">{turn.content}</p>
+                      : <AgentReplyText text={turn.content} />}
                     {/* The agent often ends with options — "Central heating", "Write a
                         new description". They were returned by the server and never
                         shown, so the creator had to retype an answer the agent had

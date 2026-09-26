@@ -240,3 +240,19 @@ Tests: `app/lib/agent-conversation.test.mjs`.
   nothing is listed as missing or unknown.
 - Guarded by `scripts/validate-agent-panel.test.mjs` (`npm run
   validate-agent-panel`, part of `npm run check`).
+
+## Replies with tables and lists; cancelled cards (2026-09-26)
+
+- **Formatted replies.** Agent replies are read by
+  `app/lib/agent-reply-format.ts` into paragraphs, bullet and numbered
+  lists, tables and **bold**; `AgentReplyText` renders them (a wide table
+  scrolls inside the bubble). Nothing else is interpreted — no links, HTML or
+  images — and every piece stays text for React to escape. Before, a
+  comparison table arrived as rows of pipes (Bench 04 L01, L04). The
+  creator's own messages stay plain text. Tests:
+  `app/lib/agent-reply-format.test.mjs`.
+- **Cancelled cards.** "Cancel this proposed change" withdraws the latest
+  open card whether it proposes an edit or offers to create a listing (Bench
+  04 S03 left "Create" clickable), and when the server recognises a cancel
+  the panel did not (`pending_proposal: "cancel"`), every open card outside
+  a plan is withdrawn.

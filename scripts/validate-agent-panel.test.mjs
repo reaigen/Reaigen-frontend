@@ -25,3 +25,18 @@ test("the listing being built is shown fact by fact", () => {
   assert.doesNotMatch(card.slice(card.indexOf("function ListingDraftFacts("), card.indexOf("function proposalSpecEntries(")), /missing/, "nothing is listed as missing or unknown");
   for (const locale of locales) assert.match(locale, /"reai\.listingSoFar":/);
 });
+
+test("agent replies render their tables, lists and bold; the creator's own text stays plain", () => {
+  assert.match(card, /function AgentReplyText\(\{ text \}: \{ text: string \}\)/);
+  assert.match(card, /turn\.role === "user"\s*\?\s*<p className="whitespace-pre-line[^"]*">\{turn\.content\}<\/p>\s*:\s*<AgentReplyText text=\{turn\.content\} \/>/);
+  assert.match(card, /<div key=\{index\} className="overflow-x-auto rounded-xl/, "a wide table scrolls inside the bubble");
+  assert.doesNotMatch(card, /dangerouslySetInnerHTML/, "no reply text is ever injected as HTML");
+});
+
+test("a cancelled card never keeps a live Apply or Create button (Bench 04 S01, S03)", () => {
+  assert.match(card, /\(pendingProposal\?\.response\?\.proposal_token \|\| pendingProposal\?\.response\?\.action_token\)/, "a create card is cancellable too");
+  assert.match(card, /else dismissAction\(pendingProposal\.id\);/);
+  assert.match(card, /pending_proposal === "cancel"/, "a cancel the server heard withdraws open cards");
+  assert.match(card, /function withdrawnCard\(turn: ChatTurn\): ChatTurn/);
+  assert.match(card, /if \(!turn\.response \|\| turn\.planId\) return turn;/, "plan step cards stay with their plan");
+});
