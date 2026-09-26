@@ -369,6 +369,44 @@ Findings from the Bench 06 new-user run (2026-09-26) that now hold:
 - **The plan welcome leads somewhere.** Its action button acknowledges the notice and opens the
   drafts page, with the Agent panel when the Agent is on; Escape or closing only acknowledges.
 
+## Editing contract: unsaved work, dialogs and focus
+
+Findings from the Bench 07 UI/UX run (2026-09-26) that now hold on every editing surface:
+
+- **Unsaved work is kept or given up deliberately.** The draft editor and the nested description
+  editor already asked before a dirty Close, Back or Escape; the photo editor now does too (Back,
+  Close and Escape with an unsaved rotation or adjustment show the same footer question: Cancel keeps
+  editing, Discard drops the edits, Save as version saves them — cancelling never creates a version).
+  `DraftImageEditor` reports `onDirtyChange` and exposes `save()` through `controlRef`.
+- **Settings sections keep their drafts.** A section stays mounted once visited (Radix `forceMount`,
+  hidden when inactive), so an unsaved Company or Bio survives a look at another section. Sections
+  with unsaved edits (Profile and Seller profile report them) carry a dot in the section list, and
+  leaving the page — an in-app link, a reload, closing the tab — asks first
+  (`useUnsavedChangesGuard`, `leavingDestination`); a `#section` link inside Settings never asks.
+- **Focus goes back where it came from.** The app opens dialogs from state, never through a Radix
+  `Dialog.Trigger`, so Radix's own restore focused nothing and the keyboard landed on `<body>`.
+  `SidePanel`, `BottomSheet`, `useConfirm` and the plan welcome remember the focused control when
+  they open and return focus to it on Escape, Close or Save (`useDialogFocusReturn`); a nested panel
+  returns to the control in its parent. All of them set `aria-modal="true"`, matching their focus
+  trap and the aria-hidden background Radix applies.
+- **Required fields say why Save is off.** The draft title carries a required mark; once the field
+  is left empty it shows "Enter a title — the listing needs one to be saved.", tied to the input
+  (`aria-invalid`, `aria-describedby`, announced politely). A disabled Save alone no longer has to be
+  interpreted.
+- **Shortcuts in the platform's notation.** The description toolbar shows ⌘B · ⌘I · ⌘↵ on Apple
+  platforms and Ctrl+B · Ctrl+I · Ctrl+Enter elsewhere (`shortcutLabel`); both modifiers work
+  everywhere and the buttons carry `aria-keyshortcuts`.
+- **One fact, one place.** Total rooms (`specs.layout.rooms`, "Celkom izieb") is a Basic field beside
+  bedrooms and bathrooms for residential types (`core` in the field registry), no longer only in
+  Advanced.
+- **The Agent panel knows which listing it is on.** Every turn records the listing or workspace it was
+  made in; the transcript shows "Teraz: <title>" where that changes and after the last turn when
+  the creator has moved on; a card made for another listing is labelled with it, cannot be
+  confirmed (tapped or typed) from here and offers to open its listing. The header names the current
+  listing as a chip. Opened by the creator, the panel focuses the composer (the close button in the
+  phone drawer); closed, it returns focus to the launcher only if the keyboard was in the panel. The
+  resize separator is in the tab order (arrows, Home, End; width kept like a drag).
+
 ## Data-loading and state rules
 
 - Browser requests stay same-origin through `/api/auth/*` and `/api/reaigen/*`; tokens remain in
