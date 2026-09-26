@@ -1692,8 +1692,10 @@ export async function listDrafts(
   pageSize = 100,
   search = "",
   signal?: AbortSignal,
+  /** Filter parameters as "&property_type=…&price_max=…" (draftFilterParams). */
+  filterQuery = "",
 ): Promise<{ results: DraftListingItem[]; count: number; next: string | null }> {
-  const q = search ? `&search=${encodeURIComponent(search)}` : "";
+  const q = `${search ? `&search=${encodeURIComponent(search)}` : ""}${filterQuery.startsWith("&") ? filterQuery : ""}`;
   // A published/transferred draft is still part of the owner's workspace.
   // Request the complete history explicitly so web and iOS cannot drift if a
   // backend default changes during a rolling deployment.

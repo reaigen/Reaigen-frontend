@@ -15,6 +15,7 @@ import { PageLoading } from "../components/page-loading";
 import { PageHeader } from "../components/page-header";
 import { StatusPill } from "../components/status-pill";
 import { SearchField } from "../components/search-field";
+import { DraftFilterBar, DraftFilters, activeFilterCount, draftFilterParams } from "../components/draft-filter-bar";
 import { GridLayoutToggle } from "../components/grid-layout-toggle";
 import { ImageIcon, InfoIcon } from "../components/icons";
 import { Button } from "../lib/ui/button";
@@ -121,9 +122,13 @@ export default function DashboardPage() {
   const [searchQuery, setSearchQuery] = React.useState("");
   const [resolvedQuery, setResolvedQuery] = React.useState("");
   const [gridCols, setGridCols] = React.useState<1 | 2>(2);
+  const [filters, setFilters] = React.useState<DraftFilters>({});
+  const filterQuery = React.useMemo(() => draftFilterParams(filters), [filters]);
+  const filtering = activeFilterCount(filters) > 0;
   const clearSearch = React.useCallback(() => {
     setSearchInput("");
     setSearchQuery("");
+    setFilters({});
   }, []);
   const headerSearch = React.useMemo(() => ({
     value: searchInput,
@@ -159,6 +164,8 @@ export default function DashboardPage() {
   );
   const visibleDrafts = React.useMemo(() => {
     if (!normalizedSearchInput || normalizedSearchInput === normalizedResolvedQuery) return drafts;
+    // With filters on, only the server's answer is the filtered list.
+    if (filtering) return drafts;
     // A number is a filter only the server reads ("byty pod 200000",
     // "3 izbové"); matching it as text here flashed "no results" first.
     if (/\d/.test(normalizedSearchInput)) return drafts;
@@ -172,7 +179,7 @@ export default function DashboardPage() {
       draft.state,
       draft.country,
     ));
-  }, [drafts, normalizedResolvedQuery, normalizedSearchInput]);
+  }, [drafts, filtering, normalizedResolvedQuery, normalizedSearchInput]);
   const searchSettling = normalizedSearchInput !== normalizedResolvedQuery;
   const visibleCount = searchSettling ? visibleDrafts.length : totalCount;
   const loadedDraftIds = React.useMemo(() => drafts.map((draft) => draft.id), [drafts]);
@@ -207,7 +214,7 @@ export default function DashboardPage() {
     const controller = new AbortController();
     abortRef.current = controller;
 
-    const data = await listDrafts(page, DASHBOARD_PAGE_SIZE, searchQuery, controller.signal);
+    const data = await listDrafts(page, DASHBOARD_PAGE_SIZE, searchQuery, controller.signal, filterQuery);
     // If this request was superseded, discard results
     if (controller.signal.aborted) return;
 
@@ -221,7 +228,7 @@ export default function DashboardPage() {
     setTotalCount(data.count ?? 0);
     pageRef.current = page;
     if (!append) setResolvedQuery(searchQuery);
-    if (page === 1 && !searchQuery && user?.id) {
+    if (page === 1 && !searchQuery && !filterQuery && user?.id) {
       writeDraftPageCache(user.id, {
         results,
         count: data.count ?? results.length,
@@ -231,7 +238,7 @@ export default function DashboardPage() {
     setUsingCachedDrafts(false);
     setRetryAttempt(0);
 
-  }, [searchQuery, user?.id]);
+  }, [filterQuery, searchQuery, user?.id]);
 
   // Enrich only cards that are actually loaded. The old implementation pulled
   // every splat page for the account, which became an unbounded burst after
@@ -324,7 +331,7 @@ export default function DashboardPage() {
       .then(() => { if (active) setDraftsError(false); })
       .catch((reason: unknown) => {
         if (!active || (reason instanceof DOMException && reason.name === "AbortError")) return;
-        const cached = !searchQuery && user?.id ? readDraftPageCache(user.id) : null;
+        const cached = !searchQuery && !filterQuery && user?.id ? readDraftPageCache(user.id) : null;
         if (cached?.results.length) {
           setDrafts(cached.results);
           setHasMore(!!cached.next);
@@ -346,7 +353,7 @@ export default function DashboardPage() {
       active = false;
       abortRef.current?.abort();
     };
-  }, [searchQuery, isAuthenticated, loadPage, reloadNonce, user?.id]);
+  }, [filterQuery, searchQuery, isAuthenticated, loadPage, reloadNonce, user?.id]);
 
   React.useEffect(() => {
     if (!isAuthenticated || (!draftsError && !usingCachedDrafts)) return;
@@ -404,7 +411,7 @@ export default function DashboardPage() {
     if (!isAuthenticated) return;
     const poll = () => {
       if (document.hidden) return;
-      listDrafts(1, DASHBOARD_PAGE_SIZE, searchQuery).then((data) => {
+      listDrafts(1, DASHBOARD_PAGE_SIZE, searchQuery, undefined, filterQuery).then((data) => {
         const results = data.results ?? [];
         if (results[0]?.id !== drafts[0]?.id || results.length !== Math.min(drafts.length, DASHBOARD_PAGE_SIZE)) {
           setDrafts((prev) => {
@@ -420,7 +427,7 @@ export default function DashboardPage() {
     const onVisible = () => { if (document.visibilityState === "visible") poll(); };
     document.addEventListener("visibilitychange", onVisible);
     return () => { clearInterval(id); document.removeEventListener("visibilitychange", onVisible); };
-  }, [isAuthenticated, searchQuery, drafts]);
+  }, [isAuthenticated, filterQuery, searchQuery, drafts]);
 
   if (isLoading || !user || setupPromptPending) {
     return <PageLoading />;
@@ -458,6 +465,8 @@ export default function DashboardPage() {
           />
           <GridLayoutToggle value={gridCols} onChange={handleGridCols} lang={lang} />
         </div>
+
+        <DraftFilterBar value={filters} onChange={setFilters} lang={lang} className="mb-4 sm:mb-5" />
 
         <AccountSetupReminder user={user} lang={lang} status={reminderStatus} />
 
@@ -497,9 +506,9 @@ export default function DashboardPage() {
         ) : visibleDrafts.length === 0 ? (
           <CollectionState
             icon={<ImageIcon size={20} />}
-            title={t(searchQuery ? "dashboard.noResults" : "dashboard.noSplatsTitle", lang)}
-            description={t(searchQuery ? "dashboard.noResultsHint" : "dashboard.noSplats", lang)}
-            action={searchQuery ? <Button type="button" variant="outline" size="sm" onClick={clearSearch}>{t("dashboard.clearSearch", lang)}</Button> : undefined}
+            title={t(searchQuery || filtering ? "dashboard.noResults" : "dashboard.noSplatsTitle", lang)}
+            description={t(searchQuery || filtering ? "dashboard.noResultsHint" : "dashboard.noSplats", lang)}
+            action={searchQuery || filtering ? <Button type="button" variant="outline" size="sm" onClick={clearSearch}>{t("dashboard.clearSearch", lang)}</Button> : undefined}
           />
         ) : (
           <>
