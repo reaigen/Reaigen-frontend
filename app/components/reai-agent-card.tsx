@@ -109,7 +109,7 @@ import { AgentTinyUi } from "./agent-tiny-ui";
 import { MediaVersionCard, type MediaAction } from "./draft-version-manager";
 import { useAuth } from "./hooks/use-auth";
 import { StatusPill } from "./status-pill";
-import { AgentIcon, SearchIcon, VersionsIcon, LayoutIcon, SparklesIcon, CheckIcon, CloseIcon, EditIcon, LockIcon, InfoIcon, DocumentIcon, ImageIcon, VideoIcon } from "./icons";
+import { AgentIcon, SearchIcon, VersionsIcon, LayoutIcon, SparklesIcon, CheckIcon, CloseIcon, EditIcon, LockIcon, InfoIcon, DocumentIcon, ImageIcon, VideoIcon, ChevronRightIcon } from "./icons";
 
 // Maps a quick-action key to its icon, so the agent suggestions read as
 // distinct, recognisable actions rather than flat text rows.
@@ -3286,33 +3286,54 @@ export function ReaiAgentCard({
           )}
           {error && <p role="alert" className="rounded-2xl border border-destructive/20 bg-destructive/[0.045] px-3 py-2.5 text-[12px] text-destructive">{error}</p>}
           {!showHistory && !showMediaHistory && turns.length === 0 && !sourceImportProgress && (!panel || (!composerFocused && !message.trim())) && (
-            <div className={cn(
-              "flex gap-2",
-              compactPanel
-                ? "overflow-x-auto pb-0.5 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
-                : "flex-wrap justify-center",
-            )}>
-              {quickActions.map((key, index) => {
-                const Icon = ACTION_ICON[key] ?? SparklesIcon;
-                return (
-                  <button
-                    key={key}
-                    type="button"
-                    disabled={busy}
-                    onClick={() => void ask(t(key, lang))}
-                    className={cn(
-                      "group inline-flex shrink-0 items-center gap-1.5 rounded-2xl border border-transparent bg-foreground/[0.04] px-3 text-[12px] font-medium text-foreground/75 transition-colors hover:bg-foreground/[0.06] hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50",
-                      "h-11",
-                      compactPanel && index > 1 && "hidden",
-                      compactPanel && index > 0 && "max-[359px]:hidden",
-                    )}
-                  >
-                    <Icon size={14} className="text-foreground/45 transition-colors group-hover:text-foreground/70" />
-                    {t(key, lang)}
-                  </button>
-                );
-              })}
-            </div>
+            // Recommended actions (2026-09-26, operator: "better UI with
+            // recommended actions"): in the panel, a short list of next steps
+            // right above the field, each a full-width row; the narrow panel
+            // keeps one scrollable row of pills.
+            compactPanel ? (
+              <div className="flex gap-2 overflow-x-auto pb-0.5 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+                {quickActions.map((key, index) => {
+                  const Icon = ACTION_ICON[key] ?? SparklesIcon;
+                  return (
+                    <button
+                      key={key}
+                      type="button"
+                      disabled={busy}
+                      onClick={() => void ask(t(key, lang))}
+                      className={cn(
+                        "group inline-flex h-11 shrink-0 items-center gap-1.5 rounded-full border border-border/60 bg-card px-3.5 text-[12px] font-medium text-foreground/75 transition-colors hover:border-foreground/20 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-50",
+                        index > 1 && "hidden",
+                        index > 0 && "max-[359px]:hidden",
+                      )}
+                    >
+                      <Icon size={14} className="text-foreground/45 transition-colors group-hover:text-foreground/70" />
+                      {t(key, lang)}
+                    </button>
+                  );
+                })}
+              </div>
+            ) : (
+              <div data-testid="agent-recommended-actions" className={cn("flex w-full flex-col gap-1.5", panel ? "" : "sm:max-w-md")}>
+                {quickActions.map((key) => {
+                  const Icon = ACTION_ICON[key] ?? SparklesIcon;
+                  return (
+                    <button
+                      key={key}
+                      type="button"
+                      disabled={busy}
+                      onClick={() => void ask(t(key, lang))}
+                      className="group flex min-h-12 w-full items-center gap-3 rounded-2xl border border-border/55 bg-card px-3 py-2 text-left shadow-[0_1px_2px_rgba(17,17,17,0.03)] transition-[border-color,background-color,box-shadow] hover:border-foreground/15 hover:bg-surface-subtle hover:shadow-[0_4px_16px_-8px_rgba(17,17,17,0.18)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-50"
+                    >
+                      <span aria-hidden="true" className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-foreground/[0.05] text-foreground/60 transition-colors group-hover:bg-foreground group-hover:text-background">
+                        <Icon size={15} />
+                      </span>
+                      <span className="min-w-0 flex-1 truncate text-[13px] font-medium text-foreground/85">{t(key, lang)}</span>
+                      <ChevronRightIcon size={15} aria-hidden="true" className="shrink-0 text-foreground/30 transition-transform group-hover:translate-x-0.5 group-hover:text-foreground/55" />
+                    </button>
+                  );
+                })}
+              </div>
+            )
           )}
           {!showHistory && !showMediaHistory && (attachmentNotice || intakeBusy) && (
             <p role="status" className="px-2 text-xs text-muted-foreground">{intakeBusy ? t("reai.attachments.reading", lang) : attachmentNotice}</p>

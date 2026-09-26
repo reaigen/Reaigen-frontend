@@ -52,10 +52,13 @@ export function AgentComposer({
       role="group"
       aria-label={t("reai.composer.label", lang)}
       data-testid="agent-composer"
-      className="w-full min-w-0 shrink-0 rounded-[20px] border border-border/80 bg-card shadow-control transition-colors focus-within:border-foreground/35"
+      // One calm field (2026-09-26, operator: "this pool where we type — better
+      // UI"): a soft lift instead of a hard outline, a quieter focus ring, and
+      // round controls that sit inside it.
+      className="w-full min-w-0 shrink-0 rounded-[26px] border border-border/60 bg-card shadow-[0_1px_2px_rgba(17,17,17,0.04),0_10px_32px_-12px_rgba(17,17,17,0.14)] transition-[border-color,box-shadow] focus-within:border-foreground/25 focus-within:shadow-[0_1px_2px_rgba(17,17,17,0.05),0_14px_40px_-14px_rgba(17,17,17,0.22)]"
     >
       {hasContext && (
-        <div data-testid="agent-composer-context" className="max-h-40 space-y-2 overflow-y-auto overscroll-contain border-b border-border/60 p-2">
+        <div data-testid="agent-composer-context" className="max-h-40 space-y-2 overflow-y-auto overscroll-contain border-b border-border/50 p-2.5">
           {children}
         </div>
       )}
@@ -68,7 +71,7 @@ export function AgentComposer({
         aria-label={t("reai.composer.message", lang)}
         aria-describedby={helpId}
         maxLength={AGENT_MESSAGE_LIMIT}
-        rows={2}
+        rows={1}
         placeholder={placeholder}
         onKeyDown={(event) => {
           if (shouldSendAgentMessage({
@@ -80,10 +83,10 @@ export function AgentComposer({
             onSend();
           }
         }}
-        className="block max-h-40 min-h-16 w-full resize-none rounded-t-[20px] bg-transparent px-4 pb-2 pt-3 text-[16px] leading-6 text-foreground outline-none placeholder:text-muted-foreground sm:text-[14px]"
+        className="block max-h-40 min-h-12 w-full resize-none rounded-t-[26px] bg-transparent px-5 pb-1 pt-4 text-[16px] leading-6 text-foreground outline-none placeholder:text-foreground/40 sm:text-[14.5px]"
       />
       <p id={helpId} className="sr-only">{t("reai.composer.keyboardHint", lang)}</p>
-      <div data-testid="agent-composer-toolbar" className="flex min-w-0 items-center gap-2 px-2 pb-2">
+      <div data-testid="agent-composer-toolbar" className="flex min-w-0 items-center gap-1.5 px-2.5 pb-2.5">
         {canAttach && <>
           <input
             ref={fileInputRef}
@@ -104,10 +107,10 @@ export function AgentComposer({
             onClick={() => fileInputRef.current?.click()}
             aria-label={t("reai.attachments.add", lang)}
             title={t("reai.attachments.add", lang)}
-            className="inline-flex min-h-11 min-w-11 shrink-0 items-center justify-center gap-1.5 rounded-[20px] bg-foreground/[0.04] px-3 text-[12px] font-medium text-foreground/75 transition-colors hover:bg-foreground/[0.08] hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-40"
+            className="inline-flex min-h-11 min-w-11 shrink-0 items-center justify-center rounded-full text-foreground/60 transition-colors hover:bg-foreground/[0.06] hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-40"
           >
-            <PlusIcon size={18} aria-hidden="true" />
-            <span>{t("reai.composer.addFiles", lang)}</span>
+            <PlusIcon size={20} aria-hidden="true" />
+            <span className="sr-only">{t("reai.composer.addFiles", lang)}</span>
           </button>
         </>}
         <span className="min-w-0 flex-1" />
@@ -122,14 +125,14 @@ export function AgentComposer({
           onClick={() => { if (canSend) onSend(); }}
           aria-label={busy ? busyLabel : t("reai.ask", lang)}
           title={busy ? busyLabel : t("reai.ask", lang)}
-          className="inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-[20px] bg-creative text-creative-foreground transition-colors hover:bg-creative/90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:bg-foreground/[0.06] disabled:text-foreground/35"
+          className="inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-foreground text-background shadow-[0_2px_8px_-2px_rgba(17,17,17,0.35)] transition-[background-color,transform] hover:bg-foreground/90 active:scale-[0.96] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:bg-foreground/[0.07] disabled:text-foreground/30 disabled:shadow-none"
         >
           {busy ? (
             <svg className="h-4 w-4 animate-spin motion-reduce:animate-none" viewBox="0 0 24 24" fill="none" aria-hidden="true">
               <circle className="opacity-25" cx="12" cy="12" r="9" stroke="currentColor" strokeWidth="2" />
               <path d="M12 3a9 9 0 0 1 9 9" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
             </svg>
-          ) : <ArrowUpIcon size={22} aria-hidden="true" />}
+          ) : <ArrowUpIcon size={20} aria-hidden="true" />}
         </button>
       </div>
     </div>

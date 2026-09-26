@@ -128,8 +128,8 @@ test("the loading fallback is the panel's own light silhouette", () => {
   const imports = [...skeleton.matchAll(/^import .* from "([^"]+)";$/gm)].map((match) => match[1]);
   assert.deepEqual(imports, ["./icons"], "nothing heavy ships with the shell");
   assert.match(skeleton, /aria-busy="true"/);
-  assert.equal((skeleton.match(/h-11 w-\d+ shrink-0 rounded-2xl/g) ?? []).length, 3, "three chip placeholders");
-  assert.match(skeleton, /rounded-\[20px\] border border-border\/80 bg-card shadow-control/, "the composer's own material");
+  assert.equal((skeleton.match(/h-12 w-full shrink-0 rounded-2xl/g) ?? []).length, 3, "three recommended-action rows");
+  assert.match(skeleton, /rounded-\[26px\] border border-border\/60 bg-card/, "the composer's own material");
   assert.match(skeleton, /mt-4 flex min-h-0 flex-1 flex-col gap-3 max-md:mt-1 max-md:gap-2/, "the body spacing of the panel, compact below 768px");
 });
 
@@ -137,4 +137,14 @@ test("what was dragged into the chat goes with one message and then leaves the p
   assert.match(card, /const sentPoolKeys = new Set\(requestPool\.map\(\(item\) => poolItemKey\(item\)\)\);/);
   assert.match(card, /setPool\(\(current\) => current\.filter\(\(item\) => !sentPoolKeys\.has\(poolItemKey\(item\)\)\)\);/);
   assert.match(card, /attachments: requestPool\.map\(\(item\) => item\.label\)/, "the sent items are shown under the message");
+});
+
+test("recommended actions are full-width rows above the field; the narrow panel keeps pills (2026-09-26)", () => {
+  assert.match(card, /data-testid="agent-recommended-actions"/);
+  assert.match(card, /group flex min-h-12 w-full items-center gap-3 rounded-2xl/);
+  assert.match(card, /<ChevronRightIcon size=\{15\}/);
+  assert.match(card, /compactPanel \? \(\s*<div className="flex gap-2 overflow-x-auto/);
+  const composer = fs.readFileSync(new URL("../app/components/agent-composer.tsx", import.meta.url), "utf8");
+  assert.match(composer, /rounded-\[26px\] border border-border\/60 bg-card/);
+  assert.match(composer, /h-11 w-11 shrink-0 items-center justify-center rounded-full bg-foreground text-background/);
 });

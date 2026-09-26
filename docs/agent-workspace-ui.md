@@ -318,3 +318,19 @@ agent call; everything below is a first-paint decision only.
 - Guarded by `scripts/validate-agent-panel.test.mjs` (source contracts) and
   `app/lib/api/retry-policy.test.mjs` (the real client's consent cache
   against a stubbed fetch).
+
+## Recommended actions and the composer (2026-09-26)
+
+Operator: "better UI with recommended actions and this pool where we type".
+
+- Recommended actions are full-width rows right above the field (icon in a
+  soft circle, the action, a chevron), not scattered pills; the narrow panel
+  keeps one scrollable row of pills. They are the same context-aware actions as
+  before (dashboard: find, compare, bulk edit; listing: improve description,
+  check missing fields, edit this listing; settings: agent, language, security).
+- The composer is one calm field: 26 px radius, a soft lift instead of a hard
+  outline, one line to start that grows with the text, a round (+) for files
+  (its words kept for screen readers) and a round dark send button. Touch
+  targets stay 44 px.
+- The loading skeleton draws the same rows and field, so nothing moves when
+  the panel fills in.

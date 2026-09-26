@@ -47,10 +47,11 @@ test("composer keeps the full-width message above a separate attachment/send too
   const html = renderComposer();
   const textarea = html.match(/<textarea[^>]*>/)[0];
   assert.match(textarea, /aria-label="Message Agent"/);
-  assert.match(textarea, /rows="2"/);
+  // One line to start; it grows with the text (redesign 2026-09-26).
+  assert.match(textarea, /rows="1"/);
   assert.match(textarea, /maxLength="2000"/);
   assert.match(textarea, /w-full/);
-  assert.match(textarea, /min-h-16/);
+  assert.match(textarea, /min-h-12/);
   assert.match(textarea, /max-h-40/);
   assert.ok(html.indexOf("<textarea") < html.indexOf('data-testid="agent-composer-toolbar"'));
   assert.match(html, /Enter to send\. Shift\+Enter for a new line/);
@@ -60,7 +61,8 @@ test("composer keeps the full-width message above a separate attachment/send too
   assert.match(buttons[0], /min-h-11 min-w-11/);
   assert.match(buttons[1], /h-11 w-11/);
   assert.match(buttons[1], / disabled=""/);
-  assert.match(html, />Add files</);
+  // The (+) is a round icon button; its words stay for screen readers.
+  assert.match(html, /<span class="sr-only">Add files<\/span>/);
   assert.ok(html.includes(`accept="${AGENT_ATTACHMENT_ACCEPT}"`));
 });
 
