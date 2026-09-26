@@ -2212,6 +2212,11 @@ const de: LocaleStrings = {
 
   // ── Account setup: phone conflict ───────────────────────────────────
   "setup.seller.phoneTaken":              "Diese Nummer ist bereits mit einem anderen Reaigen-Konto verknüpft. Verwenden Sie eine andere Nummer oder kontaktieren Sie den Support, falls sie Ihnen gehört.",
+  "common.networkError":                   "Die Verbindung wurde unterbrochen. Prüfen Sie Ihre Internetverbindung und versuchen Sie es erneut.",
+  "settings.profile.imageUnsupported":     "Diese Datei kann nicht als Foto verwendet werden. Wählen Sie ein JPEG-, PNG-, WebP- oder HEIC-Bild.",
+  "settings.profile.imageTooLarge":        "Dieses Foto ist zu groß. Wählen Sie ein Bild bis 10 MB (HEIC bis 4 MB).",
+  "settings.profile.imageMissing":         "Es ist kein Foto angekommen. Wählen Sie das Bild erneut.",
+  "settings.profile.imageFailed":          "Das Foto konnte nicht gespeichert werden. Versuchen Sie es gleich noch einmal; bis dahin bleibt das aktuelle Foto.",
   "setup.leave.fixFirst":                  "Ihre Angaben sind noch nicht gespeichert: Korrigieren oder leeren Sie das markierte Feld und verlassen Sie dann diesen Schritt.",
 };
 

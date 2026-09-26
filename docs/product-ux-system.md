@@ -326,6 +326,25 @@ The detailed Agent interaction contract lives in `docs/agent-workspace-ui.md`.
 - The active camera remains visibly identified while editing.
 - Saved order is playback order and must be preserved by the camera PATCH request.
 
+## Account setup and settings contract
+
+Findings from the Bench 06 new-user run (2026-09-26) that now hold:
+
+- **Setup saves what it can.** A verified phone is a publishing requirement, not a condition for
+  saving a seller profile: the setup seller step saves without a number, as Settings does, and its
+  hint says the number is only needed to publish. Leaving a step any way other than Continue
+  (Skip, Back, a rail step) first saves what was typed; a value that cannot be saved as typed keeps
+  the user on the step with a sentence naming what to fix.
+- **The dashboard reminder is the route back.** Automatic prompts stop after Skip or Finish, but the
+  quiet dashboard reminder with "Continue setup" stays while any step is open
+  (`shouldShowSetupReminder`), as the done screen promises.
+- **Profile photo and cover go through the API.** The browser never PUTs to a presigned bucket URL
+  (the workspace bucket has no CORS rule): Settings scales the image to at most 2048 px, sends it
+  as multipart `file` to `/api/reaigen/profiles/upload-avatar/` or `/upload-cover/`, and maps every
+  refusal to a localized sentence (supported types JPEG/PNG/WebP/HEIC, 10 MB, retry). A dropped
+  connection reads as one localized sentence everywhere (`getSafeApiErrorMessage`), never the
+  browser's "Failed to fetch".
+
 ## Data-loading and state rules
 
 - Browser requests stay same-origin through `/api/auth/*` and `/api/reaigen/*`; tokens remain in

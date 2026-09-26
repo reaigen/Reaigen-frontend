@@ -1552,6 +1552,26 @@ export async function confirmAvatar(key: string) {
   });
 }
 
+/**
+ * Upload a profile photo or cover through the API. The browser cannot PUT to
+ * the presigned bucket URL (no CORS on the workspace bucket), so the web
+ * sends the file here and the server stores it; the presign pair above stays
+ * for the native apps.
+ */
+function uploadProfileImage(kind: "avatar" | "cover", file: File): Promise<{ avatar_url?: string; cover_image_url?: string }> {
+  const body = new FormData();
+  body.append("file", file, file.name);
+  return request(`/api/reaigen/profiles/upload-${kind}/`, { method: "POST", body });
+}
+
+export function uploadAvatar(file: File) {
+  return uploadProfileImage("avatar", file);
+}
+
+export function uploadCover(file: File) {
+  return uploadProfileImage("cover", file);
+}
+
 export async function presignCover(data: { filename: string; content_type: string }): Promise<PresignResponse> {
   return request("/api/reaigen/profiles/presign-cover/", {
     method: "POST",

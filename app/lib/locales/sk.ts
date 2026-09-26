@@ -2212,6 +2212,11 @@ const sk: LocaleStrings = {
 
   // ── Account setup: phone conflict ───────────────────────────────────
   "setup.seller.phoneTaken":              "Toto číslo je už prepojené s iným účtom Reaigen. Použite iné číslo, alebo kontaktujte podporu, ak je vaše.",
+  "common.networkError":                   "Spojenie sa prerušilo. Skontrolujte pripojenie na internet a skúste to znova.",
+  "settings.profile.imageUnsupported":     "Tento súbor sa nedá použiť ako fotka. Vyberte obrázok JPEG, PNG, WebP alebo HEIC.",
+  "settings.profile.imageTooLarge":        "Táto fotka je príliš veľká. Vyberte obrázok do 10 MB (HEIC do 4 MB).",
+  "settings.profile.imageMissing":         "Fotka neprišla. Vyberte obrázok znova.",
+  "settings.profile.imageFailed":          "Fotku sa nepodarilo uložiť. Skúste to o chvíľu znova; dovtedy zostane súčasná fotka.",
   "setup.leave.fixFirst":                  "Údaje ešte nie sú uložené: opravte alebo vymažte zvýraznené pole a potom tento krok opustite.",
 };
 

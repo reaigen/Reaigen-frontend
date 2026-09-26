@@ -31,10 +31,9 @@ import {
   confirmBillingCheckout,
   changePassword,
   getAvailablePreferences,
-  presignAvatar,
-  confirmAvatar,
-  presignCover,
-  confirmCover,
+  uploadAvatar,
+  uploadCover,
+  ApiError,
   resendVerification,
   getTotpStatus,
   setupTotp,
@@ -79,7 +78,14 @@ import {
   type TrainingCatalogProfile,
   type UserCapabilities,
 } from "../lib/api/client";
-import { getSafeApiErrorMessage } from "../lib/api/error-message";
+import { getApiErrorCode, getSafeApiErrorMessage } from "../lib/api/error-message";
+import {
+  PROFILE_IMAGE_ACCEPT,
+  ProfileImageError,
+  prepareProfileImage,
+  profileImageProblemFromResponse,
+  profileImageProblemKey,
+} from "../lib/profile-image";
 import { resolveAdministrativeRegion } from "../lib/address-region";
 import { isEmailAddress, normalizeWebAddress } from "../lib/form-validation";
 import { parseTrainingIterations } from "../lib/training-quality";
@@ -379,21 +385,22 @@ function CollapsibleSection({ title, defaultOpen, children }: {
 
 /* ── Image Upload Helper ─────────────────────────────────────────────── */
 
-async function uploadPresigned(
-  presignFn: (data: { filename: string; content_type: string }) => Promise<{ upload_key: string; presigned_url: string }>,
-  confirmFn: (key: string) => Promise<unknown>,
-  file: File,
-) {
-  const { upload_key, presigned_url } = await presignFn({
-    filename: file.name,
-    content_type: file.type,
-  });
-  await fetch(presigned_url, {
-    method: "PUT",
-    body: file,
-    headers: { "Content-Type": file.type },
-  });
-  await confirmFn(upload_key);
+/**
+ * Send a profile photo or cover through the API (see lib/profile-image) and
+ * turn every refusal into a sentence the creator can act on: the supported
+ * types, the size, or "try again" — never the browser's "Failed to fetch".
+ */
+async function uploadProfileImage(upload: (file: File) => Promise<unknown>, file: File) {
+  await upload(await prepareProfileImage(file));
+}
+
+function profileImageErrorMessage(err: unknown, lang: string): string {
+  if (err instanceof ProfileImageError) return t(profileImageProblemKey(err.problem), lang);
+  if (err instanceof ApiError) {
+    const problem = profileImageProblemFromResponse(err.status, getApiErrorCode(err));
+    if (problem) return t(profileImageProblemKey(problem), lang);
+  }
+  return getSafeApiErrorMessage(err, lang, "settings.profile.imageFailed");
 }
 
 type JsonObject = Record<string, unknown>;
@@ -470,10 +477,10 @@ function ProfileTab({ user, onSaved, lang }: { user: UserProfile; onSaved: () =>
     try {
       setAvatarUploading(true);
       setError(null);
-      await uploadPresigned(presignAvatar, confirmAvatar, file);
+      await uploadProfileImage(uploadAvatar, file);
       onSaved();
     } catch (err) {
-      setError(getSafeApiErrorMessage(err, lang));
+      setError(profileImageErrorMessage(err, lang));
     } finally {
       setAvatarUploading(false);
       if (avatarInputRef.current) avatarInputRef.current.value = "";
@@ -549,7 +556,7 @@ function ProfileTab({ user, onSaved, lang }: { user: UserProfile; onSaved: () =>
             screens), and the address sits under the name with its status.
           */}
           <div className="flex items-center gap-5" data-testid="settings-profile-identity">
-            <input ref={avatarInputRef} type="file" accept="image/*" className="hidden" onChange={handleAvatarChange} />
+            <input ref={avatarInputRef} type="file" accept={PROFILE_IMAGE_ACCEPT} className="hidden" onChange={handleAvatarChange} />
             <button
               type="button"
               onClick={() => avatarInputRef.current?.click()}
@@ -785,10 +792,10 @@ function SellerTab({ user, onSaved, lang }: { user: UserProfile; onSaved: () => 
     if (!file) return;
     try {
       setCoverUploading(true);
-      await uploadPresigned(presignCover, confirmCover, file);
+      await uploadProfileImage(uploadCover, file);
       onSaved();
     } catch (err) {
-      setError(getSafeApiErrorMessage(err, lang));
+      setError(profileImageErrorMessage(err, lang));
     } finally {
       setCoverUploading(false);
       if (coverInputRef.current) coverInputRef.current.value = "";
@@ -871,7 +878,7 @@ function SellerTab({ user, onSaved, lang }: { user: UserProfile; onSaved: () => 
         <form className="space-y-4" onSubmit={handleSubmit} noValidate>
           {/* Cover Image */}
           <div className="relative">
-            <input ref={coverInputRef} type="file" accept="image/*" className="hidden" onChange={handleCoverChange} />
+            <input ref={coverInputRef} type="file" accept={PROFILE_IMAGE_ACCEPT} className="hidden" onChange={handleCoverChange} />
             {p?.cover_image_url ? (
               <>
                 <div className="h-28 w-full overflow-hidden rounded-xl bg-muted sm:h-36">

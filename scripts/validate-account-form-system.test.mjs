@@ -2,6 +2,13 @@ import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
 
+import {
+  isSupportedProfileImage,
+  profileImageProblemFromResponse,
+  profileImageType,
+  scaledProfileImageSize,
+} from "../app/lib/profile-image.ts";
+
 async function source(relativePath) {
   return readFile(new URL(relativePath, import.meta.url), "utf8");
 }
@@ -150,4 +157,24 @@ test("account elements use the Reaigen semantic palette instead of utility color
   assert.match(statusPill, /success: "bg-success"/);
   assert.match(statusPill, /warning: "bg-warning"/);
   assert.match(statusPill, /danger: "bg-destructive"/);
+});
+
+test("profile photos go through the API with a localized, actionable refusal", () => {
+  // Bench 06 B06-F02/EF04: the browser PUT to the presigned bucket URL was
+  // refused (no CORS) and Settings showed the raw "Failed to fetch".
+  assert.doesNotMatch(settings, /uploadPresigned|presigned_url/);
+  assert.match(settings, /await uploadProfileImage\(uploadAvatar, file\)/);
+  assert.match(settings, /await uploadProfileImage\(uploadCover, file\)/);
+  assert.match(settings, /setError\(profileImageErrorMessage\(err, lang\)\)/);
+  assert.match(settings, /accept=\{PROFILE_IMAGE_ACCEPT\}/);
+
+  assert.equal(profileImageType({ name: "IMG_0001.HEIC", type: "" }), "image/heic");
+  assert.equal(profileImageType({ name: "a.jpg", type: "image/jpg" }), "image/jpeg");
+  assert.equal(isSupportedProfileImage({ name: "nina.png", type: "image/png" }), true);
+  assert.equal(isSupportedProfileImage({ name: "scan.pdf", type: "application/pdf" }), false);
+  assert.deepEqual(scaledProfileImageSize(4032, 3024), { width: 2048, height: 1536, scaled: true });
+  assert.deepEqual(scaledProfileImageSize(1024, 1024), { width: 1024, height: 1024, scaled: false });
+  assert.equal(profileImageProblemFromResponse(413, null), "image_too_large");
+  assert.equal(profileImageProblemFromResponse(400, "image_unsupported"), "image_unsupported");
+  assert.equal(profileImageProblemFromResponse(400, "something_else"), null);
 });

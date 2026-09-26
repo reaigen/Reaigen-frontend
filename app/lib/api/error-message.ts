@@ -2,6 +2,7 @@ import { ApiError } from "./client";
 import { t, type LocaleKey } from "../i18n";
 
 const HTML_FRAGMENT_RE = /<\/?[a-z][\s\S]*>/i;
+const NETWORK_FAILURE_RE = /failed to fetch|load failed|networkerror|network request failed/i;
 const TECHNICAL_ERROR_RE =
   /(api error|backend unreachable|bad gateway|nginx\/|traceback|segmentation fault|improperlyconfigured|secret_key|connection refused|aws secret|endpoint url)/i;
 
@@ -115,6 +116,12 @@ export function getSafeApiErrorMessage(
 
     const detail = apiErrorDetail(error);
     return isSafeForUser(detail) ? detail.trim().slice(0, 240) : t(fallbackKey, lang);
+  }
+
+  // fetch() rejects with a TypeError whose text is the browser's own
+  // ("Failed to fetch", "Load failed"); it is never a sentence for the page.
+  if (error instanceof TypeError && NETWORK_FAILURE_RE.test(error.message)) {
+    return t("common.networkError", lang);
   }
 
   if (error instanceof Error && isSafeForUser(error.message)) {

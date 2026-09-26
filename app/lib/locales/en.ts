@@ -2234,6 +2234,11 @@ const en = {
 
   // ── Account setup: phone conflict ───────────────────────────────────
   "setup.seller.phoneTaken":              "This number is already linked to another Reaigen account. Use a different number, or contact support if it's yours.",
+  "common.networkError":                   "The connection was interrupted. Check your internet connection and try again.",
+  "settings.profile.imageUnsupported":     "This file can't be used as a photo. Choose a JPEG, PNG, WebP or HEIC image.",
+  "settings.profile.imageTooLarge":        "This photo is too large. Choose an image up to 10 MB (HEIC up to 4 MB).",
+  "settings.profile.imageMissing":         "No photo arrived. Choose the image again.",
+  "settings.profile.imageFailed":          "The photo could not be saved. Try again in a moment; your current photo stays until then.",
   "setup.leave.fixFirst":                  "Your details are not saved yet: correct or clear the highlighted field, then leave this step.",
 } as const;
 

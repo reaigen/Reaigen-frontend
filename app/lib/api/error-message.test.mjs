@@ -60,3 +60,14 @@ test("an unknown but readable message still passes through, technical ones do no
   assert.notEqual(getSafeApiErrorMessage(refusal(400, { detail: "Traceback (most recent call last)" }), "sk"), "Traceback (most recent call last)");
   assert.equal(getSafeApiErrorMessage(refusal(503, { detail: "nginx/1.25 bad gateway" }), "en").length > 0, true);
 });
+
+test("a dropped connection reads as one localized sentence, never the browser's text", () => {
+  assert.equal(
+    getSafeApiErrorMessage(new TypeError("Failed to fetch"), "sk"),
+    "Spojenie sa prerušilo. Skontrolujte pripojenie na internet a skúste to znova.",
+  );
+  assert.equal(
+    getSafeApiErrorMessage(new TypeError("Load failed"), "en"),
+    "The connection was interrupted. Check your internet connection and try again.",
+  );
+});
