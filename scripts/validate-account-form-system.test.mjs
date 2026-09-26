@@ -28,6 +28,9 @@ import {
   scaledProfileImageSize,
 } from "../app/lib/profile-image.ts";
 import { privacySummary } from "../app/lib/privacy-summary.ts";
+import { changedFields, leavingDestination } from "../app/lib/unsaved-changes.ts";
+import { canReturnFocusTo } from "../app/lib/ui/dialog-focus.ts";
+import { ariaShortcut, isApplePlatform, shortcutLabel } from "../app/lib/keyboard-shortcuts.ts";
 
 async function source(relativePath) {
   return readFile(new URL(relativePath, import.meta.url), "utf8");
@@ -237,4 +240,68 @@ test("Language & region shows real samples and names, not catalogue codes", asyn
   assert.equal(t(preview.unitNameKey("SQM"), "sk"), "Štvorcový meter");
   assert.equal(preview.unitNameKey("XYZ"), null);
   assert.doesNotMatch(settings, /stableOptionLabel|\{d\.code\} · \{d\.name\}/);
+});
+
+// Bench 07 (2026-09-26): editing surfaces keep unsaved work or ask before it
+// goes, and give the keyboard back where it came from.
+
+test("Settings keeps a section's unsaved edits across sections and asks before the page is left", () => {
+  // B07-F01: an unsaved Company was gone after a look at Profile.
+  assert.match(settings, /data-\[state=inactive\]:hidden/);
+  for (const section of ["profile", "seller", "privacy", "training", "localization", "notifications", "billing", "security", "reai"]) {
+    assert.match(settings, new RegExp(`<TabsContent value="${section}" forceMount=\\{keepMounted\\("${section}"\\)\\}`), section);
+  }
+  assert.match(settings, /useReportSettingsDirty\("profile", dirty\)/);
+  assert.match(settings, /useReportSettingsDirty\("seller", dirty\)/);
+  assert.match(settings, /useUnsavedChangesGuard\(dirtyTabs\.size > 0, leaveQuestion\)/);
+  assert.match(settings, /settings\.unsaved\.marker/);
+
+  assert.deepEqual(changedFields({ company: "B07 UNSAVED COMPANY", bio: "", isRePro: false }, { company: "Reaigen UX Test", bio: null, isRePro: false }), ["company"]);
+  assert.deepEqual(changedFields({ company: "", website: "" }, { company: undefined, website: null }), [], "nothing saved and nothing typed are the same");
+  assert.deepEqual(changedFields({ isRePro: true }, { isRePro: false }), ["isRePro"]);
+});
+
+test("only a plain click on a link out of the page is held for the question", () => {
+  const plain = { button: 0, metaKey: false, ctrlKey: false, shiftKey: false, altKey: false, defaultPrevented: false };
+  const link = (href, extra = {}) => ({ href, target: "", download: false, ...extra });
+  const here = "https://app.example/settings#seller";
+  assert.equal(leavingDestination(link("/dashboard"), here, plain), "/dashboard");
+  assert.equal(leavingDestination(link("https://app.example/draft/12044?tab=media#top"), here, plain), "/draft/12044?tab=media#top");
+  assert.equal(leavingDestination(link("#profile"), here, plain), null, "another section of Settings stays on the page");
+  assert.equal(leavingDestination(link("/settings#billing"), here, plain), null);
+  assert.equal(leavingDestination(link("https://elsewhere.example/"), here, plain), null, "another site is the browser's to ask about");
+  assert.equal(leavingDestination(link("/dashboard", { target: "_blank" }), here, plain), null, "a new tab loses nothing");
+  assert.equal(leavingDestination(link("/terms.pdf", { download: true }), here, plain), null);
+  assert.equal(leavingDestination(link("/dashboard"), here, { ...plain, metaKey: true }), null);
+  assert.equal(leavingDestination(link("/dashboard"), here, { ...plain, button: 1 }), null);
+  assert.equal(leavingDestination(link("/dashboard"), here, { ...plain, defaultPrevented: true }), null);
+});
+
+test("a closed dialog gives focus back to the control that opened it, if it can take it", () => {
+  // B07-F05: Escape left the keyboard on <body>.
+  const element = ({ isConnected = true, attributes = {}, inertAncestor = null } = {}) => ({
+    isConnected,
+    hasAttribute: (name) => name in attributes,
+    getAttribute: (name) => attributes[name] ?? null,
+    closest: () => inertAncestor,
+    focus() {},
+  });
+  assert.equal(canReturnFocusTo(element()), true);
+  assert.equal(canReturnFocusTo(element({ isConnected: false })), false, "it left with the listing");
+  assert.equal(canReturnFocusTo(element({ attributes: { disabled: "" } })), false);
+  assert.equal(canReturnFocusTo(element({ attributes: { "aria-hidden": "true" } })), false);
+  assert.equal(canReturnFocusTo(element({ inertAncestor: {} })), false, "inside something inert");
+  assert.equal(canReturnFocusTo(null), false);
+});
+
+test("shortcut labels speak the platform's notation; both modifiers work everywhere", () => {
+  // B07-F07: ⌘ on Windows.
+  assert.equal(isApplePlatform({ platform: "Win32", userAgent: "Mozilla/5.0 (Windows NT 10.0; Win64; x64)" }), false);
+  assert.equal(isApplePlatform({ userAgentData: { platform: "Windows" } }), false);
+  assert.equal(isApplePlatform({ platform: "MacIntel" }), true);
+  assert.equal(isApplePlatform({ userAgent: "Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X)" }), true);
+  assert.equal(isApplePlatform(undefined), false);
+  assert.equal(["B", "I", "Enter"].map((key) => shortcutLabel(key, false)).join(" · "), "Ctrl+B · Ctrl+I · Ctrl+Enter");
+  assert.equal(["B", "I", "Enter"].map((key) => shortcutLabel(key, true)).join(" · "), "⌘B · ⌘I · ⌘↵");
+  assert.equal(ariaShortcut("B"), "Control+B Meta+B");
 });

@@ -15,6 +15,8 @@ import { Checkbox } from "../lib/ui/checkbox";
 import { Textarea } from "../lib/ui/textarea";
 import { Avatar, AvatarFallback, AvatarImage } from "../lib/ui/avatar";
 import { BottomSheet } from "../lib/ui/bottom-sheet";
+import { changedFields } from "../lib/unsaved-changes";
+import { useUnsavedChangesGuard } from "../lib/use-unsaved-changes-guard";
 import {
   updateProfile,
   updateAccountConsent,
@@ -461,6 +463,21 @@ function withSellerContactPreferences(
 
 /* ── Profile Tab ─────────────────────────────────────────────────────── */
 
+/**
+ * Which sections hold edits not yet saved. Each section says so itself; the
+ * form marks it in the section list and asks before the page is left
+ * (Bench 07, B07-F01).
+ */
+const SettingsDirtyContext = React.createContext<(section: string, dirty: boolean) => void>(() => undefined);
+
+function useReportSettingsDirty(section: string, dirty: boolean) {
+  const report = React.useContext(SettingsDirtyContext);
+  React.useEffect(() => {
+    report(section, dirty);
+  }, [dirty, report, section]);
+  React.useEffect(() => () => report(section, false), [report, section]);
+}
+
 function ProfileTab({ user, onSaved, lang }: { user: UserProfile; onSaved: () => void; lang: string }) {
   const [firstName, setFirstName] = React.useState(user.first_name ?? "");
   const [lastName, setLastName] = React.useState(user.last_name ?? "");
@@ -516,6 +533,7 @@ function ProfileTab({ user, onSaved, lang }: { user: UserProfile; onSaved: () =>
   const dirty = firstName.trim() !== (user.first_name ?? "")
     || lastName.trim() !== (user.last_name ?? "")
     || username.trim() !== (user.username ?? "");
+  useReportSettingsDirty("profile", dirty);
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -797,6 +815,21 @@ function SellerTab({ user, onSaved, lang }: { user: UserProfile; onSaved: () => 
     sellerContact.publicEmail,
     sellerContact.secondaryPhone,
   ]);
+
+  const dirty = changedFields(
+    {
+      phone, publicEmail, secondaryPhone, company, website, bio, jobTitle, linkedin, twitter, instagram,
+      isRePro, license, agency, address, city, state, country, postalCode,
+    },
+    {
+      phone: p?.phone, publicEmail: sellerContact.publicEmail, secondaryPhone: sellerContact.secondaryPhone,
+      company: p?.company, website: p?.website, bio: p?.bio, jobTitle: p?.job_title, linkedin: p?.linkedin_url,
+      twitter: p?.twitter_handle, instagram: p?.instagram_handle, isRePro: p?.is_real_estate_professional ?? false,
+      license: p?.license_number, agency: p?.agency_name, address: p?.address, city: p?.city, state: p?.state,
+      country: p?.country, postalCode: p?.postal_code,
+    },
+  ).length > 0;
+  useReportSettingsDirty("seller", dirty);
 
   async function handleCoverChange(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
@@ -4107,12 +4140,39 @@ function PhoneSection({ user, onSaved, lang }: { user: UserProfile; onSaved: () 
 /* ── Settings Form (main export) ─────────────────────────────────────── */
 
 // A section eases in when it is chosen instead of snapping into place.
-const TAB_PANEL_CLASS = "mt-0 animate-fade-in-up focus-visible:outline-none";
+// Visited sections stay mounted (see `visitedTabs`), so the inactive ones
+// are hidden here rather than removed by Radix.
+const TAB_PANEL_CLASS = "mt-0 animate-fade-in-up focus-visible:outline-none data-[state=inactive]:hidden";
 
 export function SettingsForm({ user, onSaved }: { user: UserProfile; onSaved: () => void }) {
   const lang = getUserLanguage(user.localization);
   const [activeTab, setActiveTab] = React.useState("profile");
   const [agentAccess, setAgentAccess] = React.useState<boolean | null>(null);
+  // A section keeps its component — and so its unsaved draft — once it has
+  // been opened. Radix unmounted the inactive one, so an unsaved Company was
+  // gone after a look at Profile (Bench 07, B07-F01).
+  const [visitedTabs, setVisitedTabs] = React.useState<ReadonlySet<string>>(() => new Set(["profile"]));
+  React.useEffect(() => {
+    setVisitedTabs((current) => (current.has(activeTab) ? current : new Set([...current, activeTab])));
+  }, [activeTab]);
+  const keepMounted = (section: string) => (visitedTabs.has(section) || section === activeTab ? true : undefined);
+  const [dirtyTabs, setDirtyTabs] = React.useState<ReadonlySet<string>>(() => new Set());
+  const reportDirty = React.useCallback((section: string, dirty: boolean) => {
+    setDirtyTabs((current) => {
+      if (current.has(section) === dirty) return current;
+      const next = new Set(current);
+      if (dirty) next.add(section);
+      else next.delete(section);
+      return next;
+    });
+  }, []);
+  const leaveQuestion = React.useMemo(() => ({
+    title: t("settings.unsaved.leaveTitle", lang),
+    description: t("settings.unsaved.leaveDescription", lang),
+    leave: t("settings.unsaved.leave", lang),
+    stay: t("settings.unsaved.stay", lang),
+  }), [lang]);
+  const leaveGuard = useUnsavedChangesGuard(dirtyTabs.size > 0, leaveQuestion);
 
   React.useEffect(() => {
     let active = true;
@@ -4184,8 +4244,19 @@ export function SettingsForm({ user, onSaved }: { user: UserProfile; onSaved: ()
     { value: "security", label: "settings.tab.security", icon: LockIcon },
   ] as const).filter((tab) => tab.value !== "reai" || agentAllowed);
 
+  const unsavedMarker = (section: string) => (dirtyTabs.has(section) ? (
+    <span
+      role="img"
+      aria-label={t("settings.unsaved.marker", lang)}
+      title={t("settings.unsaved.marker", lang)}
+      className="ml-auto h-1.5 w-1.5 shrink-0 rounded-full bg-primary"
+    />
+  ) : null);
+
   return (
+    <SettingsDirtyContext.Provider value={reportDirty}>
     <div className="w-full">
+      {leaveGuard}
       <AccountSetupEntry user={user} lang={lang} />
       <Tabs
         value={activeTab}
@@ -4218,6 +4289,7 @@ export function SettingsForm({ user, onSaved }: { user: UserProfile; onSaved: ()
                       <span className="inline-flex items-center gap-2.5">
                         <TabIcon size={15} className="shrink-0 text-foreground/55" />
                         <span>{t(tab.label, lang)}</span>
+                        {unsavedMarker(tab.value)}
                       </span>
                     </SelectItem>
                   );
@@ -4235,43 +4307,45 @@ export function SettingsForm({ user, onSaved }: { user: UserProfile; onSaved: ()
                 <TabsTrigger key={tab.value} value={tab.value} data-testid={`settings-tab-${tab.value}`} className={triggerClassName}>
                   <TabIcon size={16} className="block shrink-0 text-foreground/52 transition-colors group-hover:text-foreground group-data-[state=active]:text-foreground" />
                   <span className="min-w-0 truncate">{t(tab.label, lang)}</span>
+                  {unsavedMarker(tab.value)}
                 </TabsTrigger>
               );
             })}
           </TabsList>
         </div>
         <div className="min-w-0 max-lg:[&_button]:min-h-11 lg:p-3">
-          <TabsContent value="profile" className={TAB_PANEL_CLASS}>
+          <TabsContent value="profile" forceMount={keepMounted("profile")} className={TAB_PANEL_CLASS}>
             <ProfileTab user={user} onSaved={onSaved} lang={lang} />
           </TabsContent>
-          <TabsContent value="seller" className={TAB_PANEL_CLASS}>
+          <TabsContent value="seller" forceMount={keepMounted("seller")} className={TAB_PANEL_CLASS}>
             <SellerTab user={user} onSaved={onSaved} lang={lang} />
           </TabsContent>
-          <TabsContent value="privacy" className={TAB_PANEL_CLASS}>
+          <TabsContent value="privacy" forceMount={keepMounted("privacy")} className={TAB_PANEL_CLASS}>
             <PrivacyTab user={user} onSaved={onSaved} lang={lang} agentAllowed={agentAllowed} />
           </TabsContent>
           {agentAllowed ? (
-            <TabsContent value="reai" className={TAB_PANEL_CLASS}>
+            <TabsContent value="reai" forceMount={keepMounted("reai")} className={TAB_PANEL_CLASS}>
               <ReaiTab lang={lang} />
             </TabsContent>
           ) : null}
-          <TabsContent value="training" className={TAB_PANEL_CLASS}>
+          <TabsContent value="training" forceMount={keepMounted("training")} className={TAB_PANEL_CLASS}>
             <TrainingTab lang={lang} />
           </TabsContent>
-          <TabsContent value="localization" className={TAB_PANEL_CLASS}>
+          <TabsContent value="localization" forceMount={keepMounted("localization")} className={TAB_PANEL_CLASS}>
             <LocalizationTab user={user} lang={lang} />
           </TabsContent>
-          <TabsContent value="notifications" className={TAB_PANEL_CLASS}>
+          <TabsContent value="notifications" forceMount={keepMounted("notifications")} className={TAB_PANEL_CLASS}>
             <NotificationsTab user={user} onSaved={onSaved} lang={lang} />
           </TabsContent>
-          <TabsContent value="billing" className={TAB_PANEL_CLASS}>
+          <TabsContent value="billing" forceMount={keepMounted("billing")} className={TAB_PANEL_CLASS}>
             <BillingTab user={user} onSaved={onSaved} lang={lang} />
           </TabsContent>
-          <TabsContent value="security" className={TAB_PANEL_CLASS}>
+          <TabsContent value="security" forceMount={keepMounted("security")} className={TAB_PANEL_CLASS}>
             <SecurityTab user={user} onSaved={onSaved} lang={lang} />
           </TabsContent>
         </div>
       </Tabs>
     </div>
+    </SettingsDirtyContext.Provider>
   );
 }
