@@ -153,7 +153,15 @@ async function fetchGetData(path: string, options: RequestInit): Promise<unknown
   throw lastError;
 }
 
+/**
+ * The agent consent answer. It changes only when the creator switches the
+ * agent on or off, and every such write goes through this same path, so it
+ * is cached like the profile and survives ordinary agent traffic.
+ */
+const REAI_AGENT_CONSENT_PATH = "/api/reaigen/reai-agent/consent/";
+
 function ttlForPath(path: string): number {
+  if (path === REAI_AGENT_CONSENT_PATH) return LONG_TTL;
   if (path.startsWith("/api/reaigen/users/") || path.startsWith("/api/reaigen/profiles/") || path.startsWith("/api/reaigen/personalized-data/")) return LONG_TTL;
   if (path.startsWith("/api/reaigen/content/")) return CONTENT_TTL;
   // Billing carries the live compute-credit balance now — keep it on the
@@ -180,8 +188,13 @@ function invalidateCache(path: string) {
   if (EMBEDDED_IN_PROFILE_PREFIXES.some((prefix) => path.startsWith(prefix))) {
     prefixes.push("/api/reaigen/users/");
   }
+  // Every chat turn, apply and feedback POST shares the /reai-agent/ prefix.
+  // Dropping consent with them refetched it after each message and made the
+  // panel wait on it again; only a write to consent itself can change it.
+  const keepConsent = path !== REAI_AGENT_CONSENT_PATH;
   for (const store of [cache, inFlight, freshInFlight]) {
     for (const key of store.keys()) {
+      if (keepConsent && key === REAI_AGENT_CONSENT_PATH) continue;
       if (prefixes.some((candidate) => key.startsWith(candidate))) store.delete(key);
     }
   }
@@ -3237,18 +3250,30 @@ export interface AgentCreationRevision {
 }
 
 export async function getReaiAgentConsent(): Promise<ReaiAgentConsent> {
-  return request("/api/reaigen/reai-agent/consent/");
+  return request(REAI_AGENT_CONSENT_PATH);
+}
+
+/**
+ * The consent answer already in memory, if it is still fresh, without a
+ * request. The agent panel paints from it on open; the server still enforces
+ * consent on every agent call, so this is only a first-paint hint.
+ */
+export function peekReaiAgentConsent(): ReaiAgentConsent | null {
+  if (typeof window === "undefined") return null;
+  const cached = cache.get(REAI_AGENT_CONSENT_PATH);
+  if (!cached || Date.now() - cached.ts >= ttlForPath(REAI_AGENT_CONSENT_PATH)) return null;
+  return cached.data as ReaiAgentConsent | null;
 }
 
 export async function grantReaiAgentConsent(policyVersion: string): Promise<ReaiAgentConsent> {
-  return request("/api/reaigen/reai-agent/consent/", {
+  return request(REAI_AGENT_CONSENT_PATH, {
     method: "POST",
     body: JSON.stringify({ accepted: true, policy_version: policyVersion }),
   });
 }
 
 export async function revokeReaiAgentConsent(): Promise<ReaiAgentConsent> {
-  return request("/api/reaigen/reai-agent/consent/", { method: "DELETE" });
+  return request(REAI_AGENT_CONSENT_PATH, { method: "DELETE" });
 }
 
 export async function getReaiToolPermissions(): Promise<ReaiToolPermissions> {

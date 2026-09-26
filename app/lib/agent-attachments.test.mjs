@@ -125,7 +125,7 @@ test("composer wiring retains the same file-drop and message authorization bound
   assert.match(source, /onFiles=\{\(files\) => void handleDroppedFiles\(files\)\}/);
   assert.match(source, /onDrop=\{handleDrop\}/);
   assert.match(source, /busy=\{busy \|\| uploading \|\| intakeBusy \|\| Boolean\(sourceImportProgress\)\}/);
-  assert.match(source, /if \(!requestText \|\| busy \|\| uploading \|\| intakeBusy \|\| sourceImportBusyRef.current \|\| !consent\?\.consented\) return/);
+  assert.match(source, /if \(!requestText \|\| busy \|\| uploading \|\| intakeBusy \|\| sourceImportBusyRef.current \|\| !agentConsented\) return/);
   assert.match(source, /reai\.attachments\.privateEvidence/);
   assert.match(source, /reai\.attachments\.unread/);
 });

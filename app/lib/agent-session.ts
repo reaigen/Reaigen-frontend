@@ -61,7 +61,10 @@ export function writeAgentTranscript<T>(key: string, turns: T[]): void {
   }
 }
 
-const ENABLED_KEY = "reai:agent-enabled";
+// Under the `reaigen:agent:` prefix so the auth-boundary purge drops it with
+// the transcript: the panel now paints its body from this hint, so it must
+// never carry over to the next account signing in on the same tab.
+const ENABLED_KEY = "reaigen:agent:enabled";
 
 /**
  * Whether the agent was on the last time this tab checked. The shell is

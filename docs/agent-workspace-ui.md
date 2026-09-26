@@ -268,3 +268,53 @@ Tests: `app/lib/agent-conversation.test.mjs`.
   shown as chips under it ("Sent with this message") and leave the pool once
   the answer arrives; a failed send keeps them for a retry. They used to stay
   as "pending" forever and ride along with every later message.
+
+## Instant open (2026-09-26)
+
+Operator: "we open the tab and the rest of the agent's UI comes after
+seconds." Opening the panel no longer waits on the network for anything this
+tab already knows. The server still enforces consent and entitlement on every
+agent call; everything below is a first-paint decision only.
+
+- **Body from what is known.** `ReaiAgentCard` starts from
+  `peekReaiAgentConsent()` (the in-memory API cache, read synchronously) and
+  from `readAgentEnabled()` (the shell's sessionStorage hint). If either says
+  the agent is on, the intro, quick-action chips and composer render at once;
+  the spinner appears only when nothing is known. Action guards use the
+  derived `agentConsented`, so the optimistic body is usable.
+- **Background confirmation.** The consent read still runs on mount, on a
+  language change and on `reai-consent-changed`. "Not consented" switches to
+  the enable-in-settings view; a failed read while the body is showing keeps
+  the body and only logs (`[REAI] Agent consent refresh failed`). A failed
+  read with no hint shows the error with Try again, as before.
+- **Consent cache.** `/api/reaigen/reai-agent/consent/` is cached for five
+  minutes (`LONG_TTL`). Ordinary `/reai-agent/*` POSTs (chat turns, applies,
+  feedback) no longer drop it; only a write to the consent endpoint itself
+  (grant or revoke) does, and those writes still dispatch
+  `reai-consent-changed` for the shell, the card and the account setup.
+- **Shell reads in parallel.** When the tab already knows the agent is on
+  (`readAgentEnabled()`), `AppShell` starts `getUserCapabilities()` and
+  `getReaiAgentConsent()` together on every navigation instead of one after
+  the other, and the launcher and panel it restored wait on neither. A
+  refused consent closes the agent as soon as it arrives; a missing
+  entitlement still clears the agent session. Without the hint, entitlement
+  is proven before consent is requested (fail closed, as
+  `validate-account-entitlements` requires), and only Django's answers turn
+  the agent on.
+- **The hint is private state.** The enabled hint now lives under
+  `reaigen:agent:enabled`, so the auth-boundary purge drops it with the
+  transcript; it used to be `reai:agent-enabled`, which survived a sign-out
+  and would have painted the next account's panel from the previous one's
+  answer.
+- **Warm chunk.** Once the agent is enabled, the card's chunk is imported on
+  idle (`requestIdleCallback`, `setTimeout` fallback) and on launcher
+  `pointerenter`/`focus`; the open handler and the restore of an open panel
+  mount the card in the same commit that opens the drawer.
+- **Silhouette, not a blank.** While the chunk loads, the panel shows
+  `ReaiAgentSkeleton` (`app/components/reai-agent-skeleton.tsx`): intro
+  lines, three chips and a composer in the panel's own padding and material,
+  compact below 768px like the card, so nothing jumps when the card arrives.
+  It imports only `./icons`, which the shell already ships.
+- Guarded by `scripts/validate-agent-panel.test.mjs` (source contracts) and
+  `app/lib/api/retry-policy.test.mjs` (the real client's consent cache
+  against a stubbed fetch).

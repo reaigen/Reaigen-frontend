@@ -16,6 +16,7 @@ import {
   getDraftService,
   refreshDraft,
   getReaiAgentConsent,
+  peekReaiAgentConsent,
   getReaiSourceImportProgress,
   getReaiImprovementConsent,
   intakeReaiAttachment,
@@ -56,6 +57,7 @@ import {
 } from "../lib/agent-pool";
 import {
   agentTranscriptKey,
+  readAgentEnabled,
   readAgentTranscript,
   writeAgentTranscript,
 } from "../lib/agent-session";
@@ -640,12 +642,21 @@ export function ReaiAgentCard({
   const router = useRouter();
   const { user } = useAuth();
   const dateFormat = user?.localization?.date_format;
-  const [consent, setConsent] = useState<ReaiAgentConsent | null>(null);
-  const [consentResolved, setConsentResolved] = useState(false);
-  const consentRef = useRef<ReaiAgentConsent | null>(null);
+  // The panel paints from what this tab already knows: a consent answer still
+  // in the API cache, or the shell's "the agent was on" hint. Waiting for a
+  // fresh consent read put a spinner where the intro, chips and composer
+  // belong for a second or more on every open. The read below still runs and
+  // wins, and the server enforces consent on every agent call regardless.
+  const [consent, setConsent] = useState<ReaiAgentConsent | null>(() => peekReaiAgentConsent());
+  const [consentHint, setConsentHint] = useState(() => readAgentEnabled());
+  const [consentResolved, setConsentResolved] = useState(() => peekReaiAgentConsent() !== null);
+  const agentConsented = consent ? consent.consented : consentHint;
+  const consentRef = useRef<ReaiAgentConsent | null>(consent);
+  const agentConsentedRef = useRef(agentConsented);
   useEffect(() => {
     consentRef.current = consent;
-  }, [consent]);
+    agentConsentedRef.current = agentConsented;
+  }, [consent, agentConsented]);
   const [improvementConsent, setImprovementConsent] = useState<ReaiImprovementConsent | null>(null);
   const [improvementConversationId, setImprovementConversationId] = useState<string | null>(null);
   const [message, setMessage] = useState("");
@@ -677,10 +688,10 @@ export function ReaiAgentCard({
   const [savedEvidence, setSavedEvidence] = useState<{ draftId: number; files: DraftUpload[] } | null>(null);
   const intakeGenerationRef = useRef(0);
   const assistSequenceRef = useRef(0);
-  const editContextRef = useRef<AgentEditContext>({ draftId, userId: user?.id, generation: 0, consented: false });
+  const editContextRef = useRef<AgentEditContext>({ draftId, userId: user?.id, generation: 0, consented: agentConsented });
   useEffect(() => {
-    editContextRef.current = { draftId, userId: user?.id, generation: intakeGenerationRef.current, consented: Boolean(consent?.consented) };
-  }, [draftId, user?.id, consent?.consented]);
+    editContextRef.current = { draftId, userId: user?.id, generation: intakeGenerationRef.current, consented: agentConsented };
+  }, [draftId, user?.id, agentConsented]);
   const [showHistory, setShowHistory] = useState(false);
   const [showMediaHistory, setShowMediaHistory] = useState(false);
   const [history, setHistory] = useState<AgentCreationRevision[]>([]);
@@ -908,10 +919,16 @@ export function ReaiAgentCard({
         if (active) setConsent(value);
       })
       .catch((err) => {
-        if (active) {
-          setConsent(null);
-          setError(errorText(err, lang));
+        if (!active) return;
+        // A panel already showing its body keeps it: a failed background
+        // read must not swap a working composer for an error. The next agent
+        // call is refused by the server if consent really is gone.
+        if (agentConsentedRef.current) {
+          console.warn("[REAI] Agent consent refresh failed; keeping the open panel.", err);
+          return;
         }
+        setConsent(null);
+        setError(errorText(err, lang));
       })
       .finally(() => {
         if (active) setConsentResolved(true);
@@ -1057,11 +1074,14 @@ export function ReaiAgentCard({
         // Settings just confirmed the agent is on: show the composer now and
         // let the reload confirm it, instead of a disabled box, a spinner
         // and then the composer.
+        setConsentHint(true);
         setConsent((current) => current ? { ...current, consented: true } : current);
         return;
       }
       intakeGenerationRef.current += 1;
       editContextRef.current = { ...editContextRef.current, consented: false, generation: intakeGenerationRef.current };
+      agentConsentedRef.current = false;
+      setConsentHint(false);
       setConsent((current) => current ? { ...current, consented: false } : null);
       sourceImportControllerRef.current?.abort();
       sourceImportControllerRef.current = null;
@@ -1381,7 +1401,7 @@ export function ReaiAgentCard({
 
   const retrySourceImport = async () => {
     const retry = sourceImportRetry;
-    if (!retry || busy || uploading || intakeBusy || sourceImportBusyRef.current || !consent?.consented
+    if (!retry || busy || uploading || intakeBusy || sourceImportBusyRef.current || !agentConsented
       || retry.generation !== intakeGenerationRef.current || retry.userId !== user?.id || retry.options.currentDraftId !== draftId) return;
     setBusy(true);
     setError(null);
@@ -1434,10 +1454,10 @@ export function ReaiAgentCard({
 
   const ask = async (override?: string) => {
     const requestText = (override ?? message).trim();
-    if (!requestText || busy || uploading || intakeBusy || sourceImportBusyRef.current || !consent?.consented) return;
+    if (!requestText || busy || uploading || intakeBusy || sourceImportBusyRef.current || !agentConsented) return;
     assistSequenceRef.current += 1;
     const generation = intakeGenerationRef.current;
-    const editContext: AgentEditContext = { draftId, userId: user?.id, generation, consented: Boolean(consent?.consented) };
+    const editContext: AgentEditContext = { draftId, userId: user?.id, generation, consented: agentConsented };
     // The pool travels with this one message and then belongs to it: it was
     // never emptied, so dragged parameters sat as "pending" forever and rode
     // along with every later message (2026-09-26).
@@ -1674,7 +1694,7 @@ export function ReaiAgentCard({
   };
 
   const apply = async (turnId: number, answer: ReaiAgentResponse): Promise<boolean> => {
-    if (!answer.proposal_token || busy || uploading || intakeBusy || !consent?.consented) return false;
+    if (!answer.proposal_token || busy || uploading || intakeBusy || !agentConsented) return false;
     const generation = intakeGenerationRef.current;
     setBusy(true);
     setError(null);
@@ -1687,7 +1707,7 @@ export function ReaiAgentCard({
 
   const undoProposal = async (turn: ChatTurn) => {
     const undo = turn.undo;
-    if (!undo || undo.draftId !== draftId || busy || uploading || intakeBusy || !consent?.consented) return;
+    if (!undo || undo.draftId !== draftId || busy || uploading || intakeBusy || !agentConsented) return;
     const context: AgentEditContext = { draftId, userId: user?.id, generation: intakeGenerationRef.current, consented: true };
     if (!isCurrentEditContext(context, { ...editContextRef.current, generation: intakeGenerationRef.current })) return;
     setBusy(true);
@@ -1752,7 +1772,7 @@ export function ReaiAgentCard({
   };
 
   const applyAction = async (turnId: number, answer: ReaiAgentResponse) => {
-    if (!answer.action_token || busy || uploading || intakeBusy || !consent?.consented) return;
+    if (!answer.action_token || busy || uploading || intakeBusy || !agentConsented) return;
     const generation = intakeGenerationRef.current;
     const planStepTurn = turns.find((turn) => turn.id === turnId && turn.planId && turn.planStepId);
     if (planStepTurn) {
@@ -1867,7 +1887,7 @@ export function ReaiAgentCard({
   // offers the two to four things that fit it; each chip is a sentence the
   // router runs, with the pool still attached. Nothing runs until a tap.
   const reactToDrop = async (nextPool: AgentPoolItem[], pendingFiles: File[]) => {
-    if (busy || sourceImportBusyRef.current || message.trim() || !consent?.consented) return;
+    if (busy || sourceImportBusyRef.current || message.trim() || !agentConsented) return;
     const generation = intakeGenerationRef.current;
     const requestSequence = ++assistSequenceRef.current;
     const sourceTokens = activeAgentSourceTokens(
@@ -1980,7 +2000,7 @@ export function ReaiAgentCard({
   };
 
   const toggleSourceImage = async (image: SourceImageReview) => {
-    if (image.uploaded || image.draftId !== draftId || busy || uploading || intakeBusy || !consent?.consented) return;
+    if (image.uploaded || image.draftId !== draftId || busy || uploading || intakeBusy || !agentConsented) return;
     if (image.selectedFile) {
       pendingAttachmentsRef.current = pendingAttachmentsRef.current.filter((file) => file !== image.selectedFile);
       setPendingAttachments(pendingAttachmentsRef.current);
@@ -2033,7 +2053,7 @@ export function ReaiAgentCard({
   };
 
   const loadSavedEvidence = async () => {
-    if (!draftId || busy || intakeBusy || uploading || !consent?.consented) return;
+    if (!draftId || busy || intakeBusy || uploading || !agentConsented) return;
     if (savedEvidence?.draftId === draftId) { setSavedEvidence(null); return; }
     const generation = intakeGenerationRef.current;
     setBusy(true);
@@ -2051,7 +2071,7 @@ export function ReaiAgentCard({
   };
 
   const reviewSavedEvidence = async (upload: DraftUpload) => {
-    if (!draftId || savedEvidence?.draftId !== draftId || busy || intakeBusy || uploading || !consent?.consented) return;
+    if (!draftId || savedEvidence?.draftId !== draftId || busy || intakeBusy || uploading || !agentConsented) return;
     const generation = intakeGenerationRef.current;
     setIntakeBusy(true);
     setError(null);
@@ -2072,7 +2092,7 @@ export function ReaiAgentCard({
   };
 
   const handleDroppedFiles = async (files: File[]) => {
-    if (files.length === 0 || uploading || intakeBusy || busy || !consent?.consented) return;
+    if (files.length === 0 || uploading || intakeBusy || busy || !agentConsented) return;
     // Failed uploads belong to their original listing, never the page opened later.
     if (attachmentDraftId && attachmentDraftId !== draftId && pendingAttachmentsRef.current.length) return;
     const accepted = files.filter((file) => describeAgentAttachment(file)).slice(0, MAX_AGENT_ATTACHMENTS - pendingAttachmentsRef.current.length);
@@ -2220,18 +2240,18 @@ export function ReaiAgentCard({
         <StatusPill tone="success" dot className="rounded-2xl">{t("reai.private", lang)}</StatusPill>
       </div>
 
-      {!consentResolved ? (
+      {!consentResolved && !agentConsented ? (
         <div className={cn("mt-4", panel && "flex min-h-0 flex-1 items-center justify-center")}>
           <Working lang={lang} />
         </div>
-      ) : !consent ? (
+      ) : !consent && !agentConsented ? (
         <div role="alert" className={cn("mt-4 rounded-2xl border border-destructive/20 bg-destructive/[0.045] p-3", panel && "mt-auto mb-auto")}>
           <p className="text-[12px] leading-relaxed text-destructive">{error || t("reai.error", lang)}</p>
           <Button type="button" variant="outline" size="sm" className="mt-3 rounded-2xl" onClick={() => setConsentReloadKey((current) => current + 1)}>
             {t("common.tryAgain", lang)}
           </Button>
         </div>
-      ) : !consent.consented ? (
+      ) : !agentConsented ? (
         <div className="mt-4 flex flex-col gap-3 rounded-2xl bg-background/70 p-3 sm:flex-row sm:items-center sm:justify-between">
           <p className="text-[12px] leading-relaxed text-foreground/65">{t("reai.enableInSettings", lang)}</p>
           <Button asChild size="sm" variant="outline" className="min-h-11">

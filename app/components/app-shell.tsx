@@ -16,25 +16,30 @@ import { AppContentMessages } from "./content-documents";
 import { useWebAuthoringAccess } from "./hooks/use-web-authoring-access";
 import { REAI_COMPOSE_EVENT } from "../lib/reai-compose";
 import { ReaigenWordmark } from "./reaigen-wordmark";
+import { ReaiAgentSkeleton } from "./reai-agent-skeleton";
 import { SearchField } from "./search-field";
 import { SubscriptionWelcomeCard } from "./subscription-welcome-card";
 import { AgentIcon, ArrowLeftIcon, CloseIcon, DocumentIcon, MainHomeIcon, MainSettingsIcon, MainSignOutIcon, MainTourIcon, PlusIcon, TourIcon } from "./icons";
 
 // The agent contains its own composer, media tooling, history, and orchestration
 // client. Loading all of that on every collection page made a closed drawer one
-// of the largest pieces of startup JavaScript. Keep the shell control instant,
-// then fetch the agent implementation only after the drawer is first opened.
+// of the largest pieces of startup JavaScript. Keep it out of the page bundle,
+// but warm the chunk once the agent is known to be on (on idle, and when the
+// pointer or focus reaches the launcher), so opening the drawer does not wait
+// on the network. Until it arrives the panel shows its own silhouette.
+const loadReaiAgentCard = () => import("./reai-agent-card");
+let reaiAgentCardWarmup: Promise<unknown> | null = null;
+function warmReaiAgentCard() {
+  // A failed warm-up is forgotten, so the next hint (or the open) retries.
+  reaiAgentCardWarmup ??= loadReaiAgentCard().catch(() => {
+    reaiAgentCardWarmup = null;
+  });
+}
 const ReaiAgentCard = dynamic(
-  () => import("./reai-agent-card").then((module) => module.ReaiAgentCard),
+  () => loadReaiAgentCard().then((module) => module.ReaiAgentCard),
   {
     ssr: false,
-    loading: () => (
-      <div
-        className="async-stable-region h-full min-h-40 bg-card"
-        role="status"
-        aria-busy="true"
-      />
-    ),
+    loading: () => <ReaiAgentSkeleton />,
   },
 );
 
@@ -399,7 +404,10 @@ function AppShellFrame({
   // open, and mirror every later change back.
   React.useLayoutEffect(() => {
     if (readAgentEnabled()) setReaiEnabled(true);
-    if (readAgentPanelOpen()) setReaiOpen(true);
+    if (readAgentPanelOpen()) {
+      setReaiCardMounted(true);
+      setReaiOpen(true);
+    }
   }, []);
 
   React.useEffect(() => {
@@ -410,15 +418,22 @@ function AppShellFrame({
     writeAgentEnabled(reaiEnabled);
   }, [reaiEnabled]);
 
-  // Once opened, retain the mounted card while the drawer is hidden so its
-  // conversation and draft state survive a close/reopen in the same route.
+  // Warm the agent chunk while the browser is idle once the agent is on, so
+  // the first open renders the card instead of waiting for its download.
   React.useEffect(() => {
-    if (reaiOpen) setReaiCardMounted(true);
-  }, [reaiOpen]);
+    if (!reaiEnabled) return;
+    if (typeof window.requestIdleCallback === "function") {
+      const idle = window.requestIdleCallback(warmReaiAgentCard, { timeout: 2_000 });
+      return () => window.cancelIdleCallback(idle);
+    }
+    const timer = window.setTimeout(warmReaiAgentCard, 1_200);
+    return () => window.clearTimeout(timer);
+  }, [reaiEnabled]);
 
   React.useEffect(() => {
     const openComposer = () => {
       setMobileAccountOpen(false);
+      setReaiCardMounted(true);
       setReaiOpen(true);
     };
     window.addEventListener(REAI_COMPOSE_EVENT, openComposer);
@@ -440,9 +455,27 @@ function AppShellFrame({
   React.useEffect(() => {
     let active = true;
     const refresh = () => {
-      void getUserCapabilities()
+      // The consent read used to wait behind a capabilities request that is
+      // never cached, on every navigation. When this tab already knows the
+      // agent is on (the hint is only ever set after Django confirmed it, and
+      // is purged at the auth boundary) both reads start together, and the
+      // launcher and panel it restored do not wait on capabilities at all.
+      // Otherwise entitlement is still proven first, so a creator without the
+      // agent never asks for consent.
+      const capabilitiesRequest = getUserCapabilities();
+      const earlyConsent = readAgentEnabled() ? getReaiAgentConsent() : null;
+      // A withdrawn consent closes the agent as soon as it is known.
+      void earlyConsent
+        ?.then((consent) => {
+          if (active && !consent.consented) {
+            setReaiEnabled(false);
+            setReaiOpen(false);
+          }
+        })
+        .catch(() => undefined);
+      void capabilitiesRequest
         .then((capabilities) => {
-          if (!active) return;
+          if (!active) return null;
           const entitled = capabilities.apps.reaigen === true
             && capabilities.features.agent_access === true;
           if (!entitled) {
@@ -451,7 +484,7 @@ function AppShellFrame({
             setReaiOpen(false);
             return null;
           }
-          return getReaiAgentConsent();
+          return earlyConsent ?? getReaiAgentConsent();
         })
         .then((consent) => {
           if (!active || consent == null) return;
@@ -611,6 +644,9 @@ function AppShellFrame({
     reaiReturnFocusRef.current = event.currentTarget;
     setMobileAccountOpen(false);
     setCreateOpen(false);
+    // Mount the card in the same commit that opens the drawer; once mounted
+    // it stays, so its conversation survives a close/reopen on this route.
+    setReaiCardMounted(true);
     setReaiOpen(true);
     if (!window.matchMedia("(min-width: 1440px)").matches) {
       window.setTimeout(() => reaiCloseRef.current?.focus({ preventScroll: true }), 0);
@@ -630,6 +666,8 @@ function AppShellFrame({
       type="button"
       data-testid="agent-launcher"
       onClick={openReai}
+      onPointerEnter={warmReaiAgentCard}
+      onFocus={warmReaiAgentCard}
       title={t("reai.openAgent", lang)}
       aria-label={t("reai.openAgent", lang)}
       aria-expanded={reaiOpen}

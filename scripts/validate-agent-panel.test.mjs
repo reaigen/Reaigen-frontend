@@ -62,6 +62,77 @@ test("TinyUI distances are shown in the creator's own unit from the server", () 
   assert.match(tiny, /\{place\.distance_label \|\|/);
 });
 
+// Instant open (2026-09-26, operator): "the agent is loading UI slowly — we
+// open the tab and the rest of the agent's UI comes after seconds".
+const shell = fs.readFileSync(path.join(root, "app/components/app-shell.tsx"), "utf8");
+const client = fs.readFileSync(path.join(root, "app/lib/api/client.ts"), "utf8");
+const skeletonPath = path.join(root, "app/components/reai-agent-skeleton.tsx");
+
+test("the panel body paints from the cached consent or the enabled hint, not a fresh read", () => {
+  assert.match(card, /useState<ReaiAgentConsent \| null>\(\(\) => peekReaiAgentConsent\(\)\)/, "a cached consent answer is used at once");
+  assert.match(card, /useState\(\(\) => readAgentEnabled\(\)\)/, "the shell's enabled hint is used at once");
+  assert.match(card, /useState\(\(\) => peekReaiAgentConsent\(\) !== null\)/, "a cached answer counts as resolved");
+  assert.match(card, /const agentConsented = consent \? consent\.consented : consentHint;/, "the server's answer wins over the hint");
+  assert.match(card, /\{!consentResolved && !agentConsented \? \(\s*<div[^>]*>\s*<Working lang=\{lang\} \/>/, "the spinner only when nothing is known");
+  assert.match(card, /\) : !consent && !agentConsented \? \(\s*<div role="alert"/, "an error only when there is no hint");
+  assert.match(card, /\) : !agentConsented \? \(\s*<div[^>]*>\s*<p[^>]*>\{t\("reai\.enableInSettings", lang\)\}/, "a refusal still switches to enable-in-settings");
+  assert.doesNotMatch(card, /consent\?\.consented/, "action guards use the derived boolean");
+  assert.ok((card.match(/!agentConsented\) return/g) ?? []).length >= 8, "every action guard follows the optimistic state");
+});
+
+test("the consent read still runs in the background and a failure keeps an open panel", () => {
+  const effect = card.slice(card.indexOf("    getReaiAgentConsent()\n"), card.indexOf("  }, [consentReloadKey, lang]);"));
+  assert.match(effect, /if \(active\) setConsent\(value\);/);
+  assert.match(effect, /if \(agentConsentedRef\.current\) \{\s*console\.warn\([^)]*\);\s*return;\s*\}\s*setConsent\(null\);\s*setError\(errorText\(err, lang\)\);/);
+  assert.match(card, /agentConsentedRef\.current = false;\s*setConsentHint\(false\);/, "withdrawn consent drops the hint too");
+  assert.match(card, /setConsentHint\(true\);\s*setConsent\(\(current\) => current \? \{ \.\.\.current, consented: true \} : current\);/);
+});
+
+test("consent is cached like the profile and survives ordinary agent POSTs", () => {
+  assert.match(client, /const REAI_AGENT_CONSENT_PATH = "\/api\/reaigen\/reai-agent\/consent\/";/);
+  assert.match(client, /if \(path === REAI_AGENT_CONSENT_PATH\) return LONG_TTL;/);
+  assert.match(client, /const keepConsent = path !== REAI_AGENT_CONSENT_PATH;/);
+  assert.match(client, /if \(keepConsent && key === REAI_AGENT_CONSENT_PATH\) continue;/);
+  assert.match(client, /export function peekReaiAgentConsent\(\): ReaiAgentConsent \| null \{/);
+});
+
+test("the shell reads capabilities and consent in parallel once the agent is known to be on", () => {
+  const refresh = shell.slice(shell.indexOf("    const refresh = () => {"), shell.indexOf("    const permissionChanged ="));
+  assert.match(refresh, /const capabilitiesRequest = getUserCapabilities\(\);\s*const earlyConsent = readAgentEnabled\(\) \? getReaiAgentConsent\(\) : null;/, "both start together for a known-on agent");
+  assert.match(refresh, /earlyConsent\s*\?\.then\(\(consent\) => \{\s*if \(active && !consent\.consented\) \{\s*setReaiEnabled\(false\);/, "a withdrawn consent closes it without waiting");
+  assert.match(refresh, /if \(!entitled\) \{\s*setReaiEnabled\(false\);\s*clearAgentSession\(\);[\s\S]*?return earlyConsent \?\? getReaiAgentConsent\(\);/, "entitlement is still proven before a fresh consent read, and can withdraw it");
+  assert.doesNotMatch(refresh, /setReaiEnabled\(true\)/, "nothing but Django's answers turns it on");
+  assert.match(shell, /window\.addEventListener\("reai-consent-changed", permissionChanged\)/);
+  const session = fs.readFileSync(path.join(root, "app/lib/agent-session.ts"), "utf8");
+  const purge = fs.readFileSync(path.join(root, "app/lib/private-client-state.ts"), "utf8");
+  assert.match(session, /const ENABLED_KEY = "reaigen:agent:enabled";/);
+  assert.match(purge, /"reaigen:agent:",/, "the hint is dropped at the auth boundary with the transcript");
+});
+
+test("the agent chunk is warmed before the first open and the card mounts with the open", () => {
+  assert.match(shell, /const loadReaiAgentCard = \(\) => import\("\.\/reai-agent-card"\);/);
+  assert.match(shell, /dynamic\(\s*\(\) => loadReaiAgentCard\(\)\.then\(\(module\) => module\.ReaiAgentCard\)/, "the preload and the dynamic card share one chunk");
+  assert.match(shell, /window\.requestIdleCallback\(warmReaiAgentCard/, "warmed on idle once enabled");
+  assert.match(shell, /window\.setTimeout\(warmReaiAgentCard/, "with a timer where idle callbacks are missing");
+  assert.match(shell, /\}, \[reaiEnabled\]\);/);
+  assert.match(shell, /onPointerEnter=\{warmReaiAgentCard\}\s*onFocus=\{warmReaiAgentCard\}/, "and on launcher intent");
+  assert.match(shell, /setReaiCardMounted\(true\);\s*setReaiOpen\(true\);\s*if \(!window\.matchMedia/, "the open handler mounts the card in the same commit");
+  assert.match(shell, /if \(readAgentPanelOpen\(\)\) \{\s*setReaiCardMounted\(true\);\s*setReaiOpen\(true\);/, "a restored open panel mounts before paint");
+  assert.doesNotMatch(shell, /if \(reaiOpen\) setReaiCardMounted\(true\)/, "no passive effect in between");
+});
+
+test("the loading fallback is the panel's own light silhouette", () => {
+  assert.match(shell, /loading: \(\) => <ReaiAgentSkeleton \/>/);
+  assert.ok(fs.existsSync(skeletonPath));
+  const skeleton = fs.readFileSync(skeletonPath, "utf8");
+  const imports = [...skeleton.matchAll(/^import .* from "([^"]+)";$/gm)].map((match) => match[1]);
+  assert.deepEqual(imports, ["./icons"], "nothing heavy ships with the shell");
+  assert.match(skeleton, /aria-busy="true"/);
+  assert.equal((skeleton.match(/h-11 w-\d+ shrink-0 rounded-2xl/g) ?? []).length, 3, "three chip placeholders");
+  assert.match(skeleton, /rounded-\[20px\] border border-border\/80 bg-card shadow-control/, "the composer's own material");
+  assert.match(skeleton, /mt-4 flex min-h-0 flex-1 flex-col gap-3 max-md:mt-1 max-md:gap-2/, "the body spacing of the panel, compact below 768px");
+});
+
 test("what was dragged into the chat goes with one message and then leaves the pool", () => {
   assert.match(card, /const sentPoolKeys = new Set\(requestPool\.map\(\(item\) => poolItemKey\(item\)\)\);/);
   assert.match(card, /setPool\(\(current\) => current\.filter\(\(item\) => !sentPoolKeys\.has\(poolItemKey\(item\)\)\)\);/);
