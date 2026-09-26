@@ -151,7 +151,10 @@ export function SubscriptionWelcomeCard({
     try {
       const payload = await getSubscriptionWelcome(language);
       if (requestVersion.current !== version) return;
-      setNotice(payload.notice);
+      // A body without a notice (an empty list from a stub, a proxy page) is
+      // "no notice": `undefined` passed the dialog's `!== null` check and
+      // opened an empty modal over the workspace.
+      setNotice(payload?.notice ?? null);
       setError("");
     } catch {
       // This is non-blocking account presentation. A transient request failure

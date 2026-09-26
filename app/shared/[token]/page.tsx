@@ -41,8 +41,12 @@ import type { UnitLookup } from "../../lib/unit-catalog";
 import { composedRootTransformFromScene } from "../../lib/global-scene-transform";
 import { parseRoomKitCage } from "../../lib/spatial-editor-data";
 import { ReaigenWordmark } from "../../components/reaigen-wordmark";
+import { TourViewportLoading } from "../../components/tour-workspace-loading";
 
-const SplatViewer = dynamic(() => import("../../components/splat-viewer"), { ssr: false });
+const SplatViewer = dynamic(() => import("../../components/splat-viewer"), {
+  ssr: false,
+  loading: TourViewportLoading,
+});
 
 // ── Splat URL selection ────────────────────────────────────────────────
 

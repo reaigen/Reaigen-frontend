@@ -463,3 +463,25 @@ test("fallback overview never moves an already-wider safe camera closer", () => 
   };
   assert.deepEqual(fallbackOverviewCamera(frame).position, frame.safePosition);
 });
+
+// ---------------------------------------------------------------------------
+// The black blink between loaders
+// ---------------------------------------------------------------------------
+
+test("every route that loads the viewer covers its download with a loading surface", () => {
+  // SplatViewer is a client-only dynamic import. A route that imports it with
+  // no `loading` shows its own dark tour backdrop until the chunk arrives,
+  // between the white route loader and the viewer's white loading surface —
+  // the black blink at the start of a tour (tour page and shared tour, Sep 2026).
+  const routes = [
+    "app/tour/[id]/page.tsx",
+    "app/shared/[token]/page.tsx",
+    "app/create/tour/[id]/page.tsx",
+  ];
+  for (const route of routes) {
+    const source = readFileSync(join(here, "..", route), "utf8");
+    const call = source.match(/dynamic\(\s*\(\)\s*=>\s*import\([^)]*splat-viewer["']\)\s*,\s*\{[^}]*\}/);
+    assert.ok(call, `${route} imports the viewer with next/dynamic`);
+    assert.match(call[0], /\bloading\s*:/, `${route} gives the viewer's dynamic import a loading surface`);
+  }
+});

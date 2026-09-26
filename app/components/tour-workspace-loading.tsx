@@ -32,3 +32,23 @@ export function TourWorkspaceLoading({
     </main>
   );
 }
+
+/**
+ * The tour viewport while the viewer's code is still downloading. The viewer
+ * is a client-only dynamic import; without this the route's loader unmounted,
+ * the page's dark tour backdrop showed alone until the chunk arrived, and then
+ * the viewer's own white loading surface mounted over it — white, black,
+ * white: the black blink at the start of a tour. This is the same surface the
+ * viewer mounts with, so the hand-over is invisible.
+ */
+export function TourViewportLoading() {
+  return (
+    <div
+      data-testid="tour-viewport-loading"
+      className="absolute inset-0 z-10 bg-background text-foreground"
+      aria-busy="true"
+    >
+      <ReaigenLoadingMark tone="light" />
+    </div>
+  );
+}

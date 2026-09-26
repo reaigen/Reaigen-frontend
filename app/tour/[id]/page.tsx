@@ -26,7 +26,7 @@ import dynamic from "next/dynamic";
 import CameraEditor from "../../components/camera-editor";
 import { Button } from "../../lib/ui/button";
 import { getUserLanguage, t } from "../../lib/i18n";
-import { TourWorkspaceLoading } from "../../components/tour-workspace-loading";
+import { TourViewportLoading, TourWorkspaceLoading } from "../../components/tour-workspace-loading";
 import { ArrowLeftIcon, InfoIcon, SearchIcon } from "../../components/icons";
 import { buildTextDataMap } from "../../lib/floorplan-geometry";
 import { parseRoomKitCage } from "../../lib/spatial-editor-data";
@@ -36,7 +36,10 @@ import {
   IDENTITY_GLOBAL_SCENE_TRANSFORM,
 } from "../../lib/global-scene-transform";
 
-const SplatViewer = dynamic(() => import("../../components/splat-viewer"), { ssr: false });
+const SplatViewer = dynamic(() => import("../../components/splat-viewer"), {
+  ssr: false,
+  loading: TourViewportLoading,
+});
 
 function pickRenderableUrl(viewer: SplatViewerPayload): string {
   return viewer.asset.url;
