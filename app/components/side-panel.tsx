@@ -4,6 +4,7 @@ import * as React from "react";
 import * as Dialog from "@radix-ui/react-dialog";
 import { ArrowLeftIcon, CloseIcon } from "./icons";
 import { t } from "../lib/i18n";
+import { useDialogFocusReturn } from "../lib/ui/dialog-focus";
 import { cn } from "../lib/utils";
 
 /**
@@ -56,6 +57,7 @@ export function SidePanel({
   lang?: string;
 }) {
   const [phoneViewport, setPhoneViewport] = React.useState<{ height: number; offsetTop: number } | null>(null);
+  const focusReturn = useDialogFocusReturn();
 
   React.useEffect(() => {
     if (!open) {
@@ -114,11 +116,18 @@ export function SidePanel({
             } : {}),
             ...style,
           }}
+          // Modal in behaviour (focus trap, the page behind hidden from
+          // assistive technology), so modal in what it announces too.
+          aria-modal="true"
           onOpenAutoFocus={(event) => {
+            focusReturn.remember();
             if (!initialFocusRef?.current) return;
             event.preventDefault();
             initialFocusRef.current.focus({ preventScroll: true });
           }}
+          // Back to the control that opened the panel — Escape, Close and a
+          // save alike — instead of <body> (Bench 07, B07-F05).
+          onCloseAutoFocus={focusReturn.restore}
           className={cn(
             // Panels keep their regular right-edge home and slide OVER the
             // docked agent — the dialog scrim (z-80) dims the agent (z-75)

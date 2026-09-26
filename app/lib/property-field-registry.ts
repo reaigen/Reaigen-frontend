@@ -93,7 +93,9 @@ export const PROPERTY_FIELD_SECTIONS: PropertyFieldSectionDefinition[] = [
     fields: [
       { key: "bedrooms", labelKey: "draft.bedrooms", kind: "number", min: 0, max: 20, visibleFor: residential, core: true },
       { key: "bathrooms", labelKey: "draft.bathrooms", kind: "number", min: 0, max: 10, visibleFor: residential, core: true },
-      { key: "rooms", labelKey: "draft.rooms", kind: "number", min: 0, max: 30, visibleFor: residential },
+      // Slovak and Czech listings count "izby" — total rooms — before
+      // bedrooms, so it is edited in the Basic form beside them (Bench 07 UI06).
+      { key: "rooms", labelKey: "draft.rooms", kind: "number", min: 0, max: 30, visibleFor: residential, core: true },
       { key: "living_rooms", labelKey: "draft.livingRooms", kind: "number", min: 0, max: 10, visibleFor: residential },
       { key: "kitchens", labelKey: "draft.kitchens", kind: "number", min: 0, max: 5 },
       { key: "kitchenettes", labelKey: "draft.kitchenettes", kind: "number", min: 0, max: 5, visibleFor: residential },
@@ -231,6 +233,12 @@ const SECTION_ORDER: Record<PropertyType, PropertySpecSection[]> = {
   commercial: ["taxonomy", "layout", "technical", "areas", "utilities", "pricing_extra", "legal", "features"],
   other: ["taxonomy", "layout", "areas", "technical", "utilities", "pricing_extra", "legal", "features"],
 };
+
+/** Whether a field applies to this property type (the registry's `visibleFor`). */
+export function fieldVisibleFor(section: PropertySpecSection, key: string, propertyType: PropertyType): boolean {
+  const field = PROPERTY_FIELD_SECTIONS.find((candidate) => candidate.key === section)?.fields.find((candidate) => candidate.key === key);
+  return Boolean(field) && (!field!.visibleFor || field!.visibleFor.includes(propertyType));
+}
 
 export function subtypeOptions(propertyType: PropertyType) {
   return PROPERTY_SUBTYPES[propertyType];

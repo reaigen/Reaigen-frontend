@@ -534,6 +534,11 @@ const cs: LocaleStrings = {
 
   // ── Settings ──────────────────────────────────────────────────────────
   "settings.title":                      "Nastavení",
+  "settings.unsaved.marker":              "Neuložené změny",
+  "settings.unsaved.leaveTitle":          "Odejít bez uložení?",
+  "settings.unsaved.leaveDescription":    "Změny v nastavení ještě nejsou uložené.",
+  "settings.unsaved.leave":               "Odejít bez uložení",
+  "settings.unsaved.stay":                "Pokračovat v úpravách",
   "settings.subtitle":                   "Vaše nastavení účtu.",
 
   "settings.tab.profile":                "Profil",
@@ -1101,6 +1106,7 @@ const cs: LocaleStrings = {
   "draft.editor.save":                   "Uložit změny",
   "draft.editor.discardPrompt":          "Zahodit neuložené změny?",
   "draft.editor.discard":                "Zahodit",
+  "draft.editor.titleRequired":          "Zadejte název — bez něj nabídku nelze uložit.",
   "draft.editor.editDescription":        "Upravit popis",
   "draft.editor.descriptionPlaceholder": "Začněte psát popis",
   "draft.editor.descriptionHint":        "Pište přirozeně nebo použijte tučné písmo a kurzívu níže.",
@@ -2035,6 +2041,11 @@ const cs: LocaleStrings = {
   "reai.closeAgent":                    "Zavřít Agenta",
   "reai.newConversation":                 "Nová konverzace",
   "reai.draftContext":                  "Aktuální koncept",
+  "reai.context.now":                     "Nyní: {title}",
+  "reai.context.cardFor":                 "Pro {title}",
+  "reai.context.heldElsewhere":           "Připraveno pro {title} — potvrdit to lze v té nabídce.",
+  "reai.context.openListing":             "Otevřít nabídku",
+  "reai.context.target":                  "Pracuje s",
   "reai.noDraftContext":                "Pracovní prostor tvůrce",
   "reai.noDraftTitle":                  "Začněte otevřením konceptu",
   "reai.noDraftBody":                   "Agent pracuje s konceptem, který máte právě otevřený, a nevyhledává nesouvisející nabídky.",

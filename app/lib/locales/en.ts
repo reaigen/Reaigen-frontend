@@ -545,6 +545,11 @@ const en = {
 
   // ── Settings ──────────────────────────────────────────────────────────
   "settings.title":                      "Settings",
+  "settings.unsaved.marker":              "Unsaved changes",
+  "settings.unsaved.leaveTitle":          "Leave without saving?",
+  "settings.unsaved.leaveDescription":    "Your changes in Settings are not saved yet.",
+  "settings.unsaved.leave":               "Leave without saving",
+  "settings.unsaved.stay":                "Keep editing",
   "settings.subtitle":                   "Your account preferences.",
 
   "settings.tab.profile":                "Profile",
@@ -1115,6 +1120,7 @@ const en = {
   "draft.editor.save":                   "Save changes",
   "draft.editor.discardPrompt":          "Discard your unsaved changes?",
   "draft.editor.discard":                "Discard",
+  "draft.editor.titleRequired":          "Enter a title — the listing needs one to be saved.",
   "draft.editor.editDescription":        "Edit description",
   "draft.editor.descriptionPlaceholder": "Start typing your description",
   "draft.editor.descriptionHint":        "Write naturally, or use bold and italic formatting below.",
@@ -2056,6 +2062,11 @@ const en = {
   "reai.closeAgent":                    "Close Agent",
   "reai.newConversation":                 "New conversation",
   "reai.draftContext":                  "Current creation",
+  "reai.context.now":                     "Now on: {title}",
+  "reai.context.cardFor":                 "For {title}",
+  "reai.context.heldElsewhere":           "Made for {title} — open that listing to confirm it.",
+  "reai.context.openListing":             "Open listing",
+  "reai.context.target":                  "Working on",
   "reai.noDraftContext":                "Creator workspace",
   "reai.noDraftTitle":                  "Open a draft to begin",
   "reai.noDraftBody":                   "Agent works with the draft currently open in your workspace and does not search unrelated listings.",

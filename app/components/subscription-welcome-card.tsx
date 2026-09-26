@@ -10,6 +10,7 @@ import {
 } from "../lib/api/client";
 import { SUBSCRIPTION_WELCOME_REFRESH_EVENT } from "../lib/subscription-welcome-events";
 import { Button } from "../lib/ui/button";
+import { useDialogFocusReturn } from "../lib/ui/dialog-focus";
 import { cn } from "../lib/utils";
 
 export function SubscriptionWelcomeDialog({
@@ -24,6 +25,7 @@ export function SubscriptionWelcomeDialog({
   onAcknowledge: (start?: boolean) => void;
 }) {
   const actionRef = React.useRef<HTMLButtonElement>(null);
+  const focusReturn = useDialogFocusReturn();
 
   return (
     <Dialog.Root
@@ -46,10 +48,13 @@ export function SubscriptionWelcomeDialog({
             if (!acknowledging) onAcknowledge();
           }}
           onPointerDownOutside={(event) => event.preventDefault()}
+          aria-modal="true"
           onOpenAutoFocus={(event) => {
+            focusReturn.remember();
             event.preventDefault();
             actionRef.current?.focus();
           }}
+          onCloseAutoFocus={focusReturn.restore}
         >
           {notice ? (
             <>

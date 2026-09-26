@@ -115,18 +115,33 @@ function prefersStackedLayout() {
   return window.matchMedia(STACKED_QUERY).matches;
 }
 
+/** What the media manager may ask of an open photo editor. */
+export interface DraftImageEditorHandle {
+  /** Save the pending edits as a new version, as the rail's own button does. */
+  save: () => void;
+}
+
 export function DraftImageEditor({
   upload,
   label,
   lang,
   busy,
   onSave,
+  onDirtyChange,
+  controlRef,
 }: {
   upload: DraftUpload;
   label: string;
   lang: string;
   busy: boolean;
   onSave: (operations: ReaiImageEditOperations) => void | Promise<void>;
+  /**
+   * Whether there are edits not yet saved as a version. The manager asks
+   * before Back or Close drops them (Bench 07, B07-F02: a 90° rotation was
+   * lost on Back without a word, while the text editors asked).
+   */
+  onDirtyChange?: (dirty: boolean) => void;
+  controlRef?: React.Ref<DraftImageEditorHandle>;
 }) {
   const [edit, setEdit] = React.useState<EditState>(DEFAULT_EDIT);
   const [showOriginal, setShowOriginal] = React.useState(false);
@@ -258,6 +273,15 @@ export function DraftImageEditor({
 
   const operations = React.useMemo(() => buildOperations(edit), [edit]);
   const hasChanges = Object.keys(operations).length > 0;
+  React.useEffect(() => {
+    onDirtyChange?.(hasChanges);
+  }, [hasChanges, onDirtyChange]);
+  React.useEffect(() => () => onDirtyChange?.(false), [onDirtyChange]);
+  React.useImperativeHandle(controlRef, () => ({
+    save: () => {
+      if (hasChanges && !busy) void onSave(operations);
+    },
+  }), [busy, hasChanges, onSave, operations]);
   const chosenAspect = CROP_ASPECTS.find((option) => option.value === edit.cropAspect)?.ratio;
   const rotatedNaturalAspect = naturalAspect === null
     ? null

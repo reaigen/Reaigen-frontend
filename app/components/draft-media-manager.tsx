@@ -36,7 +36,7 @@ import {
   VersionsIcon,
   VideoIcon,
 } from "./icons";
-import { DraftImageEditor } from "./draft-image-editor";
+import { DraftImageEditor, type DraftImageEditorHandle } from "./draft-image-editor";
 import { SidePanel } from "./side-panel";
 import { StatusPill } from "./status-pill";
 import { Thumbnail } from "./thumbnail";
@@ -310,6 +310,12 @@ export const DraftMediaManager = React.forwardRef<DraftMediaManagerHandle, {
   const [, setReplacingId] = React.useState<string | null>(null);
   const [editingId, setEditingId] = React.useState<string | null>(null);
   const [notice, setNotice] = React.useState<string | null>(null);
+  // Unsaved photo edits and the exit they are holding up: Back to the
+  // gallery or Close of the whole panel. Leaving asks first, like the text
+  // editors (Bench 07, B07-F02).
+  const [imageEditorDirty, setImageEditorDirty] = React.useState(false);
+  const [pendingEditorExit, setPendingEditorExit] = React.useState<"back" | "close" | null>(null);
+  const imageEditorRef = React.useRef<DraftImageEditorHandle>(null);
 
   // Completed actions acknowledge themselves briefly and then leave the
   // workspace. Requiring a separate dismiss click made every upload leave a
@@ -449,6 +455,8 @@ export const DraftMediaManager = React.forwardRef<DraftMediaManagerHandle, {
     setVersionUploadTargetId(null);
     setReplacingId(null);
     setEditingId(null);
+    setImageEditorDirty(false);
+    setPendingEditorExit(null);
     setNotice(null);
     void loadMedia();
   }, [loadMedia, open]);
@@ -887,6 +895,7 @@ export const DraftMediaManager = React.forwardRef<DraftMediaManagerHandle, {
   }, []);
   React.useImperativeHandle(ref, () => ({ requestUpload }), [requestUpload]);
   const switchView = (nextView: MediaManagerView) => {
+    setPendingEditorExit(null);
     setView(nextView);
     setReorderMode(false);
     setDraggingId(null);
@@ -895,8 +904,28 @@ export const DraftMediaManager = React.forwardRef<DraftMediaManagerHandle, {
     setConfirmAction(null);
     setVersionCandidate(null);
     setVersionCreateRequest(null);
-    if (nextView !== "editor") setEditingId(null);
+    if (nextView !== "editor") {
+      setEditingId(null);
+      setImageEditorDirty(false);
+    }
     window.requestAnimationFrame(() => contentRef.current?.scrollTo({ top: 0, behavior: "smooth" }));
+  };
+
+  const leaveImageEditor = (exit: "back" | "close") => {
+    if (view === "editor" && imageEditorDirty && !versionBusy) {
+      setPendingEditorExit(exit);
+      return;
+    }
+    if (exit === "back") switchView("gallery");
+    else onOpenChange(false);
+  };
+
+  const discardImageEdits = () => {
+    const exit = pendingEditorExit;
+    setPendingEditorExit(null);
+    setImageEditorDirty(false);
+    if (exit === "close") onOpenChange(false);
+    else switchView("gallery");
   };
 
   const openImageEditor = (group: MediaGroup) => {
@@ -1160,7 +1189,10 @@ export const DraftMediaManager = React.forwardRef<DraftMediaManagerHandle, {
       />
       <SidePanel
       open={open}
-      onOpenChange={onOpenChange}
+      onOpenChange={(next) => {
+        if (next) onOpenChange(true);
+        else leaveImageEditor("close");
+      }}
       title={t(view === "gallery" ? "draft.media.title" : view === "editor" ? "draft.media.editPhoto" : "reai.mediaVersions", lang)}
       description={draft.title || t("dashboard.untitled", lang)}
       headerMode="editor"
@@ -1176,7 +1208,26 @@ export const DraftMediaManager = React.forwardRef<DraftMediaManagerHandle, {
       )}
       contentRef={contentRef}
       closeIcon={view === "gallery" ? "close" : "back"}
-      onBack={view === "gallery" ? undefined : () => switchView("gallery")}
+      onBack={view === "gallery" ? undefined : () => (view === "editor" ? leaveImageEditor("back") : switchView("gallery"))}
+      footer={pendingEditorExit ? (
+        <div className="grid grid-cols-2 gap-2 sm:flex sm:items-center sm:gap-3" role="group" aria-label={t("draft.editor.discardPrompt", lang)}>
+          <p className="col-span-2 min-w-0 text-[11px] leading-relaxed text-foreground/60 sm:flex-1">{t("draft.editor.discardPrompt", lang)}</p>
+          <Button type="button" variant="ghost" size="sm" className="w-full sm:w-auto" onClick={() => setPendingEditorExit(null)}>{t("common.cancel", lang)}</Button>
+          <Button type="button" variant="outline" size="sm" className="w-full border-destructive/18 !bg-destructive/[0.045] text-destructive shadow-none hover:!bg-destructive/[0.08] sm:w-auto" onClick={discardImageEdits}>{t("draft.editor.discard", lang)}</Button>
+          <Button
+            type="button"
+            size="sm"
+            className="col-span-2 w-full sm:col-span-1 sm:w-auto"
+            loading={versionBusy}
+            onClick={() => {
+              setPendingEditorExit(null);
+              imageEditorRef.current?.save();
+            }}
+          >
+            {t("draft.media.saveAsVersion", lang)}
+          </Button>
+        </div>
+      ) : undefined}
       lang={lang}
       headerAction={view === "gallery" ? (
         <Button type="button" variant="default" size="sm" className="floating-control h-auto px-3" onClick={requestUpload} disabled={busy}>
@@ -1202,6 +1253,8 @@ export const DraftMediaManager = React.forwardRef<DraftMediaManagerHandle, {
               lang={lang}
               busy={versionBusy}
               onSave={saveEditedVersion}
+              onDirtyChange={setImageEditorDirty}
+              controlRef={imageEditorRef}
             />
           </div>
         ) : (

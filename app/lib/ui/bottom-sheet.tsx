@@ -2,6 +2,7 @@
 
 import * as React from "react";
 import * as Dialog from "@radix-ui/react-dialog";
+import { useDialogFocusReturn } from "./dialog-focus";
 import { cn } from "../utils";
 
 /**
@@ -38,13 +39,26 @@ export function BottomSheet({
   children: React.ReactNode;
   contentClassName?: string;
 } & Omit<React.ComponentPropsWithoutRef<typeof Dialog.Content>, "title" | "className" | "children">) {
+  // Radix returns focus to a Dialog.Trigger, which no caller renders; the
+  // control that opened the sheet gets it back instead (B07-F05).
+  const focusReturn = useDialogFocusReturn();
+  const { onOpenAutoFocus, onCloseAutoFocus, ...sheetContentProps } = contentProps;
   return (
     <Dialog.Root open={open} onOpenChange={onOpenChange}>
       <Dialog.Portal>
         {/* Above the mobile header (z-50) and content messages (z-70), below the confirm dialog (z-10000). */}
         <Dialog.Overlay className="fixed inset-0 z-[95] bg-black/25 backdrop-blur-[2px] data-[state=closed]:animate-[fadeOut_140ms_ease-in] data-[state=open]:animate-[fadeIn_200ms_var(--motion-ease-smooth)] motion-reduce:animate-none" />
         <Dialog.Content
-          {...contentProps}
+          aria-modal="true"
+          {...sheetContentProps}
+          onOpenAutoFocus={(event) => {
+            focusReturn.remember();
+            onOpenAutoFocus?.(event);
+          }}
+          onCloseAutoFocus={(event) => {
+            onCloseAutoFocus?.(event);
+            if (!event.defaultPrevented) focusReturn.restore(event);
+          }}
           className={cn(
             "fixed inset-x-0 bottom-0 z-[95] max-h-[calc(100dvh-3rem)] overflow-y-auto overscroll-contain",
             "rounded-t-[28px] border-t border-border/60 bg-card px-5 pb-[max(1.25rem,env(safe-area-inset-bottom))] pt-2.5 shadow-soft outline-none",

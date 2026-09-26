@@ -3,6 +3,7 @@
 import * as React from "react";
 import * as Dialog from "@radix-ui/react-dialog";
 import { Button } from "./button";
+import { useDialogFocusReturn } from "./dialog-focus";
 import { cn } from "../utils";
 
 export interface ConfirmRequest {
@@ -48,6 +49,7 @@ export function useConfirm(): {
   // re-render having happened, or a fast confirm-then-close can drop it.
   const resolveRef = React.useRef<((value: boolean) => void) | null>(null);
   const cancelRef = React.useRef<HTMLButtonElement | null>(null);
+  const focusReturn = useDialogFocusReturn();
 
   const settle = React.useCallback((value: boolean) => {
     const resolve = resolveRef.current;
@@ -88,7 +90,13 @@ export function useConfirm(): {
             "border border-border/60 bg-background p-5 shadow-soft outline-none",
             "data-[state=open]:animate-[fadeIn_180ms_var(--motion-ease-smooth)]",
           )}
+          aria-modal="true"
+          // Answered, the question hands focus back to what asked it — the
+          // Back or Close control — or, if that left with the panel, to
+          // wherever the panel returns it (B07-F05).
+          onCloseAutoFocus={focusReturn.restore}
           onOpenAutoFocus={(event) => {
+            focusReturn.remember();
             // Focus lands on Cancel, not on the confirming button. These are
             // asked when something is about to be lost, and a stray Enter or
             // Space in flight from the action that opened it must not be what

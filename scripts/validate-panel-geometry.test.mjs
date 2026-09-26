@@ -157,3 +157,57 @@ test("draft silhouette follows the saved viewing mode and the workspace width", 
   assert.match(draftPage, /headerTitleLoading\s+headerAction=\{<DetailLayoutToggle lang=\{lang\} \/>\}/);
   assert.match(draftPage, /headerAction=\{<DetailLayoutToggle lang=\{lang\} \/>\}\s+onReaiDraftUpdated/);
 });
+
+// Bench 07 (2026-09-26): one editing contract across the panels.
+const confirmDialog = read("app/lib/ui/confirm-dialog.tsx");
+const welcomeDialog = read("app/components/subscription-welcome-card.tsx");
+const mediaManager = read("app/components/draft-media-manager.tsx");
+const imageEditor = read("app/components/draft-image-editor.tsx");
+const fieldRegistry = read("app/lib/property-field-registry.ts");
+const editorLocales = ["en", "sk", "cs", "de"].map((code) => read(`app/lib/locales/${code}.ts`));
+
+test("every app dialog is modal in what it announces and hands focus back on close", () => {
+  // B07-F05: Radix focused a Dialog.Trigger none of them renders — <body>.
+  for (const [name, source] of [["side panel", sidePanel], ["bottom sheet", bottomSheet], ["confirm", confirmDialog], ["welcome", welcomeDialog]]) {
+    assert.match(source, /aria-modal="true"/, name);
+    assert.match(source, /useDialogFocusReturn\(\)/, name);
+    assert.match(source, /focusReturn\.remember\(\)/, name);
+    assert.match(source, /focusReturn\.restore/, name);
+  }
+});
+
+test("a blank title says why Save is off, tied to the field", () => {
+  // B07-F06: the disabled Save also meant "no changes".
+  assert.match(editor, /errorMessage=\{titleTouched && !values\.title\.trim\(\) \? t\("draft\.editor\.titleRequired", lang\) : null\}/);
+  assert.match(editor, /aria-describedby=\{errorMessage \? `\$\{id\}-error` : undefined\}/);
+  assert.match(editor, /<p id=\{`\$\{id\}-error`\} aria-live="polite"/);
+  assert.match(editor, /onBlur=\{\(\) => setTitleTouched\(true\)\}/);
+  for (const locale of editorLocales) assert.match(locale, /"draft\.editor\.titleRequired":/);
+});
+
+test("the description toolbar names its shortcuts in the platform's notation", () => {
+  // B07-F07: "⌘B · ⌘I · ⌘↵" on Windows.
+  assert.doesNotMatch(editor, /⌘B · ⌘I · ⌘↵/);
+  assert.match(editor, /shortcutLabel\(key, applePlatform\)/);
+  assert.match(editor, /\(event\.metaKey \|\| event\.ctrlKey\) && event\.key\.toLowerCase\(\) === "b"/, "Ctrl works as ⌘ does");
+});
+
+test("total rooms is a Basic field beside bedrooms, one fact in one place", () => {
+  // UI06: Slovak and Czech creators count "izby".
+  assert.match(fieldRegistry, /\{ key: "rooms", labelKey: "draft\.rooms", kind: "number", min: 0, max: 30, visibleFor: residential, core: true \}/);
+  assert.match(editor, /<NumericStepper id="draft-rooms" label=\{t\("draft\.rooms", lang\)\} value=\{stringValue\(specs\.layout\?\.rooms\)\} onChange=\{\(value\) => setSpecValue\("layout", "rooms", value\)\}/);
+  assert.match(editor, /numberMeetsConstraints\(stringValue\(specs\.layout\?\.rooms\), plainNumberContext, \{ integer: true, min: 0, max: 30, step: 1 \}\)/);
+  assert.match(editor, /rooms: roomsNumber\(currentLayout\.rooms\)/, "saved as a whole number, cleared when emptied");
+});
+
+test("photo edits are kept or given up deliberately, like the text editors'", () => {
+  // B07-F02: Back after a rotation lost it without a word.
+  assert.match(imageEditor, /onDirtyChange\?\.\(hasChanges\)/);
+  assert.match(imageEditor, /React\.useImperativeHandle\(controlRef/);
+  assert.match(mediaManager, /onBack=\{view === "gallery" \? undefined : \(\) => \(view === "editor" \? leaveImageEditor\("back"\) : switchView\("gallery"\)\)\}/);
+  assert.match(mediaManager, /else leaveImageEditor\("close"\)/, "Escape and Close ask too");
+  assert.match(mediaManager, /footer=\{pendingEditorExit \?/);
+  assert.match(mediaManager, /t\("draft\.editor\.discardPrompt", lang\)/);
+  assert.match(mediaManager, /imageEditorRef\.current\?\.save\(\)/, "Save version from the question");
+  assert.match(mediaManager, /onClick=\{\(\) => setPendingEditorExit\(null\)\}/, "Cancel keeps editing and saves nothing");
+});

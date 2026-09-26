@@ -534,6 +534,11 @@ const de: LocaleStrings = {
 
   // ── Settings ──────────────────────────────────────────────────────────
   "settings.title":                      "Einstellungen",
+  "settings.unsaved.marker":              "Nicht gespeicherte Änderungen",
+  "settings.unsaved.leaveTitle":          "Ohne Speichern verlassen?",
+  "settings.unsaved.leaveDescription":    "Ihre Änderungen in den Einstellungen sind noch nicht gespeichert.",
+  "settings.unsaved.leave":               "Ohne Speichern verlassen",
+  "settings.unsaved.stay":                "Weiter bearbeiten",
   "settings.subtitle":                   "Ihre Kontoeinstellungen.",
 
   "settings.tab.profile":                "Profil",
@@ -1101,6 +1106,7 @@ const de: LocaleStrings = {
   "draft.editor.save":                   "Änderungen speichern",
   "draft.editor.discardPrompt":          "Nicht gespeicherte Änderungen verwerfen?",
   "draft.editor.discard":                "Verwerfen",
+  "draft.editor.titleRequired":          "Geben Sie einen Titel ein — ohne ihn lässt sich das Angebot nicht speichern.",
   "draft.editor.editDescription":        "Beschreibung bearbeiten",
   "draft.editor.descriptionPlaceholder": "Beginnen Sie mit Ihrer Beschreibung",
   "draft.editor.descriptionHint":        "Schreiben Sie frei oder verwenden Sie unten Fett- und Kursivformatierung.",
@@ -2035,6 +2041,11 @@ const de: LocaleStrings = {
   "reai.closeAgent":                    "Agent schließen",
   "reai.newConversation":                 "Neue Unterhaltung",
   "reai.draftContext":                  "Aktuelle Erstellung",
+  "reai.context.now":                     "Jetzt: {title}",
+  "reai.context.cardFor":                 "Für {title}",
+  "reai.context.heldElsewhere":           "Für {title} vorbereitet — bestätigen können Sie es in diesem Angebot.",
+  "reai.context.openListing":             "Angebot öffnen",
+  "reai.context.target":                  "Arbeitet an",
   "reai.noDraftContext":                "Ersteller-Arbeitsbereich",
   "reai.noDraftTitle":                  "Öffnen Sie zunächst einen Entwurf",
   "reai.noDraftBody":                   "Agent arbeitet mit dem aktuell geöffneten Entwurf und durchsucht keine unverbundenen Angebote.",

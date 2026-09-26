@@ -534,6 +534,11 @@ const sk: LocaleStrings = {
 
   // ── Settings ──────────────────────────────────────────────────────────
   "settings.title":                      "Nastavenia",
+  "settings.unsaved.marker":              "Neuložené zmeny",
+  "settings.unsaved.leaveTitle":          "Odísť bez uloženia?",
+  "settings.unsaved.leaveDescription":    "Zmeny v nastaveniach ešte nie sú uložené.",
+  "settings.unsaved.leave":               "Odísť bez uloženia",
+  "settings.unsaved.stay":                "Pokračovať v úpravách",
   "settings.subtitle":                   "Vaše nastavenia účtu.",
 
   "settings.tab.profile":                "Profil",
@@ -1101,6 +1106,7 @@ const sk: LocaleStrings = {
   "draft.editor.save":                   "Uložiť zmeny",
   "draft.editor.discardPrompt":          "Zahodiť neuložené zmeny?",
   "draft.editor.discard":                "Zahodiť",
+  "draft.editor.titleRequired":          "Zadajte názov — bez neho sa ponuka nedá uložiť.",
   "draft.editor.editDescription":        "Upraviť popis",
   "draft.editor.descriptionPlaceholder": "Začnite písať svoj popis",
   "draft.editor.descriptionHint":        "Píšte prirodzene alebo použite tučné písmo a kurzívu nižšie.",
@@ -2035,6 +2041,11 @@ const sk: LocaleStrings = {
   "reai.closeAgent":                    "Zavrieť Agenta",
   "reai.newConversation":                 "Nová konverzácia",
   "reai.draftContext":                  "Aktuálny koncept",
+  "reai.context.now":                     "Teraz: {title}",
+  "reai.context.cardFor":                 "Pre {title}",
+  "reai.context.heldElsewhere":           "Pripravené pre {title} — potvrdiť sa dá v tej ponuke.",
+  "reai.context.openListing":             "Otvoriť ponuku",
+  "reai.context.target":                  "Pracuje s",
   "reai.noDraftContext":                "Pracovný priestor tvorcu",
   "reai.noDraftTitle":                  "Začnite otvorením konceptu",
   "reai.noDraftBody":                   "Agent pracuje s konceptom, ktorý máte práve otvorený, a nevyhľadáva nesúvisiace ponuky.",

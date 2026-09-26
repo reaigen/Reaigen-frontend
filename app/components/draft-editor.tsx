@@ -33,6 +33,7 @@ import {
 } from "../lib/unit-catalog";
 import {
   advancedPropertySections,
+  fieldVisibleFor,
   subtypeOptions,
   type OfferType,
   type PropertyFieldDefinition,
@@ -61,6 +62,7 @@ import {
   type IconProps,
 } from "./icons";
 import { SearchField } from "./search-field";
+import { ariaShortcut, isApplePlatform, shortcutLabel } from "../lib/keyboard-shortcuts";
 import { SegmentedControl } from "./segmented-control";
 import { SidePanel } from "./side-panel";
 import { FormattedDescription } from "./formatted-description";
@@ -219,6 +221,11 @@ function advancedSectionSummary(
   return fragments.slice(0, 2).join(" · ");
 }
 
+function roomsNumber(value: unknown): number | null {
+  const parsed = optionalNumber(stringValue(value));
+  return parsed == null ? null : Math.round(parsed);
+}
+
 function stringValue(value: unknown) {
   if (value == null || Array.isArray(value) || typeof value === "object") return "";
   return String(value);
@@ -279,6 +286,8 @@ function editorNumbersValid(values: EditorValues, specs: SpecsValues, environmen
   if (!numberMeetsConstraints(values.lotSize, { kind: "area", targetUnit: environment.lotUnit, units: environment.units })) return false;
   if (!numberMeetsConstraints(values.bedrooms, plainNumberContext, { integer: true, min: 0, max: 20, step: 1 })) return false;
   if (!numberMeetsConstraints(values.bathrooms, plainNumberContext, { integer: true, min: 0, max: 10, step: 1 })) return false;
+  // Total rooms is a Basic field (core) and so outside the Advanced sections checked below.
+  if (!numberMeetsConstraints(stringValue(specs.layout?.rooms), plainNumberContext, { integer: true, min: 0, max: 30, step: 1 })) return false;
   if (!numberMeetsConstraints(values.yearBuilt, plainNumberContext, { integer: true, min: 1850, max: new Date().getFullYear() })) return false;
 
   const propertyType = normalizedPropertyType(specs.taxonomy?.property_type);
@@ -409,6 +418,8 @@ function DirectValueField({
   autoComplete,
   unitControl,
   className,
+  onBlur,
+  errorMessage,
 }: {
   id: string;
   label: React.ReactNode;
@@ -416,6 +427,14 @@ function DirectValueField({
   value: string;
   onChange: (value: string) => void;
   lang: string;
+  /** Called after the field's own blur handling (numeric commit). */
+  onBlur?: () => void;
+  /**
+   * A reason the value cannot be saved, shown under the field and tied to it
+   * (aria-invalid, aria-describedby). A disabled Save said nothing, and meant
+   * "no changes" as often as "cannot save" (Bench 07, B07-F06).
+   */
+  errorMessage?: string | null;
   numeric?: boolean;
   numericContext?: NumericInputContext;
   integer?: boolean;
@@ -491,7 +510,8 @@ function DirectValueField({
             autoComplete={autoComplete}
             maxLength={maxLength ?? (numeric ? 64 : undefined)}
             placeholder={placeholder}
-            aria-invalid={invalid || undefined}
+            aria-invalid={invalid || Boolean(errorMessage) || undefined}
+            aria-describedby={errorMessage ? `${id}-error` : undefined}
             onFocus={(event) => {
               if (selectOnFocus) event.currentTarget.select();
               else if (numeric) {
@@ -503,6 +523,7 @@ function DirectValueField({
             onBlur={() => {
               commitNumericValue();
               window.setTimeout(() => setMathToolsOpen(false), 100);
+              onBlur?.();
             }}
             onChange={(event) => {
               const next = numeric
@@ -514,7 +535,7 @@ function DirectValueField({
               fieldClass,
               unitControl && "!h-full rounded-none border-0 !bg-transparent focus-visible:border-transparent focus-visible:ring-0",
               showStaticUnit && showClear ? "pr-[6.5rem]" : showStaticUnit ? "pr-[4.25rem]" : showClear ? "pr-11" : undefined,
-              invalid && !unitControl && "border-destructive/60 focus-visible:ring-destructive/20",
+              (invalid || errorMessage) && !unitControl && "border-destructive/60 focus-visible:ring-destructive/20",
               className,
             )}
           />
@@ -613,6 +634,10 @@ function DirectValueField({
         </div>
       ) : null}
       {preview ? <p className="px-1 text-right text-[11px] font-medium tabular-nums text-foreground/55" aria-live="polite">{preview}</p> : null}
+      {/* Always mounted so the reason is announced the moment it appears. */}
+      <p id={`${id}-error`} aria-live="polite" className={cn("px-1 text-[12px] leading-snug text-destructive", !errorMessage && "sr-only")}>
+        {errorMessage ?? ""}
+      </p>
     </Field>
   );
 }
@@ -1130,6 +1155,9 @@ export function DraftEditor({
   const [saving, setSaving] = React.useState(false);
   const [error, setError] = React.useState<string | null>(null);
   const [confirmDiscard, setConfirmDiscard] = React.useState(false);
+  // The title's emptiness is said once the creator has left the field, not
+  // while they are still typing a new one (Bench 07, B07-F06).
+  const [titleTouched, setTitleTouched] = React.useState(false);
   const [editorFieldFocused, setEditorFieldFocused] = React.useState(false);
   const [descriptionEditorOpen, setDescriptionEditorOpen] = React.useState(false);
   const [descriptionDraft, setDescriptionDraft] = React.useState(values.description);
@@ -1177,6 +1205,8 @@ export function DraftEditor({
   const genDefaultsLoadedRef = React.useRef(false);
   const editorScrollRef = React.useRef<HTMLDivElement>(null);
   const editorFormRef = React.useRef<HTMLFormElement>(null);
+  // Only read in the description panel, which renders in the browser.
+  const [applePlatform] = React.useState(() => typeof navigator !== "undefined" && isApplePlatform(navigator));
   const descriptionEditorRef = React.useRef<HTMLDivElement>(null);
   const currency = values.currency.trim().toUpperCase();
   const distanceUnit = baseUnitForCategory(units, "DISTANCE")?.code ?? "";
@@ -1205,6 +1235,7 @@ export function DraftEditor({
     setExpandedSections(new Set(["taxonomy"]));
     setError(null);
     setConfirmDiscard(false);
+    setTitleTouched(false);
     setEditorFieldFocused(false);
     // A draft refetch (translation polling, media updates) must not stomp the
     // text being edited or slam the description panel open/closed — that pair
@@ -1502,6 +1533,11 @@ export function DraftEditor({
           ...currentLayout,
           bedrooms: optionalNumber(values.bedrooms),
           bathrooms: optionalNumber(values.bathrooms),
+          // Sent when there is one, or cleared when there was one: a key left
+          // out keeps the saved value on the server.
+          ...(stringValue(currentLayout.rooms) || hasRecordedValue(baselineSpecs.layout?.rooms)
+            ? { rooms: roomsNumber(currentLayout.rooms) }
+            : {}),
         },
         areas: {
           ...currentAreas,
@@ -1554,6 +1590,7 @@ export function DraftEditor({
 
   const propertyType = normalizedPropertyType(specs.taxonomy?.property_type);
   const offerType = normalizedOfferType(specs.taxonomy?.offer_type);
+  const showsRooms = fieldVisibleFor("layout", "rooms", propertyType);
   const query = advancedQuery.trim().toLocaleLowerCase(lang);
   const advancedSections = advancedPropertySections(propertyType, offerType)
     .map((section) => {
@@ -1661,10 +1698,17 @@ export function DraftEditor({
               <Section title={t("draft.editor.basics", lang)} icon={InfoIcon}>
               <DirectValueField
                 id="draft-title"
-                label={t("shareDialog.field.title", lang)}
+                label={(
+                  <>
+                    {t("shareDialog.field.title", lang)}
+                    <span aria-hidden="true" className="ml-0.5 text-destructive/80">*</span>
+                  </>
+                )}
                 labelText={t("shareDialog.field.title", lang)}
                 value={values.title}
                 onChange={(value) => setValue("title", value)}
+                onBlur={() => setTitleTouched(true)}
+                errorMessage={titleTouched && !values.title.trim() ? t("draft.editor.titleRequired", lang) : null}
                 lang={lang}
                 required
                 maxLength={255}
@@ -1778,7 +1822,7 @@ export function DraftEditor({
                     ) : undefined}
                   />
                 </div>
-                <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+                <div className={cn("grid grid-cols-1 gap-3", showsRooms ? "sm:grid-cols-2" : "sm:grid-cols-3")}>
                   <NumericStepper
                     id="draft-year-built"
                     label={t("draft.yearBuilt", lang)}
@@ -1790,6 +1834,9 @@ export function DraftEditor({
                     optional
                     lang={lang}
                   />
+                  {showsRooms ? (
+                    <NumericStepper id="draft-rooms" label={t("draft.rooms", lang)} value={stringValue(specs.layout?.rooms)} onChange={(value) => setSpecValue("layout", "rooms", value)} min={0} max={30} lang={lang} />
+                  ) : null}
                   <NumericStepper id="draft-bedrooms" label={t("draft.bedrooms", lang)} value={values.bedrooms} onChange={(value) => setValue("bedrooms", value)} min={0} max={20} lang={lang} />
                   <NumericStepper id="draft-bathrooms" label={t("draft.bathrooms", lang)} value={values.bathrooms} onChange={(value) => setValue("bathrooms", value)} min={0} max={10} lang={lang} />
                 </div>
@@ -1926,15 +1973,17 @@ export function DraftEditor({
         <div className="flex shrink-0 items-center gap-1 border-b border-border/45 bg-card px-3 py-2">
           {/* onMouseDown preventDefault keeps the text selection alive: a plain
               click blurs the editable first and the command then formats nothing. */}
-          <button type="button" onMouseDown={(event) => event.preventDefault()} onClick={() => applyDescriptionCommand("bold")} aria-label={t("draft.editor.descriptionBold", lang)} title={t("draft.editor.descriptionBold", lang)} className="flex h-10 min-w-10 items-center justify-center rounded-full px-3 text-[15px] font-bold text-foreground/70 transition-colors hover:bg-foreground/[0.055] hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/25">B</button>
-          <button type="button" onMouseDown={(event) => event.preventDefault()} onClick={() => applyDescriptionCommand("italic")} aria-label={t("draft.editor.descriptionItalic", lang)} title={t("draft.editor.descriptionItalic", lang)} className="flex h-10 min-w-10 items-center justify-center rounded-full px-3 text-[15px] italic text-foreground/70 transition-colors hover:bg-foreground/[0.055] hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/25">I</button>
+          <button type="button" onMouseDown={(event) => event.preventDefault()} onClick={() => applyDescriptionCommand("bold")} aria-keyshortcuts={ariaShortcut("B")} aria-label={t("draft.editor.descriptionBold", lang)} title={t("draft.editor.descriptionBold", lang)} className="flex h-10 min-w-10 items-center justify-center rounded-full px-3 text-[15px] font-bold text-foreground/70 transition-colors hover:bg-foreground/[0.055] hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/25">B</button>
+          <button type="button" onMouseDown={(event) => event.preventDefault()} onClick={() => applyDescriptionCommand("italic")} aria-keyshortcuts={ariaShortcut("I")} aria-label={t("draft.editor.descriptionItalic", lang)} title={t("draft.editor.descriptionItalic", lang)} className="flex h-10 min-w-10 items-center justify-center rounded-full px-3 text-[15px] italic text-foreground/70 transition-colors hover:bg-foreground/[0.055] hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/25">I</button>
           <span aria-hidden="true" className="mx-1 h-5 w-px bg-border/60" />
           <button type="button" onMouseDown={(event) => event.preventDefault()} onClick={() => applyDescriptionCommand("insertUnorderedList")} aria-label={t("draft.editor.descriptionBullets", lang)} title={t("draft.editor.descriptionBullets", lang)} className="flex h-10 min-w-10 items-center justify-center rounded-full px-3 text-[15px] font-semibold text-foreground/70 transition-colors hover:bg-foreground/[0.055] hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/25">• —</button>
           <button type="button" onMouseDown={(event) => event.preventDefault()} onClick={() => applyDescriptionCommand("insertOrderedList")} aria-label={t("draft.editor.descriptionNumbered", lang)} title={t("draft.editor.descriptionNumbered", lang)} className="flex h-10 min-w-10 items-center justify-center rounded-full px-3 text-[15px] font-semibold tabular-nums text-foreground/70 transition-colors hover:bg-foreground/[0.055] hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/25">1.</button>
           <span aria-hidden="true" className="mx-1 h-5 w-px bg-border/60" />
           <button type="button" onMouseDown={(event) => event.preventDefault()} onClick={() => applyDescriptionCommand("removeFormat")} aria-label={t("draft.editor.descriptionClear", lang)} title={t("draft.editor.descriptionClear", lang)} className="flex h-10 min-w-10 items-center justify-center rounded-full px-3 text-[15px] font-semibold text-foreground/70 transition-colors hover:bg-foreground/[0.055] hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/25"><span className="line-through decoration-[1.5px]">Aa</span></button>
           <span className="flex-1" />
-          <span className="hidden text-[11px] font-medium text-foreground/42 sm:inline">⌘B · ⌘I · ⌘↵</span>
+          <span className="hidden text-[11px] font-medium text-foreground/42 sm:inline">
+            {(["B", "I", "Enter"] as const).map((key) => shortcutLabel(key, applePlatform)).join(" · ")}
+          </span>
         </div>
         <div className="relative min-h-[24rem] flex-1 bg-card">
         {!descriptionDraft && !generating ? (
