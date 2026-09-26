@@ -74,11 +74,11 @@ const VolumesEditor = dynamic(() => import("../../components/volumes-editor").th
 
 // ── Formatting ────────────────────────────────────────────────────────────
 
-function fmt(value: string | number | null | undefined, lang: string) {
+function fmt(value: string | number | null | undefined, lang: string, maxDecimals = 1) {
   if (value == null || value === "") return null;
   const n = typeof value === "number" ? value : Number(value);
   if (!Number.isFinite(n)) return String(value);
-  return new Intl.NumberFormat(lang, { maximumFractionDigits: n % 1 === 0 ? 0 : 1 }).format(n);
+  return new Intl.NumberFormat(lang, { maximumFractionDigits: n % 1 === 0 ? 0 : maxDecimals }).format(n);
 }
 
 function fmtMoney(value: string | number | null | undefined, currency: string | null | undefined, lang: string) {
@@ -94,7 +94,9 @@ function fmtMoney(value: string | number | null | undefined, currency: string | 
 }
 
 function fmtWithUnit(value: unknown, unit: UnitLookup | null, lang: string) {
-  const formatted = fmt(value as string | number | null | undefined, lang);
+  // A saved 58.53 m² showed as 58.5 (Bench 06): the unit row says how many
+  // decimals its figures carry; the listing's figures keep two.
+  const formatted = fmt(value as string | number | null | undefined, lang, unit?.display_decimal_places ?? 2);
   if (!formatted) return null;
   const label = unitLabel(unit);
   return `${formatted}${label ? ` ${label}` : ""}`;
