@@ -28,9 +28,15 @@ Copy `.env.local.example` to `.env.local`:
 # Backend URL (Django API) — server-side only, not exposed to browser
 REAIGEN_BACKEND_URL=http://localhost:80
 
-# Google Maps JavaScript API website key — stored server-side
+# Mapbox public token (pk.) — primary property map, stored server-side
+MAPBOX_ACCESS_TOKEN=your_url_restricted_mapbox_public_token
+
+# Google Maps JavaScript API website key — fallback map, stored server-side
 GOOGLE_MAPS_KEY=your_restricted_google_maps_javascript_key
 ```
+
+Mapbox is the primary property map and Google Maps the fallback; see
+`docs/production-maps-ui-runbook.md`.
 
 `GOOGLE_MAPS_KEY` stays out of the built JavaScript bundle and is returned only
 by an authenticated, same-origin map bootstrap request. The Maps JavaScript API

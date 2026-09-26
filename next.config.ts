@@ -10,6 +10,10 @@ function contentSecurityPolicy({ googleMaps = false } = {}) {
   // worker can fetch the module it was bundled with.
   const scriptSrc = ["'self'", "'unsafe-inline'", "'wasm-unsafe-eval'"];
   const connectSrc = ["'self'", "https:", "data:", "blob:"];
+  // Mapbox GL (the primary property map) fetches its style, tiles and
+  // telemetry from these hosts; "https:" already admits them, listed so the
+  // map's needs stay visible when the policy is narrowed.
+  connectSrc.push("https://api.mapbox.com", "https://*.tiles.mapbox.com", "https://events.mapbox.com");
 
   if (!isProduction) {
     scriptSrc.push("'unsafe-eval'");
@@ -108,10 +112,20 @@ const nextConfig: NextConfig = {
         ],
       },
       {
-        // Authenticated app routes can render Google map blocks in the Agent.
-        // Exclude all of them here so this default CSP cannot overwrite their
-        // Google-compatible policy through a second matching header rule.
-        source: "/:path((?!(?:draft|dashboard|tour|tours|shares|settings|create)(?:/|$)).*)",
+        // A CSP header applies only on a full page load: Next.js client
+        // navigation keeps the policy of the page the tab was opened on. Sign-in
+        // happens on "/" and moves to "/dashboard" without a reload, so a
+        // strict policy there blocked every map in the session (2026-09-26:
+        // "google is not loading"). Every app page therefore carries the
+        // map-capable policy; only the public viewer, the API and the
+        // association files keep the strict default (their own rules below and
+        // above), and they are excluded here so no two rules set the header.
+        source: "/:path((?!(?:draft|dashboard|tour|tours|shares|settings|create|shared|api|apple-app-site-association|\\.well-known)(?:/|$)).*)",
+        headers: googleMapsSecurityHeaders,
+      },
+      {
+        // The public tour/listing viewer shows no map and stays strict.
+        source: "/shared/:path*",
         headers: defaultSecurityHeaders,
       },
       {
@@ -145,7 +159,8 @@ const nextConfig: NextConfig = {
       ].map((source) => ({
         source,
         headers: [
-          ...defaultSecurityHeaders,
+          // Sign-in pages lead into the app without a reload; see above.
+          ...googleMapsSecurityHeaders,
           { key: "Cache-Control", value: "private, no-store, no-cache, max-age=0, must-revalidate" },
           { key: "Pragma", value: "no-cache" },
           { key: "Expires", value: "0" },

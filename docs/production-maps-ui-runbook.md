@@ -4,39 +4,57 @@ This runbook records the production contract for property maps, editor control
 geometry, collection delivery, and immersive tour loading. Use it when changing
 or diagnosing these surfaces.
 
-## Google Cloud and Vercel configuration
+## Providers (2026-09-26)
 
-Production uses one browser key stored in Vercel as `GOOGLE_MAPS_KEY`.
+The property location map (listing detail, draft editor) uses **Mapbox GL as
+the primary provider and Google Maps as the fallback** — operator: "use
+mapbox as maps because google is not loading … we keep also google but now we
+have primary mapbox". Agent (Reai panel) map and route blocks stay on Google:
+Mapbox Product Terms §1.5(ii) bar using the service to operate AI technologies.
+OpenStreetMap tiles, Leaflet and Nominatim are still not used.
 
-The Google Cloud key must have:
+## Vercel configuration
 
-- an active billing account on its project;
-- **Maps JavaScript API** enabled;
-- application restriction **Websites**;
-- website rules for `https://reaigen.io/*` and
-  `https://www.reaigen.io/*`;
-- API restriction **Maps JavaScript API** only.
+Two server-only variables (never `NEXT_PUBLIC_*`, a repository file, a log, a
+screenshot or a documentation example):
 
-Do not enable or introduce OpenStreetMap, Leaflet, Nominatim, Mapbox, or a
-silent fallback provider. Address-only drafts are not geocoded by this client.
-They offer a user-triggered Google-hosted map frame inside the authenticated
-creator workspace. The frame is absent until the user chooses **Show map**, so
-ordinary page loading does not disclose the private address to Google.
+- `MAPBOX_ACCESS_TOKEN` — the public `pk.` token (the same one the backend
+  holds as `MAPBOX_KEY` in the Stockholm secret). Restrict it in the Mapbox
+  account to the production URLs `https://reaigen.io` and
+  `https://www.reaigen.io` (and the test-stack origin if maps are wanted
+  there). Scopes: styles, tiles, fonts, geocoding.
+- `GOOGLE_MAPS_KEY` — the Google fallback. The Google Cloud key must have an
+  active billing account, **Maps JavaScript API** enabled, application
+  restriction **Websites** (`https://reaigen.io/*`, `https://www.reaigen.io/*`)
+  and API restriction **Maps JavaScript API** only.
 
-After changing `GOOGLE_MAPS_KEY`, redeploy the production frontend. Never put
-the key in a `NEXT_PUBLIC_*` variable, repository file, log, screenshot, or
-documentation example.
+Either variable alone draws the map; with neither, the card says the preview is
+unavailable. Redeploy the frontend after changing them.
 
 ## Map runtime contract
 
 `PropertyMapCard` sends saved coordinates to the same-origin
-`POST /api/maps/client` route. The route returns those validated coordinates
-and the website-restricted browser key only after validating the cookie token
-against Django. Cookie presence alone is not authentication. Expired access
-tokens use the shared silent-refresh path; forged or refused sessions receive
-no browser key.
+`POST /api/maps/client` route. The route validates the cookie token against
+Django (cookie presence alone is not authentication; expired access tokens use
+the shared silent-refresh path; forged or refused sessions get nothing) and
+only then returns `{ apiKey, mapboxToken, latitude, longitude }`.
 
-The browser runtime:
+- **Mapbox first** (`app/lib/mapbox-client.ts`): the bundled `mapbox-gl`
+  (pinned `3.31.0`, loaded only when a map is about to render), style
+  `mapbox://styles/mapbox/streets-v12`, a marker, cooperative gestures and
+  zoom buttons on interactive maps, attribution and logo kept. A map that fires
+  `error` or does not reach `load` within 12 s falls back.
+- **Google fallback**: when Mapbox has no token or fails and a Google key
+  exists, the same card draws the Google canvas (the contract below). With no
+  Google key, the card shows the unavailable state with Try again.
+- **Address-only drafts** are never geocoded during page load. Only after the
+  creator chooses **Show map**, the card asks the route for the Mapbox token
+  (`{ purpose: "geocode" }` — the address is not sent to our route), geocodes
+  the address in the browser with Mapbox Geocoding v6 (one best match,
+  temporary results, nothing stored) and draws the Mapbox map. Any miss falls
+  back to the user-triggered Google-hosted frame as before.
+
+The Google runtime (fallback):
 
 - loads Google Maps JavaScript `3.65` directly from
   `maps.googleapis.com`;
@@ -49,11 +67,22 @@ The browser runtime:
   connections—the canvas is not removed merely because tiles are late;
 - stamps the loaded key/version on the current document. If a tab retained a
   Google namespace from an older deployment, it performs one clean reload and
-  then boots the current key. This prevents an obsolete “For development
-  purposes only” state from surviving a deployment.
+  then boots the current key.
 
 Google Maps cannot be safely unloaded and replaced inside one document. Do not
 remove the stale-runtime reload guard or attempt to mutate Google's namespace.
+
+## Content-Security-Policy
+
+A CSP response header applies only on a full page load; Next.js client
+navigation keeps the policy of the page the tab was opened on. Sign-in happens
+on `/` and moves to `/dashboard` without a reload, so the strict policy that
+`/` used to carry blocked every map for the rest of the session — the cause of
+"google is not loading". Every app page (sign-in pages included) now carries
+the map-capable policy (`next.config.ts`, Google script hosts plus the Mapbox
+`connect-src` hosts); only the public `/shared` viewer, the API and the Apple
+association files keep the strict default. Mapbox GL needs `worker-src blob:`
+and `img-src data: blob:`, which both policies already have.
 
 ## UI geometry contract
 
@@ -95,19 +124,22 @@ Then verify production:
 
 1. Confirm `reaigen.io` redirects to `www.reaigen.io` and both aliases point to
    the intended Ready Vercel deployment.
-2. Open an authenticated draft with saved coordinates and verify colored map
-   tiles, the Google attribution, pan, zoom, expansion, and retry behavior.
-3. Open an address-only draft, confirm no Google frame request occurs during
-   page load, choose **Show map**, and verify the Google map stays inside the
-   location card and expanded dialog.
+2. Sign in on `/`, then open an authenticated draft with saved coordinates
+   without reloading, and verify Mapbox tiles, the Mapbox attribution and logo,
+   pan, zoom, expansion, and retry behavior.
+3. Open an address-only draft, confirm no geocoding or map request occurs
+   during page load, choose **Show map**, and verify the Mapbox map stays
+   inside the location card and expanded dialog.
 4. Submit a valid-coordinate request to `/api/maps/client` with no cookies and
-   with a forged cookie. Both must return `401` without an API key response.
-5. Leave a tab open across a deployment, navigate back to the draft, and
+   with a forged cookie. Both must return `401` without a key or token.
+5. With `MAPBOX_ACCESS_TOKEN` unset (a preview), confirm the Google fallback
+   draws the map.
+6. Leave a tab open across a deployment, navigate back to the draft, and
    confirm it reloads at most once and then shows the current authorized map.
-6. Confirm the console has no `RefererNotAllowedMapError`,
+7. Confirm the console has no `RefererNotAllowedMapError`,
    `BillingNotEnabledMapError`, `InvalidKeyMapError`, or CSP violations.
-7. Search the production source for disallowed map providers and confirm none
-   are present.
+8. Search the production source for OpenStreetMap, Leaflet or Nominatim and
+   confirm none are present.
 
 An HTTP 200 from the page and Maps bootstrap does not prove that tiles rendered.
 Final release sign-off requires a real signed-in browser session.

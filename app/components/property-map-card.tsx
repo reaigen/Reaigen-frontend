@@ -13,14 +13,108 @@ import {
   resetGoogleMapsFailure,
   subscribeGoogleMapsFailure,
 } from "../lib/google-maps-client";
+import { MAPBOX_READY_TIMEOUT_MS, MAPBOX_STYLE, geocodeAddress, isMapboxToken, loadMapbox } from "../lib/mapbox-client";
 import { t } from "../lib/i18n";
 import { cn } from "../lib/utils";
 import { CloseIcon, LayoutIcon, LockIcon, MapPinIcon } from "./icons";
+import "mapbox-gl/dist/mapbox-gl.css";
 
 type ClientMapConfig = {
-  apiKey: string;
+  apiKey: string | null;
+  mapboxToken: string | null;
   center: GoogleMapCenter;
 };
+
+// Mapbox is the primary map; Google Maps takes over when Mapbox has no token
+// or fails (operator, 2026-09-26: "we keep also google but now we have
+// primary mapbox").
+type MapProvider = "mapbox" | "google";
+
+function MapboxCanvas({
+  token,
+  center,
+  language,
+  zoom,
+  interactive,
+  onReady,
+  onError,
+}: {
+  token: string;
+  center: GoogleMapCenter;
+  language: string;
+  zoom: number;
+  interactive: boolean;
+  onReady?: () => void;
+  onError?: () => void;
+}) {
+  const containerRef = useRef<HTMLDivElement>(null);
+  // Callbacks are read through refs: a parent's inline handler must not tear
+  // the map down and rebuild it on every render.
+  const onReadyRef = useRef(onReady);
+  const onErrorRef = useRef(onError);
+  useEffect(() => {
+    onReadyRef.current = onReady;
+    onErrorRef.current = onError;
+  }, [onError, onReady]);
+
+  useEffect(() => {
+    let active = true;
+    let loaded = false;
+    let map: { remove(): void } | null = null;
+    const container = containerRef.current;
+    if (!container) return;
+
+    const fail = () => {
+      if (!active || loaded) return;
+      active = false;
+      onErrorRef.current?.();
+    };
+    // A token Mapbox refuses or a blocked style never reaches "load"; the
+    // Google fallback takes over instead of a spinner that never ends.
+    const timer = window.setTimeout(fail, MAPBOX_READY_TIMEOUT_MS);
+
+    void loadMapbox(token)
+      .then((mapboxgl) => {
+        if (!active) return;
+        const instance = new mapboxgl.Map({
+          container,
+          style: MAPBOX_STYLE,
+          center: [center.lng, center.lat],
+          zoom,
+          interactive,
+          cooperativeGestures: interactive,
+          attributionControl: true,
+          language,
+        });
+        map = instance;
+        if (interactive) instance.addControl(new mapboxgl.NavigationControl({ showCompass: false }), "bottom-right");
+        new mapboxgl.Marker({ color: "#111111" }).setLngLat([center.lng, center.lat]).addTo(instance);
+        instance.on("load", () => {
+          if (!active) return;
+          loaded = true;
+          window.clearTimeout(timer);
+          onReadyRef.current?.();
+        });
+        instance.on("error", () => fail());
+      })
+      .catch(() => fail());
+
+    return () => {
+      active = false;
+      window.clearTimeout(timer);
+      map?.remove();
+      container.replaceChildren();
+    };
+  }, [token, center, interactive, language, zoom]);
+
+  return (
+    <div
+      ref={containerRef}
+      aria-hidden="true"
+      className={cn("absolute inset-0 h-full w-full", !interactive && "pointer-events-none")}
+    />
+  );
+}
 
 const MAPS_RUNTIME_RELOAD_GUARD = "reaigen-google-maps-runtime-reload";
 
@@ -32,7 +126,9 @@ function GoogleMapCanvas({
   interactive,
   onReady,
   onError,
-}: ClientMapConfig & {
+}: {
+  apiKey: string;
+  center: GoogleMapCenter;
   language: string;
   zoom: number;
   interactive: boolean;
@@ -189,6 +285,9 @@ export function PropertyMapCard({
   ), [lat, lng, normalizedAddress]);
   const [target, setTarget] = useState(rawTarget);
   const [mapConfig, setMapConfig] = useState<ClientMapConfig | null>(null);
+  const [provider, setProvider] = useState<MapProvider>("mapbox");
+  const [addressProvider, setAddressProvider] = useState<MapProvider>("mapbox");
+  const [addressMapbox, setAddressMapbox] = useState<{ token: string; center: GoogleMapCenter } | null>(null);
   const [failed, setFailed] = useState(false);
   const [loading, setLoading] = useState(Boolean(rawTarget?.lat != null && rawTarget?.lng != null));
   const [retryNonce, setRetryNonce] = useState(0);
@@ -245,6 +344,8 @@ export function PropertyMapCard({
       setFailed(false);
       setAddressMapRequested(false);
       setAddressMapStatus("idle");
+      setAddressProvider("mapbox");
+      setAddressMapbox(null);
     };
 
     // Saved coordinates can render immediately. Address-only drafts debounce
@@ -300,18 +401,21 @@ export function PropertyMapCard({
         if (!response.ok) throw new Error("map-unavailable");
         const payload: unknown = await response.json();
         if (!payload || typeof payload !== "object") throw new Error("map-invalid-response");
-        const { apiKey, latitude, longitude } = payload as Record<string, unknown>;
+        const { apiKey, mapboxToken, latitude, longitude } = payload as Record<string, unknown>;
+        const googleKey = typeof apiKey === "string" && apiKey ? apiKey : null;
+        const mapbox = isMapboxToken(mapboxToken) ? mapboxToken : null;
         if (
-          typeof apiKey !== "string"
+          (!googleKey && !mapbox)
           || typeof latitude !== "number"
           || typeof longitude !== "number"
         ) {
           throw new Error("map-invalid-response");
         }
-        return { apiKey, center: { lat: latitude, lng: longitude } };
+        return { apiKey: googleKey, mapboxToken: mapbox, center: { lat: latitude, lng: longitude } };
       })
       .then((config) => {
         if (controller.signal.aborted) return;
+        setProvider(config.mapboxToken ? "mapbox" : "google");
         setMapConfig(config);
       })
       .catch(() => {
@@ -344,6 +448,20 @@ export function PropertyMapCard({
     setLoading(false);
   }, []);
 
+  // Mapbox failed: Google draws the same map when it has a key.
+  const handleMapboxError = useCallback(() => {
+    if (mapConfig?.apiKey) {
+      console.error("Mapbox map unavailable; falling back to Google Maps");
+      setProvider("google");
+      setLoading(true);
+      return;
+    }
+    console.error("Mapbox map unavailable and no Google fallback is configured");
+    setMapConfig(null);
+    setFailed(true);
+    setLoading(false);
+  }, [mapConfig]);
+
   const handleRetry = useCallback(() => {
     if (resetGoogleMapsFailure()) {
       window.location.reload();
@@ -359,8 +477,42 @@ export function PropertyMapCard({
 
   const handleRetryAddressMap = useCallback(() => {
     setAddressMapNonce((value) => value + 1);
+    setAddressProvider("mapbox");
+    setAddressMapbox(null);
     setAddressMapStatus("loading");
   }, []);
+
+  const addressFallbackToGoogle = useCallback(() => {
+    setAddressMapbox(null);
+    setAddressProvider("google");
+  }, []);
+
+  // After "Show map" only: ask the route for the Mapbox token (never sending
+  // the address there), geocode in the browser, and draw the Mapbox map. Any
+  // miss falls back to the Google-hosted frame, as before.
+  useEffect(() => {
+    if (!target || target.lat != null || !addressMapRequested || addressProvider !== "mapbox") return;
+    const controller = new AbortController();
+    void fetch("/api/maps/client", {
+      method: "POST",
+      credentials: "same-origin",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ purpose: "geocode" }),
+      signal: controller.signal,
+    })
+      .then(async (response) => {
+        if (!response.ok) throw new Error("map-unavailable");
+        const { mapboxToken } = (await response.json()) as Record<string, unknown>;
+        if (!isMapboxToken(mapboxToken)) throw new Error("map-invalid-response");
+        const center = await geocodeAddress(target.address, lang, mapboxToken, controller.signal);
+        if (!center) throw new Error("map-address-not-found");
+        if (!controller.signal.aborted) setAddressMapbox({ token: mapboxToken, center });
+      })
+      .catch(() => {
+        if (!controller.signal.aborted) addressFallbackToGoogle();
+      });
+    return () => controller.abort();
+  }, [addressFallbackToGoogle, addressMapNonce, addressMapRequested, addressProvider, lang, target]);
 
   if (!target) return null;
   const isAddressOnly = target.lat == null || target.lng == null;
@@ -381,9 +533,21 @@ export function PropertyMapCard({
           aria-hidden="true"
           className="absolute inset-0 bg-[linear-gradient(rgba(17,17,17,0.035)_1px,transparent_1px),linear-gradient(90deg,rgba(17,17,17,0.035)_1px,transparent_1px)] bg-[size:2rem_2rem]"
         />
-        {!failed && mapConfig ? (
+        {!failed && mapConfig && provider === "mapbox" && mapConfig.mapboxToken ? (
+          <MapboxCanvas
+            token={mapConfig.mapboxToken}
+            center={mapConfig.center}
+            language={lang.slice(0, 2).toLowerCase()}
+            zoom={target.lat != null ? 15 : 14}
+            interactive
+            onReady={handleMapReady}
+            onError={handleMapboxError}
+          />
+        ) : null}
+        {!failed && mapConfig && provider === "google" && mapConfig.apiKey ? (
           <GoogleMapCanvas
-            {...mapConfig}
+            apiKey={mapConfig.apiKey}
+            center={mapConfig.center}
             language={lang.slice(0, 2).toLowerCase()}
             zoom={target.lat != null ? 15 : 14}
             interactive
@@ -391,7 +555,19 @@ export function PropertyMapCard({
             onError={handleMapError}
           />
         ) : null}
-        {isAddressOnly && addressMapRequested && addressMapStatus !== "failed" ? (
+        {isAddressOnly && addressMapRequested && addressMapStatus !== "failed" && addressProvider === "mapbox" && addressMapbox ? (
+          <MapboxCanvas
+            key={`inline-mapbox-${target.key}-${addressMapNonce}`}
+            token={addressMapbox.token}
+            center={addressMapbox.center}
+            language={lang.slice(0, 2).toLowerCase()}
+            zoom={15}
+            interactive
+            onReady={() => setAddressMapStatus("ready")}
+            onError={addressFallbackToGoogle}
+          />
+        ) : null}
+        {isAddressOnly && addressMapRequested && addressMapStatus !== "failed" && addressProvider === "google" ? (
           <GoogleAddressMapFrame
             address={target.address}
             lang={lang}
@@ -516,9 +692,20 @@ export function PropertyMapCard({
               </button>
             </header>
             <div className="relative min-h-0 flex-1 overflow-hidden border-y border-border/55 bg-[#e9eae7]">
-              {mapConfig && !failed && !isAddressOnly ? (
+              {mapConfig && !failed && !isAddressOnly && provider === "mapbox" && mapConfig.mapboxToken ? (
+                <MapboxCanvas
+                  token={mapConfig.mapboxToken}
+                  center={mapConfig.center}
+                  language={lang.slice(0, 2).toLowerCase()}
+                  zoom={target.lat != null ? 15 : 14}
+                  interactive
+                  onError={handleMapboxError}
+                />
+              ) : null}
+              {mapConfig && !failed && !isAddressOnly && provider === "google" && mapConfig.apiKey ? (
                 <GoogleMapCanvas
-                  {...mapConfig}
+                  apiKey={mapConfig.apiKey}
+                  center={mapConfig.center}
                   language={lang.slice(0, 2).toLowerCase()}
                   zoom={target.lat != null ? 15 : 14}
                   interactive
@@ -532,7 +719,18 @@ export function PropertyMapCard({
                   <button type="button" onClick={handleRetry} className="rounded-full border border-border bg-card px-4 py-2 text-[11px] font-semibold transition-colors hover:bg-surface-subtle">{t("common.tryAgain", lang)}</button>
                 </div>
               ) : null}
-              {isAddressOnly && addressMapRequested && addressMapStatus !== "failed" ? (
+              {isAddressOnly && addressMapRequested && addressMapStatus !== "failed" && addressProvider === "mapbox" && addressMapbox ? (
+                <MapboxCanvas
+                  key={`expanded-mapbox-${target.key}-${addressMapNonce}`}
+                  token={addressMapbox.token}
+                  center={addressMapbox.center}
+                  language={lang.slice(0, 2).toLowerCase()}
+                  zoom={15}
+                  interactive
+                  onError={addressFallbackToGoogle}
+                />
+              ) : null}
+              {isAddressOnly && addressMapRequested && addressMapStatus !== "failed" && addressProvider === "google" ? (
                 <GoogleAddressMapFrame
                   address={target.address}
                   lang={lang}

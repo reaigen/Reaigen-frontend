@@ -65,15 +65,32 @@ export async function POST(request: NextRequest) {
     return new Response(null, { status: 415, headers: PRIVATE_RESPONSE_HEADERS });
   }
 
-  let payload: { latitude?: unknown; longitude?: unknown };
+  let payload: { latitude?: unknown; longitude?: unknown; purpose?: unknown };
   try {
     payload = await request.json();
   } catch {
     return new Response(null, { status: 400, headers: PRIVATE_RESPONSE_HEADERS });
   }
 
-  const apiKey = process.env.GOOGLE_MAPS_KEY?.trim();
-  if (!apiKey?.startsWith("AIza") || apiKey.length < 30) {
+  // Mapbox is the primary map (2026-09-26); the Google key stays as the
+  // fallback. Either one is enough to draw the map.
+  const googleKey = process.env.GOOGLE_MAPS_KEY?.trim();
+  const apiKey = googleKey?.startsWith("AIza") && googleKey.length >= 30 ? googleKey : null;
+  const mapboxCandidate = process.env.MAPBOX_ACCESS_TOKEN?.trim();
+  const mapboxToken = mapboxCandidate?.startsWith("pk.") && mapboxCandidate.length >= 60 ? mapboxCandidate : null;
+
+  // An address-only draft, after the creator chose "Show map": only the
+  // Mapbox token, to geocode in the browser. The address never comes here.
+  if (payload.purpose === "geocode") {
+    if (!mapboxToken) {
+      return new Response(null, { status: 503, headers: PRIVATE_RESPONSE_HEADERS });
+    }
+    const response = NextResponse.json({ mapboxToken }, { headers: PRIVATE_RESPONSE_HEADERS });
+    if (session.refreshed) setAuthCookies(response, session, refreshToken);
+    return response;
+  }
+
+  if (!apiKey && !mapboxToken) {
     return new Response(null, { status: 503, headers: PRIVATE_RESPONSE_HEADERS });
   }
 
@@ -84,7 +101,7 @@ export async function POST(request: NextRequest) {
   }
 
   const response = NextResponse.json(
-    { apiKey, latitude, longitude },
+    { apiKey, mapboxToken, latitude, longitude },
     { headers: PRIVATE_RESPONSE_HEADERS },
   );
   if (session.refreshed) {
