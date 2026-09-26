@@ -28,7 +28,10 @@ test("the listing being built is shown fact by fact", () => {
 
 test("agent replies render their tables, lists and bold; the creator's own text stays plain", () => {
   assert.match(card, /function AgentReplyText\(\{ text \}: \{ text: string \}\)/);
-  assert.match(card, /turn\.role === "user"\s*\?\s*<p className="whitespace-pre-line[^"]*">\{turn\.content\}<\/p>\s*:\s*<AgentReplyText text=\{turn\.content\} \/>/);
+  // The creator's own message stays plain text (with its sent attachments);
+  // only agent replies go through the reply formatter.
+  assert.match(card, /turn\.role === "user"\s*\?\s*\(\s*<>\s*<p className="whitespace-pre-line[^"]*">\{turn\.content\}<\/p>/);
+  assert.match(card, /:\s*<AgentReplyText text=\{turn\.content\} \/>\}/);
   assert.match(card, /<div key=\{index\} className="overflow-x-auto rounded-xl/, "a wide table scrolls inside the bubble");
   assert.doesNotMatch(card, /dangerouslySetInnerHTML/, "no reply text is ever injected as HTML");
 });
