@@ -450,12 +450,12 @@ function AgentReplyText({ text }: { text: string }) {
             <div key={index} className="overflow-x-auto rounded-xl border border-border/60">
               <table className="w-full border-collapse text-left text-[13px] leading-5">
                 <thead className="bg-muted/40">
-                  <tr>{block.header.map((cell, column) => <th key={column} className="px-2.5 py-1.5 font-semibold"><ReplyInlineText parts={cell} /></th>)}</tr>
+                  <tr>{block.header.map((cell, column) => <th key={column} className="px-2.5 py-1.5 font-semibold [overflow-wrap:anywhere]"><ReplyInlineText parts={cell} /></th>)}</tr>
                 </thead>
                 <tbody>
                   {block.rows.map((row, rowIndex) => (
                     <tr key={rowIndex} className="border-t border-border/50">
-                      {row.map((cell, column) => <td key={column} className="px-2.5 py-1.5 align-top"><ReplyInlineText parts={cell} /></td>)}
+                      {row.map((cell, column) => <td key={column} className="px-2.5 py-1.5 align-top [overflow-wrap:anywhere]"><ReplyInlineText parts={cell} /></td>)}
                     </tr>
                   ))}
                 </tbody>
@@ -472,7 +472,7 @@ function AgentReplyText({ text }: { text: string }) {
           );
         }
         return (
-          <p key={index} className="break-words">
+          <p key={index} className="break-words [overflow-wrap:anywhere]">
             {block.lines.map((line, lineIndex) => (
               <span key={lineIndex}>{lineIndex > 0 && <br />}<ReplyInlineText parts={line} /></span>
             ))}
@@ -716,6 +716,26 @@ export function ReaiAgentCard({
   const [answering, setAnswering] = useState<{ planId: string; stepId: string; text: string } | null>(null);
 
   useEffect(() => { turnsRef.current = turns; }, [turns]);
+  useEffect(() => {
+    // A save in the editor replaces the values the open cards and the latest
+    // suggestions were made against: withdraw the cards for that listing and
+    // drop the stale suggestions (Bench 04 D05).
+    const onDraftSaved = (event: Event) => {
+      const savedId = (event as CustomEvent<{ draftId?: number }>).detail?.draftId;
+      if (!savedId) return;
+      setTurns((current) => current.map((turn) => {
+        const owners = turn.response?.selected_creation_ids ?? [];
+        const aboutSaved = owners.includes(savedId) || (!owners.length && draftId === savedId);
+        if (!aboutSaved || !turn.response) return turn;
+        const withdrawn = withdrawnCard(turn);
+        return withdrawn.response?.suggested_actions?.length
+          ? { ...withdrawn, response: { ...withdrawn.response, suggested_actions: [] } }
+          : withdrawn;
+      }));
+    };
+    window.addEventListener("reai-draft-saved", onDraftSaved);
+    return () => window.removeEventListener("reai-draft-saved", onDraftSaved);
+  }, [draftId]);
   useEffect(() => {
     const element = conversationRef.current;
     if (!element) return;
@@ -2492,7 +2512,7 @@ export function ReaiAgentCard({
                       : "py-1"}
                   >
                     {turn.role === "user"
-                      ? <p className="whitespace-pre-line text-[14px] leading-6 text-background">{turn.content}</p>
+                      ? <p className="whitespace-pre-line break-words text-[14px] leading-6 text-background [overflow-wrap:anywhere]">{turn.content}</p>
                       : <AgentReplyText text={turn.content} />}
                     {/* The agent often ends with options — "Central heating", "Write a
                         new description". They were returned by the server and never

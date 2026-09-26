@@ -256,3 +256,10 @@ Tests: `app/lib/agent-conversation.test.mjs`.
   04 S03 left "Create" clickable), and when the server recognises a cancel
   the panel did not (`pending_proposal: "cancel"`), every open card outside
   a plan is withdrawn.
+- **Editor saves.** `draft-editor.tsx` announces a save with
+  `reai-draft-saved` (`{ draftId }`); the panel withdraws that listing's open
+  cards and drops the latest suggestions, which were made against the
+  replaced values (Bench 04 D05). The server still refuses a stale proposal
+  with 409.
+- **Long words.** Bubbles and table cells wrap unbroken text (ids, URLs,
+  run titles) with `overflow-wrap: anywhere` instead of spilling out.

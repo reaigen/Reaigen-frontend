@@ -1535,6 +1535,9 @@ export function DraftEditor({
       if (lotUnit) payload.lot_size_unit = lotUnit.id;
       const updated = await updateDraft(draft.id, payload);
       onSaved(updated);
+      // The agent panel withdraws cards and suggestions made against the
+      // values this save just replaced (Bench 04 D05).
+      window.dispatchEvent(new CustomEvent("reai-draft-saved", { detail: { draftId: draft.id } }));
       onOpenChange(false);
     } catch (reason) {
       setError(getSafeApiErrorMessage(reason, lang));

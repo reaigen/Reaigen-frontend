@@ -40,3 +40,15 @@ test("a cancelled card never keeps a live Apply or Create button (Bench 04 S01, 
   assert.match(card, /function withdrawnCard\(turn: ChatTurn\): ChatTurn/);
   assert.match(card, /if \(!turn\.response \|\| turn\.planId\) return turn;/, "plan step cards stay with their plan");
 });
+
+test("a save in the editor withdraws the cards and suggestions it made stale (Bench 04 D05)", () => {
+  const editor = fs.readFileSync(path.join(root, "app/components/draft-editor.tsx"), "utf8");
+  assert.match(editor, /onSaved\(updated\);\s*\/\/[^\n]*\n[^\n]*\n\s*window\.dispatchEvent\(new CustomEvent\("reai-draft-saved", \{ detail: \{ draftId: draft\.id \} \}\)\)/);
+  assert.match(card, /window\.addEventListener\("reai-draft-saved", onDraftSaved\)/);
+  assert.match(card, /suggested_actions: \[\]/, "stale suggestions are dropped");
+});
+
+test("long unbroken text wraps inside the bubbles and table cells", () => {
+  assert.match(card, /whitespace-pre-line break-words text-\[14px\] leading-6 text-background \[overflow-wrap:anywhere\]/);
+  assert.match(card, /<td key=\{column\} className="[^"]*\[overflow-wrap:anywhere\]/);
+});
