@@ -2212,6 +2212,15 @@ const cs: LocaleStrings = {
 
   // ── Account setup: phone conflict ───────────────────────────────────
   "setup.seller.phoneTaken":              "Toto číslo je už propojeno s jiným účtem Reaigen. Použijte jiné číslo, nebo kontaktujte podporu, pokud je vaše.",
+  "settings.reai.toolNotOffered":          "Zatím není dostupné v žádném balíčku.",
+  "settings.reai.toolEarlyAccess":         "Předběžný přístup pro vybrané účty.",
+  "reai.plan.blocked.not_offered":         "Zatím není dostupné v žádném balíčku.",
+  "reai.plan.blocked.early_access":        "Předběžný přístup pro vybrané účty.",
+  "reai.consentSummary":                   "Agent vám pomáhá psát a upravovat inzeráty. Vidí jen údaje o nemovitosti, které úloha potřebuje — nikdy váš účet, kontakty, přesnou adresu ani fakturaci — a nic se nezmění, dokud to nepotvrdíte.",
+  "reai.consentDetails":                   "Jak Agent zachází s vašimi údaji",
+  "settings.reai.toolSubscription":        "Vaše předplatné není aktivní. Zkontrolujte Fakturaci.",
+  "settings.reai.toolBillingHold":         "Fakturace je pozastavena. Zkontrolujte Fakturaci.",
+  "settings.reai.toolNoAccess":            "Tento účet zatím nemá přístup k Reaigenu.",
   "draft.versions.listingHistoryHint":     "Sem se ukládají změny, které potvrdíte přes Agenta, a před první z nich i původní podoba nabídky. Úpravy v editoru se sem nezapisují.",
   "dashboard.empty.agentHint":             "Napište Agentovi, co prodáváte nebo pronajímáte — připraví koncept k potvrzení. Nemovitost můžete nasnímat i v aplikaci Reaigen pro iPhone a iPad.",
   "dashboard.empty.agentOffHint":          "Váš balíček zahrnuje Agenta, který vytvoří koncept z krátkého popisu. Zapněte ho v Nastavení, nebo nemovitost nasnímejte v aplikaci Reaigen pro iPhone a iPad.",

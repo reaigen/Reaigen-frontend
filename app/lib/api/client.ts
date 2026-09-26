@@ -2939,7 +2939,7 @@ export interface ReaiAgentResponse {
     has_existing_description: boolean;
   };
   /** Present when the tool the request needed is off for this account. */
-  blocked_tools?: { tool: string; reason: "tier_feature" | "user_policy" }[];
+  blocked_tools?: { tool: string; reason: "tier_feature" | "not_offered" | "early_access" | "user_policy" }[];
   /** The stored answer this response corresponds to, for per-turn feedback. */
   improvement_message_id?: number | null;
   action_token?: string | null;
@@ -3040,6 +3040,8 @@ export type ReaiAgentPlanStatus =
 
 export type ReaiAgentPlanBlockReason =
   | "tier_feature"
+  | "not_offered"
+  | "early_access"
   | "user_policy"
   | "owner_only"
   | "service_permission"
@@ -3214,7 +3216,15 @@ export interface ReaiToolStatus {
   user_policy: boolean;
   /** entitled && user_policy — what the backend actually enforces. */
   allowed: boolean;
-  blocker: "reaigen_access" | "tier_feature" | "user_policy" | null;
+  /**
+   * Why the tool is off. `tier_feature`: a higher plan includes it.
+   * `not_offered`: no plan above this account's includes it; `early_access`:
+   * an experimental feature enabled for selected accounts — an upgrade fixes
+   * neither. `subscription` and `billing_hold` are account states.
+   */
+  blocker: "reaigen_access" | "tier_feature" | "not_offered" | "early_access" | "subscription" | "billing_hold" | "user_policy" | null;
+  entitlement_blocker?: ReaiToolStatus["blocker"];
+  missing_features?: string[];
 }
 
 export interface ReaiToolPermissions {

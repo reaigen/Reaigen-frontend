@@ -2234,6 +2234,15 @@ const en = {
 
   // ── Account setup: phone conflict ───────────────────────────────────
   "setup.seller.phoneTaken":              "This number is already linked to another Reaigen account. Use a different number, or contact support if it's yours.",
+  "settings.reai.toolNotOffered":          "Not available in any plan yet.",
+  "settings.reai.toolEarlyAccess":         "Early access for selected accounts.",
+  "reai.plan.blocked.not_offered":         "Not available in any plan yet.",
+  "reai.plan.blocked.early_access":        "Early access for selected accounts.",
+  "reai.consentSummary":                   "The Agent helps you write and edit your listings. It sees only the property details a task needs — never your account, contacts, exact address or billing — and nothing changes until you confirm it.",
+  "reai.consentDetails":                   "How the Agent handles your data",
+  "settings.reai.toolSubscription":        "Your subscription is not active. Check Billing.",
+  "settings.reai.toolBillingHold":         "Billing is on hold. Check Billing.",
+  "settings.reai.toolNoAccess":            "This account does not have access to Reaigen yet.",
   "draft.versions.listingHistoryHint":     "Changes you confirm through the Agent are kept here, and the listing as it was before the first one is saved as the starting version. Edits made in the editor are not recorded here.",
   "dashboard.empty.agentHint":             "Tell the Agent what you are selling or renting — it prepares a draft for you to confirm. You can also capture a property in the Reaigen app for iPhone and iPad.",
   "dashboard.empty.agentOffHint":          "Your plan includes the Agent, which creates drafts from a short description. Turn it on in Settings, or capture a property in the Reaigen app for iPhone and iPad.",

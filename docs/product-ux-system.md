@@ -360,6 +360,12 @@ Findings from the Bench 06 new-user run (2026-09-26) that now hold:
   An empty Tours page explains the capture handoff (Reaigen app with LiDAR, same account).
 - **A saved edit shows at once.** After the draft editor saves, the page shows the draft re-read
   from the server; the PATCH answer carried the specs (rooms, deposit, …) as they were before.
+- **Agent settings speak plainly.** Consent leads with one paragraph (what the Agent does, what it
+  never sees, nothing changes without confirmation); providers, retention and media tools are in a
+  disclosure. An unavailable tool names the backend's reason (`tool_status[code].blocker`):
+  `tier_feature` (a higher plan has it), `not_offered` (no plan above the account's includes it),
+  `early_access` (selected accounts), subscription, billing hold, no Reaigen access. Only
+  `tier_feature` may carry an upgrade hint.
 - **The plan welcome leads somewhere.** Its action button acknowledges the notice and opens the
   drafts page, with the Agent panel when the Agent is on; Escape or closing only acknowledges.
 

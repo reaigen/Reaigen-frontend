@@ -308,3 +308,29 @@ test("the plan welcome's action leads into creation; closing it only acknowledge
   assert.match(appShell, /<SubscriptionWelcomeCard userId=\{user\.id\} language=\{lang\} onStart=\{startCreating\} \/>/);
   assert.match(appShell, /const startCreating = React\.useCallback\(\(\) => \{\s*if \(pathname !== "\/dashboard"\) router\.push\("\/dashboard"\);/);
 });
+
+test("an unavailable Agent tool names the backend's reason, not always the plan", () => {
+  // Bench 06 EF06: on Enterprise, tools no plan includes yet read
+  // "not part of your current plan".
+  assert.match(settings, /t\(toolBlockerKey\(toolPermissions\.tool_status\?\.\[code\]\?\.blocker\), lang\)/);
+  for (const [blocker, key] of [
+    ["not_offered", "settings.reai.toolNotOffered"],
+    ["early_access", "settings.reai.toolEarlyAccess"],
+    ["subscription", "settings.reai.toolSubscription"],
+    ["billing_hold", "settings.reai.toolBillingHold"],
+    ["reaigen_access", "settings.reai.toolNoAccess"],
+  ]) {
+    assert.match(settings, new RegExp(`case "${blocker}":\\s*return "${key.replaceAll(".", "\\.")}";`));
+  }
+  assert.match(api, /blocker: "reaigen_access" \| "tier_feature" \| "not_offered" \| "early_access" \| "subscription" \| "billing_hold" \| "user_policy" \| null;/);
+  assert.match(api, /\| "tier_feature"\s*\| "not_offered"\s*\| "early_access"/);
+});
+
+test("Agent consent leads with one plain paragraph and keeps the processing details one click away", () => {
+  // Bench 06 EF09: providers, redaction, VFX and HDR led the enable decision.
+  assert.match(settings, /\{t\("reai\.consentSummary", lang\)\}<\/p>\s*<details/);
+  assert.match(settings, /<summary[^>]*>\s*\{t\("reai\.consentDetails", lang\)\}/);
+  for (const key of ["reai.consentData", "reai.consentNoData", "reai.consentStorage", "reai.consentMedia"]) {
+    assert.match(settings, new RegExp(`<p>\\{t\\("${key.replace(".", "\\.")}", lang\\)\\}</p>`));
+  }
+});

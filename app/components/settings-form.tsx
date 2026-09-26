@@ -53,6 +53,7 @@ import {
   revokeReaiImprovementConsent,
   getPipelinePreferences,
   updatePipelinePreferences,
+  type ReaiToolStatus,
   type UserProfile,
   type PersonalizedData,
   type AvailablePreferences,
@@ -1244,11 +1245,24 @@ function ReaiTab({ lang }: { lang: string }) {
                 </span>
               </div>
 
-              <div className="rounded-lg bg-muted/25 p-4 text-[12px] leading-relaxed text-foreground/70">
-                <p>{t("reai.consentData", lang)}</p>
-                <p className="mt-1.5">{t("reai.consentNoData", lang)}</p>
-                <p className="mt-1.5">{t("reai.consentStorage", lang)}</p>
-                <p className="mt-1.5">{t("reai.consentMedia", lang)}</p>
+              {/*
+                The decision in one plain paragraph first; the processing
+                details (providers, retention, media tools) stay one click
+                away instead of leading the section (Bench 06 EF09).
+              */}
+              <div className="rounded-lg bg-muted/25 p-4 text-[12px] leading-relaxed text-foreground/70" data-testid="settings-agent-consent-summary">
+                <p className="text-[13px] text-foreground/80">{t("reai.consentSummary", lang)}</p>
+                <details className="group mt-2.5">
+                  <summary className="cursor-pointer select-none text-[12px] font-medium text-foreground/70 underline-offset-4 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/25">
+                    {t("reai.consentDetails", lang)}
+                  </summary>
+                  <div className="mt-2 space-y-1.5">
+                    <p>{t("reai.consentData", lang)}</p>
+                    <p>{t("reai.consentNoData", lang)}</p>
+                    <p>{t("reai.consentStorage", lang)}</p>
+                    <p>{t("reai.consentMedia", lang)}</p>
+                  </div>
+                </details>
               </div>
 
               {consent.consented ? (
@@ -1333,8 +1347,8 @@ function ReaiTab({ lang }: { lang: string }) {
                             </p>
                           )}
                           {!entitled && (
-                            <p className="mt-0.5 text-[12px] leading-relaxed text-muted-foreground/80">
-                              {t("settings.reai.toolTierBlocked", lang)}
+                            <p className="mt-0.5 text-[12px] leading-relaxed text-muted-foreground/80" data-testid={`settings-agent-tool-blocker-${code}`}>
+                              {t(toolBlockerKey(toolPermissions.tool_status?.[code]?.blocker), lang)}
                             </p>
                           )}
                         </div>
@@ -2093,6 +2107,29 @@ function unitOptionLabel(option: PreferenceOption, lang: string): string {
   const key = unitNameKey(option.code);
   const name = key ? t(key, lang) : option.name;
   return option.symbol ? `${name} (${option.symbol})` : name;
+}
+
+/**
+ * The reason an Agent tool is unavailable, as the backend reports it. Every
+ * unavailable tool used to say "not part of your current plan" — also on
+ * Enterprise, for tools no plan includes (Bench 06 EF06). Only
+ * `tier_feature` means a higher plan has it.
+ */
+function toolBlockerKey(blocker: ReaiToolStatus["blocker"] | undefined): LocaleKey {
+  switch (blocker) {
+    case "not_offered":
+      return "settings.reai.toolNotOffered";
+    case "early_access":
+      return "settings.reai.toolEarlyAccess";
+    case "subscription":
+      return "settings.reai.toolSubscription";
+    case "billing_hold":
+      return "settings.reai.toolBillingHold";
+    case "reaigen_access":
+      return "settings.reai.toolNoAccess";
+    default:
+      return "settings.reai.toolTierBlocked";
+  }
 }
 
 function SettingsField({ label, children, hint }: { label: string; children: React.ReactNode; hint?: string }) {
