@@ -50,6 +50,7 @@ import {
   readReaiViewerAction,
   type ReaiViewerAction,
 } from "../../lib/reai-viewer-actions";
+import type { VersionTab } from "../../components/draft-version-manager";
 
 // The listing itself is the primary path. Editors, sharing, versions, maps,
 // video controls, and floorplan tooling live in separate chunks so a normal
@@ -611,6 +612,13 @@ export default function DraftPreviewPage({
     () => typeof window !== "undefined" && window.matchMedia("(max-width: 767px)").matches,
   );
   const [versionsOpen, setVersionsOpen] = useState(false);
+  // Which history the manager opens on: the one belonging to the control
+  // that opened it (the Description's Versions opens the listing history).
+  const [versionsTab, setVersionsTab] = useState<VersionTab>("tour");
+  const openVersions = (tab: VersionTab = "tour") => {
+    setVersionsTab(tab);
+    setVersionsOpen(true);
+  };
   const [mediaOpen, setMediaOpen] = useState(false);
   const [sharingOpen, setSharingOpen] = useState(sharingRequested);
   const [usingCachedDraft, setUsingCachedDraft] = useState(false);
@@ -1189,7 +1197,7 @@ export default function DraftPreviewPage({
             <button
               type="button"
               data-testid="draft-mobile-versions-open"
-              onClick={() => setVersionsOpen(true)}
+              onClick={() => openVersions()}
               className="flex h-10 min-w-0 items-center justify-center gap-1.5 rounded-full text-[11px] font-semibold text-foreground/62 transition-colors hover:bg-card hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/25"
             >
               <VersionsIcon size={14} />
@@ -1353,7 +1361,7 @@ export default function DraftPreviewPage({
                     <Button type="button" data-testid="draft-sharing-open" variant="ghost" size="sm" className="h-10 min-w-0 flex-1 shrink-0 rounded-full" onClick={() => handleSharingOpenChange(true)}>
                       <ShareIcon size={14} /> {t("draft.share", lang)}
                     </Button>
-                    <Button type="button" data-testid="draft-versions-open" variant="ghost" size="sm" className="h-10 min-w-0 flex-1 shrink-0 rounded-full" onClick={() => setVersionsOpen(true)}>
+                    <Button type="button" data-testid="draft-versions-open" variant="ghost" size="sm" className="h-10 min-w-0 flex-1 shrink-0 rounded-full" onClick={() => openVersions()}>
                       <VersionsIcon size={15} /> {t("draft.versions.short", lang)}
                     </Button>
                   </div>
@@ -1407,7 +1415,8 @@ export default function DraftPreviewPage({
                         </button>
                         <button
                           type="button"
-                          onClick={() => setVersionsOpen(true)}
+                          onClick={() => openVersions("listing")}
+                          data-testid="draft-description-versions-open"
                           className="hidden h-9 items-center gap-1.5 rounded-full px-3 text-[11px] font-semibold text-foreground/52 transition-colors hover:bg-foreground/[0.045] hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/25 md:inline-flex"
                         >
                           <VersionsIcon size={13} /> {t("draft.versions.short", lang)}
@@ -1672,6 +1681,7 @@ export default function DraftPreviewPage({
         <DraftVersionManager
           open={versionsOpen}
           onOpenChange={setVersionsOpen}
+          initialTab={versionsTab}
           draft={draft}
           splats={splatData}
           units={unitCatalog}

@@ -2234,6 +2234,7 @@ const en = {
 
   // ── Account setup: phone conflict ───────────────────────────────────
   "setup.seller.phoneTaken":              "This number is already linked to another Reaigen account. Use a different number, or contact support if it's yours.",
+  "draft.versions.listingHistoryHint":     "Changes you confirm through the Agent are kept here, and the listing as it was before the first one is saved as the starting version. Edits made in the editor are not recorded here.",
   "dashboard.empty.agentHint":             "Tell the Agent what you are selling or renting — it prepares a draft for you to confirm. You can also capture a property in the Reaigen app for iPhone and iPad.",
   "dashboard.empty.agentOffHint":          "Your plan includes the Agent, which creates drafts from a short description. Turn it on in Settings, or capture a property in the Reaigen app for iPhone and iPad.",
   "dashboard.empty.webHint":               "Start a draft here in the browser, or capture a property in the Reaigen app for iPhone and iPad.",

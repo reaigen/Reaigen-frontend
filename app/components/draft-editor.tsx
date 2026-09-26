@@ -10,6 +10,7 @@ import {
   generateDraftDescription,
   getCreationSettings,
   getDraftService,
+  getDraft,
   updateDraft,
   type DescriptionSize,
   type DescriptionTone,
@@ -1534,7 +1535,12 @@ export function DraftEditor({
       if (areaUnit) payload.area_unit = areaUnit.id;
       if (lotUnit) payload.lot_size_unit = lotUnit.id;
       const updated = await updateDraft(draft.id, payload);
-      onSaved(updated);
+      // The PATCH answer is serialized before the specs rows it writes are
+      // re-read, so rooms, deposit and the other advanced fields came back as
+      // they were and stayed stale until a reload (Bench 06 EF05). Show the
+      // draft as the server now holds it; the answer is only the fallback.
+      const saved = await getDraft(draft.id).catch(() => updated);
+      onSaved(saved);
       // The agent panel withdraws cards and suggestions made against the
       // values this save just replaced (Bench 04 D05).
       window.dispatchEvent(new CustomEvent("reai-draft-saved", { detail: { draftId: draft.id } }));

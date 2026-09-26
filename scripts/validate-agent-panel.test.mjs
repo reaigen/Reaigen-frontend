@@ -46,7 +46,9 @@ test("a cancelled card never keeps a live Apply or Create button (Bench 04 S01, 
 
 test("a save in the editor withdraws the cards and suggestions it made stale (Bench 04 D05)", () => {
   const editor = fs.readFileSync(path.join(root, "app/components/draft-editor.tsx"), "utf8");
-  assert.match(editor, /onSaved\(updated\);\s*\/\/[^\n]*\n[^\n]*\n\s*window\.dispatchEvent\(new CustomEvent\("reai-draft-saved", \{ detail: \{ draftId: draft\.id \} \}\)\)/);
+  assert.match(editor, /onSaved\(saved\);\s*\/\/[^\n]*\n[^\n]*\n\s*window\.dispatchEvent\(new CustomEvent\("reai-draft-saved", \{ detail: \{ draftId: draft\.id \} \}\)\)/);
+  // Bench 06 EF05: the PATCH answer carried the specs as they were; the page shows the re-read draft.
+  assert.match(editor, /const saved = await getDraft\(draft\.id\)\.catch\(\(\) => updated\);/);
   assert.match(card, /window\.addEventListener\("reai-draft-saved", onDraftSaved\)/);
   assert.match(card, /suggested_actions: \[\]/, "stale suggestions are dropped");
 });
@@ -147,4 +149,16 @@ test("recommended actions are full-width rows above the field; the narrow panel 
   const composer = fs.readFileSync(new URL("../app/components/agent-composer.tsx", import.meta.url), "utf8");
   assert.match(composer, /rounded-\[26px\] border border-border\/60 bg-card/);
   assert.match(composer, /h-11 w-11 shrink-0 items-center justify-center rounded-full bg-foreground text-background/);
+});
+
+test("Versions opened from the Description starts on the listing history and says what it records", () => {
+  // Bench 06 EF08: it opened on an empty Tour tab, and the empty listing tab
+  // only said the Agent had not edited anything.
+  const page = fs.readFileSync(path.join(root, "app/draft/[id]/page.tsx"), "utf8");
+  const manager = fs.readFileSync(path.join(root, "app/components/draft-version-manager.tsx"), "utf8");
+  assert.match(page, /onClick=\{\(\) => openVersions\("listing"\)\}\s*data-testid="draft-description-versions-open"/);
+  assert.match(page, /initialTab=\{versionsTab\}/);
+  assert.match(manager, /React\.useState<VersionTab>\(initialTab\)/);
+  assert.match(manager, /if \(!open\) return;\s*setActiveTab\(initialTab\);/);
+  assert.match(manager, /hint=\{t\("draft\.versions\.listingHistoryHint", lang\)\}/);
 });

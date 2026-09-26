@@ -2212,6 +2212,7 @@ const cs: LocaleStrings = {
 
   // ── Account setup: phone conflict ───────────────────────────────────
   "setup.seller.phoneTaken":              "Toto číslo je už propojeno s jiným účtem Reaigen. Použijte jiné číslo, nebo kontaktujte podporu, pokud je vaše.",
+  "draft.versions.listingHistoryHint":     "Sem se ukládají změny, které potvrdíte přes Agenta, a před první z nich i původní podoba nabídky. Úpravy v editoru se sem nezapisují.",
   "dashboard.empty.agentHint":             "Napište Agentovi, co prodáváte nebo pronajímáte — připraví koncept k potvrzení. Nemovitost můžete nasnímat i v aplikaci Reaigen pro iPhone a iPad.",
   "dashboard.empty.agentOffHint":          "Váš balíček zahrnuje Agenta, který vytvoří koncept z krátkého popisu. Zapněte ho v Nastavení, nebo nemovitost nasnímejte v aplikaci Reaigen pro iPhone a iPad.",
   "dashboard.empty.webHint":               "Začněte koncept přímo zde v prohlížeči, nebo nemovitost nasnímejte v aplikaci Reaigen pro iPhone a iPad.",

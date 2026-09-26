@@ -187,7 +187,10 @@ than one Web tour is visible.
 
 ### Listing history
 
-Listing revisions are loaded from the Agent history endpoint after Agent consent. The UI presents a
+Listing revisions are loaded from the Agent history endpoint after Agent consent. They record
+changes confirmed through the Agent (with the pre-change baseline); editor saves are not recorded,
+and the empty tab says so. The Versions control beside the Description opens the manager on this
+tab; the other Versions controls open on the tour. The UI presents a
 newest-first timeline, marks the current version, and confirms restore. Restoring must keep the
 replaced state recoverable on the backend. Timeline entries stay compact until selected; expansion
 shows field-level before/after values so restoration is an informed decision rather than a blind
@@ -355,6 +358,8 @@ Findings from the Bench 06 new-user run (2026-09-26) that now hold:
   (`firstDraftStep`): write to the Agent when it is on, turn it on when the plan includes it, create
   in the browser when the server allows it, otherwise the iPhone/iPad app with a plan comparison.
   An empty Tours page explains the capture handoff (Reaigen app with LiDAR, same account).
+- **A saved edit shows at once.** After the draft editor saves, the page shows the draft re-read
+  from the server; the PATCH answer carried the specs (rooms, deposit, …) as they were before.
 - **The plan welcome leads somewhere.** Its action button acknowledges the notice and opens the
   drafts page, with the Agent panel when the Agent is on; Escape or closing only acknowledges.
 

@@ -41,7 +41,7 @@ import {
 import { SidePanel } from "./side-panel";
 import { StatusPill } from "./status-pill";
 
-type VersionTab = "tour" | "listing" | "media";
+export type VersionTab = "tour" | "listing" | "media";
 export type MediaAction = { uploadId: number; action: "promote" | "hide" | "restore" } | null;
 export type MediaVersionCreateKind = "enhance" | "cleanplate" | "hdr";
 export type MediaVersionCreateRequest = {
@@ -243,7 +243,9 @@ export function DraftVersionManager({
   lang,
   onActiveTourChanged,
   onDraftRestored,
+  initialTab = "tour",
 }: {
+  initialTab?: VersionTab;
   open: boolean;
   onOpenChange: (open: boolean) => void;
   draft: DraftDetailItem;
@@ -253,11 +255,14 @@ export function DraftVersionManager({
   onActiveTourChanged: (activeSplatId: number | null) => void;
   onDraftRestored: (draft: DraftDetailItem) => void;
 }) {
+  // Opened from the Description, the manager starts on the listing's
+  // history, not on the tour (Bench 06 EF08); without the Agent entitlement
+  // that tab does not exist and the tour stays the fallback.
   const { user } = useAuth();
   const dateFormat = user?.localization?.date_format;
   // Tour versions are available independently. Agent-owned listing/media
   // history is added only after Django explicitly grants the entitlement.
-  const [activeTab, setActiveTab] = React.useState<VersionTab>("tour");
+  const [activeTab, setActiveTab] = React.useState<VersionTab>(initialTab);
   const [agentEntitled, setAgentEntitled] = React.useState<boolean | null>(null);
   const [agentEnabled, setAgentEnabled] = React.useState<boolean | null>(null);
   const [history, setHistory] = React.useState<AgentCreationRevision[]>([]);
@@ -356,7 +361,7 @@ export function DraftVersionManager({
 
   React.useEffect(() => {
     if (!open) return;
-    setActiveTab("tour");
+    setActiveTab(initialTab);
     setTourCandidate(null);
     setRestoreCandidate(null);
     setMediaCandidate(null);
@@ -365,7 +370,7 @@ export function DraftVersionManager({
     setExpandedRevision(null);
     setActionError(null);
     void loadVersionData();
-  }, [open, loadVersionData]);
+  }, [open, loadVersionData, initialTab]);
 
   React.useEffect(() => {
     if (open) return;
@@ -620,7 +625,7 @@ export function DraftVersionManager({
           {loadingVersionData ? <Working lang={lang} /> : agentUnavailable ? (
             <AgentRequired lang={lang} />
           ) : historyDataFailed ? null : sortedHistory.length === 0 ? (
-            <EmptyVersionState icon={VersionsIcon} title={t("draft.versions.noListingHistory", lang)} hint={t("reai.historyEmpty", lang)} />
+            <EmptyVersionState icon={VersionsIcon} title={t("draft.versions.noListingHistory", lang)} hint={t("draft.versions.listingHistoryHint", lang)} />
           ) : (
             <>
               <div className="mb-5 flex items-start gap-3 rounded-2xl bg-surface-subtle px-4 py-3 text-foreground/60">
