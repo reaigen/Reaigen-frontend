@@ -812,22 +812,21 @@ export function DraftTourAssetsPanel({
 
   return (
     <section className="draft-tour-assets mt-7 sm:mt-9">
-      <header className="draft-tour-header mb-3.5 flex items-center gap-3 sm:justify-between">
+      {/* Same anatomy as every other section header on the page: a 32px chip,
+          a one-line 16px title and 36px action chips. No status summary here:
+          "Available to clients · 1" repeated what each card already says and
+          read as an unexplained number. Several tours get a plain count. */}
+      <header className="draft-tour-header mb-3.5 flex min-h-9 items-center gap-3 sm:justify-between">
         <div className="flex min-w-0 flex-1 items-center gap-2.5">
           <span className="detail-icon-chip">
             <TourIcon size={16} />
           </span>
-          <div className="min-w-0">
-            <h2 className="text-[16px] font-semibold tracking-[-0.015em]">{text.title}</h2>
-            <p className="mt-1 truncate text-[12px] text-muted-foreground tabular-nums">
-              {text.summary(
-                visibleAssets.length,
-                readyAssets.length,
-                previewableAssets.length,
-                payload?.assets.length ?? 0,
-              )}
-            </p>
-          </div>
+          <h2 className="flex min-w-0 items-baseline gap-2 text-[16px] font-semibold tracking-[-0.015em]">
+            <span className="truncate">{text.title}</span>
+            {(payload?.assets.length ?? 0) > 1 ? (
+              <span className="shrink-0 text-[13px] font-medium text-foreground/45 tabular-nums">{payload?.assets.length}</span>
+            ) : null}
+          </h2>
         </div>
         <div className="draft-tour-actions flex shrink-0 items-center gap-1.5 empty:hidden">
           {payload?.assets.length ? (
@@ -836,12 +835,13 @@ export function DraftTourAssetsPanel({
               data-testid="draft-tour-assets-open"
               variant="ghost"
               size="sm"
-              className="h-10 w-10 shrink-0 px-0 text-foreground/62 sm:w-auto sm:px-3"
+              // Same 36px chip scale as every other section header's actions.
+              className="h-9 w-9 shrink-0 gap-1.5 px-0 text-[11px] font-semibold text-foreground/62 sm:w-auto sm:px-3"
               onClick={() => setOpen(true)}
               aria-label={text.manage}
               title={text.manage}
             >
-              <SettingsIcon size={14} />
+              <SettingsIcon size={13} />
               <span className="hidden sm:inline">{text.manage}</span>
             </Button>
           ) : null}
@@ -855,7 +855,7 @@ export function DraftTourAssetsPanel({
               type="button"
               variant="outline"
               size="sm"
-              className="pen-touch-target hidden h-11 w-auto shrink-0 px-3 md:inline-flex"
+              className="hidden h-9 w-auto shrink-0 gap-1.5 border-border/65 px-3 text-[11px] font-semibold text-foreground/72 shadow-none hover:border-foreground/20 hover:text-foreground md:inline-flex"
               loading={creatingInWeb}
               onClick={() => { void createInWeb(); }}
               aria-label={t("webCreate.tourAction", lang)}
@@ -866,7 +866,7 @@ export function DraftTourAssetsPanel({
                 compact variant is a 2.25rem circle — spinner plus icon does not
                 fit, so the icon stands down while the spinner is showing.
               */}
-              {creatingInWeb ? null : <PlusIcon size={14} />}
+              {creatingInWeb ? null : <PlusIcon size={13} />}
               <span>{t("webCreate.tourAction", lang)}</span>
             </Button>
           ) : null}
@@ -879,7 +879,7 @@ export function DraftTourAssetsPanel({
           className="detail-card-lg min-h-36 pt-10 sm:min-h-[6.25rem] sm:pt-6"
         />
       ) : error && !payload ? (
-        <div className="detail-card-lg flex items-center gap-3 p-4 sm:px-5">
+        <div className="detail-card flex items-center gap-3 px-5 py-4 sm:px-6">
           <InfoIcon size={18} className="shrink-0 text-destructive" />
           <p className="min-w-0 flex-1 text-[12px] text-muted-foreground">{error}</p>
           <Button type="button" variant="outline" size="sm" onClick={() => { void load(); }}>
@@ -887,7 +887,7 @@ export function DraftTourAssetsPanel({
           </Button>
         </div>
       ) : !payload?.assets.length ? (
-        <div className="detail-card-lg flex items-start gap-3.5 p-5 sm:items-center">
+        <div className="detail-card flex items-start gap-3.5 px-5 py-5 sm:items-center sm:px-6">
           <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-surface-subtle text-foreground/52 ring-1 ring-inset ring-border/40">
             <TourIcon size={18} />
           </span>
@@ -935,8 +935,8 @@ export function DraftTourAssetsPanel({
                   of pills beside it; desktop keeps actions on their own column.
                 */
                 className={cn(
-                  "detail-card draft-tour-asset-card grid min-w-0 grid-cols-[auto_minmax(0,1fr)] items-center gap-3 p-3.5 transition-colors hover:border-foreground/20 sm:gap-4 sm:p-4",
-                  overviewAssets.length === 1 && "lg:grid-cols-[auto_minmax(0,1fr)_minmax(18rem,auto)] lg:px-5",
+                  "detail-card draft-tour-asset-card grid min-w-0 grid-cols-[auto_minmax(0,1fr)] items-center gap-3 px-5 py-3.5 transition-colors hover:border-foreground/20 sm:gap-4 sm:px-6 sm:py-4",
+                  overviewAssets.length === 1 && "lg:grid-cols-[auto_minmax(0,1fr)_minmax(18rem,auto)]",
                 )}
               >
                 <div className={cn(
@@ -975,7 +975,7 @@ export function DraftTourAssetsPanel({
                       type="button"
                       aria-label={`${text.editName}: ${displayName}`}
                       title={text.editName}
-                      className="pen-touch-target flex shrink-0 items-center justify-center rounded-full text-foreground/40 transition-colors hover:bg-foreground/[0.055] hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring sm:h-9 sm:min-h-0 sm:w-9 sm:min-w-0"
+                      className="pen-touch-target flex shrink-0 items-center justify-center rounded-full text-foreground/40 transition-colors hover:bg-foreground/[0.055] hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring -my-3 sm:-my-2 sm:h-9 sm:min-h-0 sm:w-9 sm:min-w-0"
                       onClick={() => {
                         beginRename(asset);
                         setOpen(true);
@@ -985,12 +985,12 @@ export function DraftTourAssetsPanel({
                     </button>
                   </div>
                   {/*
-                    Status is a pill; when it was captured and where it is
+                    Status is a dot and a word; when it was captured and where it is
                     published are facts. Those two facts used to sit on separate
                     lines with the pills wedged between them, so one asset spent
                     four stacked rows saying very little. They are the same kind
                     of thing in the same muted voice, so they share a line and
-                    the pills follow — name, facts, state.
+                    the state follows — name, facts, state.
                   */}
                   <p className="truncate text-[10px] text-muted-foreground sm:text-[11px]">
                     {[
@@ -1000,12 +1000,27 @@ export function DraftTourAssetsPanel({
                     ].filter(Boolean).join(" · ")}
                   </p>
 
-                  <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
-                    <StatusPill tone={state.tone} dot className="shrink-0">
+                  {/* Dot and words, as in the listing's meta line above: pills
+                      made this block taller than the thumbnail beside it. */}
+                  <div className="mt-1 flex flex-wrap items-center gap-x-2 text-[12px] font-medium leading-5 text-foreground/62">
+                    <span className="inline-flex items-center gap-1.5">
+                      <span
+                        aria-hidden="true"
+                        className={cn(
+                          "h-1.5 w-1.5 shrink-0 rounded-full",
+                          state.tone === "success" ? "bg-success"
+                            : state.tone === "warning" ? "bg-warning"
+                              : state.tone === "danger" ? "bg-destructive"
+                                : "bg-foreground/30",
+                        )}
+                      />
                       {state.label}
-                    </StatusPill>
+                    </span>
                     {selection?.isPrimary ? (
-                      <StatusPill>{text.primaryBadge}</StatusPill>
+                      <>
+                        <span aria-hidden="true" className="text-foreground/30">·</span>
+                        <span>{text.primaryBadge}</span>
+                      </>
                     ) : null}
                   </div>
 

@@ -1,6 +1,7 @@
 "use client";
 
-import { DETAIL_LAYOUT_PRE_HYDRATION_HTML, useDetailLayout } from "../lib/detail-layout";
+import type { CSSProperties } from "react";
+import { DETAIL_LAYOUT_PRE_HYDRATION_HTML, useDetailLayout, useEmitsPreHydrationScript } from "../lib/detail-layout";
 import { cn } from "../lib/utils";
 
 function SkeletonShape({ className }: { className: string }) {
@@ -23,6 +24,7 @@ function DraftDetailSkeletonContent({
   // exactly as it decides the loaded listing's — one general skeleton left a
   // focused-mode reader watching 1360px of shapes snap down to 920px.
   const detailLayout = useDetailLayout();
+  const emitPreHydrationScript = useEmitsPreHydrationScript();
   return (
     <div
       data-testid="draft-detail-skeleton"
@@ -38,7 +40,7 @@ function DraftDetailSkeletonContent({
       aria-busy="true"
       aria-label={label}
     >
-      <script dangerouslySetInnerHTML={DETAIL_LAYOUT_PRE_HYDRATION_HTML} />
+      {emitPreHydrationScript ? <script dangerouslySetInnerHTML={DETAIL_LAYOUT_PRE_HYDRATION_HTML} /> : null}
       <span className="sr-only">{label}</span>
 
       {/* The mobile detail route owns its back action below the global header. */}
@@ -56,34 +58,36 @@ function DraftDetailSkeletonContent({
       */}
       <div className="draft-mobile-workspace flex flex-col overflow-hidden border-0 bg-transparent shadow-none md:rounded-[1.5rem] md:border md:border-border/65 md:bg-card md:shadow-control">
         <section aria-hidden="true" className="order-first min-w-0 bg-transparent px-1 pb-5 pt-1 md:bg-card md:p-6">
-          <div className="flex flex-wrap items-center gap-2">
-            <SkeletonShape className="h-7 w-20 rounded-full" />
-            <SkeletonShape className="h-7 w-24 rounded-full" />
-            <SkeletonShape className="hidden h-7 w-24 rounded-full sm:block" />
+          {/* The meta line: offer type, then states — text, not pills. */}
+          <div className="flex h-5 flex-wrap items-center gap-3">
+            <SkeletonShape className="h-3 w-14 rounded-full" />
+            <SkeletonShape className="h-3 w-28 rounded-full" />
+            <SkeletonShape className="hidden h-3 w-28 rounded-full sm:block" />
           </div>
 
-          <div className="mt-4 space-y-2.5">
-            <SkeletonShape className="h-8 w-[min(78%,38rem)] rounded-xl sm:h-10" />
-            <SkeletonShape className="h-4 w-[min(62%,27rem)] rounded-full" />
+          {/* Title and address left, price right from lg up — as the listing. */}
+          <div className="mt-4 flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between lg:gap-10">
+            <div className="min-w-0 flex-1 space-y-2.5">
+              <SkeletonShape className="h-8 w-[min(78%,38rem)] rounded-xl sm:h-10" />
+              <SkeletonShape className="h-4 w-[min(62%,27rem)] rounded-full" />
+            </div>
+            <SkeletonShape className="h-7 w-36 shrink-0 rounded-lg sm:h-8 sm:w-44" />
           </div>
-          <SkeletonShape className="mt-4 h-7 w-36 rounded-lg sm:h-8 sm:w-44" />
 
-          <div className="draft-facts-grid mt-4 flex gap-2.5 overflow-hidden pb-1 sm:grid sm:grid-cols-3 sm:pb-0 md:mt-5 md:border-t md:border-border/65 md:pt-5">
+          {/* The spec strip: one hairline frame of three equal cells. */}
+          <div
+            className="draft-facts-grid mt-5 md:mt-6"
+            style={{ "--facts-n": 3, "--facts-cols": 3, "--facts-cols-compact": 3 } as CSSProperties}
+          >
             {[0, 1, 2].map((index) => (
-              <div
-                key={index}
-                className="flex h-[4.15rem] w-[9.75rem] flex-none items-center gap-2.5 rounded-[1.125rem] border border-border/45 bg-surface-subtle px-3 sm:w-auto md:rounded-xl"
-              >
-                <SkeletonShape className="h-8 w-8 shrink-0 rounded-full bg-foreground/[0.085]" />
-                <span className="min-w-0 flex-1 space-y-2">
-                  <SkeletonShape className="h-3.5 w-3/4 rounded-full" />
-                  <SkeletonShape className="h-2.5 w-full rounded-full" />
-                </span>
+              <div key={index} className="h-[4.6rem] space-y-2.5 px-4 py-4 sm:h-[5.1rem] sm:px-5">
+                <SkeletonShape className="h-2.5 w-2/3 rounded-full" />
+                <SkeletonShape className="h-4 w-1/2 rounded-full sm:h-5" />
               </div>
             ))}
           </div>
 
-          <div className="mt-5 hidden border-t border-border/70 pt-5 md:block">
+          <div className="mt-5 hidden md:block">
             <div className="flex min-h-12 items-center gap-2 rounded-full border border-border/68 bg-card p-1">
               <SkeletonShape className="h-10 w-40 rounded-full" />
               <SkeletonShape className="h-10 flex-1 rounded-full" />

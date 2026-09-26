@@ -110,7 +110,11 @@ test("draft route and data loading render geometry-matched silhouettes", () => {
   assert.match(draftSkeleton, /data-testid="draft-detail-skeleton"/);
   assert.match(draftSkeleton, /draft-mobile-workspace/);
   assert.match(draftSkeleton, /detail-hero-gallery aspect-\[4\/3\]/);
-  assert.match(draftSkeleton, /sm:grid sm:grid-cols-3/);
+  // Facts are one spec strip whose columns come from CSS variables; the
+  // silhouette sets the same variables so it lays out exactly like the page.
+  assert.match(draftPage, /className="draft-facts-grid[^"]*"[\s\S]{0,240}"--facts-cols"/);
+  assert.match(draftSkeleton, /className="draft-facts-grid[^"]*"[\s\S]{0,240}"--facts-cols"/);
+  assert.match(globals, /\.draft-facts-grid \{[\s\S]*?grid-template-columns: repeat\(var\(--facts-cols-compact, 3\)/);
   assert.match(draftSkeleton, /data-testid="draft-detail-skeleton-shell"/);
   assert.match(globals, /\.draft-skeleton-shape \{[\s\S]*?animation: shimmer 1\.65s/);
 });
@@ -136,6 +140,12 @@ test("draft silhouette follows the saved viewing mode and the workspace width", 
   assert.match(detailLayoutStore, /DETAIL_LAYOUT_PRE_HYDRATION_HTML/);
   assert.match(detailLayoutStore, /document\.currentScript\.parentElement\.setAttribute\("data-detail-layout","1"\)/);
   assert.match(draftSkeleton, /suppressHydrationWarning[\s\S]{0,400}<script dangerouslySetInnerHTML=\{DETAIL_LAYOUT_PRE_HYDRATION_HTML\} \/>/);
+  // The script exists only in server HTML and its hydration pass. A client-
+  // created <script> never runs and React logs "Encountered a script tag
+  // while rendering React component" on every in-app navigation.
+  assert.match(detailLayoutStore, /export function useEmitsPreHydrationScript\(\): boolean \{\s*return useSyncExternalStore\(subscribeNever, \(\) => false, \(\) => true\);/);
+  assert.match(draftSkeleton, /\{emitPreHydrationScript \? <script dangerouslySetInnerHTML=\{DETAIL_LAYOUT_PRE_HYDRATION_HTML\} \/> : null\}/);
+  assert.doesNotMatch(draftSkeleton, /^\s*<script dangerouslySetInnerHTML/m);
   // The workspace container query collapses the listing beside a docked Agent
   // by these class names; the silhouette must carry them too.
   assert.match(draftSkeleton, /draft-support-grid[^"]*lg:grid-cols-2/);

@@ -103,8 +103,11 @@ interface Props {
   /**
    * Fullscreen presentation lives inside the lightbox's single glass surface,
    * so it must not introduce a second bordered card around the drawing.
+   * "embedded" is for a host card that already draws the frame (the draft
+   * detail page): no second border or radius, and the legend rows sit on the
+   * host's 1.5rem content inset.
    */
-  presentation?: "card" | "lightbox";
+  presentation?: "card" | "lightbox" | "embedded";
 }
 
 const SVG_W = 400;
@@ -285,7 +288,10 @@ function FloorplanViewer({
       ? convertUnitValue(value, sourceAreaUnit, displayAreaUnit) ?? value
       : value;
     const label = unitLabel(displayAreaUnit);
-    return `${converted.toFixed(1)}${label ? ` ${label}` : ""}`;
+    // The reader's decimal separator ("9,2 m²" in sk/cs/de), like every other
+    // figure on the page; toFixed always printed a point.
+    const formatted = new Intl.NumberFormat(lang, { minimumFractionDigits: 1, maximumFractionDigits: 1 }).format(converted);
+    return `${formatted}${label ? ` ${label}` : ""}`;
   };
 
   const model = useMemo(() => buildLocalModel(draftData), [draftData]);
@@ -334,7 +340,8 @@ function FloorplanViewer({
         <div className={cn("mx-auto aspect-[4/3] w-full animate-pulse bg-muted/55 motion-reduce:animate-none", planClassName)} />
         <div className={cn(
           "min-h-16 space-y-2 px-4 py-3",
-          presentation === "card" ? "border-t border-border/40" : "bg-black/[0.025]",
+          presentation === "embedded" && "px-5 sm:px-6",
+          presentation !== "lightbox" ? "border-t border-border/40" : "bg-black/[0.025]",
         )}>
           <div className="h-3 w-2/5 rounded-full bg-muted/65" />
           <div className="h-3 w-3/5 rounded-full bg-muted/45" />
@@ -350,6 +357,7 @@ function FloorplanViewer({
         model={model.local}
         legendEntries={legendEntries}
         className={planClassName}
+        embedded={presentation === "embedded"}
         measurementMode={measurementMode}
         measurementSession={measurementSession}
       />
@@ -389,8 +397,9 @@ function FloorplanViewer({
           {legendEntries.length > 0 && (
             <div className={cn(
               "px-4 py-2.5",
+              presentation === "embedded" && "px-5 py-3 sm:px-6",
               railOnWide && "lg:flex-1 lg:overflow-y-auto lg:py-4",
-              presentation === "card"
+              presentation !== "lightbox"
                 ? cn("border-t border-border/40", railOnWide && "lg:border-t-0")
                 : cn("bg-black/[0.025] shadow-[0_-14px_32px_-32px_rgba(0,0,0,0.45)] backdrop-blur-xl sm:px-6", railOnWide && "lg:bg-transparent lg:shadow-none"),
             )}>
@@ -418,8 +427,9 @@ function FloorplanViewer({
           {totalArea > 0 && (
             <div className={cn(
               "flex items-center justify-between px-4 py-3",
+              presentation === "embedded" && "px-5 py-3.5 sm:px-6",
               railOnWide && "lg:mt-auto lg:border-t lg:border-border/40",
-              presentation === "card"
+              presentation !== "lightbox"
                 ? "border-t border-border/40"
                 : cn("bg-black/[0.035] shadow-[inset_0_1px_0_rgba(0,0,0,0.045)] sm:px-6", railOnWide && "lg:bg-transparent lg:shadow-none"),
             )}>
@@ -702,12 +712,15 @@ function LocalPlan({
   className,
   measurementMode,
   measurementSession,
+  embedded = false,
 }: {
   model: LocalModel;
   legendEntries: LegendEntry[];
   className?: string;
   measurementMode?: "distance" | "area" | null;
   measurementSession?: number;
+  /** Compass on the host card's 1.5rem content line instead of 0.875rem. */
+  embedded?: boolean;
 }) {
   const maskId = useId();
   const { proj, svgH } = model;
@@ -1042,7 +1055,7 @@ function LocalPlan({
 
     {/* Compass chip (iOS FloorplanCompassChip) — fixed-size HTML overlay in
         the card corner; the dial rotates so N points at true north */}
-    <svg viewBox="0 0 36 36" className="pointer-events-none absolute right-3.5 top-3.5 h-9 w-9" xmlns="http://www.w3.org/2000/svg">
+    <svg viewBox="0 0 36 36" className={cn("pointer-events-none absolute h-9 w-9", embedded ? "right-4 top-4 sm:right-6 sm:top-6" : "right-3.5 top-3.5")} xmlns="http://www.w3.org/2000/svg">
       <circle cx="18" cy="18" r="17.4" fill="white" stroke={STROKE_COLOR} strokeOpacity={0.7} strokeWidth={1.2} />
       <g transform={`rotate(${model.compassRotationDeg} 18 18)`}>
         <polygon points="18,7.2 13.5,18 22.5,18" fill={STROKE_COLOR} />

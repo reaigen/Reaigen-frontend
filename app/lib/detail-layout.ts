@@ -32,6 +32,21 @@ export const DETAIL_LAYOUT_PRE_HYDRATION_HTML = {
     `document.currentScript.parentElement.setAttribute("data-detail-layout","1")}catch(e){}`,
 };
 
+const subscribeNever = () => () => {};
+
+/**
+ * True only for the server render and the hydration pass that adopts its
+ * HTML; false for every client-created render. The pre-hydration script is
+ * emitted only then: in server HTML it runs as the page streams, while a
+ * <script> React creates on the client (an in-app navigation to a loading
+ * state) never executes and makes React log "Encountered a script tag while
+ * rendering React component". After hydration the snapshot flips and the
+ * already-executed script is simply dropped.
+ */
+export function useEmitsPreHydrationScript(): boolean {
+  return useSyncExternalStore(subscribeNever, () => false, () => true);
+}
+
 // Storage can be unavailable (private mode, quota) — the chosen mode still has
 // to hold for this page, so the last written value lives here as well.
 let current: DetailLayout | null = null;

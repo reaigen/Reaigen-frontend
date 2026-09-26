@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState, use, type ReactNode } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, use, type CSSProperties, type ReactNode } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import dynamic from "next/dynamic";
@@ -28,12 +28,13 @@ import { FormattedDescription } from "../../components/formatted-description";
 import {
   ArrowLeftIcon,
   ArrowRightIcon,
+  CheckIcon,
+  ChevronDownIcon,
   DocumentIcon,
   EditIcon,
   FloorplanIcon,
   InfoIcon,
   ImageIcon,
-  MapPinIcon,
   PlusIcon,
   PriceIcon,
   SearchIcon,
@@ -43,7 +44,6 @@ import {
   VideoIcon,
   VersionsIcon,
 } from "../../components/icons";
-import { StatusPill } from "../../components/status-pill";
 import { selectShareableTour } from "../../lib/tour-sharing";
 import {
   REAI_VIEWER_ACTION_EVENT,
@@ -181,6 +181,12 @@ function currencyIcon(
 
 // ── Facts grid (hero stats like iOS) ──────────────────────────────────────
 
+/** Columns the last cell of a `count`-cell grid spans so its row is complete. */
+function lastRowSpan(count: number, columns: number) {
+  const remainder = columns > 0 ? count % columns : 0;
+  return remainder === 0 ? 1 : columns - remainder + 1;
+}
+
 /**
  * `path` is the canonical field address the Agent acts on when this parameter
  * is dragged into the Agent window. It is optional: a derived or composite
@@ -200,7 +206,10 @@ function buildFacts(d: DraftDetailItem, lang: string, units: readonly UnitLookup
   // Area: show preferred, with original as sub if different unit
   const storedAreaUnit = resolveUnit(units, d.area_unit, "AREA")
     ?? resolveUnit(units, d.area_unit_code, "AREA")
-    ?? resolveUnit(units, d.area_unit_display, "AREA");
+    ?? resolveUnit(units, d.area_unit_display, "AREA")
+    // A listing saved without a unit (older imports) still means the
+    // catalog's base area unit; a bare "9,3" reads as a broken value.
+    ?? baseUnitForCategory(units, "AREA");
   const preferredAreaUnit = resolveUnit(units, d.area_preferred_unit, "AREA");
   const usingPreferredArea = d.area_preferred != null;
   const area = usingPreferredArea ? d.area_preferred : d.area;
@@ -229,11 +238,12 @@ function buildRows(d: DraftDetailItem, lang: string, units: readonly UnitLookup[
   type LK = import("../../lib/locales/en").LocaleKey;
   const storedAreaUnit = resolveUnit(units, d.area_unit, "AREA")
     ?? resolveUnit(units, d.area_unit_code, "AREA")
-    ?? resolveUnit(units, d.area_unit_display, "AREA");
+    ?? resolveUnit(units, d.area_unit_display, "AREA")
+    ?? baseUnitForCategory(units, "AREA");
   const areaUnit = d.area_preferred != null
     ? resolveUnit(units, d.area_preferred_unit, "AREA")
     : storedAreaUnit;
-  const storedLotUnit = resolveUnit(units, d.lot_size_unit, "AREA");
+  const storedLotUnit = resolveUnit(units, d.lot_size_unit, "AREA") ?? baseUnitForCategory(units, "AREA");
   const lotUnit = d.lot_size_preferred != null
     ? resolveUnit(units, d.lot_size_preferred_unit, "AREA")
     : storedLotUnit;
@@ -370,8 +380,9 @@ function buildRows(d: DraftDetailItem, lang: string, units: readonly UnitLookup[
 
 // ── Monthly costs builder ────────────────────────────────────────────────
 
-function buildMonthlyCosts(d: DraftDetailItem, lang: string, units: readonly UnitLookup[]): Row[] {
+function buildMonthlyCosts(d: DraftDetailItem, lang: string, units: readonly UnitLookup[]): { rows: Row[]; total: string | null } {
   const rows: Row[] = [];
+  let sum = 0;
   const currencyUnit = resolveUnit(units, d.currency, "CURRENCY");
   const currencyCode = currencyUnit?.code
     ?? (typeof d.currency === "string" && /^[a-z]{3}$/i.test(d.currency.trim()) ? d.currency : null);
@@ -380,6 +391,7 @@ function buildMonthlyCosts(d: DraftDetailItem, lang: string, units: readonly Uni
     if (value == null || value === "") return;
     const n = Number(value);
     if (!Number.isFinite(n) || n <= 0) return;
+    sum += n;
     rows.push({ icon: moneyIcon, label, value: fmtMoney(n, currencyCode, lang)! });
   };
   type LK = import("../../lib/locales/en").LocaleKey;
@@ -394,9 +406,11 @@ function buildMonthlyCosts(d: DraftDetailItem, lang: string, units: readonly Uni
     ["monthly_other", "draft.monthlyOther"],
   ];
   for (const [k, tKey] of monthlyFields) {
-    push(t(tKey, lang), sec(d, "pricing_extra", k));
+    // The section heading already says "monthly"; some locales repeat it as a
+    // "Monthly: …" prefix that is only needed where the label stands alone.
+    push(t(tKey, lang).replace(/^[^:]{1,24}:\s*/, ""), sec(d, "pricing_extra", k));
   }
-  return rows;
+  return { rows, total: sum > 0 ? fmtMoney(sum, currencyCode, lang) : null };
 }
 
 /** Keys already shown as attribute rows — exclude from feature chips to avoid duplication */
@@ -473,7 +487,8 @@ function ExpandableDescription({ text, lang }: { text: string; lang: string }) {
     const measure = () => {
       const styles = window.getComputedStyle(node);
       const lineHeight = Number.parseFloat(styles.lineHeight);
-      const collapsedHeight = Number.isFinite(lineHeight) ? lineHeight * 5 : 123;
+      const lines = window.matchMedia("(min-width: 1024px)").matches ? 7 : 5;
+      const collapsedHeight = Number.isFinite(lineHeight) ? lineHeight * lines : 123;
       setCanExpand(node.scrollHeight > collapsedHeight + 1);
     };
 
@@ -490,26 +505,33 @@ function ExpandableDescription({ text, lang }: { text: string; lang: string }) {
   }, [text]);
 
   return (
-    <div className="detail-card px-4 py-4 sm:px-6 sm:py-5">
+    <div className="detail-card flex flex-1 flex-col px-5 py-5 sm:px-6">
       <div
         ref={textRef}
         className={cn(
           // Listing copy, not chrome — agents paste this into portals and mail.
-          "select-text overflow-hidden whitespace-pre-line text-[15px] leading-[1.7] text-foreground/88 transition-[max-height] duration-300 sm:leading-[1.75]",
-          expanded ? "max-h-[200em]" : "max-h-[8.75em]",
+          "select-text overflow-hidden whitespace-pre-line text-[15px] leading-[1.7] text-foreground/85 transition-[max-height] duration-300 sm:leading-[1.75]",
+          expanded ? "max-h-[200em]" : "max-h-[8.5em] lg:max-h-[12.25em]",
+          // A cut-off sentence fades out instead of stopping mid-line.
+          canExpand && !expanded && "[mask-image:linear-gradient(to_bottom,#000_62%,transparent)]",
         )}
       >
         <FormattedDescription text={text} />
       </div>
       {canExpand ? (
-        <button
-          type="button"
-          aria-expanded={expanded}
-          onClick={() => setExpanded((value) => !value)}
-          className="-ml-2 mt-3 rounded-full px-2.5 py-1.5 text-[12px] font-semibold text-foreground/55 transition-colors hover:bg-foreground/[0.045] hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
-        >
-          {expanded ? t("draft.showLess", lang) : t("draft.showMore", lang)}
-        </button>
+        // Pinned to the card's foot, so a card stretched beside a taller
+        // details card keeps its control where the eye expects it.
+        <div className="mt-auto pt-3.5">
+          <button
+            type="button"
+            aria-expanded={expanded}
+            onClick={() => setExpanded((value) => !value)}
+            className="detail-action-chip focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/25"
+          >
+            {expanded ? t("draft.showLess", lang) : t("draft.showMore", lang)}
+            <ChevronDownIcon size={12} className={cn("transition-transform", expanded && "rotate-180")} />
+          </button>
+        </div>
       ) : null}
     </div>
   );
@@ -798,10 +820,14 @@ export default function DraftPreviewPage({
   const facts = useMemo(() => draft ? buildFacts(draft, lang, unitCatalog) : [], [draft, lang, unitCatalog]);
   const rows = useMemo(() => draft ? buildRows(draft, lang, unitCatalog) : [], [draft, lang, unitCatalog]);
   const features = useMemo(() => draft ? getFeatureChips(draft, lang) : [], [draft, lang]);
-  const monthlyCosts = useMemo(
-    () => draft ? buildMonthlyCosts(draft, lang, unitCatalog) : [],
+  const monthly = useMemo(
+    () => draft ? buildMonthlyCosts(draft, lang, unitCatalog) : { rows: [], total: null },
     [draft, lang, unitCatalog],
   );
+  // The monthly total always sits with the price. A breakdown of one or two
+  // items is not worth a full-width section of its own; from three up the
+  // itemised table appears as well.
+  const monthlyCosts = monthly.rows.length >= 3 ? monthly.rows : [];
 
   if (isLoading || !user) {
     return <DraftDetailSkeleton label={t("common.loading", "en")} standalone />;
@@ -865,6 +891,22 @@ export default function DraftPreviewPage({
   const origPrice = fmtMoney(draft.price, storedCurrency?.code, lang);
   const price = prefPrice || origPrice;
   const showOrigPrice = prefPrice && origPrice && preferredCurrency?.id !== storedCurrency?.id;
+  // Price per area unit, in the currency and unit the facts strip shows —
+  // the figure buyers compare listings by, derived rather than typed.
+  const rateAreaUnit = draft.area_preferred != null
+    ? resolveUnit(unitCatalog, draft.area_preferred_unit, "AREA")
+    : resolveUnit(unitCatalog, draft.area_unit, "AREA")
+      ?? resolveUnit(unitCatalog, draft.area_unit_code, "AREA")
+      ?? resolveUnit(unitCatalog, draft.area_unit_display, "AREA")
+      ?? baseUnitForCategory(unitCatalog, "AREA");
+  const rateAreaValue = Number(draft.area_preferred ?? draft.area);
+  const ratePriceValue = Number(prefPrice ? draft.price_preferred : draft.price);
+  const rateMoney = rateAreaUnit && rateAreaValue > 0 && ratePriceValue > 0
+    ? fmtMoney(Math.round(ratePriceValue / rateAreaValue), (prefPrice ? preferredCurrency : storedCurrency)?.code, lang)
+    : null;
+  const pricePerArea = rateMoney && unitLabel(rateAreaUnit) ? `${rateMoney} / ${unitLabel(rateAreaUnit)}` : null;
+  const monthlyNote = monthly.total ? `${t("draft.monthlyCosts", lang)} ${monthly.total}` : null;
+  const priceNote = [pricePerArea, monthlyNote, showOrigPrice ? origPrice : null].filter(Boolean).join(" · ");
 
   const address = draft.display_address || [draft.city, draft.state, draft.country].filter(Boolean).join(", ");
   // Django may already return a complete street address in `address`. Do not
@@ -899,29 +941,45 @@ export default function DraftPreviewPage({
     draft.floorplan_id ||
     draft.draft_data?.some((d) => d.data_key === "captured_room_json" || d.data_key === "wall_graph_json")
   );
-  const detailsLong = rows.length > 8;
-  const visibleRows = detailsExpanded ? rows : rows.slice(0, 8);
-  const hasNarrative = Boolean(description || translationPending || hasFloorplan);
-  const hasSupportingDetails = rows.length > 0 || features.length > 0 || monthlyCosts.length > 0;
-  const nonFloorCardCount = Number(Boolean(description || translationPending))
-    + Number(rows.length > 0)
+  // A handful of details is not a section. Beside a long description two
+  // values left a card with a hole under it, so up to four of them join the
+  // key facts in the spec strip instead.
+  const detailsInStrip = rows.length > 0 && rows.length <= 4;
+  const sectionRows = detailsInStrip ? [] : rows;
+  const stripFacts: Fact[] = detailsInStrip
+    ? [...facts, ...rows.map(({ icon, label, value, path }) => ({ icon, label, value, path }))]
+    : facts;
+  const stripCols = stripFacts.length <= 6 ? stripFacts.length : Math.ceil(stripFacts.length / 2);
+  const stripColsCompact = stripFacts.length === 4 ? 2 : Math.min(stripFacts.length, 3);
+  const detailsLong = sectionRows.length > 8;
+  const visibleRows = detailsExpanded ? sectionRows : sectionRows.slice(0, 8);
+  const hasDescription = Boolean(description || translationPending);
+  const hasNarrative = Boolean(hasDescription || hasFloorplan);
+  const hasSupportingDetails = sectionRows.length > 0 || features.length > 0 || monthlyCosts.length > 0;
+  const nonFloorCardCount = Number(hasDescription)
+    + Number(sectionRows.length > 0)
     + Number(features.length > 0)
     + Number(monthlyCosts.length > 0);
   const detailCardCount = nonFloorCardCount + Number(hasFloorplan);
-  const sparseNarrativeDetails = Boolean(description || translationPending)
-    && rows.length <= 1
+  const sparseNarrativeDetails = hasDescription
+    && sectionRows.length === 0
     && features.length === 0
     && monthlyCosts.length === 0
     && !hasFloorplan;
-  // Cards flow in pairs on the lg two-column grid, but the floorplan always
-  // spans the full row. Any card left without a row partner spans too —
-  // nothing sits half-width next to dead space.
-  const supportingCount = Number(rows.length > 0) + Number(features.length > 0) + Number(monthlyCosts.length > 0);
-  const descriptionSpans = nonFloorCardCount === 1 || hasFloorplan;
-  const flowCount = (hasFloorplan ? 0 : Number(Boolean(description || translationPending))) + supportingCount;
-  const lastSupportingKey = monthlyCosts.length > 0 ? "costs" : features.length > 0 ? "features" : rows.length > 0 ? "rows" : null;
+  // Row pairing on the lg two-column grid. The description sits beside the
+  // details only when they are long enough to match its height (six or more
+  // values, three rows of cells); otherwise it takes its own full row. The
+  // floorplan always spans. The remaining cards pair up, and the last one of
+  // an odd count spans — nothing sits half-width next to dead space.
+  const descriptionPairsWithRows = hasDescription && !hasFloorplan && sectionRows.length >= 6;
+  const descriptionSpans = hasDescription && !descriptionPairsWithRows;
+  const flowKeys = [
+    ...(sectionRows.length > 0 && !descriptionPairsWithRows ? ["rows"] : []),
+    ...(features.length > 0 ? ["features"] : []),
+    ...(monthlyCosts.length > 0 ? ["costs"] : []),
+  ];
   const supportingSpans = (key: string) =>
-    nonFloorCardCount === 1 || (flowCount % 2 === 1 && lastSupportingKey === key);
+    flowKeys.length % 2 === 1 && flowKeys[flowKeys.length - 1] === key;
 
 
   return (
@@ -997,18 +1055,26 @@ export default function DraftPreviewPage({
             <button
               type="button"
               onClick={() => setMediaOpen(true)}
-              className="group w-full bg-transparent p-0 text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring md:border-t md:border-border/60 md:bg-card md:p-4"
+              className="group w-full bg-transparent p-0 text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring md:border-t md:border-border/60 md:bg-card md:px-6 md:py-5"
             >
-              <span className="flex min-h-40 min-w-0 items-center justify-center gap-4 rounded-[1.25rem] border border-dashed border-border/80 bg-surface-subtle p-5 text-center transition-[background-color,border-color] group-hover:border-foreground/20 group-hover:bg-secondary sm:p-7">
-                <span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-card text-foreground/55 ring-1 ring-inset ring-border/70">
-                  <ImageIcon size={21} />
-                </span>
-                <span className="min-w-0 text-left">
-                  <span className="block text-[18px] font-semibold tracking-[-0.02em]">{t("draft.media.emptyTitle", lang)}</span>
-                  <span className="mt-1.5 block max-w-xl text-[13px] leading-relaxed text-foreground/58">{t("draft.media.emptyBody", lang)}</span>
-                  <span className="mt-4 inline-flex min-h-10 items-center gap-2 rounded-full border border-border/65 bg-card px-4 text-[13px] font-semibold text-foreground transition-colors group-hover:border-foreground/20 group-hover:bg-muted/55">
-                    <PlusIcon size={15} /> {t("draft.media.addPhotos", lang)}
+              {/* One quiet row with the action at its end: the prompt is an
+                  invitation, not a second hero competing with the listing. */}
+              {/* Inside the desktop card this is a plain row, so the button's
+                  right edge lands on the same 24px inset as the action rail
+                  above it. A phone has no outer card; there it keeps its own
+                  dashed frame. */}
+              <span className="flex min-w-0 flex-col gap-4 rounded-[1.25rem] border border-dashed border-border/75 bg-surface-subtle/55 p-4 transition-[background-color,border-color] group-hover:border-foreground/20 group-hover:bg-surface-subtle sm:flex-row sm:items-center sm:gap-5 sm:px-5 md:rounded-none md:border-0 md:bg-transparent md:p-0 md:group-hover:bg-transparent">
+                <span className="flex min-w-0 flex-1 items-center gap-4">
+                  <span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-card text-foreground/55 shadow-[0_1px_2px_rgba(0,0,0,0.05)] ring-1 ring-inset ring-border/60">
+                    <ImageIcon size={20} />
                   </span>
+                  <span className="min-w-0">
+                    <span className="block text-[15px] font-semibold tracking-[-0.015em]">{t("draft.media.emptyTitle", lang)}</span>
+                    <span className="mt-1 block max-w-2xl text-[13px] leading-relaxed text-foreground/58">{t("draft.media.emptyBody", lang)}</span>
+                  </span>
+                </span>
+                <span className="inline-flex min-h-10 shrink-0 items-center justify-center gap-2 self-stretch rounded-full border border-border/65 bg-card px-4 text-[13px] font-semibold text-foreground shadow-[0_1px_2px_rgba(0,0,0,0.045)] transition-colors group-hover:border-foreground/20 sm:self-center">
+                  <PlusIcon size={15} /> {t("draft.media.addPhotos", lang)}
                 </span>
               </span>
             </button>
@@ -1140,74 +1206,111 @@ export default function DraftPreviewPage({
               "order-first relative z-10 min-w-0 bg-transparent px-1 pb-5 pt-1 md:bg-card md:p-6",
             )}
           >
-            <div className="flex min-w-0 flex-wrap items-center gap-2">
-                {offerType ? (
-                  <StatusPill tone="strong" className="uppercase tracking-[0.09em]">
+            {/* One quiet meta line above the title instead of three competing
+                pills: the offer type in small caps, then each state as a dot
+                and a word. Colour lives only in the dots. */}
+            <div className="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1.5 text-[12px] font-medium leading-5 text-foreground/62 sm:text-[13px]">
+              {offerType ? (
+                <>
+                  <span className="text-[11px] font-semibold uppercase tracking-[0.14em] text-foreground/85 sm:text-[11.5px]">
                     {enumT("offer", offerType, lang)}
-                  </StatusPill>
-                ) : null}
-                <StatusPill tone={draft.is_complete ? "success" : "neutral"} dot>
-                  {t(draft.is_complete ? "dashboard.listingComplete" : "dashboard.listingDraft", lang)}
-                </StatusPill>
-                {hasTour ? <StatusPill tone="success" dot>{t("dashboard.tourReady", lang)}</StatusPill> : null}
+                  </span>
+                  <span aria-hidden="true" className="h-3.5 w-px bg-border" />
+                </>
+              ) : null}
+              <span className="inline-flex items-center gap-1.5">
+                <span aria-hidden="true" className={cn("h-1.5 w-1.5 rounded-full", draft.is_complete ? "bg-success" : "bg-foreground/30")} />
+                {t(draft.is_complete ? "dashboard.listingComplete" : "dashboard.listingDraft", lang)}
+              </span>
+              {hasTour ? (
+                <span className="inline-flex items-center gap-1.5">
+                  <span aria-hidden="true" className="h-1.5 w-1.5 rounded-full bg-success" />
+                  {t("dashboard.tourReady", lang)}
+                </span>
+              ) : null}
             </div>
 
-            <div className="mt-3">
-              <h1 className="min-w-0 select-text text-[30px] font-semibold leading-[1.06] tracking-[-0.035em] sm:text-[34px] lg:text-[40px]">
-                {draft.title || t("dashboard.untitled", lang)}
-              </h1>
-            </div>
-            {address && (
-              <p className="mt-2 flex select-text items-start gap-2 text-[14px] leading-relaxed text-foreground/65 sm:text-[15px]">
-                <MapPinIcon size={15} className="mt-0.5 shrink-0 text-foreground/50" />
-                <span>{address}</span>
-              </p>
-            )}
-            {price && (
-                <p className="mt-3 select-text text-[24px] font-semibold tracking-[-0.025em] tabular-nums sm:mt-4 sm:text-[28px]">
-                {price}
-                {showOrigPrice && (
-                  <span className="ml-2 text-[12px] font-normal tracking-normal text-muted-foreground tabular-nums">{origPrice}</span>
+            {/* Title and address on the left, price on the right from lg up:
+                the identity reads in one glance instead of a tall stack. */}
+            <div className="mt-3 flex min-w-0 flex-col gap-3 lg:flex-row lg:items-end lg:justify-between lg:gap-10">
+              <div className="min-w-0">
+                <h1 className="min-w-0 select-text text-[30px] font-semibold leading-[1.06] tracking-[-0.035em] sm:text-[34px] lg:text-[40px]">
+                  {draft.title || t("dashboard.untitled", lang)}
+                </h1>
+                {address && (
+                  <p className="mt-2.5 flex select-text items-center gap-1.5 text-[14px] leading-relaxed text-foreground/60 sm:text-[15px]">
+                    <svg aria-hidden="true" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" className="shrink-0 text-foreground/45">
+                      <path d="M20 10c0 5-5.5 10.2-7.4 11.8a1 1 0 0 1-1.2 0C9.5 20.2 4 15 4 10a8 8 0 0 1 16 0Z" />
+                      <circle cx="12" cy="10" r="3" />
+                    </svg>
+                    <span className="min-w-0">{address}</span>
+                  </p>
                 )}
-              </p>
-            )}
+              </div>
+              {price && (
+                <p className="shrink-0 select-text text-[24px] font-semibold leading-none tracking-[-0.025em] tabular-nums sm:text-[28px] lg:pb-1 lg:text-right">
+                  {price}
+                  {priceNote && (
+                    <span className="mt-2 block text-[12px] font-medium tracking-normal text-foreground/50 tabular-nums sm:text-[13px]">{priceNote}</span>
+                  )}
+                </p>
+              )}
+            </div>
 
-            {facts.length > 0 && (
-              <div className="draft-facts-grid mt-4 flex gap-2.5 overflow-x-auto pb-1 scrollbar-hide sm:grid sm:grid-cols-3 sm:overflow-visible sm:pb-0 md:mt-5 md:border-t md:border-border/65 md:pt-5">
-                {facts.map((fact) => (
-                  <button
-                    key={fact.label}
-                    type="button"
-                    disabled={!fact.path}
-                    aria-pressed={Boolean(fact.path && agentField?.draftId === draftId && agentField.field.path === fact.path)}
-                    onClick={() => fact.path && setAgentField({ draftId, field: { kind: "field", path: fact.path, label: fact.label, value: fact.value } })}
-                    // Parameters with a canonical field behind them can be
-                    // dragged into the Agent window to be asked about or edited.
-                    draggable={Boolean(fact.path)}
-                    onDragStart={(event) => {
-                      if (!fact.path) return;
-                      writeDragItem(event.dataTransfer, {
-                        kind: "field",
-                        path: fact.path,
-                        label: fact.label,
-                        value: fact.value,
-                      });
-                    }}
-                    className={cn(
-                      "flex w-[9.75rem] flex-none items-center gap-2.5 rounded-[1.25rem] border border-border/45 bg-card px-3 py-2.5 sm:w-auto sm:min-w-0 md:border-0 md:bg-surface-subtle md:ring-1 md:ring-inset md:ring-border/35",
-                      fact.path && "cursor-grab text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring active:cursor-grabbing",
-                      agentField?.draftId === draftId && agentField.field.path === fact.path && "ring-2 ring-foreground/40",
-                    )}
-                  >
-                    <span className="detail-icon-chip">
-                      {fact.icon}
-                    </span>
-                    <span className="min-w-0 leading-tight">
-                      <span className="block select-text truncate text-[14px] font-semibold tabular-nums">{fact.value}</span>
-                      <span className="mt-1 block truncate text-[11px] font-medium text-foreground/55">{fact.label}{fact.sub ? ` · ${fact.sub}` : ""}</span>
-                    </span>
-                  </button>
-                ))}
+            {stripFacts.length > 0 && (
+              <div
+                className="draft-facts-grid mt-5 md:mt-6"
+                style={{
+                  "--facts-n": stripFacts.length,
+                  // One row up to six cells; beyond that two even rows.
+                  "--facts-cols": stripCols,
+                  "--facts-cols-compact": stripColsCompact,
+                  // The last cell closes its row, so no row ends in a hole.
+                  "--facts-last-span": lastRowSpan(stripFacts.length, stripCols),
+                  "--facts-last-span-compact": lastRowSpan(stripFacts.length, stripColsCompact),
+                } as CSSProperties}
+              >
+                {stripFacts.map((fact, index) => {
+                  const selected = Boolean(fact.path && agentField?.draftId === draftId && agentField.field.path === fact.path);
+                  return (
+                    <button
+                      key={`${fact.label}-${index}`}
+                      type="button"
+                      disabled={!fact.path}
+                      aria-pressed={selected}
+                      onClick={() => fact.path && setAgentField({ draftId, field: { kind: "field", path: fact.path, label: fact.label, value: fact.value } })}
+                      // Parameters with a canonical field behind them can be
+                      // dragged into the Agent window to be asked about or edited.
+                      draggable={Boolean(fact.path)}
+                      onDragStart={(event) => {
+                        if (!fact.path) return;
+                        writeDragItem(event.dataTransfer, {
+                          kind: "field",
+                          path: fact.path,
+                          label: fact.label,
+                          value: fact.value,
+                        });
+                      }}
+                      className={cn(
+                        "flex min-w-0 flex-col items-start justify-between px-3.5 py-3.5 text-left transition-colors disabled:cursor-default sm:justify-center sm:px-6 sm:py-4",
+                        fact.path && "draft-cell cursor-grab active:cursor-grabbing",
+                      )}
+                    >
+                      {/* Labels wrap to two lines on a phone rather than
+                          truncating to "Parkovaci…"; the value stays one line. */}
+                      <span className="flex min-w-0 max-w-full items-start gap-1.5 text-[11px] font-medium leading-4 text-foreground/52 sm:items-center sm:text-[12px] [&_svg]:mt-px [&_svg]:h-3.5 [&_svg]:w-3.5 sm:[&_svg]:mt-0">
+                        {fact.icon}
+                        <span className="line-clamp-2 min-w-0 break-words sm:line-clamp-1">{fact.label}</span>
+                      </span>
+                      <span className="mt-1.5 block max-w-full select-text truncate text-[17px] font-semibold leading-[22px] tracking-[-0.015em] tabular-nums sm:text-[19px] sm:leading-6">
+                        {fact.value}
+                      </span>
+                      {fact.sub ? (
+                        <span className="mt-0.5 block max-w-full truncate text-[11px] text-foreground/45 tabular-nums">{fact.sub}</span>
+                      ) : null}
+                    </button>
+                  );
+                })}
               </div>
             )}
 
@@ -1215,7 +1318,7 @@ export default function DraftPreviewPage({
                 visual centre. The tour remains the dark primary segment; the
                 authoring tools divide the remaining width evenly instead of
                 forming a second, unrelated capsule on the opposite edge. */}
-            <div className="mt-5 hidden border-t border-border/65 pt-5 md:block">
+            <div className="mt-5 hidden md:block">
               {/* No fixed height: h-12 gave the 40px buttons a 38px inner box
                   (p-1 wins over the class padding), so the active pill clipped
                   against the capsule instead of floating centred in it. */}
@@ -1239,11 +1342,13 @@ export default function DraftPreviewPage({
                   )}
                   {hasTour ? <span aria-hidden="true" className="draft-action-divider mx-1 h-6 w-px shrink-0 bg-border/70" /> : null}
                   <div className="draft-action-items flex min-w-[25rem] flex-1 items-center gap-0.5">
-                    <Button type="button" data-testid="draft-media-open" variant="ghost" size="sm" className="h-10 min-w-0 flex-1 shrink-0 rounded-full" aria-label={t("draft.media.manage", lang)} onClick={() => setMediaOpen(true)}>
-                      <ImageIcon size={15} /> {t("draft.media.gallery", lang)}
-                    </Button>
+                    {/* Edit leads: without a tour it is the primary action and
+                        belongs at the rail's start, not as a dark pill mid-row. */}
                     <Button type="button" data-testid="draft-editor-open" variant={hasTour ? "ghost" : "default"} size="sm" className="h-10 min-w-0 flex-1 shrink-0 rounded-full" onClick={() => { setDescriptionEditRequested(false); setEditorOpen(true); }}>
                       <EditIcon size={14} /> {t("shareDialog.edit", lang)}
+                    </Button>
+                    <Button type="button" data-testid="draft-media-open" variant="ghost" size="sm" className="h-10 min-w-0 flex-1 shrink-0 rounded-full" aria-label={t("draft.media.manage", lang)} onClick={() => setMediaOpen(true)}>
+                      <ImageIcon size={15} /> {t("draft.media.gallery", lang)}
                     </Button>
                     <Button type="button" data-testid="draft-sharing-open" variant="ghost" size="sm" className="h-10 min-w-0 flex-1 shrink-0 rounded-full" onClick={() => handleSharingOpenChange(true)}>
                       <ShareIcon size={14} /> {t("draft.share", lang)}
@@ -1276,6 +1381,8 @@ export default function DraftPreviewPage({
             "draft-support-grid",
             "mt-6 grid gap-6 md:mt-8 md:gap-7 lg:mt-10",
             // The focused mode stacks these by the attribute rule on the root.
+            // Natural heights: stretching a short details card to a long
+            // description only inflated its cells with empty air.
             detailCardCount > 1 && !sparseNarrativeDetails && "lg:grid-cols-2 lg:items-start",
           )}>
             {hasNarrative && (
@@ -1286,7 +1393,7 @@ export default function DraftPreviewPage({
                 className="draft-support-contents min-w-0 space-y-7 lg:contents lg:space-y-0"
               >
                 {(description || translationPending) && (
-                  <section style={{ animationDelay: "0ms" }} className={cn("draft-section-enter", descriptionSpans && "lg:col-span-2")}>
+                  <section style={{ animationDelay: "0ms" }} className={cn("draft-section-enter flex flex-col", descriptionSpans && "lg:col-span-2")}>
                     <h2 className="detail-section-title flex-wrap">
                       <span className="detail-icon-chip"><DocumentIcon size={16} /></span>
                       {t("draft.description", lang)}
@@ -1326,7 +1433,7 @@ export default function DraftPreviewPage({
                           href={`/draft/${draftId}/floorplan`}
                           className="detail-action-chip ml-auto focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/25"
                         >
-                          {t("floorplan.edit", lang)}
+                          <EditIcon size={13} /> {t("floorplan.edit", lang)}
                         </Link>
                       )}
                     </h2>
@@ -1350,7 +1457,10 @@ export default function DraftPreviewPage({
                       keeps the full column and stays flush with its siblings.
                       Fullscreen is still where the plan gets to be large.
                     */}
-                    <div className="detail-card-lg relative w-full overflow-hidden">
+                    {/* Opaque card: the drawing paints its own white sheet, and on
+                        the translucent card material that sheet showed as a
+                        lighter box with edges on both sides of the plan. */}
+                    <div className="detail-card-lg relative w-full overflow-hidden bg-card">
                       <FloorplanViewer
                         draftData={draft.draft_data ?? []}
                         floorplanId={draft.floorplan_id}
@@ -1358,6 +1468,7 @@ export default function DraftPreviewPage({
                         units={unitCatalog}
                         targetAreaUnit={draft.area_preferred_unit ?? draft.area_unit}
                         planClassName="max-h-[min(56vh,32rem)]"
+                        presentation="embedded"
                       />
                       <button
                         type="button"
@@ -1391,67 +1502,81 @@ export default function DraftPreviewPage({
                 // row partner — the grid gap alone spaces the lg layout.
                 className="draft-support-contents min-w-0 space-y-7 lg:contents lg:space-y-0"
               >
-                {rows.length > 0 && (
-                  <section style={{ animationDelay: "90ms" }} className={cn("draft-section-enter", "draft-details-section", supportingSpans("rows") && "lg:col-span-2")}>
+                {sectionRows.length > 0 && (
+                  <section style={{ animationDelay: "90ms" }} className={cn("draft-section-enter", "draft-details-section flex flex-col", supportingSpans("rows") && "lg:col-span-2")}>
                     <h2 className="detail-section-title">
                       <span className="detail-icon-chip"><InfoIcon size={16} /></span>
                       {t("draft.details", lang)}
                     </h2>
-                    <div className={cn("draft-detail-grid grid grid-cols-1 gap-2.5", visibleRows.length > 1 && "sm:grid-cols-2")}>
-                      {visibleRows.map((row, index) => (
-                        <button
-                          key={`${row.label}-${index}`}
-                          type="button"
-                          disabled={!row.path}
-                          aria-pressed={Boolean(row.path && agentField?.draftId === draftId && agentField.field.path === row.path)}
-                          onClick={() => row.path && setAgentField({ draftId, field: { kind: "field", path: row.path, label: row.label, value: row.value } })}
-                          draggable={Boolean(row.path)}
-                          onDragStart={(event) => {
-                            if (!row.path) return;
-                            writeDragItem(event.dataTransfer, {
-                              kind: "field",
-                              path: row.path,
-                              label: row.label,
-                              value: row.value,
-                            });
-                          }}
-                          className={cn(
-                            // A button centres its content; every card reads left of its icon,
-                            // whether or not the value can be dragged to the agent.
-                            "detail-card group flex min-w-0 items-center gap-3 px-3.5 py-3.5 text-left transition-[border-color,box-shadow,transform]",
-                            row.path && "cursor-grab hover:-translate-y-px hover:border-foreground/20 hover:shadow-card focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring active:cursor-grabbing",
-                            agentField?.draftId === draftId && agentField.field.path === row.path && "ring-2 ring-foreground/40",
-                          )}
-                        >
-                          <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full border border-border/55 bg-surface-subtle/75 text-foreground/62 shadow-[inset_0_1px_0_rgba(255,255,255,0.82)]">
-                            {row.icon}
-                          </span>
-                          <span className="min-w-0 flex-1 leading-tight">
-                            <span className="block break-words text-[11px] font-medium text-foreground/52">{row.label}</span>
-                            <span className="mt-1.5 block select-text break-words text-[14px] font-semibold leading-snug text-foreground tabular-nums">{row.value}</span>
-                          </span>
-                        </button>
-                      ))}
+                    {/* One card, hairline cells: a spec sheet rather than a
+                        stack of separate tiles. Columns follow the section's
+                        own width (container query), never the viewport. */}
+                    <div className="detail-card flex flex-1 flex-col overflow-hidden">
+                      <div className="draft-detail-grid draft-hairline-grid grid flex-1">
+                        {visibleRows.map((row, index) => {
+                          const selected = Boolean(row.path && agentField?.draftId === draftId && agentField.field.path === row.path);
+                          return (
+                            <button
+                              key={`${row.label}-${index}`}
+                              type="button"
+                              disabled={!row.path}
+                              aria-pressed={selected}
+                              onClick={() => row.path && setAgentField({ draftId, field: { kind: "field", path: row.path, label: row.label, value: row.value } })}
+                              draggable={Boolean(row.path)}
+                              onDragStart={(event) => {
+                                if (!row.path) return;
+                                writeDragItem(event.dataTransfer, {
+                                  kind: "field",
+                                  path: row.path,
+                                  label: row.label,
+                                  value: row.value,
+                                });
+                              }}
+                              className={cn(
+                                // A button centres its content; every cell reads from the left,
+                                // whether or not the value can be dragged to the agent.
+                                "flex min-w-0 flex-col items-start justify-center px-5 py-3.5 text-left transition-colors disabled:cursor-default sm:px-6",
+                                // Hover, focus and selection are a rounded inset pill (.draft-cell),
+                                // so they never square off against the card's rounded corner.
+                                row.path && "draft-cell cursor-grab active:cursor-grabbing",
+                              )}
+                            >
+                              <span className="flex min-w-0 max-w-full items-center gap-1.5 text-[11px] font-medium leading-4 text-foreground/52 sm:text-[12px] [&_svg]:h-3.5 [&_svg]:w-3.5">
+                                {row.icon}
+                                <span className="min-w-0 break-words">{row.label}</span>
+                              </span>
+                              {/* Whole-pixel line heights keep every hairline on a device pixel. */}
+                              <span className="mt-1 block max-w-full select-text break-words text-[14px] font-semibold leading-[22px] text-foreground tabular-nums sm:text-[15px]">{row.value}</span>
+                            </button>
+                          );
+                        })}
+                      </div>
                       {detailsLong && (
-                        <div className="flex justify-center pt-1 sm:col-span-2">
-                          <button type="button" aria-expanded={detailsExpanded} onClick={() => setDetailsExpanded(!detailsExpanded)} className="floating-capsule min-h-10 rounded-full px-4 text-[12px] font-semibold text-foreground/62 shadow-control transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2">
-                            {detailsExpanded ? t("draft.showLess", lang) : t("draft.showMore", lang)}
-                          </button>
-                        </div>
+                        <button
+                          type="button"
+                          aria-expanded={detailsExpanded}
+                          onClick={() => setDetailsExpanded(!detailsExpanded)}
+                          className="draft-cell flex min-h-11 w-full items-center justify-center gap-1.5 text-[12px] font-semibold text-foreground/62 transition-colors hover:text-foreground"
+                        >
+                          {detailsExpanded ? t("draft.showLess", lang) : t("draft.showMore", lang)}
+                          {!detailsExpanded ? <span className="tabular-nums text-foreground/40">+{sectionRows.length - visibleRows.length}</span> : null}
+                          <ChevronDownIcon size={12} className={cn("transition-transform", detailsExpanded && "rotate-180")} />
+                        </button>
                       )}
                     </div>
                   </section>
                 )}
 
                 {features.length > 0 && (
-                  <section style={{ animationDelay: "135ms" }} className={cn("draft-section-enter", supportingSpans("features") && "lg:col-span-2")}>
+                  <section style={{ animationDelay: "135ms" }} className={cn("draft-section-enter flex flex-col", supportingSpans("features") && "lg:col-span-2")}>
                     <h2 className="detail-section-title">
                       <span className="detail-icon-chip"><StarIcon size={16} /></span>
                       {t("draft.features", lang)}
                     </h2>
-                    <div className="detail-card flex flex-wrap gap-2 p-4">
+                    <div className="detail-card flex flex-1 flex-wrap content-start gap-2 px-5 py-4 sm:px-6 sm:py-5">
                       {features.map((feature) => (
-                        <span key={feature} className="inline-flex min-h-9 items-center rounded-full border border-border/65 bg-surface-subtle px-3.5 py-1 text-[12px] font-medium text-foreground/80">
+                        <span key={feature} className="inline-flex min-h-9 items-center gap-1.5 rounded-full border border-border/50 bg-surface-subtle/60 py-1 pl-2.5 pr-3.5 text-[12.5px] font-medium text-foreground/80">
+                          <CheckIcon size={13} className="shrink-0 text-foreground/45" />
                           {feature}
                         </span>
                       ))}
@@ -1460,21 +1585,20 @@ export default function DraftPreviewPage({
                 )}
 
                 {monthlyCosts.length > 0 && (
-                  <section style={{ animationDelay: "180ms" }} className={cn("draft-section-enter", supportingSpans("costs") && "lg:col-span-2")}>
+                  <section style={{ animationDelay: "180ms" }} className={cn("draft-section-enter draft-details-section flex flex-col", supportingSpans("costs") && "lg:col-span-2")}>
                     <h2 className="detail-section-title">
                       <span className="detail-icon-chip"><PriceIcon size={16} /></span>
                       {t("draft.monthlyCosts", lang)}
                     </h2>
-                    <div className={cn("draft-cost-grid grid grid-cols-1 gap-2.5", monthlyCosts.length > 1 && "sm:grid-cols-2")}>
-                      {monthlyCosts.map((row, index) => (
-                        <div key={`${row.label}-${index}`} className="detail-card flex min-w-0 items-center gap-3 px-3.5 py-3.5">
-                          <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full border border-border/55 bg-surface-subtle/75 text-foreground/62 shadow-[inset_0_1px_0_rgba(255,255,255,0.82)]">{row.icon}</span>
-                          <span className="min-w-0 flex-1 leading-tight">
-                            <span className="block break-words text-[11px] font-medium text-foreground/52">{row.label}</span>
-                            <span className="mt-1.5 block select-text break-words text-[14px] font-semibold text-foreground tabular-nums">{row.value}</span>
-                          </span>
-                        </div>
-                      ))}
+                    <div className="detail-card flex flex-1 flex-col overflow-hidden">
+                      <div className="draft-detail-grid draft-cost-grid draft-hairline-grid grid flex-1">
+                        {monthlyCosts.map((row, index) => (
+                          <div key={`${row.label}-${index}`} className="flex min-w-0 flex-col justify-center px-5 py-3.5 sm:px-6">
+                            <span className="block break-words text-[11px] font-medium leading-4 text-foreground/52 sm:text-[12px]">{row.label}</span>
+                            <span className="mt-1 block select-text break-words text-[14px] font-semibold leading-[22px] text-foreground tabular-nums sm:text-[15px]">{row.value}</span>
+                          </div>
+                        ))}
+                      </div>
                     </div>
                   </section>
                 )}
