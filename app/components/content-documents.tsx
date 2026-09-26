@@ -310,26 +310,39 @@ export function RegistrationLegalText({ lang }: { lang: string }) {
 
   const byKey = React.useMemo(() => new Map(documents.map((document) => [document.key, document])), [documents]);
 
+  // The link text is the sentence's own inflected wording ("s Podmienkami
+  // služby", "den Nutzungsbedingungen … zu"), not the document's title,
+  // which is a heading in the nominative; the dialog still shows the title.
   function legalButton(key: string, label: string) {
     const document = byKey.get(key);
-    if (!document) return <span>{label}</span>;
+    if (!document) return <span key={key}>{label}</span>;
     return (
       <button
+        key={key}
         type="button"
         onClick={() => setSelectedDocument(document)}
         className="font-medium text-foreground underline underline-offset-4 transition-colors hover:text-foreground/70"
       >
-        {document.title || label}
+        {label}
       </button>
     );
   }
 
+  const links: Record<string, React.ReactNode> = {
+    terms: legalButton("terms", t("auth.register.agreeTermsLink", lang)),
+    privacy: legalButton("privacy", t("auth.register.agreePrivacyLink", lang)),
+    gdpr: legalButton("gdpr", t("auth.register.agreeGdprLink", lang)),
+  };
+  const sentence = t(byKey.has("gdpr") ? "auth.register.agreeSentenceGdpr" : "auth.register.agreeSentence", lang);
+
   return (
     <>
       <span>
-        {t("auth.register.agreePrefix", lang)} {legalButton("terms", t("content.titleTerms", lang))} {t("auth.register.agreeAnd", lang)} {legalButton("privacy", t("content.titlePrivacy", lang))}
+        {sentence.split(/(\{\w+\})/).map((part, index) => {
+          const token = /^\{(\w+)\}$/.exec(part)?.[1];
+          return token && token in links ? links[token] : <React.Fragment key={index}>{part}</React.Fragment>;
+        })}
       </span>
-      {byKey.has("gdpr") && <span>, {t("auth.register.agreeIncluding", lang)} {legalButton("gdpr", t("content.titleGdpr", lang))}</span>}
       {selectedDocument && <ContentDocumentDialog document={selectedDocument} lang={lang} onClose={() => setSelectedDocument(null)} />}
     </>
   );

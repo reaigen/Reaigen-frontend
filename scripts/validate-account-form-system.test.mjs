@@ -45,7 +45,8 @@ test("registration validates each field without using labels as placeholders", (
   assert.match(auth, /id="register-first-name"[\s\S]*?error=\{firstNameError\}/);
   assert.match(auth, /id="register-email"[\s\S]*?error=\{emailError\}/);
   assert.match(auth, /id="register-password"[\s\S]*?error=\{passwordError\}/);
-  assert.match(auth, /id="register-terms-error" role="alert"/);
+  assert.match(auth, /<FieldMessage id="register-terms-error">/);
+  assert.match(field, /export function FieldMessage[\s\S]*?role="alert"/);
   assert.match(auth, /isEmailAddress\(email\)/);
   assert.doesNotMatch(registration, /placeholder=/);
 });
@@ -104,7 +105,9 @@ test("the setup wizard keeps indicators, labels, and headings on one visual syst
 test("account setup disappears from Settings after completion or dismissal", () => {
   assert.match(settings, /function AccountSetupEntry/);
   assert.match(settings, /useAccountSetup\(user\)/);
-  assert.match(settings, /!shouldPromptAccountSetup\(status\)\) return null/);
+  // The card is not rendered unless setup should be prompted; it eases open when it is.
+  assert.match(settings, /const show = !loading && status !== null && shouldPromptAccountSetup\(status\)/);
+  assert.match(settings, /\{show && status \? <AccountSetupEntryCard/);
   assert.match(setup, /const ready = isAccountReady\(status\)/);
   assert.match(setup, /status\.onboardingCompleted \|\| status\.onboardingSkipped/);
   assert.match(setup, /setup\.done\.blockedSubtitle/);
@@ -117,9 +120,9 @@ test("account setup disappears from Settings after completion or dismissal", () 
   assert.match(settings, /status\?\.nextStep === step\.key/);
   assert.match(settings, /setup\.status\.next/);
   assert.match(settings, /setup\.status\.pending/);
-  assert.match(settings, /SETTINGS_SETUP_STEPS[\s\S]*?ProfileIcon[\s\S]*?DeviceMobileIcon[\s\S]*?PriceIcon[\s\S]*?AgentIcon/);
+  assert.match(settings, /SETTINGS_SETUP_STEPS[\s\S]*?ProfileIcon[\s\S]*?SellerIcon[\s\S]*?BillingIcon[\s\S]*?AgentIcon/);
   assert.match(settings, /settingsTabs[\s\S]*?icon: ProfileIcon[\s\S]*?icon: LockIcon/);
-  assert.match(settings, /group-data-\[state=active\]:bg-primary/);
+  assert.match(settings, /data-\[state=active\]:bg-surface-subtle data-\[state=active\]:font-semibold/);
   const setupEntry = settings.slice(
     settings.indexOf("export function AccountSetupEntry"),
     settings.indexOf("function formatAccountDate"),

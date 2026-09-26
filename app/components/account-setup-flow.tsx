@@ -50,7 +50,8 @@ import {
   DeviceMobileIcon,
   InfoIcon,
   LockIcon,
-  PriceIcon,
+  BillingIcon,
+  SellerIcon,
   ProfileIcon,
 } from "./icons";
 import { CountrySelect } from "./country-select";
@@ -77,8 +78,8 @@ import { InternationalPhoneInput } from "./international-phone-input";
 
 const STEPS: Array<{ key: SetupStepKey; label: LocaleKey; hint: LocaleKey; icon: React.ComponentType<{ size?: number; className?: string }> }> = [
   { key: "profile", label: "setup.step.profile", hint: "setup.step.profileHint", icon: ProfileIcon },
-  { key: "seller", label: "setup.step.seller", hint: "setup.step.sellerHint", icon: DeviceMobileIcon },
-  { key: "billing", label: "setup.step.billing", hint: "setup.step.billingHint", icon: PriceIcon },
+  { key: "seller", label: "setup.step.seller", hint: "setup.step.sellerHint", icon: SellerIcon },
+  { key: "billing", label: "setup.step.billing", hint: "setup.step.billingHint", icon: BillingIcon },
   { key: "permissions", label: "setup.step.permissions", hint: "setup.step.permissionsHint", icon: LockIcon },
 ];
 
@@ -779,6 +780,11 @@ function BillingStep({ user, lang, onSaved, onAdvance, onBack }: StepProps) {
   }
 
   const tier = ba?.subscription_tier_detail;
+  // The profile payload names the plan in English; the billing catalog was
+  // asked for in the creator's language.
+  const tierName = billingCatalog?.account?.current_tier_name
+    ?? billingCatalog?.tiers.find((candidate) => candidate.code === tier?.code)?.name
+    ?? tier?.name;
   const subscriptionStatusName = ba?.subscription_status
     ? billingCatalog?.statuses.subscription?.find(
       (status) => status.code === ba.subscription_status,
@@ -791,7 +797,7 @@ function BillingStep({ user, lang, onSaved, onAdvance, onBack }: StepProps) {
         <div className="flex min-h-11 items-center justify-between gap-4 rounded-xl border border-border/55 bg-surface-subtle/75 px-4 py-2 text-[13px]">
           <span className="text-muted-foreground">{t("settings.billing.plan", lang)}</span>
           <span className="flex items-center gap-2 font-medium">
-            {tier.name}
+            {tierName}
             {subscriptionStatusName ? (
               <StatusPill tone="neutral">{subscriptionStatusName}</StatusPill>
             ) : null}

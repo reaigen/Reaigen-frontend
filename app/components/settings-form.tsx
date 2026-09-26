@@ -4,7 +4,7 @@ import * as React from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { Button } from "../lib/ui/button";
-import { FormField, focusFirstInvalidField } from "../lib/ui/form-field";
+import { FieldMessage, FormField, focusFirstInvalidField } from "../lib/ui/form-field";
 import { Input } from "../lib/ui/input";
 import { Label } from "../lib/ui/label";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "../lib/ui/tabs";
@@ -91,18 +91,21 @@ import {
 } from "../lib/web-push";
 import {
   AgentIcon,
+  BillingIcon,
+  CheckIcon,
   ChevronRightIcon,
   DeviceDesktopIcon,
   DeviceMobileIcon,
-  DocumentIcon,
   EyeOpenIcon,
   ImageIcon,
   InfoIcon,
+  LanguageIcon,
   LinkIcon,
   LockIcon,
-  MapPinIcon,
-  PriceIcon,
+  NotificationsIcon,
+  PhotoIcon,
   ProfileIcon,
+  SellerIcon,
   SettingsIcon,
 } from "./icons";
 import { formatPhoneDisplay, isValidInternationalPhone } from "../lib/phone";
@@ -116,7 +119,7 @@ import { AddressRegionControl } from "./address-region-control";
 import { InternationalPhoneInput } from "./international-phone-input";
 import { useAccountSetup } from "./hooks/use-account-setup";
 import { useAddressRegions } from "./hooks/use-address-regions";
-import { shouldPromptAccountSetup } from "../lib/account-setup";
+import { shouldPromptAccountSetup, type AccountSetupStatus } from "../lib/account-setup";
 
 function useAutoDismiss(value: boolean, setter: (v: boolean) => void, ms = 3000) {
   React.useEffect(() => {
@@ -155,8 +158,8 @@ function CardContent({ className, ...props }: React.HTMLAttributes<HTMLDivElemen
 
 const SETTINGS_SETUP_STEPS = [
   { key: "profile", label: "setup.step.profile", icon: ProfileIcon },
-  { key: "seller", label: "setup.step.seller", icon: DeviceMobileIcon },
-  { key: "billing", label: "setup.step.billing", icon: PriceIcon },
+  { key: "seller", label: "setup.step.seller", icon: SellerIcon },
+  { key: "billing", label: "setup.step.billing", icon: BillingIcon },
   { key: "permissions", label: "setup.step.permissions", icon: AgentIcon },
 ] as const;
 
@@ -171,8 +174,39 @@ export function AccountSetupEntry({ user, lang }: { user: UserProfile; lang: str
   const { status, loading } = useAccountSetup(user);
   // Once setup is finished or dismissed, its fields remain editable in their
   // ordinary Settings sections without a permanent setup advertisement.
-  if (loading || !status || !shouldPromptAccountSetup(status)) return null;
+  const show = !loading && status !== null && shouldPromptAccountSetup(status);
+  // The verdict needs a few backend reads, so the card arrives after the
+  // page. It opens its own height instead of snapping in and shoving the
+  // Settings panel down.
+  return (
+    <Reveal show={show}>
+      {show && status ? <AccountSetupEntryCard status={status} loading={loading} lang={lang} /> : null}
+    </Reveal>
+  );
+}
 
+/** Opens (height and opacity) when `show` turns true, from the first frame it can. */
+function Reveal({ show, children }: { show: boolean; children: React.ReactNode }) {
+  const [open, setOpen] = React.useState(false);
+  React.useEffect(() => {
+    if (!show) { setOpen(false); return; }
+    const frame = window.requestAnimationFrame(() => setOpen(true));
+    return () => window.cancelAnimationFrame(frame);
+  }, [show]);
+  return (
+    <div
+      className={cn(
+        "grid transition-[grid-template-rows,opacity] duration-500 ease-[cubic-bezier(0.22,1,0.36,1)]",
+        open ? "grid-rows-[1fr] opacity-100" : "grid-rows-[0fr] opacity-0",
+      )}
+      aria-hidden={open ? undefined : true}
+    >
+      <div className="min-h-0 overflow-hidden">{children}</div>
+    </div>
+  );
+}
+
+function AccountSetupEntryCard({ status, loading, lang }: { status: AccountSetupStatus; loading: boolean; lang: string }) {
   const blocked = !loading && Boolean(status?.blockers.length);
   // Profile, seller, and billing state is already authoritative on the user
   // payload. Keep that useful progress visible while only the permission
@@ -435,6 +469,7 @@ function ProfileTab({ user, onSaved, lang }: { user: UserProfile; onSaved: () =>
     if (!file) return;
     try {
       setAvatarUploading(true);
+      setError(null);
       await uploadPresigned(presignAvatar, confirmAvatar, file);
       onSaved();
     } catch (err) {
@@ -456,6 +491,13 @@ function ProfileTab({ user, onSaved, lang }: { user: UserProfile; onSaved: () =>
       setEmailResending(false);
     }
   }
+
+  // Sign-up stores the email as the username; asking for it again as its
+  // own field only repeats the address. It is shown when it differs.
+  const usernameIsEmail = (user.username ?? "").trim().toLowerCase() === user.email.trim().toLowerCase();
+  const dirty = firstName.trim() !== (user.first_name ?? "")
+    || lastName.trim() !== (user.last_name ?? "")
+    || username.trim() !== (user.username ?? "");
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -485,8 +527,13 @@ function ProfileTab({ user, onSaved, lang }: { user: UserProfile; onSaved: () =>
     }
   }
 
-  const initials = `${(user.first_name || "")[0] ?? ""}${(user.last_name || "")[0] ?? ""}`.toUpperCase() || "?";
+  const initials = `${(firstName || user.first_name || "")[0] ?? ""}${(lastName || user.last_name || "")[0] ?? ""}`.toUpperCase() || "?";
   const avatarUrl = user.profile?.avatar_thumbnail_url || user.profile?.avatar_url;
+  // The header follows the fields as they are typed.
+  const displayName = `${firstName.trim()} ${lastName.trim()}`.trim() || t("settings.profile.nameFallback", lang);
+  const memberSince = user.date_joined
+    ? t("settings.profile.memberSince", lang).replace("{date}", formatAccountDate(user.date_joined, lang))
+    : null;
 
   return (
     <Card>
@@ -495,113 +542,158 @@ function ProfileTab({ user, onSaved, lang }: { user: UserProfile; onSaved: () =>
         <CardDescription>{t("settings.profile.subtitle", lang)}</CardDescription>
       </CardHeader>
       <CardContent>
-        <form className="space-y-4" onSubmit={handleSubmit} noValidate>
-          {/* Avatar */}
-          <div className="flex items-center gap-4">
-            <Avatar size="xl">
-              {avatarUrl && <AvatarImage src={avatarUrl} alt={t("settings.profile.avatar", lang)} />}
-              <AvatarFallback>{initials}</AvatarFallback>
-            </Avatar>
-            <div>
-              <input ref={avatarInputRef} type="file" accept="image/*" className="hidden" onChange={handleAvatarChange} />
-              <Button
+        <form className="space-y-7" onSubmit={handleSubmit} noValidate>
+          {/*
+            Who this account is, at a glance: the photo changes when clicked
+            (a veil says so on hover; the quiet link below says so on touch
+            screens), and the address sits under the name with its status.
+          */}
+          <div className="flex items-center gap-5" data-testid="settings-profile-identity">
+            <input ref={avatarInputRef} type="file" accept="image/*" className="hidden" onChange={handleAvatarChange} />
+            <button
+              type="button"
+              onClick={() => avatarInputRef.current?.click()}
+              disabled={avatarUploading}
+              tabIndex={-1}
+              aria-hidden="true"
+              title={t("settings.profile.avatarChange", lang)}
+              data-testid="settings-avatar-button"
+              className="group relative shrink-0 rounded-full transition-transform duration-150 active:scale-[0.97] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-4"
+            >
+              <Avatar size="2xl" className="ring-1 ring-border/65">
+                {avatarUrl && <AvatarImage src={avatarUrl} alt={t("settings.profile.avatar", lang)} />}
+                <AvatarFallback className="text-[22px] font-semibold">{initials}</AvatarFallback>
+              </Avatar>
+              <span
+                aria-hidden="true"
+                className={cn(
+                  "absolute inset-0 flex items-center justify-center rounded-full bg-foreground/45 text-background transition-opacity duration-200",
+                  avatarUploading ? "opacity-100" : "opacity-0 group-hover:opacity-100",
+                )}
+              >
+                {avatarUploading
+                  ? <span className="h-5 w-5 animate-spin rounded-full border-2 border-background/35 border-t-background" />
+                  : <PhotoIcon size={20} />}
+              </span>
+            </button>
+            <div className="min-w-0">
+              <p className="truncate text-[20px] font-semibold leading-tight tracking-[-0.02em] text-foreground" data-testid="settings-profile-name">
+                {displayName}
+              </p>
+              <div className="mt-1.5 flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 text-[13px] text-muted-foreground">
+                <span className="min-w-0 truncate">{user.email}</span>
+                {user.email_verified ? (
+                  <span className="inline-flex shrink-0 items-center gap-1 text-[12px] font-medium text-success">
+                    <CheckIcon size={13} />
+                    {t("settings.profile.emailVerified", lang)}
+                  </span>
+                ) : (
+                  <span className="inline-flex shrink-0 items-center gap-2 text-[12px]">
+                    <span className="font-medium text-foreground/70">{t("settings.profile.emailUnverified", lang)}</span>
+                    {emailResent ? (
+                      <span className="text-success">{t("settings.profile.emailResent", lang)}</span>
+                    ) : (
+                      <button
+                        type="button"
+                        className="font-medium text-foreground underline underline-offset-2 hover:no-underline disabled:opacity-50"
+                        onClick={handleResendVerification}
+                        disabled={emailResending}
+                      >
+                        {t("settings.profile.emailResend", lang)}
+                      </button>
+                    )}
+                  </span>
+                )}
+              </div>
+              {memberSince ? <p className="mt-1 text-[12px] text-foreground/45">{memberSince}</p> : null}
+              <button
                 type="button"
-                variant="outline"
-                size="sm"
-                className="h-11"
-                loading={avatarUploading}
                 onClick={() => avatarInputRef.current?.click()}
+                disabled={avatarUploading}
+                className="-mx-1.5 mt-2 rounded-md px-1.5 py-0.5 text-[12px] font-medium text-foreground/70 underline-offset-4 transition-colors hover:text-foreground hover:underline disabled:opacity-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
               >
                 {avatarUploading ? t("settings.profile.avatarUploading", lang) : t("settings.profile.avatarChange", lang)}
-              </Button>
+              </button>
             </div>
           </div>
 
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            <FormField
-              id="first-name"
-              label={t("settings.profile.firstName", lang)}
-              error={touched.firstName && !firstName.trim() ? t("form.required", lang) : null}
-            >
-              {(control) => (
-                <Input
-                  {...control}
-                  value={firstName}
-                  onChange={(e) => setFirstName(e.target.value)}
-                  onBlur={() => setTouched((current) => ({ ...current, firstName: true }))}
-                  autoComplete="given-name"
-                />
-              )}
-            </FormField>
-            <FormField
-              id="last-name"
-              label={t("settings.profile.lastName", lang)}
-              error={touched.lastName && !lastName.trim() ? t("form.required", lang) : null}
-            >
-              {(control) => (
-                <Input
-                  {...control}
-                  value={lastName}
-                  onChange={(e) => setLastName(e.target.value)}
-                  onBlur={() => setTouched((current) => ({ ...current, lastName: true }))}
-                  autoComplete="family-name"
-                />
-              )}
-            </FormField>
-          </div>
-          <FormField
-            id="username"
-            label={t("settings.profile.username", lang)}
-            error={touched.username && !username.trim() ? t("form.required", lang) : null}
-          >
-            {(control) => (
-              <Input
-                {...control}
-                value={username}
-                onChange={(e) => setUsername(e.target.value)}
-                onBlur={() => setTouched((current) => ({ ...current, username: true }))}
-                autoComplete="username"
-              />
-            )}
-          </FormField>
-          {/*
-            The address is a fact, not a field — a disabled input reads as a
-            broken form. A quiet row states it, and the chip carries the
-            verification status the way the phone row does.
-          */}
-          <div className="space-y-1.5">
-            <Label>{t("settings.profile.email", lang)}</Label>
-            <div className="flex min-h-11 items-center justify-between gap-4 rounded-2xl bg-muted/30 px-4 py-2.5">
-              <span className="min-w-0 truncate text-sm font-medium">{user.email}</span>
-              {user.email_verified ? (
-                <span className="shrink-0 rounded-full bg-success/10 px-2.5 py-0.5 text-[11px] font-semibold text-success">
-                  {t("settings.profile.emailVerified", lang)}
-                </span>
-              ) : (
-                <span className="flex shrink-0 items-center gap-2">
-                  <span className="rounded-full bg-foreground/[0.07] px-2.5 py-0.5 text-[11px] font-semibold text-foreground/70">
-                    {t("settings.profile.emailUnverified", lang)}
-                  </span>
-                  {emailResent ? (
-                    <span className="text-[11px] text-success">{t("settings.profile.emailResent", lang)}</span>
-                  ) : (
-                    <button
-                      type="button"
-                      className="text-[11px] font-medium text-foreground underline underline-offset-2 hover:no-underline disabled:opacity-50"
-                      onClick={handleResendVerification}
-                      disabled={emailResending}
-                    >
-                      {t("settings.profile.emailResend", lang)}
-                    </button>
-                  )}
-                </span>
-              )}
+          <div className="space-y-1">
+            <div className="grid grid-cols-1 gap-x-4 sm:grid-cols-2">
+              <FormField
+                id="first-name"
+                label={t("settings.profile.firstName", lang)}
+                error={touched.firstName && !firstName.trim() ? t("auth.field.firstNameRequired", lang) : null}
+                reserveMessage
+              >
+                {(control) => (
+                  <Input
+                    {...control}
+                    value={firstName}
+                    onChange={(e) => setFirstName(e.target.value)}
+                    onBlur={() => { if (firstName.trim() !== (user.first_name ?? "")) setTouched((current) => ({ ...current, firstName: true })); }}
+                    autoComplete="given-name"
+                  />
+                )}
+              </FormField>
+              <FormField
+                id="last-name"
+                label={t("settings.profile.lastName", lang)}
+                error={touched.lastName && !lastName.trim() ? t("auth.field.lastNameRequired", lang) : null}
+                reserveMessage
+              >
+                {(control) => (
+                  <Input
+                    {...control}
+                    value={lastName}
+                    onChange={(e) => setLastName(e.target.value)}
+                    onBlur={() => { if (lastName.trim() !== (user.last_name ?? "")) setTouched((current) => ({ ...current, lastName: true })); }}
+                    autoComplete="family-name"
+                  />
+                )}
+              </FormField>
             </div>
+            {!usernameIsEmail ? (
+              <FormField
+                id="username"
+                label={t("settings.profile.username", lang)}
+                error={touched.username && !username.trim() ? t("settings.profile.usernameRequired", lang) : null}
+                reserveMessage
+              >
+                {(control) => (
+                  <Input
+                    {...control}
+                    value={username}
+                    onChange={(e) => setUsername(e.target.value)}
+                    onBlur={() => { if (username.trim() !== (user.username ?? "")) setTouched((current) => ({ ...current, username: true })); }}
+                    autoComplete="username"
+                  />
+                )}
+              </FormField>
+            ) : null}
           </div>
-          {error && <p className="text-[12px] text-destructive" role="alert">{error}</p>}
-          {success && <p className="text-[12px] text-success" role="status">{t("settings.profile.saved", lang)}</p>}
-          <div className="pt-2">
-            <Button type="submit" size="sm" className="h-11" loading={loading}>{t("settings.profile.save", lang)}</Button>
+
+          {error ? <FieldMessage>{error}</FieldMessage> : null}
+          {/*
+            The button answers the click itself: it wakes when something
+            changed and turns into "Saved" in place, so nothing below moves.
+          */}
+          <div>
+            <Button
+              type="submit"
+              size="sm"
+              className="h-11 min-w-[9.5rem] transition-[background-color,opacity,transform] active:scale-[0.98]"
+              loading={loading}
+              disabled={!dirty && !success}
+              data-testid="settings-profile-save"
+              data-state={success ? "saved" : dirty ? "dirty" : "clean"}
+            >
+              {success ? (
+                <span className="inline-flex animate-fade-in items-center gap-1.5">
+                  <CheckIcon size={15} />
+                  {t("settings.profile.savedShort", lang)}
+                </span>
+              ) : t("settings.profile.save", lang)}
+            </Button>
           </div>
         </form>
       </CardContent>
@@ -2006,6 +2098,17 @@ function SettingsField({ label, children, hint }: { label: string; children: Rea
 
 /* ── Gaussian Training Tab ──────────────────────────────────────────── */
 
+/*
+ * The training catalog is served as English lookup rows. Known codes read in
+ * the creator's language; a code added on the server later still shows its
+ * server text until it gets a translation here.
+ */
+function trainingCatalogText(code: string, field: "name" | "description", fallback: string, lang: string): string {
+  const key = `settings.training.catalog.${code}.${field}` as LocaleKey;
+  const text = t(key, lang);
+  return text === key ? fallback : text;
+}
+
 function TrainingTab({ lang }: { lang: string }) {
   const [profileCode, setProfileCode] = React.useState("");
   const [resolution, setResolution] = React.useState("");
@@ -2117,10 +2220,10 @@ function TrainingTab({ lang }: { lang: string }) {
           <form className="space-y-5" onSubmit={handleSubmit} noValidate>
             <div className="rounded-2xl border border-border/65 bg-muted/20 px-4 py-3.5">
               <p className="text-[13px] font-medium">{t("settings.training.summary", lang)}</p>
-              <p className="mt-1 text-[12px] leading-relaxed text-muted-foreground">{selectedProfile.description}</p>
+              <p className="mt-1 text-[12px] leading-relaxed text-muted-foreground">{trainingCatalogText(selectedProfile.code, "description", selectedProfile.description, lang)}</p>
               <div className="mt-3 flex flex-wrap gap-2 text-[11px] font-medium text-foreground/70">
                 <span className="rounded-full bg-background px-2.5 py-1 shadow-sm">
-                  {selectedResolution.name}
+                  {trainingCatalogText(selectedResolution.code, "name", selectedResolution.name, lang)}
                 </span>
                 <span className="rounded-full bg-background px-2.5 py-1 shadow-sm">
                   {Number(iterations || 0).toLocaleString()} {t("settings.training.iterationsShort", lang)}
@@ -2136,7 +2239,7 @@ function TrainingTab({ lang }: { lang: string }) {
                 <SelectTrigger aria-label={t("settings.training.profile", lang)}><SelectValue /></SelectTrigger>
                 <SelectContent>
                   {profiles.map((profile) => (
-                    <SelectItem key={profile.code} value={profile.code}>{profile.name}</SelectItem>
+                    <SelectItem key={profile.code} value={profile.code}>{trainingCatalogText(profile.code, "name", profile.name, lang)}</SelectItem>
                   ))}
                 </SelectContent>
               </Select>
@@ -2147,13 +2250,13 @@ function TrainingTab({ lang }: { lang: string }) {
             <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
               <SettingsField
                 label={t("settings.training.resolution", lang)}
-                hint={selectedResolution.description || undefined}
+                hint={selectedResolution.description ? trainingCatalogText(selectedResolution.code, "description", selectedResolution.description, lang) : undefined}
               >
                 <Select value={resolution} onValueChange={setResolution}>
                   <SelectTrigger aria-label={t("settings.training.resolution", lang)}><SelectValue /></SelectTrigger>
                   <SelectContent>
                     {resolutions.map((option) => (
-                      <SelectItem key={option.code} value={option.code}>{option.name}</SelectItem>
+                      <SelectItem key={option.code} value={option.code}>{trainingCatalogText(option.code, "name", option.name, lang)}</SelectItem>
                     ))}
                   </SelectContent>
                 </Select>
@@ -2509,6 +2612,9 @@ function BillingTab({ user, onSaved, lang }: { user: UserProfile; onSaved: () =>
   const [success, setSuccess] = React.useState(false);
   useAutoDismiss(success, setSuccess);
 
+  // Until the first answer, names that only exist in English (the profile
+  // payload's plan name) are not shown; a placeholder holds their place.
+  const [accountStateSettled, setAccountStateSettled] = React.useState(false);
   const refreshAccountState = React.useCallback(async () => {
     setAccountRefreshing(true);
     const [
@@ -2531,6 +2637,7 @@ function BillingTab({ user, onSaved, lang }: { user: UserProfile; onSaved: () =>
     if (catalogResult.status === "fulfilled") {
       setBillingCatalog(catalogResult.value);
     }
+    setAccountStateSettled(true);
     if (paymentsResult.status === "fulfilled") {
       setPayments(paymentsResult.value);
       setPaymentsLoadError(false);
@@ -2727,7 +2834,9 @@ function BillingTab({ user, onSaved, lang }: { user: UserProfile; onSaved: () =>
           <dl className="rounded-lg border border-border/65 px-4">
             <DataRow
               label={t("settings.billing.plan", lang)}
-              value={tierName}
+              value={accountStateSettled
+                ? tierName
+                : <span aria-hidden="true" className="inline-block h-3.5 w-20 animate-pulse rounded-full bg-muted align-middle" />}
             />
             <DataRow
               label={t("settings.billing.status", lang)}
@@ -3950,6 +4059,9 @@ function PhoneSection({ user, onSaved, lang }: { user: UserProfile; onSaved: () 
 
 /* ── Settings Form (main export) ─────────────────────────────────────── */
 
+// A section eases in when it is chosen instead of snapping into place.
+const TAB_PANEL_CLASS = "mt-0 animate-fade-in-up focus-visible:outline-none";
+
 export function SettingsForm({ user, onSaved }: { user: UserProfile; onSaved: () => void }) {
   const lang = getUserLanguage(user.localization);
   const [activeTab, setActiveTab] = React.useState("profile");
@@ -4008,17 +4120,20 @@ export function SettingsForm({ user, onSaved }: { user: UserProfile; onSaved: ()
   }, [activeTab, agentAccess]);
   // Desktop settings navigation is a stable vertical list. Compact layouts
   // use the selector below instead of hiding destinations in a chip carousel.
+  // Same contrast as the app's own navigation rail: inactive rows at /58,
+  // the open one in full-strength semibold on the subtle surface with a
+  // hairline border, plus a small press on click.
   const triggerClassName =
-    "group h-11 w-full justify-start gap-2.5 rounded-full border border-transparent bg-transparent px-2.5 py-0 text-left text-[13px] font-medium text-foreground/58 shadow-none transition-all hover:bg-foreground/[0.035] hover:text-foreground/80 data-[state=active]:border-foreground/15 data-[state=active]:bg-muted/70 data-[state=active]:text-foreground data-[state=active]:shadow-card data-[state=active]:backdrop-blur-xl";
+    "group h-10 w-full justify-start gap-3 rounded-full border border-transparent bg-transparent px-3 py-0 text-left text-[13px] font-medium text-foreground/58 shadow-none transition-[background-color,border-color,color,transform] duration-150 hover:bg-surface-subtle/45 hover:text-foreground/85 active:scale-[0.98] data-[state=active]:border-border/55 data-[state=active]:bg-surface-subtle data-[state=active]:font-semibold data-[state=active]:text-foreground data-[state=active]:shadow-none";
   const settingsTabs = ([
     { value: "profile", label: "settings.tab.profile", icon: ProfileIcon },
-    { value: "seller", label: "settings.tab.seller", icon: DocumentIcon },
+    { value: "seller", label: "settings.tab.seller", icon: SellerIcon },
     { value: "privacy", label: "settings.tab.privacy", icon: EyeOpenIcon },
     { value: "reai", label: "settings.tab.reai", icon: AgentIcon },
     { value: "training", label: "settings.tab.training", icon: ImageIcon },
-    { value: "localization", label: "settings.tab.localization", icon: MapPinIcon },
-    { value: "notifications", label: "settings.tab.notifications", icon: DeviceMobileIcon },
-    { value: "billing", label: "settings.tab.billing", icon: PriceIcon },
+    { value: "localization", label: "settings.tab.localization", icon: LanguageIcon },
+    { value: "notifications", label: "settings.tab.notifications", icon: NotificationsIcon },
+    { value: "billing", label: "settings.tab.billing", icon: BillingIcon },
     { value: "security", label: "settings.tab.security", icon: LockIcon },
   ] as const).filter((tab) => tab.value !== "reai" || agentAllowed);
 
@@ -4071,9 +4186,7 @@ export function SettingsForm({ user, onSaved }: { user: UserProfile; onSaved: ()
               const TabIcon = tab.icon;
               return (
                 <TabsTrigger key={tab.value} value={tab.value} data-testid={`settings-tab-${tab.value}`} className={triggerClassName}>
-                  <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-foreground/[0.045] text-foreground/60 transition-colors group-data-[state=active]:bg-primary group-data-[state=active]:text-primary-foreground">
-                    <TabIcon size={14} className="block" />
-                  </span>
+                  <TabIcon size={16} className="block shrink-0 text-foreground/52 transition-colors group-hover:text-foreground group-data-[state=active]:text-foreground" />
                   <span className="min-w-0 truncate">{t(tab.label, lang)}</span>
                 </TabsTrigger>
               );
@@ -4081,33 +4194,33 @@ export function SettingsForm({ user, onSaved }: { user: UserProfile; onSaved: ()
           </TabsList>
         </div>
         <div className="min-w-0 max-lg:[&_button]:min-h-11 lg:p-3">
-          <TabsContent value="profile" className="mt-0">
+          <TabsContent value="profile" className={TAB_PANEL_CLASS}>
             <ProfileTab user={user} onSaved={onSaved} lang={lang} />
           </TabsContent>
-          <TabsContent value="seller" className="mt-0">
+          <TabsContent value="seller" className={TAB_PANEL_CLASS}>
             <SellerTab user={user} onSaved={onSaved} lang={lang} />
           </TabsContent>
-          <TabsContent value="privacy" className="mt-0">
+          <TabsContent value="privacy" className={TAB_PANEL_CLASS}>
             <PrivacyTab user={user} onSaved={onSaved} lang={lang} agentAllowed={agentAllowed} />
           </TabsContent>
           {agentAllowed ? (
-            <TabsContent value="reai" className="mt-0">
+            <TabsContent value="reai" className={TAB_PANEL_CLASS}>
               <ReaiTab lang={lang} />
             </TabsContent>
           ) : null}
-          <TabsContent value="training" className="mt-0">
+          <TabsContent value="training" className={TAB_PANEL_CLASS}>
             <TrainingTab lang={lang} />
           </TabsContent>
-          <TabsContent value="localization" className="mt-0">
+          <TabsContent value="localization" className={TAB_PANEL_CLASS}>
             <LocalizationTab user={user} lang={lang} />
           </TabsContent>
-          <TabsContent value="notifications" className="mt-0">
+          <TabsContent value="notifications" className={TAB_PANEL_CLASS}>
             <NotificationsTab user={user} onSaved={onSaved} lang={lang} />
           </TabsContent>
-          <TabsContent value="billing" className="mt-0">
+          <TabsContent value="billing" className={TAB_PANEL_CLASS}>
             <BillingTab user={user} onSaved={onSaved} lang={lang} />
           </TabsContent>
-          <TabsContent value="security" className="mt-0">
+          <TabsContent value="security" className={TAB_PANEL_CLASS}>
             <SecurityTab user={user} onSaved={onSaved} lang={lang} />
           </TabsContent>
         </div>

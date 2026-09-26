@@ -3,6 +3,8 @@ import {
   ArrowLeftIcon as RadixArrowLeftIcon,
   ArrowRightIcon as RadixArrowRightIcon,
   ArrowUpIcon as RadixArrowUpIcon,
+  BellIcon,
+  CameraIcon as RadixCameraIcon,
   CheckIcon as RadixCheckIcon,
   ChevronDownIcon as RadixChevronDownIcon,
   ChevronRightIcon as RadixChevronRightIcon,
@@ -17,8 +19,10 @@ import {
   FileTextIcon,
   EyeOpenIcon as RadixEyeOpenIcon,
   GearIcon,
+  GlobeIcon,
   GridIcon as RadixGridIcon,
   HomeIcon as RadixHomeIcon,
+  IdCardIcon,
   ImageIcon as RadixImageIcon,
   InfoCircledIcon,
   LayersIcon,
@@ -245,6 +249,20 @@ export const LayoutIcon = fromRadix(DashboardIcon, "LayoutIcon");
 export const RulerIcon = fromRadix(RulerSquareIcon, "RulerIcon");
 export const PriceIcon = fromRadix(TokensIcon, "PriceIcon");
 export const ProfileIcon = fromRadix(PersonIcon, "ProfileIcon");
+export const SellerIcon = fromRadix(IdCardIcon, "SellerIcon");
+export const LanguageIcon = fromRadix(GlobeIcon, "LanguageIcon");
+export const NotificationsIcon = fromRadix(BellIcon, "NotificationsIcon");
+/** A payment card, drawn on Radix's 15px grid and 1px line weight (Radix has none). */
+export function BillingIcon({ size = 18, width, height, ...props }: IconProps) {
+  return (
+    <svg viewBox="0 0 15 15" width={width ?? size} height={height ?? size} fill="none" stroke="currentColor" strokeWidth="1" aria-hidden={props["aria-hidden"] ?? true} {...props}>
+      <rect x="1.5" y="3.5" width="12" height="8" rx="1.5" />
+      <path d="M1.5 6.5h12" />
+      <path d="M3.75 9.25h2.5" strokeLinecap="round" />
+    </svg>
+  );
+}
+export const PhotoIcon = fromRadix(RadixCameraIcon, "PhotoIcon");
 export const DocumentIcon = fromRadix(FileTextIcon, "DocumentIcon");
 export const TechnicalIcon = fromRadix(MixerHorizontalIcon, "TechnicalIcon");
 export const UtilitiesIcon = fromRadix(LightningBoltIcon, "UtilitiesIcon");

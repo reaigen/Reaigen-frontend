@@ -569,8 +569,23 @@ async function openPage(path, { consent = false, webCreationAllowed = false } = 
     loginPlaceholders.email === "you@email.com" && loginPlaceholders.password === "Enter password",
     JSON.stringify(loginPlaceholders),
   );
+  await page.focus("#login-email");
+  await page.keyboard.press("Tab");
+  const afterLoginEmail = await page.evaluate(() => document.activeElement?.id);
+  check("sign in: Tab from email goes to password, not the reset link", afterLoginEmail === "login-password", String(afterLoginEmail));
   await page.click("text=Create an account");
   await page.waitForSelector("#register-email", { timeout: 20000 });
+  await page.focus("#register-password");
+  await page.keyboard.press("Tab");
+  const afterRegisterPassword = await page.evaluate(() => document.activeElement?.id);
+  check("registration: Tab from password goes to confirm, not the reveal toggle", afterRegisterPassword === "register-confirm", String(afterRegisterPassword));
+  const registerFieldTops = () => page.evaluate(() => ["register-email", "register-password", "register-confirm", "register-terms"].map((id) =>
+    Math.round(document.getElementById(id).getBoundingClientRect().top - document.querySelector("form").getBoundingClientRect().top)));
+  const topsBefore = await registerFieldTops();
+  await page.click('form button[type="submit"]');
+  await page.waitForSelector("#register-name-error", { timeout: 20000 });
+  const topsAfter = await registerFieldTops();
+  check("registration: messages fill their reserved line, fields do not move", JSON.stringify(topsBefore) === JSON.stringify(topsAfter), JSON.stringify([topsBefore, topsAfter]));
   await page.fill("#register-first-name", "QA");
   await page.fill("#register-last-name", "Signup");
   await page.fill("#register-email", "qa.signup@reaigen.test");
