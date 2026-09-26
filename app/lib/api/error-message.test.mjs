@@ -32,7 +32,7 @@ test("the backend's English sign-in refusals are shown in the creator's language
   assert.equal(getSafeApiErrorMessage(unverified, "sk"), "Táto adresa ešte nie je overená. Skontrolujte schránku alebo si nechajte overovací e-mail poslať znova.");
   assert.equal(getSafeApiErrorMessage(unverified, "de").startsWith("Diese Adresse ist noch nicht bestätigt"), true);
   assert.equal(getSafeApiErrorMessage(refusal(400, { non_field_errors: ["Invalid credentials."] }), "cs"), "E-mail a heslo se neshodují. Zkuste to prosím znovu.");
-  assert.equal(getSafeApiErrorMessage(refusal(400, { detail: "Invalid credentials." }), "en"), "The email or password is not right. Try again.");
+  assert.equal(getSafeApiErrorMessage(refusal(400, { detail: "Invalid credentials." }), "en"), "That email and password don't match. Please try again.");
 });
 
 test("verification is known from the refusal, not from the words on screen", () => {
