@@ -64,6 +64,7 @@ export function AgentComposer({
       )}
       <textarea
         ref={textareaRef}
+        data-agent-composer
         value={value}
         onChange={(event) => onChange(event.target.value)}
         onFocus={() => onFocusChange(true)}

@@ -122,6 +122,12 @@ const AGENT_PANEL_BASE_W = 480;
 const AGENT_DOCK_MIN_W =
   SIDEBAR_W + AGENT_PANEL_BASE_W + AGENT_MIN_CONTENT_W;
 
+/** The width the panel opens at before it is resized: the CSS clamp below, in pixels. */
+function defaultAgentPanelWidth() {
+  if (typeof window === "undefined") return AGENT_PANEL_BASE_W;
+  return Math.round(Math.min(720, Math.max(AGENT_PANEL_BASE_W, window.innerWidth * 0.33)));
+}
+
 function clampAgentPanelWidth(width: number) {
   const viewportLimit = typeof window === "undefined"
     ? REAI_PANEL_MAX_W
@@ -372,6 +378,10 @@ function AppShellFrame({
   const reaiPanelRef = React.useRef<HTMLDivElement>(null);
   const reaiCloseRef = React.useRef<HTMLButtonElement>(null);
   const reaiReturnFocusRef = React.useRef<HTMLElement | null>(null);
+  // Set only when the creator opens the panel; a panel restored open by a
+  // navigation never takes the keyboard (Bench 07 UI01).
+  const focusAgentOnOpenRef = React.useRef(false);
+  const reaiWasOpenRef = React.useRef(false);
   const reaiPanelWidthRef = React.useRef<number | null>(null);
   const reaiResizeActiveRef = React.useRef(false);
   const lang = getUserLanguage(user.localization);
@@ -584,14 +594,54 @@ function AppShellFrame({
   }, [compactAgentViewport, dockedAgentViewport, reaiOpen]);
 
   React.useEffect(() => {
-    if (reaiOpen) return;
-    const returnTarget = reaiReturnFocusRef.current;
-    if (!returnTarget?.isConnected) return;
+    if (reaiOpen) {
+      reaiWasOpenRef.current = true;
+      return;
+    }
+    // Closed before the composer arrived: a later automatic open must not take focus.
+    focusAgentOnOpenRef.current = false;
+    if (!reaiWasOpenRef.current) return;
+    reaiWasOpenRef.current = false;
+    // Only when the keyboard was in the panel (or lost with it): a creator
+    // typing in the page while the docked panel closes stays where they are.
+    const active = document.activeElement;
+    if (active && active !== document.body && !reaiPanelRef.current?.contains(active)) return;
+    // The floating launcher unmounts while the panel is open, so the one that
+    // was clicked is gone; the launcher shown now takes focus instead.
+    const stored = reaiReturnFocusRef.current;
+    const returnTarget = stored?.isConnected
+      ? stored
+      : Array.from(document.querySelectorAll<HTMLElement>('[data-testid="agent-launcher"]')).find((launcher) => launcher.offsetParent !== null);
+    if (!returnTarget) return;
     const focusFrame = window.requestAnimationFrame(() => {
       returnTarget.focus({ preventScroll: true });
     });
     return () => window.cancelAnimationFrame(focusFrame);
   }, [reaiOpen]);
+
+  // Opened by the creator, the panel takes the keyboard: the composer on a
+  // wide screen — the launcher that had focus unmounts as the panel opens,
+  // and focus fell to <body> (Bench 07 UI01) — and the close button in the
+  // phone drawer, where focusing a text field would throw up the keyboard.
+  React.useEffect(() => {
+    if (!reaiOpen || !focusAgentOnOpenRef.current) return;
+    let frame = 0;
+    let attempts = 0;
+    const focusPanel = () => {
+      const composer = reaiPanelRef.current?.querySelector<HTMLTextAreaElement>("textarea[data-agent-composer]") ?? null;
+      // The card is loaded on first open; give it a moment to mount.
+      if (!compactAgentViewport && !composer && attempts < 45) {
+        attempts += 1;
+        frame = window.requestAnimationFrame(focusPanel);
+        return;
+      }
+      focusAgentOnOpenRef.current = false;
+      const target = !compactAgentViewport && composer && !composer.disabled ? composer : reaiCloseRef.current;
+      target?.focus({ preventScroll: true });
+    };
+    frame = window.requestAnimationFrame(focusPanel);
+    return () => window.cancelAnimationFrame(frame);
+  }, [compactAgentViewport, reaiOpen]);
 
   React.useEffect(() => {
     if (!reaiOpen) return;
@@ -654,6 +704,7 @@ function AppShellFrame({
 
   const openReai = (event: React.MouseEvent<HTMLButtonElement>) => {
     reaiReturnFocusRef.current = event.currentTarget;
+    focusAgentOnOpenRef.current = true;
     setMobileAccountOpen(false);
     setCreateOpen(false);
     // Mount the card in the same commit that opens the drawer; once mounted
@@ -1062,13 +1113,17 @@ function AppShellFrame({
           )}
           <div
             ref={reaiPanelRef}
+            id="reai-agent-panel"
             data-testid="agent-panel"
             role={compactAgentViewport ? "dialog" : "complementary"}
             aria-modal={compactAgentViewport ? true : undefined}
             aria-labelledby="reai-panel-title"
             aria-hidden={!reaiOpen}
             onTransitionEnd={(event) => {
-              if (event.target === event.currentTarget && reaiOpen && !dockedAgentViewport) {
+              if (
+                event.target === event.currentTarget && reaiOpen && !dockedAgentViewport
+                && !reaiPanelRef.current?.contains(document.activeElement)
+              ) {
                 reaiCloseRef.current?.focus({ preventScroll: true });
               }
             }}
@@ -1099,11 +1154,15 @@ function AppShellFrame({
               <button
                 type="button"
                 role="separator"
+                // A focusable separator: Tab reaches it, the arrows resize
+                // (Bench 07 UI01 found it outside the tab order).
+                tabIndex={0}
+                aria-controls="reai-agent-panel"
                 aria-orientation="vertical"
                 aria-label={t("reai.resizePanel", lang)}
                 aria-valuemin={REAI_PANEL_MIN_W}
                 aria-valuemax={REAI_PANEL_MAX_W}
-                aria-valuenow={reaiPanelWidth ?? 560}
+                aria-valuenow={Math.round(reaiPanelWidth ?? defaultAgentPanelWidth())}
                 title={t("reai.resizePanel", lang)}
                 className="group absolute inset-y-0 left-0 z-20 w-11 -translate-x-1/2 cursor-col-resize touch-none focus-visible:outline-none"
                 onPointerDown={(event) => {
@@ -1127,8 +1186,7 @@ function AppShellFrame({
                 onLostPointerCapture={finishAgentResize}
                 onDoubleClick={resetAgentPanelWidth}
                 onKeyDown={(event) => {
-                  const current = reaiPanelWidth
-                    ?? Math.min(720, Math.max(480, window.innerWidth * 0.33));
+                  const current = reaiPanelWidth ?? defaultAgentPanelWidth();
                   if (event.key === "ArrowLeft") {
                     event.preventDefault();
                     window.localStorage.setItem(REAI_PANEL_WIDTH_KEY, String(setAgentPanelWidth(current + 16)));
@@ -1161,7 +1219,12 @@ function AppShellFrame({
                 </span>
                 <h2 id="reai-panel-title" className="flex min-w-0 items-baseline gap-2 leading-tight">
                   <span className="shrink-0 text-[15px] font-semibold">{t("reai.title", lang)}</span>
-                  <span className="truncate text-[11px] font-normal text-muted-foreground">{reaiContextLabel}</span>
+                  {/* The listing the next message is about, as a chip that stays
+                      put while the conversation scrolls (Bench 07, B07-F04). */}
+                  <span className="inline-flex min-w-0 max-w-full items-center rounded-full border border-border/70 bg-surface-subtle px-2 py-0.5 text-[11px] font-medium text-foreground/72">
+                    <span className="sr-only">{t("reai.context.target", lang)}: </span>
+                    <span className="truncate">{reaiContextLabel}</span>
+                  </span>
                 </h2>
               </div>
               <div className="flex shrink-0 items-center gap-0.5">
@@ -1200,7 +1263,7 @@ function AppShellFrame({
             */}
             <div className={cn("min-h-0 flex-1", dockedAgentViewport && "border-l border-border")}>
               {reaiCardMounted ? (
-                <ReaiAgentCard draftId={reaiDraftId} currentUploadId={reaiUploadId} currentField={reaiField} onFieldClear={onReaiFieldClear} currentTourId={reaiTourId} workspaceContext={reaiContext === "advanced_tour" ? undefined : reaiContext} lang={lang} onDraftUpdated={onReaiDraftUpdated} panel compact={compactAgentViewport} />
+                <ReaiAgentCard draftId={reaiDraftId} currentUploadId={reaiUploadId} currentField={reaiField} onFieldClear={onReaiFieldClear} currentTourId={reaiTourId} workspaceContext={reaiContext === "advanced_tour" ? undefined : reaiContext} contextLabel={reaiContextLabel} lang={lang} onDraftUpdated={onReaiDraftUpdated} panel compact={compactAgentViewport} />
               ) : null}
             </div>
           </div>

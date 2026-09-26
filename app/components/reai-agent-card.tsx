@@ -3,7 +3,7 @@
 import Link from "next/link";
 import Image from "next/image";
 import { useRouter } from "next/navigation";
-import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
+import { Fragment, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 
 import {
   advanceReaiAgentPlan,
@@ -68,6 +68,7 @@ import {
 } from "../lib/agent-actions";
 import { isPlanConfirmation, isPlanStop, isProposalCancellation, isProposalConfirmation } from "../lib/agent-plan-confirmation";
 import { latestThreadToken, pendingAgentTurn, pendingCreationContextToken } from "../lib/agent-conversation";
+import { agentTurnContext, contextMarks, otherListingOf, stampTurnContexts, type AgentTurnContext } from "../lib/agent-turn-context";
 import { canApplyDirectEdit, isCurrentEditContext, proposalUndo, type AgentEditContext, type AgentEditUndo } from "../lib/agent-direct-edit";
 import { MAX_SOURCE_IMAGE_PREVIEWS, markSourceImportAttempt, monitorSourceImportProgress, reviewedSourceImageFile, reviewedSourceImport, sourceImageCandidates, unattemptedSourceImports } from "../lib/agent-document-import";
 import { proposalFieldUnit } from "../lib/agent-proposal";
@@ -234,6 +235,18 @@ function AgentVersionStamp({ answer }: { answer: ReaiAgentResponse }) {
   );
 }
 
+/** Where the conversation moved to another listing: "Teraz: B06 UX Prenájom". */
+function AgentContextDivider({ label, lang }: { label: string; lang: string }) {
+  const text = t("reai.context.now", lang).replace("{title}", label);
+  return (
+    <div role="separator" aria-label={text} className="flex items-center gap-2 py-1 text-[11px] font-medium text-muted-foreground">
+      <span aria-hidden="true" className="h-px min-w-4 flex-1 bg-border/70" />
+      <span aria-hidden="true" className="max-w-[75%] truncate">{text}</span>
+      <span aria-hidden="true" className="h-px min-w-4 flex-1 bg-border/70" />
+    </div>
+  );
+}
+
 type ChatTurn = {
   id: number;
   role: "user" | "assistant";
@@ -255,6 +268,8 @@ type ChatTurn = {
   planStepId?: string;
   /** The plan card's live state, parked with the transcript so a reload can resume it. */
   planState?: AgentPlanSnapshot;
+  /** The listing or workspace this turn was made in; null when restored from before this was recorded. */
+  context?: AgentTurnContext | null;
 };
 
 type AgentDocumentSource = File | { name: string; uploadId: number; draftId: number };
@@ -623,12 +638,15 @@ export function ReaiAgentCard({
   onFieldClear,
   currentTourId,
   workspaceContext = draftId ? "draft" : "creator",
+  contextLabel,
   lang,
   onDraftUpdated,
   panel = false,
   compact = false,
 }: {
   draftId?: number;
+  /** What the panel header names as the current listing or workspace. */
+  contextLabel?: string;
   currentUploadId?: number;
   currentField?: AgentPoolField;
   onFieldClear?: () => void;
@@ -641,6 +659,14 @@ export function ReaiAgentCard({
 }) {
   const router = useRouter();
   const { user } = useAuth();
+  const currentContext = useMemo(
+    () => agentTurnContext(workspaceContext, draftId, contextLabel || t(draftId ? "reai.draftContext" : "reai.noDraftContext", lang)),
+    [contextLabel, draftId, lang, workspaceContext],
+  );
+  const currentContextRef = useRef(currentContext);
+  useEffect(() => {
+    currentContextRef.current = currentContext;
+  }, [currentContext]);
   const dateFormat = user?.localization?.date_format;
   // The panel paints from what this tab already knows: a consent answer still
   // in the API cache, or the shell's "the agent was on" hint. Waiting for a
@@ -876,7 +902,7 @@ export function ReaiAgentCard({
         proposalStatus: "failed",
         response: turn.response ? { ...turn.response, proposal_token: null } : undefined,
       } : turn
-    ));
+    )).map((turn): ChatTurn => (turn.context === undefined ? { ...turn, context: null } : turn));
     nextTurnIdRef.current = restored.reduce((highest, turn) => (
       typeof turn.id === "number" && turn.id > highest ? turn.id : highest
     ), nextTurnIdRef.current);
@@ -892,6 +918,15 @@ export function ReaiAgentCard({
     if (!transcriptRestored || restoredTranscriptKeyRef.current !== transcriptKey) return;
     writeAgentTranscript(transcriptKey, turns);
   }, [transcriptKey, transcriptRestored, turns]);
+
+  // A turn made anywhere but `ask` (applied, cancelled, a job's result)
+  // records the listing it was made in once it lands. `ask` records its own
+  // at send time, so an answer that arrives after a navigation stays with
+  // the listing it was asked about.
+  useEffect(() => {
+    if (!transcriptRestored) return;
+    setTurns((current) => stampTurnContexts(current, currentContextRef.current));
+  }, [transcriptRestored, turns]);
 
   // The working pool is parked and restored on the same terms as the
   // transcript: what you dropped is still there after a navigation.
@@ -1333,6 +1368,9 @@ export function ReaiAgentCard({
   }, [currentTourId, draftId, improvementConversationId, lang]);
 
   const lastAssistantTurnId = [...turns].reverse().find((turn) => turn.role === "assistant")?.id;
+  // Where the listing changes in this conversation, and whether the creator
+  // has moved on since its last turn (Bench 07, B07-F04).
+  const transcriptMarks = contextMarks(turns, currentContext);
   /** Only the newest plan can be acted on; older plan cards are a record. */
   const latestPlanTurnId = [...turns].reverse().find((turn) => turn.response?.action_code === "action_plan" && turn.planState)?.id;
 
@@ -1462,8 +1500,9 @@ export function ReaiAgentCard({
     // never emptied, so dragged parameters sat as "pending" forever and rode
     // along with every later message (2026-09-26).
     const sentPoolKeys = new Set(requestPool.map((item) => poolItemKey(item)));
+    const sendContext = currentContextRef.current;
     const userTurn: ChatTurn = {
-      id: newTurnId(), role: "user", content: requestText,
+      id: newTurnId(), role: "user", content: requestText, context: sendContext,
       ...(requestPool.length ? { attachments: requestPool.map((item) => item.label) } : {}),
     };
     setTurns((current) => [...current, userTurn]);
@@ -1504,7 +1543,7 @@ export function ReaiAgentCard({
       return;
     }
 
-    const pendingProposal = pendingAgentTurn(turns);
+    const pendingProposal = pendingAgentTurn(turns, sendContext.key);
     if (
       (pendingProposal?.response?.proposal_token || pendingProposal?.response?.action_token)
       && !sourceImportFollowUp
@@ -1548,7 +1587,7 @@ export function ReaiAgentCard({
       }
       return;
     }
-    const pendingViewerAction = pendingAgentTurn(turns);
+    const pendingViewerAction = pendingAgentTurn(turns, sendContext.key);
     if (
       pendingViewerAction?.response?.client_action?.confirmation_required
       && isProposalConfirmation(requestText, lang)
@@ -1574,7 +1613,7 @@ export function ReaiAgentCard({
       // hand the router no pending code. Looking past them to an older turn
       // would resurrect a finished flow and switch off the copy-edit guard the
       // server keeps for a message with no pending action.
-      const pendingActionCode = pendingAgentTurn(turns)?.response?.action_code;
+      const pendingActionCode = pendingAgentTurn(turns, sendContext.key)?.response?.action_code;
       const response = importTokens.length ? await importSources({
         sourceTokens: importTokens, message: requestText, currentDraftId: draftId,
         creationContextToken: !draftId ? pendingCreationContextToken(turns) : null,
@@ -1645,6 +1684,7 @@ export function ReaiAgentCard({
         id: assistantTurnId,
         role: "assistant",
         content: response.reply,
+        context: sendContext,
         response,
         ...(directEdit ? { directEdit: true, proposalStatus: "pending" as const, content: t("reai.directEdit.saving", lang) } : {}),
         ...(planSnapshot ? { planId: planSnapshot.planId, planState: planSnapshot } : {}),
@@ -2539,13 +2579,38 @@ export function ReaiAgentCard({
                 const planState = turn.planState;
                 const shareUrl = answer ? contextualShareUrl(answer) : null;
                 const targetTitle = answer?.draft_results?.find((draft) => answer.selected_creation_ids?.includes(draft.id))?.creation_data.title;
+                // A card made while another listing was open says whose it
+                // is; while it still waits for a tap it waits for that
+                // listing, not this one.
+                const otherListing = otherListingOf(turn, currentContext);
+                const showsCard = Boolean(answer && (
+                  answer.proposal_token || answer.action_token || planState || answer.listing_draft
+                  || (answer.proposed_changes && Object.keys(answer.proposed_changes).length > 0)
+                ));
+                const heldForOtherListing = Boolean(otherListing && (
+                  (answer?.proposal_token && !turn.proposalStatus)
+                  || (answer?.action_token && !turn.actionStatus)
+                  || (planState && isLivePlanPhase(planState.phase))
+                ));
+                const transition = transcriptMarks.before.get(turn.id);
                 return (
+                  <Fragment key={turn.id}>
+                  {transition ? <AgentContextDivider label={transition.label} lang={lang} /> : null}
                   <div
-                    key={turn.id}
-                    className={turn.role === "user"
-                      ? "ml-auto w-fit max-w-[85%] rounded-2xl bg-foreground px-3.5 py-2.5"
-                      : "py-1"}
+                    inert={heldForOtherListing ? true : undefined}
+                    aria-describedby={heldForOtherListing ? `agent-turn-${turn.id}-elsewhere` : undefined}
+                    className={cn(
+                      turn.role === "user"
+                        ? "ml-auto w-fit max-w-[85%] rounded-2xl bg-foreground px-3.5 py-2.5"
+                        : "py-1",
+                      heldForOtherListing && "opacity-60",
+                    )}
                   >
+                    {otherListing && showsCard ? (
+                      <p className="mb-1.5 inline-flex max-w-full items-center rounded-full bg-foreground/[0.05] px-2 py-0.5 text-[11px] font-medium text-foreground/60">
+                        <span className="truncate">{t("reai.context.cardFor", lang).replace("{title}", otherListing.label)}</span>
+                      </p>
+                    ) : null}
                     {turn.role === "user"
                       ? (
                         <>
@@ -3255,8 +3320,18 @@ export function ReaiAgentCard({
                       </div>
                     )}
                   </div>
+                  {heldForOtherListing && otherListing?.draftId != null ? (
+                    <div id={`agent-turn-${turn.id}-elsewhere`} className="-mt-2 flex flex-wrap items-center gap-x-2 gap-y-1 text-[11px] text-muted-foreground">
+                      <span>{t("reai.context.heldElsewhere", lang).replace("{title}", otherListing.label)}</span>
+                      <Button type="button" variant="ghost" size="xs" onClick={() => router.push(`/draft/${otherListing.draftId}`)}>
+                        {t("reai.context.openListing", lang)}
+                      </Button>
+                    </div>
+                  ) : null}
+                  </Fragment>
                 );
               })}
+              {transcriptMarks.trailing ? <AgentContextDivider label={transcriptMarks.trailing.label} lang={lang} /> : null}
               {sourceImportProgress ? (
                 <div role="status" aria-live="polite" className="rounded-2xl border border-border/60 bg-card px-3.5 py-3 text-xs">
                   <p className="font-medium">{t("reai.import.progressTitle", lang)}</p>

@@ -8,6 +8,7 @@ import test from "node:test";
 // formed".
 const root = process.cwd();
 const card = fs.readFileSync(path.join(root, "app/components/reai-agent-card.tsx"), "utf8");
+const composerSource = fs.readFileSync(path.join(root, "app/components/agent-composer.tsx"), "utf8");
 const locales = ["en", "sk", "cs", "de"].map((code) => fs.readFileSync(path.join(root, `app/lib/locales/${code}.ts`), "utf8"));
 
 test("the conversation follows its newest message unless the creator scrolled up", () => {
@@ -161,4 +162,42 @@ test("Versions opened from the Description starts on the listing history and say
   assert.match(manager, /React\.useState<VersionTab>\(initialTab\)/);
   assert.match(manager, /if \(!open\) return;\s*setActiveTab\(initialTab\);/);
   assert.match(manager, /hint=\{t\("draft\.versions\.listingHistoryHint", lang\)\}/);
+});
+
+// Bench 07 (2026-09-26): the panel across listings, and with the keyboard.
+test("the transcript says which listing each part was about, and a card waits for its own listing", () => {
+  // B07-F04: the rental open, the sale's cards above, nothing to tell them apart.
+  assert.match(card, /context: sendContext/, "a sent message and its answer keep the listing they were asked in");
+  assert.match(card, /stampTurnContexts\(current, currentContextRef\.current\)/, "other turns take the listing they landed in");
+  assert.match(card, /context: null \} : turn\)\)/, "a transcript from before this is marked unknown, not re-dated");
+  assert.match(card, /<AgentContextDivider label=\{transition\.label\}/);
+  assert.match(card, /transcriptMarks\.trailing \? <AgentContextDivider/);
+  assert.match(card, /inert=\{heldForOtherListing \? true : undefined\}/, "its buttons cannot be pressed from here");
+  assert.match(card, /router\.push\(`\/draft\/\$\{otherListing\.draftId\}`\)/, "it offers the way to its listing");
+  for (const call of card.match(/pendingAgentTurn\([^)]*\)/g) ?? []) {
+    assert.match(call, /sendContext\.key/, `typed confirmations are for this listing only: ${call}`);
+  }
+  assert.match(shell, /contextLabel=\{reaiContextLabel\}/);
+  assert.match(shell, /reai\.context\.target/, "the header names the listing as a chip");
+  for (const locale of locales) {
+    for (const key of ["reai.context.now", "reai.context.cardFor", "reai.context.heldElsewhere", "reai.context.openListing", "reai.context.target"]) {
+      assert.match(locale, new RegExp(`"${key.replace(/\./g, "\\.")}":`), key);
+    }
+  }
+});
+
+test("the resize handle is in the tab order and the panel takes and gives back the keyboard", () => {
+  // UI01: the separator had no tabindex; opening the panel left focus on <body>.
+  const separator = shell.slice(shell.indexOf('role="separator"'), shell.indexOf("onPointerDown", shell.indexOf('role="separator"')));
+  assert.match(separator, /tabIndex=\{0\}/);
+  assert.match(separator, /aria-controls="reai-agent-panel"/);
+  assert.match(separator, /aria-valuenow=\{Math\.round\(reaiPanelWidth \?\? defaultAgentPanelWidth\(\)\)\}/);
+  assert.match(shell, /id="reai-agent-panel"/);
+  assert.match(shell, /event\.key === "ArrowLeft"[\s\S]{0,160}REAI_PANEL_WIDTH_KEY/, "keyboard resizing is kept like a drag");
+  assert.match(composerSource, /data-agent-composer/);
+  assert.match(shell, /focusAgentOnOpenRef\.current = true;/, "only the creator's own open moves focus");
+  assert.match(shell, /textarea\[data-agent-composer\]/);
+  assert.match(shell, /!compactAgentViewport && composer && !composer\.disabled \? composer : reaiCloseRef\.current/, "no phone keyboard on open");
+  assert.match(shell, /querySelectorAll<HTMLElement>\('\[data-testid="agent-launcher"\]'\)/, "back to the launcher that is shown now");
+  assert.match(shell, /if \(active && active !== document\.body && !reaiPanelRef\.current\?\.contains\(active\)\) return;/, "never pulled out of the page");
 });

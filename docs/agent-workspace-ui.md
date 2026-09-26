@@ -334,3 +334,28 @@ Operator: "better UI with recommended actions and this pool where we type".
   targets stay 44 px.
 - The loading skeleton draws the same rows and field, so nothing moves when
   the panel fills in.
+
+## Across listings and with the keyboard (2026-09-26, Bench 07)
+
+One conversation follows the creator across listings. Bench 07 opened the rental with the panel
+open: the header named the rental while the cards above were the sale's.
+
+- Every turn records the listing or workspace it was made in (`ChatTurn.context`,
+  `app/lib/agent-turn-context.ts`). A message and its answer keep the listing they were sent from,
+  even when the answer lands after a navigation; other turns take the listing they land in; a
+  transcript restored from before this is marked unknown (`null`), never re-dated.
+- The transcript shows a divider — "Teraz: B06 UX Prenájom" — where the listing changes and after
+  the last turn when the creator has moved on since (`contextMarks`).
+- A card made for another listing is labelled ("Pre B06 UX Predaj"). While it still waits for a
+  tap it is `inert`, says it is confirmed in its own listing and offers "Otvoriť ponuku". A typed
+  confirmation or cancellation ("ulož to", "zruš to") only reaches the latest card when it belongs
+  to the listing open now (`pendingAgentTurn(turns, currentContextKey)`); workspace cards are no
+  listing's and stay answerable.
+- The panel header names the current listing as a chip.
+- Opened by the creator, the panel focuses the composer (`textarea[data-agent-composer]`); in the
+  phone drawer it focuses the close button so no keyboard jumps up. A panel restored open by a
+  navigation never takes focus. Closed, it returns focus to the launcher shown now — only if the
+  keyboard was in the panel.
+- The resize separator is in the tab order (`tabIndex={0}`, `aria-controls`, `aria-valuenow` from
+  the real width): Arrow keys resize by 16 px, Home and End jump to the limits, and the width is
+  kept like a pointer drag.
