@@ -45,14 +45,16 @@ test("an address-only map uses a keyless Google embed with a normalized locale",
   assert.equal(googleMapsAddressEmbedUrl("  ", "en"), null);
 });
 
-test("the production map runtime is Google Maps JavaScript only", () => {
+test("the map runtimes are Mapbox and Google only: no OpenStreetMap tiles or Nominatim", () => {
   const repositoryRoot = fileURLToPath(new URL("../../", import.meta.url));
   const runtimeFiles = [
     "app/components/property-map-card.tsx",
     "app/components/agent-tiny-ui.tsx",
     "app/api/maps/client/route.ts",
   ];
-  const disallowedProviders = ["openstreetmap", "nominatim", "tile.openstreetmap"];
+  // The OpenStreetMap copyright link is required attribution for Mapbox
+  // data; OSM tiles, Nominatim and Leaflet stay out.
+  const disallowedProviders = ["nominatim", "tile.openstreetmap", "leaflet"];
 
   for (const relativePath of runtimeFiles) {
     const source = readFileSync(`${repositoryRoot}/${relativePath}`, "utf8").toLowerCase();
@@ -88,7 +90,9 @@ test("address-only drafts wait for an explicit in-app Google map request", () =>
   assert.match(mapCard, /addressMapRequested/);
   assert.match(mapCard, /GoogleAddressMapFrame/);
   assert.match(mapCard, /referrerPolicy="strict-origin-when-cross-origin"/);
-  assert.doesNotMatch(mapCard, /target="_blank"/);
+  // No link carries the draft's address out of the card.
+  assert.doesNotMatch(mapCard, /href=\{[^}]*address/);
+  assert.doesNotMatch(mapCard, /href=\{[^}]*target\./);
   assert.doesNotMatch(mapCard, /maps\/search\/\?api=1/);
   assert.doesNotMatch(mapCard, /body: JSON\.stringify\(\{[^}]*address/s);
 });

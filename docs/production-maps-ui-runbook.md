@@ -41,9 +41,16 @@ only then returns `{ apiKey, mapboxToken, latitude, longitude }`.
 
 - **Mapbox first** (`app/lib/mapbox-client.ts`): the bundled `mapbox-gl`
   (pinned `3.31.0`, loaded only when a map is about to render), style
-  `mapbox://styles/mapbox/streets-v12`, a marker, cooperative gestures and
-  zoom buttons on interactive maps, attribution and logo kept. A map that fires
-  `error` or does not reach `load` within 12 s falls back.
+  `mapbox://styles/mapbox/streets-v12`, a marker. Only our own controls:
+  round zoom buttons and an (i) attribution pill in the card's overlay
+  material, worded in the creator's language (sk/cs/de/en); page scrolling is
+  never captured (scroll zoom off; drag, pinch and double-click work). The
+  Mapbox wordmark stays, inside the rounded corner, and the pill opens to the
+  required "© Mapbox © OpenStreetMap Improve this map" — both are Mapbox
+  terms. The card clips the WebGL canvas with a rounded `clip-path`, and
+  `app/components/property-map.css` restores the absolute fill that
+  `mapbox-gl.css` (`position: relative`) overrode. A map that fires `error` or
+  does not reach `load` within 12 s falls back.
 - **Google fallback**: when Mapbox has no token or fails and a Google key
   exists, the same card draws the Google canvas (the contract below). With no
   Google key, the card shows the unavailable state with Try again.

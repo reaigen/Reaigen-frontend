@@ -56,6 +56,7 @@ test("the property map draws Mapbox first and falls back to Google", () => {
   assert.match(card, /provider === "google" && mapConfig\.apiKey/);
   assert.match(card, /if \(mapConfig\?\.apiKey\) \{[^}]*setProvider\("google"\)/s);
   assert.match(card, /MAPBOX_READY_TIMEOUT_MS/, "a map that never loads falls back instead of spinning");
+  assert.match(card, /scrollZoom: false/, "the page scrolls; zoom is our buttons, pinch or double-click");
   // Parent callbacks are read through refs, so inline handlers cannot
   // rebuild the map on every render.
   assert.match(card, /onReadyRef\.current\?\.\(\)/);
@@ -102,4 +103,28 @@ test("every app page carries the map policy; the public viewer stays strict", ()
 test("agent map blocks stay on Google (Mapbox terms bar operating AI with it)", () => {
   const agent = read("app/components/agent-tiny-ui.tsx").toLowerCase();
   assert.equal(agent.includes("mapbox"), false);
+});
+
+test("the map shows only our controls, in the creator's language, inside the rounded card", () => {
+  const card = read("app/components/property-map-card.tsx");
+  const css = read("app/components/property-map.css");
+  // No Mapbox chrome but the wordmark its terms require.
+  assert.match(card, /attributionControl: false/);
+  assert.doesNotMatch(card, /NavigationControl|cooperativeGestures: interactive/);
+  assert.match(card, /logoPosition: "bottom-left"/);
+  assert.match(card, /<MapZoomControls map=\{inlineMap\}/);
+  assert.match(card, /<MapboxAttribution lang=\{lang\}/);
+  // The attribution text Mapbox requires is still there.
+  for (const required of ["https://www.mapbox.com/about/maps/", "https://www.openstreetmap.org/copyright", "https://www.mapbox.com/map-feedback/"]) {
+    assert.ok(card.includes(required), required);
+  }
+  // Slovak, Czech and German words, not English, for those preferences.
+  assert.match(card, /sk: \{ zoomIn: "Priblížiť", zoomOut: "Oddialiť", attribution: "Zdroje mapových údajov", improve: "Vylepšiť túto mapu" \}/);
+  assert.match(card, /cs: \{ zoomIn: "Přiblížit"/);
+  assert.match(card, /de: \{ zoomIn: "Vergrößern"/);
+  // Rounding: the card clips the WebGL canvas, and mapbox-gl.css's
+  // position: relative no longer overrides the absolute fill.
+  assert.match(card, /\[clip-path:inset\(0_round_1\.6rem\)\]/);
+  assert.match(card, /import "\.\/property-map\.css"/);
+  assert.match(css, /\.reaigen-mapbox\.mapboxgl-map \{\s*position: absolute;\s*inset: 0;\s*border-radius: inherit;\s*overflow: hidden;/);
 });

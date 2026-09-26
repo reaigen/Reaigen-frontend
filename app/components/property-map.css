@@ -1,0 +1,39 @@
+/*
+ * The Mapbox canvas inside the Reaigen location card (2026-09-26: "we have to
+ * fix those roundings", "remove this default map ui and use only ours").
+ *
+ * Scoped to .reaigen-mapbox, the container PropertyMapCard gives the map.
+ * Zoom and attribution are our own components; the only Mapbox control left
+ * is its wordmark, which Mapbox's terms require to stay visible.
+ */
+
+/* mapbox-gl.css sets .mapboxgl-map { position: relative }, which overrode the
+   container's absolute fill; the canvas then ignored the card's radius. */
+.reaigen-mapbox.mapboxgl-map {
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  overflow: hidden;
+  font: inherit;
+}
+
+.reaigen-mapbox .mapboxgl-canvas {
+  border-radius: inherit;
+  outline: none;
+}
+
+/* The wordmark sits inside the rounded corner, small and quiet. */
+.reaigen-mapbox .mapboxgl-ctrl-bottom-left {
+  left: 0.95rem;
+  bottom: 0.8rem;
+}
+
+.reaigen-mapbox .mapboxgl-ctrl-bottom-left .mapboxgl-ctrl {
+  margin: 0;
+}
+
+.reaigen-mapbox .mapboxgl-ctrl-logo {
+  opacity: 0.7;
+  transform: scale(0.84);
+  transform-origin: left bottom;
+}

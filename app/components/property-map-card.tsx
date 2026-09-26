@@ -18,6 +18,7 @@ import { t } from "../lib/i18n";
 import { cn } from "../lib/utils";
 import { CloseIcon, LayoutIcon, LockIcon, MapPinIcon } from "./icons";
 import "mapbox-gl/dist/mapbox-gl.css";
+import "./property-map.css";
 
 type ClientMapConfig = {
   apiKey: string | null;
@@ -38,6 +39,7 @@ function MapboxCanvas({
   interactive,
   onReady,
   onError,
+  onMap,
 }: {
   token: string;
   center: GoogleMapCenter;
@@ -46,16 +48,19 @@ function MapboxCanvas({
   interactive: boolean;
   onReady?: () => void;
   onError?: () => void;
+  onMap?: (map: ZoomableMap | null) => void;
 }) {
   const containerRef = useRef<HTMLDivElement>(null);
   // Callbacks are read through refs: a parent's inline handler must not tear
   // the map down and rebuild it on every render.
   const onReadyRef = useRef(onReady);
   const onErrorRef = useRef(onError);
+  const onMapRef = useRef(onMap);
   useEffect(() => {
     onReadyRef.current = onReady;
     onErrorRef.current = onError;
-  }, [onError, onReady]);
+    onMapRef.current = onMap;
+  }, [onError, onMap, onReady]);
 
   useEffect(() => {
     let active = true;
@@ -76,19 +81,28 @@ function MapboxCanvas({
     void loadMapbox(token)
       .then((mapboxgl) => {
         if (!active) return;
+        // Only our own controls (operator: "remove this default map ui and
+        // use only ours"): no Mapbox zoom buttons, no cooperative-gesture
+        // overlay, no Mapbox attribution box — MapboxAttribution renders the
+        // required text in our material. The wordmark stays (Mapbox terms).
         const instance = new mapboxgl.Map({
           container,
           style: MAPBOX_STYLE,
           center: [center.lng, center.lat],
           zoom,
           interactive,
-          cooperativeGestures: interactive,
-          attributionControl: true,
+          scrollZoom: false,
+          dragRotate: false,
+          pitchWithRotate: false,
+          touchPitch: false,
+          attributionControl: false,
+          logoPosition: "bottom-left",
           language,
         });
         map = instance;
-        if (interactive) instance.addControl(new mapboxgl.NavigationControl({ showCompass: false }), "bottom-right");
+        instance.touchZoomRotate?.disableRotation?.();
         new mapboxgl.Marker({ color: "#111111" }).setLngLat([center.lng, center.lat]).addTo(instance);
+        onMapRef.current?.(instance);
         instance.on("load", () => {
           if (!active) return;
           loaded = true;
@@ -102,6 +116,7 @@ function MapboxCanvas({
     return () => {
       active = false;
       window.clearTimeout(timer);
+      onMapRef.current?.(null);
       map?.remove();
       container.replaceChildren();
     };
@@ -111,8 +126,70 @@ function MapboxCanvas({
     <div
       ref={containerRef}
       aria-hidden="true"
-      className={cn("absolute inset-0 h-full w-full", !interactive && "pointer-events-none")}
+      className={cn("reaigen-mapbox absolute inset-0 h-full w-full", !interactive && "pointer-events-none")}
     />
+  );
+}
+
+type ZoomableMap = { zoomIn(): unknown; zoomOut(): unknown };
+
+// The map controls' words in the creator's language (2026-09-26: "navigation
+// ui is in english and we have slovak preferences"). Kept here rather than in
+// the locale files while those are being reworked in parallel; "© Mapbox" and
+// "© OpenStreetMap" are names and stay as they are.
+const MAP_CONTROL_TEXT = {
+  en: { zoomIn: "Zoom in", zoomOut: "Zoom out", attribution: "Map data sources", improve: "Improve this map" },
+  sk: { zoomIn: "Priblížiť", zoomOut: "Oddialiť", attribution: "Zdroje mapových údajov", improve: "Vylepšiť túto mapu" },
+  cs: { zoomIn: "Přiblížit", zoomOut: "Oddálit", attribution: "Zdroje mapových dat", improve: "Vylepšit tuto mapu" },
+  de: { zoomIn: "Vergrößern", zoomOut: "Verkleinern", attribution: "Quellen der Kartendaten", improve: "Diese Karte verbessern" },
+} as const;
+
+function mapControlText(lang: string) {
+  const code = String(lang || "").slice(0, 2).toLowerCase();
+  return MAP_CONTROL_TEXT[code as keyof typeof MAP_CONTROL_TEXT] ?? MAP_CONTROL_TEXT.en;
+}
+
+/** Zoom in our own round controls, in place of Mapbox's. */
+function MapZoomControls({ map, lang, className }: { map: ZoomableMap | null; lang: string; className?: string }) {
+  if (!map) return null;
+  const text = mapControlText(lang);
+  const button = "flex h-10 w-10 items-center justify-center text-[18px] font-medium leading-none transition-colors hover:bg-black/[0.04] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring";
+  return (
+    <div className={cn("media-overlay-surface flex flex-col overflow-hidden rounded-full", className)}>
+      <button type="button" onClick={() => map.zoomIn()} aria-label={text.zoomIn} title={text.zoomIn} className={button}>+</button>
+      <span aria-hidden="true" className="mx-2.5 h-px bg-foreground/10" />
+      <button type="button" onClick={() => map.zoomOut()} aria-label={text.zoomOut} title={text.zoomOut} className={button}>−</button>
+    </div>
+  );
+}
+
+/**
+ * The attribution Mapbox's terms require, in our material: a small (i) pill
+ * that opens to "© Mapbox © OpenStreetMap Improve this map".
+ */
+function MapboxAttribution({ lang, className }: { lang: string; className?: string }) {
+  const [open, setOpen] = useState(false);
+  const text = mapControlText(lang);
+  return (
+    <div className={cn("media-overlay-surface flex h-7 items-center rounded-full text-[10.5px] font-medium", open ? "gap-2 pl-3 pr-1" : "", className)}>
+      {open ? (
+        <>
+          <a href="https://www.mapbox.com/about/maps/" target="_blank" rel="noopener noreferrer" className="hover:underline">© Mapbox</a>
+          <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener noreferrer" className="hover:underline">© OpenStreetMap</a>
+          <a href="https://www.mapbox.com/map-feedback/" target="_blank" rel="noopener noreferrer" className="font-semibold hover:underline">{text.improve}</a>
+        </>
+      ) : null}
+      <button
+        type="button"
+        onClick={() => setOpen((value) => !value)}
+        aria-expanded={open}
+        aria-label={text.attribution}
+        title={text.attribution}
+        className="flex h-7 w-7 items-center justify-center rounded-full text-[12px] font-semibold italic focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+      >
+        i
+      </button>
+    </div>
   );
 }
 
@@ -286,6 +363,8 @@ export function PropertyMapCard({
   const [target, setTarget] = useState(rawTarget);
   const [mapConfig, setMapConfig] = useState<ClientMapConfig | null>(null);
   const [provider, setProvider] = useState<MapProvider>("mapbox");
+  const [inlineMap, setInlineMap] = useState<ZoomableMap | null>(null);
+  const [expandedMap, setExpandedMap] = useState<ZoomableMap | null>(null);
   const [addressProvider, setAddressProvider] = useState<MapProvider>("mapbox");
   const [addressMapbox, setAddressMapbox] = useState<{ token: string; center: GoogleMapCenter } | null>(null);
   const [failed, setFailed] = useState(false);
@@ -524,7 +603,9 @@ export function PropertyMapCard({
         aria-label={t("draft.location", lang)}
         aria-busy={loading || addressMapStatus === "loading"}
         className={cn(
-          "group relative isolate overflow-hidden rounded-[1.6rem] border border-border/65 bg-[#e9eae7] shadow-card",
+          // The explicit clip-path rounds a WebGL canvas that overflow alone
+          // left square (2026-09-26: "we have to fix those roundings").
+          "group relative isolate overflow-hidden rounded-[1.6rem] border border-border/65 bg-[#e9eae7] shadow-card [clip-path:inset(0_round_1.6rem)]",
           compact ? "aspect-[4/3] min-h-[15rem] sm:aspect-[16/7]" : "aspect-[4/3] min-h-[17rem] sm:aspect-[18/7]",
           className,
         )}
@@ -535,6 +616,7 @@ export function PropertyMapCard({
         />
         {!failed && mapConfig && provider === "mapbox" && mapConfig.mapboxToken ? (
           <MapboxCanvas
+            onMap={setInlineMap}
             token={mapConfig.mapboxToken}
             center={mapConfig.center}
             language={lang.slice(0, 2).toLowerCase()}
@@ -557,6 +639,7 @@ export function PropertyMapCard({
         ) : null}
         {isAddressOnly && addressMapRequested && addressMapStatus !== "failed" && addressProvider === "mapbox" && addressMapbox ? (
           <MapboxCanvas
+            onMap={setInlineMap}
             key={`inline-mapbox-${target.key}-${addressMapNonce}`}
             token={addressMapbox.token}
             center={addressMapbox.center}
@@ -645,6 +728,12 @@ export function PropertyMapCard({
         ) : null}
 
         <div className="pointer-events-none absolute inset-0 bg-gradient-to-b from-black/[0.08] via-transparent to-black/[0.24]" />
+        {inlineMap ? (
+          <>
+            <MapZoomControls map={inlineMap} lang={lang} className="absolute bottom-12 right-3 sm:bottom-14 sm:right-4" />
+            <MapboxAttribution lang={lang} className="absolute bottom-3 right-3 sm:bottom-4 sm:right-4" />
+          </>
+        ) : null}
         <div className="media-overlay-surface absolute left-3 top-3 flex max-w-[calc(100%-7rem)] items-center gap-2 rounded-full px-3 py-2 text-[11px] font-semibold sm:left-4 sm:top-4">
           <LockIcon size={13} className="shrink-0" />
           <span className="truncate">{t("draft.location", lang)} · {t("draft.editor.private", lang)}</span>
@@ -692,8 +781,15 @@ export function PropertyMapCard({
               </button>
             </header>
             <div className="relative min-h-0 flex-1 overflow-hidden border-y border-border/55 bg-[#e9eae7]">
+              {expandedMap ? (
+                <>
+                  <MapZoomControls map={expandedMap} lang={lang} className="absolute right-4 top-4 z-10" />
+                  <MapboxAttribution lang={lang} className="absolute bottom-4 right-4 z-10" />
+                </>
+              ) : null}
               {mapConfig && !failed && !isAddressOnly && provider === "mapbox" && mapConfig.mapboxToken ? (
                 <MapboxCanvas
+                  onMap={setExpandedMap}
                   token={mapConfig.mapboxToken}
                   center={mapConfig.center}
                   language={lang.slice(0, 2).toLowerCase()}
@@ -721,6 +817,7 @@ export function PropertyMapCard({
               ) : null}
               {isAddressOnly && addressMapRequested && addressMapStatus !== "failed" && addressProvider === "mapbox" && addressMapbox ? (
                 <MapboxCanvas
+                  onMap={setExpandedMap}
                   key={`expanded-mapbox-${target.key}-${addressMapNonce}`}
                   token={addressMapbox.token}
                   center={addressMapbox.center}
