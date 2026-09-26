@@ -52,3 +52,9 @@ test("long unbroken text wraps inside the bubbles and table cells", () => {
   assert.match(card, /whitespace-pre-line break-words text-\[14px\] leading-6 text-background \[overflow-wrap:anywhere\]/);
   assert.match(card, /<td key=\{column\} className="[^"]*\[overflow-wrap:anywhere\]/);
 });
+
+test("TinyUI distances are shown in the creator's own unit from the server", () => {
+  const tiny = fs.readFileSync(path.join(root, "app/components/agent-tiny-ui.tsx"), "utf8");
+  assert.match(tiny, /const distance = block\.distance_label \|\|/);
+  assert.match(tiny, /\{place\.distance_label \|\|/);
+});

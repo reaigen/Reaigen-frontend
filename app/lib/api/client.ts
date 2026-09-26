@@ -2760,6 +2760,8 @@ export type ReaiAgentTinyUiBlock =
         category: string;
         coordinate: [number, number];
         distance_m: number;
+        /** The distance in the creator's own unit, formatted by the server. */
+        distance_label?: string;
       }>;
       attribution?: string;
     }
@@ -2770,6 +2772,8 @@ export type ReaiAgentTinyUiBlock =
       origin_label: string;
       destination_label: string;
       distance_m: number;
+      /** The distance in the creator's own unit, formatted by the server. */
+      distance_label?: string;
       /** Omitted only for an explicitly labelled straight-line preview. */
       duration_s?: number;
       preview_kind?: "road_route" | "straight_line";

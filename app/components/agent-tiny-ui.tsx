@@ -436,7 +436,9 @@ function TinyRoute({ block, lang }: { block: Extract<ReaiAgentTinyUiBlock, { kin
     )).slice(0, 256),
     [block.path],
   );
-  const distance = block.distance_m >= 1000 ? `${(block.distance_m / 1000).toFixed(1)} km` : `${Math.round(block.distance_m)} m`;
+  // The server says the distance in the creator's own unit; the metric
+  // fallback is only for a block from an older server.
+  const distance = block.distance_label || (block.distance_m >= 1000 ? `${(block.distance_m / 1000).toFixed(1)} km` : `${Math.round(block.distance_m)} m`);
   const minutes = block.duration_s == null ? null : Math.max(1, Math.round(block.duration_s / 60));
   const duration = minutes == null ? null : (minutes >= 60 ? `${Math.floor(minutes / 60)} h ${minutes % 60} min` : `${minutes} min`);
   const previewLabel = block.preview_kind === "straight_line" ? copy.geographicPreview : copy.routePreview;
@@ -522,7 +524,7 @@ function TinyNearbyMap({
                 >
                   <span className="flex h-4 w-4 shrink-0 items-center justify-center rounded-full bg-violet-500/10 font-semibold text-violet-700 dark:text-violet-300">{index + 1}</span>
                   <span className="min-w-0 flex-1 truncate font-medium">{place.label}</span>
-                  <span className="shrink-0 tabular-nums text-muted-foreground">{place.distance_m >= 1000 ? `${(place.distance_m / 1000).toFixed(1)} km` : `${Math.round(place.distance_m)} m`}</span>
+                  <span className="shrink-0 tabular-nums text-muted-foreground">{place.distance_label || (place.distance_m >= 1000 ? `${(place.distance_m / 1000).toFixed(1)} km` : `${Math.round(place.distance_m)} m`)}</span>
                 </button>
               </li>
             ))}
