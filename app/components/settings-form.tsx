@@ -120,6 +120,16 @@ import type { LocaleKey } from "../lib/locales";
 import { cn } from "../lib/utils";
 import { ManagedLegalDocuments } from "./content-documents";
 import { resolveQuotaPresentation } from "../lib/account-usage";
+import { privacySummary } from "../lib/privacy-summary";
+import {
+  areaSample,
+  currencyLabel,
+  currencySample,
+  dateFormatSample,
+  distanceSample,
+  languageLabel,
+  unitNameKey,
+} from "../lib/locale-preview";
 import { CountrySelect } from "./country-select";
 import { AddressRegionControl } from "./address-region-control";
 import { InternationalPhoneInput } from "./international-phone-input";
@@ -1521,21 +1531,10 @@ function PrivacyTab({
     }
   }
 
-  const visibleContactDetails = [
-    emailAvailable && showEmail,
-    phoneAvailable && showPhone,
-  ].filter(Boolean).length;
-  const hasPublicContactDetails = isPublic && visibleContactDetails > 0;
-  const statusLabel = !isPublic
-    ? t("settings.privacy.statusPrivate", lang)
-    : allowContact || hasPublicContactDetails
-      ? t("settings.privacy.statusPublicContact", lang)
-      : t("settings.privacy.statusPublicLimited", lang);
-  const statusHint = !isPublic
-    ? t("settings.privacy.statusPrivateHint", lang)
-    : hasPublicContactDetails
-      ? t("settings.privacy.statusPublicContactHint", lang)
-      : t("settings.privacy.statusPublicLimitedHint", lang);
+  const privacy = privacySummary({ isPublic, emailAvailable, showEmail, phoneAvailable, showPhone, allowContact });
+  const hasPublicContactDetails = isPublic && ((emailAvailable && showEmail) || (phoneAvailable && showPhone));
+  const statusLabel = privacy.parts.map((key) => t(key, lang)).join(" · ");
+  const statusHint = t(privacy.hint, lang);
 
   const gdpr = user.gdpr;
   const licenseStatus = p?.is_real_estate_professional
@@ -2089,8 +2088,11 @@ function symbolFor(options: PreferenceOption[], code: string): string {
   return options.find((option) => option.code === code)?.symbol ?? code;
 }
 
-function stableOptionLabel(option: PreferenceOption): string {
-  return option.symbol ? `${option.code} · ${option.name} (${option.symbol})` : `${option.code} · ${option.name}`;
+/** A unit in the interface language with its symbol; codes stay out of the label. */
+function unitOptionLabel(option: PreferenceOption, lang: string): string {
+  const key = unitNameKey(option.code);
+  const name = key ? t(key, lang) : option.name;
+  return option.symbol ? `${name} (${option.symbol})` : name;
 }
 
 function SettingsField({ label, children, hint }: { label: string; children: React.ReactNode; hint?: string }) {
@@ -2374,9 +2376,10 @@ function LocalizationTab({ user, lang }: { user: UserProfile; lang: string }) {
   const distanceUnits = prefs ? flattenUnits(prefs.distance_units) : [];
   const dateFormats = prefs?.date_formats ?? [];
   const timezones = prefs?.timezones ?? [];
-  const formattedDateSample = dateFormats.find((d) => d.code === dateFormat)?.name ?? dateFormat;
-  const formattedAreaSample = `82 ${symbolFor(areaUnits, areaUnit)}`;
-  const formattedDistanceSample = `1.4 ${symbolFor(distanceUnits, distanceUnit)}`;
+  const formattedDateSample = dateFormatSample(dateFormat, lang);
+  const formattedCurrencySample = currencySample(currency, lang);
+  const formattedAreaSample = areaSample(areaUnit, symbolFor(areaUnits, areaUnit), lang);
+  const formattedDistanceSample = distanceSample(distanceUnit, symbolFor(distanceUnits, distanceUnit), lang);
 
   return (
     <Card>
@@ -2398,7 +2401,7 @@ function LocalizationTab({ user, lang }: { user: UserProfile; lang: string }) {
             <p className="text-[13px] font-medium">{t("settings.localization.preview", lang)}</p>
             <div className="mt-2 grid grid-cols-1 gap-x-4 gap-y-1 text-[12px] sm:grid-cols-2">
               <p className="text-muted-foreground">{t("settings.localization.previewDate", lang)} <span className="font-medium text-foreground">{formattedDateSample}</span></p>
-              <p className="text-muted-foreground">{t("settings.localization.previewCurrency", lang)} <span className="font-medium text-foreground">{currency}</span></p>
+              <p className="text-muted-foreground">{t("settings.localization.previewCurrency", lang)} <span className="font-medium text-foreground">{formattedCurrencySample}</span></p>
               <p className="text-muted-foreground">{t("settings.localization.previewArea", lang)} <span className="font-medium text-foreground">{formattedAreaSample}</span></p>
               <p className="text-muted-foreground">{t("settings.localization.previewDistance", lang)} <span className="font-medium text-foreground">{formattedDistanceSample}</span></p>
             </div>
@@ -2410,7 +2413,7 @@ function LocalizationTab({ user, lang }: { user: UserProfile; lang: string }) {
                 <SelectTrigger aria-label={t("settings.localization.language", lang)}><SelectValue /></SelectTrigger>
                 <SelectContent>
                   {languages.map((l) => (
-                    <SelectItem key={l.code} value={l.code}>{stableOptionLabel(l)}</SelectItem>
+                    <SelectItem key={l.code} value={l.code}>{languageLabel(l.code, l.name)}</SelectItem>
                   ))}
                 </SelectContent>
               </Select>
@@ -2436,7 +2439,7 @@ function LocalizationTab({ user, lang }: { user: UserProfile; lang: string }) {
                 <SelectContent>
                   {currencies.map((c) => (
                     <SelectItem key={c.code} value={c.code}>
-                      {stableOptionLabel(c)}
+                      {currencyLabel(c.code, c.name, c.symbol, lang)}
                     </SelectItem>
                   ))}
                 </SelectContent>
@@ -2447,7 +2450,7 @@ function LocalizationTab({ user, lang }: { user: UserProfile; lang: string }) {
                 <SelectTrigger aria-label={t("settings.localization.dateFormat", lang)}><SelectValue /></SelectTrigger>
                 <SelectContent>
                   {dateFormats.map((d) => (
-                    <SelectItem key={d.code} value={d.code}>{d.code} · {d.name}</SelectItem>
+                    <SelectItem key={d.code} value={d.code}>{dateFormatSample(d.code, lang)}</SelectItem>
                   ))}
                 </SelectContent>
               </Select>
@@ -2461,7 +2464,7 @@ function LocalizationTab({ user, lang }: { user: UserProfile; lang: string }) {
                 <SelectContent>
                   {areaUnits.map((u) => (
                     <SelectItem key={u.code} value={u.code}>
-                      {stableOptionLabel(u)}
+                      {unitOptionLabel(u, lang)}
                     </SelectItem>
                   ))}
                 </SelectContent>
@@ -2473,7 +2476,7 @@ function LocalizationTab({ user, lang }: { user: UserProfile; lang: string }) {
                 <SelectContent>
                   {distanceUnits.map((u) => (
                     <SelectItem key={u.code} value={u.code}>
-                      {stableOptionLabel(u)}
+                      {unitOptionLabel(u, lang)}
                     </SelectItem>
                   ))}
                 </SelectContent>

@@ -344,6 +344,13 @@ Findings from the Bench 06 new-user run (2026-09-26) that now hold:
   refusal to a localized sentence (supported types JPEG/PNG/WebP/HEIC, 10 MB, retry). A dropped
   connection reads as one localized sentence everywhere (`getSafeApiErrorMessage`), never the
   browser's "Failed to fetch".
+- **Privacy says what the switches say.** The Privacy summary lists each switch's state (profile,
+  email, phone when there is one, messages; `privacySummary`) instead of a headline that could
+  contradict its own hint.
+- **Language & region shows real samples.** The preview formats today's date in the chosen format,
+  a sample price in the chosen currency and sample area/distance values; option labels are names
+  (languages in themselves, currencies from Intl, units from our locale strings), never catalogue
+  codes such as `SQM` or `EU`.
 
 ## Data-loading and state rules
 

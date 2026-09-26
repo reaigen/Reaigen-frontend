@@ -1,6 +1,25 @@
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
+import { registerHooks } from "node:module";
 import test from "node:test";
+
+// App modules import their siblings without extensions (bundler resolution).
+registerHooks({
+  resolve(specifier, context, nextResolve) {
+    try {
+      return nextResolve(specifier, context);
+    } catch (error) {
+      if (specifier.startsWith(".") && !/\.[cm]?[jt]sx?$/.test(specifier)) {
+        try {
+          return nextResolve(`${specifier}.ts`, context);
+        } catch {
+          return nextResolve(`${specifier}/index.ts`, context);
+        }
+      }
+      throw error;
+    }
+  },
+});
 
 import {
   isSupportedProfileImage,
@@ -8,6 +27,7 @@ import {
   profileImageType,
   scaledProfileImageSize,
 } from "../app/lib/profile-image.ts";
+import { privacySummary } from "../app/lib/privacy-summary.ts";
 
 async function source(relativePath) {
   return readFile(new URL(relativePath, import.meta.url), "utf8");
@@ -177,4 +197,44 @@ test("profile photos go through the API with a localized, actionable refusal", (
   assert.equal(profileImageProblemFromResponse(413, null), "image_too_large");
   assert.equal(profileImageProblemFromResponse(400, "image_unsupported"), "image_unsupported");
   assert.equal(profileImageProblemFromResponse(400, "something_else"), null);
+});
+
+test("the Privacy summary lists what each switch does, not a headline that contradicts it", () => {
+  // Bench 06 B06-F07: public profile, email hidden, messages on was titled
+  // "Public contact details" above a sentence saying contact details stay hidden.
+  const defaults = privacySummary({ isPublic: true, emailAvailable: true, showEmail: false, phoneAvailable: false, showPhone: false, allowContact: true });
+  assert.deepEqual(defaults.parts, [
+    "settings.privacy.summary.profilePublic",
+    "settings.privacy.summary.emailHidden",
+    "settings.privacy.summary.messagesOn",
+  ]);
+  assert.equal(defaults.hint, "settings.privacy.statusMessagesOnlyHint");
+  const shown = privacySummary({ isPublic: true, emailAvailable: true, showEmail: true, phoneAvailable: true, showPhone: false, allowContact: false });
+  assert.deepEqual(shown.parts, [
+    "settings.privacy.summary.profilePublic",
+    "settings.privacy.summary.emailShown",
+    "settings.privacy.summary.phoneHidden",
+    "settings.privacy.summary.messagesOff",
+  ]);
+  assert.equal(shown.hint, "settings.privacy.statusPublicContactHint");
+  assert.deepEqual(privacySummary({ isPublic: false, emailAvailable: true, showEmail: true, phoneAvailable: true, showPhone: true, allowContact: true }).parts, ["settings.privacy.summary.profilePrivate"]);
+  assert.match(settings, /const statusLabel = privacy\.parts\.map\(\(key\) => t\(key, lang\)\)\.join\(" · "\)/);
+});
+
+test("Language & region shows real samples and names, not catalogue codes", async () => {
+  // Bench 06 B06-F08: "Dátum EU", "sk · Slovencina", "SQM · Square Meter", "1.4 m".
+  const preview = await import("../app/lib/locale-preview.ts");
+  const { t } = await import("../app/lib/i18n.ts");
+  const day = new Date("2026-09-26T10:00:00Z");
+  assert.equal(preview.dateFormatSample("EU", "sk", day), "26.09.2026");
+  assert.equal(preview.dateFormatSample("ISO", "sk", day), "2026-09-26");
+  assert.equal(preview.languageLabel("sk", "Slovencina"), "Slovenčina");
+  assert.equal(preview.languageLabel("de", "German"), "Deutsch");
+  assert.match(preview.currencyLabel("EUR", "Euro", "€", "sk"), /^Euro \(€\)$/);
+  assert.match(preview.currencySample("EUR", "sk"), /^245\s000\s€$/);
+  assert.equal(preview.distanceSample("M", "m", "sk"), "850 m");
+  assert.equal(preview.distanceSample("KM", "km", "sk"), "1,4 km");
+  assert.equal(t(preview.unitNameKey("SQM"), "sk"), "Štvorcový meter");
+  assert.equal(preview.unitNameKey("XYZ"), null);
+  assert.doesNotMatch(settings, /stableOptionLabel|\{d\.code\} · \{d\.name\}/);
 });
