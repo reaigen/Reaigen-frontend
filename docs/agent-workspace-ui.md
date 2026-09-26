@@ -238,6 +238,5 @@ Tests: `app/lib/agent-conversation.test.mjs`.
   and the create card lists the same facts (`ListingDraftFacts`), formatted
   with the unit catalogue like proposals. Only what was said is shown —
   nothing is listed as missing or unknown.
-- Guarded by `scripts/validate-agent-panel.test.mjs` (run with
-  `node --test scripts/validate-agent-panel.test.mjs`; adding it to
-  `npm run check` needs a `package.json` change, which waits for approval).
+- Guarded by `scripts/validate-agent-panel.test.mjs` (`npm run
+  validate-agent-panel`, part of `npm run check`).
