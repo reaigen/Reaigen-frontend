@@ -39,6 +39,7 @@ import { cn } from "../lib/utils";
 import {
   computeAccountSetupStatus,
   isAccountReady,
+  shouldShowSetupReminder,
   type AccountSetupStatus,
   type SetupBlockerKey,
   type SetupMissingKey,
@@ -243,7 +244,7 @@ function StepFooter({
 
 /* ── Step 1: profile ────────────────────────────────────────────────────── */
 
-function ProfileStep({ user, lang, onSaved, onAdvance }: StepProps) {
+function ProfileStep({ user, lang, onSaved, onAdvance, registerPendingSave }: StepProps) {
   const [firstName, setFirstName] = React.useState(user.first_name ?? "");
   const [lastName, setLastName] = React.useState(user.last_name ?? "");
   const [username, setUsername] = React.useState(user.username ?? "");
@@ -256,6 +257,25 @@ function ProfileStep({ user, lang, onSaved, onAdvance }: StepProps) {
   const usernameMissing = !username.trim();
   const issueCount = countFormIssues([firstNameMissing, lastNameMissing, usernameMissing]);
   const canSubmit = issueCount === 0;
+  // Leaving without Continue keeps every typed name that is not blank.
+  const typedChanges = Object.fromEntries(
+    ([
+      ["first_name", firstName.trim(), user.first_name ?? ""],
+      ["last_name", lastName.trim(), user.last_name ?? ""],
+      ["username", username.trim(), user.username ?? ""],
+    ] as const)
+      .filter(([, value, saved]) => value && value !== saved)
+      .map(([key, value]) => [key, value]),
+  );
+  usePendingSave(
+    registerPendingSave,
+    Object.keys(typedChanges).length > 0
+      ? async () => {
+        await updateProfile(typedChanges);
+        await onSaved();
+      }
+      : null,
+  );
 
   async function handleSubmit(event: React.FormEvent) {
     event.preventDefault();
@@ -336,7 +356,7 @@ function ProfileStep({ user, lang, onSaved, onAdvance }: StepProps) {
 
 /* ── Step 2: seller profile ─────────────────────────────────────────────── */
 
-function SellerStep({ user, lang, onSaved, onAdvance, onBack }: StepProps) {
+function SellerStep({ user, lang, onSaved, onAdvance, onBack, registerPendingSave }: StepProps) {
   const p = user.profile;
   const [phone, setPhone] = React.useState(p?.phone ?? "");
   const [company, setCompany] = React.useState(p?.company ?? "");
@@ -375,7 +395,11 @@ function SellerStep({ user, lang, onSaved, onAdvance, onBack }: StepProps) {
   const [otpBusy, setOtpBusy] = React.useState(false);
   const phoneDisplay = formatPhoneDisplay(savedPhone);
 
-  const phoneValid = isValidInternationalPhone(phone);
+  // The number is optional here, as it is in Settings: a verified phone is a
+  // publishing requirement, checked when a listing is published, not a
+  // condition for saving the rest of the seller profile (B06-F03).
+  const phoneEmpty = !phone.trim();
+  const phoneValid = phoneEmpty || isValidInternationalPhone(phone);
   const bioMissing = !bio.trim();
   const countryInvalid = Boolean(country.trim()) && !isPhoneCountry(country);
   const normalizedWebsite = normalizeWebAddress(website);
@@ -397,8 +421,8 @@ function SellerStep({ user, lang, onSaved, onAdvance, onBack }: StepProps) {
     return text.includes("phone") && (text.includes("exist") || text.includes("taken") || text.includes("already"));
   }
 
-  async function save() {
-    const fields = {
+  function sellerFields() {
+    return {
       company: company.trim(),
       job_title: jobTitle.trim(),
       website: normalizedWebsite ?? website.trim(),
@@ -412,6 +436,10 @@ function SellerStep({ user, lang, onSaved, onAdvance, onBack }: StepProps) {
       license_number: isRePro ? license.trim() : "",
       agency_name: isRePro ? agency.trim() : "",
     };
+  }
+
+  async function save() {
+    const fields = sellerFields();
     try {
       await updateSellerProfile({ phone: phone.trim(), ...fields });
       setPhoneError(null);
@@ -425,6 +453,40 @@ function SellerStep({ user, lang, onSaved, onAdvance, onBack }: StepProps) {
     }
     await onSaved();
   }
+
+  const sellerDirty = JSON.stringify({ phone: phone.trim(), ...sellerFields() }) !== JSON.stringify({
+    phone: savedPhone,
+    company: p?.company ?? "",
+    job_title: p?.job_title ?? "",
+    website: p?.website ?? "",
+    bio: p?.bio ?? "",
+    address: p?.address ?? "",
+    city: p?.city ?? "",
+    state: p?.state ?? "",
+    postal_code: p?.postal_code ?? "",
+    country: (p?.country ?? "").toUpperCase(),
+    is_real_estate_professional: p?.is_real_estate_professional ?? false,
+    license_number: p?.is_real_estate_professional ? p?.license_number ?? "" : "",
+    agency_name: p?.is_real_estate_professional ? p?.agency_name ?? "" : "",
+  });
+  usePendingSave(
+    registerPendingSave,
+    sellerDirty
+      ? async () => {
+        if (!phoneValid || websiteInvalid || countryInvalid) {
+          setPhoneTouched(true);
+          touchAll(["website", "country"]);
+          throw new Error(t("setup.leave.fixFirst", lang));
+        }
+        try {
+          await save();
+        } catch (err) {
+          // A refused number still leaves the other details saved.
+          if (err !== PHONE_TAKEN) throw err;
+        }
+      }
+      : null,
+  );
 
   async function savePhoneForOtp() {
     try {
@@ -502,6 +564,7 @@ function SellerStep({ user, lang, onSaved, onAdvance, onBack }: StepProps) {
         <Field
           id="setup-phone"
           label={t("settings.seller.phone", lang)}
+          optional
           lang={lang}
           hint={t("setup.seller.phoneHint", lang)}
           error={phoneError ?? (phoneTouched && !phoneValid ? t("phone.invalid", lang) : null)}
@@ -1077,12 +1140,30 @@ function PermissionsStep({
 
 /* ── Flow ───────────────────────────────────────────────────────────────── */
 
+/**
+ * Saves what a step has typed but not submitted. The flow calls it before
+ * leaving the step any other way than Continue — Skip, Back, or a rail
+ * click — so typed details are never dropped silently (Bench 06 B06-F01:
+ * Skip left the seller details empty in Settings). It rejects with a
+ * message when a typed value cannot be saved as it stands.
+ */
+type PendingSave = () => Promise<void>;
+
 interface StepProps {
   user: UserProfile;
   lang: string;
   onSaved: () => Promise<unknown>;
   onAdvance: () => void;
   onBack: () => void;
+  registerPendingSave?: (save: PendingSave | null) => void;
+}
+
+/** Hands the step's current pending save (or none) to the flow. */
+function usePendingSave(register: StepProps["registerPendingSave"], save: PendingSave | null) {
+  React.useEffect(() => {
+    register?.(save);
+  });
+  React.useEffect(() => () => register?.(null), [register]);
 }
 
 export function AccountSetupFlow({
@@ -1106,18 +1187,49 @@ export function AccountSetupFlow({
   const [skipping, setSkipping] = React.useState(false);
   const [resent, setResent] = React.useState(false);
   const [resendError, setResendError] = React.useState<string | null>(null);
+  const [leaveError, setLeaveError] = React.useState<string | null>(null);
+  const pendingSaveRef = React.useRef<PendingSave | null>(null);
+  const registerPendingSave = React.useCallback((save: PendingSave | null) => {
+    pendingSaveRef.current = save;
+  }, []);
 
   const stepIndex = view === "done" ? STEPS.length : STEPS.findIndex((step) => step.key === view);
   const goTo = (key: StepView) => {
+    pendingSaveRef.current = null;
+    setLeaveError(null);
     setView(key);
     window.scrollTo({ top: 0, behavior: "smooth" });
   };
   const advance = () => goTo(stepIndex + 1 < STEPS.length ? STEPS[stepIndex + 1].key : "done");
-  const back = () => goTo(STEPS[Math.max(0, stepIndex - 1)].key);
+
+  /** Saves what the current step has typed; false keeps the user on it. */
+  async function keepTypedInput(): Promise<boolean> {
+    const save = pendingSaveRef.current;
+    if (!save) return true;
+    setLeaveError(null);
+    try {
+      await save();
+      pendingSaveRef.current = null;
+      return true;
+    } catch (err) {
+      setLeaveError(getSafeApiErrorMessage(err, lang));
+      return false;
+    }
+  }
+  const leaveTo = async (key: StepView) => {
+    if (key === view) return;
+    if (await keepTypedInput()) goTo(key);
+  };
+  const back = () => { void leaveTo(STEPS[Math.max(0, stepIndex - 1)].key); };
 
   async function skip() {
     if (skipping) return;
     setSkipping(true);
+    // Skip means "not now", not "throw away what I typed".
+    if (!(await keepTypedInput())) {
+      setSkipping(false);
+      return;
+    }
     try {
       await updatePersonalizedData({ onboarding_skipped: true });
       await onSaved();
@@ -1270,7 +1382,7 @@ export function AccountSetupFlow({
                 ) : null}
                 <button
                   type="button"
-                  onClick={() => goTo(step.key)}
+                  onClick={() => { void leaveTo(step.key); }}
                   aria-current={current ? "step" : undefined}
                   data-testid={`setup-strip-${step.key}`}
                   data-complete={complete ? "true" : "false"}
@@ -1303,7 +1415,7 @@ export function AccountSetupFlow({
                 <li key={step.key}>
                   <button
                     type="button"
-                    onClick={() => goTo(step.key)}
+                    onClick={() => { void leaveTo(step.key); }}
                     aria-current={current ? "step" : undefined}
                     data-testid={`setup-rail-${step.key}`}
                     data-complete={complete ? "true" : "false"}
@@ -1380,8 +1492,11 @@ export function AccountSetupFlow({
                   {t("setup.skip", lang)}
                 </Button>
               </div>
-              {view === "profile" ? <ProfileStep key="profile" user={user} lang={lang} onSaved={onSaved} onAdvance={advance} onBack={back} /> : null}
-              {view === "seller" ? <SellerStep key="seller" user={user} lang={lang} onSaved={onSaved} onAdvance={advance} onBack={back} /> : null}
+              {leaveError ? (
+                <p role="alert" className="mb-4 text-[12px] text-destructive" data-testid="setup-leave-error">{leaveError}</p>
+              ) : null}
+              {view === "profile" ? <ProfileStep key="profile" user={user} lang={lang} onSaved={onSaved} onAdvance={advance} onBack={back} registerPendingSave={registerPendingSave} /> : null}
+              {view === "seller" ? <SellerStep key="seller" user={user} lang={lang} onSaved={onSaved} onAdvance={advance} onBack={back} registerPendingSave={registerPendingSave} /> : null}
               {view === "billing" ? <BillingStep key="billing" user={user} lang={lang} onSaved={onSaved} onAdvance={advance} onBack={back} /> : null}
               {view === "permissions" ? (
                 <PermissionsStep key="permissions" user={user} lang={lang} onSaved={onSaved} onAdvance={advance} onBack={back} signals={signals} refreshSignals={refresh} blocked={blocked} />
@@ -1397,7 +1512,10 @@ export function AccountSetupFlow({
 /* ── Dashboard reminder ─────────────────────────────────────────────────── */
 
 export function AccountSetupReminder({ user, lang, status }: { user: UserProfile; lang: string; status: AccountSetupStatus | null }) {
-  if (!status || status.complete || status.onboardingCompleted || status.onboardingSkipped) return null;
+  // The quiet route back stays while steps are open, also after Skip or a
+  // "Finish setup" with gaps — the done screen promises exactly that
+  // (B06-F05). Only the automatic prompts stop (shouldPromptAccountSetup).
+  if (!shouldShowSetupReminder(status)) return null;
   void user;
   return (
     <div className="floating-panel mb-4 flex flex-col gap-3 border-border/65 bg-card px-4 py-3.5 sm:flex-row sm:items-center" data-testid="account-setup-reminder">

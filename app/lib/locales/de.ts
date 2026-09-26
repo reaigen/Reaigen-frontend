@@ -2138,7 +2138,7 @@ const de: LocaleStrings = {
   "setup.done.subtitleIncomplete":        "Gespeichert. Eine Erinnerung bleibt auf der Übersicht, bis die restlichen Schritte erledigt sind.",
   "setup.done.blockedSubtitle":           "Ihre Angaben sind gespeichert. Klären Sie die oben genannte Kontoanforderung, bevor Sie veröffentlichen oder den Agenten verwenden.",
   "setup.done.blockedSubtitleBasic":      "Ihre Angaben sind gespeichert. Klären Sie die oben genannte Kontoanforderung, bevor Sie fortfahren.",
-  "setup.seller.phoneHint":               "Internationales Format, z. B. +49 151 2345678. Zum Veröffentlichen ist eine verifizierte Nummer nötig.",
+  "setup.seller.phoneHint":                "Vorerst optional. Internationales Format, z. B. +49 151 2345678. Eine verifizierte Nummer ist erst zum Veröffentlichen nötig.",
   "setup.seller.verifyPhone":             "Nummer verifizieren",
   "setup.seller.phoneVerified":           "Verifiziert",
   "setup.seller.codeSent":                "Code gesendet an",
@@ -2212,6 +2212,7 @@ const de: LocaleStrings = {
 
   // ── Account setup: phone conflict ───────────────────────────────────
   "setup.seller.phoneTaken":              "Diese Nummer ist bereits mit einem anderen Reaigen-Konto verknüpft. Verwenden Sie eine andere Nummer oder kontaktieren Sie den Support, falls sie Ihnen gehört.",
+  "setup.leave.fixFirst":                  "Ihre Angaben sind noch nicht gespeichert: Korrigieren oder leeren Sie das markierte Feld und verlassen Sie dann diesen Schritt.",
 };
 
 export default de;

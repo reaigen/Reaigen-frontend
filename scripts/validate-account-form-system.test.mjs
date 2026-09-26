@@ -109,7 +109,7 @@ test("account setup disappears from Settings after completion or dismissal", () 
   assert.match(settings, /const show = !loading && status !== null && shouldPromptAccountSetup\(status\)/);
   assert.match(settings, /\{show && status \? <AccountSetupEntryCard/);
   assert.match(setup, /const ready = isAccountReady\(status\)/);
-  assert.match(setup, /status\.onboardingCompleted \|\| status\.onboardingSkipped/);
+  assert.match(setup, /if \(!shouldShowSetupReminder\(status\)\) return null;/);
   assert.match(setup, /setup\.done\.blockedSubtitle/);
   assert.match(settings, /href="\/setup"/);
   assert.match(settings, /data-testid="settings-account-setup"/);
@@ -128,6 +128,17 @@ test("account setup disappears from Settings after completion or dismissal", () 
     settings.indexOf("function formatAccountDate"),
   );
   assert.doesNotMatch(setupEntry, /var\(--font-brand\)|CheckIcon|(?:text|bg|border)-success/);
+});
+
+test("setup saves seller details without a phone and keeps typed input when leaving a step", () => {
+  // Bench 06 B06-F01/F03: Skip dropped typed seller details, and the step
+  // refused to save without a phone although Settings saves the same fields.
+  assert.match(setup, /const phoneValid = phoneEmpty \|\| isValidInternationalPhone\(phone\)/);
+  assert.match(setup, /id="setup-phone"\s+label=\{t\("settings\.seller\.phone", lang\)\}\s+optional/);
+  assert.match(setup, /if \(!\(await keepTypedInput\(\)\)\) \{/);
+  assert.match(setup, /onClick=\{\(\) => \{ void leaveTo\(step\.key\); \}\}/);
+  assert.match(setup, /usePendingSave\(\s*registerPendingSave,\s*sellerDirty/);
+  assert.match(setup, /usePendingSave\(\s*registerPendingSave,\s*Object\.keys\(typedChanges\)/);
 });
 
 test("account elements use the Reaigen semantic palette instead of utility colors", () => {

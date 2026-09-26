@@ -2138,7 +2138,7 @@ const cs: LocaleStrings = {
   "setup.done.subtitleIncomplete":        "Uloženo. Připomínka zůstane na přehledu, dokud nedokončíte zbývající kroky.",
   "setup.done.blockedSubtitle":           "Vaše údaje jsou uložené. Před publikováním nebo používáním Agenta vyřešte požadavek účtu uvedený výše.",
   "setup.done.blockedSubtitleBasic":      "Vaše údaje jsou uložené. Před pokračováním vyřešte požadavek účtu uvedený výše.",
-  "setup.seller.phoneHint":               "Mezinárodní formát, např. +420 601 234 567. K publikování je potřeba ověřené číslo.",
+  "setup.seller.phoneHint":                "Zatím nepovinné. Mezinárodní formát, např. +420 601 234 567. Ověřené číslo je potřeba až k publikování.",
   "setup.seller.verifyPhone":             "Ověřit číslo",
   "setup.seller.phoneVerified":           "Ověřeno",
   "setup.seller.codeSent":                "Kód jsme poslali na",
@@ -2212,6 +2212,7 @@ const cs: LocaleStrings = {
 
   // ── Account setup: phone conflict ───────────────────────────────────
   "setup.seller.phoneTaken":              "Toto číslo je už propojeno s jiným účtem Reaigen. Použijte jiné číslo, nebo kontaktujte podporu, pokud je vaše.",
+  "setup.leave.fixFirst":                  "Údaje ještě nejsou uložené: opravte nebo smažte zvýrazněné pole a pak tento krok opusťte.",
 };
 
 export default cs;

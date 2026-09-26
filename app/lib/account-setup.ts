@@ -181,3 +181,12 @@ export function hasSynchronousSetupGaps(user: UserProfile): boolean {
 export function shouldPromptAccountSetup(status: AccountSetupStatus): boolean {
   return !status.complete && !status.onboardingCompleted && !status.onboardingSkipped;
 }
+
+/**
+ * Whether the dashboard's quiet setup reminder shows. Unlike the automatic
+ * prompts it survives Skip and a "Finish setup" with open steps: it is the
+ * route back the done screen promises, and it goes once every step is done.
+ */
+export function shouldShowSetupReminder(status: AccountSetupStatus | null): status is AccountSetupStatus {
+  return status !== null && !status.complete;
+}

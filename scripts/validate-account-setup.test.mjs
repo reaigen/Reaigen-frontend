@@ -6,6 +6,7 @@ import {
   hasSynchronousSetupGaps,
   isAccountReady,
   shouldPromptAccountSetup,
+  shouldShowSetupReminder,
 } from "../app/lib/account-setup.ts";
 import { sessionEndReasonFromDetail } from "../app/lib/session-end.ts";
 
@@ -200,6 +201,26 @@ test("skipped or completed onboarding stops every automatic setup prompt", () =>
   assert.equal(shouldPromptAccountSetup(status), false);
   // The permissions gap alone is not known from the profile payload.
   assert.equal(hasSynchronousSetupGaps(user()), false);
+});
+
+test("the dashboard reminder stays after Skip or an unfinished Finish, until every step is done", () => {
+  // Bench 06 B06-F05: the done screen promised a reminder on the overview,
+  // but the reminder hid itself once onboarding was marked completed or skipped.
+  for (const flags of [
+    { onboarding_completed: true, onboarding_skipped: false, onboarding_step: 4 },
+    { onboarding_completed: false, onboarding_skipped: true, onboarding_step: 1 },
+  ]) {
+    const status = computeAccountSetupStatus({
+      user: user({ personalized_data: flags, billing_account: null }),
+      consent: consented,
+      toolPermissions: allTools,
+    });
+    assert.equal(shouldPromptAccountSetup(status), false);
+    assert.equal(shouldShowSetupReminder(status), true);
+  }
+  const finished = computeAccountSetupStatus({ user: user(), consent: consented, toolPermissions: allTools });
+  assert.equal(shouldShowSetupReminder(finished), false);
+  assert.equal(shouldShowSetupReminder(null), false);
 });
 
 test("the backend's refusals surface as blockers, not as form gaps", () => {

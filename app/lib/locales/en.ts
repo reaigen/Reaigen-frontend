@@ -2160,7 +2160,7 @@ const en = {
   "setup.done.subtitleIncomplete":        "Saved. A reminder stays on your dashboard until the remaining steps are done.",
   "setup.done.blockedSubtitle":           "Your details are saved. Resolve the account requirement above before publishing or using the Agent.",
   "setup.done.blockedSubtitleBasic":      "Your details are saved. Resolve the account requirement above before continuing.",
-  "setup.seller.phoneHint":               "International format, e.g. +421 901 234 567. A verified number is required to publish.",
+  "setup.seller.phoneHint":                "Optional for now. International format, e.g. +421 901 234 567. A verified number is only needed to publish.",
   "setup.seller.verifyPhone":             "Verify number",
   "setup.seller.phoneVerified":           "Verified",
   "setup.seller.codeSent":                "Code sent to",
@@ -2234,6 +2234,7 @@ const en = {
 
   // ── Account setup: phone conflict ───────────────────────────────────
   "setup.seller.phoneTaken":              "This number is already linked to another Reaigen account. Use a different number, or contact support if it's yours.",
+  "setup.leave.fixFirst":                  "Your details are not saved yet: correct or clear the highlighted field, then leave this step.",
 } as const;
 
 export default en;
