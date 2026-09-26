@@ -2212,6 +2212,16 @@ const sk: LocaleStrings = {
 
   // ── Account setup: phone conflict ───────────────────────────────────
   "setup.seller.phoneTaken":              "Toto číslo je už prepojené s iným účtom Reaigen. Použite iné číslo, alebo kontaktujte podporu, ak je vaše.",
+  "dashboard.empty.agentHint":             "Napíšte Agentovi, čo predávate alebo prenajímate — pripraví koncept na potvrdenie. Nehnuteľnosť môžete nasnímať aj v aplikácii Reaigen pre iPhone a iPad.",
+  "dashboard.empty.agentOffHint":          "Váš balík zahŕňa Agenta, ktorý vytvorí koncept z krátkeho popisu. Zapnite ho v Nastaveniach, alebo nehnuteľnosť nasnímajte v aplikácii Reaigen pre iPhone a iPad.",
+  "dashboard.empty.webHint":               "Začnite koncept priamo tu v prehliadači, alebo nehnuteľnosť nasnímajte v aplikácii Reaigen pre iPhone a iPad.",
+  "dashboard.empty.appHint":               "Inzeráty vytvoríte v aplikácii Reaigen pre iPhone a iPad — prihláste sa v nej týmto účtom a zobrazia sa tu. Tvorba s Agentom v prehliadači je súčasťou vyšších balíkov.",
+  "dashboard.empty.agentAction":           "Vytvoriť s Agentom",
+  "dashboard.empty.agentPrompt":           "Vytvor nový koncept: ",
+  "dashboard.empty.agentSettingsAction":   "Zapnúť Agenta",
+  "dashboard.empty.webAction":             "Vytvoriť v prehliadači",
+  "dashboard.empty.plansAction":           "Porovnať balíky",
+  "tours.emptyCaptureHint":                "Prehliadky sa snímajú v aplikácii Reaigen pre iPhone alebo iPad s LiDARom — prihláste sa v nej týmto účtom. Po spracovaní snímania sa prehliadka zobrazí tu sama.",
   "units.name.SQM":                        "Štvorcový meter",
   "units.name.SQCM":                       "Štvorcový centimeter",
   "units.name.SQKM":                       "Štvorcový kilometer",

@@ -3,7 +3,7 @@
 import * as React from "react";
 import dynamic from "next/dynamic";
 import Link from "next/link";
-import { usePathname } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import { Avatar, AvatarFallback, AvatarImage } from "../lib/ui/avatar";
 import { BottomSheet } from "../lib/ui/bottom-sheet";
 import { getReaiAgentConsent, getUserCapabilities, type UserProfile } from "../lib/api/client";
@@ -341,6 +341,7 @@ function AppShellFrame({
   children,
 }: AppShellProps) {
   const pathname = usePathname();
+  const router = useRouter();
   const [reaiEnabled, setReaiEnabled] = React.useState(false);
   const [reaiOpen, setReaiOpen] = React.useState(false);
   const [reaiCardMounted, setReaiCardMounted] = React.useState(false);
@@ -640,6 +641,17 @@ function AppShellFrame({
     };
   }, [compactAgentViewport, reaiOpen]);
 
+  // The plan welcome's "Start creating": the drafts page, with the Agent
+  // open when this account has it on — the dashboard's empty state names the
+  // next step otherwise.
+  const startCreating = React.useCallback(() => {
+    if (pathname !== "/dashboard") router.push("/dashboard");
+    if (reaiEnabled) {
+      setReaiCardMounted(true);
+      setReaiOpen(true);
+    }
+  }, [pathname, reaiEnabled, router]);
+
   const openReai = (event: React.MouseEvent<HTMLButtonElement>) => {
     reaiReturnFocusRef.current = event.currentTarget;
     setMobileAccountOpen(false);
@@ -745,7 +757,7 @@ function AppShellFrame({
       } as React.CSSProperties}
     >
       {!immersive ? (
-        <SubscriptionWelcomeCard userId={user.id} language={lang} />
+        <SubscriptionWelcomeCard userId={user.id} language={lang} onStart={startCreating} />
       ) : null}
       {!immersive ? (
         <aside className="app-sidebar fixed inset-y-0 left-0 z-[60] hidden flex-col overflow-visible bg-card text-foreground md:flex">

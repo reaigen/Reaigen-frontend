@@ -289,7 +289,7 @@ export default function ToursPage() {
             <CollectionState
               icon={<MainTourIcon size={20} />}
               title={searchQuery ? t("tours.emptyFiltered", lang) : t("tours.empty", lang)}
-              description={t("tours.emptyHint", lang)}
+              description={t(searchQuery ? "tours.emptyHint" : "tours.emptyCaptureHint", lang)}
               action={searchQuery ? <Button type="button" variant="outline" size="sm" onClick={clearSearch}>{t("dashboard.clearSearch", lang)}</Button> : undefined}
             />
           ) : (

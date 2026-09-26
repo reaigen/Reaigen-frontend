@@ -2212,6 +2212,16 @@ const de: LocaleStrings = {
 
   // ── Account setup: phone conflict ───────────────────────────────────
   "setup.seller.phoneTaken":              "Diese Nummer ist bereits mit einem anderen Reaigen-Konto verknüpft. Verwenden Sie eine andere Nummer oder kontaktieren Sie den Support, falls sie Ihnen gehört.",
+  "dashboard.empty.agentHint":             "Schreiben Sie dem Agent, was Sie verkaufen oder vermieten — er bereitet einen Entwurf zur Bestätigung vor. Sie können eine Immobilie auch in der Reaigen-App für iPhone und iPad erfassen.",
+  "dashboard.empty.agentOffHint":          "Ihr Paket enthält den Agent, der aus einer kurzen Beschreibung einen Entwurf erstellt. Aktivieren Sie ihn in den Einstellungen oder erfassen Sie eine Immobilie in der Reaigen-App für iPhone und iPad.",
+  "dashboard.empty.webHint":               "Beginnen Sie einen Entwurf direkt hier im Browser oder erfassen Sie eine Immobilie in der Reaigen-App für iPhone und iPad.",
+  "dashboard.empty.appHint":               "Inserate erstellen Sie in der Reaigen-App für iPhone und iPad — melden Sie sich dort mit diesem Konto an, dann erscheinen sie hier. Das Erstellen mit dem Agent im Browser gehört zu den höheren Paketen.",
+  "dashboard.empty.agentAction":           "Mit dem Agent erstellen",
+  "dashboard.empty.agentPrompt":           "Erstelle einen neuen Entwurf: ",
+  "dashboard.empty.agentSettingsAction":   "Agent aktivieren",
+  "dashboard.empty.webAction":             "Im Browser erstellen",
+  "dashboard.empty.plansAction":           "Pakete vergleichen",
+  "tours.emptyCaptureHint":                "Rundgänge werden in der Reaigen-App für iPhone oder iPad mit LiDAR erfasst — melden Sie sich dort mit diesem Konto an. Sobald die Aufnahme verarbeitet ist, erscheint der Rundgang hier von selbst.",
   "units.name.SQM":                        "Quadratmeter",
   "units.name.SQCM":                       "Quadratzentimeter",
   "units.name.SQKM":                       "Quadratkilometer",

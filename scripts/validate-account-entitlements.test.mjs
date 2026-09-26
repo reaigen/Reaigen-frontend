@@ -3,6 +3,8 @@ import fs from "node:fs";
 import path from "node:path";
 import test from "node:test";
 
+import { firstDraftStep } from "../app/lib/first-step.ts";
+
 const root = process.cwd();
 const settings = fs.readFileSync(
   path.join(root, "app/components/settings-form.tsx"),
@@ -280,4 +282,29 @@ test("the subscription welcome card is calm and owns no commercial copy", () => 
     subscriptionWelcome,
     /Welcome to|What you can do|Start creating|Free|Standard|Enterprise/,
   );
+});
+
+test("an empty Drafts page offers the first step this account can take", () => {
+  // Bench 06 B06-F04: "Create a listing from the app" with no action at all.
+  assert.deepEqual(firstDraftStep({ agentReady: false, agentEntitled: false, webAuthoring: false }), {
+    hint: "dashboard.empty.appHint",
+    actions: ["plans"],
+  });
+  assert.deepEqual(firstDraftStep({ agentReady: true, agentEntitled: true, webAuthoring: false }), {
+    hint: "dashboard.empty.agentHint",
+    actions: ["agent"],
+  });
+  assert.deepEqual(firstDraftStep({ agentReady: false, agentEntitled: true, webAuthoring: true }).actions, ["agentSettings", "webCreate"]);
+  const dashboard = fs.readFileSync(path.join(root, "app/dashboard/page.tsx"), "utf8");
+  assert.match(dashboard, /firstStep\.actions\.map\(\(action, index\) => firstStepAction\(action, index === 0\)\)/);
+  assert.match(dashboard, /openReaiComposer\(t\("dashboard\.empty\.agentPrompt", lang\)\)/);
+});
+
+test("the plan welcome's action leads into creation; closing it only acknowledges", () => {
+  // Bench 06 EF07: "Start creating" closed the dialog and left the creator on Settings.
+  assert.match(subscriptionWelcome, /onClick=\{\(\) => onAcknowledge\(true\)\}/);
+  assert.match(subscriptionWelcome, /if \(start\) onStart\?\.\(\);/);
+  assert.match(subscriptionWelcome, /if \(!acknowledging\) onAcknowledge\(\);/);
+  assert.match(appShell, /<SubscriptionWelcomeCard userId=\{user\.id\} language=\{lang\} onStart=\{startCreating\} \/>/);
+  assert.match(appShell, /const startCreating = React\.useCallback\(\(\) => \{\s*if \(pathname !== "\/dashboard"\) router\.push\("\/dashboard"\);/);
 });

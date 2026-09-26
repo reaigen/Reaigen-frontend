@@ -21,7 +21,7 @@ export function SubscriptionWelcomeDialog({
   notice: SubscriptionWelcomeNotice | null;
   acknowledging: boolean;
   error: string;
-  onAcknowledge: () => void;
+  onAcknowledge: (start?: boolean) => void;
 }) {
   const actionRef = React.useRef<HTMLButtonElement>(null);
 
@@ -118,7 +118,7 @@ export function SubscriptionWelcomeDialog({
                     ref={actionRef}
                     type="button"
                     loading={acknowledging}
-                    onClick={onAcknowledge}
+                    onClick={() => onAcknowledge(true)}
                   >
                     {notice.action_label}
                   </Button>
@@ -132,12 +132,20 @@ export function SubscriptionWelcomeDialog({
   );
 }
 
+/**
+ * `onStart` runs after the action button is acknowledged, never after Escape
+ * or a close: the server's label promises a way into creation, so it has to
+ * lead there (Bench 06 EF07 — it only closed the dialog and left the creator
+ * on the Settings page it opened over).
+ */
 export function SubscriptionWelcomeCard({
   userId,
   language,
+  onStart,
 }: {
   userId: number;
   language: string;
+  onStart?: () => void;
 }) {
   const [notice, setNotice] = React.useState<SubscriptionWelcomeNotice | null>(null);
   const [acknowledging, setAcknowledging] = React.useState(false);
@@ -189,7 +197,7 @@ export function SubscriptionWelcomeCard({
     };
   }, [refresh, userId]);
 
-  const acknowledge = React.useCallback(async () => {
+  const acknowledge = React.useCallback(async (start = false) => {
     if (!notice || acknowledgingRef.current) return;
     acknowledgingRef.current = true;
     requestVersion.current += 1;
@@ -198,20 +206,21 @@ export function SubscriptionWelcomeCard({
     try {
       await acknowledgeSubscriptionWelcome(notice.id);
       setNotice((current) => current?.id === notice.id ? null : current);
+      if (start) onStart?.();
     } catch {
       setError(notice.error_message);
     } finally {
       acknowledgingRef.current = false;
       setAcknowledging(false);
     }
-  }, [notice]);
+  }, [notice, onStart]);
 
   return (
     <SubscriptionWelcomeDialog
       notice={notice}
       acknowledging={acknowledging}
       error={error}
-      onAcknowledge={() => void acknowledge()}
+      onAcknowledge={(start) => void acknowledge(start)}
     />
   );
 }

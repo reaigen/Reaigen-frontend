@@ -28,6 +28,9 @@ import { matchesCollectionQuery, normalizeCollectionQuery } from "../lib/collect
 import { useAccountSetup } from "../components/hooks/use-account-setup";
 import { hasSynchronousSetupGaps, shouldPromptAccountSetup } from "../lib/account-setup";
 import { ACCOUNT_SETUP_PROMPTED_KEY, AccountSetupReminder } from "../components/account-setup-flow";
+import { useWebAuthoringAccess } from "../components/hooks/use-web-authoring-access";
+import { firstDraftStep, type FirstStepAction } from "../lib/first-step";
+import { openReaiComposer } from "../lib/reai-compose";
 
 const DASHBOARD_PAGE_SIZE = 12;
 
@@ -104,6 +107,34 @@ export default function DashboardPage() {
   // the Agent consent request can reveal waits for that answer instead of
   // pushing the list down after the fact.
   const reminderStatus = accountSetup.loading && user && !hasSynchronousSetupGaps(user) ? null : accountSetup.status;
+  const { allowed: webAuthoringAllowed } = useWebAuthoringAccess(Boolean(user));
+  const agentConsent = accountSetup.signals?.consent;
+  const firstStep = firstDraftStep({
+    agentReady: typeof agentConsent === "object" && agentConsent !== null && agentConsent.consented,
+    agentEntitled: accountSetup.status?.agentEntitled === true,
+    webAuthoring: webAuthoringAllowed,
+  });
+  const firstStepAction = (action: FirstStepAction, primary: boolean) => {
+    const variant = primary ? "default" : "outline";
+    if (action === "agent") {
+      return (
+        <Button key={action} type="button" variant={variant} size="sm" onClick={() => openReaiComposer(t("dashboard.empty.agentPrompt", lang))} data-testid="empty-create-with-agent">
+          {t("dashboard.empty.agentAction", lang)}
+        </Button>
+      );
+    }
+    const href = action === "agentSettings" ? "/settings#reai" : action === "webCreate" ? "/create" : "/upgrade";
+    const label = action === "agentSettings"
+      ? "dashboard.empty.agentSettingsAction"
+      : action === "webCreate"
+        ? "dashboard.empty.webAction"
+        : "dashboard.empty.plansAction";
+    return (
+      <Button key={action} asChild variant={variant} size="sm" data-testid={`empty-${action}`}>
+        <Link href={href}>{t(label, lang)}</Link>
+      </Button>
+    );
+  };
 
   const [drafts, setDrafts] = React.useState<DraftListingItem[]>([]);
   const [draftsLoading, setDraftsLoading] = React.useState(true);
@@ -507,8 +538,10 @@ export default function DashboardPage() {
           <CollectionState
             icon={<ImageIcon size={20} />}
             title={t(searchQuery || filtering ? "dashboard.noResults" : "dashboard.noSplatsTitle", lang)}
-            description={t(searchQuery || filtering ? "dashboard.noResultsHint" : "dashboard.noSplats", lang)}
-            action={searchQuery || filtering ? <Button type="button" variant="outline" size="sm" onClick={clearSearch}>{t("dashboard.clearSearch", lang)}</Button> : undefined}
+            description={t(searchQuery || filtering ? "dashboard.noResultsHint" : firstStep.hint, lang)}
+            action={searchQuery || filtering
+              ? <Button type="button" variant="outline" size="sm" onClick={clearSearch}>{t("dashboard.clearSearch", lang)}</Button>
+              : <div className="flex flex-wrap justify-center gap-2">{firstStep.actions.map((action, index) => firstStepAction(action, index === 0))}</div>}
           />
         ) : (
           <>

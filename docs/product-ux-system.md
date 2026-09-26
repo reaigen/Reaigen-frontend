@@ -351,6 +351,12 @@ Findings from the Bench 06 new-user run (2026-09-26) that now hold:
   a sample price in the chosen currency and sample area/distance values; option labels are names
   (languages in themselves, currencies from Intl, units from our locale strings), never catalogue
   codes such as `SQM` or `EU`.
+- **Empty pages name the next step.** An empty Drafts page offers what this account can do
+  (`firstDraftStep`): write to the Agent when it is on, turn it on when the plan includes it, create
+  in the browser when the server allows it, otherwise the iPhone/iPad app with a plan comparison.
+  An empty Tours page explains the capture handoff (Reaigen app with LiDAR, same account).
+- **The plan welcome leads somewhere.** Its action button acknowledges the notice and opens the
+  drafts page, with the Agent panel when the Agent is on; Escape or closing only acknowledges.
 
 ## Data-loading and state rules
 

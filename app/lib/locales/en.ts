@@ -2234,6 +2234,16 @@ const en = {
 
   // ── Account setup: phone conflict ───────────────────────────────────
   "setup.seller.phoneTaken":              "This number is already linked to another Reaigen account. Use a different number, or contact support if it's yours.",
+  "dashboard.empty.agentHint":             "Tell the Agent what you are selling or renting — it prepares a draft for you to confirm. You can also capture a property in the Reaigen app for iPhone and iPad.",
+  "dashboard.empty.agentOffHint":          "Your plan includes the Agent, which creates drafts from a short description. Turn it on in Settings, or capture a property in the Reaigen app for iPhone and iPad.",
+  "dashboard.empty.webHint":               "Start a draft here in the browser, or capture a property in the Reaigen app for iPhone and iPad.",
+  "dashboard.empty.appHint":               "Listings are created in the Reaigen app for iPhone and iPad — sign in there with this account and they appear here. Creating with the Agent in the browser comes with the higher plans.",
+  "dashboard.empty.agentAction":           "Create with the Agent",
+  "dashboard.empty.agentPrompt":           "Create a new draft: ",
+  "dashboard.empty.agentSettingsAction":   "Turn on the Agent",
+  "dashboard.empty.webAction":             "Create in the browser",
+  "dashboard.empty.plansAction":           "Compare plans",
+  "tours.emptyCaptureHint":                "Tours are captured in the Reaigen app for iPhone or iPad with LiDAR — sign in there with this account. Once the capture is processed, the tour appears here on its own.",
   "units.name.SQM":                        "Square metre",
   "units.name.SQCM":                       "Square centimetre",
   "units.name.SQKM":                       "Square kilometre",
