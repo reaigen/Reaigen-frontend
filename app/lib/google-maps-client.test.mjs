@@ -88,8 +88,10 @@ test("address-only drafts wait for an explicit in-app Google map request", () =>
   assert.notEqual(clientRequest, -1);
   assert.ok(coordinateGuard < clientRequest, "missing coordinates must be rejected before fetch");
   assert.match(mapCard, /addressMapRequested/);
-  assert.match(mapCard, /GoogleAddressMapFrame/);
-  assert.match(mapCard, /referrerPolicy="strict-origin-when-cross-origin"/);
+  // The Google-hosted frame is gone (2026-09-26): Google's own buttons, and
+  // a world map for an address it could not place. A miss is our own state.
+  assert.doesNotMatch(mapCard, /GoogleAddressMapFrame|<iframe/);
+  assert.match(mapCard, /addressNotFoundText\(lang\)/);
   // No link carries the draft's address out of the card.
   assert.doesNotMatch(mapCard, /href=\{[^}]*address/);
   assert.doesNotMatch(mapCard, /href=\{[^}]*target\./);

@@ -3,7 +3,7 @@ import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import test from "node:test";
 
-import { MAPBOX_STYLE, geocodeAddress, isMapboxToken, mapboxGeocodeUrl } from "./mapbox-client.ts";
+import { MAPBOX_STYLE, geocodeAddress, isMapboxToken, mapboxGeocodeUrl, splitCountry } from "./mapbox-client.ts";
 
 const root = fileURLToPath(new URL("../../", import.meta.url));
 const read = (path) => readFileSync(`${root}/${path}`, "utf8");
@@ -61,9 +61,8 @@ test("the property map draws Mapbox first and falls back to Google", () => {
   // rebuild the map on every render.
   assert.match(card, /onReadyRef\.current\?\.\(\)/);
   assert.match(card, /\}, \[token, center, interactive, language, zoom\]\);/);
-  // The Google fallback is intact.
+  // The Google canvas stays the fallback for saved coordinates.
   assert.match(card, /<GoogleMapCanvas/);
-  assert.match(card, /<GoogleAddressMapFrame/);
 });
 
 test("an address-only draft is geocoded only after Show map, and the address never reaches our route", () => {
@@ -72,7 +71,7 @@ test("an address-only draft is geocoded only after Show map, and the address nev
   assert.match(effect, /!addressMapRequested/);
   assert.match(effect, /body: JSON\.stringify\(\{ purpose: "geocode" \}\)/);
   assert.match(effect, /geocodeAddress\(target\.address, lang, mapboxToken/);
-  assert.match(effect, /addressFallbackToGoogle\(\)/);
+  assert.match(effect, /addressMapMissed\(error instanceof Error && error\.message === "map-address-not-found" \? "not-found" : "failed"\)/);
 });
 
 test("the route authenticates before reading either key and hands out the Mapbox token", () => {
@@ -127,4 +126,29 @@ test("the map shows only our controls, in the creator's language, inside the rou
   assert.match(card, /\[clip-path:inset\(0_round_1\.6rem\)\]/);
   assert.match(card, /import "\.\/property-map\.css"/);
   assert.match(css, /\.reaigen-mapbox\.mapboxgl-map \{\s*position: absolute;\s*inset: 0;\s*border-radius: inherit;\s*overflow: hidden;/);
+});
+
+test("a trailing country code filters the search, and the street is dropped when the map does not know it", async () => {
+  assert.deepEqual(splitCountry("bou 6373, 06004, sk"), { query: "bou 6373, 06004", country: "sk" });
+  assert.deepEqual(splitCountry("Bajkalská 9, Bratislava"), { query: "Bajkalská 9, Bratislava", country: null });
+  assert.equal(new URL(mapboxGeocodeUrl("06004", "sk", TOKEN, "sk")).searchParams.get("country"), "sk");
+  const previousFetch = globalThis.fetch;
+  const asked = [];
+  try {
+    globalThis.fetch = async (url) => {
+      asked.push(new URL(url).searchParams.get("q"));
+      const found = asked.length === 2;
+      return { ok: true, json: async () => ({ features: found ? [{ geometry: { coordinates: [20.43, 49.14] } }] : [] }) };
+    };
+    assert.deepEqual(await geocodeAddress("Neznáma 1, Kežmarok, sk", "sk", TOKEN), { lat: 49.14, lng: 20.43 });
+    assert.deepEqual(asked, ["Neznáma 1, Kežmarok", "Kežmarok"]);
+  } finally {
+    globalThis.fetch = previousFetch;
+  }
+});
+
+test("an address the map cannot place says so in the creator's language", () => {
+  const card = read("app/components/property-map-card.tsx");
+  assert.match(card, /sk: "Túto adresu sa na mape nepodarilo nájsť\. Skontrolujte ulicu a obec\."/);
+  assert.doesNotMatch(card, /<iframe/);
 });

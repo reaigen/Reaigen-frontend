@@ -8,7 +8,6 @@ import {
   GoogleMapMarker,
   REAIGEN_GOOGLE_MAP_STYLES,
   REAIGEN_GOOGLE_MAPS_VERSION,
-  googleMapsAddressEmbedUrl,
   loadGoogleMaps,
   resetGoogleMapsFailure,
   subscribeGoogleMapsFailure,
@@ -305,34 +304,15 @@ function coordinate(value: string | number | null | undefined, min: number, max:
   return Number.isFinite(parsed) && parsed >= min && parsed <= max ? parsed : null;
 }
 
-function GoogleAddressMapFrame({
-  address,
-  lang,
-  instance,
-  onLoad,
-  onError,
-}: {
-  address: string;
-  lang: string;
-  instance: string;
-  onLoad: () => void;
-  onError: () => void;
-}) {
-  const src = googleMapsAddressEmbedUrl(address, lang);
-  if (!src) return null;
-
-  return (
-    <iframe
-      key={instance}
-      src={src}
-      title={`${t("draft.location", lang)} · Google Maps`}
-      className="absolute inset-0 h-full w-full border-0"
-      referrerPolicy="strict-origin-when-cross-origin"
-      allowFullScreen
-      onLoad={onLoad}
-      onError={onError}
-    />
-  );
+/** An address the map could not place, said in the card's own words. */
+function addressNotFoundText(lang: string) {
+  const text = {
+    en: "This address could not be found on the map. Check the street and town.",
+    sk: "Túto adresu sa na mape nepodarilo nájsť. Skontrolujte ulicu a obec.",
+    cs: "Tuto adresu se na mapě nepodařilo najít. Zkontrolujte ulici a obec.",
+    de: "Diese Adresse wurde auf der Karte nicht gefunden. Prüfen Sie Straße und Ort.",
+  } as const;
+  return text[String(lang || "").slice(0, 2).toLowerCase() as keyof typeof text] ?? text.en;
 }
 
 export function PropertyMapCard({
@@ -365,7 +345,9 @@ export function PropertyMapCard({
   const [provider, setProvider] = useState<MapProvider>("mapbox");
   const [inlineMap, setInlineMap] = useState<ZoomableMap | null>(null);
   const [expandedMap, setExpandedMap] = useState<ZoomableMap | null>(null);
-  const [addressProvider, setAddressProvider] = useState<MapProvider>("mapbox");
+  // "not-found": Mapbox has no match for the address; "failed": the map
+  // service itself did not answer.
+  const [addressMiss, setAddressMiss] = useState<"not-found" | "failed" | null>(null);
   const [addressMapbox, setAddressMapbox] = useState<{ token: string; center: GoogleMapCenter } | null>(null);
   const [failed, setFailed] = useState(false);
   const [loading, setLoading] = useState(Boolean(rawTarget?.lat != null && rawTarget?.lng != null));
@@ -423,7 +405,7 @@ export function PropertyMapCard({
       setFailed(false);
       setAddressMapRequested(false);
       setAddressMapStatus("idle");
-      setAddressProvider("mapbox");
+      setAddressMiss(null);
       setAddressMapbox(null);
     };
 
@@ -556,21 +538,25 @@ export function PropertyMapCard({
 
   const handleRetryAddressMap = useCallback(() => {
     setAddressMapNonce((value) => value + 1);
-    setAddressProvider("mapbox");
+    setAddressMiss(null);
     setAddressMapbox(null);
     setAddressMapStatus("loading");
   }, []);
 
-  const addressFallbackToGoogle = useCallback(() => {
+  // No Google-hosted frame any more: it brought Google's own buttons and, for
+  // an address it could not place, a map of the whole world (operator,
+  // 2026-09-26: "those map ui things i dont like them"). A miss is said in
+  // the card's own words instead.
+  const addressMapMissed = useCallback((reason: "not-found" | "failed") => {
     setAddressMapbox(null);
-    setAddressProvider("google");
+    setAddressMiss(reason);
+    setAddressMapStatus("failed");
   }, []);
 
   // After "Show map" only: ask the route for the Mapbox token (never sending
-  // the address there), geocode in the browser, and draw the Mapbox map. Any
-  // miss falls back to the Google-hosted frame, as before.
+  // the address there), geocode in the browser, and draw the Mapbox map.
   useEffect(() => {
-    if (!target || target.lat != null || !addressMapRequested || addressProvider !== "mapbox") return;
+    if (!target || target.lat != null || !addressMapRequested || addressMiss || addressMapbox) return;
     const controller = new AbortController();
     void fetch("/api/maps/client", {
       method: "POST",
@@ -587,11 +573,14 @@ export function PropertyMapCard({
         if (!center) throw new Error("map-address-not-found");
         if (!controller.signal.aborted) setAddressMapbox({ token: mapboxToken, center });
       })
-      .catch(() => {
-        if (!controller.signal.aborted) addressFallbackToGoogle();
+      .catch((error: unknown) => {
+        if (controller.signal.aborted) return;
+        addressMapMissed(error instanceof Error && error.message === "map-address-not-found" ? "not-found" : "failed");
       });
     return () => controller.abort();
-  }, [addressFallbackToGoogle, addressMapNonce, addressMapRequested, addressProvider, lang, target]);
+    // addressMapbox/addressMiss end the request; they are not re-run triggers.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [addressMapMissed, addressMapNonce, addressMapRequested, lang, target]);
 
   if (!target) return null;
   const isAddressOnly = target.lat == null || target.lng == null;
@@ -637,7 +626,7 @@ export function PropertyMapCard({
             onError={handleMapError}
           />
         ) : null}
-        {isAddressOnly && addressMapRequested && addressMapStatus !== "failed" && addressProvider === "mapbox" && addressMapbox ? (
+        {isAddressOnly && addressMapRequested && addressMapStatus !== "failed" && addressMapbox ? (
           <MapboxCanvas
             onMap={setInlineMap}
             key={`inline-mapbox-${target.key}-${addressMapNonce}`}
@@ -647,16 +636,7 @@ export function PropertyMapCard({
             zoom={15}
             interactive
             onReady={() => setAddressMapStatus("ready")}
-            onError={addressFallbackToGoogle}
-          />
-        ) : null}
-        {isAddressOnly && addressMapRequested && addressMapStatus !== "failed" && addressProvider === "google" ? (
-          <GoogleAddressMapFrame
-            address={target.address}
-            lang={lang}
-            instance={`inline-${target.key}-${addressMapNonce}`}
-            onLoad={() => setAddressMapStatus("ready")}
-            onError={() => setAddressMapStatus("failed")}
+            onError={() => addressMapMissed("failed")}
           />
         ) : null}
         {failed ? (
@@ -682,7 +662,7 @@ export function PropertyMapCard({
               <span className="media-overlay-surface mx-auto flex h-12 w-12 items-center justify-center rounded-full">
                 <MapPinIcon size={20} />
               </span>
-              <p className="mt-3 text-[13px] font-semibold text-foreground/68">{t("draft.mapPreviewUnavailable", lang)}</p>
+              <p className="mt-3 text-[13px] font-semibold text-foreground/68">{addressMiss === "not-found" ? addressNotFoundText(lang) : t("draft.mapPreviewUnavailable", lang)}</p>
               <button
                 type="button"
                 onClick={handleRetryAddressMap}
@@ -815,7 +795,7 @@ export function PropertyMapCard({
                   <button type="button" onClick={handleRetry} className="rounded-full border border-border bg-card px-4 py-2 text-[11px] font-semibold transition-colors hover:bg-surface-subtle">{t("common.tryAgain", lang)}</button>
                 </div>
               ) : null}
-              {isAddressOnly && addressMapRequested && addressMapStatus !== "failed" && addressProvider === "mapbox" && addressMapbox ? (
+              {isAddressOnly && addressMapRequested && addressMapStatus !== "failed" && addressMapbox ? (
                 <MapboxCanvas
                   onMap={setExpandedMap}
                   key={`expanded-mapbox-${target.key}-${addressMapNonce}`}
@@ -824,22 +804,13 @@ export function PropertyMapCard({
                   language={lang.slice(0, 2).toLowerCase()}
                   zoom={15}
                   interactive
-                  onError={addressFallbackToGoogle}
-                />
-              ) : null}
-              {isAddressOnly && addressMapRequested && addressMapStatus !== "failed" && addressProvider === "google" ? (
-                <GoogleAddressMapFrame
-                  address={target.address}
-                  lang={lang}
-                  instance={`expanded-${target.key}-${addressMapNonce}`}
-                  onLoad={() => setAddressMapStatus("ready")}
-                  onError={() => setAddressMapStatus("failed")}
+                  onError={() => addressMapMissed("failed")}
                 />
               ) : null}
               {isAddressOnly && addressMapStatus === "failed" ? (
                 <div className="flex h-full flex-col items-center justify-center gap-3 px-6 text-center text-foreground/55">
                   <MapPinIcon size={28} />
-                  <p className="text-[13px] font-semibold">{t("draft.mapPreviewUnavailable", lang)}</p>
+                  <p className="text-[13px] font-semibold">{addressMiss === "not-found" ? addressNotFoundText(lang) : t("draft.mapPreviewUnavailable", lang)}</p>
                   <button type="button" onClick={handleRetryAddressMap} className="rounded-full border border-border bg-card px-4 py-2 text-[11px] font-semibold transition-colors hover:bg-surface-subtle">{t("common.tryAgain", lang)}</button>
                 </div>
               ) : null}

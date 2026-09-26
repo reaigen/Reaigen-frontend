@@ -42,14 +42,28 @@ function mapboxLanguage(lang: string) {
   return /^[a-z]{2}$/.test(code) ? code : "en";
 }
 
+/**
+ * "bou 6373, 06004, sk" → the query without a trailing country code, and that
+ * code as a country filter: Mapbox reads "sk" as a word, not as Slovakia.
+ */
+export function splitCountry(address: string): { query: string; country: string | null } {
+  const parts = address.replace(/\s+/g, " ").split(",").map((part) => part.trim()).filter(Boolean);
+  const last = parts[parts.length - 1] ?? "";
+  if (parts.length > 1 && /^[a-z]{2}$/i.test(last)) {
+    return { query: parts.slice(0, -1).join(", "), country: last.toLowerCase() };
+  }
+  return { query: parts.join(", "), country: null };
+}
+
 /** Forward-geocoding URL for one address (Geocoding v6, temporary results, best match only). */
-export function mapboxGeocodeUrl(address: string, lang: string, token: string): string | null {
+export function mapboxGeocodeUrl(address: string, lang: string, token: string, country: string | null = null): string | null {
   const query = address.replace(/\s+/g, " ").trim();
   if (query.length < 3 || !isMapboxToken(token)) return null;
   const url = new URL("https://api.mapbox.com/search/geocode/v6/forward");
   url.searchParams.set("q", query);
   url.searchParams.set("limit", "1");
   url.searchParams.set("language", mapboxLanguage(lang));
+  if (country && /^[a-z]{2}$/.test(country)) url.searchParams.set("country", country);
   url.searchParams.set("access_token", token);
   return url.toString();
 }
@@ -64,15 +78,24 @@ export async function geocodeAddress(
   token: string,
   signal?: AbortSignal,
 ): Promise<{ lat: number; lng: number } | null> {
-  const url = mapboxGeocodeUrl(address, lang, token);
-  if (!url) return null;
-  const response = await fetch(url, { signal, credentials: "omit", referrerPolicy: "strict-origin-when-cross-origin" });
-  if (!response.ok) throw new Error("mapbox-geocode-failed");
-  const payload: unknown = await response.json();
-  const feature = (payload as { features?: Array<{ geometry?: { coordinates?: unknown } }> })?.features?.[0];
-  const coordinates = feature?.geometry?.coordinates;
-  if (!Array.isArray(coordinates) || coordinates.length < 2) return null;
-  const [lng, lat] = coordinates.map(Number);
-  if (!Number.isFinite(lat) || !Number.isFinite(lng) || Math.abs(lat) > 90 || Math.abs(lng) > 180) return null;
-  return { lat, lng };
+  const { query, country } = splitCountry(address);
+  // The whole address first; then, when the street is not known to the map,
+  // what follows it (postal code, town) — near the place beats no map.
+  const parts = query.split(",").map((part) => part.trim()).filter(Boolean);
+  const attempts = [query, parts.length > 1 ? parts.slice(1).join(", ") : null];
+  for (const attempt of attempts) {
+    if (!attempt) continue;
+    const url = mapboxGeocodeUrl(attempt, lang, token, country);
+    if (!url) continue;
+    const response = await fetch(url, { signal, credentials: "omit", referrerPolicy: "strict-origin-when-cross-origin" });
+    if (!response.ok) throw new Error("mapbox-geocode-failed");
+    const payload: unknown = await response.json();
+    const feature = (payload as { features?: Array<{ geometry?: { coordinates?: unknown } }> })?.features?.[0];
+    const coordinates = feature?.geometry?.coordinates;
+    if (!Array.isArray(coordinates) || coordinates.length < 2) continue;
+    const [lng, lat] = coordinates.map(Number);
+    if (!Number.isFinite(lat) || !Number.isFinite(lng) || Math.abs(lat) > 90 || Math.abs(lng) > 180) continue;
+    return { lat, lng };
+  }
+  return null;
 }

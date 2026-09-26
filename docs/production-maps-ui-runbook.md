@@ -56,10 +56,15 @@ only then returns `{ apiKey, mapboxToken, latitude, longitude }`.
   Google key, the card shows the unavailable state with Try again.
 - **Address-only drafts** are never geocoded during page load. Only after the
   creator chooses **Show map**, the card asks the route for the Mapbox token
-  (`{ purpose: "geocode" }` — the address is not sent to our route), geocodes
-  the address in the browser with Mapbox Geocoding v6 (one best match,
-  temporary results, nothing stored) and draws the Mapbox map. Any miss falls
-  back to the user-triggered Google-hosted frame as before.
+  (`{ purpose: "geocode" }` — the address is not sent to our route) and
+  geocodes the address in the browser with Mapbox Geocoding v6 (one best
+  match, temporary results, nothing stored). A trailing two-letter country
+  code ("…, sk") becomes the `country` filter; when the whole address has no
+  match, the part after the street (postal code, town) is tried. No match:
+  the card says so in the creator's language ("Túto adresu sa na mape
+  nepodarilo nájsť…") with Try again. There is no Google-hosted frame any
+  more: it showed Google's own controls and, for an address it could not
+  place, a map of the whole world (operator, 2026-09-26).
 
 The Google runtime (fallback):
 
